@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Flutter White: 0xFFFFFFFF -> 0 0% 100% */
+    --background: 0 0% 100%;
+    /* Flutter TextPrimary: 0xFF111827 -> 222 39% 11% */
+    --foreground: 222 39% 11%;
+
+    /* Flutter Surface: 0xFFFFFFFF -> 0 0% 100% */
+    --card: 0 0% 100%;
+    --card-foreground: 222 39% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 39% 11%;
+
+    /* Flutter Primary Orange: 0xFFF24E1E -> 13 88% 53% */
+    --primary: 13 88% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Flutter OrangeSoft: 0xFFFFF1E7 -> 25 100% 95% */
+    /* Replaces Blue secondary for better brand alignment and premium feel */
+    --secondary: 25 100% 95%;
+    --secondary-foreground: 13 88% 53%;
+
+    /* Flutter SurfaceSubtle: 0xFFF9FAFB -> 210 20% 98% */
+    --muted: 210 20% 98%;
+    /* Flutter TextSecondary: 0xFF6B7280 -> 220 9% 46% */
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 25 100% 95%; /* Match Secondary/Soft Orange */
+    --accent-foreground: 13 88% 53%;
+
+    /* Flutter Error: 0xFFEF4444 -> 0 84% 60% */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Flutter Border (with 0.4 alpha simulation): Lighter than 0xFFE5E7EB */
+    /* Approx 0xFFF3F4F6 -> 220 13% 96% */
+    --border: 220 13% 96%;
+    --input: 220 13% 96%;
+    --ring: 13 88% 53%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Flutter Dark Background: 0xFF0F1115 -> 220 17% 7% */
+    --background: 220 17% 7%;
+    /* Flutter Dark TextPrimary: 0xFFF9FAFB -> 210 20% 98% */
+    --foreground: 210 20% 98%;
+
+    /* Flutter Dark Card: 0xFF1A1D23 -> 220 15% 12% */
+    --card: 220 15% 12%;
+    --card-foreground: 210 20% 98%;
+
+    --popover: 220 15% 12%;
+    --popover-foreground: 210 20% 98%;
+
+    /* Flutter Primary Orange: 0xFFF24E1E -> 13 88% 53% */
+    --primary: 13 88% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 91% 60%;
+    --secondary-foreground: 0 0% 100%;
+
+    /* Flutter Dark Surface/AppBar: 0xFF12151A -> 220 18% 9% */
+    --muted: 220 18% 9%;
+    /* Flutter Dark TextSecondary: 0xFF9CA3AF -> 218 11% 65% */
+    --muted-foreground: 218 11% 65%;
+
+    --accent: 220 18% 9%;
+    --accent-foreground: 210 20% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
+
+    /* Flutter Dark Border: 0xFF2D323A -> 217 13% 20% */
+    --border: 217 13% 20%;
+    --input: 217 13% 20%;
+    --ring: 13 88% 53%;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground;
+  }
+}

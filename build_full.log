@@ -1,0 +1,22 @@
+
+> yummy-web@0.1.0 build
+> next build --debug
+
+  ▲ Next.js 14.2.15
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+   Collecting page data ...
+unhandledRejection Error [PageNotFoundError]: Cannot find module for page: /_document
+    at getPagePath (/home/ram0niswack/RootProjects/yummy-web/node_modules/next/dist/server/require.js:94:15)
+    at requirePage (/home/ram0niswack/RootProjects/yummy-web/node_modules/next/dist/server/require.js:99:22)
+    at /home/ram0niswack/RootProjects/yummy-web/node_modules/next/dist/server/load-components.js:72:65
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async Promise.all (index 0)
+    at async loadComponentsImpl (/home/ram0niswack/RootProjects/yummy-web/node_modules/next/dist/server/load-components.js:71:33)
+    at async Object.hasCustomGetInitialProps (/home/ram0niswack/RootProjects/yummy-web/node_modules/next/dist/build/utils.js:1273:24) {
+  type: 'PageNotFoundError',
+  code: 'ENOENT'
+}
