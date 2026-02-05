@@ -13,28 +13,41 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 export function ModeToggle() {
-  const { setTheme } = useTheme()
+  const { setTheme, theme } = useTheme()
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return null
+  }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon">
-          <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">Toggle theme</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme("light")}>
-          Light
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("dark")}>
-          Dark
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("system")}>
-          System
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="flex items-center p-1 bg-background/50 backdrop-blur-md rounded-full border shadow-sm">
+        <button
+            onClick={() => setTheme("light")}
+            className={`p-2 rounded-full transition-all duration-300 ${
+                theme === 'light' 
+                ? 'bg-white text-orange-500 shadow-md scale-110' 
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            aria-label="Light Mode"
+        >
+            <Sun className="w-4 h-4" />
+        </button>
+        <button
+            onClick={() => setTheme("dark")}
+            className={`p-2 rounded-full transition-all duration-300 ${
+                theme === 'dark' 
+                ? 'bg-slate-800 text-blue-400 shadow-md scale-110' 
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+             aria-label="Dark Mode"
+        >
+            <Moon className="w-4 h-4" />
+        </button>
+    </div>
   )
 }

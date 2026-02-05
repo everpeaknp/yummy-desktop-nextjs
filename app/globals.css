@@ -47,38 +47,38 @@
   }
 
   .dark {
-    /* Flutter Dark Background: 0xFF0F1115 -> 220 17% 7% */
-    --background: 220 17% 7%;
+    /* Flutter Dark Background: Neutral Zinc dark -> 240 5% 7% */
+    --background: 240 5% 7%;
     /* Flutter Dark TextPrimary: 0xFFF9FAFB -> 210 20% 98% */
-    --foreground: 210 20% 98%;
+    --foreground: 0 0% 98%;
 
-    /* Flutter Dark Card: 0xFF1A1D23 -> 220 15% 12% */
-    --card: 220 15% 12%;
-    --card-foreground: 210 20% 98%;
+    /* Flutter Dark Card: Neutral Zinc -> 240 4% 12% */
+    --card: 240 4% 12%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 220 15% 12%;
-    --popover-foreground: 210 20% 98%;
+    --popover: 240 4% 12%;
+    --popover-foreground: 0 0% 98%;
 
     /* Flutter Primary Orange: 0xFFF24E1E -> 13 88% 53% */
     --primary: 13 88% 53%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 217 91% 60%;
+    --secondary: 240 4% 16%;
     --secondary-foreground: 0 0% 100%;
 
-    /* Flutter Dark Surface/AppBar: 0xFF12151A -> 220 18% 9% */
-    --muted: 220 18% 9%;
+    /* Flutter Dark Surface/AppBar: Neutral */
+    --muted: 240 4% 16%;
     /* Flutter Dark TextSecondary: 0xFF9CA3AF -> 218 11% 65% */
     --muted-foreground: 218 11% 65%;
 
     --accent: 220 18% 9%;
     --accent-foreground: 210 20% 98%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 20% 98%;
+    --destructive: 0 84% 60%; /* Reverted to bright red for visibility */
+    --destructive-foreground: 0 0% 100%;
 
-    /* Flutter Dark Border: 0xFF2D323A -> 217 13% 20% */
-    --border: 217 13% 20%;
+    /* Flutter Dark Border: Subtler for dark mode */
+    --border: 217 13% 15%; /* Darker than before to avoid "white border" look */
     --input: 217 13% 20%;
     --ring: 13 88% 53%;
   }

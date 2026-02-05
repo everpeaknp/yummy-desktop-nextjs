@@ -103,19 +103,20 @@ export function Sidebar() {
   }, [restaurant, fetchRestaurant]);
 
   return (
-    <div className="flex h-full w-64 flex-col border-r bg-card">
-      <div className="flex h-16 items-center border-b px-6">
-        <Link href="/dashboard" className="flex items-center gap-2 font-bold text-xl text-primary">
-          {restaurant?.profile_picture ? (
-            <img src={restaurant.profile_picture} alt={restaurant.name} className="h-8 w-8 rounded-lg object-cover" />
-          ) : (
-            <ChefHat className="h-6 w-6" />
-          )}
-          <span className="truncate">{restaurant?.name || "Yummy"}</span>
+    <div className="flex h-full w-72 flex-col border-r bg-card dark:border-white/5">
+      <div className="flex h-16 items-center border-b px-6 dark:border-white/5">
+        <Link href="/dashboard" className="flex items-center gap-3 font-bold text-xl hover:opacity-90 transition-opacity">
+          {/* Use the new logo asset */}
+          <div className="relative h-8 w-8 min-w-8">
+             <img src="/refresh_icon.png" alt="Logo" className="object-contain h-full w-full" />
+          </div>
+          <span className="truncate text-primary">
+             {restaurant?.name || "Yummy Kitchen"}
+          </span>
         </Link>
       </div>
       <div className="flex-1 overflow-y-auto py-4">
-        <nav className="grid items-start px-4 text-sm font-medium">
+        <nav className="grid items-start px-4 text-sm font-medium gap-2">
           {sidebarItems.map((item, index) => (
             <Link
               key={index}
@@ -127,18 +128,18 @@ export function Sidebar() {
                   : "text-muted-foreground"
               )}
             >
-              <item.icon className="h-4 w-4" />
-              {item.title}
+              <item.icon className="h-5 w-5" />
+              <span className="text-base font-medium">{item.title}</span>
             </Link>
           ))}
         </nav>
       </div>
-      <div className="border-t p-4">
+      <div className="border-t p-4 dark:border-white/5">
         <button 
           onClick={() => logout()}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-destructive transition-all hover:bg-destructive/10"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-base font-medium text-red-600 dark:text-red-400 transition-all hover:bg-destructive/10"
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-5 w-5" />
           Logout
         </button>
       </div>

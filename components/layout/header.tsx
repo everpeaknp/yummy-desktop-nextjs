@@ -9,7 +9,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 export function Header() {
   const user = useAuth(state => state.user);
   return (
-    <header className="flex h-16 items-center gap-4 border-b bg-background px-6">
+    <header className="flex h-16 items-center gap-4 border-b bg-background px-6 dark:border-white/5">
       <div className="w-full flex-1">
         <form>
           <div className="relative">

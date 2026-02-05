@@ -38,7 +38,7 @@ export const useAuth = create<AuthState>()(
           localStorage.removeItem('refreshToken');
         }
         set({ user: null, token: null, refreshToken: null });
-        window.location.href = '/auth'; 
+        window.location.href = '/'; 
       },
       me: async () => {
         try {
