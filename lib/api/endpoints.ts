@@ -352,3 +352,25 @@ export const ReservationApis = {
   updateReservation: (id: number) => `/reservations/${id}`,
   deleteReservation: (id: number) => `/reservations/${id}`,
 };
+
+export const DayCloseApis = {
+  current: '/day-closes/current',
+  validateClose: '/day-closes/validate-close',
+  initiate: '/day-closes/initiate',
+  generateSnapshot: '/day-closes/generate-snapshot',
+  confirm: (id: number) => `/day-closes/${id}/confirm`,
+  cancel: (id: number) => `/day-closes/${id}/cancel`,
+  list: ({ restaurantId, start, end, status }: { restaurantId?: number; start?: string; end?: string; status?: string }) => {
+     const params = new URLSearchParams();
+     if (restaurantId) params.append('restaurant_id', restaurantId.toString());
+     if (start) params.append('date_from', start);
+     if (end) params.append('date_to', end);
+     if (status) params.append('status', status);
+     const query = params.toString();
+     return query ? `/day-closes?${query}` : '/day-closes';
+  },
+  detail: (id: number) => `/day-closes/${id}`,
+  auditLog: (id: number) => `/day-closes/${id}/audit-log`,
+  savedSnapshot: (id: number) => `/day-closes/${id}/snapshot`,
+  reopen: (id: number) => `/day-closes/${id}/reopen`,
+};

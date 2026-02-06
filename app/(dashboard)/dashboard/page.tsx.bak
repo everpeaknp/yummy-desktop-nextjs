@@ -11,8 +11,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { DashboardApis } from "@/lib/api/endpoints";
-import { RevenueChart } from "@/components/analytics/revenue-chart";
-import { CategoryPieChart } from "@/components/analytics/category-pie";
 
 
 export default function DashboardPage() {
@@ -175,18 +173,18 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Trends & Charts Section */}
+      {/* Trends Section */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight">Analytics & Trends</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
-             {/* Uses mock data for now as DashboardV2 doesn't return time-series yet. 
-                 Ideally, we should fetch /analytics/trends here too. 
-                 For now, we will pass empty data to show the Chart shell or basic data if available.
-             */}
-             <RevenueChart data={[]} loading={loading} />
-             
-             {/* We can map top_items to pie chart format somewhat or fetch breakdown */}
-             <CategoryPieChart data={breakdowns?.top_items?.map(i => ({ name: i.name, value: i.revenue })) || []} loading={loading} />
+        <h2 className="text-lg font-semibold tracking-tight">Trends</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TrendCard 
+                label="Sales vs Yesterday" 
+                trend={trends.sales_vs_yesterday} 
+            />
+            <TrendCard 
+                label="Orders vs Yesterday" 
+                trend={trends.orders_vs_yesterday} 
+            />
         </div>
       </section>
 
@@ -206,7 +204,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Breakdown Section - Restyled Pattern */}
+      {/* Breakdown Section - Keeping existing logic but restyled */}
        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 pt-4">
           <Card className="col-span-4 bg-card border-border shadow-sm">
               <CardHeader>
@@ -265,6 +263,7 @@ export default function DashboardPage() {
               </CardContent>
           </Card>
         </div>
+
     </div>
   );
 }
