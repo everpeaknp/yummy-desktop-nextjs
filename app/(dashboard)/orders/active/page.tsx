@@ -74,8 +74,16 @@ export default function ActiveOrdersPage() {
             const q = searchQuery.toLowerCase();
             const tableName = (order.table_name || "").toLowerCase();
             const customerName = (order.customer_name || "").toLowerCase();
+            const categoryName = (order.table_category_name || "").toLowerCase();
+            const waiterName = (order.waiter_name || "").toLowerCase();
             const orderId = String(order.restaurant_order_id || order.id);
-            if (!tableName.includes(q) && !customerName.includes(q) && !orderId.includes(q)) return false;
+            if (
+                !tableName.includes(q) &&
+                !customerName.includes(q) &&
+                !categoryName.includes(q) &&
+                !waiterName.includes(q) &&
+                !orderId.startsWith(q)
+            ) return false;
         }
 
         return true;

@@ -25,6 +25,14 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
     if (token && !user) {
       me();
     }
+    // Also handle hydration: zustand token is null but localStorage has tokens
+    if (!token && !user && typeof window !== "undefined") {
+      const lsToken = localStorage.getItem("accessToken");
+      const lsRefresh = localStorage.getItem("refreshToken");
+      if (lsToken || lsRefresh) {
+        me();
+      }
+    }
   }, [token, user, me]);
 
   useEffect(() => {
@@ -34,8 +42,17 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // No token at all → redirect to login
+    // No zustand token yet — check localStorage before redirecting
     if (!token) {
+      if (typeof window !== "undefined") {
+        const lsToken = localStorage.getItem("accessToken");
+        const lsRefresh = localStorage.getItem("refreshToken");
+        if (lsToken || lsRefresh) {
+          // Tokens exist in localStorage but zustand hasn't hydrated yet — wait
+          setStatus("loading");
+          return;
+        }
+      }
       router.replace("/");
       return;
     }

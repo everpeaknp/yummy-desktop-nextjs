@@ -125,7 +125,9 @@ function formatTime(ts: string): string {
 // ── WebSocket URL ──────────────────────────────────────────────────────
 function buildWsUrl(token: string, restaurantId: number): string {
   const base = process.env.NEXT_PUBLIC_API_URL || "https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io";
-  const wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+  let wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+  // Ensure clean path join (no double slashes)
+  wsBase = wsBase.replace(/\/+$/, "");
   return `${wsBase}/ws/kots?token=${encodeURIComponent(token)}&restaurant_id=${restaurantId}`;
 }
 
@@ -145,30 +147,28 @@ export default function KitchenPage() {
   const me = useAuth((s) => s.me);
   const router = useRouter();
   const wsRef = useRef<WebSocket | null>(null);
-  const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fetchKotsRef = useRef<() => void>(() => { });
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timersRef = useRef<{ ping?: ReturnType<typeof setInterval>; reconnect?: ReturnType<typeof setTimeout>; debounce?: ReturnType<typeof setTimeout>; poll?: ReturnType<typeof setInterval> }>({});
   const elapsedTick = useElapsedTick();
 
-  // ── Auth guard ───────────────────────────────────────────────────────
+  const restaurantId = user?.restaurant_id;
+
+  // ── Auth guard ─────────────────────────────────────────────────────
   useEffect(() => {
-    const check = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-      if (!user && token) await me();
-      const t2 = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-      if (!user && !t2) router.push("/");
-    };
-    const t = setTimeout(check, 500);
-    return () => clearTimeout(t);
+    if (user) return; // Already have user
+    const token = localStorage.getItem("accessToken");
+    const refreshToken = localStorage.getItem("refreshToken");
+    if (token || refreshToken) {
+      me().catch(() => { });
+    } else {
+      router.push("/");
+    }
   }, [user, me, router]);
 
-  // ── Fetch KOTs ───────────────────────────────────────────────────────
-  const fetchKots = useCallback(async () => {
-    if (!user?.restaurant_id) return;
+  // ── Fetch KOTs — simple, takes restaurantId as param ───────────────
+  const doFetch = useCallback(async (rid: number) => {
     try {
       const params = new URLSearchParams({
-        restaurant_id: String(user.restaurant_id),
+        restaurant_id: String(rid),
         limit: "100",
         include_printer_config: "false",
       });
@@ -177,95 +177,116 @@ export default function KitchenPage() {
         setKots(res.data.data || []);
       }
     } catch (err) {
-      console.error("Failed to fetch KOTs:", err);
+      console.error("[KOT] Fetch error:", err);
     } finally {
       setLoading(false);
     }
-  }, [user]);
-
-  useEffect(() => {
-    if (user?.restaurant_id) {
-      fetchKots();
-    }
-  }, [user, fetchKots]);
-
-  // Keep fetchKots in a ref so WebSocket handler doesn't cause reconnection loops
-  useEffect(() => {
-    fetchKotsRef.current = fetchKots;
-  }, [fetchKots]);
-
-  // Debounced fetch triggered by WS events (prevents rapid API calls)
-  const debouncedFetchKots = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      fetchKotsRef.current();
-    }, 300);
   }, []);
 
-  // ── WebSocket ────────────────────────────────────────────────────────
-  const connectWs = useCallback(() => {
-    if (!user?.restaurant_id) return;
-    const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-    if (!token) return;
-
-    // Cleanup previous
-    if (wsRef.current) {
-      try { wsRef.current.close(); } catch { }
-    }
-
-    const url = buildWsUrl(token, user.restaurant_id);
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log("[WS] Connected");
-      setWsConnected(true);
-      // Start ping every 30s
-      if (pingRef.current) clearInterval(pingRef.current);
-      pingRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) ws.send("ping");
-      }, 30000);
-    };
-
-    ws.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        const event = data.event;
-        if (
-          event === "kot_created" ||
-          event === "kot_modified" ||
-          event === "kot_updated" ||
-          event === "kot_deleted" ||
-          event === "kot_status_updated" ||
-          event === "kot_item_progress_updated" ||
-          event === "order_status_updated"
-        ) {
-          debouncedFetchKots();
-        }
-      } catch { }
-    };
-
-    ws.onerror = () => {
-      setWsConnected(false);
-    };
-
-    ws.onclose = () => {
-      setWsConnected(false);
-      if (pingRef.current) clearInterval(pingRef.current);
-      // Reconnect after 5s
-      reconnectRef.current = setTimeout(connectWs, 5000);
-    };
-  }, [user, debouncedFetchKots]);
-
+  // Initial fetch + polling + WebSocket — single effect, clean lifecycle
   useEffect(() => {
-    connectWs();
-    return () => {
-      if (wsRef.current) try { wsRef.current.close(); } catch { }
-      if (pingRef.current) clearInterval(pingRef.current);
-      if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!restaurantId) return;
+    let alive = true;
+
+    // ── Fetch immediately ──────────────────────────────────────────
+    doFetch(restaurantId);
+
+    // ── Debounced fetch (called by WS events) ──────────────────────
+    const debouncedFetch = () => {
+      if (timersRef.current.debounce) clearTimeout(timersRef.current.debounce);
+      timersRef.current.debounce = setTimeout(() => {
+        if (alive) doFetch(restaurantId);
+      }, 350);
     };
-  }, [connectWs]);
+
+    // ── WebSocket ──────────────────────────────────────────────────
+    const connectWs = () => {
+      if (!alive) return;
+      const token = localStorage.getItem("accessToken");
+      if (!token) return;
+
+      // Skip if already connected
+      if (wsRef.current) {
+        const s = wsRef.current.readyState;
+        if (s === WebSocket.OPEN || s === WebSocket.CONNECTING) return;
+        try { wsRef.current.close(); } catch { }
+        wsRef.current = null;
+      }
+
+      const url = buildWsUrl(token, restaurantId);
+      console.log("[WS] Connecting...");
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("[WS] Connected ✅");
+        if (alive) setWsConnected(true);
+        // Ping every 30s
+        if (timersRef.current.ping) clearInterval(timersRef.current.ping);
+        timersRef.current.ping = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            try { ws.send("ping"); } catch { }
+          }
+        }, 30000);
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          const event = data.event;
+          if (event === "kots_connected" || event === "pong") return;
+          console.log("[WS] Event:", event);
+          debouncedFetch();
+        } catch { }
+      };
+
+      ws.onerror = () => {
+        if (alive) setWsConnected(false);
+      };
+
+      ws.onclose = (ev) => {
+        console.log("[WS] Closed, code:", ev.code);
+        if (alive) setWsConnected(false);
+        if (timersRef.current.ping) { clearInterval(timersRef.current.ping); timersRef.current.ping = undefined; }
+        wsRef.current = null;
+        // Reconnect in 3s
+        if (alive) {
+          timersRef.current.reconnect = setTimeout(connectWs, 3000);
+        }
+      };
+    };
+
+    // Start WS after a short delay (let auth settle)
+    const wsTimer = setTimeout(connectWs, 500);
+
+    // ── Polling fallback: always fetch every 5s ────────────────────
+    timersRef.current.poll = setInterval(() => {
+      if (alive) doFetch(restaurantId);
+    }, 5000);
+
+    // ── Tab visibility: reconnect + fetch when tab becomes visible ─
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && alive) {
+        doFetch(restaurantId);
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          connectWs();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    // ── Cleanup ────────────────────────────────────────────────────
+    return () => {
+      alive = false;
+      clearTimeout(wsTimer);
+      if (wsRef.current) try { wsRef.current.close(); } catch { }
+      if (timersRef.current.ping) clearInterval(timersRef.current.ping);
+      if (timersRef.current.reconnect) clearTimeout(timersRef.current.reconnect);
+      if (timersRef.current.debounce) clearTimeout(timersRef.current.debounce);
+      if (timersRef.current.poll) clearInterval(timersRef.current.poll);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [restaurantId, doFetch]);
 
   // ── Auto-dismiss messages ────────────────────────────────────────────
   useEffect(() => {
@@ -280,28 +301,28 @@ export default function KitchenPage() {
     try {
       await apiClient.patch(KotApis.updateKotStatus(kotId), { status: newStatus });
       setMessage({ text: `KOT updated to ${newStatus}`, type: "success" });
-      await fetchKots();
+      if (restaurantId) await doFetch(restaurantId);
     } catch (err: any) {
       const detail = err.response?.data?.detail || "Failed to update status";
       setMessage({ text: typeof detail === "string" ? detail : JSON.stringify(detail), type: "error" });
     } finally {
       setUpdatingIds((prev) => { const s = new Set(prev); s.delete(kotId); return s; });
     }
-  }, [fetchKots]);
+  }, [restaurantId, doFetch]);
 
   const handleReject = useCallback(async (kotId: number) => {
     setUpdatingIds((prev) => new Set(prev).add(kotId));
     try {
       await apiClient.post(KotApis.rejectKot(kotId));
       setMessage({ text: "KOT rejected", type: "success" });
-      await fetchKots();
+      if (restaurantId) await doFetch(restaurantId);
     } catch (err: any) {
       const detail = err.response?.data?.detail || "Failed to reject";
       setMessage({ text: typeof detail === "string" ? detail : JSON.stringify(detail), type: "error" });
     } finally {
       setUpdatingIds((prev) => { const s = new Set(prev); s.delete(kotId); return s; });
     }
-  }, [fetchKots]);
+  }, [restaurantId, doFetch]);
 
   // ── Filtering ────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -359,17 +380,20 @@ export default function KitchenPage() {
           <h1 className="text-xl font-extrabold tracking-tight">KOT Management</h1>
         </div>
         <div className="flex items-center gap-3">
-          <div className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold",
-            wsConnected
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "bg-red-500/10 text-red-600 dark:text-red-400"
-          )}>
-            {wsConnected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-            {wsConnected ? "Live" : "Offline"}
+          <div
+            title={wsConnected ? "Real-time WebSocket connected" : "Auto-refreshing every 5s"}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold",
+              wsConnected
+                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+            )}
+          >
+            {wsConnected ? <Wifi className="h-3 w-3" /> : <RefreshCw className="h-3 w-3 animate-spin" />}
+            {wsConnected ? "Live" : "Auto-refresh"}
           </div>
           <button
-            onClick={() => { setLoading(true); fetchKots(); }}
+            onClick={() => { if (restaurantId) { setLoading(true); doFetch(restaurantId); } }}
             className="h-9 w-9 flex items-center justify-center rounded-xl bg-muted/50 border border-border/40 text-muted-foreground hover:text-foreground hover:bg-muted transition-all active:scale-95"
           >
             <RefreshCw className="h-4 w-4" />

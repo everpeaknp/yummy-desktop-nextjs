@@ -59,6 +59,8 @@ export default function TablesPage() {
   // Layout edit mode
   const [isLayoutMode, setIsLayoutMode] = useState(false);
   const [originalTables, setOriginalTables] = useState<TableData[]>([]);
+  const [categoryHeights, setCategoryHeights] = useState<Record<string, number>>({});
+  const [originalHeights, setOriginalHeights] = useState<Record<string, number>>({});
   const [savingLayout, setSavingLayout] = useState(false);
 
   // Table form dialog
@@ -68,6 +70,7 @@ export default function TablesPage() {
   const [formCapacity, setFormCapacity] = useState("");
   const [formArea, setFormArea] = useState("");
   const [formSaving, setFormSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
   // Area dialog
   const [areaDialogOpen, setAreaDialogOpen] = useState(false);
@@ -93,9 +96,9 @@ export default function TablesPage() {
     return () => clearTimeout(timer);
   }, [user, me, router]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (showLoader = false) => {
     if (!user?.restaurant_id) return;
-    setLoading(true);
+    if (showLoader) setLoading(true);
     try {
       const [tablesRes, typesRes] = await Promise.all([
         apiClient.get(TableApis.getTables(user.restaurant_id)),
@@ -110,12 +113,12 @@ export default function TablesPage() {
     } catch (err) {
       console.error("Failed to fetch tables:", err);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   }, [user?.restaurant_id]);
 
   useEffect(() => {
-    if (user?.restaurant_id) fetchData();
+    if (user?.restaurant_id) fetchData(true);
   }, [user?.restaurant_id, fetchData]);
 
   // ─── Area options ───
@@ -130,8 +133,13 @@ export default function TablesPage() {
   })();
 
   const getLayoutHeight = (areaName: string): number => {
+    if (categoryHeights[areaName] != null) return categoryHeights[areaName];
     const tt = tableTypes.find((t) => t.name === areaName);
     return tt?.layout_height ?? 200;
+  };
+
+  const handleHeightChanged = (roomName: string, newHeight: number) => {
+    setCategoryHeights((prev) => ({ ...prev, [roomName]: Math.max(newHeight, 100) }));
   };
 
   const getTableTypeId = (areaName: string): number | undefined => {
@@ -160,13 +168,20 @@ export default function TablesPage() {
   // ═══════════════════════════════════════════════
   const enterLayoutMode = () => {
     setOriginalTables(JSON.parse(JSON.stringify(tables)));
+    // Snapshot current heights from tableTypes
+    const heights: Record<string, number> = {};
+    tableTypes.forEach((tt) => { heights[tt.name] = tt.layout_height; });
+    setOriginalHeights(heights);
+    setCategoryHeights(heights);
     setIsLayoutMode(true);
   };
 
   const cancelLayoutMode = () => {
     setTables(originalTables);
+    setCategoryHeights(originalHeights);
     setIsLayoutMode(false);
     setOriginalTables([]);
+    setOriginalHeights({});
   };
 
   const handleTableDrop = (tableId: number, posX: number, posY: number) => {
@@ -175,9 +190,24 @@ export default function TablesPage() {
     );
   };
 
+  const handleAutoArrange = (
+    roomName: string,
+    updates: Record<number, { posX: number; posY: number }>,
+    newHeight: number
+  ) => {
+    setTables((prev) =>
+      prev.map((t) => {
+        const u = updates[t.id];
+        return u ? { ...t, pos_x: u.posX, pos_y: u.posY } : t;
+      })
+    );
+    handleHeightChanged(roomName, newHeight);
+  };
+
   const saveLayout = async () => {
     setSavingLayout(true);
     try {
+      // Save moved tables
       const movedTables = tables.filter((t) => {
         const orig = originalTables.find((o) => o.id === t.id);
         return orig && (orig.pos_x !== t.pos_x || orig.pos_y !== t.pos_y);
@@ -190,23 +220,51 @@ export default function TablesPage() {
         });
       }
 
-      setIsLayoutMode(false);
-      setOriginalTables([]);
+      // Save changed layout_heights
+      for (const [roomName, newHeight] of Object.entries(categoryHeights)) {
+        const origHeight = originalHeights[roomName];
+        if (origHeight != null && Math.abs(origHeight - newHeight) > 0.1) {
+          const typeId = getTableTypeId(roomName);
+          if (typeId) {
+            await apiClient.put(TableTypeApis.updateTableType(typeId), {
+              layout_height: newHeight,
+            });
+          }
+        }
+      }
     } catch (err) {
       console.error("Failed to save layout:", err);
     } finally {
+      // Always exit layout mode and refetch — even on network errors,
+      // partial saves may have succeeded
       setSavingLayout(false);
+      setIsLayoutMode(false);
+      setOriginalTables([]);
+      setOriginalHeights({});
+      fetchData();
     }
   };
 
   // ═══════════════════════════════════════════════
   // TABLE CRUD
   // ═══════════════════════════════════════════════
+  // Client-side duplicate name check
+  const isDuplicateName = (() => {
+    if (!formName.trim() || !formArea) return false;
+    const name = formName.trim().toLowerCase();
+    return tables.some(
+      (t) =>
+        t.table_name.toLowerCase() === name &&
+        (t.table_type_name || "") === formArea &&
+        t.id !== editingTable?.id
+    );
+  })();
+
   const openAddTable = () => {
     setEditingTable(null);
     setFormName("");
     setFormCapacity("");
-    // Default to the selected area, or first available
+    setFormError("");
     const defaultArea =
       selectedArea !== "All Areas" ? selectedArea : tableTypes[0]?.name || "";
     setFormArea(defaultArea);
@@ -218,6 +276,7 @@ export default function TablesPage() {
     setFormName(table.table_name);
     setFormCapacity(table.capacity.toString());
     setFormArea(table.table_type_name || "");
+    setFormError("");
     setTableDialogOpen(true);
   };
 
@@ -229,25 +288,19 @@ export default function TablesPage() {
     if (!typeId) return;
 
     setFormSaving(true);
+    setFormError("");
     try {
       if (editingTable) {
-        // Update existing
-        const res = await apiClient.put(TableApis.updateTable(editingTable.id), {
+        await apiClient.put(TableApis.updateTable(editingTable.id), {
           name: formName.trim(),
           capacity: parseInt(formCapacity),
           table_type_id: typeId,
         });
-        if (res.data.status === "success") {
-          setTables((prev) =>
-            prev.map((t) => (t.id === editingTable.id ? res.data.data : t))
-          );
-        }
       } else {
-        // Create new — find next available position
         const existingInArea = tables.filter((t) => t.table_type_name === formArea);
         const pos = findNextPosition(existingInArea);
 
-        const res = await apiClient.post(
+        await apiClient.post(
           TableApis.createTable(user.restaurant_id),
           {
             name: formName.trim(),
@@ -258,29 +311,44 @@ export default function TablesPage() {
             pos_y: pos.y,
           }
         );
-        if (res.data.status === "success") {
-          setTables((prev) => [...prev, res.data.data]);
-        }
       }
-      setTableDialogOpen(false);
-    } catch (err) {
-      console.error("Failed to save table:", err);
-    } finally {
       setFormSaving(false);
+      setTableDialogOpen(false);
+      fetchData();
+    } catch (err: any) {
+      // If we got a proper HTTP error response (e.g. 400 duplicate), show it
+      if (err?.response?.data?.detail) {
+        setFormError(err.response.data.detail);
+        setFormSaving(false);
+        return;
+      }
+      // Network Error / timeout = no response received.
+      // The backend likely processed it — close dialog and refetch to verify.
+      console.warn("Save request may have succeeded despite error:", err?.message);
+      setFormSaving(false);
+      setTableDialogOpen(false);
+      fetchData();
     }
   };
 
   const handleDeleteTable = async () => {
     if (!editingTable) return;
     setFormSaving(true);
+    setFormError("");
     try {
       await apiClient.delete(TableApis.deleteTable(editingTable.id));
-      setTables((prev) => prev.filter((t) => t.id !== editingTable.id));
-      setTableDialogOpen(false);
-    } catch (err) {
-      console.error("Failed to delete table:", err);
-    } finally {
       setFormSaving(false);
+      setTableDialogOpen(false);
+      fetchData();
+    } catch (err: any) {
+      if (err?.response?.data?.detail) {
+        setFormError(err.response.data.detail);
+        setFormSaving(false);
+        return;
+      }
+      setFormSaving(false);
+      setTableDialogOpen(false);
+      fetchData();
     }
   };
 
@@ -306,30 +374,21 @@ export default function TablesPage() {
     setAreaSaving(true);
     try {
       if (areaDialogMode === "add") {
-        const res = await apiClient.post(
+        await apiClient.post(
           TableTypeApis.createTableType(user.restaurant_id),
           { name: areaName.trim(), layout_height: 200 }
         );
-        if (res.data.status === "success") {
-          setTableTypes((prev) => [...prev, res.data.data]);
-        }
       } else if (editingAreaId) {
-        const res = await apiClient.put(
+        await apiClient.put(
           TableTypeApis.updateTableType(editingAreaId),
           { name: areaName.trim() }
         );
-        if (res.data.status === "success") {
-          setTableTypes((prev) =>
-            prev.map((t) => (t.id === editingAreaId ? res.data.data : t))
-          );
-          // Refresh tables to get updated table_type_name
-          await fetchData();
-        }
       }
+      setAreaSaving(false);
       setAreaDialogOpen(false);
-    } catch (err) {
+      fetchData();
+    } catch (err: any) {
       console.error("Failed to save area:", err);
-    } finally {
       setAreaSaving(false);
     }
   };
@@ -339,9 +398,8 @@ export default function TablesPage() {
       return;
     try {
       await apiClient.delete(TableTypeApis.deleteTableType(tt.id));
-      setTableTypes((prev) => prev.filter((t) => t.id !== tt.id));
-      setTables((prev) => prev.filter((t) => t.table_type_id !== tt.id));
       if (selectedArea === tt.name) setSelectedArea("All Areas");
+      fetchData();
     } catch (err) {
       console.error("Failed to delete area:", err);
     }
@@ -485,6 +543,8 @@ export default function TablesPage() {
           isLayoutMode={isLayoutMode}
           onTableClick={isLayoutMode ? undefined : openEditTable}
           onTableDrop={isLayoutMode ? handleTableDrop : undefined}
+          onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(selectedArea, h) : undefined}
+          onAutoArrange={isLayoutMode ? (updates, h) => handleAutoArrange(selectedArea, updates, h) : undefined}
         />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -497,6 +557,8 @@ export default function TablesPage() {
               isLayoutMode={isLayoutMode}
               onTableClick={isLayoutMode ? undefined : openEditTable}
               onTableDrop={isLayoutMode ? handleTableDrop : undefined}
+              onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(roomName, h) : undefined}
+              onAutoArrange={isLayoutMode ? (updates, h) => handleAutoArrange(roomName, updates, h) : undefined}
             />
           ))}
         </div>
@@ -533,10 +595,13 @@ export default function TablesPage() {
               <Label>Table Name</Label>
               <Input
                 value={formName}
-                onChange={(e) => setFormName(e.target.value)}
+                onChange={(e) => { setFormName(e.target.value); setFormError(""); }}
                 placeholder="e.g. A1, T2"
                 maxLength={10}
               />
+              {isDuplicateName && (
+                <p className="text-xs text-red-500">A table with this name already exists in {formArea}</p>
+              )}
             </div>
             <div className="grid gap-2">
               <Label>Capacity</Label>
@@ -560,9 +625,12 @@ export default function TablesPage() {
                 {formSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete"}
               </Button>
             )}
+            {formError && (
+              <p className="text-sm text-red-500 mr-auto">{formError}</p>
+            )}
             <Button
               onClick={handleSaveTable}
-              disabled={formSaving || !formName.trim() || !formCapacity || !formArea}
+              disabled={formSaving || !formName.trim() || !formCapacity || !formArea || isDuplicateName}
               className="bg-orange-600 hover:bg-orange-700 text-white"
             >
               {formSaving ? (

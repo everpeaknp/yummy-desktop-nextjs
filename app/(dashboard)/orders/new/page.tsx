@@ -1,29 +1,30 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useCallback } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import POSSystem from "@/components/orders/pos-system";
-import { Utensils, Zap, Truck, ShoppingBag, Sofa, Users, ChevronLeft, Loader2 } from "lucide-react";
+import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { TableApis } from "@/lib/api/endpoints";
+import { TableApis, TableTypeApis } from "@/lib/api/endpoints";
 import { useRouter } from "next/navigation";
+import { RoomContainer, type TableData } from "@/components/tables/room-container";
 
-interface Table {
+interface TableType {
     id: number;
-    table_name: string;
-    capacity: number;
-    status: string;
-    table_type_name?: string;
+    name: string;
+    restaurant_id: number;
+    layout_height: number;
 }
 
 export default function NewOrderPage() {
     const [activeTab, setActiveTab] = useState("tables");
     const [selectedTable, setSelectedTable] = useState<number | null>(null);
-    const [tables, setTables] = useState<Table[]>([]);
+    const [tables, setTables] = useState<TableData[]>([]);
+    const [tableTypes, setTableTypes] = useState<TableType[]>([]);
+    const [selectedArea, setSelectedArea] = useState("All Areas");
     const [loading, setLoading] = useState(false);
 
     const user = useAuth(state => state.user);
@@ -43,38 +44,72 @@ export default function NewOrderPage() {
         return () => clearTimeout(timer);
     }, [user, me, router]);
 
-    // 2. Data Fetching
-    useEffect(() => {
-        const fetchTables = async () => {
-            if (!user?.restaurant_id) return;
-            setLoading(true);
-            try {
-                const url = TableApis.getTables(user.restaurant_id);
-                const response = await apiClient.get(url);
-                if (response.data.status === "success") {
-                    setTables(response.data.data);
-                }
-            } catch (err) {
-                console.error("Failed to fetch tables:", err);
-            } finally {
-                setLoading(false);
+    // 2. Data Fetching — tables + table types (for layout_height)
+    const fetchData = useCallback(async () => {
+        if (!user?.restaurant_id) return;
+        setLoading(true);
+        try {
+            const [tablesRes, typesRes] = await Promise.all([
+                apiClient.get(TableApis.getTables(user.restaurant_id)),
+                apiClient.get(TableTypeApis.getTableTypes(user.restaurant_id)),
+            ]);
+            if (tablesRes.data.status === "success") {
+                setTables(tablesRes.data.data || []);
             }
-        };
+            if (typesRes.data.status === "success") {
+                setTableTypes(typesRes.data.data || []);
+            }
+        } catch (err) {
+            console.error("Failed to fetch tables:", err);
+        } finally {
+            setLoading(false);
+        }
+    }, [user?.restaurant_id]);
 
+    useEffect(() => {
         if (activeTab === "tables" && user?.restaurant_id) {
-            fetchTables();
-            const interval = setInterval(fetchTables, 15000); // Poll tables less frequently
+            fetchData();
+            const interval = setInterval(fetchData, 15000);
             return () => clearInterval(interval);
         }
-    }, [activeTab, user]);
+    }, [activeTab, user?.restaurant_id, fetchData]);
 
-    // Group tables by type (Area)
-    const tablesByArea = tables.reduce((acc, table) => {
-        const area = table.table_type_name || "Main Hall";
-        if (!acc[area]) acc[area] = [];
-        acc[area].push(table);
-        return acc;
-    }, {} as Record<string, Table[]>);
+    // ─── Area options ───
+    const areaOptions = (() => {
+        const set = new Set<string>();
+        tableTypes.forEach((tt) => set.add(tt.name));
+        tables.forEach((t) => {
+            if (t.table_type_name) set.add(t.table_type_name);
+        });
+        const sorted = Array.from(set).sort();
+        return ["All Areas", ...sorted];
+    })();
+
+    const getLayoutHeight = (areaName: string): number => {
+        const tt = tableTypes.find((t) => t.name === areaName);
+        return tt?.layout_height ?? 200;
+    };
+
+    // ─── Filter / group ───
+    const filteredTables =
+        selectedArea === "All Areas"
+            ? tables
+            : tables.filter((t) => (t.table_type_name || "General") === selectedArea);
+
+    const groupedTables = filteredTables.reduce(
+        (acc, table) => {
+            const area = table.table_type_name || "General";
+            if (!acc[area]) acc[area] = [];
+            acc[area].push(table);
+            return acc;
+        },
+        {} as Record<string, TableData[]>
+    );
+    const sortedRooms = Object.keys(groupedTables).sort();
+
+    const handleTableClick = (table: TableData) => {
+        setSelectedTable(table.id);
+    };
 
     // If a table is selected, show POS with Back button
     if (selectedTable) {
@@ -119,52 +154,67 @@ export default function NewOrderPage() {
                 </TabsList>
 
                 <TabsContent value="tables" className="mt-0">
+                    {/* Area Filter Chips */}
+                    <div className="flex flex-wrap items-center gap-2 mb-4">
+                        {areaOptions.map((area) => (
+                            <button
+                                key={area}
+                                onClick={() => setSelectedArea(area)}
+                                className={cn(
+                                    "px-4 py-1.5 rounded-full text-sm font-medium transition-colors border",
+                                    selectedArea === area
+                                        ? "bg-orange-600 text-white border-orange-600"
+                                        : "bg-card text-foreground border-border hover:bg-muted"
+                                )}
+                            >
+                                {area}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Status Legend */}
+                    <div className="flex items-center gap-5 text-sm text-muted-foreground mb-5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                            <span>Available</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                            <span>Occupied</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                            <span>Reserved</span>
+                        </div>
+                    </div>
+
                     {loading ? (
                         <div className="h-64 flex items-center justify-center">
                             <Loader2 className="w-8 h-8 animate-spin text-primary" />
                         </div>
+                    ) : tables.length === 0 ? (
+                        <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-lg gap-3">
+                            <Armchair className="w-12 h-12 opacity-20" />
+                            <p>No tables found.</p>
+                        </div>
+                    ) : selectedArea !== "All Areas" ? (
+                        <RoomContainer
+                            title={selectedArea}
+                            tables={filteredTables}
+                            layoutHeight={getLayoutHeight(selectedArea)}
+                            onTableClick={handleTableClick}
+                        />
                     ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {Object.entries(tablesByArea).map(([area, areaTables]) => (
-                                <Card key={area} className="bg-card border-border shadow-sm">
-                                    <div className="p-4 border-b border-border flex justify-between items-center text-sm">
-                                        <h3 className="font-semibold text-primary uppercase tracking-wider">{area}</h3>
-                                        <span className="text-xs text-muted-foreground">{areaTables.length} Tables</span>
-                                    </div>
-                                    <CardContent className="p-6">
-                                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
-                                            {areaTables.map(table => {
-                                                const isOccupied = table.status.toLowerCase() === 'occupied';
-                                                const isReserved = table.status.toLowerCase() === 'reserved';
-
-                                                return (
-                                                    <button
-                                                        key={table.id}
-                                                        onClick={() => setSelectedTable(table.id)}
-                                                        className={cn(
-                                                            "aspect-square rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition-all hover:scale-105",
-                                                            isOccupied
-                                                                ? "bg-red-100 border-red-200 text-red-600 dark:bg-red-950/20 dark:border-red-500/50 dark:text-red-500"
-                                                                : isReserved
-                                                                    ? "bg-yellow-100 border-yellow-200 text-yellow-600 dark:bg-yellow-950/20 dark:border-yellow-500/50 dark:text-yellow-500"
-                                                                    : "bg-green-100 border-green-200 text-green-600 hover:bg-green-200 dark:bg-emerald-950/20 dark:border-emerald-500/50 dark:text-emerald-500 dark:hover:bg-emerald-950/30"
-                                                        )}
-                                                    >
-                                                        {isOccupied ? <Users className="w-5 h-5" /> : <Sofa className="w-5 h-5" />}
-                                                        <span className="font-bold text-lg">{table.table_name.replace(/\D/g, '') || table.id}</span>
-                                                    </button>
-                                                )
-                                            })}
-                                        </div>
-                                    </CardContent>
-                                </Card>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                            {sortedRooms.map((roomName) => (
+                                <RoomContainer
+                                    key={roomName}
+                                    title={roomName}
+                                    tables={groupedTables[roomName]}
+                                    layoutHeight={getLayoutHeight(roomName)}
+                                    onTableClick={handleTableClick}
+                                />
                             ))}
-
-                            {tables.length === 0 && !loading && (
-                                <div className="col-span-full h-64 flex items-center justify-center text-muted-foreground border-2 border-dashed border-slate-800 rounded-lg">
-                                    No tables found.
-                                </div>
-                            )}
                         </div>
                     )}
                 </TabsContent>

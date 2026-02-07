@@ -360,6 +360,34 @@ export const ReservationApis = {
   deleteReservation: (id: number) => `/reservations/${id}`,
 };
 
+export const NotificationApis = {
+  list: ({
+    restaurantId,
+    type,
+    status,
+    skip = 0,
+    limit = 100,
+  }: {
+    restaurantId?: number;
+    type?: string;
+    status?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({ skip: skip.toString(), limit: limit.toString() });
+    if (restaurantId) params.append('restaurant_id', restaurantId.toString());
+    if (type) params.append('type', type);
+    if (status) params.append('status', status);
+    return `/notifications?${params.toString()}`;
+  },
+  unreadCount: (restaurantId?: number) => {
+    const params = new URLSearchParams();
+    if (restaurantId) params.append('restaurant_id', restaurantId.toString());
+    return `/notifications/unread-count?${params.toString()}`;
+  },
+  markRead: '/notifications/read',
+};
+
 export const DayCloseApis = {
   current: '/day-closes/current',
   validateClose: '/day-closes/validate-close',

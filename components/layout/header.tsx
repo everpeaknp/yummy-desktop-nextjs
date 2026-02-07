@@ -13,6 +13,30 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { useEffect, useState } from "react";
 import { useSidebarItems } from "./sidebar";
 import { cn } from "@/lib/utils";
+import { useNotifications, useNotificationStore } from "@/hooks/use-notifications";
+import { NotificationPanel } from "@/components/notifications/notification-panel";
+
+function NotificationBell() {
+  const { unreadCount } = useNotifications();
+  const setPanelOpen = useNotificationStore((s) => s.setPanelOpen);
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="relative text-muted-foreground"
+      onClick={() => setPanelOpen(true)}
+    >
+      <Bell className="h-5 w-5" />
+      {unreadCount > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      )}
+      <span className="sr-only">Notifications</span>
+    </Button>
+  );
+}
 
 export function Header() {
   const user = useAuth(state => state.user);
@@ -99,10 +123,8 @@ export function Header() {
           </div>
         </form>
       </div>
-      <Button variant="ghost" size="icon" className="text-muted-foreground">
-        <Bell className="h-5 w-5" />
-        <span className="sr-only">Notifications</span>
-      </Button>
+      <NotificationBell />
+      <NotificationPanel />
       <ModeToggle />
       <div className="flex items-center gap-2">
         <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden">

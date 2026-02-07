@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { TableGraphic } from "./table-graphic";
-import { DoorOpen } from "lucide-react";
+import { DoorOpen, GripHorizontal, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface TableData {
@@ -25,6 +25,8 @@ interface RoomContainerProps {
   isLayoutMode?: boolean;
   onTableClick?: (table: TableData) => void;
   onTableDrop?: (tableId: number, posX: number, posY: number) => void;
+  onHeightChanged?: (newHeight: number) => void;
+  onAutoArrange?: (updates: Record<number, { posX: number; posY: number }>, newHeight: number) => void;
 }
 
 const BASELINE_WIDTH = 400;
@@ -36,13 +38,41 @@ export function RoomContainer({
   isLayoutMode = false,
   onTableClick,
   onTableDrop,
+  onHeightChanged,
+  onAutoArrange,
 }: RoomContainerProps) {
   const hasSpatialPositions = tables.some(
     (t) => t.pos_x != null && t.pos_y != null && (t.pos_x !== 0 || t.pos_y !== 0)
   );
 
+  const handleAutoArrange = useCallback(() => {
+    if (!onAutoArrange) return;
+    const cols = 4;
+    const colWidth = 100 / cols; // 25% per column
+    const tableWidthPct = 15; // each table is 15% wide
+    const rowHeightNorm = 22; // normalized row height units
+    const marginY = 2;
+
+    const sorted = [...tables].sort((a, b) => a.table_name.localeCompare(b.table_name));
+    const rows = Math.ceil(sorted.length / cols);
+
+    // Calculate new normalized height to fit all rows
+    const newHeight = Math.max((rows * rowHeightNorm) + marginY + 5, 100);
+
+    const updates: Record<number, { posX: number; posY: number }> = {};
+    sorted.forEach((table, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const posX = (col * colWidth) + (colWidth - tableWidthPct) / 2;
+      const posY = (row * rowHeightNorm + marginY) / newHeight * 100;
+      updates[table.id] = { posX, posY };
+    });
+
+    onAutoArrange(updates, newHeight);
+  }, [tables, onAutoArrange]);
+
   return (
-    <div className="rounded-3xl border border-border bg-card shadow-sm overflow-hidden">
+    <div className="rounded-3xl border border-border bg-card shadow-sm overflow-visible">
       {/* Header matching Flutter RoomContainer */}
       <div className="px-5 pt-5 pb-0">
         <div className="flex items-center gap-3">
@@ -58,9 +88,20 @@ export function RoomContainer({
             </p>
           </div>
           {isLayoutMode && (
-            <span className="px-2.5 py-1 rounded-full bg-orange-500 text-white text-[10px] font-bold tracking-wider">
-              EDITING
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-full bg-orange-500 text-white text-[10px] font-bold tracking-wider">
+                EDITING
+              </span>
+              {onAutoArrange && (
+                <button
+                  onClick={handleAutoArrange}
+                  title="Auto Arrange Grid"
+                  className="p-1.5 rounded-lg bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition-colors"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -68,7 +109,7 @@ export function RoomContainer({
       <div className="mx-5 my-4 border-t border-border/30" />
 
       {/* Spatial layout or grid fallback */}
-      <div className="px-4 pb-5">
+      <div className="px-4 pb-2">
         {hasSpatialPositions || isLayoutMode ? (
           <SpatialLayout
             tables={tables}
@@ -81,6 +122,13 @@ export function RoomContainer({
           <GridLayout tables={tables} onTableClick={onTableClick} />
         )}
       </div>
+
+      {/* Drag handle at the bottom of the OUTER card (resizes whole card) */}
+      {isLayoutMode && onHeightChanged ? (
+        <ResizeHandle layoutHeight={layoutHeight} onHeightChanged={onHeightChanged} />
+      ) : (
+        <div className="pb-3" />
+      )}
     </div>
   );
 }
@@ -102,8 +150,6 @@ function SpatialLayout({
   const dragTableId = useRef<number | null>(null);
   const dragOffsetRef = useRef<{ ox: number; oy: number }>({ ox: 0, oy: 0 });
 
-  // z-index map: most recently moved table gets the highest z value
-  // This ensures overlapping tables stack correctly and the top one drags first
   const [zMap, setZMap] = useState<Record<number, number>>({});
   const zCounter = useRef(1);
 
@@ -123,11 +169,9 @@ function SpatialLayout({
       if (!containerRef.current || dragTableId.current === null) return;
 
       const rect = containerRef.current.getBoundingClientRect();
-      // Account for the offset within the table where the drag started
       const x = e.clientX - rect.left - dragOffsetRef.current.ox;
       const y = e.clientY - rect.top - dragOffsetRef.current.oy;
 
-      // Convert to percentage — NO clamping, allow full freedom including overlap & edge placement
       const percX = (x / rect.width) * 100;
       const percY = (y / rect.height) * 100;
 
@@ -177,7 +221,6 @@ function SpatialLayout({
                 ? (e) => {
                   dragTableId.current = table.id;
                   e.dataTransfer.effectAllowed = "move";
-                  // Record where within the element the user grabbed
                   const elRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                   dragOffsetRef.current = {
                     ox: e.clientX - elRect.left,
@@ -185,7 +228,6 @@ function SpatialLayout({
                   };
                   const el = e.currentTarget as HTMLElement;
                   e.dataTransfer.setDragImage(el, el.offsetWidth / 2, el.offsetHeight / 2);
-                  // Bring to front immediately on grab
                   bringToFront(table.id);
                 }
                 : undefined
@@ -207,6 +249,81 @@ function SpatialLayout({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Resize handle at the bottom of the outer card ────────────────
+function ResizeHandle({
+  layoutHeight,
+  onHeightChanged,
+}: {
+  layoutHeight: number;
+  onHeightChanged: (newHeight: number) => void;
+}) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const resizingRef = useRef(false);
+  const startYRef = useRef(0);
+  const startHeightRef = useRef(0);
+
+  // Find the parent card element on mount
+  const handleRef = useCallback((el: HTMLDivElement | null) => {
+    if (el) {
+      // Walk up to the outer card (rounded-3xl)
+      cardRef.current = el.closest(".rounded-3xl") as HTMLDivElement | null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current || !cardRef.current) return;
+      e.preventDefault();
+      const deltaY = e.clientY - startYRef.current;
+      // Find the spatial layout div inside the card to get its width
+      const spatialDiv = cardRef.current.querySelector("[style*='padding-bottom']") as HTMLDivElement | null;
+      const width = spatialDiv?.offsetWidth || cardRef.current.offsetWidth;
+      const scale = width / BASELINE_WIDTH;
+      // We stored the starting layoutHeight (normalized), convert delta to normalized
+      const deltaNormalized = scale > 0 ? deltaY / scale : deltaY;
+      const newNormalized = startHeightRef.current + deltaNormalized;
+      onHeightChanged(Math.max(newNormalized, 100));
+    };
+
+    const handleMouseUp = () => {
+      resizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [onHeightChanged]);
+
+  const startResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      resizingRef.current = true;
+      startYRef.current = e.clientY;
+      startHeightRef.current = layoutHeight;
+      document.body.style.cursor = "ns-resize";
+      document.body.style.userSelect = "none";
+    },
+    [layoutHeight]
+  );
+
+  return (
+    <div ref={handleRef} className="flex justify-center pb-2 pt-1">
+      <div
+        onMouseDown={startResize}
+        className="w-[72px] h-7 flex items-center justify-center rounded-full bg-card border border-orange-500/30 shadow cursor-ns-resize hover:border-orange-500/60 transition-colors"
+      >
+        <GripHorizontal className="w-4 h-4 text-orange-500" />
+      </div>
     </div>
   );
 }
