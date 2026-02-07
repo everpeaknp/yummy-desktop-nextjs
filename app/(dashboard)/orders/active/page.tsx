@@ -94,11 +94,11 @@ export default function ActiveOrdersPage() {
     const pendingCount = orders.filter(o => (o.status as string).toLowerCase() === 'pending' || (o.status as string).toLowerCase() === 'confirmed').length;
 
     return (
-        <div className="flex flex-col gap-8 max-w-[1600px] mx-auto">
-            {/* Header with Search and New Order */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex flex-col gap-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-black tracking-tight uppercase">Orders</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
                     <div className="flex items-center gap-2 mt-1">
                         <span className="h-1 w-1 rounded-full bg-primary" />
                         <p className="text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">

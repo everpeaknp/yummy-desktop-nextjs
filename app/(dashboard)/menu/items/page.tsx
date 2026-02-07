@@ -240,7 +240,7 @@ export default function MenuItemsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Menu Items</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Menu</h1>
           <p className="text-muted-foreground text-sm">
             Manage your dishes and categories
             {!loading && <span className="ml-1 text-foreground font-medium">({allItems.length} items)</span>}

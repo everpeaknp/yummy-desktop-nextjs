@@ -9,27 +9,27 @@ const items = [
   {
     category: "Core Operations",
     items: [
-      { 
-        title: "Tables", 
-        description: "Floor & occupancy", 
-        icon: LayoutGrid, 
-        href: "/tables", 
+      {
+        title: "Tables",
+        description: "Floor & occupancy",
+        icon: LayoutGrid,
+        href: "/tables",
         color: "text-blue-500",
         bg: "bg-blue-100 dark:bg-blue-900/20"
       },
-      { 
-        title: "Reservations", 
-        description: "Bookings & guests", 
-        icon: CalendarRange, 
-        href: "/reservations", 
+      {
+        title: "Reservations",
+        description: "Bookings & guests",
+        icon: CalendarRange,
+        href: "/reservations",
         color: "text-purple-500",
         bg: "bg-purple-100 dark:bg-purple-900/20"
       },
-      { 
-        title: "Receipts", 
-        description: "Past transactions", 
-        icon: Receipt, 
-        href: "/receipts", 
+      {
+        title: "Receipts",
+        description: "Past transactions",
+        icon: Receipt,
+        href: "/receipts",
         color: "text-slate-500",
         bg: "bg-slate-100 dark:bg-slate-900/20"
       },
@@ -38,27 +38,27 @@ const items = [
   {
     category: "Menu & Offers",
     items: [
-      { 
-        title: "Menu", 
-        description: "Items & prices", 
-        icon: Utensils, 
-        href: "/menu/items", 
+      {
+        title: "Menu",
+        description: "Items & prices",
+        icon: Utensils,
+        href: "/menu/items",
         color: "text-orange-500",
         bg: "bg-orange-100 dark:bg-orange-900/20"
       },
-      { 
-        title: "Categories", 
-        description: "Organize items", 
-        icon: Pizza, 
-        href: "/menu/categories", 
+      {
+        title: "Categories",
+        description: "Organize items",
+        icon: Pizza,
+        href: "/menu/categories",
         color: "text-yellow-500",
         bg: "bg-yellow-100 dark:bg-yellow-900/20"
       },
-      { 
-        title: "Modifiers", 
-        description: "Add-ons & sides", 
-        icon: Settings, 
-        href: "/menu/modifiers", 
+      {
+        title: "Modifiers",
+        description: "Add-ons & sides",
+        icon: Settings,
+        href: "/menu/modifiers",
         color: "text-cyan-500",
         bg: "bg-cyan-100 dark:bg-cyan-900/20"
       },
@@ -75,27 +75,27 @@ const items = [
   {
     category: "Finance & Insights",
     items: [
-      { 
-        title: "Income", 
-        description: "Sales revenue", 
-        icon: DollarSign, 
-        href: "/finance/income", 
+      {
+        title: "Income",
+        description: "Sales revenue",
+        icon: DollarSign,
+        href: "/finance/income",
         color: "text-emerald-500",
         bg: "bg-emerald-100 dark:bg-emerald-900/20"
       },
-      { 
-        title: "Expenses", 
-        description: "Cost tracking", 
-        icon: Activity, 
-        href: "/finance/expenses", 
+      {
+        title: "Expenses",
+        description: "Cost tracking",
+        icon: Activity,
+        href: "/finance/expenses",
         color: "text-red-500",
         bg: "bg-red-100 dark:bg-red-900/20"
       },
-      { 
-        title: "Analytics", 
-        description: "Trends & insights", 
-        icon: Activity, 
-        href: "/analytics", 
+      {
+        title: "Analytics",
+        description: "Trends & insights",
+        icon: Activity,
+        href: "/analytics",
         color: "text-indigo-500",
         bg: "bg-indigo-100 dark:bg-indigo-900/20"
       },
@@ -107,7 +107,7 @@ export default function ManagePage() {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Manage Restaurant</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground">Configure your operations, menu, and financial settings.</p>
       </div>
 

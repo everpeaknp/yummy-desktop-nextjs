@@ -132,7 +132,7 @@ export default function NewOrderPage() {
         <div className="flex flex-col gap-6 h-full">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">New Order</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
                     <p className="text-muted-foreground">Select a table or order type to start.</p>
                 </div>
             </div>

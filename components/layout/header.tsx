@@ -3,18 +3,94 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Bell, Search, User, Menu, LogOut, Store } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSidebarItems } from "./sidebar";
 import { cn } from "@/lib/utils";
 import { useNotifications, useNotificationStore } from "@/hooks/use-notifications";
 import { NotificationPanel } from "@/components/notifications/notification-panel";
+import apiClient from "@/lib/api-client";
+import { DashboardApis } from "@/lib/api/endpoints";
+
+function LiveStats() {
+  const user = useAuth(state => state.user);
+  const [stats, setStats] = useState<{ activeOrders: number; kotPending: number; todaySales: number } | null>(null);
+
+  // Only admin, manager, cashier can see today's sales
+  const canSeeSales = (() => {
+    const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
+    const allowed = ["admin", "manager", "cashier"];
+    return roles.some((r) => allowed.includes(r.toLowerCase()));
+  })();
+
+  const fetchStats = useCallback(async () => {
+    if (!user?.restaurant_id) return;
+    try {
+      const res = await apiClient.get(DashboardApis.dashboardDataV2({ restaurantId: user.restaurant_id }));
+      if (res.data?.status === "success") {
+        const d = res.data.data;
+        setStats({
+          activeOrders: d?.health?.active_orders ?? 0,
+          kotPending: d?.health?.kot_pending ?? 0,
+          todaySales: d?.kpis?.gross_sales ?? 0,
+        });
+      }
+    } catch {
+      // silently fail — stats are non-critical
+    }
+  }, [user?.restaurant_id]);
+
+  useEffect(() => {
+    fetchStats();
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
+  if (!stats) return null;
+
+  const currency = "Rs.";
+  const formatSales = (n: number) => {
+    if (n >= 100000) return `${(n / 1000).toFixed(0)}k`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+    return n.toLocaleString();
+  };
+
+  return (
+    <div className="hidden md:flex items-center gap-2">
+      <Link
+        href="/orders/active"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
+      >
+        <ClipboardList className="h-3.5 w-3.5 text-blue-500" />
+        <span className="text-xs font-semibold text-blue-500">{stats.activeOrders}</span>
+        <span className="text-[10px] text-blue-500/70">orders</span>
+      </Link>
+      <Link
+        href="/kitchen"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 transition-colors"
+      >
+        <ChefHat className="h-3.5 w-3.5 text-orange-500" />
+        <span className="text-xs font-semibold text-orange-500">{stats.kotPending}</span>
+        <span className="text-[10px] text-orange-500/70">KOT</span>
+      </Link>
+      {canSeeSales && (
+        <Link
+          href="/analytics"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors"
+        >
+          <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
+          <span className="text-xs font-semibold text-emerald-500">{currency} {formatSales(stats.todaySales)}</span>
+          <span className="text-[10px] text-emerald-500/70">today</span>
+        </Link>
+      )}
+    </div>
+  );
+}
 
 function NotificationBell() {
   const { unreadCount } = useNotifications();
@@ -111,32 +187,27 @@ export function Header() {
         </Sheet>
       </div>
 
-      <div className="w-full flex-1">
-        <form>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search anything..."
-              className="w-full appearance-none bg-background pl-8 shadow-none md:w-2/3 lg:w-1/3"
-            />
+      {/* Live stats — active orders, KOT pending, today's sales */}
+      <LiveStats />
+      <div className="flex-1" />
+
+      <div className="flex items-center gap-1">
+        <NotificationBell />
+        <NotificationPanel />
+        <ModeToggle />
+        <div className="h-6 w-px bg-border mx-1 hidden md:block" />
+        <div className="flex items-center gap-2 pl-1">
+          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden">
+            {user?.full_name ? (
+              <span className="text-xs font-bold">{user.full_name.charAt(0).toUpperCase()}</span>
+            ) : (
+              <User className="h-5 w-5" />
+            )}
           </div>
-        </form>
-      </div>
-      <NotificationBell />
-      <NotificationPanel />
-      <ModeToggle />
-      <div className="flex items-center gap-2">
-        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden">
-          {user?.full_name ? (
-            <span className="text-xs font-bold">{user.full_name.charAt(0).toUpperCase()}</span>
-          ) : (
-            <User className="h-5 w-5" />
-          )}
-        </div>
-        <div className="hidden md:block">
-          <p className="text-sm font-medium">{user?.full_name || "Admin User"}</p>
-          <p className="text-xs text-muted-foreground capitalize">{user?.roles?.length ? user.roles.join(", ") : user?.role || "Manager"}</p>
+          <div className="hidden md:block">
+            <p className="text-sm font-medium leading-tight">{user?.full_name || "Admin User"}</p>
+            <p className="text-xs text-muted-foreground capitalize leading-tight">{user?.roles?.length ? user.roles.join(", ") : user?.role || "Manager"}</p>
+          </div>
         </div>
       </div>
     </header>

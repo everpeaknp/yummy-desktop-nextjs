@@ -413,7 +413,7 @@ export default function TablesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Manage Tables</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Tables</h1>
           <p className="text-sm text-muted-foreground">
             Switch halls/floors and add tables to the active category.
           </p>

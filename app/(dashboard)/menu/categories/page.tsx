@@ -57,7 +57,7 @@ export default function CategoriesPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Item Categories</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Categories</h1>
           <p className="text-muted-foreground">Organize your menu items into categories.</p>
         </div>
         <Button className="bg-primary text-white hover:bg-primary/90">
