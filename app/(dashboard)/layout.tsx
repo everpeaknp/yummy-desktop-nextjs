@@ -1,5 +1,8 @@
+"use client";
+
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { RoleGuard } from "@/components/auth/role-guard";
 
 export default function DashboardLayout({
   children,
@@ -12,7 +15,7 @@ export default function DashboardLayout({
       <div className="flex flex-col flex-1 h-full overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto p-4">
-           {children}
+          <RoleGuard>{children}</RoleGuard>
         </main>
       </div>
     </div>

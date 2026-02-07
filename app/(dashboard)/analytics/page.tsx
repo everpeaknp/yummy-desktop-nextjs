@@ -36,7 +36,7 @@ export default function AnalyticsPage() {
             if (!user && token) await me();
 
             const updatedToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-            if (!user && !updatedToken) router.push('/auth');
+            if (!user && !updatedToken) router.push('/');
         };
         const timer = setTimeout(checkAuth, 500);
         return () => clearTimeout(timer);

@@ -40,7 +40,7 @@ export default function DashboardPage() {
       // Final check: if still no user and no token, redirect
       const updatedToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
       if (!user && !updatedToken) {
-        router.push('/auth');
+        router.push('/');
       }
     };
 

@@ -25,7 +25,7 @@ export default function DiscountsPage() {
     const checkAuth = async () => {
       const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
       if (!user && token) await me();
-      if (!user && !token) router.push('/auth');
+      if (!user && !token) router.push('/');
     };
     const timer = setTimeout(checkAuth, 500);
     return () => clearTimeout(timer);

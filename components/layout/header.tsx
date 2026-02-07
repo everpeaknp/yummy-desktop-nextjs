@@ -11,7 +11,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useEffect, useState } from "react";
-import { sidebarItems } from "./sidebar";
+import { useSidebarItems } from "./sidebar";
 import { cn } from "@/lib/utils";
 
 export function Header() {
@@ -20,6 +20,7 @@ export function Header() {
   const { restaurant, fetchRestaurant } = useRestaurant();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const sidebarItems = useSidebarItems();
 
   useEffect(() => {
     if (!restaurant) {
@@ -32,57 +33,57 @@ export function Header() {
       {/* Mobile Menu */}
       <div className="md:hidden">
         <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="shrink-0">
-                    <Menu className="h-5 w-5" />
-                    <span className="sr-only">Toggle navigation menu</span>
-                </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
-                <div className="flex h-16 items-center border-b px-6">
-                    <Link href="/dashboard" className="flex items-center gap-2 font-bold text-lg" onClick={() => setOpen(false)}>
-                        <div className="relative h-8 w-8 min-w-8 flex items-center justify-center">
-                            {restaurant?.profile_picture ? (
-                                <Image src={restaurant.profile_picture} alt="Logo" className="object-cover rounded-md" fill priority />
-                            ) : (
-                                <div className="bg-primary/10 p-1.5 rounded-md">
-                                    <Store className="h-full w-full text-primary" />
-                                </div>
-                            )}
-                        </div>
-                        <span className="text-primary truncate">{restaurant?.name || "Yummy Kitchen"}</span>
-                    </Link>
+          <SheetTrigger asChild>
+            <Button variant="ghost" size="icon" className="shrink-0">
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle navigation menu</span>
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
+            <div className="flex h-16 items-center border-b px-6">
+              <Link href="/dashboard" className="flex items-center gap-2 font-bold text-lg" onClick={() => setOpen(false)}>
+                <div className="relative h-8 w-8 min-w-8 flex items-center justify-center">
+                  {restaurant?.profile_picture ? (
+                    <Image src={restaurant.profile_picture} alt="Logo" className="object-cover rounded-md" fill priority />
+                  ) : (
+                    <div className="bg-primary/10 p-1.5 rounded-md">
+                      <Store className="h-full w-full text-primary" />
+                    </div>
+                  )}
                 </div>
-                <div className="flex-1 overflow-y-auto py-4">
-                     <nav className="grid items-start px-4 text-sm font-medium gap-2">
-                        {sidebarItems.map((item, index) => (
-                            <Link
-                                key={index}
-                                href={item.href}
-                                onClick={() => setOpen(false)}
-                                className={cn(
-                                    "flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary",
-                                    pathname === item.href || (pathname && pathname.startsWith(item.href + "/"))
-                                    ? "bg-muted text-primary"
-                                    : "text-muted-foreground"
-                                )}
-                            >
-                                <item.icon className="h-5 w-5" />
-                                <span className="text-base font-medium">{item.title}</span>
-                            </Link>
-                        ))}
-                     </nav>
-                </div>
-                <div className="border-t p-4">
-                     <button 
-                        onClick={() => logout()}
-                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-base font-medium text-red-600 dark:text-red-400 transition-all hover:bg-destructive/10"
-                     >
-                        <LogOut className="h-5 w-5" />
-                        Logout
-                     </button>
-                </div>
-            </SheetContent>
+                <span className="text-primary truncate">{restaurant?.name || "Yummy Kitchen"}</span>
+              </Link>
+            </div>
+            <div className="flex-1 overflow-y-auto py-4">
+              <nav className="grid items-start px-4 text-sm font-medium gap-2">
+                {sidebarItems.map((item, index) => (
+                  <Link
+                    key={index}
+                    href={item.href}
+                    onClick={() => setOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary",
+                      pathname === item.href || (pathname && pathname.startsWith(item.href + "/"))
+                        ? "bg-muted text-primary"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    <item.icon className="h-5 w-5" />
+                    <span className="text-base font-medium">{item.title}</span>
+                  </Link>
+                ))}
+              </nav>
+            </div>
+            <div className="border-t p-4">
+              <button
+                onClick={() => logout()}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-base font-medium text-red-600 dark:text-red-400 transition-all hover:bg-destructive/10"
+              >
+                <LogOut className="h-5 w-5" />
+                Logout
+              </button>
+            </div>
+          </SheetContent>
         </Sheet>
       </div>
 
@@ -104,17 +105,17 @@ export function Header() {
       </Button>
       <ModeToggle />
       <div className="flex items-center gap-2">
-         <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden">
-            {user?.full_name ? (
-              <span className="text-xs font-bold">{user.full_name.charAt(0).toUpperCase()}</span>
-            ) : (
-              <User className="h-5 w-5"/>
-            )}
-         </div>
-         <div className="hidden md:block">
-            <p className="text-sm font-medium">{user?.full_name || "Admin User"}</p>
-            <p className="text-xs text-muted-foreground capitalize">{user?.role || "Manager"}</p>
-         </div>
+        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden">
+          {user?.full_name ? (
+            <span className="text-xs font-bold">{user.full_name.charAt(0).toUpperCase()}</span>
+          ) : (
+            <User className="h-5 w-5" />
+          )}
+        </div>
+        <div className="hidden md:block">
+          <p className="text-sm font-medium">{user?.full_name || "Admin User"}</p>
+          <p className="text-xs text-muted-foreground capitalize">{user?.roles?.length ? user.roles.join(", ") : user?.role || "Manager"}</p>
+        </div>
       </div>
     </header>
   );

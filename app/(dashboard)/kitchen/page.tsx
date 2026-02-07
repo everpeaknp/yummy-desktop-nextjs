@@ -147,6 +147,8 @@ export default function KitchenPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchKotsRef = useRef<() => void>(() => { });
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const elapsedTick = useElapsedTick();
 
   // ── Auth guard ───────────────────────────────────────────────────────
@@ -155,7 +157,7 @@ export default function KitchenPage() {
       const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
       if (!user && token) await me();
       const t2 = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-      if (!user && !t2) router.push("/auth");
+      if (!user && !t2) router.push("/");
     };
     const t = setTimeout(check, 500);
     return () => clearTimeout(t);
@@ -187,6 +189,19 @@ export default function KitchenPage() {
     }
   }, [user, fetchKots]);
 
+  // Keep fetchKots in a ref so WebSocket handler doesn't cause reconnection loops
+  useEffect(() => {
+    fetchKotsRef.current = fetchKots;
+  }, [fetchKots]);
+
+  // Debounced fetch triggered by WS events (prevents rapid API calls)
+  const debouncedFetchKots = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchKotsRef.current();
+    }, 300);
+  }, []);
+
   // ── WebSocket ────────────────────────────────────────────────────────
   const connectWs = useCallback(() => {
     if (!user?.restaurant_id) return;
@@ -203,7 +218,7 @@ export default function KitchenPage() {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log("🔌 [WS] Connected");
+      console.log("[WS] Connected");
       setWsConnected(true);
       // Start ping every 30s
       if (pingRef.current) clearInterval(pingRef.current);
@@ -225,8 +240,7 @@ export default function KitchenPage() {
           event === "kot_item_progress_updated" ||
           event === "order_status_updated"
         ) {
-          // Debounced refresh
-          fetchKots();
+          debouncedFetchKots();
         }
       } catch { }
     };
@@ -241,7 +255,7 @@ export default function KitchenPage() {
       // Reconnect after 5s
       reconnectRef.current = setTimeout(connectWs, 5000);
     };
-  }, [user, fetchKots]);
+  }, [user, debouncedFetchKots]);
 
   useEffect(() => {
     connectWs();
@@ -249,6 +263,7 @@ export default function KitchenPage() {
       if (wsRef.current) try { wsRef.current.close(); } catch { }
       if (pingRef.current) clearInterval(pingRef.current);
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [connectWs]);
 

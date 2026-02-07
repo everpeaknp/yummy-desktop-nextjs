@@ -38,7 +38,7 @@ export const DashboardApis = {
   }) => {
     const params = new URLSearchParams();
     params.append('restaurant_id', restaurantId.toString());
-    
+
     if (startTime) params.append('start_time', startTime.toISOString());
     if (endTime) params.append('end_time', endTime.toISOString());
     if (date && !startTime) params.append('date', date);
@@ -126,6 +126,13 @@ export const TableApis = {
   getTableById: (tableId: number) => `/restaurants/tables/single/${tableId}`,
   deleteTable: (tableId: number) => `/restaurants/tables/${tableId}`,
   freeTable: (tableId: number) => `/restaurants/tables/${tableId}/free`,
+};
+
+export const TableTypeApis = {
+  getTableTypes: (restaurantId: number) => `/restaurants/table-types/${restaurantId}`,
+  createTableType: (restaurantId: number) => `/restaurants/table-types/${restaurantId}`,
+  updateTableType: (tableTypeId: number) => `/restaurants/table-types/${tableTypeId}`,
+  deleteTableType: (tableTypeId: number) => `/restaurants/table-types/${tableTypeId}`,
 };
 
 export const CustomerApis = {
@@ -224,14 +231,14 @@ export const AnalyticsApis = {
     return `/analytics/dashboard?${params.toString()}`;
   },
   overview: ({ restaurantId, dateFrom, dateTo, timezone, station }: any) => {
-     const params = new URLSearchParams();
-     if (restaurantId) params.append('restaurant_id', restaurantId.toString());
-     if (dateFrom) params.append('date_from', dateFrom);
-     if (dateTo) params.append('date_to', dateTo);
-     if (timezone) params.append('timezone', timezone);
-     if (station) params.append('station', station);
-     const query = params.toString();
-     return query ? `/analytics/overview?${query}` : '/analytics/overview';
+    const params = new URLSearchParams();
+    if (restaurantId) params.append('restaurant_id', restaurantId.toString());
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    if (timezone) params.append('timezone', timezone);
+    if (station) params.append('station', station);
+    const query = params.toString();
+    return query ? `/analytics/overview?${query}` : '/analytics/overview';
   },
   trends: ({ metric, restaurantId, dateFrom, dateTo, timezone, station }: any) => {
     const params = new URLSearchParams({ metric });
@@ -240,7 +247,7 @@ export const AnalyticsApis = {
     if (dateTo) params.append('date_to', dateTo);
     if (timezone) params.append('timezone', timezone);
     if (station) params.append('station', station);
-     return `/analytics/trends?${params.toString()}`;
+    return `/analytics/trends?${params.toString()}`;
   },
   breakdown: ({ type, restaurantId, dateFrom, dateTo, timezone, station }: any) => {
     const params = new URLSearchParams({ type });
@@ -249,7 +256,7 @@ export const AnalyticsApis = {
     if (dateTo) params.append('date_to', dateTo);
     if (timezone) params.append('timezone', timezone);
     if (station) params.append('station', station);
-     return `/analytics/breakdown?${params.toString()}`;
+    return `/analytics/breakdown?${params.toString()}`;
   },
 };
 
@@ -361,13 +368,13 @@ export const DayCloseApis = {
   confirm: (id: number) => `/day-closes/${id}/confirm`,
   cancel: (id: number) => `/day-closes/${id}/cancel`,
   list: ({ restaurantId, start, end, status }: { restaurantId?: number; start?: string; end?: string; status?: string }) => {
-     const params = new URLSearchParams();
-     if (restaurantId) params.append('restaurant_id', restaurantId.toString());
-     if (start) params.append('date_from', start);
-     if (end) params.append('date_to', end);
-     if (status) params.append('status', status);
-     const query = params.toString();
-     return query ? `/day-closes?${query}` : '/day-closes';
+    const params = new URLSearchParams();
+    if (restaurantId) params.append('restaurant_id', restaurantId.toString());
+    if (start) params.append('date_from', start);
+    if (end) params.append('date_to', end);
+    if (status) params.append('status', status);
+    const query = params.toString();
+    return query ? `/day-closes?${query}` : '/day-closes';
   },
   detail: (id: number) => `/day-closes/${id}`,
   auditLog: (id: number) => `/day-closes/${id}/audit-log`,

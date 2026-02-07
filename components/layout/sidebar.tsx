@@ -22,91 +22,63 @@ import {
   Store,
   ChevronsLeft,
   ChevronsRight,
+  LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSidebar } from "@/hooks/use-sidebar";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  normalizeRoles,
+  getSidebarItemsForRoles,
+} from "@/lib/role-permissions";
 
-export const sidebarItems = [
-  {
-    title: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "Orders",
-    href: "/orders/active",
-    icon: ClipboardList,
-  },
-  {
-    title: "New Order",
-    href: "/orders/new",
-    icon: Plus,
-  },
-  {
-    title: "Analytics",
-    href: "/analytics",
-    icon: Activity,
-  },
-  {
-    title: "Menu",
-    href: "/menu/items",
-    icon: UtensilsCrossed,
-  },
-  {
-    title: "Kitchen",
-    href: "/kitchen",
-    icon: ChefHat,
-  },
-  {
-    title: "Inventory",
-    href: "/inventory",
-    icon: Package,
-  },
-  {
-    title: "Finance",
-    href: "/finance",
-    icon: CreditCard,
-  },
-  {
-    title: "Customers",
-    href: "/customers",
-    icon: Users,
-  },
-  {
-    title: "Tables",
-    href: "/tables",
-    icon: Armchair,
-  },
-  {
-    title: "Reservations",
-    href: "/reservations",
-    icon: Calendar,
-  },
-  {
-    title: "Discounts",
-    href: "/discounts",
-    icon: Percent,
-  },
-  {
-    title: "Manage",
-    href: "/manage",
-    icon: Settings,
-  },
-];
+const ICON_MAP: Record<string, LucideIcon> = {
+  "/dashboard": LayoutDashboard,
+  "/orders/active": ClipboardList,
+  "/orders/new": Plus,
+  "/analytics": Activity,
+  "/menu/items": UtensilsCrossed,
+  "/kitchen": ChefHat,
+  "/inventory": Package,
+  "/finance": CreditCard,
+  "/customers": Users,
+  "/tables": Armchair,
+  "/reservations": Calendar,
+  "/discounts": Percent,
+  "/manage": Settings,
+};
+
+export interface SidebarItem {
+  title: string;
+  href: string;
+  icon: LucideIcon;
+}
+
+export function useSidebarItems(): SidebarItem[] {
+  const user = useAuth((state) => state.user);
+  return useMemo(() => {
+    const roles = normalizeRoles(user?.roles?.length ? user.roles : user?.role ? [user.role] : []);
+    return getSidebarItemsForRoles(roles).map((item) => ({
+      title: item.title,
+      href: item.href,
+      icon: ICON_MAP[item.href] ?? LayoutDashboard,
+    }));
+  }, [user?.roles, user?.role]);
+}
 
 export function Sidebar() {
   const pathname = usePathname();
   const logout = useAuth(state => state.logout);
   const { restaurant, fetchRestaurant } = useRestaurant();
   const { collapsed, toggle } = useSidebar();
+  const items = useSidebarItems();
 
   useEffect(() => {
     if (!restaurant) {
@@ -160,7 +132,7 @@ export function Sidebar() {
         {/* Nav Items */}
         <div className="flex-1 overflow-y-auto py-4">
           <nav className={cn("grid items-start text-sm font-medium gap-1", collapsed ? "px-2" : "px-4 gap-2")}>
-            {sidebarItems.map((item, index) => {
+            {items.map((item, index) => {
               const isActive = pathname === item.href || (pathname && pathname.startsWith(item.href + "/"));
               const link = (
                 <Link
