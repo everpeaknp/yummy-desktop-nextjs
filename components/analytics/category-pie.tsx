@@ -24,44 +24,44 @@ export function CategoryPieChart({ data, loading }: CategoryPieChartProps) {
       </CardHeader>
       <CardContent>
         <div className="h-[300px] w-full">
-            {loading ? (
-                 <div className="h-full w-full flex items-center justify-center bg-muted/20 animate-pulse rounded-md">
-                    <span className="text-muted-foreground text-sm">Loading chart...</span>
-                 </div>
-            ) : data && data.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                    <Pie
-                        data={data}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                        nameKey="name"
-                    >
-                        {data.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                    </Pie>
-                    <Tooltip 
-                         contentStyle={{ 
-                             backgroundColor: theme === 'dark' ? '#1e1e1e' : '#fff',
-                             borderRadius: '8px',
-                             border: 'none',
-                             boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                         }}
-                         formatter={(value: any, name: string) => [`Rs. ${Number(value).toLocaleString()}`, name]}
-                    />
-                    <Legend />
-                    </PieChart>
-                </ResponsiveContainer>
-            ) : (
-                <div className="h-full w-full flex items-center justify-center text-muted-foreground">
-                    No data available
-                </div>
-            )}
+          {loading ? (
+            <div className="h-full w-full flex items-center justify-center bg-muted/20 animate-pulse rounded-md">
+              <span className="text-muted-foreground text-sm">Loading chart...</span>
+            </div>
+          ) : data && data.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={data}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                  nameKey="name"
+                >
+                  {data.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: theme === 'dark' ? '#1e1e1e' : '#fff',
+                    borderRadius: '8px',
+                    border: 'none',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                  }}
+                  formatter={(value: any, name?: string) => [`Rs. ${Number(value).toLocaleString()}`, name || '']}
+                />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+              No data available
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
