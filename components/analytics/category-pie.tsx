@@ -39,6 +39,7 @@ export function CategoryPieChart({ data, loading }: CategoryPieChartProps) {
                         outerRadius={80}
                         paddingAngle={5}
                         dataKey="value"
+                        nameKey="name"
                     >
                         {data.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -48,9 +49,10 @@ export function CategoryPieChart({ data, loading }: CategoryPieChartProps) {
                          contentStyle={{ 
                              backgroundColor: theme === 'dark' ? '#1e1e1e' : '#fff',
                              borderRadius: '8px',
-                             border: '1px solid #333'
+                             border: 'none',
+                             boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                          }}
-                         formatter={(value: any) => [`Rs. ${value}`, "Sales"]}
+                         formatter={(value: any, name: string) => [`Rs. ${Number(value).toLocaleString()}`, name]}
                     />
                     <Legend />
                     </PieChart>

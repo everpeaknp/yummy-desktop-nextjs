@@ -77,8 +77,8 @@
     --destructive: 0 84% 60%; /* Reverted to bright red for visibility */
     --destructive-foreground: 0 0% 100%;
 
-    /* Flutter Dark Border: Subtler for dark mode */
-    --border: 217 13% 15%; /* Darker than before to avoid "white border" look */
+    /* Flutter Dark Border: Subtler for dark mode (Zinc-800 approx) */
+    --border: 240 3.7% 15.9%;
     --input: 217 13% 20%;
     --ring: 13 88% 53%;
   }
@@ -87,5 +87,15 @@
 @layer base {
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }

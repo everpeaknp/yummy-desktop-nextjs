@@ -22,6 +22,7 @@ import { ItemCategoryApis } from "@/lib/api/endpoints";
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
   const { user, me } = useAuth();
 
   useEffect(() => {
@@ -34,8 +35,8 @@ export default function CategoriesPage() {
   useEffect(() => {
     const fetchCategories = async () => {
       if (!user?.restaurant_id) {
-          if (user) setLoading(false);
-          return;
+        if (user) setLoading(false);
+        return;
       }
       try {
         const response = await apiClient.get(ItemCategoryApis.getItemCategories(user.restaurant_id));
@@ -54,28 +55,28 @@ export default function CategoriesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-       <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <div>
-            <h1 className="text-2xl font-bold tracking-tight">Item Categories</h1>
-            <p className="text-muted-foreground">Organize your menu items into categories.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Item Categories</h1>
+          <p className="text-muted-foreground">Organize your menu items into categories.</p>
         </div>
         <Button className="bg-primary text-white hover:bg-primary/90">
-            <Plus className="mr-2 h-4 w-4" /> Add Category
+          <Plus className="mr-2 h-4 w-4" /> Add Category
         </Button>
       </div>
 
       <Card>
         <CardHeader>
-           <div className="flex items-center justify-between">
-                <CardTitle>Categories</CardTitle>
-                 <div className="relative w-full md:w-64">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search categories..." className="pl-8" />
-                </div>
+          <div className="flex items-center justify-between">
+            <CardTitle>Categories</CardTitle>
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search categories..." className="pl-8" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
-            <CardDescription>
-                Drag and drop to reorder categories (Implementation pending).
-            </CardDescription>
+          </div>
+          <CardDescription>
+            Drag and drop to reorder categories (Implementation pending).
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -106,7 +107,11 @@ export default function CategoriesPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                categories.map((category) => (
+                categories.filter((c) => {
+                  if (!searchQuery.trim()) return true;
+                  const q = searchQuery.toLowerCase();
+                  return c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q);
+                }).map((category) => (
                   <TableRow key={category.id}>
                     <TableCell>
                       <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />

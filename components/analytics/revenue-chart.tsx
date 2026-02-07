@@ -45,9 +45,13 @@ export function RevenueChart({ data, loading }: RevenueChartProps) {
                         tickLine={false}
                         axisLine={false}
                         tickFormatter={(value) => {
-                            // Format date to show Month/Day if needed
-                            const d = new Date(value);
-                            return `${d.getMonth() + 1}/${d.getDate()}`;
+                            try {
+                                const d = new Date(value);
+                                if (isNaN(d.getTime())) return value;
+                                return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                            } catch (e) {
+                                return value;
+                            }
                         }}
                     />
                     <YAxis
@@ -55,18 +59,27 @@ export function RevenueChart({ data, loading }: RevenueChartProps) {
                         fontSize={12}
                         tickLine={false}
                         axisLine={false}
-                        tickFormatter={(value) => `Rs.${value}`}
+                        tickFormatter={(value) => `Rs.${value >= 1000 ? (value / 1000).toFixed(1) + 'k' : value}`}
                     />
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
                     <Tooltip 
                          contentStyle={{ 
                              backgroundColor: theme === 'dark' ? '#1e1e1e' : '#fff',
                              borderRadius: '8px',
-                             border: '1px solid #333'
+                             border: 'none',
+                             boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                          }}
-                         itemStyle={{ color: '#f97316' }}
-                         formatter={(value: any) => [`Rs. ${value}`, "Revenue"]}
-                         labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                         itemStyle={{ color: '#f97316', fontWeight: 'bold' }}
+                         formatter={(value: any) => [`Rs. ${Number(value).toLocaleString()}`, "Revenue"]}
+                         labelFormatter={(label) => {
+                             try {
+                                 const d = new Date(label);
+                                 if (isNaN(d.getTime())) return label;
+                                 return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                             } catch (e) {
+                                 return label;
+                             }
+                         }}
                     />
                     <Area
                         type="monotone"

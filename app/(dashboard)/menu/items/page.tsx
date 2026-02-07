@@ -1,164 +1,553 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Edit, Trash2, MoreHorizontal } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Plus, Search, Edit, Trash2, MoreHorizontal, UtensilsCrossed, X, ImageIcon, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { MenuApis } from "@/lib/api/endpoints";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface MenuItem {
   id: number;
   name: string;
   price: number;
+  description?: string;
   category_type?: string;
+  category_name?: string;
+  item_category_id?: number;
   image?: string;
+  modifier_group_ids?: number[];
 }
 
+interface CategoryGroup {
+  category_id: number;
+  category_name: string;
+  items: MenuItem[];
+}
+
+interface FormData {
+  name: string;
+  price: string;
+  item_category_id: string;
+  description: string;
+  is_price_tax_inclusive: boolean;
+}
+
+const emptyForm: FormData = {
+  name: "",
+  price: "",
+  item_category_id: "",
+  description: "",
+  is_price_tax_inclusive: true,
+};
+
 export default function MenuItemsPage() {
-  const [items, setItems] = useState<MenuItem[]>([]);
+  const [allItems, setAllItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const { user, me } = useAuth();
   const { restaurant } = useRestaurant();
 
+  // Dialog state
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [form, setForm] = useState<FormData>(emptyForm);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Delete dialog state
+  const [deleteItem, setDeleteItem] = useState<MenuItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Feedback message
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
   useEffect(() => {
-    const init = async () => {
-      await me();
-    };
+    const init = async () => { await me(); };
     init();
   }, [me]);
 
-  useEffect(() => {
-    const fetchItems = async () => {
-      if (!user?.restaurant_id) {
-        if (user) setLoading(false);
-        return;
+  const fetchItems = useCallback(async () => {
+    if (!user?.restaurant_id) return;
+    try {
+      const response = await apiClient.get(MenuApis.getMenusGroupedByRestaurant(user.restaurant_id));
+      if (response.data.status === "success") {
+        const groups: CategoryGroup[] = response.data.data;
+        const cats: { id: number; name: string }[] = [];
+        const items: MenuItem[] = [];
+        groups.forEach((g) => {
+          cats.push({ id: g.category_id, name: g.category_name });
+          g.items.forEach((item) => {
+            items.push({ ...item, category_name: g.category_name });
+          });
+        });
+        setCategories(cats);
+        setAllItems(items);
       }
-      try {
-        const response = await apiClient.get(MenuApis.getMenusByRestaurant(user.restaurant_id));
-        if (response.data.status === "success") {
-          setItems(response.data.data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch menu items:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchItems();
+    } catch (err) {
+      console.error("Failed to fetch menu items:", err);
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
+  useEffect(() => { fetchItems(); }, [fetchItems]);
+
+  // Auto-dismiss feedback message
+  useEffect(() => {
+    if (message) {
+      const t = setTimeout(() => setMessage(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [message]);
+
+  const filteredItems = useMemo(() => {
+    let result = allItems;
+    if (selectedCategory !== null) {
+      result = result.filter((item) => item.item_category_id === selectedCategory);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (item) =>
+          item.name.toLowerCase().includes(q) ||
+          (item.category_name || "").toLowerCase().includes(q) ||
+          (item.description || "").toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [allItems, searchQuery, selectedCategory]);
+
+  const handleClearSearch = useCallback(() => { setSearchQuery(""); }, []);
+
+  const openAddDialog = () => {
+    setEditingItem(null);
+    setForm(emptyForm);
+    setFormError(null);
+    setFormOpen(true);
+  };
+
+  const openEditDialog = (item: MenuItem) => {
+    setEditingItem(item);
+    setForm({
+      name: item.name,
+      price: String(item.price),
+      item_category_id: String(item.item_category_id || ""),
+      description: item.description || "",
+      is_price_tax_inclusive: true,
+    });
+    setFormError(null);
+    setFormOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!user?.restaurant_id) return;
+    if (!form.name.trim()) { setFormError("Name is required"); return; }
+    if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) { setFormError("Valid price is required"); return; }
+    if (!form.item_category_id) { setFormError("Category is required"); return; }
+
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const payload = {
+        name: form.name.trim(),
+        price: Number(form.price),
+        item_category_id: Number(form.item_category_id),
+        description: form.description.trim() || null,
+        is_price_tax_inclusive: form.is_price_tax_inclusive,
+      };
+
+      if (editingItem) {
+        await apiClient.put(MenuApis.updateMenu(editingItem.id), payload);
+        setMessage({ text: `"${form.name}" updated successfully`, type: "success" });
+      } else {
+        await apiClient.post(MenuApis.createMenu(user.restaurant_id), payload);
+        setMessage({ text: `"${form.name}" created successfully`, type: "success" });
+      }
+      setFormOpen(false);
+      await fetchItems();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || err.message || "Something went wrong";
+      setFormError(typeof detail === "string" ? detail : JSON.stringify(detail));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteItem) return;
+    setDeleting(true);
+    try {
+      await apiClient.delete(MenuApis.deleteMenu(deleteItem.id));
+      setMessage({ text: `"${deleteItem.name}" deleted`, type: "success" });
+      setDeleteItem(null);
+      await fetchItems();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || "Failed to delete item";
+      setMessage({ text: typeof detail === "string" ? detail : JSON.stringify(detail), type: "error" });
+      setDeleteItem(null);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const currency = restaurant?.currency || "Rs.";
+
   return (
-    <div className="flex flex-col gap-6">
-       <div className="flex items-center justify-between">
-        <div>
-            <h1 className="text-2xl font-bold tracking-tight">Menu Items</h1>
-            <p className="text-muted-foreground">Manage your restaurant's food and beverage offerings.</p>
+    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto">
+      {/* Feedback toast */}
+      {message && (
+        <div className={cn(
+          "fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-sm font-medium animate-in slide-in-from-top-2 fade-in",
+          message.type === "success" ? "bg-emerald-600 text-white" : "bg-destructive text-destructive-foreground"
+        )}>
+          {message.text}
         </div>
-        <Button className="bg-primary text-white hover:bg-primary/90">
+      )}
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Menu Items</h1>
+          <p className="text-muted-foreground text-sm">
+            Manage your dishes and categories
+            {!loading && <span className="ml-1 text-foreground font-medium">({allItems.length} items)</span>}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name or category..."
+              className="pl-9 pr-9"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button onClick={handleClearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <Button onClick={openAddDialog} className="bg-primary text-white hover:bg-primary/90 shrink-0">
             <Plus className="mr-2 h-4 w-4" /> Add Item
-        </Button>
+          </Button>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-             <div className="flex items-center justify-between">
-                <CardTitle>All Items</CardTitle>
-                 <div className="relative w-full md:w-64">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search items..." className="pl-8" />
-                </div>
+      {/* Category Filter Tabs */}
+      {categories.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+          <button
+            onClick={() => setSelectedCategory(null)}
+            className={cn(
+              "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all border",
+              selectedCategory === null
+                ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/20"
+            )}
+          >
+            All ({allItems.length})
+          </button>
+          {categories.map((cat) => {
+            const count = allItems.filter((i) => i.item_category_id === cat.id).length;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(selectedCategory === cat.id ? null : cat.id)}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all border",
+                  selectedCategory === cat.id
+                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                    : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/20"
+                )}
+              >
+                {cat.name} ({count})
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Content */}
+      {loading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <Card key={i} className="overflow-hidden">
+              <Skeleton className="h-28 w-full rounded-none" />
+              <CardContent className="p-3 space-y-2">
+                <Skeleton className="h-3.5 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-4 w-1/3" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : filteredItems.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          {searchQuery || selectedCategory !== null ? (
+            <>
+              <Search className="h-12 w-12 text-muted-foreground/40 mb-4" />
+              <h3 className="text-lg font-semibold mb-1">No results found</h3>
+              <p className="text-muted-foreground text-sm mb-4">
+                {searchQuery ? `No items match "${searchQuery}"` : "No items in this category"}
+              </p>
+              <Button variant="outline" onClick={() => { setSearchQuery(""); setSelectedCategory(null); }}>
+                Clear Filters
+              </Button>
+            </>
+          ) : (
+            <>
+              <UtensilsCrossed className="h-12 w-12 text-muted-foreground/40 mb-4" />
+              <h3 className="text-lg font-semibold mb-1">No menu items yet</h3>
+              <p className="text-muted-foreground text-sm mb-4">Add your first item to get started.</p>
+              <Button onClick={openAddDialog}>
+                <Plus className="mr-2 h-4 w-4" /> Add Item
+              </Button>
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+          {searchQuery && (
+            <p className="text-sm text-muted-foreground">
+              Showing <span className="font-medium text-foreground">{filteredItems.length}</span> result{filteredItems.length !== 1 ? "s" : ""} for &quot;{searchQuery}&quot;
+            </p>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+            {filteredItems.map((item) => (
+              <MenuItemCard
+                key={item.id}
+                item={item}
+                currency={currency}
+                onEdit={() => openEditDialog(item)}
+                onDelete={() => setDeleteItem(item)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingItem ? "Edit Menu Item" : "Add Menu Item"}</DialogTitle>
+            <DialogDescription>
+              {editingItem ? "Update the details of this menu item." : "Fill in the details to create a new menu item."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name *</Label>
+              <Input
+                id="name"
+                placeholder="e.g. Chicken Momo"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
             </div>
-          <CardDescription>
-            Manage your menu items, prices, and availability.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Stock Status</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                [1, 2, 3, 4, 5].map((i) => (
-                  <TableRow key={i}>
-                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                    <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
-                  </TableRow>
-                ))
-              ) : items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    No menu items found. Click 'Add Item' to create one.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-3">
-                        {item.image && (
-                          <img src={item.image} alt={item.name} className="h-8 w-8 rounded-md object-cover" />
-                        )}
-                        {item.name}
-                      </div>
-                    </TableCell>
-                    <TableCell className="capitalize">{item.category_type || "Uncategorized"}</TableCell>
-                    <TableCell>{restaurant?.currency || "$"} {(item.price || 0).toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge variant="success" className="font-normal">In Stock</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-normal">Active</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem><Edit className="mr-2 h-4 w-4" /> Edit</DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="price">Price *</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={form.price}
+                  onChange={(e) => setForm({ ...form, price: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Category *</Label>
+                <Select
+                  value={form.item_category_id}
+                  onValueChange={(val) => setForm({ ...form, item_category_id: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={String(cat.id)}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Input
+                id="description"
+                placeholder="Optional description..."
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="tax_inclusive"
+                checked={form.is_price_tax_inclusive}
+                onChange={(e) => setForm({ ...form, is_price_tax_inclusive: e.target.checked })}
+                className="rounded border-border"
+              />
+              <Label htmlFor="tax_inclusive" className="text-sm font-normal cursor-pointer">
+                Price includes tax
+              </Label>
+            </div>
+
+            {formError && (
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">{formError}</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFormOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {editingItem ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteItem} onOpenChange={(open) => { if (!open) setDeleteItem(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Menu Item</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <strong>&quot;{deleteItem?.name}&quot;</strong>? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteItem(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function MenuItemCard({
+  item,
+  currency,
+  onEdit,
+  onDelete,
+}: {
+  item: MenuItem;
+  currency: string;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const hasImage = item.image && !item.image.startsWith("asset:") && !imgError;
+
+  return (
+    <Card className="overflow-hidden group hover:shadow-md transition-all border-border bg-card">
+      {/* Image */}
+      <div className="relative h-28 sm:h-32 bg-muted/50 overflow-hidden flex items-center justify-center">
+        {hasImage ? (
+          <img
+            src={item.image!}
+            alt={item.name}
+            className="max-w-full max-h-full object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-muted">
+            <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
+          </div>
+        )}
+        {item.category_name && (
+          <Badge className="absolute top-1.5 left-1.5 bg-black/60 text-white border-0 text-[9px] font-medium backdrop-blur-sm px-1.5 py-0.5">
+            {item.category_name}
+          </Badge>
+        )}
+        <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="secondary" size="icon" className="h-7 w-7 bg-black/50 hover:bg-black/70 text-white border-0">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onEdit}><Edit className="mr-2 h-4 w-4" /> Edit</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onDelete} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Content */}
+      <CardContent className="p-2.5 sm:p-3">
+        <h3 className="font-semibold text-xs sm:text-sm truncate mb-0.5 group-hover:text-primary transition-colors">
+          {item.name}
+        </h3>
+        {item.description && (
+          <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-1 mb-1">{item.description}</p>
+        )}
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-sm sm:text-base font-bold text-foreground">
+            {currency} {(item.price || 0).toLocaleString()}
+          </span>
+          {item.category_type && (
+            <Badge variant="outline" className="text-[9px] capitalize hidden sm:inline-flex">
+              {item.category_type}
+            </Badge>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

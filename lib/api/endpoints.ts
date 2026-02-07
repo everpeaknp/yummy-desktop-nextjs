@@ -129,7 +129,7 @@ export const TableApis = {
 };
 
 export const CustomerApis = {
-  listCustomers: '/customers',
+  listCustomers: (restaurantId: number) => `/customers?restaurant_id=${restaurantId}`,
   getCustomer: (id: number) => `/customers/${id}`,
   createCustomer: '/customers',
   updateCustomer: (id: number) => `/customers/${id}`,

@@ -142,10 +142,10 @@ export default function FinancePage() {
 
   // Export Handlers
   const handleExportIncome = () => {
-    if (!incomeData?.recent_entries) return;
+    if (!incomeData?.recent) return;
     
     // Flatten data for nicer excel structure
-    const dataToExport = incomeData.recent_entries.map((entry: any) => ({
+    const dataToExport = incomeData.recent.map((entry: any) => ({
         "Description": entry.description || "Manual Entry",
         "Amount": entry.amount,
         "Date": new Date(entry.paid_at).toLocaleDateString(),
@@ -259,15 +259,16 @@ export default function FinancePage() {
                       <div className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
                           <div className="px-6 py-4 border-b border-border bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
                               <h3 className="font-semibold">Recent Income Entries</h3>
-                              <Button variant="outline" size="sm" onClick={handleExportIncome} disabled={!incomeData?.recent_entries?.length}>
+                              <Button variant="outline" size="sm" onClick={handleExportIncome} disabled={!incomeData?.recent?.length}>
                                   <Download className="w-4 h-4 mr-2" /> Export Excel
                               </Button>
                           </div>
-                          {incomeData?.recent_entries?.length === 0 ? (
+                          {incomeData?.recent?.length === 0 ? (
                                <div className="p-8 text-center text-muted-foreground">
                                    No recent income entries found.
                                </div>
                           ) : (
+                          <div className="overflow-x-auto">
                               <table className="w-full text-sm text-left">
                                   <thead className="bg-muted text-muted-foreground font-medium border-b border-border">
                                       <tr>
@@ -278,20 +279,21 @@ export default function FinancePage() {
                                       </tr>
                                   </thead>
                                   <tbody className="divide-y divide-border">
-                                      {(incomeData?.recent_entries || []).map((entry: any) => (
-                                          <tr key={entry.id} className="hover:bg-muted/50 transition-colors">
+                                      {(incomeData?.recent || []).map((entry: any) => (
+                                          <tr key={entry.order_id || entry.id || Math.random()} className="hover:bg-muted/50 transition-colors">
                                               <td className="px-6 py-4 font-medium text-foreground">{entry.description || "Manual Entry"}</td>
                                               <td className="px-6 py-4 font-bold text-emerald-600">+ Rs. {Number(entry.amount).toLocaleString()}</td>
                                               <td className="px-6 py-4 text-muted-foreground">{new Date(entry.paid_at).toLocaleDateString()}</td>
                                               <td className="px-6 py-4">
                                                   <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                                      {entry.source_type || "Day Close"}
+                                                      {entry.source || "Day Close"}
                                                   </Badge>
                                               </td>
                                           </tr>
                                       ))}
                                   </tbody>
                               </table>
+                          </div>
                           )}
                       </div>
                   </div>
@@ -330,37 +332,39 @@ export default function FinancePage() {
                   </div>
               ) : (
                   <div className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
-                      <table className="w-full text-sm text-left">
-                          <thead className="bg-muted text-muted-foreground font-medium border-b border-border">
-                              <tr>
-                                  <th className="px-6 py-4">Description</th>
-                                  <th className="px-6 py-4">Category</th>
-                                  <th className="px-6 py-4">Amount</th>
-                                  <th className="px-6 py-4">Date</th>
-                                  <th className="px-6 py-4">Status</th>
-                              </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                              {expenses.map((expense: any) => (
-                                  <tr key={expense.id} className="hover:bg-muted/50 transition-colors">
-                                      <td className="px-6 py-4 font-medium text-foreground">{expense.description || "Untitled"}</td>
-                                      <td className="px-6 py-4 text-muted-foreground">{expense.category?.name || "General"}</td>
-                                      <td className="px-6 py-4 font-bold text-destructive">- Rs. {Number(expense.amount).toLocaleString()}</td>
-                                      <td className="px-6 py-4 text-muted-foreground">
-                                          <div className="flex items-center gap-2">
-                                              <Calendar className="w-3 h-3" />
-                                              {new Date(expense.expense_date || expense.paid_on).toLocaleDateString()}
-                                          </div>
-                                      </td>
-                                      <td className="px-6 py-4">
-                                          <Badge variant="outline" className="border-border text-muted-foreground">
-                                              {expense.status || "Completed"}
-                                          </Badge>
-                                      </td>
+                      <div className="overflow-x-auto">
+                          <table className="w-full text-sm text-left">
+                              <thead className="bg-muted text-muted-foreground font-medium border-b border-border">
+                                  <tr>
+                                      <th className="px-6 py-4">Description</th>
+                                      <th className="px-6 py-4">Category</th>
+                                      <th className="px-6 py-4">Amount</th>
+                                      <th className="px-6 py-4">Date</th>
+                                      <th className="px-6 py-4">Status</th>
                                   </tr>
-                              ))}
-                          </tbody>
-                      </table>
+                              </thead>
+                              <tbody className="divide-y divide-border">
+                                  {expenses.map((expense: any) => (
+                                      <tr key={expense.id} className="hover:bg-muted/50 transition-colors">
+                                          <td className="px-6 py-4 font-medium text-foreground">{expense.description || "Untitled"}</td>
+                                          <td className="px-6 py-4 text-muted-foreground">{expense.category?.name || "General"}</td>
+                                          <td className="px-6 py-4 font-bold text-destructive">- Rs. {Number(expense.amount).toLocaleString()}</td>
+                                          <td className="px-6 py-4 text-muted-foreground">
+                                              <div className="flex items-center gap-2">
+                                                  <Calendar className="w-3 h-3" />
+                                                  {new Date(expense.expense_date || expense.paid_on).toLocaleDateString()}
+                                              </div>
+                                          </td>
+                                          <td className="px-6 py-4">
+                                              <Badge variant="outline" className="border-border text-muted-foreground">
+                                                  {expense.status || "Completed"}
+                                              </Badge>
+                                          </td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
                   </div>
               )}
           </TabsContent>
