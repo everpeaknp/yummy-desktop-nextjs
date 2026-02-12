@@ -7,19 +7,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 interface CategoryPieChartProps {
   data: any[];
   loading?: boolean;
+  title?: string;
+  description?: string;
 }
 
 const COLORS = ['#f97316', '#3b82f6', '#10b981', '#a855f7', '#ec4899', '#eab308'];
 
-export function CategoryPieChart({ data, loading }: CategoryPieChartProps) {
+export function CategoryPieChart({ data, loading, title = "Sales by Category", description = "Distribution of sales across menu categories." }: CategoryPieChartProps) {
   const { theme } = useTheme();
 
   return (
     <Card className="col-span-3 bg-card border-border shadow-sm">
       <CardHeader>
-        <CardTitle>Sales by Category</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription>
-          Distribution of sales across menu categories.
+          {description}
         </CardDescription>
       </CardHeader>
       <CardContent>

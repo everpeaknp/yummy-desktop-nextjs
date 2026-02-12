@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Plus, Minus, Trash2, ChefHat, ShoppingBag, Loader2, Utensils } from "lucide-react";
+import { Search, Plus, Minus, Trash2, ChefHat, ShoppingBag, Loader2, Utensils, Receipt } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
@@ -353,6 +353,16 @@ export default function POSSystem({
               {!orderId || orderId === 'create' ? 'Place Order' : 'Update Order'}
             </Button>
           </div>
+          {orderId && orderId !== 'create' && (
+            <Button
+              variant="secondary"
+              className="w-full gap-2"
+              onClick={() => router.push(`/orders/${orderId}/checkout`)}
+            >
+              <Receipt className="h-4 w-4" />
+              Checkout / Bill
+            </Button>
+          )}
         </div>
       </Card>
     </div>

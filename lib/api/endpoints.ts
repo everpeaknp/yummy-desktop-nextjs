@@ -329,6 +329,10 @@ export const KotApis = {
   requestFallback: (kotId: number, canPrint = true) => `/kots/${kotId}/request-fallback?can_print=${canPrint}`,
 };
 
+export const ReceiptApis = {
+  getReceiptData: (orderId: number) => `/receipts/orders/${orderId}/data`,
+};
+
 export const ModifierApis = {
   listGroups: '/modifiers/groups',
   createGroup: '/modifiers/groups',
@@ -408,4 +412,10 @@ export const DayCloseApis = {
   auditLog: (id: number) => `/day-closes/${id}/audit-log`,
   savedSnapshot: (id: number) => `/day-closes/${id}/snapshot`,
   reopen: (id: number) => `/day-closes/${id}/reopen`,
+};
+
+export const HistoryApis = {
+  listAuditLogs: (params: string) => `/history/audit-logs?${params}`,
+  listUserActivity: (userId: number) => `/history/activity/user/${userId}`,
+  listActivityByDate: (params: string) => `/history/activity?${params}`,
 };

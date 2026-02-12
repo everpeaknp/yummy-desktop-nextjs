@@ -36,6 +36,9 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { MenuApis } from "@/lib/api/endpoints";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { MenuImageService } from "@/services/menu-image-service";
+import { toast } from "@/components/ui/use-toast";
+import { MenuGalleryDialog, MenuGalleryItem } from "@/components/menu/menu-gallery-dialog";
 
 interface MenuItem {
   id: number;
@@ -60,7 +63,9 @@ interface FormData {
   price: string;
   item_category_id: string;
   description: string;
+
   is_price_tax_inclusive: boolean;
+  image: string;
 }
 
 const emptyForm: FormData = {
@@ -68,7 +73,9 @@ const emptyForm: FormData = {
   price: "",
   item_category_id: "",
   description: "",
+
   is_price_tax_inclusive: true,
+  image: "",
 };
 
 export default function MenuItemsPage() {
@@ -86,6 +93,12 @@ export default function MenuItemsPage() {
   const [form, setForm] = useState<FormData>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Image Upload State
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   // Delete dialog state
   const [deleteItem, setDeleteItem] = useState<MenuItem | null>(null);
@@ -155,8 +168,18 @@ export default function MenuItemsPage() {
   const openAddDialog = () => {
     setEditingItem(null);
     setForm(emptyForm);
+    setSelectedFile(null);
+    setPreviewUrl(null);
     setFormError(null);
     setFormOpen(true);
+  };
+   
+  const getImageUrl = (path?: string) => {
+    if (!path) return "";
+    if (path.startsWith("asset:")) {
+      return `/${path.replace("asset:", "assets/")}`;
+    }
+    return path;
   };
 
   const openEditDialog = (item: MenuItem) => {
@@ -166,10 +189,37 @@ export default function MenuItemsPage() {
       price: String(item.price),
       item_category_id: String(item.item_category_id || ""),
       description: item.description || "",
+
       is_price_tax_inclusive: true,
+      image: item.image || "",
     });
+    setSelectedFile(null);
+    setPreviewUrl(null);
     setFormError(null);
     setFormOpen(true);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleGallerySelect = (item: MenuGalleryItem) => {
+    // Format: asset:menu_gallery/filename.webp
+    // This matches how Flutter stores it
+    const assetPath = `asset:${item.assetPath.replace("assets/", "")}`;
+    setForm({ ...form, image: assetPath });
+    setPreviewUrl(`/${item.assetPath}`); // Local preview path
+    setSelectedFile(null); // Clear file selection if gallery item picked
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setForm({ ...form, image: '' });
   };
 
   const handleSubmit = async () => {
@@ -181,12 +231,31 @@ export default function MenuItemsPage() {
     setSubmitting(true);
     setFormError(null);
     try {
+      let imageUrl = form.image;
+
+      if (selectedFile) {
+        setIsUploading(true);
+        try {
+          // Use user.restaurant_id if available, otherwise 0 (should handle error or default)
+          const restaurantId = user?.restaurant_id || 0; 
+          imageUrl = await MenuImageService.uploadMenuImage(selectedFile, restaurantId);
+        } catch (error) {
+          console.error("Upload failed", error);
+          setFormError("Failed to upload image. Please try again.");
+          setIsUploading(false);
+          setSubmitting(false);
+          return;
+        }
+        setIsUploading(false);
+      }
+
       const payload = {
         name: form.name.trim(),
         price: Number(form.price),
         item_category_id: Number(form.item_category_id),
         description: form.description.trim() || null,
         is_price_tax_inclusive: form.is_price_tax_inclusive,
+        image: imageUrl || null,
       };
 
       if (editingItem) {
@@ -415,6 +484,70 @@ export default function MenuItemsPage() {
             </div>
 
             <div className="space-y-2">
+              <Label>Item Image</Label>
+              <div className="flex items-center gap-4">
+                {(previewUrl || (form.image && !form.image.startsWith('asset:'))) && (
+                  <div className="relative w-24 h-24 border rounded-md overflow-hidden">
+                    <img 
+                      src={previewUrl || getImageUrl(form.image)} 
+                      alt="Preview" 
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      onClick={handleRemoveImage}
+                      className="absolute top-0 right-0 p-1 bg-red-500 text-white rounded-bl-md hover:bg-red-600"
+                      type="button"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+                
+                {/* Logic for default image display if form.image is set but no preview */}
+                 {!previewUrl && form.image && form.image.startsWith('asset:') && (
+                  <div className="relative w-24 h-24 border rounded-md overflow-hidden">
+                    <img 
+                      src={getImageUrl(form.image)} 
+                      alt="Preview" 
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      onClick={handleRemoveImage}
+                      className="absolute top-0 right-0 p-1 bg-red-500 text-white rounded-bl-md hover:bg-red-600"
+                      type="button"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex-1 space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      id="image"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      disabled={isUploading}
+                      className="flex-1"
+                    />
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => setGalleryOpen(true)}
+                    >
+                      <ImageIcon className="mr-2 h-4 w-4" />
+                      Gallery
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Upload a photo or choose from our gallery.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <Input
                 id="description"
@@ -446,9 +579,9 @@ export default function MenuItemsPage() {
             <Button variant="outline" onClick={() => setFormOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting}>
-              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {editingItem ? "Update" : "Create"}
+            <Button onClick={handleSubmit} disabled={submitting || isUploading}>
+              {(submitting || isUploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isUploading ? "Uploading..." : editingItem ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -474,6 +607,11 @@ export default function MenuItemsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <MenuGalleryDialog 
+        open={galleryOpen} 
+        onOpenChange={setGalleryOpen} 
+        onSelect={handleGallerySelect} 
+      />
     </div>
   );
 }
@@ -490,7 +628,15 @@ function MenuItemCard({
   onDelete: () => void;
 }) {
   const [imgError, setImgError] = useState(false);
-  const hasImage = item.image && !item.image.startsWith("asset:") && !imgError;
+  const hasImage = item.image && !imgError;
+
+  const getImageUrl = (path?: string) => {
+    if (!path) return "";
+    if (path.startsWith("asset:")) {
+      return `/${path.replace("asset:", "assets/")}`;
+    }
+    return path;
+  };
 
   return (
     <Card className="overflow-hidden group hover:shadow-md transition-all border-border bg-card">
@@ -498,7 +644,7 @@ function MenuItemCard({
       <div className="relative h-28 sm:h-32 bg-muted/50 overflow-hidden flex items-center justify-center">
         {hasImage ? (
           <img
-            src={item.image!}
+            src={getImageUrl(item.image)}
             alt={item.name}
             className="max-w-full max-h-full object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
             onError={() => setImgError(true)}

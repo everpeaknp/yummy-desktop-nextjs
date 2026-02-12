@@ -64,28 +64,28 @@ function LiveStats() {
     <div className="hidden md:flex items-center gap-2">
       <Link
         href="/orders/active"
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
+        className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
       >
         <ClipboardList className="h-3.5 w-3.5 text-blue-500" />
-        <span className="text-xs font-semibold text-blue-500">{stats.activeOrders}</span>
-        <span className="text-[10px] text-blue-500/70">orders</span>
+        <span className="text-xs font-bold text-foreground">{stats.activeOrders}</span>
+        <span className="text-[10px] text-muted-foreground uppercase font-black">orders</span>
       </Link>
       <Link
         href="/kitchen"
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 transition-colors"
+        className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
       >
         <ChefHat className="h-3.5 w-3.5 text-orange-500" />
-        <span className="text-xs font-semibold text-orange-500">{stats.kotPending}</span>
-        <span className="text-[10px] text-orange-500/70">KOT</span>
+        <span className="text-xs font-bold text-foreground">{stats.kotPending}</span>
+        <span className="text-[10px] text-muted-foreground uppercase font-black">KOT</span>
       </Link>
       {canSeeSales && (
         <Link
           href="/analytics"
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors"
+          className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
         >
           <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
-          <span className="text-xs font-semibold text-emerald-500">{currency} {formatSales(stats.todaySales)}</span>
-          <span className="text-[10px] text-emerald-500/70">today</span>
+          <span className="text-xs font-bold text-foreground">{currency} {formatSales(stats.todaySales)}</span>
+          <span className="text-[10px] text-muted-foreground uppercase font-black">today</span>
         </Link>
       )}
     </div>

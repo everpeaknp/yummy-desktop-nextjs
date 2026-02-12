@@ -123,7 +123,7 @@ export default function AnalyticsPage() {
         }
         const bd = data.breakdown;
         let list: any[] = [];
-        if (breakdownType === 'category') list = bd.expense_by_category || [];
+        if (breakdownType === 'category') list = bd.income_by_category || [];
         else if (breakdownType === 'source') list = bd.income_by_source || [];
         else if (breakdownType === 'payment') list = bd.income_by_payment_method || [];
         else if (breakdownType === 'supplier') list = bd.purchase_by_supplier || [];

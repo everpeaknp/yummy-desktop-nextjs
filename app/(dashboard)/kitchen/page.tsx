@@ -7,17 +7,21 @@ import apiClient from "@/lib/api-client";
 import { KotApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Loader2,
   ChefHat,
   Clock,
   AlertTriangle,
   Wifi,
-  WifiOff,
   RefreshCw,
   X,
+  Calendar as CalendarIcon,
+  Archive,
+  CheckCircle2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface KotItem {
@@ -68,9 +72,9 @@ function nextStatus(s: string): KotStatus | null {
 function actionLabel(s: string, delayed: boolean): string {
   const next = nextStatus(s);
   switch (next) {
-    case "PREPARING": return "Accept Order";
-    case "READY": return delayed ? "Prioritize & Mark Ready" : "Mark Ready";
-    case "SERVED": return "Mark Served";
+    case "PREPARING": return "Start Cooking";
+    case "READY": return "Mark Ready";
+    case "SERVED": return "Complete";
     default: return "Completed";
   }
 }
@@ -80,7 +84,7 @@ function elapsedLabel(timestamp: string | undefined, status: string): string {
   const elapsed = Date.now() - new Date(timestamp).getTime();
   const mins = Math.floor(elapsed / 60000);
   const isCooking = status === "PREPARING";
-  const suffix = isCooking ? "cooking" : "elapsed";
+  const suffix = isCooking ? "cooking" : "ago"; // simpler
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ${suffix}`;
   const hrs = Math.floor(mins / 60);
@@ -105,18 +109,6 @@ function itemStatusLabel(item: KotItem): string {
   return "Pending";
 }
 
-function statusAccentColor(s: string, delayed: boolean): string {
-  if (delayed) return "border-l-red-500";
-  switch (s) {
-    case "PENDING": return "border-l-blue-500";
-    case "PREPARING": return "border-l-amber-500";
-    case "READY": return "border-l-emerald-500";
-    case "SERVED": return "border-l-gray-400";
-    case "REJECTED": return "border-l-red-500";
-    default: return "border-l-gray-400";
-  }
-}
-
 function formatTime(ts: string): string {
   try { return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
   catch { return ""; }
@@ -126,7 +118,6 @@ function formatTime(ts: string): string {
 function buildWsUrl(token: string, restaurantId: number): string {
   const base = process.env.NEXT_PUBLIC_API_URL || "https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io";
   let wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
-  // Ensure clean path join (no double slashes)
   wsBase = wsBase.replace(/\/+$/, "");
   return `${wsBase}/ws/kots?token=${encodeURIComponent(token)}&restaurant_id=${restaurantId}`;
 }
@@ -142,6 +133,7 @@ export default function KitchenPage() {
   const [wsConnected, setWsConnected] = useState(false);
   const [updatingIds, setUpdatingIds] = useState<Set<number>>(new Set());
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
@@ -154,7 +146,7 @@ export default function KitchenPage() {
 
   // ── Auth guard ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (user) return; // Already have user
+    if (user) return; 
     const token = localStorage.getItem("accessToken");
     const refreshToken = localStorage.getItem("refreshToken");
     if (token || refreshToken) {
@@ -165,13 +157,24 @@ export default function KitchenPage() {
   }, [user, me, router]);
 
   // ── Fetch KOTs — simple, takes restaurantId as param ───────────────
-  const doFetch = useCallback(async (rid: number) => {
+  const doFetch = useCallback(async (rid: number, dateOverride?: Date) => {
     try {
+      const targetDate = dateOverride || selectedDate;
+      // Convert to start/end of day in local time (browser) -> ISO
+      // Actually backend expects ISO. Let's send full day range.
+      const start = new Date(targetDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(targetDate);
+      end.setHours(23, 59, 59, 999);
+
       const params = new URLSearchParams({
         restaurant_id: String(rid),
         limit: "100",
         include_printer_config: "false",
+        date_from: start.toISOString(),
+        date_to: end.toISOString()
       });
+      
       const res = await apiClient.get(`${KotApis.searchKots}?${params}`);
       if (res.data.status === "success") {
         setKots(res.data.data || []);
@@ -181,23 +184,20 @@ export default function KitchenPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedDate]); // Re-create fetcher when date changes
+
+  // Trigger fetch when date changes
+  useEffect(() => {
+    if (restaurantId) {
+       setLoading(true);
+       doFetch(restaurantId);
+    }
+  }, [restaurantId, selectedDate, doFetch]);
 
   // Initial fetch + polling + WebSocket — single effect, clean lifecycle
   useEffect(() => {
     if (!restaurantId) return;
     let alive = true;
-
-    // ── Fetch immediately ──────────────────────────────────────────
-    doFetch(restaurantId);
-
-    // ── Debounced fetch (called by WS events) ──────────────────────
-    const debouncedFetch = () => {
-      if (timersRef.current.debounce) clearTimeout(timersRef.current.debounce);
-      timersRef.current.debounce = setTimeout(() => {
-        if (alive) doFetch(restaurantId);
-      }, 350);
-    };
 
     // ── WebSocket ──────────────────────────────────────────────────
     const connectWs = () => {
@@ -205,7 +205,6 @@ export default function KitchenPage() {
       const token = localStorage.getItem("accessToken");
       if (!token) return;
 
-      // Skip if already connected
       if (wsRef.current) {
         const s = wsRef.current.readyState;
         if (s === WebSocket.OPEN || s === WebSocket.CONNECTING) return;
@@ -221,7 +220,6 @@ export default function KitchenPage() {
       ws.onopen = () => {
         console.log("[WS] Connected ✅");
         if (alive) setWsConnected(true);
-        // Ping every 30s
         if (timersRef.current.ping) clearInterval(timersRef.current.ping);
         timersRef.current.ping = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -236,7 +234,13 @@ export default function KitchenPage() {
           const event = data.event;
           if (event === "kots_connected" || event === "pong") return;
           console.log("[WS] Event:", event);
-          debouncedFetch();
+          
+          // Debounce fetch
+          if (timersRef.current.debounce) clearTimeout(timersRef.current.debounce);
+          timersRef.current.debounce = setTimeout(() => {
+            // WS update should refresh based on CURRENT selected date
+            if (alive) doFetch(restaurantId); 
+          }, 350);
         } catch { }
       };
 
@@ -249,22 +253,19 @@ export default function KitchenPage() {
         if (alive) setWsConnected(false);
         if (timersRef.current.ping) { clearInterval(timersRef.current.ping); timersRef.current.ping = undefined; }
         wsRef.current = null;
-        // Reconnect in 3s
         if (alive) {
           timersRef.current.reconnect = setTimeout(connectWs, 3000);
         }
       };
     };
 
-    // Start WS after a short delay (let auth settle)
     const wsTimer = setTimeout(connectWs, 500);
 
-    // ── Polling fallback: always fetch every 5s ────────────────────
+    // ── Polling fallback: always fetch every 15s (relaxed) ──────────
     timersRef.current.poll = setInterval(() => {
       if (alive) doFetch(restaurantId);
-    }, 5000);
+    }, 15000);
 
-    // ── Tab visibility: reconnect + fetch when tab becomes visible ─
     const onVisible = () => {
       if (document.visibilityState === "visible" && alive) {
         doFetch(restaurantId);
@@ -275,7 +276,6 @@ export default function KitchenPage() {
     };
     document.addEventListener("visibilitychange", onVisible);
 
-    // ── Cleanup ────────────────────────────────────────────────────
     return () => {
       alive = false;
       clearTimeout(wsTimer);
@@ -286,7 +286,7 @@ export default function KitchenPage() {
       if (timersRef.current.poll) clearInterval(timersRef.current.poll);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [restaurantId, doFetch]);
+  }, [restaurantId, doFetch]); // Dependency on doFetch correct? Yes, because doFetch changes when date changes.
 
   // ── Auto-dismiss messages ────────────────────────────────────────────
   useEffect(() => {
@@ -300,7 +300,7 @@ export default function KitchenPage() {
     setUpdatingIds((prev) => new Set(prev).add(kotId));
     try {
       await apiClient.patch(KotApis.updateKotStatus(kotId), { status: newStatus });
-      setMessage({ text: `KOT updated to ${newStatus}`, type: "success" });
+      setMessage({ text: `KOT updated`, type: "success" });
       if (restaurantId) await doFetch(restaurantId);
     } catch (err: any) {
       const detail = err.response?.data?.detail || "Failed to update status";
@@ -338,7 +338,6 @@ export default function KitchenPage() {
 
   // ── Counts ───────────────────────────────────────────────────────────
   const counts = useMemo(() => {
-    // Count from the station-filtered set (before status filter)
     let base = kots;
     if (stationTab !== "All") {
       base = base.filter((k) => k.station?.toLowerCase() === stationTab.toLowerCase());
@@ -358,11 +357,18 @@ export default function KitchenPage() {
     return base.filter(isDelayed).length;
   }, [kots, stationTab]);
 
+  // Handle Date Change
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value) {
+      setSelectedDate(new Date(e.target.value));
+    }
+  };
+
   // ════════════════════════════════════════════════════════════════════
   // RENDER
   // ════════════════════════════════════════════════════════════════════
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] max-w-[1800px] mx-auto">
+    <div className="flex flex-col h-[calc(100vh-4rem)] max-w-[1800px] mx-auto bg-background">
       {/* Toast */}
       {message && (
         <div className={cn(
@@ -375,80 +381,114 @@ export default function KitchenPage() {
       )}
 
       {/* Header */}
-      <div className="px-5 pt-4 pb-2 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-xl font-extrabold tracking-tight">KOT Management</h1>
+      <div className="px-5 pt-5 pb-3 flex items-center justify-between shrink-0 border-b border-border/40">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-black tracking-tighter">Kitchen</h1>
+          
+          {/* Date Picker */}
+          <div className="relative">
+             <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+             <input
+               type="date"
+               value={format(selectedDate, "yyyy-MM-dd")}
+               onChange={handleDateChange}
+               className="h-10 pl-9 pr-3 rounded-lg border border-input bg-background text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+             />
+          </div>
         </div>
+
         <div className="flex items-center gap-3">
           <div
-            title={wsConnected ? "Real-time WebSocket connected" : "Auto-refreshing every 5s"}
+            title={wsConnected ? "Real-time WebSocket connected" : "Auto-refreshing"}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold",
+              "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-colors",
               wsConnected
-                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50"
+                : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200/50"
             )}
           >
             {wsConnected ? <Wifi className="h-3 w-3" /> : <RefreshCw className="h-3 w-3 animate-spin" />}
-            {wsConnected ? "Live" : "Auto-refresh"}
+            <span>{wsConnected ? "Live" : "Polling"}</span>
           </div>
-          <button
+          <Button
+            size="icon"
+            variant="ghost"
             onClick={() => { if (restaurantId) { setLoading(true); doFetch(restaurantId); } }}
-            className="h-9 w-9 flex items-center justify-center rounded-xl bg-muted/50 border border-border/40 text-muted-foreground hover:text-foreground hover:bg-muted transition-all active:scale-95"
+            className="h-9 w-9 rounded-lg"
           >
             <RefreshCw className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
-      {/* Station Tabs */}
-      <div className="px-5 pb-2 flex items-center gap-2 overflow-x-auto shrink-0">
-        {STATIONS.map((s) => (
-          <button
-            key={s}
-            onClick={() => setStationTab(s)}
-            className={cn(
-              "px-5 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap uppercase tracking-wider",
-              stationTab === s
-                ? "bg-foreground text-background shadow-md"
-                : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+      {/* Controls Bar */}
+      <div className="px-5 py-3 flex items-center justify-between gap-4 shrink-0 bg-muted/20 border-b border-border/40">
+          <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
+             {STATIONS.map((s) => (
+                <button
+                    key={s}
+                    onClick={() => setStationTab(s)}
+                    className={cn(
+                        "px-4 py-1.5 rounded-md text-xs font-bold transition-all whitespace-nowrap",
+                        stationTab === s
+                            ? "bg-background text-foreground shadow-sm ring-1 ring-border"
+                            : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                    )}
+                >
+                    {s}
+                </button>
+             ))}
+          </div>
 
-      {/* Summary Cards */}
-      <div className="px-5 py-2 grid grid-cols-3 gap-3 shrink-0">
-        <SummaryCard label="ACTIVE KOT" value={activeCount} />
-        <SummaryCard label="PENDING" value={pendingCount} />
-        <SummaryCard label="DELAYED" value={delayedCount} variant="danger" />
-      </div>
+          <div className="flex items-center gap-2">
+             <StatusChip label="All" count={total} active={statusFilter === null} onClick={() => setStatusFilter(null)} />
+             {ALL_STATUSES.map((s) => (
+                <StatusChip 
+                  key={s} 
+                  label={s === "PENDING" ? "Pending" : s === "PREPARING" ? "Making" : s === "READY" ? "Ready" : s === "SERVED" ? "Served" : "Void"} 
+                  count={counts[s] || 0} 
+                  active={statusFilter === s} 
+                  onClick={() => setStatusFilter(s)} 
+                />
+             ))}
+          </div>
+        </div>
 
-      {/* Status Filter Chips */}
-      <div className="px-5 py-2 flex items-center gap-2.5 overflow-x-auto shrink-0">
-        <StatusChip label="All" count={total} active={statusFilter === null} onClick={() => setStatusFilter(null)} />
-        {ALL_STATUSES.map((s) => (
-          <StatusChip key={s} label={s === "PENDING" ? "Pending" : s === "PREPARING" ? "Preparing" : s === "READY" ? "Ready" : s === "SERVED" ? "Served" : "Rejected"} count={counts[s] || 0} active={statusFilter === s} onClick={() => setStatusFilter(s)} />
-        ))}
+      {/* Stats Summary - Optional, maybe hide for cleaner look? Keeping as requested "fix them" */}
+      <div className="grid grid-cols-4 gap-4 px-5 py-4 shrink-0">
+          <div className="bg-blue-500/5 border border-blue-500/20 text-blue-700 dark:text-blue-300 rounded-xl p-3 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase opacity-70">Active</span>
+              <span className="text-xl font-black">{activeCount}</span>
+          </div>
+          <div className="bg-amber-500/5 border border-amber-500/20 text-amber-700 dark:text-amber-300 rounded-xl p-3 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase opacity-70">Pending</span>
+              <span className="text-xl font-black">{pendingCount}</span>
+          </div>
+          <div className="bg-red-500/5 border border-red-500/20 text-red-700 dark:text-red-300 rounded-xl p-3 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase opacity-70">Delayed</span>
+              <span className="text-xl font-black">{delayedCount}</span>
+          </div>
+          <div className="bg-gray-500/5 border border-gray-500/20 text-gray-700 dark:text-gray-300 rounded-xl p-3 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase opacity-70">Completed</span>
+              <span className="text-xl font-black">{(counts.SERVED || 0)}</span>
+          </div>
       </div>
 
       {/* KOT Grid */}
-      <div className="flex-1 overflow-y-auto px-5 pb-6 pt-2">
+      <div className="flex-1 overflow-y-auto px-5 pb-10">
         {loading && kots.length === 0 ? (
           <div className="h-64 flex flex-col items-center justify-center text-muted-foreground">
             <Loader2 className="h-8 w-8 animate-spin mb-3" />
-            <p className="text-sm font-medium">Loading KOTs...</p>
+            <p className="text-sm font-medium">Fetching orders...</p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-2xl">
-            <ChefHat className="w-14 h-14 mb-4 opacity-20" />
-            <p className="font-bold text-base">No KOT tickets right now.</p>
-            <p className="text-sm mt-1">Pull down to refresh or adjust filters.</p>
+          <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border/50 rounded-3xl bg-muted/5 mt-4">
+            <Archive className="w-12 h-12 mb-4 opacity-10" />
+            <p className="font-bold text-lg text-foreground/50">No orders found</p>
+            <p className="text-sm mt-1 opacity-50">Try selecting a different date or filter.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
             {filtered.map((kot) => (
               <KotTicketCard
                 key={kot.id}
@@ -466,7 +506,7 @@ export default function KitchenPage() {
   );
 }
 
-// ── Elapsed time tick hook (updates every 30s to refresh time labels) ──
+// ── Elapsed time tick hook ─────────────────────────────────────────────
 function useElapsedTick() {
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -476,48 +516,23 @@ function useElapsedTick() {
   return tick;
 }
 
-// ── Summary Card ───────────────────────────────────────────────────────
-function SummaryCard({ label, value, variant }: { label: string; value: number; variant?: "danger" }) {
-  return (
-    <div className={cn(
-      "rounded-2xl border px-4 py-3 text-center transition-all",
-      variant === "danger"
-        ? "bg-red-500/5 border-red-500/20 dark:bg-red-950/20 dark:border-red-900/30"
-        : "bg-card border-border"
-    )}>
-      <div className={cn(
-        "text-2xl font-extrabold tracking-tight",
-        variant === "danger" ? "text-red-600 dark:text-red-400" : "text-foreground"
-      )}>
-        {value}
-      </div>
-      <div className={cn(
-        "text-[10px] font-bold uppercase tracking-widest mt-1",
-        variant === "danger" ? "text-red-500/70 dark:text-red-400/70" : "text-muted-foreground"
-      )}>
-        {label}
-      </div>
-    </div>
-  );
-}
-
 // ── Status Filter Chip ─────────────────────────────────────────────────
 function StatusChip({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap",
+        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border border-transparent",
         active
-          ? "bg-foreground text-background shadow-md"
-          : "bg-card border border-border text-muted-foreground hover:text-foreground hover:border-foreground/20"
+          ? "bg-foreground text-background shadow-md border-foreground/10"
+          : "bg-background border-border text-muted-foreground hover:bg-muted"
       )}
     >
       {label}
       {count > 0 && (
         <span className={cn(
-          "px-1.5 py-0.5 rounded-md text-[10px] font-extrabold ml-0.5",
-          active ? "bg-primary text-white" : "bg-muted text-muted-foreground"
+          "h-4 min-w-[1rem] px-1 rounded-full text-[9px] flex items-center justify-center",
+          active ? "bg-background text-foreground" : "bg-muted text-muted-foreground"
         )}>
           {count}
         </span>
@@ -527,7 +542,7 @@ function StatusChip({ label, count, active, onClick }: { label: string; count: n
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ██  KOT TICKET CARD
+// ██  KOT TICKET CARD (Redesigned)
 // ═══════════════════════════════════════════════════════════════════════
 function KotTicketCard({
   kot,
@@ -543,123 +558,120 @@ function KotTicketCard({
   tick: number;
 }) {
   const delayed = isDelayed(kot);
-  const rejected = kot.status === "REJECTED";
-  const served = kot.status === "SERVED";
   const next = nextStatus(kot.status);
   const canAdvance = next !== null;
-  const title = kot.table_name?.trim() || `Order #${kot.restaurant_order_id || kot.order_id}`;
-  const timeStr = formatTime(kot.created_at);
   const elapsed = elapsedLabel(kot.created_at || kot.order_created_at, kot.status);
-  const stationLabel = kot.station ? kot.station.charAt(0).toUpperCase() + kot.station.slice(1) : null;
   const showTimer = delayed || kot.status === "PENDING" || kot.status === "PREPARING";
 
-  // Sort items: non-deleted first, then alphabetical
-  const sortedItems = useMemo(() => {
-    return [...kot.items].sort((a, b) => {
-      if (a.is_deleted !== b.is_deleted) return a.is_deleted ? 1 : -1;
-      return a.item_name.toLowerCase().localeCompare(b.item_name.toLowerCase());
-    });
-  }, [kot.items]);
+  // Simplified Card Styles
+  // Status Colors: Pending(Blue), Preparing(Orange), Ready(Green), Served(Gray)
+  const statusColor = 
+      kot.status === "PENDING" ? "bg-blue-500" :
+      kot.status === "PREPARING" ? "bg-amber-500" :
+      kot.status === "READY" ? "bg-emerald-500" :
+      kot.status === "REJECTED" ? "bg-red-500" : "bg-gray-500";
 
-  const totalQty = sortedItems.reduce((s, i) => s + Math.abs(i.qty_change), 0);
+  const lightBg = 
+      kot.status === "PENDING" ? "bg-blue-500/5" :
+      kot.status === "PREPARING" ? "bg-amber-500/5" :
+      kot.status === "READY" ? "bg-emerald-500/5" : "bg-card";
+
+  const borderColor = 
+      kot.status === "PENDING" ? "border-blue-200 dark:border-blue-900/30" :
+      kot.status === "PREPARING" ? "border-amber-200 dark:border-amber-900/30" :
+      kot.status === "READY" ? "border-emerald-200 dark:border-emerald-900/30" : "border-border";
 
   return (
     <div className={cn(
-      "rounded-2xl border bg-card overflow-hidden transition-all relative",
-      `border-l-4 ${statusAccentColor(kot.status, delayed)}`,
-      (delayed || rejected) && "bg-red-50/50 dark:bg-red-950/10 border-red-500/30",
+      "group relative flex flex-col rounded-xl border bg-card shadow-sm transition-all hover:shadow-md",
+      borderColor,
+      lightBg
     )}>
       {isUpdating && (
-        <div className="absolute inset-0 bg-background/60 z-10 flex items-center justify-center rounded-2xl">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <div className="absolute inset-0 bg-background/50 z-20 flex items-center justify-center backdrop-blur-[1px] rounded-xl">
+           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       )}
 
-      <div className="p-4 space-y-3">
-        {/* Top: Status Badge */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground font-bold">
-            <span>#{kot.kot_number}</span>
-            {timeStr && (
-              <>
-                <span className="h-1 w-1 rounded-full bg-border" />
-                <span>{timeStr}</span>
-              </>
-            )}
-          </div>
-          <KotStatusBadge status={kot.status} delayed={delayed} />
-        </div>
-
-        {/* Station */}
-        {stationLabel && (
-          <StationBadge station={stationLabel} />
-        )}
-
-        {/* Title Row */}
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="font-extrabold text-foreground text-base leading-tight truncate">
-            {title}
-          </h3>
-          {kot.table_category && (
-            <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-muted text-muted-foreground shrink-0">
-              {kot.table_category}
-            </span>
-          )}
-        </div>
-
-        {/* Timer */}
-        {showTimer && elapsed && (
-          <div className={cn(
-            "flex items-center gap-1.5 text-xs font-bold",
-            delayed ? "text-red-600 dark:text-red-400" : kot.status === "PREPARING" ? "text-amber-600 dark:text-amber-400" : "text-primary"
-          )}>
-            {delayed && <AlertTriangle className="h-3 w-3" />}
-            <Clock className="h-3 w-3" />
-            <span>{elapsed}</span>
-          </div>
-        )}
-
-        {/* Items */}
-        <div className="space-y-2 pt-1 border-t border-border/50">
-          <div className="flex items-center justify-between text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-            <span>Items</span>
-            <span>{totalQty} qty</span>
-          </div>
-          {sortedItems.map((item) => (
-            <KotItemRow key={item.id} item={item} />
-          ))}
-        </div>
-
-        {/* Actions */}
-        {!served && !rejected && (
-          <div className="flex items-center gap-2 pt-2 border-t border-border/50">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-xs border-red-500/30 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 dark:text-red-400"
-              disabled={isUpdating}
-              onClick={() => onReject(kot.id)}
-            >
-              Reject
-            </Button>
-            {canAdvance && (
-              <Button
-                size="sm"
-                className={cn(
-                  "h-8 text-xs flex-1 font-bold",
-                  kot.status === "PENDING" && "bg-blue-600 hover:bg-blue-700 text-white",
-                  kot.status === "PREPARING" && "bg-amber-600 hover:bg-amber-700 text-white",
-                  kot.status === "READY" && "bg-emerald-600 hover:bg-emerald-700 text-white",
+      {/* HEADER */}
+      <div className="p-3 pb-2 flex items-start justify-between">
+         <div>
+            <div className="flex items-center gap-2 mb-1">
+                <span className={cn("h-2 w-2 rounded-full", statusColor)} /> 
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    #{kot.kot_number}
+                </span>
+                {showTimer && elapsed && (
+                    <span className={cn(
+                        "text-[10px] font-bold flex items-center gap-1",
+                        delayed ? "text-red-600 animate-pulse" : "text-muted-foreground"
+                    )}>
+                        • <Clock className="h-3 w-3" /> {elapsed}
+                    </span>
                 )}
-                disabled={isUpdating}
-                onClick={() => onStatusChange(kot.id, next!)}
-              >
-                {actionLabel(kot.status, delayed)}
-              </Button>
-            )}
-          </div>
-        )}
+            </div>
+            <h3 className="font-bold text-base leading-tight">
+                {kot.table_name || `Order #${kot.restaurant_order_id}`}
+            </h3>
+         </div>
+         {kot.table_category && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 font-bold text-muted-foreground bg-background">
+                {kot.table_category}
+            </Badge>
+         )}
       </div>
+
+      {/* ITEMS */}
+      <div className="flex-1 px-3 py-2 space-y-1.5">
+          {kot.items.map(item => (
+              <div key={item.id} className={cn("text-sm flex justify-between items-start gap-2", item.is_deleted ? "opacity-50 line-through decoration-red-500" : "")}>
+                  <div className="font-medium leading-snug">
+                       <span className="font-bold mr-1">{Math.abs(item.qty_change)}x</span>
+                       {item.item_name}
+                       {item.modifiers?.length > 0 && (
+                           <div className="text-[10px] text-muted-foreground mt-0.5 pl-1 leading-tight">
+                               {item.modifiers.map(m => `+ ${m.modifier_name_snapshot}`).join(", ")}
+                           </div>
+                       )}
+                       {item.notes && <div className="text-[10px] text-amber-600 italic">Note: {item.notes}</div>}
+                  </div>
+                  {/* Item Status Dot */}
+                  {item.qty_ready >= item.qty_change && !item.is_deleted && kot.status !== 'SERVED' && (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                  )}
+              </div>
+          ))}
+      </div>
+
+      {/* FOOTER ACTIONS */}
+      {kot.status !== 'SERVED' && kot.status !== 'REJECTED' && (
+      <div className="p-2 border-t border-border/50 flex items-center gap-2 mt-auto">
+          <Button 
+             size="sm" 
+             variant="ghost" 
+             className="h-8 flex-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+             onClick={() => onReject(kot.id)}
+             disabled={isUpdating}
+          >
+              Reject
+          </Button>
+          {canAdvance && (
+              <Button 
+                size="sm" 
+                className={cn(
+                    "h-8 flex-[2] text-xs font-bold shadow-sm",
+                    kot.status === "PENDING" ? "bg-blue-600 hover:bg-blue-700" : 
+                    kot.status === "PREPARING" ? "bg-amber-600 hover:bg-amber-700" : 
+                    "bg-emerald-600 hover:bg-emerald-700"
+                )}
+                onClick={() => onStatusChange(kot.id, next!)}
+                disabled={isUpdating}
+            >
+                {actionLabel(kot.status, delayed)}
+            </Button>
+          )}
+      </div>
+      )}
     </div>
   );
 }
