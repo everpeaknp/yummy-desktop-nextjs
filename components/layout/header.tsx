@@ -10,7 +10,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useEffect, useState, useCallback } from "react";
-import { useSidebarItems } from "./sidebar";
+import { useSidebarItems } from "@/hooks/use-sidebar-items";
 import { cn } from "@/lib/utils";
 import { useNotifications, useNotificationStore } from "@/hooks/use-notifications";
 import { NotificationPanel } from "@/components/notifications/notification-panel";

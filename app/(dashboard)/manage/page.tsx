@@ -126,7 +126,6 @@ export default function ManagePage() {
                   href={item.href} 
                   key={itemIdx}
                   prefetch={false}
-                  onMouseEnter={() => router.prefetch(item.href)}
                   onClick={() => sessionStorage.setItem('fromManage', 'true')}
                 >
 

@@ -35,43 +35,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  normalizeRoles,
-  getSidebarItemsForRoles,
-} from "@/lib/role-permissions";
-
-const ICON_MAP: Record<string, LucideIcon> = {
-  "/dashboard": LayoutDashboard,
-  "/orders/active": ClipboardList,
-  "/orders/new": Plus,
-  "/analytics": Activity,
-  "/menu/items": UtensilsCrossed,
-  "/kitchen": ChefHat,
-  "/inventory": Package,
-  "/finance": CreditCard,
-  "/customers": Users,
-  "/tables": Armchair,
-  "/reservations": Calendar,
-  "/discounts": Percent,
-  "/manage": Settings,
-};
-
-export interface SidebarItem {
-  title: string;
-  href: string;
-  icon: LucideIcon;
-}
-
-export function useSidebarItems(): SidebarItem[] {
-  const user = useAuth((state) => state.user);
-  return useMemo(() => {
-    const roles = normalizeRoles(user?.roles?.length ? user.roles : user?.role ? [user.role] : []);
-    return getSidebarItemsForRoles(roles).map((item) => ({
-      title: item.title,
-      href: item.href,
-      icon: ICON_MAP[item.href] ?? LayoutDashboard,
-    }));
-  }, [user?.roles, user?.role]);
-}
+  useSidebarItems,
+  type SidebarItem
+} from "@/hooks/use-sidebar-items";
 
 export function Sidebar() {
   const pathname = usePathname();

@@ -73,8 +73,8 @@ export function ModifierItemDialog({
     } else {
       form.reset({
         name: "",
-        price: 0,
-        is_available: true,
+        price_adjustment: 0,
+        is_active: true,
       });
     }
   }, [initialData, form, open]);
