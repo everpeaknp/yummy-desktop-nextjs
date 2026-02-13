@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Utensils, Receipt, CalendarRange, Settings, Truck, Users, LayoutGrid, Pizza, AlertCircle, Percent, DollarSign, Activity } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 const items = [
   {
@@ -104,6 +105,8 @@ const items = [
 ];
 
 export default function ManagePage() {
+  const router = useRouter();
+
   return (
     <div className="flex flex-col gap-8">
       <div>
@@ -119,7 +122,14 @@ export default function ManagePage() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {section.items.map((item, itemIdx) => (
-                <Link href={item.href} key={itemIdx}>
+                <Link 
+                  href={item.href} 
+                  key={itemIdx}
+                  prefetch={false}
+                  onMouseEnter={() => router.prefetch(item.href)}
+                  onClick={() => sessionStorage.setItem('fromManage', 'true')}
+                >
+
                   <Card className="hover:shadow-md transition-all cursor-pointer border-l-4 hover:scale-[1.02] group" style={{ borderLeftColor: item.color.replace('text-', '') }}>
                     <CardHeader className="flex flex-row items-center gap-4 p-4">
                       <div className={cn("p-2 rounded-lg transition-colors group-hover:bg-opacity-80", item.bg)}>

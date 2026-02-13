@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign } from "lucide-react";
+import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign, ArrowLeft, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -122,11 +122,30 @@ export function Header() {
   const [open, setOpen] = useState(false);
   const sidebarItems = useSidebarItems();
 
+  const [isFromManage, setIsFromManage] = useState(false);
+
   useEffect(() => {
     if (!restaurant) {
       fetchRestaurant();
     }
   }, [restaurant, fetchRestaurant]);
+
+  useEffect(() => {
+    const checkFromManage = () => {
+      const fromManage = sessionStorage.getItem('fromManage') === 'true';
+      setIsFromManage(fromManage && pathname !== '/manage');
+    };
+
+    checkFromManage();
+    // Also listen for storage events in case of multiple tabs (though less likely for this use case)
+    window.addEventListener('storage', checkFromManage);
+    return () => window.removeEventListener('storage', checkFromManage);
+  }, [pathname]);
+
+  const handleBackToManage = () => {
+    sessionStorage.removeItem('fromManage');
+    setIsFromManage(false);
+  };
 
   return (
     <header className="flex h-16 items-center gap-4 border-b bg-background px-6">
@@ -141,10 +160,17 @@ export function Header() {
           </SheetTrigger>
           <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
             <div className="flex h-16 items-center border-b px-6">
-              <Link href="/dashboard" className="flex items-center gap-2 font-bold text-lg" onClick={() => setOpen(false)}>
+              <Link 
+                href="/dashboard" 
+                className="flex items-center gap-2 font-bold text-lg" 
+                onClick={() => {
+                    setOpen(false);
+                    sessionStorage.removeItem('fromManage');
+                }}
+              >
                 <div className="relative h-8 w-8 min-w-8 flex items-center justify-center">
                   {restaurant?.profile_picture ? (
-                    <Image src={restaurant.profile_picture} alt="Logo" className="object-cover rounded-md" fill priority />
+                    <Image src={restaurant.profile_picture} alt="Logo" className="object-cover rounded-md" fill priority unoptimized />
                   ) : (
                     <div className="bg-primary/10 p-1.5 rounded-md">
                       <Store className="h-full w-full text-primary" />
@@ -160,7 +186,10 @@ export function Header() {
                   <Link
                     key={index}
                     href={item.href}
-                    onClick={() => setOpen(false)}
+                    onClick={() => {
+                        setOpen(false);
+                        sessionStorage.removeItem('fromManage');
+                    }}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary",
                       pathname === item.href || (pathname && pathname.startsWith(item.href + "/"))
@@ -188,7 +217,23 @@ export function Header() {
       </div>
 
       {/* Live stats — active orders, KOT pending, today's sales */}
-      <LiveStats />
+      <div className="flex items-center gap-4">
+        {isFromManage && (
+            <Button
+                variant="outline"
+                size="sm"
+                asChild
+                className="h-8 px-2 gap-1.5 text-xs font-semibold hover:bg-primary/10 hover:text-primary bg-muted/30 border-dashed"
+                onClick={handleBackToManage}
+            >
+                <Link href="/manage">
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    Back to Manage
+                </Link>
+            </Button>
+        )}
+        <LiveStats />
+      </div>
       <div className="flex-1" />
 
       <div className="flex items-center gap-1">

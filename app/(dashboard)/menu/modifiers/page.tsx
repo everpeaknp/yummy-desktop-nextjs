@@ -53,11 +53,12 @@ export default function ModifiersPage() {
   }, [me]);
 
   const fetchGroups = async () => {
+    if (!user?.restaurant_id) return;
     setLoading(true);
     try {
-      const response = await apiClient.get(ModifierApis.listGroups);
+      const response = await apiClient.get(ModifierApis.listGroups(user.restaurant_id));
       if (response.data.status === 'success') {
-        setGroups(response.data.data);
+        setGroups(response.data.data.groups || []);
       }
     } catch (error) {
       console.error("Failed to fetch modifier groups", error);
@@ -92,7 +93,7 @@ export default function ModifiersPage() {
   const handleUpdateGroup = async (data: any) => {
     if (!editingGroup) return;
     try {
-      await apiClient.put(ModifierApis.updateGroup(editingGroup.id), data);
+      await apiClient.patch(ModifierApis.updateGroup(editingGroup.id), data);
       toast({ title: "Success", description: "Modifier group updated." });
       fetchGroups();
     } catch (error) {
@@ -194,7 +195,7 @@ export default function ModifiersPage() {
                   <TableRow key={group.id}>
                     <TableCell className="font-medium">{group.name}</TableCell>
                     <TableCell className="capitalize">
-                        <Badge variant="outline">{group.selection_type}</Badge>
+                        <Badge variant="outline">{group.min_selections === 1 && group.max_selections === 1 ? 'single' : 'multiple'}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">

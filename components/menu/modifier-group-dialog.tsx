@@ -32,7 +32,7 @@ const formSchema = z.object({
   selection_type: z.enum(["single", "multiple"]),
   is_required: z.boolean().default(false),
   min_selections: z.coerce.number().min(0).default(0),
-  max_selections: z.coerce.number().min(0).default(1),
+  max_selections: z.coerce.number().min(1).nullable().default(1),
 });
 
 export interface ModifierGroup {
@@ -134,10 +134,13 @@ export function ModifierGroupDialog({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="single">Single Select (Radio)</SelectItem>
-                          <SelectItem value="multiple">Multi Select (Checkbox)</SelectItem>
+                          <SelectItem value="single">Single Select (Choose 1)</SelectItem>
+                          <SelectItem value="multiple">Multi Select (Choose Many)</SelectItem>
                         </SelectContent>
                       </Select>
+                      <FormDescription>
+                        Determines if the customer can pick one or multiple options.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -183,8 +186,16 @@ export function ModifierGroupDialog({
                     <FormItem>
                       <FormLabel>Max Selections</FormLabel>
                       <FormControl>
-                        <Input type="number" min={1} {...field} />
+                        <Input 
+                            type="number" 
+                            min={1} 
+                            placeholder="Unlimited"
+                            {...field} 
+                            value={field.value || ""} 
+                            onChange={(e) => field.onChange(e.target.value === "" ? null : parseInt(e.target.value))}
+                        />
                       </FormControl>
+                      <FormDescription>Leave empty for unlimited</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

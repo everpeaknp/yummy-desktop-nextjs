@@ -334,7 +334,7 @@ export const ReceiptApis = {
 };
 
 export const ModifierApis = {
-  listGroups: '/modifiers/groups',
+  listGroups: (restaurantId: number) => `/modifiers/groups?restaurant_id=${restaurantId}`,
   createGroup: '/modifiers/groups',
   getGroup: (groupId: number) => `/modifiers/groups/${groupId}`,
   updateGroup: (groupId: number) => `/modifiers/groups/${groupId}`,

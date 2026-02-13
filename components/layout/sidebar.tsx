@@ -105,7 +105,7 @@ export function Sidebar() {
           )}>
             <div className="relative h-8 w-8 min-w-8 flex items-center justify-center shrink-0">
               {restaurant?.profile_picture ? (
-                <Image src={restaurant.profile_picture} alt="Logo" className="object-cover rounded-md" fill priority />
+                <Image src={restaurant.profile_picture} alt="Logo" className="object-cover rounded-md" fill priority unoptimized />
               ) : (
                 <div className="bg-primary/10 p-1.5 rounded-md">
                   <Store className="h-full w-full text-primary" />
@@ -113,7 +113,10 @@ export function Sidebar() {
               )}
             </div>
             {!collapsed && (
-              <span className="truncate text-primary">
+              <span 
+                className="truncate text-primary"
+                onClick={() => sessionStorage.removeItem('fromManage')}
+              >
                 {restaurant?.name || "Yummy Kitchen"}
               </span>
             )}
@@ -138,6 +141,7 @@ export function Sidebar() {
                 <Link
                   key={index}
                   href={item.href}
+                  onClick={() => sessionStorage.removeItem('fromManage')}
                   className={cn(
                     "flex items-center rounded-lg transition-all hover:text-primary",
                     collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2",

@@ -37,6 +37,119 @@ interface CartItem {
   quantity: number;
 }
 
+const CartContent = ({ 
+    cart, 
+    orderId, 
+    orderData, 
+    tableData, 
+    channelFromQuery, 
+    restaurant, 
+    processing, 
+    updateQuantity, 
+    setCart, 
+    handlePlaceOrder, 
+    router 
+}: any) => {
+  const subtotal = cart.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
+  const tax = subtotal * 0.13;
+  const total = subtotal + tax;
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="p-4 border-b bg-muted/20">
+        <h2 className="font-semibold flex items-center gap-2">
+          <ChefHat className="h-5 w-5 text-primary" />
+          {!orderId || orderId === 'create' ? 'New Order' : `Order #${orderData?.restaurant_order_id || orderId}`}
+        </h2>
+        <p className="text-xs text-muted-foreground capitalize">
+          {tableData?.table_name || orderData?.table_name || 'No Table'} • {orderData?.channel || channelFromQuery.replace('_', ' ')}
+        </p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+        {cart.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-center">
+            <ShoppingBag className="h-12 w-12 mb-2 opacity-20" />
+            <p>Cart is empty</p>
+            <p className="text-xs">Select items from the menu to start ordering</p>
+          </div>
+        ) : (
+          cart.map((item: any) => (
+            <div key={item.menu_item_id} className="flex gap-2 items-start animate-in slide-in-from-right-5 fade-in duration-300">
+              <div className="flex-1">
+                <h4 className="text-sm font-medium">{item.name}</h4>
+                <p className="text-xs text-muted-foreground">{restaurant?.currency || "$"}{item.price.toLocaleString()}</p>
+              </div>
+              <div className="flex items-center gap-2 bg-muted/50 rounded-md p-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-sm"
+                  onClick={() => updateQuantity(item.menu_item_id, -1)}
+                  disabled={processing}
+                >
+                  <Minus className="h-3 w-3" />
+                </Button>
+                <span className="text-sm w-4 text-center">{item.quantity}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-sm"
+                  onClick={() => updateQuantity(item.menu_item_id, 1)}
+                  disabled={processing}
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+              <div className="text-sm font-medium w-16 text-right">
+                {restaurant?.currency || "$"}{(item.price * item.quantity).toLocaleString()}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="p-4 border-t bg-muted/20 space-y-4">
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between text-muted-foreground">
+            <span>Subtotal</span>
+            <span>{restaurant?.currency || "$"}{subtotal.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between text-muted-foreground">
+            <span>Tax (13% VAT)</span>
+            <span>{restaurant?.currency || "$"}{tax.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg pt-2 border-t text-foreground">
+            <span>Total</span>
+            <span>{restaurant?.currency || "$"}{total.toLocaleString()}</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="outline" onClick={() => setCart([])} disabled={processing}>Clear</Button>
+          <Button
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={handlePlaceOrder}
+            disabled={processing || cart.length === 0}
+          >
+            {processing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {!orderId || orderId === 'create' ? 'Place Order' : 'Update Order'}
+          </Button>
+        </div>
+        {orderId && orderId !== 'create' && (
+          <Button
+            variant="secondary"
+            className="w-full gap-2"
+            onClick={() => router.push(`/orders/${orderId}/checkout`)}
+          >
+            <Receipt className="h-4 w-4" />
+            Checkout / Bill
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function POSSystem({
   orderId,
   defaultTableId,
@@ -217,100 +330,6 @@ export default function POSSystem({
 
 
 
-  const CartContent = () => (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="p-4 border-b bg-muted/20">
-        <h2 className="font-semibold flex items-center gap-2">
-          <ChefHat className="h-5 w-5 text-primary" />
-          {!orderId || orderId === 'create' ? 'New Order' : `Order #${orderData?.restaurant_order_id || orderId}`}
-        </h2>
-        <p className="text-xs text-muted-foreground capitalize">
-          {tableData?.table_name || orderData?.table_name || 'No Table'} • {orderData?.channel || channelFromQuery.replace('_', ' ')}
-        </p>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
-        {cart.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-center">
-            <ShoppingBag className="h-12 w-12 mb-2 opacity-20" />
-            <p>Cart is empty</p>
-            <p className="text-xs">Select items from the menu to start ordering</p>
-          </div>
-        ) : (
-          cart.map(item => (
-            <div key={item.menu_item_id} className="flex gap-2 items-start animate-in slide-in-from-right-5 fade-in duration-300">
-              <div className="flex-1">
-                <h4 className="text-sm font-medium">{item.name}</h4>
-                <p className="text-xs text-muted-foreground">{restaurant?.currency || "$"}{item.price.toLocaleString()}</p>
-              </div>
-              <div className="flex items-center gap-2 bg-muted/50 rounded-md p-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 rounded-sm"
-                  onClick={() => updateQuantity(item.menu_item_id, -1)}
-                  disabled={processing}
-                >
-                  <Minus className="h-3 w-3" />
-                </Button>
-                <span className="text-sm w-4 text-center">{item.quantity}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 rounded-sm"
-                  onClick={() => updateQuantity(item.menu_item_id, 1)}
-                  disabled={processing}
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-              </div>
-              <div className="text-sm font-medium w-16 text-right">
-                {restaurant?.currency || "$"}{(item.price * item.quantity).toLocaleString()}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="p-4 border-t bg-muted/20 space-y-4">
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between text-muted-foreground">
-            <span>Subtotal</span>
-            <span>{restaurant?.currency || "$"}{subtotal.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between text-muted-foreground">
-            <span>Tax (13% VAT)</span>
-            <span>{restaurant?.currency || "$"}{tax.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between font-bold text-lg pt-2 border-t text-foreground">
-            <span>Total</span>
-            <span>{restaurant?.currency || "$"}{total.toLocaleString()}</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" onClick={() => setCart([])} disabled={processing}>Clear</Button>
-          <Button
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={handlePlaceOrder}
-            disabled={processing || cart.length === 0}
-          >
-            {processing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {!orderId || orderId === 'create' ? 'Place Order' : 'Update Order'}
-          </Button>
-        </div>
-        {orderId && orderId !== 'create' && (
-          <Button
-            variant="secondary"
-            className="w-full gap-2"
-            onClick={() => router.push(`/orders/${orderId}/checkout`)}
-          >
-            <Receipt className="h-4 w-4" />
-            Checkout / Bill
-          </Button>
-        )}
-      </div>
-    </div>
-  );
 
   return (
     <div className="flex flex-1 min-h-0 min-w-0 gap-6 relative">
@@ -393,6 +412,7 @@ export default function POSSystem({
                         alt={item.name || item.item_name || "item"} 
                         className="object-contain p-1.5 group-hover:scale-105 transition-transform duration-300"
                         fill
+                        unoptimized
                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
                       />
                     ) : (
@@ -433,7 +453,19 @@ export default function POSSystem({
 
       {/* Desktop Cart Sidebar */}
       <Card className="hidden lg:flex w-80 xl:w-96 flex-col shadow-xl border-l h-full overflow-hidden shrink-0">
-        <CartContent />
+        <CartContent 
+            cart={cart}
+            orderId={orderId}
+            orderData={orderData}
+            tableData={tableData}
+            channelFromQuery={channelFromQuery}
+            restaurant={restaurant}
+            processing={processing}
+            updateQuantity={updateQuantity}
+            setCart={setCart}
+            handlePlaceOrder={handlePlaceOrder}
+            router={router}
+        />
       </Card>
 
       {/* Mobile Floating Cart Button */}
@@ -453,7 +485,19 @@ export default function POSSystem({
             <SheetHeader className="sr-only">
               <SheetTitle>Order Cart</SheetTitle>
             </SheetHeader>
-            <CartContent />
+            <CartContent 
+                cart={cart}
+                orderId={orderId}
+                orderData={orderData}
+                tableData={tableData}
+                channelFromQuery={channelFromQuery}
+                restaurant={restaurant}
+                processing={processing}
+                updateQuantity={updateQuantity}
+                setCart={setCart}
+                handlePlaceOrder={handlePlaceOrder}
+                router={router}
+            />
           </SheetContent>
         </Sheet>
       </div>

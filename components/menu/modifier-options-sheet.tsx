@@ -85,7 +85,7 @@ export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOpti
   const handleUpdateItem = async (data: any) => {
     if (!editingItem) return;
     try {
-      await apiClient.put(ModifierApis.updateItem(editingItem.id), data);
+      await apiClient.patch(ModifierApis.updateItem(editingItem.id), data);
       toast({ title: "Success", description: "Option updated." });
       fetchItems();
     } catch (error) {
@@ -169,10 +169,10 @@ export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOpti
                         items.map((item) => (
                             <TableRow key={item.id}>
                                 <TableCell className="font-medium">{item.name}</TableCell>
-                                <TableCell>+ Rs. {item.price}</TableCell>
+                                <TableCell>{item.price_adjustment >= 0 ? "+" : ""}{item.price_adjustment}</TableCell>
                                 <TableCell>
-                                    <Badge variant={item.is_available ? "default" : "destructive"} className={item.is_available ? "bg-green-600" : ""}>
-                                        {item.is_available ? "Available" : "Unavailable"}
+                                    <Badge variant={item.is_active ? "default" : "destructive"} className={item.is_active ? "bg-green-600" : ""}>
+                                        {item.is_active ? "Active" : "Inactive"}
                                     </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">

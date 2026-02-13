@@ -27,15 +27,15 @@ import { Loader2 } from "lucide-react";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  price: z.coerce.number().min(0).default(0),
-  is_available: z.boolean().default(true),
+  price_adjustment: z.coerce.number().default(0),
+  is_active: z.boolean().default(true),
 });
 
 export interface ModifierItem {
   id: number;
   name: string;
-  price: number;
-  is_available: boolean;
+  price_adjustment: number;
+  is_active: boolean;
   modifier_group_id: number;
 }
 
@@ -58,8 +58,8 @@ export function ModifierItemDialog({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
-      price: 0,
-      is_available: true,
+      price_adjustment: 0,
+      is_active: true,
     },
   });
 
@@ -67,8 +67,8 @@ export function ModifierItemDialog({
     if (initialData) {
       form.reset({
         name: initialData.name,
-        price: initialData.price,
-        is_available: initialData.is_available,
+        price_adjustment: initialData.price_adjustment,
+        is_active: initialData.is_active,
       });
     } else {
       form.reset({
@@ -112,14 +112,14 @@ export function ModifierItemDialog({
             />
             
             <div className="flex gap-4">
-                <FormField
+                 <FormField
                   control={form.control}
-                  name="price"
+                  name="price_adjustment"
                   render={({ field }) => (
                     <FormItem className="flex-1">
-                      <FormLabel>Price (Rs.)</FormLabel>
+                      <FormLabel>Price adjustment (e.g. +50 or -20)</FormLabel>
                       <FormControl>
-                        <Input type="number" min={0} {...field} />
+                        <Input type="number" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -128,11 +128,11 @@ export function ModifierItemDialog({
             
                 <FormField
                   control={form.control}
-                  name="is_available"
+                  name="is_active"
                   render={({ field }) => (
                     <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm flex-1 mt-auto">
                       <div className="space-y-0.5">
-                        <FormLabel>Available</FormLabel>
+                        <FormLabel>Active</FormLabel>
                       </div>
                       <FormControl>
                         <Switch
