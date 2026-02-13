@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoomContainer, type TableData } from "@/components/tables/room-container";
+import { ReservationDetailsSheet } from "@/components/reservations/reservation-details-sheet";
+import { ReservationApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,6 +80,11 @@ export default function TablesPage() {
   const [editingAreaId, setEditingAreaId] = useState<number | null>(null);
   const [areaName, setAreaName] = useState("");
   const [areaSaving, setAreaSaving] = useState(false);
+
+  // Reservation details
+  const [reservationSheetOpen, setReservationSheetOpen] = useState(false);
+  const [selectedReservation, setSelectedReservation] = useState<any>(null);
+  const [loadingReservation, setLoadingReservation] = useState(false);
 
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
@@ -271,7 +278,32 @@ export default function TablesPage() {
     setTableDialogOpen(true);
   };
 
-  const openEditTable = (table: TableData) => {
+  const openEditTable = async (table: TableData) => {
+    if (table.status === "RESERVED" && user?.restaurant_id) {
+      setLoadingReservation(true);
+      try {
+        // Fetch reservations and find the one for this table
+        const response = await apiClient.get(ReservationApis.listReservations(user.restaurant_id));
+        if (response.data.status === "success") {
+          const data = response.data.data;
+          const reservations = Array.isArray(data) ? data : (data.reservations || []);
+          const res = reservations.find((r: any) => 
+            (r.table_id === table.id || (r.table_ids && r.table_ids.includes(table.id))) && 
+            r.status.toLowerCase() === 'confirmed'
+          );
+          if (res) {
+            setSelectedReservation(res);
+            setReservationSheetOpen(true);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch reservation for table:", err);
+      } finally {
+        setLoadingReservation(false);
+      }
+    }
+
     setEditingTable(table);
     setFormName(table.table_name);
     setFormCapacity(table.capacity.toString());
@@ -680,6 +712,20 @@ export default function TablesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ═══ RESERVATION DETAILS SHEET ═══ */}
+      <ReservationDetailsSheet
+        open={reservationSheetOpen}
+        onOpenChange={setReservationSheetOpen}
+        reservation={selectedReservation}
+        onRefresh={() => fetchData(true)}
+      />
+
+      {loadingReservation && (
+        <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
+          <Loader2 className="w-8 h-8 animate-spin text-white" />
+        </div>
+      )}
     </div>
   );
 }

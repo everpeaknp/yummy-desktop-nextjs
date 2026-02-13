@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { OrderApis } from "@/lib/api/endpoints";
 import { OrderCard } from "@/components/orders/order-card";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ActiveOrdersPage() {
     const [orders, setOrders] = useState<Order[]>([]);
@@ -23,6 +25,7 @@ export default function ActiveOrdersPage() {
 
     const user = useAuth(state => state.user);
     const me = useAuth(state => state.me); // Get me action
+    const restaurant = useRestaurant(state => state.restaurant);
     const router = useRouter();
 
     // 1. Session Restoration & Auth Guard
@@ -136,7 +139,7 @@ export default function ActiveOrdersPage() {
                 <StatCard
                     label="Total Value"
                     value={totalValue.toLocaleString()}
-                    prefix={user?.currency || "Rs."}
+                    prefix={restaurant?.currency || user?.currency || "Rs."}
                     subSelect="Revenue today"
                     icon={<span className="text-xl font-bold">$</span>}
                     color="orange"
@@ -162,10 +165,27 @@ export default function ActiveOrdersPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {loading ? (
-                        <div className="col-span-full h-64 flex flex-col items-center justify-center text-muted-foreground">
-                            <Loader2 className="h-8 w-8 animate-spin mb-2" />
-                            <p>Loading active orders...</p>
-                        </div>
+                        Array.from({ length: 8 }).map((_, i) => (
+                          <div key={i} className="bg-card border border-border rounded-xl p-5 h-[160px] shadow-sm flex flex-col gap-4">
+                            <div className="flex justify-between">
+                              <Skeleton className="h-4 w-24" />
+                              <Skeleton className="h-4 w-12 rounded-full" />
+                            </div>
+                            <div className="space-y-3 pt-2">
+                                <div className="flex gap-3">
+                                   <Skeleton className="h-8 w-8 rounded-lg" />
+                                   <div className="space-y-2 flex-1">
+                                      <Skeleton className="h-3 w-full" />
+                                      <Skeleton className="h-2 w-1/2" />
+                                   </div>
+                                </div>
+                                <div className="flex justify-between items-center pt-2">
+                                   <Skeleton className="h-3 w-20" />
+                                   <Skeleton className="h-4 w-24" />
+                                </div>
+                            </div>
+                          </div>
+                        ))
                     ) : filteredOrders.map((order) => (
                         <Link key={order.id} href={`/orders/${order.id}`}>
                             <OrderCard order={order} />

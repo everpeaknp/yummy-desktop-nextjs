@@ -2,7 +2,8 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MENU_GALLERY_ITEMS, MenuGalleryCategory, MenuGalleryItem } from "@/lib/constants/menu-gallery";
+import { MENU_GALLERY_ITEMS, MenuGalleryCategory, type MenuGalleryItem } from "@/lib/constants/menu-gallery";
+export type { MenuGalleryItem };
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
 import Image from "next/image";

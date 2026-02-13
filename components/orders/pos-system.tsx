@@ -13,6 +13,7 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSearchParams, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 
 interface MenuItem {
   id: number;
@@ -258,9 +259,15 @@ export default function POSSystem({
               onClick={() => addToCart(item)}
             >
               <div className="p-4 flex flex-col items-center text-center gap-2">
-                <div className="h-12 w-12 flex items-center justify-center bg-muted rounded-full group-hover:scale-110 transition-transform duration-200">
+                <div className="relative h-12 w-12 flex items-center justify-center bg-muted rounded-full group-hover:scale-110 transition-transform duration-200 overflow-hidden">
                   {item.image ? (
-                    <img src={item.image} alt={item.name} className="h-full w-full object-cover rounded-full" />
+                    <Image 
+                      src={item.image} 
+                      alt={item.name} 
+                      className="object-cover"
+                      fill
+                      sizes="48px"
+                    />
                   ) : (
                     <Utensils className="h-6 w-6 text-muted-foreground" />
                   )}

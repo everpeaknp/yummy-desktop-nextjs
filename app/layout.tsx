@@ -11,6 +11,8 @@ export const metadata: Metadata = {
   description: "Next.js Admin Dashboard for Yummy",
 };
 
+import { Toaster } from "@/components/ui/toaster";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -26,6 +28,7 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             {children}
+            <Toaster />
           </ThemeProvider>
       </body>
     </html>

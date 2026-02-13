@@ -357,11 +357,18 @@ export const DiscountApis = {
 };
 
 export const ReservationApis = {
-  listReservations: '/reservations',
-  getReservation: (id: number) => `/reservations/${id}`,
-  createReservation: '/reservations',
-  updateReservation: (id: number) => `/reservations/${id}`,
-  deleteReservation: (id: number) => `/reservations/${id}`,
+  // Aligning with Flutter: Use /orders endpoints for all reservation actions
+  listReservations: (restaurantId: number) => `/orders?restaurant_id=${restaurantId}&channel=reservation`,
+  getReservation: (id: number) => `/orders/${id}`,
+  createReservation: '/orders/',
+  updateReservation: (id: number) => `/orders/${id}`,
+  deleteReservation: (id: number) => `/orders/${id}`,
+  // Status updates via /orders/{id}/status
+  confirmReservation: (id: number) => `/orders/${id}/status`,
+  seatReservation: (id: number) => `/orders/${id}/activate`,
+  completeReservation: (id: number) => `/orders/${id}/status`,
+  cancelReservation: (id: number) => `/orders/${id}/cancel`,
+  noShowReservation: (id: number) => `/orders/${id}/status`,
 };
 
 export const NotificationApis = {

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import apiClient from "@/lib/api-client"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
@@ -539,23 +540,58 @@ function Receipt({ className }: { className?: string }) { return <CreditCard cla
 
 function DashboardSkeleton() {
   return (
-    <div className="flex flex-col gap-8 max-w-[1600px] mx-auto animate-pulse p-6">
-      <div className="flex justify-between items-center bg-card p-10 rounded-2xl border">
-        <div className="h-10 w-64 bg-muted rounded-lg" />
-        <div className="h-10 w-40 bg-muted rounded-lg" />
+    <div className="flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4 animate-in fade-in duration-500">
+      {/* Header Skeleton */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-4 w-96 transition-all" />
+        </div>
+        <Skeleton className="h-8 w-32 rounded-full" />
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[1,2,3].map(i => <div key={i} className="h-32 bg-card rounded-2xl border" />)}
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="h-[400px] bg-card rounded-2xl border" />
-        <div className="h-[400px] bg-card rounded-2xl border" />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="h-48 bg-card rounded-2xl border" />
-        <div className="h-48 bg-card rounded-2xl border" />
-        <div className="h-48 bg-card rounded-2xl border" />
-      </div>
+
+      {/* Health Cards Skeleton */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-card border border-border rounded-xl p-6 flex justify-between items-center shadow-sm">
+            <div className="space-y-3">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-8 w-16" />
+            </div>
+            <Skeleton className="h-10 w-10 rounded-lg" />
+          </div>
+        ))}
+      </section>
+
+      {/* Summary Bar Skeleton */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {[1, 2].map((i) => (
+          <div key={i} className="bg-card border border-border rounded-xl p-5 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-4">
+              <Skeleton className="h-12 w-12 rounded-full" />
+              <div className="space-y-2">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-7 w-20" />
+              </div>
+            </div>
+            <Skeleton className="h-5 w-5 rounded" />
+          </div>
+        ))}
+      </section>
+
+      {/* Charts Skeleton */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-card border border-border rounded-xl p-6 h-[400px] shadow-sm flex flex-col gap-4">
+           <Skeleton className="h-6 w-48" />
+           <Skeleton className="flex-1 w-full" />
+        </div>
+        <div className="bg-card border border-border rounded-xl p-6 h-[400px] shadow-sm flex flex-col gap-4">
+           <Skeleton className="h-6 w-32" />
+           <div className="flex-1 flex items-center justify-center">
+              <Skeleton className="h-64 w-64 rounded-full" />
+           </div>
+        </div>
+      </section>
     </div>
   )
 }

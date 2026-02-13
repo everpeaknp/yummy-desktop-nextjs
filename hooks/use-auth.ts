@@ -9,6 +9,7 @@ interface User {
   roles: string[];
   primary_role: string | null;
   restaurant_id: number | null;
+  currency?: string;
 }
 
 interface AuthState {
@@ -63,7 +64,8 @@ export const useAuth = create<AuthState>()(
                   role: data.user_role,
                   roles,
                   primary_role: data.primary_role || data.user_role || null,
-                  restaurant_id: data.restaurant_id
+                  restaurant_id: data.restaurant_id,
+                  currency: data.currency
                 };
 
                 set({
