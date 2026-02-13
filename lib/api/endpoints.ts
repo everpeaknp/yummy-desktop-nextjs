@@ -426,3 +426,15 @@ export const HistoryApis = {
   listUserActivity: (userId: number) => `/history/activity/user/${userId}`,
   listActivityByDate: (params: string) => `/history/activity?${params}`,
 };
+
+export const SupplierApis = {
+  listSuppliers: (restaurantId: number, isActive?: boolean) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (isActive !== undefined) params.append('is_active', isActive.toString());
+    return `/suppliers?${params.toString()}`;
+  },
+  getSupplier: (id: number, restaurantId: number) => `/suppliers/${id}?restaurant_id=${restaurantId}`,
+  createSupplier: '/suppliers',
+  updateSupplier: (id: number, restaurantId: number) => `/suppliers/${id}?restaurant_id=${restaurantId}`,
+  deleteSupplier: (id: number, restaurantId: number) => `/suppliers/${id}?restaurant_id=${restaurantId}`,
+};
