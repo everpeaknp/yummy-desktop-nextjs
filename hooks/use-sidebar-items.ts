@@ -37,7 +37,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   "/menu/items": UtensilsCrossed,
   "/kitchen": ChefHat,
   "/inventory": Package,
-  "/finance": CreditCard,
+  "/finance/income": CreditCard,
   "/customers": Users,
   "/tables": Armchair,
   "/reservations": Calendar,

@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useEffect, useState, useCallback } from "react";
 import { useSidebarItems } from "@/hooks/use-sidebar-items";
-import { cn } from "@/lib/utils";
+import { cn, getImageUrl } from "@/lib/utils";
 import { useNotifications, useNotificationStore } from "@/hooks/use-notifications";
 import { NotificationPanel } from "@/components/notifications/notification-panel";
 import apiClient from "@/lib/api-client";
@@ -170,7 +170,7 @@ export function Header() {
               >
                 <div className="relative h-8 w-8 min-w-8 flex items-center justify-center">
                   {restaurant?.profile_picture ? (
-                    <Image src={restaurant.profile_picture} alt="Logo" className="object-cover rounded-md" fill priority unoptimized />
+                    <Image src={getImageUrl(restaurant.profile_picture)} alt="Logo" className="object-cover rounded-md" fill priority unoptimized />
                   ) : (
                     <div className="bg-primary/10 p-1.5 rounded-md">
                       <Store className="h-full w-full text-primary" />

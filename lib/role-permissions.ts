@@ -151,7 +151,7 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
   },
   {
     title: "Finance",
-    href: "/finance",
+    href: "/finance/income",
     allowedRoles: ADMIN_SHELL_ROLES,
   },
   {
@@ -206,12 +206,17 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/menu": ADMIN_MANAGER,
   "/kitchen": KITCHEN_ROLES,
   "/inventory": ADMIN_MANAGER,
-  "/finance": ADMIN_SHELL_ROLES,
+  "/finance/income": ADMIN_SHELL_ROLES,
+  "/finance/expenses": ADMIN_SHELL_ROLES,
   "/customers": ADMIN_SHELL_ROLES,
   "/tables": ADMIN_MANAGER,
   "/reservations": ADMIN_SHELL_ROLES,
   "/discounts": ADMIN_MANAGER,
   "/manage": ADMIN_MANAGER,
+  "/manage/additional-settings": ADMIN_MANAGER,
+  "/staff": ADMIN_MANAGER,
+  "/payroll": ["admin", "cashier"],
+  "/period-reports": ADMIN_MANAGER,
   "/settings": ALL_DASHBOARD_ROLES,
 };
 

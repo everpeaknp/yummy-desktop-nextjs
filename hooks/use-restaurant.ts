@@ -10,6 +10,9 @@ interface Restaurant {
   profile_picture: string | null;
   cover_photo: string | null;
   currency: string;
+  tax_enabled: boolean;
+  receipt_template: any | null;
+  kot_template: any | null;
 }
 
 interface RestaurantState {

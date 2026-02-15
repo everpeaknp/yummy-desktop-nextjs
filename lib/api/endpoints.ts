@@ -135,6 +135,21 @@ export const TableTypeApis = {
   deleteTableType: (tableTypeId: number) => `/restaurants/table-types/${tableTypeId}`,
 };
 
+export const RestaurantApis = {
+  getById: (id: number) => `/restaurants/${id}`,
+  update: (id: number) => `/restaurants/${id}`,
+  getByUser: '/restaurants/by-user',
+  updateFonepay: (id: number) => `/restaurants/${id}/fonepay-config`,
+  getTemplates: (id: number) => `/restaurants/${id}/templates`,
+  updateTemplates: (id: number) => `/restaurants/${id}/templates`,
+};
+
+export const AdminManagementApis = {
+  restaurantAdmins: (restaurantId: number) => `/restaurant/${restaurantId}/admins`,
+  removeAdmin: (restaurantId: number, userId: number) => `/restaurant/${restaurantId}/admins/${userId}`,
+  userRestaurants: `/users/me/restaurants`,
+};
+
 export const CustomerApis = {
   listCustomers: (restaurantId: number) => `/customers?restaurant_id=${restaurantId}`,
   getCustomer: (id: number) => `/customers/${id}`,
@@ -198,6 +213,15 @@ export const InventoryApis = {
   awaitingPaymentById: (id: number) => `/awaiting-payments/${id}`,
   markAwaitingPaymentPaid: (id: number) => `/awaiting-payments/${id}/mark-paid`,
   rejectAwaitingPayment: (id: number) => `/awaiting-payments/${id}/reject`,
+};
+
+export const AwaitingPaymentApis = {
+  list: (restaurantId: number, params: any) => {
+    const qv = new URLSearchParams({ restaurant_id: restaurantId.toString(), ...params });
+    return `/awaiting-payments?${qv.toString()}`;
+  },
+  markPaid: (id: number, restaurantId: number) => `/awaiting-payments/${id}/mark-paid?restaurant_id=${restaurantId}`,
+  reject: (id: number, restaurantId: number) => `/awaiting-payments/${id}/reject?restaurant_id=${restaurantId}`,
 };
 
 export const AnalyticsApis = {
@@ -423,8 +447,20 @@ export const DayCloseApis = {
 
 export const HistoryApis = {
   listAuditLogs: (params: string) => `/history/audit-logs?${params}`,
+  getAuditLog: (id: number) => `/history/audit-logs/${id}`,
   listUserActivity: (userId: number) => `/history/activity/user/${userId}`,
   listActivityByDate: (params: string) => `/history/activity?${params}`,
+};
+
+export const PrinterApis = {
+  list: (restaurantId: number) => `/printers/restaurants/${restaurantId}`,
+  create: (restaurantId: number) => `/printers/restaurants/${restaurantId}`,
+  get: (id: number) => `/printers/${id}`,
+  update: (id: number) => `/printers/${id}`,
+  delete: (id: number) => `/printers/${id}`,
+  test: (id: number) => `/printers/${id}/test`,
+  default: (restaurantId: number) => `/printers/restaurants/${restaurantId}/default`,
+  stationConfig: (restaurantId: number) => `/printers/restaurants/${restaurantId}/station-config`,
 };
 
 export const SupplierApis = {
@@ -437,4 +473,71 @@ export const SupplierApis = {
   createSupplier: '/suppliers',
   updateSupplier: (id: number, restaurantId: number) => `/suppliers/${id}?restaurant_id=${restaurantId}`,
   deleteSupplier: (id: number, restaurantId: number) => `/suppliers/${id}?restaurant_id=${restaurantId}`,
+};
+
+export const StaffApis = {
+  list: () => `/users/all`,
+  getStaff: (id: number | string) => `/users/${id}`,
+  create: '/users/',
+  update: (id: number | string) => `/users/${id}`,
+  delete: (id: number | string) => `/users/${id}`,
+};
+
+export const PayrollApis = {
+  listRuns: (statuses?: string[]) => {
+    const params = new URLSearchParams();
+    if (statuses) statuses.forEach(s => params.append('statuses', s));
+    return `/payroll/runs?${params.toString()}`;
+  },
+  getRun: (id: number) => `/payroll/runs/${id}`,
+  createRun: '/payroll/runs',
+  approveRun: (id: number) => `/payroll/runs/${id}/approve`,
+  markPaid: (id: number) => `/payroll/runs/${id}/paid`,
+  cancelRun: (id: number) => `/payroll/runs/${id}/cancel`,
+  addAdjustments: (id: number) => `/payroll/runs/${id}/adjustments`,
+};
+
+export const PeriodCloseApis = {
+  weeklyPreview: (restaurantId: number, year: number, week: number) => 
+    `/period-closes/weekly/preview?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
+  confirmWeekly: (restaurantId: number, year: number, week: number) => 
+    `/period-closes/weekly/confirm?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
+  listWeekly: (restaurantId: number, year?: number) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (year) params.append('year', year.toString());
+    return `/period-closes/weekly?${params.toString()}`;
+  },
+  monthlyPreview: (restaurantId: number, year: number, month: number) => 
+    `/period-closes/monthly/preview?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
+  confirmMonthly: (restaurantId: number, year: number, month: number) => 
+    `/period-closes/monthly/confirm?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
+  listMonthly: (restaurantId: number, year?: number) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (year) params.append('year', year.toString());
+    return `/period-closes/monthly?${params.toString()}`;
+  },
+};
+
+export const GeneralPurchaseApis = {
+  list: ({ restaurantId, status, skip = 0, limit = 100 }: { restaurantId: number; status?: string; skip?: number; limit?: number }) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString(), skip: skip.toString(), limit: limit.toString() });
+    if (status) params.append('status', status);
+    return `/general-purchases?${params.toString()}`;
+  },
+  get: (id: number) => `/general-purchases/${id}`,
+  create: '/general-purchases',
+  update: (id: number) => `/general-purchases/${id}`,
+  delete: (id: number) => `/general-purchases/${id}`,
+  receive: (id: number) => `/general-purchases/${id}/receive`,
+  cancel: (id: number) => `/general-purchases/${id}/cancel`,
+  return: (id: number) => `/general-purchases/${id}/return`,
+  awaitingPayments: (restaurantId: number) => `/awaiting-payments/general?restaurant_id=${restaurantId}`,
+};
+
+export const TaxConfigApis = {
+  list: (restaurantId: number) => `/tax-config/restaurant/${restaurantId}`,
+  get: (id: number) => `/tax-config/${id}`,
+  create: '/tax-config/',
+  update: (id: number) => `/tax-config/${id}`,
+  delete: (id: number) => `/tax-config/${id}`,
 };

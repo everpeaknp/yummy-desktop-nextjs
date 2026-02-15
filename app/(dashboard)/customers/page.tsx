@@ -8,7 +8,7 @@ import { CustomerApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Plus, User, Phone, Mail, Award, Loader2 } from "lucide-react";
+import { Search, Plus, User, Phone, Mail, Award, Loader2, DollarSign } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
@@ -80,6 +80,33 @@ export default function CustomersPage() {
         <AddCustomerDialog onCustomerAdded={handleCreateSuccess} />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+              <User className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Total Customers</p>
+              <h3 className="text-2xl font-bold">{customers.length}</h3>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600">
+              <DollarSign className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground text-emerald-800 dark:text-emerald-400">Total Credit Balance</p>
+              <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-500">
+                Rs. {customers.reduce((acc, c) => acc + (c.credit || 0), 0).toLocaleString()}
+              </h3>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="relative w-full max-w-sm">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input className="pl-8 bg-muted/50 border-border" placeholder="Search customers..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
@@ -132,7 +159,16 @@ export default function CustomersPage() {
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-border flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground">Visits: {customer.visits || 0}</span>
+                  <span className="text-muted-foreground font-medium">
+                    {customer.credit > 0 ? (
+                      <span className="text-red-600 flex items-center gap-1">
+                        <DollarSign className="w-3 h-3" />
+                        Credit: Rs. {customer.credit.toLocaleString()}
+                      </span>
+                    ) : (
+                      <span>Visits: {customer.visits || 0}</span>
+                    )}
+                  </span>
                   <Button variant="ghost" size="sm" className="h-auto p-0 text-primary hover:text-primary/80" onClick={(e) => { e.stopPropagation(); openDetails(customer); }}>
                     View Details
                   </Button>
@@ -147,6 +183,7 @@ export default function CustomersPage() {
         customer={selectedCustomer}
         open={isSheetOpen}
         onOpenChange={setIsSheetOpen}
+        onUpdate={fetchCustomers}
       />
     </div>
   );

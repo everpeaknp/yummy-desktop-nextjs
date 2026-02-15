@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 };
 
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 
 export default function RootLayout({
   children,
@@ -29,6 +30,7 @@ export default function RootLayout({
           >
             {children}
             <Toaster />
+            <SonnerToaster position="top-right" richColors closeButton />
           </ThemeProvider>
       </body>
     </html>

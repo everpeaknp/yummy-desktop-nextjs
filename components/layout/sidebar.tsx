@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { cn, getImageUrl } from "@/lib/utils";
 import {
   LayoutDashboard,
   UtensilsCrossed,
@@ -71,7 +71,7 @@ export function Sidebar() {
           )}>
             <div className="relative h-8 w-8 min-w-8 flex items-center justify-center shrink-0">
               {restaurant?.profile_picture ? (
-                <Image src={restaurant.profile_picture} alt="Logo" className="object-cover rounded-md" fill priority unoptimized />
+                <Image src={getImageUrl(restaurant.profile_picture)} alt="Logo" className="object-cover rounded-md" fill priority unoptimized />
               ) : (
                 <div className="bg-primary/10 p-1.5 rounded-md">
                   <Store className="h-full w-full text-primary" />

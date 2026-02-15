@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { InventoryApis } from "@/lib/api/endpoints";
+import { InventoryApis, SupplierApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,9 +58,11 @@ export default function InventoryPage() {
     unit: "",
     current_stock: "",
     min_stock_level: "",
-    cost_per_unit: "",
+    opening_stock_total_cost: "",
+    opening_stock_payment_status: "paid",
     supplier_id: "",
-    storage_location: "",
+    location: "",
+    cost_per_unit: "",
     is_active: true,
   });
   const [itemSubmitting, setItemSubmitting] = useState(false);
@@ -111,15 +113,14 @@ export default function InventoryPage() {
   const fetchSuppliers = async () => {
     if (!user?.restaurant_id) return;
     try {
-      const response = await apiClient.get(`/suppliers?restaurant_id=${user.restaurant_id}`);
+      const response = await apiClient.get(SupplierApis.listSuppliers(user.restaurant_id));
       if (response.data.status === "success") {
-        // Handle both direct array and wrapped items object
-        const supplierData = response.data.data?.items || response.data.data || [];
+        const supplierData = response.data.data?.suppliers || [];
         setSuppliers(Array.isArray(supplierData) ? supplierData : []);
       }
     } catch (err) {
       console.error("Failed to fetch suppliers:", err);
-      setSuppliers([]); // Fallback to empty array on error
+      setSuppliers([]);
     }
   };
 
@@ -138,12 +139,19 @@ export default function InventoryPage() {
 
     setAdjustSubmitting(true);
     try {
-      const payload = {
+      const payload: any = {
         adjustment_type: adjustForm.type,
         quantity: Number(adjustForm.quantity),
         reason: adjustForm.reason.trim() || undefined,
         cost: adjustForm.cost ? Number(adjustForm.cost) : undefined,
       };
+
+      if (adjustForm.type === 'add') {
+        payload.payment_status = (adjustForm as any).payment_status || 'pending';
+        if ((adjustForm as any).supplier_id && (adjustForm as any).supplier_id !== "none") {
+            payload.supplier_id = Number((adjustForm as any).supplier_id);
+        }
+      }
 
       await apiClient.post(InventoryApis.adjustInventory(adjustingItem.id), payload);
       
@@ -183,25 +191,36 @@ export default function InventoryPage() {
 
     setItemSubmitting(true);
     try {
-      const payload = {
-        restaurant_id: user.restaurant_id,
-        name: itemForm.name,
-        station: itemForm.station,
-        description: itemForm.description || null,
-        unit: itemForm.unit,
-        current_stock: Number(itemForm.current_stock),
-        min_stock_level: Number(itemForm.min_stock_level),
-        cost_per_unit: itemForm.cost_per_unit ? Number(itemForm.cost_per_unit) : null,
-        supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
-        storage_location: itemForm.storage_location || null,
-        is_active: itemForm.is_active,
-      };
-
-
       if (editingItem) {
-        await apiClient.patch(InventoryApis.updateInventoryItem(editingItem.id), payload);
+        const updatePayload = {
+          name: itemForm.name,
+          unit: itemForm.unit,
+          description: itemForm.description || null,
+          current_stock: Number(itemForm.current_stock),
+          min_stock_level: Number(itemForm.min_stock_level),
+          cost_per_unit: itemForm.cost_per_unit ? Number(itemForm.cost_per_unit) : null,
+          supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
+          location: itemForm.location || null,
+          station: itemForm.station,
+          is_active: itemForm.is_active,
+        };
+        await apiClient.patch(InventoryApis.updateInventoryItem(editingItem.id), updatePayload);
       } else {
-        await apiClient.post(InventoryApis.createInventoryItem, payload);
+        const createPayload = {
+          restaurant_id: user.restaurant_id,
+          name: itemForm.name,
+          station: itemForm.station,
+          description: itemForm.description || null,
+          unit: itemForm.unit,
+          current_stock: Number(itemForm.current_stock),
+          min_stock_level: Number(itemForm.min_stock_level),
+          opening_stock_total_cost: itemForm.opening_stock_total_cost ? Number(itemForm.opening_stock_total_cost) : null,
+          opening_stock_payment_status: itemForm.opening_stock_payment_status,
+          supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
+          location: itemForm.location || null,
+          is_active: itemForm.is_active,
+        };
+        await apiClient.post(InventoryApis.createInventoryItem, createPayload);
       }
       
       toast({
@@ -225,7 +244,13 @@ export default function InventoryPage() {
 
   const openAdjust = (item: any) => {
     setAdjustingItem(item);
-    setAdjustForm({ type: "add", quantity: "", reason: "", cost: "" });
+    setAdjustForm({ 
+        type: "add", 
+        quantity: "", 
+        reason: "", 
+        cost: "",
+        ...({ payment_status: "pending", supplier_id: item.supplier_id?.toString() || "none" } as any)
+    });
   };
 
   const openAdd = () => {
@@ -237,9 +262,11 @@ export default function InventoryPage() {
       unit: "",
       current_stock: "",
       min_stock_level: "",
-      cost_per_unit: "",
+      opening_stock_total_cost: "",
+      opening_stock_payment_status: "paid",
       supplier_id: "",
-      storage_location: "",
+      location: "",
+      cost_per_unit: "",
       is_active: true,
     });
     setIsAddDialogOpen(true);
@@ -256,7 +283,7 @@ export default function InventoryPage() {
       min_stock_level: item.min_stock_level?.toString() || "0",
       cost_per_unit: item.cost_per_unit?.toString() || "",
       supplier_id: item.supplier_id?.toString() || "none",
-      storage_location: item.storage_location || "",
+      location: item.location || "",
       is_active: item.is_active ?? true,
     });
     setIsAddDialogOpen(true);
@@ -342,8 +369,8 @@ export default function InventoryPage() {
                           </Badge>
                         )}
                       </div>
-                      {item.storage_location && (
-                        <span className="text-[10px] text-muted-foreground">Loc: {item.storage_location}</span>
+                      {item.location && (
+                        <span className="text-[10px] text-muted-foreground">Loc: {item.location}</span>
                       )}
                     </div>
                   </td>
@@ -459,17 +486,53 @@ export default function InventoryPage() {
                 />
               </div>
               {adjustForm.type === 'add' && (
-                <div className="grid gap-2">
-                  <Label htmlFor="cost">Total Cost (Optional)</Label>
-                  <Input
-                    id="cost"
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={adjustForm.cost}
-                    onChange={(e) => setAdjustForm({ ...adjustForm, cost: e.target.value })}
-                  />
-                </div>
+                <>
+                  <div className="grid gap-2">
+                    <Label htmlFor="cost">Total Cost (NPR)</Label>
+                    <Input
+                      id="cost"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={adjustForm.cost}
+                      onChange={(e) => setAdjustForm({ ...adjustForm, cost: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="adjust_supplier">Supplier</Label>
+                        <Select 
+                            value={(adjustForm as any).supplier_id || "none"} 
+                            onValueChange={(v) => setAdjustForm({ ...adjustForm, supplier_id: v } as any)}
+                        >
+                            <SelectTrigger id="adjust_supplier">
+                                <SelectValue placeholder="Select supplier" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="none">No Supplier</SelectItem>
+                                {Array.isArray(suppliers) && suppliers.map((s) => (
+                                    <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="payment_status">Payment Status</Label>
+                        <Select 
+                            value={(adjustForm as any).payment_status || "pending"} 
+                            onValueChange={(v) => setAdjustForm({ ...adjustForm, payment_status: v } as any)}
+                        >
+                            <SelectTrigger id="payment_status">
+                                <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="paid">Paid</SelectItem>
+                                <SelectItem value="pending">Pending</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                  </div>
+                </>
               )}
               <div className="grid gap-2">
                 <Label htmlFor="reason">Reason / Note</Label>
@@ -501,7 +564,7 @@ export default function InventoryPage() {
                     Saving...
                   </>
                 ) : (
-                  'Save Adjustment'
+                  adjustForm.type === 'add' ? 'Receive Stock' : 'Save Adjustment'
                 )}
               </Button>
             </DialogFooter>
@@ -565,17 +628,37 @@ export default function InventoryPage() {
                   onChange={(e) => setItemForm({ ...itemForm, unit: e.target.value })}
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="cost_per_unit">Unit Cost (Rs.)</Label>
-                <Input
-                  id="cost_per_unit"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={itemForm.cost_per_unit}
-                  onChange={(e) => setItemForm({ ...itemForm, cost_per_unit: e.target.value })}
-                />
-              </div>
+              
+              {!editingItem && (
+                <>
+                  <div className="grid gap-2">
+                    <Label htmlFor="opening_stock_total_cost">Opening Stock Total Cost (NPR)</Label>
+                    <Input
+                      id="opening_stock_total_cost"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={itemForm.opening_stock_total_cost}
+                      onChange={(e) => setItemForm({ ...itemForm, opening_stock_total_cost: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="opening_payment_status">Opening Stock Payment</Label>
+                    <Select 
+                      value={itemForm.opening_stock_payment_status} 
+                      onValueChange={(v) => setItemForm({ ...itemForm, opening_stock_payment_status: v })}
+                    >
+                      <SelectTrigger id="opening_payment_status">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="paid">Paid (Cash/Purchase)</SelectItem>
+                        <SelectItem value="pending">Pending (Awaiting Payment)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="current_stock">Current Stock *</Label>
                 <Input
@@ -619,14 +702,27 @@ export default function InventoryPage() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="storage_location">Storage Location</Label>
+                <Label htmlFor="location">Storage Location</Label>
                 <Input
-                  id="storage_location"
+                  id="location"
                   placeholder="e.g. Shelf A1, Cooler..."
-                  value={itemForm.storage_location}
-                  onChange={(e) => setItemForm({ ...itemForm, storage_location: e.target.value })}
+                  value={itemForm.location}
+                  onChange={(e) => setItemForm({ ...itemForm, location: e.target.value })}
                 />
               </div>
+              {editingItem && (
+                <div className="grid gap-2">
+                  <Label htmlFor="cost_per_unit">Cost per Unit (NPR)</Label>
+                  <Input
+                    id="cost_per_unit"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={itemForm.cost_per_unit}
+                    onChange={(e) => setItemForm({ ...itemForm, cost_per_unit: e.target.value })}
+                  />
+                </div>
+              )}
               <div className="flex items-center justify-between pt-4 md:col-span-2 border-t border-border mt-2">
                 <div className="space-y-0.5">
                   <Label htmlFor="is_active">Active Status</Label>

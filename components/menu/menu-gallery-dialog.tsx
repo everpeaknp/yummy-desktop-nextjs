@@ -5,9 +5,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MENU_GALLERY_ITEMS, MenuGalleryCategory, type MenuGalleryItem } from "@/lib/constants/menu-gallery";
 export type { MenuGalleryItem };
 import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
-import Image from "next/image";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/lib/supabase";
+import { ImagePlus, Loader2 } from "lucide-react";
 
 interface MenuGalleryDialogProps {
   open: boolean;
@@ -16,14 +17,65 @@ interface MenuGalleryDialogProps {
 }
 
 export function MenuGalleryDialog({ open, onOpenChange, onSelect }: MenuGalleryDialogProps) {
+  const { user } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [customImages, setCustomImages] = useState<MenuGalleryItem[]>([]);
+  const [loadingCustom, setLoadingCustom] = useState(false);
 
-  const categories = ["All", ...Object.values(MenuGalleryCategory)];
+  const fetchCustomImages = useCallback(async () => {
+    if (!user?.restaurant_id || !supabase) return;
+    setLoadingCustom(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from('menu-items')
+        .list(`${user.restaurant_id}/`, {
+          limit: 100,
+          offset: 0,
+          sortBy: { column: 'name', order: 'desc' },
+        });
+
+      if (error) throw error;
+
+      if (data) {
+        const items: MenuGalleryItem[] = data
+          .filter(file => file.name !== '.emptyFolderPlaceholder')
+          .map(file => {
+            const { data: { publicUrl } } = supabase.storage
+              .from('menu-items')
+              .getPublicUrl(`${user.restaurant_id}/${file.name}`);
+            
+            return {
+              id: `custom_${file.name}`,
+              label: file.name,
+              assetPath: publicUrl, // Full URL for custom uploads
+              category: "My Uploads" as any,
+              tags: ['custom']
+            };
+          });
+        setCustomImages(items);
+      }
+    } catch (err) {
+      console.error('Error fetching custom images:', err);
+    } finally {
+      setLoadingCustom(false);
+    }
+  }, [user?.restaurant_id]);
+
+  useEffect(() => {
+    if (open && (selectedCategory === "My Uploads" || selectedCategory === "All")) {
+      fetchCustomImages();
+    }
+  }, [open, selectedCategory, fetchCustomImages]);
+
+  const categories = ["All", "My Uploads", ...Object.values(MenuGalleryCategory)];
 
   const filteredItems = useMemo(() => {
-    if (selectedCategory === "All") return MENU_GALLERY_ITEMS;
-    return MENU_GALLERY_ITEMS.filter((item) => item.category === selectedCategory);
-  }, [selectedCategory]);
+    let baseItems = selectedCategory === "My Uploads" ? customImages : 
+                    selectedCategory === "All" ? [...customImages, ...MENU_GALLERY_ITEMS] :
+                    MENU_GALLERY_ITEMS.filter((item) => item.category === selectedCategory);
+    
+    return baseItems;
+  }, [selectedCategory, customImages]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -66,13 +118,13 @@ export function MenuGalleryDialog({ open, onOpenChange, onSelect }: MenuGalleryD
                   className="group relative aspect-square rounded-lg overflow-hidden border bg-muted hover:ring-2 ring-primary transition-all text-left"
                 >
                   <Image
-                    src={`/${item.assetPath}`}
+                    src={item.assetPath.startsWith('http') ? item.assetPath : `/${item.assetPath}`}
                     alt={item.label}
                     fill
                     className="object-cover transition-transform group-hover:scale-105"
                   />
                   <div className="absolute inset-x-0 bottom-0 bg-black/60 p-2 backdrop-blur-sm">
-                    <p className="text-white text-xs font-medium truncate">{item.label}</p>
+                    <p className="text-white text-[10px] font-black uppercase tracking-tight truncate">{item.label}</p>
                   </div>
                 </button>
               ))}
