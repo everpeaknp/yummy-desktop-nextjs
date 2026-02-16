@@ -16,6 +16,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
   const user = useAuth((state) => state.user);
   const token = useAuth((state) => state.token);
   const me = useAuth((state) => state.me);
+  const setRedirecting = useAuth((state) => state.setRedirecting);
   const [status, setStatus] = useState<"loading" | "allowed" | "denied">(
     "loading"
   );
@@ -69,6 +70,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
 
     if (isRouteAllowedMulti(pathname, roles)) {
       setStatus("allowed");
+      setRedirecting(false);
     } else {
       setStatus("denied");
       // Auto-redirect after a brief moment so user sees the denied message

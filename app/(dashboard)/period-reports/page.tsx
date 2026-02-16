@@ -37,7 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getISOWeek, getYear, format, startOfISOWeek, endOfISOWeek, subWeeks, subMonths } from "date-fns";
 import Link from "next/link";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
+// import * as XLSX from "xlsx"; // Removed for optimization
 
 export default function PeriodReportsPage() {
   const [loading, setLoading] = useState(true);
@@ -167,8 +167,9 @@ export default function PeriodReportsPage() {
     }
   };
 
-  const handleDownload = (report: any) => {
+  const handleDownload = async (report: any) => {
     try {
+       const XLSX = await import("xlsx");
        const isWeekly = !!report.week_number;
        const data = [
          ["Period Summary", isWeekly ? `Week ${report.week_number}` : format(new Date(selectedYear, report.month - 1), 'MMMM')],

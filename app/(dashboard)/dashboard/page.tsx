@@ -10,9 +10,19 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { cn } from "@/lib/utils"
 import { DashboardApis, HistoryApis, AnalyticsApis, TableApis } from "@/lib/api/endpoints"
-import { RevenueChart } from "@/components/analytics/revenue-chart"
-import { CategoryPieChart } from "@/components/analytics/category-pie"
-import * as XLSX from "xlsx"
+import dynamic from "next/dynamic"
+
+const RevenueChart = dynamic(() => import("@/components/analytics/revenue-chart").then(mod => mod.RevenueChart), {
+  ssr: false,
+  loading: () => <Skeleton className="h-full w-full rounded-xl" />
+})
+
+const CategoryPieChart = dynamic(() => import("@/components/analytics/category-pie").then(mod => mod.CategoryPieChart), {
+  ssr: false,
+  loading: () => <Skeleton className="h-full w-full rounded-xl" />
+})
+
+// import * as XLSX from "xlsx" // Removed for optimization
 import { 
   Activity, 
   Clock, 
@@ -132,8 +142,12 @@ export default function DashboardPage() {
   }, [user])
 
   // Export Reporting
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!analyticsData) return
+    
+    // Dynamic import for optimization
+    const XLSX = await import("xlsx")
+    
     const exportData = [
       { Metric: "Gross Sales", Value: kpis.gross_sales },
       { Metric: "Net Profit", Value: kpis.net_profit },

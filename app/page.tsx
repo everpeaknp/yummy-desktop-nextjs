@@ -61,6 +61,7 @@ export default function Home() {
 
   const router = useRouter();
   const setAuth = useAuth(state => state.setAuth);
+  const setRedirecting = useAuth(state => state.setRedirecting);
   const { setTheme, theme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -77,6 +78,7 @@ export default function Home() {
 
   // Helper: handle successful auth response (login or google)
   const handleAuthSuccess = useCallback((data: any) => {
+    setRedirecting(true);
     const { access_token, refresh_token, user_id, user_name, email: userEmail, user_role, user_roles, primary_role, restaurant_id } = data;
     const roles: string[] = user_roles || (user_role ? [user_role] : []);
     const user = {
@@ -89,6 +91,8 @@ export default function Home() {
       restaurant_id: restaurant_id,
     };
     setAuth(user, access_token, refresh_token);
+    // Use router.push for faster client-side navigation.
+    // The GlobalLoaderOverlay will still provide instant visual feedback.
     router.push(getHomeRouteForRoles(normalizeRoles(roles)));
   }, [setAuth, router]);
 
@@ -114,12 +118,14 @@ export default function Home() {
       });
       if (response.data.status === "success") {
         handleAuthSuccess(response.data.data);
+        // We DO NOT setIsLoading(false) here because we want to keep the loading state active during redirection
+        return; 
       }
     } catch (err: any) {
       setError(extractError(err));
-    } finally {
       setIsLoading(false);
     }
+    // Only reach here if success was not achieved or error occurred
   };
 
   // ── Google OAuth ──────────────────────────────────
@@ -131,12 +137,16 @@ export default function Home() {
       const response = await apiClient.post("/auth/firebase/google", { idToken });
       if (response.data.status === "success") {
         handleAuthSuccess(response.data.data);
+        // Keep isGoogleLoading(true) during redirection
+        return;
       }
     } catch (err: any) {
       // User closed popup is not an error
-      if (err?.code === "auth/popup-closed-by-user") return;
+      if (err?.code === "auth/popup-closed-by-user") {
+        setIsGoogleLoading(false);
+        return;
+      }
       setError(extractError(err));
-    } finally {
       setIsGoogleLoading(false);
     }
   };
@@ -210,10 +220,11 @@ export default function Home() {
       });
       if (loginRes.data.status === "success") {
         handleAuthSuccess(loginRes.data.data);
+        // Keep loading state true for redirection
+        return;
       }
     } catch (err: any) {
       setError(extractError(err));
-    } finally {
       setIsLoading(false);
     }
   };

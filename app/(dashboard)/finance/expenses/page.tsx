@@ -9,7 +9,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, TrendingDown, Receipt, Download, ArrowLeft, Plus, Calendar } from "lucide-react";
+import { Loader2, TrendingDown, Receipt, Download, ArrowLeft, Plus, Calendar, TrendingUp, DollarSign } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { 
     Dialog, 
@@ -23,7 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
-import * as XLSX from "xlsx";
+// import * as XLSX from "xlsx"; // Removed for optimization
 import Link from "next/link";
 
 export default function ExpensesPage() {
@@ -154,8 +155,9 @@ export default function ExpensesPage() {
     }
   }, [user, selectedStation, dateFilter, selectedCategory]);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!expenses.length) return;
+    const XLSX = await import("xlsx");
     const dataToExport = expenses.map((expense: any) => ({
       "Description": expense.description || "Untitled",
       "Category": expense.category?.name || "General",
@@ -181,8 +183,14 @@ export default function ExpensesPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-red-600 dark:text-red-500">Expenses</h1>
-            <p className="text-muted-foreground">Manage and track your operational costs.</p>
+            <p className="text-muted-foreground whitespace-nowrap">Manage and track your operational costs.</p>
           </div>
+          <Link href="/finance/income">
+            <Button variant="outline" size="sm" className="hidden sm:flex border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600 dark:border-emerald-900/30 dark:hover:bg-emerald-950/20 gap-2">
+              <TrendingUp className="h-4 w-4" />
+              View Income
+            </Button>
+          </Link>
         </div>
         <div className="flex items-center gap-2">
           <Select value={selectedStation} onValueChange={setSelectedStation}>
@@ -210,6 +218,32 @@ export default function ExpensesPage() {
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <MetricCard
+          label="Total Expenses"
+          value={expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)}
+          icon={<TrendingDown className="w-5 h-5" />}
+          color="text-red-500"
+          bg="bg-red-50 dark:bg-red-950/20"
+        />
+        <MetricCard
+          label="Expense Entries"
+          value={expenses.length}
+          icon={<Receipt className="w-5 h-5" />}
+          color="text-amber-500"
+          bg="bg-amber-50 dark:bg-amber-950/20"
+        />
+        <MetricCard
+          label="Go to Income"
+          value="View Revenue"
+          icon={<DollarSign className="w-5 h-5" />}
+          color="text-emerald-500"
+          bg="bg-emerald-50 dark:bg-emerald-950/20"
+          href="/finance/income"
+          isStringValue
+        />
       </div>
 
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -388,4 +422,33 @@ export default function ExpensesPage() {
       )}
     </div>
   );
+}
+
+function MetricCard({ label, value, icon, color, bg, href, isStringValue }: any) {
+  const content = (
+    <Card className={cn(
+      "overflow-hidden border-border bg-card transition-colors",
+      href && "hover:bg-muted/50 cursor-pointer"
+    )}>
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{label}</p>
+            <h3 className="text-2xl font-bold">
+              {isStringValue ? value : `Rs. ${Number(value || 0).toLocaleString()}`}
+            </h3>
+          </div>
+          <div className={`p-3 rounded-xl ${bg} ${color}`}>
+            {icon}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  if (href) {
+    return <Link href={href}>{content}</Link>;
+  }
+
+  return content;
 }

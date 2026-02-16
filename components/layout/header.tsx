@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign, ArrowLeft, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -17,7 +17,9 @@ import { NotificationPanel } from "@/components/notifications/notification-panel
 import apiClient from "@/lib/api-client";
 import { DashboardApis } from "@/lib/api/endpoints";
 
-function LiveStats() {
+import { memo } from "react";
+
+const LiveStats = memo(function LiveStats() {
   const user = useAuth(state => state.user);
   const [stats, setStats] = useState<{ activeOrders: number; kotPending: number; todaySales: number } | null>(null);
 
@@ -90,13 +92,13 @@ function LiveStats() {
       )}
     </div>
   );
-}
+});
 
-function NotificationBell() {
-  const { unreadCount } = useNotifications();
-  const setPanelOpen = useNotificationStore((s) => s.setPanelOpen);
+const NotificationBell = memo(function NotificationBell() {
+    const unreadCount = useNotificationStore(state => state.unreadCount);
+    const setPanelOpen = useNotificationStore(state => state.setPanelOpen);
 
-  return (
+    return (
     <Button
       variant="ghost"
       size="icon"
@@ -112,13 +114,14 @@ function NotificationBell() {
       <span className="sr-only">Notifications</span>
     </Button>
   );
-}
+});
 
-export function Header() {
+export const Header = memo(function Header() {
   const user = useAuth(state => state.user);
   const logout = useAuth(state => state.logout);
   const { restaurant, fetchRestaurant } = useRestaurant();
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const sidebarItems = useSidebarItems();
 
@@ -205,7 +208,10 @@ export function Header() {
             </div>
             <div className="border-t p-4">
               <button
-                onClick={() => logout()}
+                onClick={() => {
+                   logout();
+                   router.push("/");
+                }}
                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-base font-medium text-red-600 dark:text-red-400 transition-all hover:bg-destructive/10"
               >
                 <LogOut className="h-5 w-5" />
@@ -257,4 +263,4 @@ export function Header() {
       </div>
     </header>
   );
-}
+});

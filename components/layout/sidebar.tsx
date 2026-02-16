@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn, getImageUrl } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -27,7 +27,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSidebar } from "@/hooks/use-sidebar";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, memo } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -39,8 +39,9 @@ import {
   type SidebarItem
 } from "@/hooks/use-sidebar-items";
 
-export function Sidebar() {
+export const Sidebar = memo(function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const logout = useAuth(state => state.logout);
   const { restaurant, fetchRestaurant } = useRestaurant();
   const { collapsed, toggle } = useSidebar();
@@ -142,7 +143,10 @@ export function Sidebar() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => logout()}
+                  onClick={() => {
+                    logout();
+                    router.push("/");
+                  }}
                   className="flex w-full items-center justify-center rounded-lg py-2.5 text-red-600 dark:text-red-400 transition-all hover:bg-destructive/10"
                 >
                   <LogOut className="h-5 w-5" />
@@ -152,7 +156,10 @@ export function Sidebar() {
             </Tooltip>
           ) : (
             <button
-              onClick={() => logout()}
+              onClick={() => {
+                logout();
+                router.push("/");
+              }}
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-base font-medium text-red-600 dark:text-red-400 transition-all hover:bg-destructive/10"
             >
               <LogOut className="h-5 w-5" />
@@ -163,4 +170,4 @@ export function Sidebar() {
       </div>
     </TooltipProvider>
   );
-}
+});

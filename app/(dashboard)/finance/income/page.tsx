@@ -8,10 +8,11 @@ import { IncomeApis, ExpenseApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, DollarSign, TrendingUp, Receipt, Download, ArrowLeft } from "lucide-react";
+import { Loader2, DollarSign, TrendingUp, Receipt, Download, ArrowLeft, TrendingDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
-import * as XLSX from "xlsx";
+// import * as XLSX from "xlsx"; // Removed for optimization
 import Link from "next/link";
 
 export default function IncomePage() {
@@ -102,8 +103,9 @@ export default function IncomePage() {
     }
   }, [user, selectedStation, dateFilter]);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!incomeData?.recent_entries?.length) return;
+    const XLSX = await import("xlsx");
     const dataToExport = incomeData.recent_entries.map((entry: any) => ({
       "Description": entry.description || "Manual Entry",
       "Amount": entry.amount,
@@ -129,8 +131,14 @@ export default function IncomePage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-500">Income</h1>
-            <p className="text-muted-foreground">Track sales revenue and cash flow.</p>
+            <p className="text-muted-foreground whitespace-nowrap">Track sales revenue and cash flow.</p>
           </div>
+          <Link href="/finance/expenses">
+            <Button variant="outline" size="sm" className="hidden sm:flex border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:hover:bg-red-950/20 gap-2">
+              <TrendingDown className="h-4 w-4" />
+              View Expenses
+            </Button>
+          </Link>
         </div>
         <div className="flex items-center gap-2">
           <Select value={selectedStation} onValueChange={setSelectedStation}>
@@ -189,11 +197,12 @@ export default function IncomePage() {
               bg={(incomeData?.summary?.total_net_income || 0) - (expenseSummary?.total_amount || 0) >= 0 ? "bg-blue-50 dark:bg-blue-950/20" : "bg-red-50 dark:bg-red-950/20"}
             />
             <MetricCard
-              label="Service Charges"
-              value={incomeData?.summary?.total_service_charge || 0}
-              icon={<DollarSign className="w-5 h-5" />}
-              color="text-amber-500"
-              bg="bg-amber-50 dark:bg-amber-950/20"
+              label="Total Expenses"
+              value={expenseSummary?.total_amount || 0}
+              icon={<TrendingDown className="w-5 h-5" />}
+              color="text-red-500"
+              bg="bg-red-50 dark:bg-red-950/20"
+              href="/finance/expenses"
             />
           </div>
 
@@ -245,9 +254,12 @@ export default function IncomePage() {
   );
 }
 
-function MetricCard({ label, value, icon, color, bg }: any) {
-  return (
-    <Card className="overflow-hidden border-border bg-card">
+function MetricCard({ label, value, icon, color, bg, href }: any) {
+  const content = (
+    <Card className={cn(
+        "overflow-hidden border-border bg-card transition-colors",
+        href && "hover:bg-muted/50 cursor-pointer"
+    )}>
       <CardContent className="p-6">
         <div className="flex items-center justify-between">
           <div>
@@ -261,4 +273,10 @@ function MetricCard({ label, value, icon, color, bg }: any) {
       </CardContent>
     </Card>
   );
+
+  if (href) {
+    return <Link href={href}>{content}</Link>;
+  }
+
+  return content;
 }
