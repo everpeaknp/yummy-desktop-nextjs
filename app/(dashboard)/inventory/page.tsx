@@ -282,6 +282,8 @@ export default function InventoryPage() {
       current_stock: item.current_stock?.toString() || "0",
       min_stock_level: item.min_stock_level?.toString() || "0",
       cost_per_unit: item.cost_per_unit?.toString() || "",
+      opening_stock_total_cost: "",
+      opening_stock_payment_status: "paid",
       supplier_id: item.supplier_id?.toString() || "none",
       location: item.location || "",
       is_active: item.is_active ?? true,

@@ -97,7 +97,7 @@ export default function RestaurantSettingsPage() {
         if (!user?.restaurant_id) return;
         setSaving(true);
         try {
-            await apiClient.put(RestaurantApis.updateFonePay(user.restaurant_id), fonepay);
+            await apiClient.put(RestaurantApis.updateFonepay(user.restaurant_id), fonepay);
             toast.success("Payment configuration updated");
         } catch (err) {
             toast.error("Failed to update payment settings");

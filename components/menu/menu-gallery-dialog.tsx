@@ -1,5 +1,6 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import Image from "next/image";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MENU_GALLERY_ITEMS, MenuGalleryCategory, type MenuGalleryItem } from "@/lib/constants/menu-gallery";
@@ -38,8 +39,8 @@ export function MenuGalleryDialog({ open, onOpenChange, onSelect }: MenuGalleryD
 
       if (data) {
         const items: MenuGalleryItem[] = data
-          .filter(file => file.name !== '.emptyFolderPlaceholder')
-          .map(file => {
+          .filter((file: any) => file.name !== '.emptyFolderPlaceholder')
+          .map((file: any) => {
             const { data: { publicUrl } } = supabase.storage
               .from('menu-items')
               .getPublicUrl(`${user.restaurant_id}/${file.name}`);
@@ -72,7 +73,7 @@ export function MenuGalleryDialog({ open, onOpenChange, onSelect }: MenuGalleryD
   const filteredItems = useMemo(() => {
     let baseItems = selectedCategory === "My Uploads" ? customImages : 
                     selectedCategory === "All" ? [...customImages, ...MENU_GALLERY_ITEMS] :
-                    MENU_GALLERY_ITEMS.filter((item) => item.category === selectedCategory);
+                    MENU_GALLERY_ITEMS.filter((item: any) => item.category === selectedCategory);
     
     return baseItems;
   }, [selectedCategory, customImages]);
@@ -88,7 +89,7 @@ export function MenuGalleryDialog({ open, onOpenChange, onSelect }: MenuGalleryD
           <div className="px-6 py-2 border-b bg-muted/40">
             <ScrollArea className="w-full whitespace-nowrap">
               <div className="flex w-max space-x-2 p-1">
-                {categories.map((category) => (
+                {categories.map((category: any) => (
                   <button
                     key={category}
                     onClick={() => setSelectedCategory(category)}
@@ -108,7 +109,7 @@ export function MenuGalleryDialog({ open, onOpenChange, onSelect }: MenuGalleryD
 
           <ScrollArea className="flex-1 p-6">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {filteredItems.map((item) => (
+              {filteredItems.map((item: any) => (
                 <button
                   key={item.id}
                   onClick={() => {

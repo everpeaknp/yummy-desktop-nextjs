@@ -58,7 +58,7 @@ export default function PurchasesPage() {
         if (!user?.restaurant_id) return;
         setLoading(true);
         try {
-            const res = await apiClient.get(GeneralPurchaseApis.list(user.restaurant_id));
+            const res = await apiClient.get(GeneralPurchaseApis.list({ restaurantId: user.restaurant_id }));
             if (res.data.status === "success") {
                 setPurchases(res.data.data.purchases);
             }

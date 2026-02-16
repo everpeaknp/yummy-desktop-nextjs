@@ -7,6 +7,7 @@ import apiClient from "@/lib/api-client";
 import { ExpenseApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, TrendingDown, Receipt, Download, ArrowLeft, Plus, Calendar } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { Label } from "@/components/ui/label";
 import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
 import * as XLSX from "xlsx";
 import Link from "next/link";

@@ -345,6 +345,7 @@ export default function AdditionalSettingsPage() {
     const { restaurant, fetchRestaurant } = useRestaurant();
     const { logout } = useAuth();
     const { theme, setTheme } = useTheme();
+    const { preferences, updatePreference } = usePreferences();
     const router = useRouter();
 
     const [galleryOpen, setGalleryOpen] = useState(false);
@@ -352,13 +353,13 @@ export default function AdditionalSettingsPage() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
     
-    const filteredCategories = categories.map(cat => ({
+    const filteredCategories = categories.map((cat: any) => ({
         ...cat,
-        items: cat.items.filter(item => 
+        items: cat.items.filter((item: any) => 
             item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.description.toLowerCase().includes(searchQuery.toLowerCase())
         )
-    })).filter(cat => cat.items.length > 0);
+    })).filter((cat: any) => cat.items.length > 0);
 
     const handleTogglePreference = async (key: any, value: boolean) => {
         try {
@@ -432,8 +433,8 @@ export default function AdditionalSettingsPage() {
 
       if (data) {
         const imagesWithUrls = data
-          .filter(file => file.name !== '.emptyFolderPlaceholder')
-          .map(file => {
+          .filter((file: any) => file.name !== '.emptyFolderPlaceholder')
+          .map((file: any) => {
             const { data: { publicUrl } } = supabase.storage
               .from('menu-items')
               .getPublicUrl(`${user.restaurant_id}/${file.name}`);
@@ -549,7 +550,7 @@ export default function AdditionalSettingsPage() {
                                 <p className="text-sm font-bold tracking-tight">Switch between light and dark themes</p>
                             </div>
                             <div className="flex bg-muted p-1 rounded-lg border border-border/40">
-                                {['light', 'dark', 'system'].map((t) => (
+                                {['light', 'dark', 'system'].map((t: any) => (
                                     <Button 
                                         key={t}
                                         variant={theme === t ? 'secondary' : 'ghost'} 
@@ -599,7 +600,7 @@ export default function AdditionalSettingsPage() {
                              : selectedSetting === 'order_notifications' ? 'is_order_notification_enabled'
                              : selectedSetting;
                 
-                const currentItem = categories.flatMap(c => c.items).find(i => i.id === selectedSetting);
+                const currentItem = categories.flatMap((c: any) => c.items).find((i: any) => i.id === selectedSetting);
                 const title = currentItem?.title;
                 const desc = currentItem?.description;
 
@@ -626,7 +627,7 @@ export default function AdditionalSettingsPage() {
                                 )}
                                 <Switch 
                                     checked={preferences[prefKey as keyof typeof preferences] as boolean}
-                                    onCheckedChange={(val) => handleTogglePreference(prefKey, val)}
+                                    onCheckedChange={(val: any) => handleTogglePreference(prefKey, val)}
                                     disabled={isUpdating}
                                 />
                             </div>
@@ -643,7 +644,7 @@ export default function AdditionalSettingsPage() {
                                 placeholder="••••••••" 
                                 className="font-bold border-border/40" 
                                 value={passwords.current}
-                                onChange={(e) => setPasswords({...passwords, current: e.target.value})}
+                                onChange={(e: any) => setPasswords({...passwords, current: e.target.value})}
                             />
                         </div>
                         <div className="space-y-2">
@@ -653,7 +654,7 @@ export default function AdditionalSettingsPage() {
                                 placeholder="••••••••" 
                                 className="font-bold border-border/40" 
                                 value={passwords.new}
-                                onChange={(e) => setPasswords({...passwords, new: e.target.value})}
+                                onChange={(e: any) => setPasswords({...passwords, new: e.target.value})}
                             />
                         </div>
                         <div className="space-y-2">
@@ -663,7 +664,7 @@ export default function AdditionalSettingsPage() {
                                 placeholder="••••••••" 
                                 className="font-bold border-border/40" 
                                 value={passwords.confirm}
-                                onChange={(e) => setPasswords({...passwords, confirm: e.target.value})}
+                                onChange={(e: any) => setPasswords({...passwords, confirm: e.target.value})}
                             />
                         </div>
                         <Button 
@@ -786,7 +787,7 @@ export default function AdditionalSettingsPage() {
                             </div>
                         ) : (
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                                {customImages.map((img) => (
+                                {customImages.map((img: any) => (
                                     <div key={img.name} className="group relative aspect-square rounded-2xl overflow-hidden border border-border/40 bg-card shadow-sm hover:shadow-xl transition-all duration-300">
                                         <img
                                             src={img.url}
@@ -955,14 +956,14 @@ export default function AdditionalSettingsPage() {
             </div>
 
             <div className="grid grid-cols-1 gap-12">
-                {filteredCategories.map((section) => (
+                {filteredCategories.map((section: any) => (
                     <div key={section.title} className="space-y-5">
                         <h2 className="text-[11px] font-black tracking-[0.2em] text-muted-foreground/70 uppercase">
                             {section.title}
                         </h2>
                        
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {section.items.map((item) => (
+                            {section.items.map((item: any) => (
                                 <button 
                                     key={item.id}
                                     className="group text-left focus:outline-none"
@@ -1009,14 +1010,14 @@ export default function AdditionalSettingsPage() {
                 ))}
             </div>
 
-            <Dialog open={!!selectedSetting} onOpenChange={(open) => !open && setSelectedSetting(null)}>
+            <Dialog open={!!selectedSetting} onOpenChange={(open: boolean) => !open && setSelectedSetting(null)}>
                 <DialogContent className={cn(
                     "border-border/40 backdrop-blur-2xl transition-all duration-500",
                     (selectedSetting === 'receipt_designer' || selectedSetting === 'kot_designer' || selectedSetting === 'printer_management') ? "sm:max-w-[1000px]" : "sm:max-w-[500px]"
                 )}>
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-2xl font-black tracking-tight uppercase italic">
-                            {selectedSetting && categories.flatMap(c => c.items).find(i => i.id === selectedSetting)?.title}
+                            {selectedSetting && categories.flatMap((c: any) => c.items).find((i: any) => i.id === selectedSetting)?.title}
                         </DialogTitle>
                         <DialogDescription className="font-bold text-muted-foreground/80">
                             Configure your {selectedSetting?.replace("_", " ")} preferences and system parameters.
