@@ -6,7 +6,7 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis } from "@/lib/api/endpoints";
+import { OrderApis, CustomerApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +43,7 @@ import {
   AlertCircle,
   RefreshCw,
   CheckCircle,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -104,6 +105,7 @@ interface OrderMeta {
   status: string;
   customer_name?: string;
   customer_phone?: string;
+  customer_id?: number;
   number_of_guests?: number;
   notes?: string;
   created_at: string;
@@ -144,6 +146,10 @@ export default function CheckoutPage() {
   const [paySubmitting, setPaySubmitting] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
 
+  // Customer selection for Credit
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+
   // Discount dialog
   const [discountOpen, setDiscountOpen] = useState(false);
   const [discountType, setDiscountType] = useState<"code" | "manual">("code");
@@ -178,6 +184,25 @@ export default function CheckoutPage() {
     fetchBill();
   }, [fetchBill]);
 
+  // ── Fetch Customers ───────────────────────────────
+  const fetchCustomers = useCallback(async () => {
+    if (!user?.restaurant_id) return;
+    try {
+      const { data } = await apiClient.get(CustomerApis.listCustomers(user.restaurant_id));
+      if (data.status === "success") {
+        setCustomers(data.data.customers || []);
+      }
+    } catch (err) {
+      console.error("Failed to load customers:", err);
+    }
+  }, [user?.restaurant_id]);
+
+  useEffect(() => {
+    if (user?.restaurant_id) {
+      fetchCustomers();
+    }
+  }, [fetchCustomers, user?.restaurant_id]);
+
   // ── Auto-navigate on full payment ─────────────────
   useEffect(() => {
     if (bill?.is_fully_paid) {
@@ -209,9 +234,24 @@ export default function CheckoutPage() {
       setPayError("Enter a valid amount");
       return;
     }
+
+    if (payMethod === "credit") {
+        if (!orderMeta?.customer_id && !selectedCustomerId) {
+            setPayError("Select a customer for credit payment");
+            return;
+        }
+    }
+
     setPaySubmitting(true);
     setPayError(null);
     try {
+      // If paying with credit and assigning a new customer to this order
+      if (payMethod === "credit" && selectedCustomerId && String(orderMeta?.customer_id) !== selectedCustomerId) {
+        await apiClient.patch(OrderApis.updateOrder(orderId), {
+            customer_id: parseInt(selectedCustomerId, 10)
+        });
+      }
+
       const res = await apiClient.post(OrderApis.addPayment(orderId), {
         payment: {
           method: payMethod,
@@ -661,6 +701,32 @@ export default function CheckoutPage() {
                 ))}
               </div>
             </div>
+
+            {/* Customer Selection for Credit Method */}
+            {payMethod === "credit" && !orderMeta?.customer_id && (
+              <div className="space-y-2">
+                <Label>Select Customer</Label>
+                <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a customer to assign credit tracking" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers.map((c: any) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.full_name || "Guest"} ({c.phone || "No phone"}) - Balance: {formatCurrency(c.credit || 0, curr)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            
+            {payMethod === "credit" && orderMeta?.customer_id && (
+               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
+                  <User className="h-4 w-4" />
+                  Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
+               </div>
+            )}
 
             {/* Amount */}
             <div className="space-y-2">

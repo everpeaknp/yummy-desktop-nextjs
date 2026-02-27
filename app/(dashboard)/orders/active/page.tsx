@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { OrderApis } from "@/lib/api/endpoints";
+import { OrderApis, TableApis } from "@/lib/api/endpoints";
 import { OrderCard } from "@/components/orders/order-card";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,9 +48,45 @@ export default function ActiveOrdersPage() {
 
             try {
                 const url = `${OrderApis.activeOrders}?restaurant_id=${user.restaurant_id}`;
-                const response = await apiClient.get(url);
+                // Fetch both tables and orders to bypass Azure table_name bug
+                const [response, tablesRes] = await Promise.all([
+                    apiClient.get(url),
+                    apiClient.get(TableApis.tableSummary(user.restaurant_id)).catch(() => null)
+                ]);
+                
                 if (response.data.status === "success") {
-                    setOrders(response.data.data.orders);
+                    const fetchedOrders: Order[] = response.data.data.orders;
+                    
+                    let tablesLookup: Record<number, any> = {};
+                    if (tablesRes && tablesRes.data.status === "success") {
+                        const tablesArr = tablesRes.data.data || [];
+                        tablesArr.forEach((t: any) => {
+                           tablesLookup[t.id] = t;
+                        });
+                    }
+                    
+                    // FIX: Clean up stale table_name from backend bug
+                    const cleanedOrders = fetchedOrders.map(order => {
+                        if (order.table_category_name && order.table_category_name.includes(',')) {
+                            const categories = order.table_category_name.split(',');
+                            order.table_category_name = categories[categories.length - 1].trim();
+                        }
+                        
+                        if (order.table_id && tablesLookup[order.table_id]) {
+                            const tableData = tablesLookup[order.table_id];
+                            order.table_name = tableData.table_name || tableData.name;
+                            if (tableData.table_type_name) {
+                                order.table_category_name = tableData.table_type_name;
+                            }
+                        } else if (order.table_name && order.table_name.includes(',')) {
+                            const names = order.table_name.split(',');
+                            order.table_name = names[names.length - 1].trim();
+                        }
+                        
+                        return order;
+                    });
+                    
+                    setOrders(cleanedOrders);
                 }
             } catch (err) {
                 console.error("Failed to fetch active orders:", err);

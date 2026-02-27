@@ -116,6 +116,9 @@ export default function NewOrderPage() {
 
     // If a table is selected, show POS with Back button
     if (selectedTable) {
+        const tableDetails = tables.find(t => t.id === selectedTable);
+        const existingOrderId = tableDetails?.active_order_ids?.[0] || 'create';
+
         return (
             <div className="flex flex-col h-full gap-2">
                 <div className="flex items-center gap-2 pb-2">
@@ -125,7 +128,7 @@ export default function NewOrderPage() {
                     <h2 className="text-lg font-semibold">Table Order</h2>
                 </div>
                 <Suspense fallback={<div>Loading...</div>}>
-                    <POSSystem orderId="create" defaultTableId={selectedTable} />
+                    <POSSystem orderId={existingOrderId.toString()} defaultTableId={selectedTable} />
                 </Suspense>
             </div>
         );

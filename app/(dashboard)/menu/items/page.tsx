@@ -33,11 +33,12 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { MenuApis } from "@/lib/api/endpoints";
+import { MenuApis, ModifierApis } from "@/lib/api/endpoints";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { MenuImageService } from "@/services/menu-image-service";
 import { MenuGalleryDialog, MenuGalleryItem } from "@/components/menu/menu-gallery-dialog";
+import { InventoryLinkDialog } from "@/components/menu/inventory-link-dialog";
 import Image from "next/image";
 
 interface MenuItem {
@@ -66,6 +67,7 @@ interface FormData {
 
   is_price_tax_inclusive: boolean;
   image: string;
+  modifier_group_ids: number[];
 }
 
 const emptyForm: FormData = {
@@ -76,11 +78,13 @@ const emptyForm: FormData = {
 
   is_price_tax_inclusive: true,
   image: "",
+  modifier_group_ids: [],
 };
 
 export default function MenuItemsPage() {
   const [allItems, setAllItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
+  const [modifierGroups, setModifierGroups] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -99,6 +103,10 @@ export default function MenuItemsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+
+  // Inventory Link Dialog State
+  const [inventoryLinkOpen, setInventoryLinkOpen] = useState(false);
+  const [inventoryLinkItem, setInventoryLinkItem] = useState<MenuItem | null>(null);
 
   // Delete dialog state
   const [deleteItem, setDeleteItem] = useState<MenuItem | null>(null);
@@ -129,6 +137,16 @@ export default function MenuItemsPage() {
         setCategories(cats);
         setAllItems(items);
       }
+      
+      try {
+        const modRes = await apiClient.get(ModifierApis.listGroups(user.restaurant_id));
+        if (modRes.data?.status === "success") {
+           setModifierGroups(modRes.data.data.groups || []);
+        }
+      } catch(e) {
+         console.warn("Failed to fetch modifier groups", e);
+      }
+      
     } catch (err) {
       console.error("Failed to fetch menu items:", err);
     } finally {
@@ -192,6 +210,7 @@ export default function MenuItemsPage() {
 
       is_price_tax_inclusive: true,
       image: item.image || "",
+      modifier_group_ids: item.modifier_group_ids || [],
     });
     setSelectedFile(null);
     setPreviewUrl(null);
@@ -256,6 +275,7 @@ export default function MenuItemsPage() {
         description: form.description.trim() || null,
         is_price_tax_inclusive: form.is_price_tax_inclusive,
         image: imageUrl || null,
+        modifier_group_ids: form.modifier_group_ids,
       };
 
       if (editingItem) {
@@ -423,6 +443,10 @@ export default function MenuItemsPage() {
                 currency={currency}
                 onEdit={() => openEditDialog(item)}
                 onDelete={() => setDeleteItem(item)}
+                onLinkInventory={() => {
+                  setInventoryLinkItem(item);
+                  setInventoryLinkOpen(true);
+                }}
               />
             ))}
           </div>
@@ -556,6 +580,32 @@ export default function MenuItemsPage() {
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
               />
             </div>
+            
+            <div className="space-y-2">
+              <Label>Modifier Groups</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border rounded-md p-3 max-h-40 overflow-y-auto">
+                {modifierGroups.map(group => (
+                   <label key={group.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                     <input 
+                       type="checkbox" 
+                       checked={form.modifier_group_ids.includes(group.id)} 
+                       onChange={(e) => {
+                         const checked = e.target.checked;
+                         setForm(prev => ({
+                            ...prev,
+                            modifier_group_ids: checked 
+                              ? [...prev.modifier_group_ids, group.id]
+                              : prev.modifier_group_ids.filter(id => id !== group.id)
+                         }))
+                       }}
+                       className="rounded border-border"
+                     />
+                     {group.name}
+                   </label>
+                ))}
+                {modifierGroups.length === 0 && <span className="text-muted-foreground text-xs col-span-2">No modifier groups available</span>}
+              </div>
+            </div>
 
             <div className="flex items-center gap-2">
               <input
@@ -612,6 +662,16 @@ export default function MenuItemsPage() {
         onOpenChange={setGalleryOpen} 
         onSelect={handleGallerySelect} 
       />
+      
+      {/* Inventory Link Dialog */}
+      <InventoryLinkDialog
+        open={inventoryLinkOpen}
+        onOpenChange={(open) => {
+          setInventoryLinkOpen(open);
+          if (!open) setInventoryLinkItem(null);
+        }}
+        menuItem={inventoryLinkItem}
+      />
     </div>
   );
 }
@@ -621,11 +681,13 @@ function MenuItemCard({
   currency,
   onEdit,
   onDelete,
+  onLinkInventory,
 }: {
   item: MenuItem;
   currency: string;
   onEdit: () => void;
   onDelete: () => void;
+  onLinkInventory: () => void;
 }) {
   const [imgError, setImgError] = useState(false);
   const hasImage = item.image && !imgError;
@@ -669,6 +731,7 @@ function MenuItemCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onLinkInventory}><UtensilsCrossed className="mr-2 h-4 w-4" /> Link Inventory</DropdownMenuItem>
               <DropdownMenuItem onClick={onEdit}><Edit className="mr-2 h-4 w-4" /> Edit</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onDelete} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>

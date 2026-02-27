@@ -15,9 +15,12 @@ const auth = getAuth(app);
 
 export async function signInWithGoogle(): Promise<string> {
   const provider = new GoogleAuthProvider();
+  provider.addScope('email');
+  provider.addScope('profile');
+  provider.addScope('openid');
   provider.setCustomParameters({ prompt: "select_account" });
   const result = await signInWithPopup(auth, provider);
-  const idToken = await result.user.getIdToken();
+  const idToken = await result.user.getIdToken(true);
   return idToken;
 }
 

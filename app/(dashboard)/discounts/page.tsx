@@ -31,8 +31,8 @@ interface Discount {
   value: number;
   description?: string;
   min_order_amount?: number;
-  start_date?: string;
-  end_date?: string;
+  valid_from?: string;
+  valid_until?: string;
   max_discount_amount?: number;
 }
 
@@ -200,7 +200,7 @@ export default function DiscountsPage() {
                 <div className="space-y-2 text-sm text-muted-foreground mb-4">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 opacity-70" />
-                    <span>Expires: {discount.end_date ? new Date(discount.end_date).toLocaleDateString() : 'Never'}</span>
+                    <span>Expires: {discount.valid_until ? new Date(discount.valid_until).toLocaleDateString() : 'Never'}</span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
                      <span className="opacity-70">Min Order:</span>

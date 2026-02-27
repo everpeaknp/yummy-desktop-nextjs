@@ -136,7 +136,26 @@ export default function Home() {
       const idToken = await signInWithGoogle();
       const response = await apiClient.post("/auth/firebase/google", { idToken });
       if (response.data.status === "success") {
-        handleAuthSuccess(response.data.data);
+        const payload = response.data.data;
+        // Backend returns standard login with flat structure or Google auth with nested "user" object
+        let flatData;
+        if (payload.user) {
+          flatData = {
+            access_token: payload.access_token,
+            refresh_token: payload.access_token, // Backend doesn't return refresh token for Google auth currently, using access token as fallback or empty
+            user_id: payload.user.id,
+            user_name: payload.user.name,
+            email: payload.user.email,
+            user_role: payload.user.role,
+            user_roles: payload.user.roles,
+            primary_role: payload.user.primary_role,
+            restaurant_id: payload.user.restaurant_id,
+          };
+        } else {
+          flatData = payload;
+        }
+        
+        handleAuthSuccess(flatData);
         // Keep isGoogleLoading(true) during redirection
         return;
       }
@@ -384,15 +403,7 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="login-password">Password</Label>
-                      <Link
-                        href="/forgot-password"
-                        className="ml-auto inline-block text-xs text-primary underline-offset-4 hover:underline font-medium"
-                      >
-                        Forgot password?
-                      </Link>
-                    </div>
+                    <Label htmlFor="login-password">Password</Label>
                     <Input
                       id="login-password"
                       type="password"
@@ -401,6 +412,14 @@ export default function Home() {
                       onChange={(e) => setPassword(e.target.value)}
                       className="bg-background/50"
                     />
+                    <div className="flex justify-start">
+                      <Link
+                        href="/forgot-password"
+                        className="text-xs text-primary underline-offset-4 hover:underline font-medium"
+                      >
+                        Forgot password?
+                      </Link>
+                    </div>
                   </div>
                 </CardContent>
                 <CardFooter className="flex flex-col gap-4">

@@ -32,7 +32,7 @@ const formSchema = z.object({
   selection_type: z.enum(["single", "multiple"]),
   is_required: z.boolean().default(false),
   min_selections: z.coerce.number().min(0).default(0),
-  max_selections: z.coerce.number().min(1).nullable().default(1),
+  max_selections: z.preprocess((val) => (val === "" || val === null) ? null : Number(val), z.number().min(1).nullable().default(1)),
 });
 
 export interface ModifierGroup {

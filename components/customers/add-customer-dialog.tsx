@@ -20,7 +20,7 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
   const user = useAuth((state) => state.user);
   
   const [formData, setFormData] = useState({
-    full_name: "",
+    name: "",
     phone: "",
     email: ""
   });
@@ -45,7 +45,7 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
       const res = await apiClient.post(CustomerApis.createCustomer, payload);
       if (res.data.status === "success") {
         setOpen(false);
-        setFormData({ full_name: "", phone: "", email: "" });
+        setFormData({ name: "", phone: "", email: "" });
         onCustomerAdded();
       }
     } catch (error) {
@@ -68,11 +68,11 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="full_name">Full Name</Label>
+            <Label htmlFor="name">Full Name</Label>
             <Input
-              id="full_name"
-              name="full_name"
-              value={formData.full_name}
+              id="name"
+              name="name"
+              value={formData.name}
               onChange={handleChange}
               placeholder="John Doe"
               required

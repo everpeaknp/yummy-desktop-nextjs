@@ -6,7 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 export function getImageUrl(path?: string) {
   if (!path) return "";
-  if (path.startsWith("http")) return path;
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
   if (path.startsWith("asset:")) {
     // Convert asset:menu_gallery/americano.webp to /assets/menu_gallery/americano.webp
     return `/${path.replace("asset:", "assets/")}`;

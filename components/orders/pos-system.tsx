@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useSearchParams, useRouter } from "next/navigation";
 import { cn, getImageUrl } from "@/lib/utils";
 import Image from "next/image";
+import { ItemCustomizationDialog } from "./item-customization-dialog";
 
 
 interface MenuItem {
@@ -27,6 +28,7 @@ interface MenuItem {
   category_name?: string;
   item_category_id?: number;
   category_type?: string;
+  modifier_group_ids?: number[];
 }
 
 interface CartItem {
@@ -35,6 +37,8 @@ interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  notes?: string;
+  modifiers?: any[];
 }
 
 const CartContent = ({ 
@@ -76,9 +80,24 @@ const CartContent = ({
         ) : (
           cart.map((item: any) => (
             <div key={item.menu_item_id} className="flex gap-2 items-start animate-in slide-in-from-right-5 fade-in duration-300">
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <h4 className="text-sm font-medium">{item.name}</h4>
-                <p className="text-xs text-muted-foreground">{restaurant?.currency || "$"}{item.price.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">{restaurant?.currency || "Rs."}{item.price.toLocaleString()}</p>
+                {item.modifiers && item.modifiers.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {item.modifiers.map((mod: any, idx: number) => (
+                      <span key={idx} className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <Plus className="w-2 h-2" />
+                        {mod.modifier_name_snapshot || mod.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {item.notes && (
+                  <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2 italic">
+                    Note: {item.notes}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2 bg-muted/50 rounded-md p-1">
                 <Button
@@ -102,7 +121,7 @@ const CartContent = ({
                 </Button>
               </div>
               <div className="text-sm font-medium w-16 text-right">
-                {restaurant?.currency || "$"}{(item.price * item.quantity).toLocaleString()}
+                {restaurant?.currency || "Rs."}{(item.price * item.quantity).toLocaleString()}
               </div>
             </div>
           ))
@@ -113,15 +132,15 @@ const CartContent = ({
         <div className="space-y-2 text-sm">
           <div className="flex justify-between text-muted-foreground">
             <span>Subtotal</span>
-            <span>{restaurant?.currency || "$"}{subtotal.toLocaleString()}</span>
+            <span>{restaurant?.currency || "Rs."}{subtotal.toLocaleString()}</span>
           </div>
           <div className="flex justify-between text-muted-foreground">
             <span>Tax (13% VAT)</span>
-            <span>{restaurant?.currency || "$"}{tax.toLocaleString()}</span>
+            <span>{restaurant?.currency || "Rs."}{tax.toLocaleString()}</span>
           </div>
           <div className="flex justify-between font-bold text-lg pt-2 border-t text-foreground">
             <span>Total</span>
-            <span>{restaurant?.currency || "$"}{total.toLocaleString()}</span>
+            <span>{restaurant?.currency || "Rs."}{total.toLocaleString()}</span>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -162,6 +181,8 @@ export default function POSSystem({
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<number | null>(null);
+  const [modifierGroups, setModifierGroups] = useState<any[]>([]);
+  const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -195,11 +216,13 @@ export default function POSSystem({
         const orderPromise = (orderId && orderId !== 'create')
           ? apiClient.get(`/orders/${orderId}`).catch(err => { console.error("[POS] Order fetch failed:", err); return null; })
           : Promise.resolve(null);
+        const modPromise = apiClient.get(`/modifiers/groups?restaurant_id=${user.restaurant_id}`).catch(err => { console.error("[POS] Mod fetch failed", err); return null; });
 
-        const [itemRes, tableRes, orderRes] = await Promise.all([
+        const [itemRes, tableRes, orderRes, modRes] = await Promise.all([
           itemPromise,
           tablePromise,
-          orderPromise
+          orderPromise,
+          modPromise
         ]);
 
         if (itemRes && itemRes.data.status === "success") {
@@ -225,6 +248,9 @@ export default function POSSystem({
         if (tableRes && tableRes.data.status === "success") {
           setTableData(tableRes.data.data);
         }
+        if (modRes && modRes.data.status === "success") {
+          setModifierGroups(modRes.data.data.groups || []);
+        }
         if (orderRes && orderRes.data.status === "success") {
           const order = orderRes.data.data;
           setOrderData(order);
@@ -233,7 +259,9 @@ export default function POSSystem({
             menu_item_id: item.menu_item_id,
             name: item.name_snapshot,
             price: item.unit_price,
-            quantity: item.qty
+            quantity: item.qty,
+            notes: item.notes,
+            modifiers: item.modifiers || []
           })));
         }
       } catch (err) {
@@ -246,15 +274,50 @@ export default function POSSystem({
     fetchData();
   }, [user, orderId, tableIdFromQuery]);
 
-  const addToCart = (item: MenuItem) => {
+  const handleItemClick = (item: MenuItem) => {
+    // Check if the item has associated modifier groups
+    const hasModifiers = item.modifier_group_ids && item.modifier_group_ids.length > 0;
+    
+    // Check if any of these associated groups actually exist in our fetched modifier groups
+    const hasValidModifiers = hasModifiers && modifierGroups.some(g => item.modifier_group_ids?.includes(g.id));
+
+    if (hasValidModifiers) {
+      setCustomizingItem(item);
+    } else {
+      addToCart(item, [], "");
+    }
+  };
+
+  const addToCart = (item: MenuItem, selectedModifiers: any[] = [], notes: string = "") => {
     setCart(prev => {
-      const existing = prev.find(i => i.menu_item_id === item.id);
-      if (existing) {
-        return prev.map(i => i.menu_item_id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+      // Create a unique hash for the item based on its modifiers and notes
+      // so that different customized versions of the same item don't merge
+      const modSignature = selectedModifiers.map(m => m.id).sort().join(',');
+      const itemSignature = `${item.id}-${modSignature}-${notes}`;
+
+      const existingIndex = prev.findIndex(i => {
+         const iModSig = (i.modifiers || []).map((m: any) => m.modifier_id || m.id).sort().join(',');
+         const iSig = `${i.menu_item_id}-${iModSig}-${i.notes || ""}`;
+         return iSig === itemSignature;
+      });
+
+      if (existingIndex >= 0) {
+        const newCart = [...prev];
+        newCart[existingIndex].quantity += 1;
+        return newCart;
       }
+      
       const itemName = item.name || item.item_name || "Unknown Item";
       const itemPrice = item.price || item.item_price || 0;
-      return [...prev, { id: Date.now(), menu_item_id: item.id, name: itemName, price: itemPrice, quantity: 1 }];
+      return [...prev, { 
+        id: Date.now(), 
+        menu_item_id: item.id, 
+        name: itemName, 
+        price: itemPrice, 
+        quantity: 1,
+        modifiers: selectedModifiers,
+        notes: notes
+      }];
     });
   };
 
@@ -273,23 +336,28 @@ export default function POSSystem({
     setProcessing(true);
     try {
       const isEditing = orderId && orderId !== 'create';
+      const buildItemPayload = (item: any) => ({
+        menu_item_id: item.menu_item_id,
+        qty: item.quantity,
+        notes: item.notes || null,
+        modifiers: item.modifiers ? item.modifiers.map((m: any) => ({
+            modifier_id: m.modifier_id || m.id,
+            modifier_name_snapshot: m.modifier_name_snapshot || m.name,
+            price_adjustment_snapshot: m.price_adjustment_snapshot || m.price_adjustment || 0
+        })) : []
+      });
+
       const payload = {
         restaurant_id: user?.restaurant_id,
         channel: orderData?.channel || channelFromQuery,
         table_id: tableData?.id || orderData?.table_id || (tableIdFromQuery ? parseInt(tableIdFromQuery) : null),
-        items: cart.map(item => ({
-          menu_item_id: item.menu_item_id,
-          qty: item.quantity
-        }))
+        items: cart.map(buildItemPayload)
       };
 
       let response;
       if (isEditing) {
         response = await apiClient.post(`/orders/${orderId}/items/bulk-update`, {
-          items: cart.map(item => ({
-            menu_item_id: item.menu_item_id,
-            qty: item.quantity
-          }))
+          items: cart.map(buildItemPayload)
         });
       } else {
         response = await apiClient.post('/orders/', payload);
@@ -403,7 +471,7 @@ export default function POSSystem({
                 <Card
                   key={`${item.id}-${idx}`}
                   className="group flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-all border-border bg-card active:scale-95"
-                  onClick={() => addToCart(item)}
+                  onClick={() => handleItemClick(item)}
                 >
                   <div className="relative h-28 sm:h-32 bg-muted/50 overflow-hidden flex items-center justify-center flex-shrink-0">
                     {item.image ? (
@@ -501,6 +569,15 @@ export default function POSSystem({
           </SheetContent>
         </Sheet>
       </div>
+
+      <ItemCustomizationDialog
+        open={!!customizingItem}
+        onOpenChange={(open) => !open && setCustomizingItem(null)}
+        item={customizingItem}
+        modifierGroups={modifierGroups}
+        onAddToCart={addToCart}
+        currency={restaurant?.currency || "Rs."}
+      />
     </div>
   );
 }

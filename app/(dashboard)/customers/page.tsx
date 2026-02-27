@@ -126,17 +126,17 @@ export default function CustomersPage() {
           {customers.filter((c) => {
             if (!searchQuery.trim()) return true;
             const q = searchQuery.toLowerCase();
-            return (c.full_name || "").toLowerCase().includes(q) || (c.phone || "").toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q);
+            return (c.name || "").toLowerCase().includes(q) || (c.phone || "").toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q);
           }).map((customer) => (
             <Card key={customer.id} className="bg-card border-border hover:shadow-md transition-all shadow-sm cursor-pointer" onClick={() => openDetails(customer)}>
               <CardContent className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-lg font-bold text-muted-foreground">
-                      {customer.full_name?.charAt(0) || <User className="w-5 h-5" />}
+                      {customer.name?.charAt(0) || <User className="w-5 h-5" />}
                     </div>
                     <div>
-                      <h3 className="font-semibold text-foreground truncate">{customer.full_name || "Guest"}</h3>
+                      <h3 className="font-semibold text-foreground truncate">{customer.name || "Guest"}</h3>
                       <p className="text-xs text-muted-foreground">ID: #{customer.id}</p>
                     </div>
                   </div>

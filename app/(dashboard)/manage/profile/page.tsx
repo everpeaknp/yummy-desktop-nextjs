@@ -103,8 +103,11 @@ export default function RestaurantProfilePage() {
         type === 'logo' ? setUploadingLogo(true) : setUploadingCover(true);
         try {
             const publicUrl = await MenuImageService.uploadMenuImage(file, user.restaurant_id);
+            // The MenuImageService uploads to 'menu-items' bucket. 
+            // We want to store just the relative path 'restaurantId/fileName.webp' 
+            // so getImageUrl() can reconstruct it later.
             const url = new URL(publicUrl);
-            const pathParts = url.pathname.split('/public/menu-items/');
+            const pathParts = url.pathname.split('/menu-items/');
             const relativePath = pathParts.length > 1 ? pathParts[1] : publicUrl;
 
             setFormData(prev => ({
@@ -117,6 +120,8 @@ export default function RestaurantProfilePage() {
             toast.error(`Failed to upload ${type}`);
         } finally {
             type === 'logo' ? setUploadingLogo(false) : setUploadingCover(false);
+            // Reset input so the same file can be selected again if needed
+            e.target.value = '';
         }
     };
 

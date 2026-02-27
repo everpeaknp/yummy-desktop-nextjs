@@ -91,6 +91,39 @@ export function useOrderFull(orderId: string | number) {
     }
   }, [orderId, fetchContext]);
 
+  // FIX: Stale target table from Azure Backend
+  useEffect(() => {
+    if (!context || !context.order.table_id) return;
+
+    // Filter tables array to only include the active table_id
+    const validTables = context.tables.filter(t => t.id === context.order.table_id);
+    
+    // If the active table exists and there are stale tables, clean them up
+    if (validTables.length > 0 && context.tables.length > 1) {
+      setContext(prev => {
+        if (!prev) return prev;
+        
+        const singleTable = validTables[0];
+        
+        // Correct the Order object's table_name to match the active table
+        const patchedOrder = { ...prev.order };
+        patchedOrder.table_name = singleTable.name || `Table ${prev.order.table_id}`;
+        
+        // Fix category name: the backend concatenates categories (e.g. "Main, Main") so take the last one
+        if (prev.order.table_category_name && prev.order.table_category_name.includes(',')) {
+          const cats = prev.order.table_category_name.split(',');
+          patchedOrder.table_category_name = cats[cats.length - 1].trim();
+        }
+
+        return {
+          ...prev,
+          tables: [singleTable],
+          order: patchedOrder
+        };
+      });
+    }
+  }, [context?.tables?.length, context?.order?.table_id]);
+
   const isFullyPaid = context ? context.payments.reduce((sum, p) => sum + p.amount, 0) >= context.order.grand_total : false;
   const allKotsServed = context ? (context.kots.length === 0 || context.kots.every(kot => kot.status === "SERVED")) : false;
 
