@@ -6,7 +6,8 @@ import Link from "next/link";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, KotApis, TableApis } from "@/lib/api/endpoints";
+import { OrderApis, KotApis, TableApis, TableTypeApis } from "@/lib/api/endpoints";
+import { RoomContainer, type TableData } from "@/components/tables/room-container";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -139,7 +140,9 @@ export default function OrderDetailPage() {
   const [changeTableOpen, setChangeTableOpen] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string>("");
   const [changingTable, setChangingTable] = useState(false);
-  const [availableTables, setAvailableTables] = useState<any[]>([]);
+  const [allTables, setAllTables] = useState<TableData[]>([]);
+  const [tableTypes, setTableTypes] = useState<any[]>([]);
+  const [selectedArea, setSelectedArea] = useState("All Areas");
 
   // Auth guard
   useEffect(() => {
@@ -204,15 +207,19 @@ export default function OrderDetailPage() {
     }
   };
 
-  // Fetch available tables
+  // Fetch all tables
   const fetchAvailableTables = useCallback(async () => {
     if (!context?.order?.restaurant_id) return;
     try {
-      const res = await apiClient.get(TableApis.tableSummary(context.order.restaurant_id));
-      if (res.data.status === "success") {
-        const tables = res.data.data || [];
-        // Filter for available tables ONLY
-        setAvailableTables(tables.filter((t: any) => t.status?.toUpperCase() === "FREE"));
+      const [tablesRes, typesRes] = await Promise.all([
+        apiClient.get(TableApis.getTables(context.order.restaurant_id)),
+        apiClient.get(TableTypeApis.getTableTypes(context.order.restaurant_id))
+      ]);
+      if (tablesRes.data.status === "success") {
+        setAllTables(tablesRes.data.data || []);
+      }
+      if (typesRes.data.status === "success") {
+        setTableTypes(typesRes.data.data || []);
       }
     } catch (err) {
       console.error("Failed to fetch tables:", err);
@@ -658,35 +665,86 @@ export default function OrderDetailPage() {
 
       {/* ── Change Table Dialog ── */}
       <Dialog open={changeTableOpen} onOpenChange={setChangeTableOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Change Table</DialogTitle>
             <DialogDescription>
-              Select a new table for this order. The order will be moved to the selected table.
+              Select a new table for this order. Only available tables can be selected.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Select value={selectedTableId} onValueChange={setSelectedTableId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a table" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableTables.map((table) => (
-                  <SelectItem key={table.id} value={table.id.toString()}>
-                    {table.table_name} {table.capacity && `(${table.capacity} seats)`}
-                  </SelectItem>
-                ))}
-                {availableTables.length === 0 && (
-                  <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                    No available tables found
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
+
+          <div className="flex-1 overflow-y-auto min-h-0 py-4 px-1 space-y-4 no-scrollbar">
+            {/* Area Filter */}
+            <div className="flex flex-wrap items-center gap-2 p-1 bg-muted/30 rounded-2xl w-fit">
+              {(() => {
+                const set = new Set<string>();
+                tableTypes.forEach((tt) => set.add(tt.name));
+                allTables.forEach((t) => { if (t.table_type_name) set.add(t.table_type_name); });
+                const areas = ["All Areas", ...Array.from(set).sort()];
+                
+                return areas.map((area) => (
+                  <button
+                    key={area}
+                    onClick={() => setSelectedArea(area)}
+                    className={cn(
+                      "px-4 py-1.5 rounded-xl text-xs font-bold transition-all duration-300",
+                      selectedArea === area
+                        ? "bg-white dark:bg-zinc-800 text-foreground shadow-sm ring-1 ring-border/50"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    )}
+                  >
+                    {area}
+                  </button>
+                ));
+              })()}
+            </div>
+
+            {/* Status Legend */}
+            <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span>Available</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /><span>Occupied</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-orange-500" /><span>Reserved</span></div>
+            </div>
+
+            {/* Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {(() => {
+                const filtered = selectedArea === "All Areas" ? allTables : allTables.filter((t) => (t.table_type_name || "General") === selectedArea);
+                const grouped = filtered.reduce((acc, table) => {
+                  const area = table.table_type_name || "General";
+                  if (!acc[area]) acc[area] = [];
+                  acc[area].push(table);
+                  return acc;
+                }, {} as Record<string, TableData[]>);
+                const sortedRooms = Object.keys(grouped).sort();
+                
+                const getLayoutHeight = (areaName: string) => {
+                  const tt = tableTypes.find((t) => t.name === areaName);
+                  return tt?.layout_height ?? 200;
+                };
+
+                return sortedRooms.map((roomName) => (
+                  <RoomContainer
+                    key={roomName}
+                    title={roomName}
+                    tables={grouped[roomName]}
+                    layoutHeight={getLayoutHeight(roomName)}
+                    onTableClick={(t) => {
+                      if (t.status?.toUpperCase() === "FREE" || t.status?.toUpperCase() === "AVAILABLE") {
+                        setSelectedTableId(String(t.id));
+                      }
+                    }}
+                    selectedTableId={Number(selectedTableId)}
+                  />
+                ));
+              })()}
+            </div>
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="shrink-0 pt-4 border-t">
             <Button variant="outline" onClick={() => setChangeTableOpen(false)}>Cancel</Button>
             <Button
+
               onClick={handleChangeTable}
               disabled={changingTable || !selectedTableId}
               className="gap-2"

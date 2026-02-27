@@ -27,6 +27,7 @@ interface RoomContainerProps {
   onTableDrop?: (tableId: number, posX: number, posY: number) => void;
   onHeightChanged?: (newHeight: number) => void;
   onAutoArrange?: (updates: Record<number, { posX: number; posY: number }>, newHeight: number) => void;
+  selectedTableId?: number;
 }
 
 const BASELINE_WIDTH = 400;
@@ -40,6 +41,7 @@ export function RoomContainer({
   onTableDrop,
   onHeightChanged,
   onAutoArrange,
+  selectedTableId,
 }: RoomContainerProps) {
   const hasSpatialPositions = tables.some(
     (t) => t.pos_x != null && t.pos_y != null && (t.pos_x !== 0 || t.pos_y !== 0)
@@ -117,9 +119,10 @@ export function RoomContainer({
             isLayoutMode={isLayoutMode}
             onTableClick={onTableClick}
             onTableDrop={onTableDrop}
+            selectedTableId={selectedTableId}
           />
         ) : (
-          <GridLayout tables={tables} onTableClick={onTableClick} />
+          <GridLayout tables={tables} onTableClick={onTableClick} selectedTableId={selectedTableId} />
         )}
       </div>
 
@@ -139,12 +142,14 @@ function SpatialLayout({
   isLayoutMode,
   onTableClick,
   onTableDrop,
+  selectedTableId,
 }: {
   tables: TableData[];
   layoutHeight: number;
   isLayoutMode?: boolean;
   onTableClick?: (table: TableData) => void;
   onTableDrop?: (tableId: number, posX: number, posY: number) => void;
+  selectedTableId?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragTableId = useRef<number | null>(null);
@@ -206,7 +211,8 @@ function SpatialLayout({
               "absolute",
               isLayoutMode
                 ? "cursor-grab active:cursor-grabbing"
-                : "cursor-pointer transition-transform hover:scale-110"
+                : "cursor-pointer transition-transform hover:scale-110",
+              selectedTableId === table.id && "ring-4 ring-primary rounded-full shadow-lg"
             )}
             style={{
               left: `${leftPct}%`,
@@ -331,16 +337,21 @@ function ResizeHandle({
 function GridLayout({
   tables,
   onTableClick,
+  selectedTableId,
 }: {
   tables: TableData[];
   onTableClick?: (table: TableData) => void;
+  selectedTableId?: number;
 }) {
   return (
     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
       {tables.map((table) => (
         <div
           key={table.id}
-          className="aspect-square cursor-pointer transition-transform hover:scale-105"
+          className={cn(
+            "aspect-square cursor-pointer transition-transform hover:scale-105",
+            selectedTableId === table.id && "ring-4 ring-primary rounded-full shadow-lg"
+          )}
           onClick={() => onTableClick?.(table)}
         >
           <TableGraphic
