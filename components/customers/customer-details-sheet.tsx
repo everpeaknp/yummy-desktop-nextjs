@@ -4,9 +4,15 @@ import { useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { User, Phone, Mail, Award, Calendar, History, Wallet, DollarSign } from "lucide-react";
+import { User, Phone, Mail, Award, Calendar, History, Wallet, DollarSign, Loader2, CreditCard, Clock, Receipt, ArrowRight } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { RepayCreditDialog } from "./repay-credit-dialog";
+import { useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import apiClient from "@/lib/api-client";
+import { OrderApis } from "@/lib/api/endpoints";
+import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
+import { format } from "date-fns";
 
 interface CustomerDetailsSheetProps {
     customer: any | null;
@@ -17,6 +23,46 @@ interface CustomerDetailsSheetProps {
 
 export function CustomerDetailsSheet({ customer, open, onOpenChange, onUpdate }: CustomerDetailsSheetProps) {
     const [isRepayDialogOpen, setIsRepayDialogOpen] = useState(false);
+    const [orders, setOrders] = useState<any[]>([]);
+    const [loadingOrders, setLoadingOrders] = useState(false);
+    const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+    const [detailsOpen, setDetailsOpen] = useState(false);
+    const user = useAuth((state) => state.user);
+
+    useEffect(() => {
+        if (open && customer?.id && user?.restaurant_id) {
+            const fetchOrders = async () => {
+                setLoadingOrders(true);
+                try {
+                    const response = await apiClient.get(OrderApis.listOrders, {
+                        params: {
+                            restaurant_id: user.restaurant_id,
+                            customer_id: customer.id,
+                        }
+                    });
+                    if (response.data.status === "success") {
+                        const allOrders = response.data.data.orders || [];
+                        const creditOrders = allOrders.filter((o: any) => 
+                            o.payments?.some((p: any) => p.method === 'credit')
+                        );
+                        setOrders(creditOrders);
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch customer orders:", error);
+                } finally {
+                    setLoadingOrders(false);
+                }
+            };
+            fetchOrders();
+        } else if (!open) {
+            setOrders([]);
+        }
+    }, [open, customer?.id, user?.restaurant_id]);
+
+    const openReceipt = (orderId: number) => {
+        setSelectedOrderId(orderId);
+        setDetailsOpen(true);
+    };
 
     if (!customer) return null;
 
@@ -132,6 +178,76 @@ export function CustomerDetailsSheet({ customer, open, onOpenChange, onUpdate }:
                                 <span className="text-sm">{customer.created_at ? new Date(customer.created_at).toLocaleDateString() : "Unknown"}</span>
                             </div>
                         </div>
+
+                        {/* Credit Orders History */}
+                        <div className="space-y-4 pt-2">
+                            <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                                Credit Orders History
+                                <Badge variant="secondary" className="rounded-full">{orders.length}</Badge>
+                            </h3>
+                            
+                            {loadingOrders ? (
+                                <div className="h-32 flex flex-col items-center justify-center gap-2 border rounded-lg bg-slate-50/50 dark:bg-slate-900/10 border-dashed">
+                                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                    <p className="text-xs text-muted-foreground font-medium">Loading orders...</p>
+                                </div>
+                            ) : orders.length === 0 ? (
+                                <div className="h-32 flex flex-col items-center justify-center gap-2 border rounded-lg bg-slate-50/50 dark:bg-slate-900/10 border-dashed">
+                                    <Receipt className="h-6 w-6 text-muted-foreground/50" />
+                                    <p className="text-xs text-muted-foreground font-medium">No credit orders found</p>
+                                </div>
+                            ) : (
+                                <div className="grid gap-3">
+                                    {orders.map((order) => (
+                                        <div 
+                                            key={order.id}
+                                            onClick={() => openReceipt(order.id)}
+                                            className="group relative bg-card hover:bg-slate-50 dark:hover:bg-slate-900/40 border border-border rounded-xl p-3 sm:p-4 transition-all hover:shadow-md cursor-pointer flex flex-col gap-3"
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="h-8 w-8 rounded-lg bg-orange-100 dark:bg-orange-900/20 text-orange-600 flex items-center justify-center shrink-0">
+                                                        <Receipt className="h-4 w-4" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-bold text-sm">Order #{order.restaurant_order_id || order.id}</h4>
+                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 uppercase text-[9px] tracking-wider font-bold mt-1">
+                                                            {order.status}
+                                                        </Badge>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-2 text-xs bg-muted/40 p-2.5 rounded-lg border border-border/50">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[9px] uppercase text-muted-foreground font-bold mb-0.5">Date</span>
+                                                    <span className="font-semibold flex items-center gap-1.5 opacity-90">
+                                                        <Clock className="h-3 w-3 opacity-70" />
+                                                        {format(new Date(order.created_at || order.started_at), "MMM d, h:mm a")}
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-[9px] uppercase text-muted-foreground font-bold mb-0.5">Amount</span>
+                                                    <span className="font-bold text-primary flex items-center gap-1">
+                                                        <CreditCard className="h-3 w-3 opacity-70" />
+                                                        {parseFloat(order.grand_total || order.total_amount || 0).toFixed(2)}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex justify-between items-end mt-1">
+                                                <div className="text-[11px] text-muted-foreground font-medium">
+                                                    {order.items?.length || 0} items • {order.table?.table_name || order.table_name || order.channel}
+                                                </div>
+                                                <div className="bg-primary/10 text-primary p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <ArrowRight className="h-3.5 w-3.5" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <div className="mt-8 flex justify-end gap-2">
@@ -148,6 +264,12 @@ export function CustomerDetailsSheet({ customer, open, onOpenChange, onUpdate }:
                 onSuccess={() => {
                     if (onUpdate) onUpdate();
                 }}
+            />
+
+            <ReceiptDetailSheet 
+                orderId={selectedOrderId}
+                open={detailsOpen}
+                onOpenChange={setDetailsOpen}
             />
         </>
     );

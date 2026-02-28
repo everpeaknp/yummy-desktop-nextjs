@@ -124,8 +124,8 @@ export function useOrderFull(orderId: string | number) {
     }
   }, [context?.tables?.length, context?.order?.table_id]);
 
-  const isFullyPaid = context ? context.payments.reduce((sum, p) => sum + p.amount, 0) >= context.order.grand_total : false;
-  const allKotsServed = context ? (context.kots.length === 0 || context.kots.every(kot => kot.status === "SERVED")) : false;
+  const isFullyPaid = context ? context.payments.filter(p => !p.status || p.status.toLowerCase() === 'success').reduce((sum, p) => sum + Number(p.amount), 0) >= (Number(context.order.grand_total) - 0.01) : false;
+  const allKotsServed = context ? (context.kots.length === 0 || context.kots.every(kot => ['served', 'completed', 'ready', 'rejected', 'cancelled'].includes(kot.status?.toLowerCase()))) : false;
 
   return { context, loading, error, fetchContext, isFullyPaid, allKotsServed };
 }

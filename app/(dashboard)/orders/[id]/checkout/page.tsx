@@ -713,7 +713,7 @@ export default function CheckoutPage() {
                   <SelectContent>
                     {customers.map((c: any) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        {c.full_name || "Guest"} ({c.phone || "No phone"}) - Balance: {formatCurrency(c.credit || 0, curr)}
+                        {c.full_name || c.name || "Guest"} ({c.phone || "No phone"}) - Balance: {formatCurrency(c.credit || 0, curr)}
                       </SelectItem>
                     ))}
                   </SelectContent>
