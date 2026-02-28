@@ -13,6 +13,11 @@ interface Restaurant {
   tax_enabled: boolean;
   receipt_template: any | null;
   kot_template: any | null;
+  billing_mode: string;
+  effective_plan: string;
+  plan_state: string;
+  trial_ends_at: string | null;
+  paid_ends_at: string | null;
 }
 
 interface RestaurantState {

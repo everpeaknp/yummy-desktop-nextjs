@@ -15,6 +15,8 @@ import {
   Armchair,
   Calendar,
   Percent,
+  MessageSquare,
+  Zap,
   LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -43,6 +45,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   "/reservations": Calendar,
   "/discounts": Percent,
   "/manage": Settings,
+  "/feedback": MessageSquare,
+  "/premium": Zap,
 };
 
 export function useSidebarItems(): SidebarItem[] {

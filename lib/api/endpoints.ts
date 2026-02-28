@@ -541,3 +541,7 @@ export const TaxConfigApis = {
   update: (id: number) => `/tax-config/${id}`,
   delete: (id: number) => `/tax-config/${id}`,
 };
+
+export const FeedbackApis = {
+  submit: "/feedbacks/",
+};

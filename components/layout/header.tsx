@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign, ArrowLeft, Settings } from "lucide-react";
+import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign, ArrowLeft, Settings, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -243,9 +243,28 @@ export const Header = memo(function Header() {
       <div className="flex-1" />
 
       <div className="flex items-center gap-1">
-        <NotificationBell />
-        <NotificationPanel />
-        <ModeToggle />
+        <div className="flex items-center gap-1 sm:gap-2">
+          {/* Go Premium Navbar Button */}
+          {((user?.role?.toLowerCase() === "admin" || user?.role?.toLowerCase() === "manager" || 
+            user?.roles?.some(r => ["admin", "manager"].includes(r.toLowerCase()))) || true) && (
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              className="group relative flex items-center gap-1.5 px-4 h-8 bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-500 font-bold text-[10px] uppercase tracking-wider rounded-full overflow-hidden transition-all hover:scale-[1.02] active:scale-[0.98] mr-1"
+            >
+              <Link href="/premium">
+                <Zap className="h-3.5 w-3.5 fill-current animate-pulse group-hover:animate-none" />
+                <span>Premium</span>
+              </Link>
+            </Button>
+          )}
+
+          <NotificationBell />
+          <NotificationPanel />
+          <ModeToggle />
+        </div>
+
         <div className="h-6 w-px bg-border mx-1 hidden md:block" />
         <div className="flex items-center gap-2 pl-1">
           <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden">

@@ -179,6 +179,11 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     href: "/manage",
     allowedRoles: ADMIN_MANAGER,
   },
+  {
+    title: "Feedback",
+    href: "/feedback",
+    allowedRoles: ALL_DASHBOARD_ROLES,
+  },
 ];
 
 export function getSidebarItemsForRole(role: UserRole | null) {
@@ -218,6 +223,8 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/payroll": ["admin", "cashier"],
   "/period-reports": ADMIN_MANAGER,
   "/settings": ALL_DASHBOARD_ROLES,
+  "/feedback": ALL_DASHBOARD_ROLES,
+  "/premium": ADMIN_MANAGER,
 };
 
 export function isRouteAllowed(
