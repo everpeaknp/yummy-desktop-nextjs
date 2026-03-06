@@ -24,42 +24,9 @@ export function MenuGalleryDialog({ open, onOpenChange, onSelect }: MenuGalleryD
   const [loadingCustom, setLoadingCustom] = useState(false);
 
   const fetchCustomImages = useCallback(async () => {
-    if (!user?.restaurant_id || !supabase) return;
-    setLoadingCustom(true);
-    try {
-      const { data, error } = await supabase.storage
-        .from('menu-items')
-        .list(`${user.restaurant_id}/`, {
-          limit: 100,
-          offset: 0,
-          sortBy: { column: 'name', order: 'desc' },
-        });
-
-      if (error) throw error;
-
-      if (data) {
-        const items: MenuGalleryItem[] = data
-          .filter((file: any) => file.name !== '.emptyFolderPlaceholder')
-          .map((file: any) => {
-            const { data: { publicUrl } } = supabase.storage
-              .from('menu-items')
-              .getPublicUrl(`${user.restaurant_id}/${file.name}`);
-            
-            return {
-              id: `custom_${file.name}`,
-              label: file.name,
-              assetPath: publicUrl, // Full URL for custom uploads
-              category: "My Uploads" as any,
-              tags: ['custom']
-            };
-          });
-        setCustomImages(items);
-      }
-    } catch (err) {
-      console.error('Error fetching custom images:', err);
-    } finally {
-      setLoadingCustom(false);
-    }
+    // Gallery fetching is currently disabled pending backend Cloudinary Gallery implementation
+    setCustomImages([]);
+    setLoadingCustom(false);
   }, [user?.restaurant_id]);
 
   useEffect(() => {

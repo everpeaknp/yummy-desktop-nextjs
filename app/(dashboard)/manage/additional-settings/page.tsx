@@ -418,36 +418,9 @@ export default function AdditionalSettingsPage() {
     };
 
     const fetchGalleryImages = useCallback(async () => {
-    if (!user?.restaurant_id || !supabase) return;
-    setLoadingGallery(true);
-    try {
-      const { data, error } = await supabase.storage
-        .from('menu-items')
-        .list(`${user.restaurant_id}/`, {
-          limit: 100,
-          offset: 0,
-          sortBy: { column: 'name', order: 'desc' },
-        });
-
-      if (error) throw error;
-
-      if (data) {
-        const imagesWithUrls = data
-          .filter((file: any) => file.name !== '.emptyFolderPlaceholder')
-          .map((file: any) => {
-            const { data: { publicUrl } } = supabase.storage
-              .from('menu-items')
-              .getPublicUrl(`${user.restaurant_id}/${file.name}`);
-            return { name: file.name, url: publicUrl };
-          });
-        setCustomImages(imagesWithUrls);
-      }
-    } catch (err) {
-      console.error('Error fetching gallery images:', err);
-      toast.error('Failed to load gallery images');
-    } finally {
-      setLoadingGallery(false);
-    }
+    // Gallery fetching is currently disabled pending backend Cloudinary Gallery implementation
+    setCustomImages([]);
+    setLoadingGallery(false);
   }, [user?.restaurant_id]);
 
   useEffect(() => {
@@ -463,7 +436,7 @@ export default function AdditionalSettingsPage() {
     setUploadingToGallery(true);
     try {
       await MenuImageService.uploadMenuImage(file, user.restaurant_id);
-      toast.success('Image uploaded to gallery');
+      toast.success('Image uploaded successfully (Gallery view coming soon)');
       fetchGalleryImages(); // Refresh list
     } catch (err) {
       console.error('Gallery upload failed:', err);
@@ -475,23 +448,7 @@ export default function AdditionalSettingsPage() {
   };
 
   const handleDeleteGalleryImage = async (fileName: string) => {
-    if (!user?.restaurant_id || !supabase) return;
-    
-    if (!confirm('Are you sure you want to delete this image?')) return;
-
-    try {
-      const { error } = await supabase.storage
-        .from('menu-items')
-        .remove([`${user.restaurant_id}/${fileName}`]);
-
-      if (error) throw error;
-      
-      toast.success('Image deleted');
-      fetchGalleryImages();
-    } catch (err) {
-      console.error('Delete failed:', err);
-      toast.error('Failed to delete image');
-    }
+      toast.error('Image deletion is currently disabled while we upgrade the gallery system.');
   };
 
   const handleGallerySelect = async (item: MenuGalleryItem) => {

@@ -11,9 +11,8 @@ export function getImageUrl(path?: string) {
     // Convert asset:menu_gallery/americano.webp to /assets/menu_gallery/americano.webp
     return `/${path.replace("asset:", "assets/")}`;
   }
-  // Default to Supabase storage URL if it looks like a relative path
-  const SUPABASE_STORAGE_URL = "https://nrrfumuslekbdjvgklqp.supabase.co/storage/v1/object/public/menu-items";
-  return `${SUPABASE_STORAGE_URL}/${path.replace(/^\//, '')}`;
+  // Remove Supabase storage fallback and return the relative path (or prepend base if needed, but modern Cloudinary URLs are absolute)
+  return path;
 }
 
 export function formatCurrency(amount: number | string) {
