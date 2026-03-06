@@ -1,5 +1,3 @@
-import { getBaseUrl } from '@/lib/utils';
-
 export const MenuImageService = {
   BUCKET: 'menu-items', // Kept for backend reference if needed
 
@@ -11,7 +9,7 @@ export const MenuImageService = {
       formData.append('restaurant_id', restaurantId.toString());
 
       // Get the correct base URL for the API (handles local vs production)
-      const baseUrl = getBaseUrl();
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io';
       const uploadUrl = `${baseUrl}/api/menu/upload`;
 
       // Get the auth token from localStorage
