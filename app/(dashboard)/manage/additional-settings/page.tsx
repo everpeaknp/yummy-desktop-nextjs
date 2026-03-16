@@ -76,8 +76,7 @@ import { DataExporter } from "@/components/manage/settings/data-exporter";
 import { useRouter } from "next/navigation";
 import { AuthApis } from "@/lib/api/endpoints";
 import { useRef } from "react";
-import { supabase } from "@/lib/supabase";
-import { MenuImageService } from "@/services/menu-image-service";
+import { ImageService } from "@/services/image-service";
 import { Upload } from "lucide-react";
 
 // --- Categories Definition ---
@@ -435,7 +434,7 @@ export default function AdditionalSettingsPage() {
 
     setUploadingToGallery(true);
     try {
-      await MenuImageService.uploadMenuImage(file, user.restaurant_id);
+      await ImageService.uploadMenuImage(file, user.restaurant_id);
       toast.success('Image uploaded successfully (Gallery view coming soon)');
       fetchGalleryImages(); // Refresh list
     } catch (err) {

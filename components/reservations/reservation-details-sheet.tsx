@@ -162,10 +162,22 @@ export function ReservationDetailsSheet({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                <Utensils className="h-3 w-3" /> Tables
+                <Utensils className="h-3 w-3" /> Space / Table
               </div>
               <p className="font-bold text-sm">{reservation.table_name || `Table ${reservation.table_id}` || "Unassigned"}</p>
             </div>
+            
+            {reservation.checkout_at && (
+              <div className="col-span-2 mt-2 p-3 bg-orange-50 dark:bg-orange-950/20 rounded-xl border border-orange-100 dark:border-orange-900/30">
+                <div className="flex items-center gap-2 mb-1">
+                  <Calendar className="h-3.5 w-3.5 text-orange-600" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-orange-600">Check-out Date</span>
+                </div>
+                <p className="font-bold text-sm ml-5.5">
+                  {new Date(reservation.checkout_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
+              </div>
+            )}
           </div>
 
           <Separator />

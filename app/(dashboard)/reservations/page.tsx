@@ -228,7 +228,12 @@ export default function ReservationsPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="h-4 w-4 text-primary opacity-70" />
-                    <span className="font-bold">{format(new Date(res.scheduled_at), "MMM d, yyyy")}</span>
+                    <span className="font-bold">
+                      {res.checkout_at 
+                        ? `${format(new Date(res.scheduled_at), "MMM d")} - ${format(new Date(res.checkout_at), "MMM d")}`
+                        : format(new Date(res.scheduled_at), "MMM d, yyyy")
+                      }
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Clock className="h-4 w-4 text-primary opacity-70" />

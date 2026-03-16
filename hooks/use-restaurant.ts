@@ -18,24 +18,30 @@ interface Restaurant {
   plan_state: string;
   trial_ends_at: string | null;
   paid_ends_at: string | null;
+  hotel_enabled: boolean;
+  restaurant_enabled: boolean;
 }
 
 interface RestaurantState {
   restaurant: Restaurant | null;
   loading: boolean;
   error: string | null;
+  selectedModule: 'restaurant' | 'hotel' | null;
   fetchRestaurant: (force?: boolean) => Promise<void>;
   setRestaurant: (data: Restaurant) => void;
+  setSelectedModule: (module: 'restaurant' | 'hotel' | null) => void;
 }
 
 export const useRestaurant = create<RestaurantState>()(
   persist(
     (set, get) => ({
       restaurant: null,
+      selectedModule: null,
       loading: false,
       error: null,
       
       setRestaurant: (data) => set({ restaurant: data }),
+      setSelectedModule: (module) => set({ selectedModule: module }),
 
       fetchRestaurant: async (force = false) => {
         // If we already have data and not forcing refresh, return (optional optimization, but user wants FRESH data usually? 
@@ -46,7 +52,18 @@ export const useRestaurant = create<RestaurantState>()(
         try {
           const response = await apiClient.get('/restaurants/by-user');
           if (response.data.status === 'success') {
-            set({ restaurant: response.data.data, error: null });
+            const nextData = response.data.data;
+            console.log("[useRestaurant] Full Data received:", nextData);
+            console.log("[useRestaurant] Data flags check:", { id: nextData.id, hotel: nextData.hotel_enabled, rest: nextData.restaurant_enabled });
+            const current = get().restaurant;
+            
+            // If we switched to a different restaurant, clear selection
+            if (current && current.id !== nextData.id) {
+               console.log("[useRestaurant] Restaurant changed, clearing selectedModule");
+               set({ selectedModule: null });
+            }
+            
+            set({ restaurant: nextData, error: null });
           }
         } catch (err: any) {
           console.error('Failed to fetch restaurant:', err);
@@ -58,7 +75,10 @@ export const useRestaurant = create<RestaurantState>()(
     }),
     {
       name: 'restaurant-storage', // name of item in the storage (must be unique)
-      partialize: (state) => ({ restaurant: state.restaurant }), // Only persist the data, not loading/error
+      partialize: (state) => ({ 
+        restaurant: state.restaurant,
+        selectedModule: state.selectedModule 
+      }), // Only persist the data and selection
     }
   )
 );

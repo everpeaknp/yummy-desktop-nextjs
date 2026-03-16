@@ -16,6 +16,7 @@ import { useNotifications, useNotificationStore } from "@/hooks/use-notification
 import { NotificationPanel } from "@/components/notifications/notification-panel";
 import apiClient from "@/lib/api-client";
 import { DashboardApis } from "@/lib/api/endpoints";
+import { ModuleSwitcher } from "./module-switcher";
 
 import { memo } from "react";
 
@@ -239,6 +240,7 @@ export const Header = memo(function Header() {
             </Button>
         )}
         <LiveStats />
+        <ModuleSwitcher />
       </div>
       <div className="flex-1" />
 

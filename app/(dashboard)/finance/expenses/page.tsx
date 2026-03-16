@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, TrendingDown, Receipt, Download, ArrowLeft, Plus, Calendar, TrendingUp, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import { 
     Dialog, 
     DialogContent, 
@@ -47,6 +48,7 @@ export default function ExpensesPage() {
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
   const router = useRouter();
+  const { restaurant } = useRestaurant();
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -125,8 +127,7 @@ export default function ExpensesPage() {
             description: newExpense.description,
             category_id: parseInt(newExpense.category_id),
             payment_method: newExpense.payment_method,
-            // Station is inferred from category on backend, but we can pass vendor if we had it.
-            // Based on backend ExpenseCreate, it takes restaurant_id, category_id, amount, description, vendor, payment_method, paid_on
+            station: newExpense.station,
         };
 
         const res = await apiClient.post(ExpenseApis.list, payload);
@@ -202,6 +203,9 @@ export default function ExpensesPage() {
               <SelectItem value="kitchen">Kitchen</SelectItem>
               <SelectItem value="bar">Bar</SelectItem>
               <SelectItem value="cafe">Cafe</SelectItem>
+              {restaurant?.hotel_enabled && (
+                <SelectItem value="rooms">Rooms / Hotel</SelectItem>
+              )}
               <SelectItem value="general">General</SelectItem>
             </SelectContent>
           </Select>
@@ -308,6 +312,9 @@ export default function ExpensesPage() {
                             <SelectItem value="kitchen">Kitchen</SelectItem>
                             <SelectItem value="bar">Bar</SelectItem>
                             <SelectItem value="cafe">Cafe</SelectItem>
+                            {restaurant?.hotel_enabled && (
+                              <SelectItem value="rooms">Rooms / Hotel</SelectItem>
+                            )}
                             <SelectItem value="other">General / Other</SelectItem>
                         </SelectContent>
                     </Select>

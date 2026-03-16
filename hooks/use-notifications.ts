@@ -113,6 +113,12 @@ function shouldShowNotificationForRole(
     return Array.from(userRoles).some((r) => !blocked.has(r));
   }
 
+  // QR orders need to be seen by waiter/admin for verification
+  if (e === "order_requested") {
+    const allowed = new Set(["waiter", "admin", "manager"]);
+    return Array.from(userRoles).some((r) => allowed.has(r));
+  }
+
   return true;
 }
 
@@ -155,6 +161,15 @@ function buildKotNotificationContent(event: string, data: any): { title: string;
   if (e === "order_status_updated" || e === "order_updated") {
     const status = payload.status || payload.new_status || "";
     return { title: "📦 Order Updated", body: status || "Order status changed" };
+  }
+
+  if (e === "order_requested") {
+    // Check both direct payload and nested order object
+    const table = payload.table_name || payload.table || payload.order?.table_name || "";
+    return {
+      title: "🔔 QR Order Request",
+      body: table ? `Table ${table} needs verification` : "New QR order needs verification"
+    };
   }
 
   return null;

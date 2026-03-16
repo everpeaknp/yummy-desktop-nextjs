@@ -13,7 +13,10 @@ import { Loader2, UserPlus, Search, Filter, Mail, Phone, MoreVertical, Edit, Tra
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import Link from "next/link";
+import { AuthApis } from "@/lib/api/endpoints";
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -32,8 +35,10 @@ export default function StaffPage() {
     password: "",
     role: "waiter",
     roles: ["waiter"] as string[],
-    primary_role: "waiter"
+    primary_role: "waiter",
+    permissions: [] as string[]
   });
+  const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const user = useAuth(state => state.user);
@@ -64,8 +69,20 @@ export default function StaffPage() {
     }
   };
 
+  const fetchPermissions = async () => {
+    try {
+      const response = await apiClient.get(AuthApis.listPermissions);
+      if (response.data.status === "success") {
+        setAvailablePermissions(response.data.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch permissions:", err);
+    }
+  };
+
   useEffect(() => {
     fetchStaff();
+    fetchPermissions();
   }, []);
 
   const handleOpenDialog = (member: any = null) => {
@@ -77,7 +94,8 @@ export default function StaffPage() {
         password: "", // Don't show existing password
         role: member.role || "waiter",
         roles: member.roles || [member.role || "waiter"],
-        primary_role: member.primary_role || member.role || "waiter"
+        primary_role: member.primary_role || member.role || "waiter",
+        permissions: member.permissions || []
       });
     } else {
       setEditingStaff(null);
@@ -87,7 +105,8 @@ export default function StaffPage() {
         password: "",
         role: "waiter",
         roles: ["waiter"],
-        primary_role: "waiter"
+        primary_role: "waiter",
+        permissions: []
       });
     }
     setIsDialogOpen(true);
@@ -110,35 +129,62 @@ export default function StaffPage() {
         if (formData.password) payload.password = formData.password;
         
         await apiClient.patch(StaffApis.update(editingStaff.id), payload);
+        
+        // Update permissions for existing staff
+        if (formData.permissions) {
+          await apiClient.post(AuthApis.updateUserPermissions(editingStaff.id), {
+            permission_keys: formData.permissions
+          });
+        }
+        
         toast.success("Staff profile updated successfully");
       } else {
         // Create user
-        await apiClient.post(StaffApis.create, {
-          ...formData,
+        const createPayload: any = {
+          name: formData.name,
+          email: formData.email,
           role: formData.primary_role,
-          restaurant_id: user?.restaurant_id
-        });
+          roles: formData.roles,
+          primary_role: formData.primary_role
+        };
+        
+        if (formData.password) createPayload.password = formData.password;
+        if (user?.restaurant_id) createPayload.restaurant_id = user.restaurant_id;
+
+        const response = await apiClient.post(StaffApis.create, createPayload);
+        const newUserId = response.data.data.id;
+
+        // If specific permissions were selected (beyond roles), assign them
+        // Note: For now, we'll just handle it after creation
+        if (formData.permissions && formData.permissions.length > 0) {
+           await apiClient.post(AuthApis.updateUserPermissions(newUserId), {
+             permission_keys: formData.permissions
+           });
+        }
+        
         toast.success("New staff member added successfully");
       }
       setIsDialogOpen(false);
       fetchStaff();
     } catch (err: any) {
-      console.error("Failed to save staff:", err);
-      toast.error(err.response?.data?.detail || "Failed to save staff member");
+      console.error("Failed to save staff RAW DATA:", JSON.stringify(err.response?.data, null, 2));
+      const errMsg = err.response?.data?.message || err.response?.data?.detail || "Failed to save staff member";
+      toast.error(errMsg);
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDeleteStaff = async (id: number) => {
-    if (!confirm("Are you sure you want to deactivate this staff member?")) return;
+    if (!confirm("Are you sure you want to PERMANENTLY delete this staff member? This action cannot be undone.")) return;
     try {
       await apiClient.delete(StaffApis.delete(id));
-      toast.success("Staff member deactivated");
+      toast.success("Staff member deleted successfully");
       fetchStaff();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to delete staff:", err);
-      toast.error("Failed to deactivate staff member");
+      const errMsg = err.response?.data?.message || err.response?.data?.detail || "Failed to delete staff member";
+      toast.error(errMsg);
     }
   };
 
@@ -291,7 +337,7 @@ export default function StaffPage() {
                             <Edit className="w-4 h-4 mr-2" /> Edit Profile
                           </DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeleteStaff(member.id)}>
-                            <Trash2 className="w-4 h-4 mr-2" /> Deactivate
+                            <Trash2 className="w-4 h-4 mr-2" /> Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -305,7 +351,7 @@ export default function StaffPage() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>{editingStaff ? "Edit Staff Member" : "Add New Staff Member"}</DialogTitle>
             <DialogDescription>
@@ -321,6 +367,7 @@ export default function StaffPage() {
                 onChange={(e) => setFormData({...formData, name: e.target.value})} 
                 required 
                 placeholder="John Doe"
+                autoComplete="off"
               />
             </div>
             <div className="space-y-2">
@@ -332,6 +379,7 @@ export default function StaffPage() {
                 onChange={(e) => setFormData({...formData, email: e.target.value})} 
                 required 
                 placeholder="john@example.com"
+                autoComplete="off"
               />
             </div>
             {!editingStaff && (
@@ -344,6 +392,7 @@ export default function StaffPage() {
                   onChange={(e) => setFormData({...formData, password: e.target.value})} 
                   required 
                   placeholder="••••••••"
+                  autoComplete="new-password"
                 />
               </div>
             )}
@@ -395,7 +444,7 @@ export default function StaffPage() {
                   <SelectValue placeholder="Select primary role" />
                 </SelectTrigger>
                 <SelectContent>
-                  {formData.roles.map((role) => (
+                  {formData.roles.map((role: string) => (
                     <SelectItem key={role} value={role} className="capitalize">
                       {role}
                     </SelectItem>
@@ -403,6 +452,63 @@ export default function StaffPage() {
                 </SelectContent>
               </Select>
               <p className="text-[10px] text-muted-foreground">This is the main role shown in the staff list.</p>
+            </div>
+
+            <div className="space-y-4 pt-4 border-t">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-primary" /> Permission Access
+                </Label>
+              </div>
+              <p className="text-[10px] text-muted-foreground -mt-2">
+                Roles include defaults. Use these to grant specific module access.
+              </p>
+              
+              <div className="space-y-4 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
+                {Object.entries(
+                  availablePermissions.reduce((acc: any, curr: any) => {
+                    const module = curr.module || (curr.key.split('.')[0]) || "General";
+                    if (!acc[module]) acc[module] = [];
+                    acc[module].push(curr);
+                    return acc;
+                  }, {})
+                ).map(([module, perms]: [string, any]) => (
+                  <div key={module} className="bg-muted/30 rounded-lg p-3 space-y-3">
+                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-primary/70 mb-2 border-b border-primary/10 pb-1">{module}</h4>
+                    <div className="grid grid-cols-1 gap-4">
+                      {perms.map((p: any) => (
+                        <div key={p.key} className="flex items-start gap-3 group">
+                          <Checkbox 
+                            id={`perm-${p.key}`}
+                            className="mt-1 border-primary/30 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                            checked={(formData as any).permissions?.includes(p.key)}
+                            onCheckedChange={(checked) => {
+                              const currentPerms = (formData as any).permissions || [];
+                              const newPerms = checked
+                                ? [...currentPerms, p.key]
+                                : currentPerms.filter((k: string) => k !== p.key);
+                              setFormData({...formData, permissions: newPerms} as any);
+                            }}
+                          />
+                          <div className="grid gap-1 lowercase">
+                            <label
+                              htmlFor={`perm-${p.key}`}
+                              className="text-xs font-bold leading-none cursor-pointer group-hover:text-primary transition-colors"
+                            >
+                              {p.key.replace(/\./g, ' ')}
+                            </label>
+                            {p.description && (
+                              <p className="text-[11px] text-muted-foreground leading-normal">
+                                {p.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
             <DialogFooter className="pt-4">
               <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>

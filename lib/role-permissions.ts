@@ -55,6 +55,27 @@ export const hasManager = (roles: UserRole[]) => roles.includes("manager");
 export const hasAnyRole = (roles: UserRole[], targets: UserRole[]) =>
   targets.some((t) => roles.includes(t));
 
+// ─── Granular Permissions (Backend-Driven) ──────────────────────────────────
+
+export type PermissionKey =
+  | "pos.view"
+  | "pos.order"
+  | "pos.void"
+  | "hotel.manage"
+  | "user.manage"
+  | "staff.manage"
+  | "reports.view";
+
+/**
+ * Check if user has a specific permission.
+ * Admins ALWAYS have all permissions.
+ */
+export function hasPermission(user: { role: string; permissions?: string[] } | null, permission: PermissionKey): boolean {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  return user.permissions?.includes(permission) || false;
+}
+
 // ─── Permission checks (match Flutter RolePermissions) ──────────────────────
 
 export const canAccessSettings = (r: UserRole | null) =>
@@ -76,6 +97,12 @@ export const canViewIncome = (r: UserRole | null) =>
   isAdmin(r) || isManager(r) || isCashier(r);
 export const canViewFinance = (r: UserRole | null) =>
   isAdmin(r) || isManager(r) || isCashier(r);
+export function canManageHotelLayout(r: UserRole | null) {
+  return isAdmin(r) || isManager(r);
+}
+export function canHandleCheckin(r: UserRole | null) {
+  return isAdmin(r) || isManager(r) || isCashier(r);
+}
 
 // ─── Sidebar item visibility per role ───────────────────────────────────────
 // Each key = sidebar href, value = set of roles that can see it.
@@ -108,6 +135,7 @@ export interface SidebarItemDef {
   title: string;
   href: string;
   allowedRoles: UserRole[];
+  requiredPermission?: PermissionKey;
 }
 
 export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
@@ -116,33 +144,40 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Dashboard",
     href: "/dashboard",
     allowedRoles: ADMIN_SHELL_ROLES,
+    requiredPermission: "reports.view", // General dashboard access
   },
   {
     title: "Orders",
     href: "/orders/active",
     allowedRoles: ORDER_ROLES,
+    requiredPermission: "pos.view",
   },
   {
     title: "New Order",
     href: "/orders/new",
     allowedRoles: ORDER_ROLES,
+    requiredPermission: "pos.order",
   },
   {
     title: "Analytics",
     href: "/analytics",
     allowedRoles: ADMIN_SHELL_ROLES,
+    requiredPermission: "reports.view",
   },
   // ── Kitchen (matches KitchenDashboardScreen) ──
   {
     title: "Kitchen",
     href: "/kitchen",
     allowedRoles: KITCHEN_ROLES,
+    // Note: kitchen doesn't have a granular permission yet, 
+    // but in reality POS users don't see it unless they are kitchen/bar staff.
   },
   // ── Manage sub-items (from RestaurantHubScreen, admin/manager only) ──
   {
     title: "Menu",
     href: "/menu/items",
     allowedRoles: ADMIN_MANAGER,
+    // Add menu permission if we create one, for now role fallback
   },
   {
     title: "Inventory",
@@ -153,6 +188,7 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Finance",
     href: "/finance/income",
     allowedRoles: ADMIN_SHELL_ROLES,
+    requiredPermission: "reports.view",
   },
   {
     title: "Customers",
@@ -163,6 +199,13 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Tables",
     href: "/tables",
     allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "pos.view",
+  },
+  {
+    title: "Rooms",
+    href: "/rooms",
+    allowedRoles: ["admin", "manager", "cashier", "waiter"],
+    requiredPermission: "hotel.manage",
   },
   {
     title: "Reservations",
@@ -178,6 +221,7 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Manage",
     href: "/manage",
     allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "staff.manage",
   },
   {
     title: "Feedback",
@@ -193,13 +237,33 @@ export function getSidebarItemsForRole(role: UserRole | null) {
   );
 }
 
-export function getSidebarItemsForRoles(roles: UserRole[]) {
+export function getSidebarItemsForRoles(roles: UserRole[], user?: { role: string; permissions?: string[] } | null) {
   if (!roles.length) return [];
-  // Union: show item if ANY of the user's roles is in allowedRoles
-  return SIDEBAR_ROLE_MAP.filter((item) =>
-    roles.some((role) => item.allowedRoles.includes(role))
-  );
+  return SIDEBAR_ROLE_MAP.filter((item) => {
+    // 1. Check if ANY of the user's roles matches the item's allowedRoles
+    const roleAllowed = roles.some((role) => item.allowedRoles.includes(role));
+    if (!roleAllowed) return false;
+
+    // 2. If item has a requiredPermission, check if user has it
+    if (item.requiredPermission) {
+      return hasPermission(user || null, item.requiredPermission);
+    }
+
+    return true;
+  });
 }
+
+// ─── Route-level Permission ACL ─────────────────────────────────────────────
+
+export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
+  "/dashboard": "reports.view",
+  "/analytics": "reports.view",
+  "/orders": "pos.view",
+  "/rooms": "hotel.manage",
+  "/staff": "user.manage",
+  "/manage": "staff.manage",
+  "/finance": "reports.view",
+};
 
 // ─── Route-level ACL ────────────────────────────────────────────────────────
 // Maps route prefixes to allowed roles. Used by RoleGuard component.
@@ -215,6 +279,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/finance/expenses": ADMIN_SHELL_ROLES,
   "/customers": ADMIN_SHELL_ROLES,
   "/tables": ADMIN_MANAGER,
+  "/rooms": ["admin", "manager", "cashier", "waiter"],
   "/reservations": ADMIN_SHELL_ROLES,
   "/discounts": ADMIN_MANAGER,
   "/manage": ADMIN_MANAGER,
@@ -229,18 +294,34 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
 
 export function isRouteAllowed(
   pathname: string,
-  role: UserRole | null
+  user: { role: string; permissions?: string[] } | null
 ): boolean {
-  if (!role) return false;
-  if (role === "admin") return true;
+  if (!user) return false;
+  if (user.role === "admin") return true;
 
+  const roles = normalizeRoles(user.role ? [user.role] : []);
+  if (!roles.length) return false;
+
+  // 1. Check Granular Permissions first
+  const sortedPermissionPrefixes = Object.keys(ROUTE_PERMISSIONS).sort(
+    (a, b) => b.length - a.length
+  );
+  for (const prefix of sortedPermissionPrefixes) {
+    if (pathname === prefix || pathname.startsWith(prefix + "/")) {
+      const required = ROUTE_PERMISSIONS[prefix];
+      if (!hasPermission(user, required)) return false;
+      break; // Found specific permission, now fall through to legacy role check if needed
+    }
+  }
+
+  // 2. Legacy Role Check fallback
   const sortedPrefixes = Object.keys(ROUTE_ROLES).sort(
     (a, b) => b.length - a.length
   );
 
   for (const prefix of sortedPrefixes) {
     if (pathname === prefix || pathname.startsWith(prefix + "/")) {
-      return ROUTE_ROLES[prefix].includes(role);
+      return roles.some(role => ROUTE_ROLES[prefix].includes(role));
     }
   }
 
@@ -249,11 +330,9 @@ export function isRouteAllowed(
 
 export function isRouteAllowedMulti(
   pathname: string,
-  roles: UserRole[]
+  user: { role: string; permissions?: string[] } | null
 ): boolean {
-  if (!roles.length) return false;
-  // If ANY role grants access, allow
-  return roles.some((role) => isRouteAllowed(pathname, role));
+  return isRouteAllowed(pathname, user);
 }
 
 // ─── Default home route per role ────────────────────────────────────────────

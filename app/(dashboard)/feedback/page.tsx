@@ -10,7 +10,7 @@ import { ImageIcon, X, Loader2, Send, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { FeedbackApis } from "@/lib/api/endpoints";
 import apiClient from "@/lib/api-client";
-import { MenuImageService } from "@/services/menu-image-service";
+import { ImageService } from "@/services/image-service";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
@@ -50,9 +50,7 @@ export default function FeedbackPage() {
       let photoUrl = null;
 
       if (selectedFile) {
-        // Reusing MenuImageService for now as it handles Supabase upload
-        // In a real scenario, we might want a separate 'feedback' bucket
-        photoUrl = await MenuImageService.uploadMenuImage(selectedFile, user?.restaurant_id || 0);
+        photoUrl = await ImageService.uploadMenuImage(selectedFile, user?.restaurant_id || 0);
       }
 
       await apiClient.post(FeedbackApis.submit, {

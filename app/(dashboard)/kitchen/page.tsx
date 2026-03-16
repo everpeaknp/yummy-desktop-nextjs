@@ -53,6 +53,9 @@ interface Kot {
   created_by_staff_name?: string;
   customer_name?: string;
   restaurant_order_id?: number;
+  order?: {
+      business_line?: string;
+  };
 }
 
 type KotStatus = "PENDING" | "PREPARING" | "READY" | "SERVED" | "REJECTED";
@@ -69,7 +72,7 @@ function nextStatus(s: string): KotStatus | null {
   }
 }
 
-function actionLabel(s: string, delayed: boolean): string {
+function actionLabel(s: string, delayed: boolean, businessLine?: string): string {
   const next = nextStatus(s);
   switch (next) {
     case "PREPARING": return "Start Cooking";
@@ -489,16 +492,22 @@ export default function KitchenPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
-            {filtered.map((kot) => (
-              <KotTicketCard
-                key={kot.id}
-                kot={kot}
-                isUpdating={updatingIds.has(kot.id)}
-                onStatusChange={handleStatusChange}
-                onReject={handleReject}
-                tick={elapsedTick}
-              />
-            ))}
+            {filtered.map((kot) => {
+               // Final filter check to skip cards that would be empty (e.g. legacy/corrupt KOTs with only room charges)
+               const visibleItems = kot.items.filter(i => !i.item_name.toLowerCase().includes("room charge"));
+               if (visibleItems.length === 0) return null;
+
+               return (
+                 <KotTicketCard
+                   key={kot.id}
+                   kot={kot}
+                   isUpdating={updatingIds.has(kot.id)}
+                   onStatusChange={handleStatusChange}
+                   onReject={handleReject}
+                   tick={elapsedTick}
+                 />
+               );
+            })}
           </div>
         )}
       </div>
@@ -611,7 +620,7 @@ function KotTicketCard({
                 )}
             </div>
             <h3 className="font-bold text-base leading-tight">
-                {kot.table_name || `Order #${kot.restaurant_order_id}`}
+                {kot.order?.business_line === "hotel" ? kot.table_name : (kot.table_name || `Order #${kot.restaurant_order_id}`)}
             </h3>
          </div>
          {kot.table_category && (
@@ -623,7 +632,7 @@ function KotTicketCard({
 
       {/* ITEMS */}
       <div className="flex-1 px-3 py-2 space-y-1.5">
-          {kot.items.map(item => (
+          {kot.items.filter(i => !i.item_name.toLowerCase().includes("room charge")).map(item => (
               <div key={item.id} className={cn("text-sm flex justify-between items-start gap-2", item.is_deleted ? "opacity-50 line-through decoration-red-500" : "")}>
                   <div className="font-medium leading-snug">
                        <span className="font-bold mr-1">{Math.abs(item.qty_change)}x</span>
@@ -667,7 +676,7 @@ function KotTicketCard({
                 onClick={() => onStatusChange(kot.id, next!)}
                 disabled={isUpdating}
             >
-                {actionLabel(kot.status, delayed)}
+                {actionLabel(kot.status, delayed, kot.order?.business_line)}
             </Button>
           )}
       </div>

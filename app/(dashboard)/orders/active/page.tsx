@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Order } from "@/types/order";
 import { Input } from "@/components/ui/input";
-import { Search, Loader2, Plus, RefreshCw, Zap, Armchair, ShoppingBag, Clock, Utensils, AlertCircle, Receipt } from "lucide-react";
+import { Search, Loader2, Plus, RefreshCw, Zap, Armchair, ShoppingBag, Clock, Utensils, AlertCircle, Receipt, Bed } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,19 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ActiveOrdersPage() {
+    const router = useRouter();
+    useEffect(() => {
+        router.replace("/orders");
+    }, [router]);
+
+    return (
+        <div className="h-screen flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+    );
+}
+
+export function LegacyActiveOrdersPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState("all");
@@ -103,11 +116,17 @@ export default function ActiveOrdersPage() {
     }, [user]);
 
     const filteredOrders = orders.filter(order => {
-        // Channel filter
+        // Channel / business_line filter
         if (filter === "table" && order.channel !== "table") return false;
         if (filter === "pickup" && order.channel !== "pickup") return false;
         if (filter === "quick_billing" && (order.channel as string) !== "quick_billing" && (order.channel as string) !== "takeaway") return false;
         if (filter === "reservation" && (order.channel as string) !== "reservation") return false;
+        if (filter === "room_service") {
+            // Show orders that are room service (either by channel or business_line)
+            const ch = (order.channel as string);
+            const bl = (order as any).business_line;
+            if (ch !== "room_service" && bl !== "hotel") return false;
+        }
 
         // Search filter
         if (searchQuery.trim()) {
@@ -197,6 +216,9 @@ export default function ActiveOrdersPage() {
                     <FilterPill label="Pickup" active={filter === 'pickup'} onClick={() => setFilter('pickup')} icon={<ShoppingBag className="h-3 w-3" />} />
                     <FilterPill label="Quick Billing" active={filter === 'quick_billing'} onClick={() => setFilter('quick_billing')} icon={<Zap className="h-3 w-3" />} />
                     <FilterPill label="Reservation" active={filter === 'reservation'} onClick={() => setFilter('reservation')} icon={<Clock className="h-3 w-3" />} />
+                    {restaurant?.hotel_enabled && (
+                        <FilterPill label="Room Service" active={filter === 'room_service'} onClick={() => setFilter('room_service')} icon={<Bed className="h-3 w-3" />} />
+                    )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

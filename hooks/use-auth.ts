@@ -9,6 +9,7 @@ interface User {
   roles: string[];
   primary_role: string | null;
   restaurant_id: number | null;
+  permissions: string[];
   currency?: string;
 }
 
@@ -26,6 +27,7 @@ interface AuthState {
 
 import apiClient from '@/lib/api-client';
 import { AuthApis } from '@/lib/api/endpoints';
+import { useRestaurant } from './use-restaurant';
 
 export const useAuth = create<AuthState>()(
   persist(
@@ -48,6 +50,8 @@ export const useAuth = create<AuthState>()(
           localStorage.removeItem('refreshToken');
         }
         set({ user: null, token: null, refreshToken: null });
+        // Clear module selection on logout
+        useRestaurant.getState().setSelectedModule(null);
         // Redirection should be handled by the caller using router.push for performance
       },
       me: async () => {
@@ -87,7 +91,8 @@ export const useAuth = create<AuthState>()(
                   roles,
                   primary_role: data.primary_role || data.user_role || null,
                   restaurant_id: data.restaurant_id,
-                  currency: data.currency
+                  currency: data.currency,
+                  permissions: data.permissions || []
                 };
 
                 set({
@@ -118,10 +123,16 @@ export const useAuth = create<AuthState>()(
               const userId = decoded.sub || decoded.user_id || decoded.id;
 
               if (userId) {
-                // Only Admins can fetch by ID usually, but worth a try if logged in
-                const response = await apiClient.get(AuthApis.userById(userId));
-                if (response.data.status === 'success') {
-                  set({ user: response.data.data, isRedirecting: false });
+                // Only Admins can fetch by ID usually,
+                try {
+                  const response = await apiClient.get('/users/me/profile');
+                  if (response.data.status === 'success') {
+                    const user = response.data.data;
+                    console.log("[useAuth] Current User (me):", { id: user.id, email: user.email, role: user.role, restaurant_id: user.restaurant_id });
+                    set({ user });
+                  }
+                } catch (error) {
+                  console.warn("[useAuth] Failed to fetch user profile via /users/me/profile", error);
                 }
               }
             } catch (e) {

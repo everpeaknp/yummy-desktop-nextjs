@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import Image from "next/image";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { TableApis, TableTypeApis } from "@/lib/api/endpoints";
+import { TableApis, TableTypeApis, OrderApis } from "@/lib/api/endpoints";
+import {
+  normalizeRoles,
+  canManageHotelLayout,
+  canHandleCheckin,
+} from "@/lib/role-permissions";
 import {
   Loader2,
-  Armchair,
+  Bed,
   Plus,
   MapPinned,
   X,
@@ -16,17 +20,12 @@ import {
   MoreVertical,
   Pencil,
   Trash2,
-  QrCode,
-  Printer,
-  Copy,
-  ExternalLink,
-  Download,
-  RefreshCcw,
+  Utensils,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoomContainer, type TableData } from "@/components/tables/room-container";
-import { ReservationDetailsSheet } from "@/components/reservations/reservation-details-sheet";
-import { ReservationApis } from "@/lib/api/endpoints";
+import { CheckinModal } from "@/components/rooms/checkin-modal";
+import { CheckoutModal } from "@/components/rooms/checkout-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,7 +44,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,7 +58,7 @@ interface TableType {
   layout_height: number;
 }
 
-export default function TablesPage() {
+export default function RoomsPage() {
   const [tables, setTables] = useState<TableData[]>([]);
   const [tableTypes, setTableTypes] = useState<TableType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,11 +71,12 @@ export default function TablesPage() {
   const [originalHeights, setOriginalHeights] = useState<Record<string, number>>({});
   const [savingLayout, setSavingLayout] = useState(false);
 
-  // Table form dialog
+  // Room form dialog
   const [tableDialogOpen, setTableDialogOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<TableData | null>(null);
   const [formName, setFormName] = useState("");
   const [formCapacity, setFormCapacity] = useState("");
+  const [formPrice, setFormPrice] = useState("");
   const [formArea, setFormArea] = useState("");
   const [formSaving, setFormSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -89,20 +88,19 @@ export default function TablesPage() {
   const [areaName, setAreaName] = useState("");
   const [areaSaving, setAreaSaving] = useState(false);
 
-  // Reservation details
-  const [loadingReservation, setLoadingReservation] = useState(false);
-  const [reservationSheetOpen, setReservationSheetOpen] = useState(false);
-  const [selectedReservation, setSelectedReservation] = useState<any>(null);
-  
-  // QR Dialog
-  const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [qrTable, setQrTable] = useState<TableData | null>(null);
-  const [generatingQr, setGeneratingQr] = useState(false);
-  const [qrToken, setQrToken] = useState<string | null>(null);
+  // Check-in / Check-out flows
+  // Check-in / Check-out flows
+  const [checkinDialogOpen, setCheckinDialogOpen] = useState(false);
+  const [checkoutDialogOpen, setCheckoutDialogOpen] = useState(false);
+  const [activeRoom, setActiveRoom] = useState<TableData | null>(null);
 
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
   const router = useRouter();
+
+  const userRoles = normalizeRoles(user?.roles?.length ? user.roles : user?.role ? [user.role] : []);
+  const canManage = canManageHotelLayout(userRoles[0] || null); // Simplified for now, or check all
+  const canCheckin = canHandleCheckin(userRoles[0] || null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -122,8 +120,8 @@ export default function TablesPage() {
     if (showLoader) setLoading(true);
     try {
       const [tablesRes, typesRes] = await Promise.all([
-        apiClient.get(TableApis.getTables(user.restaurant_id, "table")),
-        apiClient.get(TableTypeApis.getTableTypes(user.restaurant_id, "table")),
+        apiClient.get(TableApis.getTables(user.restaurant_id, "room")),
+        apiClient.get(TableTypeApis.getTableTypes(user.restaurant_id, "room")),
       ]);
       if (tablesRes.data.status === "success") {
         setTables(tablesRes.data.data || []);
@@ -132,7 +130,7 @@ export default function TablesPage() {
         setTableTypes(typesRes.data.data || []);
       }
     } catch (err) {
-      console.error("Failed to fetch tables:", err);
+      console.error("Failed to fetch rooms:", err);
     } finally {
       if (showLoader) setLoading(false);
     }
@@ -189,7 +187,6 @@ export default function TablesPage() {
   // ═══════════════════════════════════════════════
   const enterLayoutMode = () => {
     setOriginalTables(JSON.parse(JSON.stringify(tables)));
-    // Snapshot current heights from tableTypes
     const heights: Record<string, number> = {};
     tableTypes.forEach((tt) => { heights[tt.name] = tt.layout_height; });
     setOriginalHeights(heights);
@@ -228,7 +225,6 @@ export default function TablesPage() {
   const saveLayout = async () => {
     setSavingLayout(true);
     try {
-      // Save moved tables
       const movedTables = tables.filter((t) => {
         const orig = originalTables.find((o) => o.id === t.id);
         return orig && (orig.pos_x !== t.pos_x || orig.pos_y !== t.pos_y);
@@ -241,7 +237,6 @@ export default function TablesPage() {
         });
       }
 
-      // Save changed layout_heights
       for (const [roomName, newHeight] of Object.entries(categoryHeights)) {
         const origHeight = originalHeights[roomName];
         if (origHeight != null && Math.abs(origHeight - newHeight) > 0.1) {
@@ -256,8 +251,6 @@ export default function TablesPage() {
     } catch (err) {
       console.error("Failed to save layout:", err);
     } finally {
-      // Always exit layout mode and refetch — even on network errors,
-      // partial saves may have succeeded
       setSavingLayout(false);
       setIsLayoutMode(false);
       setOriginalTables([]);
@@ -267,9 +260,8 @@ export default function TablesPage() {
   };
 
   // ═══════════════════════════════════════════════
-  // TABLE CRUD
+  // ROOM CRUD
   // ═══════════════════════════════════════════════
-  // Client-side duplicate name check
   const isDuplicateName = (() => {
     if (!formName.trim() || !formArea) return false;
     const name = formName.trim().toLowerCase();
@@ -285,6 +277,7 @@ export default function TablesPage() {
     setEditingTable(null);
     setFormName("");
     setFormCapacity("");
+    setFormPrice("");
     setFormError("");
     const defaultArea =
       selectedArea !== "All Areas" ? selectedArea : tableTypes[0]?.name || "";
@@ -293,38 +286,32 @@ export default function TablesPage() {
   };
 
   const openEditTable = async (table: TableData) => {
-    if (table.status === "RESERVED" && user?.restaurant_id) {
-      setLoadingReservation(true);
-      try {
-        // Fetch reservations and find the one for this table
-        const response = await apiClient.get(ReservationApis.listReservations(user.restaurant_id));
-        if (response.data.status === "success") {
-          const data = response.data.data;
-          const reservations = Array.isArray(data) ? data : (data.reservations || []);
-          const res = reservations.find((r: any) => 
-            (r.table_id === table.id || (r.table_ids && r.table_ids.includes(table.id))) && 
-            r.status.toLowerCase() === 'confirmed'
-          );
-          if (res) {
-            setSelectedReservation(res);
-            setReservationSheetOpen(true);
-            return;
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch reservation for table:", err);
-      } finally {
-        setLoadingReservation(false);
-      }
-    }
-
     setEditingTable(table);
     setFormName(table.table_name);
     setFormCapacity(table.capacity.toString());
+    setFormPrice(table.price_per_night?.toString() || "");
     setFormArea(table.table_type_name || "");
     setFormError("");
     setTableDialogOpen(true);
   };
+
+  const handleRoomClick = (table: TableData) => {
+    setActiveRoom(table);
+    const isOccupied = !(table.status?.toLowerCase() === "available" || table.status?.toLowerCase() === "free");
+    
+    if (!isOccupied) {
+      if (canCheckin) {
+        setCheckinDialogOpen(true);
+      } else {
+        // Waiters can't checkin, but maybe they can still see details or just "occupied" only?
+        // User said waiters take orders. On vacant room, maybe nothing happens or just "Vacant"
+      }
+    } else {
+      setCheckoutDialogOpen(true);
+    }
+  };
+
+
 
   const handleSaveTable = async () => {
     if (!formName.trim() || !formCapacity || !formArea) return;
@@ -341,6 +328,7 @@ export default function TablesPage() {
           name: formName.trim(),
           capacity: parseInt(formCapacity),
           table_type_id: typeId,
+          price_per_night: formPrice ? parseFloat(formPrice) : null,
         });
       } else {
         const existingInArea = tables.filter((t) => t.table_type_name === formArea);
@@ -355,6 +343,8 @@ export default function TablesPage() {
             status: "FREE",
             pos_x: pos.x,
             pos_y: pos.y,
+            space_kind: "room",
+            price_per_night: formPrice ? parseFloat(formPrice) : null,
           }
         );
       }
@@ -362,15 +352,11 @@ export default function TablesPage() {
       setTableDialogOpen(false);
       fetchData();
     } catch (err: any) {
-      // If we got a proper HTTP error response (e.g. 400 duplicate), show it
       if (err?.response?.data?.detail) {
         setFormError(err.response.data.detail);
         setFormSaving(false);
         return;
       }
-      // Network Error / timeout = no response received.
-      // The backend likely processed it — close dialog and refetch to verify.
-      console.warn("Save request may have succeeded despite error:", err?.message);
       setFormSaving(false);
       setTableDialogOpen(false);
       fetchData();
@@ -399,7 +385,7 @@ export default function TablesPage() {
   };
 
   // ═══════════════════════════════════════════════
-  // AREA (TABLE TYPE) CRUD
+  // AREA (FLOOR) CRUD
   // ═══════════════════════════════════════════════
   const openAddArea = () => {
     setAreaDialogMode("add");
@@ -422,7 +408,7 @@ export default function TablesPage() {
       if (areaDialogMode === "add") {
         await apiClient.post(
           TableTypeApis.createTableType(user.restaurant_id),
-          { name: areaName.trim(), layout_height: 200 }
+          { name: areaName.trim(), layout_height: 200, space_kind: "room" }
         );
       } else if (editingAreaId) {
         await apiClient.put(
@@ -440,7 +426,7 @@ export default function TablesPage() {
   };
 
   const handleDeleteArea = async (tt: TableType) => {
-    if (!confirm(`Delete area "${tt.name}"? Tables in this area will also be removed.`))
+    if (!confirm(`Delete area "${tt.name}"? Rooms in this area will also be removed.`))
       return;
     try {
       await apiClient.delete(TableTypeApis.deleteTableType(tt.id));
@@ -450,139 +436,51 @@ export default function TablesPage() {
       console.error("Failed to delete area:", err);
     }
   };
-  
-  const handleGenerateQr = async (table: TableData, regenerate = false) => {
-    setGeneratingQr(true);
-    setQrTable(table);
-    setQrDialogOpen(true);
-    if (regenerate) setQrToken(null);
-    try {
-      const res = await apiClient.post(TableApis.qrGenerate(table.id) + (regenerate ? "?regenerate=true" : ""));
-      // Handle both direct and wrapped responses
-      const token = res.data?.qr_token || res.data?.data?.qr_token;
-      if (token) {
-        setQrToken(token);
-        if (regenerate) {
-           toast.success(`QR Token REGENERATED for ${table.table_name}`);
-        } else {
-           // toast.success(`QR Token retrieved for ${table.table_name}`);
-        }
-      } else {
-        toast.error("Failed to generate token: Invalid response structure");
-      }
-    } catch (err: any) {
-      console.error("Failed to generate QR:", err);
-      const detail = err.response?.data?.detail || "Connection error or insufficient permissions";
-      toast.error(`QR Generation Failed: ${detail}`);
-    } finally {
-      setGeneratingQr(false);
-    }
-  };
 
-  const getQrUrl = (token: string) => {
-    // For production, this might need to be dynamic, but for local dev we point to :3000
-    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-      return `http://localhost:3000/qr/${token}`;
-    }
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin.replace("-web", "-menu") : "";
-    return `${baseUrl}/qr/${token}`;
-  };
-
-  const handlePrintQr = () => {
-    window.print();
-  };
-
-  const handleDownloadQr = async () => {
-    if (!qrToken || !qrTable) return;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(getQrUrl(qrToken))}`;
-    try {
-      const response = await fetch(qrUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `QR_${qrTable.table_name}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Failed to download QR:", err);
-    }
-  };
-
-  const currentPermissions = user?.permissions || [];
-  const isAdmin = user?.role?.toLowerCase() === "admin" || 
-                  user?.primary_role?.toLowerCase() === "admin" || 
-                  user?.roles?.some(r => r.toLowerCase() === "admin");
-  const canManageQr = isAdmin || currentPermissions.includes("qr.manage");
-  const canPrintQr = isAdmin || currentPermissions.includes("qr.print");
-
-  // ═══════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════
   return (
     <div className="flex flex-col gap-5 max-w-[1600px] mx-auto p-5 md:p-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Tables</h1>
-          <p className="text-sm text-muted-foreground">
-            Switch halls/floors and add tables to the active category.
-          </p>
+          <h1 className="text-xl font-bold tracking-tight">Rooms</h1>
+          <p className="text-xs text-muted-foreground">Manage your rooms, floors, and layouts.</p>
         </div>
         <div className="flex items-center gap-2">
           {isLayoutMode ? (
             <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={cancelLayoutMode}
-                className="text-red-500 hover:text-red-600"
-              >
+              <Button variant="ghost" size="sm" onClick={cancelLayoutMode} className="text-red-500 hover:text-red-600">
                 <X className="w-4 h-4 mr-1" /> Cancel
               </Button>
-              <Button
-                size="sm"
-                onClick={saveLayout}
-                disabled={savingLayout}
-                className="bg-orange-600 hover:bg-orange-700 text-white"
-              >
-                {savingLayout ? (
-                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4 mr-1" />
-                )}
+              <Button size="sm" onClick={saveLayout} disabled={savingLayout} className="bg-orange-600 hover:bg-orange-700 text-white">
+                {savingLayout ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
                 Save
               </Button>
             </>
           ) : (
-            <>
-              <Button variant="outline" size="sm" onClick={enterLayoutMode}>
-                <MapPinned className="w-4 h-4 mr-1" /> Edit Layout
-              </Button>
-              <Button
-                size="sm"
-                onClick={openAddTable}
-                className="bg-orange-600 hover:bg-orange-700 text-white"
-              >
-                <Plus className="w-4 h-4 mr-1" /> Add Table
-              </Button>
-            </>
+            canManage && (
+              <>
+                <Button variant="outline" size="sm" onClick={enterLayoutMode}>
+                  <MapPinned className="w-4 h-4 mr-1" /> Edit Layout
+                </Button>
+                <Button size="sm" onClick={openAddTable} className="bg-orange-600 hover:bg-orange-700 text-white">
+                  <Plus className="w-4 h-4 mr-1" /> Add Room
+                </Button>
+              </>
+            )
           )}
         </div>
       </div>
 
-      {/* Area Filter Chips — matching Flutter RoomSelectorBar */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Area Filter Chips — horizontal scroll on small screens */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
         {areaOptions.map((area) => {
           const tt = tableTypes.find((t) => t.name === area);
           return (
-            <div key={area} className="relative group">
+            <div key={area} className="relative group shrink-0">
               <button
                 onClick={() => setSelectedArea(area)}
                 className={cn(
-                  "px-4 py-1.5 rounded-full text-sm font-medium transition-colors border",
+                  "px-4 py-1.5 rounded-full text-sm font-medium transition-colors border whitespace-nowrap",
                   selectedArea === area
                     ? "bg-orange-600 text-white border-orange-600"
                     : "bg-card text-foreground border-border hover:bg-muted"
@@ -590,7 +488,6 @@ export default function TablesPage() {
               >
                 {area}
               </button>
-              {/* Context menu for real areas (not "All Areas") */}
               {tt && !isLayoutMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -602,10 +499,7 @@ export default function TablesPage() {
                     <DropdownMenuItem onClick={() => openRenameArea(tt)}>
                       <Pencil className="w-3.5 h-3.5 mr-2" /> Rename
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-red-600"
-                      onClick={() => handleDeleteArea(tt)}
-                    >
+                    <DropdownMenuItem className="text-red-600" onClick={() => handleDeleteArea(tt)}>
                       <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -614,19 +508,19 @@ export default function TablesPage() {
             </div>
           );
         })}
-        {!isLayoutMode && (
+        {!isLayoutMode && canManage && (
           <button
             onClick={openAddArea}
-            className="px-3 py-1.5 rounded-full text-sm font-medium border border-border bg-card text-foreground hover:bg-muted transition-colors flex items-center gap-1"
+            className="shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border border-border bg-card text-foreground hover:bg-muted transition-colors flex items-center gap-1"
           >
-            <Plus className="w-3.5 h-3.5" /> Add Area
+            <Plus className="w-3.5 h-3.5" /> Add Floor
           </button>
         )}
       </div>
 
-      {/* Status Legend — matching Flutter TableStatusLegend */}
-      <div className="flex items-center gap-5 text-sm text-muted-foreground">
-        <LegendDot color="bg-emerald-500" label="Available" />
+      {/* Status Legend — inline compact */}
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <LegendDot color="bg-emerald-500" label="Vacant" />
         <LegendDot color="bg-red-500" label="Occupied" />
         <LegendDot color="bg-orange-500" label="Reserved" />
       </div>
@@ -638,14 +532,14 @@ export default function TablesPage() {
         </div>
       ) : tables.length === 0 ? (
         <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-lg gap-3">
-          <Armchair className="w-12 h-12 opacity-20" />
-          <p>No tables configured.</p>
+          <Bed className="w-12 h-12 opacity-20" />
+          <p>No rooms configured.</p>
           <Button
             size="sm"
             onClick={openAddTable}
             className="bg-orange-600 hover:bg-orange-700 text-white"
           >
-            <Plus className="w-4 h-4 mr-1" /> Add Table
+            <Plus className="w-4 h-4 mr-1" /> Add Room
           </Button>
         </div>
       ) : selectedArea !== "All Areas" ? (
@@ -654,7 +548,7 @@ export default function TablesPage() {
           tables={filteredTables}
           layoutHeight={getLayoutHeight(selectedArea)}
           isLayoutMode={isLayoutMode}
-          onTableClick={isLayoutMode ? undefined : openEditTable}
+          onTableClick={isLayoutMode ? openEditTable : handleRoomClick}
           onTableDrop={isLayoutMode ? handleTableDrop : undefined}
           onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(selectedArea, h) : undefined}
           onAutoArrange={isLayoutMode ? (updates, h) => handleAutoArrange(selectedArea, updates, h) : undefined}
@@ -668,7 +562,7 @@ export default function TablesPage() {
               tables={groupedTables[roomName]}
               layoutHeight={getLayoutHeight(roomName)}
               isLayoutMode={isLayoutMode}
-              onTableClick={isLayoutMode ? undefined : openEditTable}
+              onTableClick={isLayoutMode ? openEditTable : handleRoomClick}
               onTableDrop={isLayoutMode ? handleTableDrop : undefined}
               onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(roomName, h) : undefined}
               onAutoArrange={isLayoutMode ? (updates, h) => handleAutoArrange(roomName, updates, h) : undefined}
@@ -677,44 +571,23 @@ export default function TablesPage() {
         </div>
       )}
 
-      {/* ═══ TABLE FORM DIALOG ═══ */}
+      {/* ═══ ROOM FORM DIALOG ═══ */}
       <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editingTable ? "Edit Table" : "Add Table"}</DialogTitle>
+            <DialogTitle>{editingTable ? "Edit Room" : "Add Room"}</DialogTitle>
             <DialogDescription>
               {editingTable
-                ? "Update table details below."
-                : "Choose the hall/floor for this table. Defaults to the active filter."}
+                ? "Update room details below."
+                : "Choose the floor for this room."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
-            {editingTable && canManageQr && (
-              <div className="flex items-center justify-between p-3 rounded-xl bg-indigo-500/5 border border-indigo-500/10">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                    <QrCode className="h-5 w-5 text-indigo-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-indigo-900 dark:text-indigo-300">QR Ordering</p>
-                    <p className="text-[10px] text-indigo-600/70 font-medium">Generate digital menu link</p>
-                  </div>
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="rounded-lg h-8 text-[10px] font-bold border-indigo-200 hover:bg-indigo-50"
-                  onClick={() => handleGenerateQr(editingTable)}
-                >
-                  Manage QR
-                </Button>
-              </div>
-            )}
             <div className="grid gap-2">
-              <Label>Area / Floor</Label>
+              <Label>Floor / Block</Label>
               <Select value={formArea} onValueChange={setFormArea}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select area" />
+                  <SelectValue placeholder="Select floor" />
                 </SelectTrigger>
                 <SelectContent>
                   {tableTypes.map((tt) => (
@@ -726,26 +599,38 @@ export default function TablesPage() {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>Table Name</Label>
+              <Label>Room Number / Name</Label>
               <Input
                 value={formName}
                 onChange={(e) => { setFormName(e.target.value); setFormError(""); }}
-                placeholder="e.g. A1, T2"
-                maxLength={10}
+                placeholder="e.g. 101, Deluxe 1"
+                maxLength={20}
               />
               {isDuplicateName && (
-                <p className="text-xs text-red-500">A table with this name already exists in {formArea}</p>
+                <p className="text-xs text-red-500">A room with this name already exists in {formArea}</p>
               )}
             </div>
-            <div className="grid gap-2">
-              <Label>Capacity</Label>
-              <Input
-                type="number"
-                value={formCapacity}
-                onChange={(e) => setFormCapacity(e.target.value)}
-                placeholder="e.g. 4"
-                min={1}
-              />
+            <div className="flex gap-4">
+              <div className="grid gap-2 flex-1">
+                <Label>Capacity (Adults)</Label>
+                <Input
+                  type="number"
+                  value={formCapacity}
+                  onChange={(e) => setFormCapacity(e.target.value)}
+                  placeholder="e.g. 2"
+                  min={1}
+                />
+              </div>
+              <div className="grid gap-2 flex-1">
+                <Label>Price per Night</Label>
+                <Input
+                  type="number"
+                  value={formPrice}
+                  onChange={(e) => setFormPrice(e.target.value)}
+                  placeholder="e.g. 2500"
+                  min={0}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter className="gap-2">
@@ -776,26 +661,26 @@ export default function TablesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ═══ AREA DIALOG ═══ */}
+      {/* ═══ FLOOR DIALOG ═══ */}
       <Dialog open={areaDialogOpen} onOpenChange={setAreaDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              {areaDialogMode === "add" ? "Add Area" : "Rename Area"}
+              {areaDialogMode === "add" ? "Add Floor" : "Rename Floor"}
             </DialogTitle>
             <DialogDescription>
               {areaDialogMode === "add"
-                ? "Create a new hall, floor, or section."
-                : "Enter the new name for this area."}
+                ? "Create a new floor or wing."
+                : "Enter the new name for this floor."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2">
-              <Label>Area Name</Label>
+              <Label>Floor Name</Label>
               <Input
                 value={areaName}
                 onChange={(e) => setAreaName(e.target.value)}
-                placeholder="e.g. Main Dining, Terrace, Outdoor"
+                placeholder="e.g. First Floor, North Wing"
                 autoFocus
               />
             </div>
@@ -814,199 +699,26 @@ export default function TablesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* ═══ RESERVATION DETAILS SHEET ═══ */}
-      <ReservationDetailsSheet
-        open={reservationSheetOpen}
-        onOpenChange={setReservationSheetOpen}
-        reservation={selectedReservation}
-        onRefresh={() => fetchData(true)}
+      
+      <CheckinModal
+        isOpen={checkinDialogOpen}
+        onOpenChange={setCheckinDialogOpen}
+        room={activeRoom}
+        restaurantId={user?.restaurant_id ?? undefined}
+        onSuccess={() => fetchData()}
+        onEditRoomRequested={canManage ? openEditTable : undefined}
       />
 
-      {loadingReservation && (
-        <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
-          <Loader2 className="w-8 h-8 animate-spin text-white" />
-        </div>
-      )}
-
-      {/* ═══ PRINT STYLES ═══ */}
-      <style jsx global>{`
-        @media print {
-          @page {
-            margin: 0;
-            size: portrait;
-          }
-          html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            height: 100% !important;
-            width: 100% !important;
-            background: white !important;
-            overflow: hidden !important;
-          }
-          /* Hide all UI elements */
-          body * {
-            visibility: hidden !important;
-          }
-          /* Show only the QR section */
-          #print-section, #print-section * {
-            visibility: visible !important;
-          }
-          /* Absolute centering on the page */
-          #print-section {
-            position: absolute !important;
-            top: 50% !important;
-            left: 50% !important;
-            transform: translate(-50%, -50%) !important;
-            width: auto !important;
-            height: auto !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
-            background: white !important;
-            z-index: 999999 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-          }
-          /* massive centered QR - 550px for "abit bigger" */
-          .qr-container {
-             width: 550px !important;
-             height: auto !important;
-             display: flex !important;
-             flex-direction: column !important;
-             align-items: center !important;
-          }
-          .qr-container div[style*="height:200px"] {
-             width: 550px !important;
-             height: 550px !important;
-          }
-          .qr-container p {
-            font-size: 20px !important;
-            margin-top: 15px !important;
-            font-weight: bold !important;
-            color: black !important;
-            text-align: center !important;
-          }
-          /* Force hide all standard UI overlays */
-          div[role="dialog"], div[data-state="open"], .fixed, .absolute, .bg-black\/80 {
-            position: static !important;
-            transform: none !important;
-            background: transparent !important;
-            box-shadow: none !important;
-            border: none !important;
-            width: auto !important;
-            height: auto !important;
-            display: block !important;
-          }
-          /* Keep the print section absolute and centered */
-          #print-section {
-             position: absolute !important;
-             top: 48% !important; /* Slightly adjusted for better visual center with text */
-             left: 50% !important;
-             transform: translate(-50%, -50%) !important;
-          }
-        }
-      `}</style>
-
-      {/* ═══ QR DIALOG ═══ */}
-      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Table QR Code</DialogTitle>
-            <DialogDescription>
-              Scan this QR to open the digital menu for <strong>{qrTable?.table_name}</strong>.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="flex flex-col items-center justify-center py-6 gap-6">
-            <div id="print-section" className="qr-container relative p-6 bg-white rounded-[32px] shadow-2xl shadow-indigo-500/10 border border-slate-100 flex items-center justify-center overflow-hidden">
-               {generatingQr ? (
-                 <div className="h-[200px] w-[200px] flex items-center justify-center">
-                   <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
-                 </div>
-               ) : qrToken ? (
-                  <div className="flex flex-col items-center gap-4">
-                     <div className="relative h-[200px] w-[200px] bg-white rounded-2xl overflow-hidden border-2 border-indigo-50 p-2">
-                        <Image 
-                           src={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(getQrUrl(qrToken))}`}
-                           alt={`QR Code for ${qrTable?.table_name}`}
-                           fill
-                           className="object-contain"
-                           unoptimized
-                        />
-                     </div>
-                     <p className="text-[10px] font-mono text-muted-foreground bg-slate-100 px-2 py-1 rounded">
-                        {qrToken}
-                     </p>
-                  </div>
-               ) : (
-                 <p className="text-sm text-muted-foreground">Failed to generate token</p>
-               )}
-            </div>
-
-            {qrToken && (
-               <div className="flex flex-col gap-3 w-full">
-                  <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-2xl border border-border/40">
-                    <div className="flex-1 min-w-0">
-                       <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-0.5">Direct Link</p>
-                       <p className="text-xs font-medium truncate text-foreground">{getQrUrl(qrToken)}</p>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-8 w-8 rounded-lg"
-                      onClick={() => navigator.clipboard.writeText(getQrUrl(qrToken!))}
-                    >
-                       <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                     {canPrintQr && (
-                       <>
-                         <Button className="rounded-xl gap-2 font-bold" onClick={handlePrintQr}>
-                            <Printer className="h-4 w-4" /> Print QR
-                         </Button>
-                         <Button 
-                           variant="secondary" 
-                           className="rounded-xl gap-2 font-bold col-span-2"
-                           onClick={handleDownloadQr}
-                         >
-                           <Download className="h-4 w-4" /> Download QR
-                         </Button>
-                       </>
-                     )}
-                     <Button 
-                        variant="outline" 
-                        className="rounded-xl gap-2 font-bold"
-                        onClick={() => window.open(getQrUrl(qrToken!), '_blank')}
-                      >
-                        <ExternalLink className="h-4 w-4" /> Test Link
-                     </Button>
-                     {canManageQr && (
-                        <Button 
-                           variant="ghost" 
-                           className="rounded-xl gap-2 font-bold text-red-600 hover:text-red-700 hover:bg-red-50"
-                           onClick={() => qrTable && handleGenerateQr(qrTable, true)}
-                           disabled={generatingQr}
-                        >
-                           <RefreshCcw className={cn("h-4 w-4", generatingQr && "animate-spin")} /> Regenerate
-                        </Button>
-                     )}
-                  </div>
-               </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CheckoutModal
+        isOpen={checkoutDialogOpen}
+        onOpenChange={setCheckoutDialogOpen}
+        room={activeRoom}
+        onSuccess={() => fetchData()}
+        onEditRoomRequested={canManage ? openEditTable : undefined}
+      />
     </div>
   );
 }
-
-// ─── Helpers ───
 
 function LegendDot({ color, label }: { color: string; label: string }) {
   return (

@@ -125,8 +125,19 @@ function formatCurrency(amount: number, currency = "Rs.") {
 // ── Main Checkout Page ─────────────────────────────
 export default function CheckoutPage() {
   const params = useParams();
-  const orderId = Number(params.id);
   const router = useRouter();
+  
+  // Extract returnTo from URL if present
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      setReturnTo(urlParams.get("returnTo"));
+    }
+  }, []);
+
+  const orderId = Number(params.id);
   const user = useAuth((s) => s.user);
   const { restaurant } = useRestaurant();
   const curr = restaurant?.currency || "Rs.";
@@ -208,18 +219,28 @@ export default function CheckoutPage() {
     if (bill?.is_fully_paid) {
       // Navigate to receipt page after a short delay
       const timer = setTimeout(() => {
-        router.push(`/orders/${orderId}/receipt`);
+        if (returnTo) {
+          router.push(`/orders/${orderId}/receipt?returnTo=${encodeURIComponent(returnTo)}`);
+        } else {
+          router.push(`/orders/${orderId}/receipt`);
+        }
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [bill?.is_fully_paid, orderId, router]);
+  }, [bill?.is_fully_paid, orderId, router, returnTo]);
 
   // ── Complete Order ──
   const handleComplete = async () => {
     setCompleting(true);
     try {
       await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
-      router.push("/orders/active");
+      if (returnTo) {
+        router.push(returnTo);
+      } else if (orderMeta?.channel === "room_service") {
+        router.push("/rooms/checkin");
+      } else {
+        router.push("/orders/active");
+      }
     } catch (err: any) {
       console.error("Failed to complete order:", err);
     } finally {
@@ -363,11 +384,17 @@ export default function CheckoutPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-xl">
+          <Button variant="ghost" size="icon" onClick={() => {
+            if (returnTo) router.push(returnTo);
+            else if (orderMeta?.channel === "room_service") router.push("/rooms/checkin");
+             else router.back();
+            }} className="rounded-xl">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Bill & Payment</h1>
+            <h1 className="text-2xl font-bold tracking-tight">
+              {orderMeta?.channel === "room_service" ? "Room Folio & Checkout" : "Bill & Payment"}
+            </h1>
             <p className="text-sm text-muted-foreground">{orderLabel}</p>
           </div>
         </div>
@@ -499,17 +526,15 @@ export default function CheckoutPage() {
                 <span className="tabular-nums">{formatCurrency(bill.subtotal, curr)}</span>
               </div>
 
-              {bill.tax_total > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    Tax
-                    {bill.tax_breakdown_note && (
-                      <span className="text-xs ml-1">({bill.tax_breakdown_note})</span>
-                    )}
-                  </span>
-                  <span className="tabular-nums">{formatCurrency(bill.tax_total, curr)}</span>
-                </div>
-              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">
+                  Tax {(bill as any).tax_rate !== undefined ? `(${(bill as any).tax_rate * 100}%)` : ""}
+                  {bill.tax_breakdown_note && (
+                    <span className="text-xs ml-1">({bill.tax_breakdown_note})</span>
+                  )}
+                </span>
+                <span className="tabular-nums">{formatCurrency(bill.tax_total, curr)}</span>
+              </div>
 
               {bill.service_charge > 0 && (
                 <div className="flex justify-between text-sm">
@@ -633,23 +658,27 @@ export default function CheckoutPage() {
 
           {bill.is_fully_paid && (
             <div className="space-y-3">
-              {allKotsServed && orderMeta?.status !== 'completed' && (
+              {(allKotsServed || orderMeta?.channel === "room_service") && orderMeta?.status !== 'completed' && (
                 <Button 
                   className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
                   onClick={handleComplete}
                   disabled={completing}
                 >
                   {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                  Complete Order
+                  Complete {orderMeta?.channel === "room_service" ? "Stay & Checkout" : "Order"}
                 </Button>
               )}
               <Button
                 variant="outline"
                 className="w-full h-12 text-base font-semibold gap-2"
-                onClick={() => router.push("/orders/active")}
+                onClick={() => {
+                  if (returnTo) router.push(returnTo);
+                  else if (orderMeta?.channel === "room_service") router.push("/rooms/checkin");
+                  else router.push("/orders/active");
+                }}
               >
                 <CheckCircle className="h-4 w-4" />
-                Back to Orders
+                {orderMeta?.channel === "room_service" ? "Back to Rooms" : "Back to Orders"}
               </Button>
               <Button
                 variant="outline"

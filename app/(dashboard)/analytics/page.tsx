@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, TrendingUp, TrendingDown, DollarSign, CreditCard, Activity, Lock, Wallet, ArrowUpRight, ArrowDownRight, ReceiptText, ChevronRight } from "lucide-react";
+import { Calendar, TrendingUp, TrendingDown, DollarSign, CreditCard, Activity, Lock, Wallet, ArrowUpRight, ArrowDownRight, ReceiptText, ChevronRight, Bed, Utensils, LayoutGrid } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,7 @@ export default function AnalyticsPage() {
     const [breakdownType, setBreakdownType] = useState<'source' | 'payment' | 'category'>('source');
     const [loading, setLoading] = useState(true);
     const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
+    const [businessLine, setBusinessLine] = useState<string | undefined>(undefined);
     const user = useAuth(state => state.user);
     const me = useAuth(state => state.me);
     const router = useRouter();
@@ -83,7 +84,8 @@ export default function AnalyticsPage() {
                     restaurantId: user.restaurant_id,
                     dateFrom,
                     dateTo,
-                    timezone
+                    timezone,
+                    businessLine
                 });
 
                 const res = await apiClient.get(dashboardUrl);
@@ -113,7 +115,7 @@ export default function AnalyticsPage() {
         if (user?.restaurant_id) {
             fetchAnalytics();
         }
-    }, [user, activeRange]);
+    }, [user, activeRange, businessLine]);
 
     // Derive breakdown pie data from cached dashboard data when tab changes (no refetch)
     useEffect(() => {
@@ -153,6 +155,33 @@ export default function AnalyticsPage() {
                     <FilterButton label="This Month" active={activeRange === 'month'} onClick={() => setActiveRange('month')} />
                 </div>
             </div>
+
+            {/* Module Selector (Only if both enabled) */}
+            {restaurant?.hotel_enabled && restaurant?.restaurant_enabled && (
+                <div className="flex items-center gap-4">
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">View Metrics For:</p>
+                    <div className="flex bg-muted p-1 rounded-lg border border-border">
+                        <FilterButton 
+                            label="All Services" 
+                            active={businessLine === undefined} 
+                            onClick={() => setBusinessLine(undefined)} 
+                            icon={<LayoutGrid className="w-3 h-3" />} 
+                        />
+                        <FilterButton 
+                            label="Restaurant" 
+                            active={businessLine === 'restaurant'} 
+                            onClick={() => setBusinessLine('restaurant')} 
+                            icon={<Utensils className="w-3 h-3" />} 
+                        />
+                        <FilterButton 
+                            label="Hotel / Rooms" 
+                            active={businessLine === 'hotel'} 
+                            onClick={() => setBusinessLine('hotel')} 
+                            icon={<Bed className="w-3 h-3" />} 
+                        />
+                    </div>
+                </div>
+            )}
 
             {loading && !data ? (
                 <AnalyticsSkeleton />

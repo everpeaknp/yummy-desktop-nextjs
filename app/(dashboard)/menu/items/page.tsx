@@ -36,7 +36,7 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { MenuApis, ModifierApis } from "@/lib/api/endpoints";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { MenuImageService } from "@/services/menu-image-service";
+import { ImageService } from "@/services/image-service";
 import { MenuGalleryDialog, MenuGalleryItem } from "@/components/menu/menu-gallery-dialog";
 import { InventoryLinkDialog } from "@/components/menu/inventory-link-dialog";
 import Image from "next/image";
@@ -257,9 +257,12 @@ export default function MenuItemsPage() {
         try {
           // Use user.restaurant_id if available, otherwise 0 (should handle error or default)
           const restaurantId = user?.restaurant_id || 0; 
-          imageUrl = await MenuImageService.uploadMenuImage(selectedFile, restaurantId);
-        } catch (error) {
+          imageUrl = await ImageService.uploadMenuImage(selectedFile, restaurantId);
+        } catch (error: any) {
           console.error("Upload failed", error);
+          if (error.response) {
+            console.error("Error Response Data:", error.response.data);
+          }
           setFormError("Failed to upload image. Please try again.");
           setIsUploading(false);
           setSubmitting(false);

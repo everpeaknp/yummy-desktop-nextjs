@@ -68,7 +68,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (isRouteAllowedMulti(pathname, roles)) {
+    if (isRouteAllowedMulti(pathname, user)) {
       setStatus("allowed");
       setRedirecting(false);
     } else {

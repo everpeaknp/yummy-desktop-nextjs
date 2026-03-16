@@ -38,6 +38,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface ReservationFormProps {
   open: boolean;
@@ -55,6 +57,7 @@ export function ReservationForm({
   initialTableId 
 }: ReservationFormProps) {
   const { user } = useAuth();
+  const { restaurant } = useRestaurant();
   const [loading, setLoading] = useState(false);
   const [searchingCustomer, setSearchingCustomer] = useState(false);
   const [customers, setCustomers] = useState<any[]>([]);
@@ -62,6 +65,18 @@ export function ReservationForm({
   const [loadingTables, setLoadingTables] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  
+  const [bookingType, setBookingType] = useState<'table' | 'room'>('table');
+
+  useEffect(() => {
+    if (restaurant) {
+      if (restaurant.hotel_enabled && !restaurant.restaurant_enabled) {
+        setBookingType('room');
+      } else if (!restaurant.hotel_enabled && restaurant.restaurant_enabled) {
+        setBookingType('table');
+      }
+    }
+  }, [restaurant]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -72,6 +87,7 @@ export function ReservationForm({
     duration: "60",
     date: new Date(),
     time: "18:00",
+    checkoutDate: new Date(new Date().setDate(new Date().getDate() + 1)),
     tableIds: [] as number[],
     notes: ""
   });
@@ -88,16 +104,30 @@ export function ReservationForm({
         time: reservation.scheduled_at 
           ? format(new Date(reservation.scheduled_at), "HH:mm") 
           : (reservation.reservation_time || "18:00"),
+        checkoutDate: reservation.checkout_at 
+          ? new Date(reservation.checkout_at) 
+          : new Date(new Date(reservation.scheduled_at || new Date()).setDate(new Date(reservation.scheduled_at || new Date()).getDate() + 1)),
         tableIds: reservation.table_id ? [reservation.table_id] : (reservation.table_ids || []),
         notes: reservation.notes || ""
       });
+      // Set bookingType from existing reservation if available
+      const firstTableId = reservation.table_id || (reservation.table_ids && reservation.table_ids[0]);
+      if (firstTableId && tables.length > 0) {
+        const table = tables.find(t => t.id === firstTableId);
+        if (table) setBookingType(table.space_kind === 'room' ? 'room' : 'table');
+      }
     } else {
       setFormData(prev => ({
         ...prev,
         tableIds: initialTableId ? [initialTableId] : []
       }));
+      // Set bookingType from initial table if available
+      if (initialTableId && tables.length > 0) {
+        const table = tables.find(t => t.id === initialTableId);
+        if (table) setBookingType(table.space_kind === 'room' ? 'room' : 'table');
+      }
     }
-  }, [reservation, open, initialTableId]);
+  }, [reservation, open, initialTableId, tables]);
 
   useEffect(() => {
     if (open) {
@@ -172,7 +202,13 @@ export function ReservationForm({
       return;
     }
     if (formData.tableIds.length === 0) {
-      alert("Please select at least one table");
+      alert("Please select at least one table/room");
+      return;
+    }
+
+    const isRoomBooking = tables.some(t => formData.tableIds.includes(t.id) && t.space_kind === "room");
+    if (isRoomBooking && formData.checkoutDate <= formData.date) {
+      alert("Check-out date must be after check-in date");
       return;
     }
 
@@ -182,15 +218,27 @@ export function ReservationForm({
       const [hours, minutes] = formData.time.split(":").map(Number);
       const scheduledAt = new Date(formData.date);
       scheduledAt.setHours(hours, minutes);
+      
+      const isRoom = tables.some(t => formData.tableIds.includes(t.id) && t.space_kind === "room");
+      let stayNights = 0;
+      let durationMinutes = parseInt(formData.duration);
+
+      if (isRoom) {
+        const diffMs = formData.checkoutDate.getTime() - scheduledAt.getTime();
+        stayNights = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        durationMinutes = stayNights * 24 * 60; // Approximate for overlap checks
+      }
 
       const commonData = {
         customer_name: formData.customerName,
         customer_phone: formData.customerPhone || null,
         scheduled_at: scheduledAt.toISOString(),
         number_of_guests: parseInt(formData.guests),
-        duration_minutes: parseInt(formData.duration),
+        duration_minutes: durationMinutes,
+        stay_nights: stayNights,
         table_ids: formData.tableIds,
         notes: formData.notes,
+        checkout_at: isRoom ? formatISO(formData.checkoutDate) : null,
         // Fallback for legacy fields if backend needs them temporarily
         special_requests: formData.notes 
       };
@@ -241,8 +289,38 @@ export function ReservationForm({
         <DialogHeader className="p-6 border-b bg-slate-50 dark:bg-slate-900/50">
           <DialogTitle>{reservation ? "Edit Reservation" : "New Reservation"}</DialogTitle>
           <DialogDescription>
-            Fill in the details to {reservation ? "update" : "create"} a table booking.
+            Fill in the details to {reservation ? "update" : "create"} a booking.
           </DialogDescription>
+          
+          {restaurant?.hotel_enabled && restaurant?.restaurant_enabled && !reservation && (
+            <div className="pt-4">
+              <Tabs 
+                value={bookingType} 
+                onValueChange={(v) => {
+                  setBookingType(v as 'table' | 'room');
+                  setFormData(prev => ({ ...prev, tableIds: [] })); // Clear selection when switching type
+                }}
+                className="w-full"
+              >
+                <TabsList className="grid w-full grid-cols-2 rounded-xl h-11 p-1 bg-slate-200/50 dark:bg-slate-800/50">
+                  <TabsTrigger 
+                    value="table" 
+                    className="rounded-lg font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-sm"
+                  >
+                    <TableIcon className="h-4 w-4 mr-2" />
+                    Table Booking
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="room" 
+                    className="rounded-lg font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-950 data-[state=active]:shadow-sm"
+                  >
+                    <CalendarIcon className="h-4 w-4 mr-2" />
+                    Room Stay
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+          )}
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -346,35 +424,68 @@ export function ReservationForm({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-               <div className="space-y-2">
-                <Label>Duration (Minutes)</Label>
-                <Select 
-                  value={formData.duration} 
-                  onValueChange={(v) => setFormData({...formData, duration: v})}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select duration" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="30">30 Minutes</SelectItem>
-                    <SelectItem value="60">1 Hour</SelectItem>
-                    <SelectItem value="90">1.5 Hours</SelectItem>
-                    <SelectItem value="120">2 Hours</SelectItem>
-                    <SelectItem value="180">3 Hours</SelectItem>
-                    <SelectItem value="240">4 Hours</SelectItem>
-                  </SelectContent>
-                </Select>
+            {tables.some(t => formData.tableIds.includes(t.id) && t.space_kind === "room") && (
+              <div className="pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="bg-orange-50 dark:bg-orange-950/20 p-4 rounded-2xl border border-orange-100 dark:border-orange-900/30">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="h-6 w-6 rounded-lg bg-orange-600 flex items-center justify-center">
+                      <CalendarIcon className="h-4 w-4 text-white" />
+                    </div>
+                    <span className="text-sm font-bold text-orange-600">Room Booking: Check-out Date</span>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-orange-900/70 dark:text-orange-300/70">Check-out Date *</Label>
+                    <div className="relative">
+                      <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-orange-400 z-10" />
+                      <Input 
+                        type="date"
+                        className="pl-9 bg-white dark:bg-slate-900 border-orange-200 dark:border-orange-900/50 focus-visible:ring-orange-500"
+                        value={formData.checkoutDate ? format(formData.checkoutDate, "yyyy-MM-dd") : ""}
+                        onChange={(e) => {
+                          const checkoutDate = e.target.value ? new Date(e.target.value) : new Date();
+                          setFormData({...formData, checkoutDate});
+                        }}
+                        min={formData.date ? format(new Date(new Date(formData.date).setDate(new Date(formData.date).getDate() + 1)), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")}
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+
+            {bookingType === 'table' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                 <div className="space-y-2">
+                  <Label>Duration (Minutes)</Label>
+                  <Select 
+                    value={formData.duration} 
+                    onValueChange={(v) => setFormData({...formData, duration: v})}
+                  >
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Select duration" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="30">30 Minutes</SelectItem>
+                      <SelectItem value="60">1 Hour</SelectItem>
+                      <SelectItem value="90">1.5 Hours</SelectItem>
+                      <SelectItem value="120">2 Hours</SelectItem>
+                      <SelectItem value="180">3 Hours</SelectItem>
+                      <SelectItem value="240">4 Hours</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
           </div>
 
           <Separator />
 
-          {/* Table Selection Section */}
+          {/* Table/Room Selection Section */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Table Selection *</h3>
+              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">
+                {bookingType === 'room' ? "Room Selection *" : "Table Selection *"}
+              </h3>
               <Badge variant="secondary" className="text-[10px] font-bold">
                 {formData.tableIds.length} Selected
               </Badge>
@@ -385,12 +496,14 @@ export function ReservationForm({
                 <div className="col-span-full py-4 flex justify-center">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
-              ) : tables.length === 0 ? (
+              ) : tables.filter(t => t.space_kind === (bookingType === 'room' ? 'room' : 'table')).length === 0 ? (
                 <div className="col-span-full py-4 text-center text-xs text-muted-foreground">
-                  No tables found
+                  No {bookingType === 'room' ? "rooms" : "tables"} found
                 </div>
               ) : (
-                tables.map(table => (
+                tables
+                  .filter(t => t.space_kind === (bookingType === 'room' ? 'room' : 'table'))
+                  .map(table => (
                   <button
                     key={table.id}
                     type="button"

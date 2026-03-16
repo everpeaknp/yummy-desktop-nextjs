@@ -16,8 +16,9 @@ export const getStatusColor = (status: string) => {
     case 'confirmed': return 'bg-blue-600 border-blue-200 text-blue-700 dark:border-blue-900/50 dark:text-blue-400';
     case 'preparing': return 'bg-amber-500 border-amber-200 text-amber-600 dark:border-amber-900/50 dark:text-amber-400';
     case 'ready': return 'bg-emerald-500 border-emerald-200 text-emerald-600 dark:border-emerald-900/50 dark:text-emerald-400';
-    case 'completed': return 'bg-gray-500 border-gray-200 text-gray-600 dark:border-gray-800 dark:text-gray-400';
-    case 'canceled': return 'bg-red-500 border-red-200 text-red-600 dark:border-red-900/50 dark:text-red-400';
+    case 'completed': return 'bg-orange-500/10 border-orange-200/50 text-orange-600 dark:border-orange-900/30 dark:text-orange-400';
+    case 'canceled': return 'bg-slate-500/10 border-slate-200 text-slate-600 dark:border-slate-800 dark:text-slate-400';
+    case 'requested': return 'bg-indigo-500/10 border-indigo-200 text-indigo-600 dark:border-indigo-900/50 dark:text-indigo-400';
     default: return 'bg-gray-500 border-gray-200 text-gray-600 dark:border-gray-800 dark:text-gray-400';
   }
 };
@@ -29,8 +30,9 @@ export const getStatusBadgeColor = (status: string) => {
       case 'confirmed': return 'bg-blue-600 text-white';
       case 'preparing': return 'bg-amber-500 text-white';
       case 'ready': return 'bg-emerald-500 text-white';
-      case 'completed': return 'bg-gray-500 text-white';
-      case 'canceled': return 'bg-red-500 text-white';
+      case 'completed': return 'bg-[#7c3aed]/10 text-[#7c3aed] border-[#7c3aed]/20';
+      case 'canceled': return 'bg-slate-500/10 text-slate-500 border-slate-200';
+      case 'requested': return 'bg-indigo-600 text-white';
       default: return 'bg-gray-500 text-white';
     }
   };
@@ -79,7 +81,8 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
       s === 'preparing' ? 'border-l-amber-500' :
       s === 'ready' ? 'border-l-emerald-500' :
       s === 'completed' ? 'border-l-gray-500' : 
-      s === 'canceled' ? 'border-l-red-500' : 'border-l-gray-400';
+      s === 'canceled' ? 'border-l-red-500' : 
+      s === 'requested' ? 'border-l-indigo-600 animate-pulse' : 'border-l-gray-400';
 
   return (
     <div 
@@ -95,7 +98,7 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider", badgeClass)}>
-                        {order.status}
+                        {order.status === 'requested' ? 'Pending Verification' : order.status}
                      </span>
                      <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
                         <Clock className="h-3 w-3" /> {timeLabel}
@@ -128,10 +131,12 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
                  <Utensils className="h-3.5 w-3.5" />
                  <span>{itemsCount} items</span>
              </div>
-             <div className="flex items-center gap-1 text-sm font-black text-foreground">
-                  <span className="text-xs font-bold text-muted-foreground/70 uppercase mr-1">Total</span>
-                  {restaurant?.currency || "Rs."} {order.grand_total.toLocaleString()}
-             </div>
+              <div className="flex items-center gap-1 text-sm font-black text-foreground">
+                   <span className="text-xs font-bold text-muted-foreground/70 uppercase mr-1">Total</span>
+                   <span className={cn(s === 'completed' ? "text-orange-600 dark:text-orange-500" : "")}>
+                    {restaurant?.currency || "Rs."} {order.grand_total.toLocaleString()}
+                   </span>
+              </div>
         </div>
       </div>
     

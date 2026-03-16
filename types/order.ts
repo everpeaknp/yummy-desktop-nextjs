@@ -1,5 +1,5 @@
 export type OrderStatus = 'pending' | 'running' | 'scheduled' | 'preparing' | 'ready' | 'out_for_delivery' | 'ready_for_pickup' | 'completed' | 'canceled';
-export type OrderType = 'quick_billing' | 'delivery' | 'pickup' | 'reservation' | 'table' | 'group' | 'online';
+export type OrderType = 'quick_billing' | 'delivery' | 'pickup' | 'reservation' | 'table' | 'group' | 'online' | 'room_service';
 export type PaymentMethod = 'cash' | 'card' | 'digital' | 'credit';
 export type PaymentStatus = 'success' | 'pending' | 'failed' | 'refunded';
 

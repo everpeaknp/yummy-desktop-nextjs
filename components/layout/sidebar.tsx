@@ -22,6 +22,8 @@ import {
   Store,
   ChevronsLeft,
   ChevronsRight,
+  Bed,
+  ArrowLeftRight,
   LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -43,9 +45,12 @@ export const Sidebar = memo(function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const logout = useAuth(state => state.logout);
-  const { restaurant, fetchRestaurant } = useRestaurant();
+  const { restaurant, fetchRestaurant, selectedModule } = useRestaurant();
   const { collapsed, toggle } = useSidebar();
   const items = useSidebarItems();
+
+  // Home link depends on active module
+  const homeHref = selectedModule === "hotel" ? "/rooms" : "/dashboard";
 
   useEffect(() => {
     if (!restaurant) {
@@ -66,7 +71,7 @@ export const Sidebar = memo(function Sidebar() {
           "flex items-center border-b",
           collapsed ? "flex-col gap-1 py-3 px-2" : "h-16 px-4 flex-row"
         )}>
-          <Link href="/dashboard" className={cn(
+          <Link href={homeHref} className={cn(
             "flex items-center font-bold hover:opacity-90 transition-opacity",
             collapsed ? "justify-center" : "gap-3 text-xl overflow-hidden flex-1 min-w-0"
           )}>
@@ -100,7 +105,7 @@ export const Sidebar = memo(function Sidebar() {
         </div>
 
         {/* Nav Items */}
-        <div className="flex-1 overflow-y-auto py-4">
+        <div className="flex-1 overflow-y-auto py-4 min-h-0">
           <nav className={cn("grid items-start text-sm font-medium gap-1", collapsed ? "px-2" : "px-4 gap-2")}>
             {items.map((item, index) => {
               const isActive = pathname === item.href || (pathname && pathname.startsWith(item.href + "/"));
@@ -136,6 +141,33 @@ export const Sidebar = memo(function Sidebar() {
             })}
           </nav>
         </div>
+
+        {/* Module Switcher — only when both modules are enabled */}
+        {restaurant?.hotel_enabled && restaurant?.restaurant_enabled && (
+          <div className="border-t p-2">
+            {collapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => router.push("/gateway")}
+                    className="flex w-full items-center justify-center rounded-lg py-2.5 text-muted-foreground hover:text-primary hover:bg-muted transition-all"
+                  >
+                    <ArrowLeftRight className="h-5 w-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={8}>Switch Module</TooltipContent>
+              </Tooltip>
+            ) : (
+              <button
+                onClick={() => router.push("/gateway")}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-base font-medium text-muted-foreground hover:text-primary hover:bg-muted transition-all"
+              >
+                <ArrowLeftRight className="h-5 w-5" />
+                Switch Module
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Logout */}
         <div className="border-t p-2">

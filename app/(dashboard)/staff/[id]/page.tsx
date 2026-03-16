@@ -12,11 +12,20 @@ import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { AuthApis } from "@/lib/api/endpoints";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
 export default function StaffDetailPage() {
   const { id } = useParams();
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<any>(null);
+  const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
+  const [isPermDialogOpen, setIsPermDialogOpen] = useState(false);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [submittingPerms, setSubmittingPerms] = useState(false);
   const user = useAuth(state => state.user);
   const router = useRouter();
 
@@ -27,7 +36,9 @@ export default function StaffDetailPage() {
       try {
         const response = await apiClient.get(StaffApis.getStaff(id as string));
         if (response.data.status === "success") {
-          setStaff(response.data.data);
+          const staffDetail = response.data.data;
+          setStaff(staffDetail);
+          setSelectedPermissions(staffDetail.permissions || []);
         }
       } catch (err) {
         console.error("Failed to fetch staff detail:", err);
@@ -36,7 +47,19 @@ export default function StaffDetailPage() {
       }
     };
 
+    const fetchPermissions = async () => {
+      try {
+        const response = await apiClient.get(AuthApis.listPermissions);
+        if (response.data.status === "success") {
+          setAvailablePermissions(response.data.data || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch permissions:", err);
+      }
+    };
+
     fetchStaffDetail();
+    fetchPermissions();
   }, [id]);
 
   const handleDelete = async () => {
@@ -45,9 +68,32 @@ export default function StaffDetailPage() {
       await apiClient.delete(StaffApis.delete(id as string));
       toast.success("Staff member deactivated");
       router.push('/staff');
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to delete staff:", err);
-      toast.error("Failed to deactivate staff member");
+      const errMsg = err.response?.data?.message || err.response?.data?.detail || "Failed to deactivate staff member";
+      toast.error(errMsg);
+    }
+  };
+
+  const handleUpdatePermissions = async () => {
+    setSubmittingPerms(true);
+    try {
+      await apiClient.post(AuthApis.updateUserPermissions(id as string), {
+        permission_keys: selectedPermissions
+      });
+      toast.success("Permissions updated successfully");
+      setIsPermDialogOpen(false);
+      
+      // Refresh staff data to get updated permissions
+      const response = await apiClient.get(StaffApis.getStaff(id as string));
+      if (response.data.status === "success") {
+        setStaff(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to update permissions:", err);
+      toast.error("Failed to update permissions");
+    } finally {
+      setSubmittingPerms(false);
     }
   };
 
@@ -133,17 +179,111 @@ export default function StaffDetailPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Activity Logs</CardTitle>
-          <CardDescription>Recent actions performed by this staff member.</CardDescription>
-        </CardHeader>
-        <CardContent>
-           <div className="text-center py-8 text-muted-foreground">
-             No recent activity logs found.
-           </div>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Security & Permissions</CardTitle>
+              <CardDescription>Granular access control settings.</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setIsPermDialogOpen(true)}>
+              <Shield className="w-4 h-4 mr-2" /> Manage
+            </Button>
+          </CardHeader>
+          <CardContent>
+             <div className="flex flex-wrap gap-2">
+               {staff.permissions && staff.permissions.length > 0 ? (
+                 staff.permissions.map((p: string) => (
+                   <Badge key={p} variant="secondary" className="font-mono text-[10px]">
+                     {p}
+                   </Badge>
+                 ))
+               ) : (
+                 <p className="text-sm text-muted-foreground italic">No customized permissions. User has default role-based access.</p>
+               )}
+             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Activity Logs</CardTitle>
+            <CardDescription>Recent actions performed by this staff member.</CardDescription>
+          </CardHeader>
+          <CardContent>
+             <div className="text-center py-8 text-muted-foreground">
+               No recent activity logs found.
+             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={isPermDialogOpen} onOpenChange={setIsPermDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Manage Granular Permissions</DialogTitle>
+            <DialogDescription>
+              Select specific permissions to grant or override defaults for {staff.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <ScrollArea className="h-[350px] pr-4">
+              <div className="grid grid-cols-1 gap-4">
+                {Object.entries(
+                  availablePermissions.reduce((acc: any, curr: any) => {
+                    if (!acc[curr.module]) acc[curr.module] = [];
+                    acc[curr.module].push(curr);
+                    return acc;
+                  }, {})
+                ).map(([module, perms]: [string, any]) => (
+                  <div key={module} className="space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                      {module}
+                    </h4>
+                    <div className="grid grid-cols-1 gap-3">
+                      {perms.map((p: any) => (
+                        <div key={p.key} className="flex items-start space-x-3">
+                          <Checkbox 
+                            id={`perm-detail-${p.key}`}
+                            checked={selectedPermissions.includes(p.key)}
+                            onCheckedChange={(checked) => {
+                              setSelectedPermissions(prev => 
+                                checked 
+                                  ? [...prev, p.key] 
+                                  : prev.filter(k => k !== p.key)
+                              );
+                            }}
+                          />
+                          <div className="grid gap-1.5 leading-none">
+                            <label
+                              htmlFor={`perm-detail-${p.key}`}
+                              className="text-sm font-medium leading-none cursor-pointer"
+                            >
+                              {p.key}
+                            </label>
+                            {p.description && (
+                              <p className="text-xs text-muted-foreground">
+                                {p.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPermDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleUpdatePermissions} disabled={submittingPerms}>
+              {submittingPerms && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Save Permissions
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

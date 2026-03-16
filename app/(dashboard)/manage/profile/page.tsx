@@ -27,7 +27,7 @@ import { useRouter } from "next/navigation";
 import { getImageUrl } from "@/lib/utils";
 import LocationPicker from "@/components/manage/profile/location-picker";
 import { useCallback, useRef } from "react";
-import { MenuImageService } from "@/services/menu-image-service";
+import { ImageService } from "@/services/image-service";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
 export default function RestaurantProfilePage() {
@@ -51,6 +51,7 @@ export default function RestaurantProfilePage() {
         timezone: "UTC",
         latitude: "",
         longitude: "",
+        local_pos_ip: "",
     });
     const [initialData, setInitialData] = useState<typeof formData | null>(null);
 
@@ -74,6 +75,7 @@ export default function RestaurantProfilePage() {
                         timezone: r.timezone || "UTC",
                         latitude: r.latitude || "",
                         longitude: r.longitude || "",
+                        local_pos_ip: r.local_pos_ip || "",
                     };
                     setFormData(data);
                     setInitialData(data);
@@ -102,21 +104,18 @@ export default function RestaurantProfilePage() {
 
         type === 'logo' ? setUploadingLogo(true) : setUploadingCover(true);
         try {
-            const publicUrl = await MenuImageService.uploadMenuImage(file, user.restaurant_id);
-            // The MenuImageService uploads to 'menu-items' bucket. 
-            // We want to store just the relative path 'restaurantId/fileName.webp' 
-            // so getImageUrl() can reconstruct it later.
-            const url = new URL(publicUrl);
-            const pathParts = url.pathname.split('/menu-items/');
-            const relativePath = pathParts.length > 1 ? pathParts[1] : publicUrl;
-
+            const publicUrl = await ImageService.uploadRestaurantImage(file, type, user.restaurant_id);
+            
             setFormData(prev => ({
                 ...prev,
-                [type === 'logo' ? 'profile_picture' : 'cover_photo']: relativePath
+                [type === 'logo' ? 'profile_picture' : 'cover_photo']: publicUrl
             }));
             toast.success(`${type === 'logo' ? 'Logo' : 'Cover image'} uploaded`);
-        } catch (err) {
+        } catch (err: any) {
             console.error(`Failed to upload ${type}`, err);
+            if (err.response) {
+                console.error("Error Response Data:", err.response.data);
+            }
             toast.error(`Failed to upload ${type}`);
         } finally {
             type === 'logo' ? setUploadingLogo(false) : setUploadingCover(false);
@@ -267,6 +266,26 @@ export default function RestaurantProfilePage() {
                                     onChange={(e) => setFormData(p => ({ ...p, longitude: e.target.value }))} 
                                     placeholder="e.g. 85.3240"
                                 />
+                            </div>
+                        </div>
+
+                        <div className="p-4 border border-orange-200 bg-orange-50/30 rounded-xl space-y-3">
+                            <div className="flex items-center gap-2 text-orange-800 font-semibold">
+                                <RefreshCw className="w-4 h-4" />
+                                <h3>Local POS Server Integration</h3>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="local_pos_ip" className="text-orange-900">Local POS IP Address</Label>
+                                <Input 
+                                    id="local_pos_ip" 
+                                    value={formData.local_pos_ip} 
+                                    onChange={(e) => setFormData(p => ({ ...p, local_pos_ip: e.target.value }))} 
+                                    placeholder="e.g. 192.168.1.139"
+                                    className="bg-white border-orange-200 focus-visible:ring-orange-500"
+                                />
+                                <p className="text-[10px] text-orange-700/70">
+                                    When set, customers on your local Wi-Fi will be automatically routed to this IP for faster ordering. Leave empty if using Cloud only.
+                                </p>
                             </div>
                         </div>
 

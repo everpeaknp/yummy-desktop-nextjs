@@ -68,6 +68,8 @@ function getEventTitle(log: any) {
     const event = (log.event || '').toLowerCase();
     const entity = log.entity_type || 'Entity';
     if (event.includes('status_changed')) return `${entity} Status changed`;
+    if (event.includes('checkin')) return `Hotel Check-in`;
+    if (event.includes('checkout')) return `Hotel Check-out`;
     if (event.includes('create')) return `${entity} Created`;
     if (event.includes('update')) return `${entity} Updated`;
     if (event.includes('delete')) return `${entity} Deleted`;
@@ -113,6 +115,8 @@ export default function AuditLogsPage() {
     const getActionBadge = (event: string) => {
         const e = (event || '').toLowerCase();
         if (e.includes('create')) return <Badge variant="default" className="bg-emerald-600">CREATE</Badge>;
+        if (e.includes('checkin')) return <Badge variant="default" className="bg-indigo-600 font-bold">CHECK-IN</Badge>;
+        if (e.includes('checkout')) return <Badge variant="default" className="bg-amber-600 font-bold">CHECK-OUT</Badge>;
         if (e.includes('update') || e.includes('change')) return <Badge variant="default" className="bg-blue-600">UPDATE</Badge>;
         if (e.includes('delete')) return <Badge variant="destructive">DELETE</Badge>;
         if (e.includes('login')) return <Badge variant="secondary">LOGIN</Badge>;
@@ -136,6 +140,8 @@ export default function AuditLogsPage() {
     const getLogSummary = (log: any) => {
         const event = (log.event || '').toLowerCase();
         if (event.includes('create')) return `Created ${log.entity_type} #${log.entity_id}`;
+        if (event.includes('checkin')) return `Guest checked into Room #${log.entity_id}`;
+        if (event.includes('checkout')) return `Guest checked out of Room #${log.entity_id}`;
         if (event.includes('delete')) return `Deleted ${log.entity_type} #${log.entity_id}`;
         if (log.change_field) return `Changed: ${log.change_field}`;
         if (event.includes('update')) return `Updated ${log.entity_type} #${log.entity_id}`;
@@ -198,6 +204,7 @@ export default function AuditLogsPage() {
                             <SelectItem value="all">All Entities</SelectItem>
                             <SelectItem value="order">Orders</SelectItem>
                             <SelectItem value="menu_item">Menu Items</SelectItem>
+                            <SelectItem value="room">Rooms</SelectItem>
                             <SelectItem value="staff">Staff</SelectItem>
                             <SelectItem value="restaurant">Restaurant</SelectItem>
                             <SelectItem value="inventory">Inventory</SelectItem>

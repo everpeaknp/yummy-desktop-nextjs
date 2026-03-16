@@ -38,9 +38,9 @@ export function TaxDialog({ open, onOpenChange, tax, onSuccess, restaurantId }: 
         if (tax) {
             setFormData({
                 name: tax.name || "",
-                percentage: tax.percentage?.toString() || "",
+                percentage: tax.rate?.toString() || "",
                 is_active: tax.is_active ?? true,
-                is_service_charge: tax.is_service_charge ?? false,
+                is_service_charge: tax.name?.toLowerCase().includes("service charge") ?? false,
             });
         } else {
             setFormData({
@@ -57,8 +57,11 @@ export function TaxDialog({ open, onOpenChange, tax, onSuccess, restaurantId }: 
         setLoading(true);
         try {
             const payload = {
-                ...formData,
-                percentage: parseFloat(formData.percentage),
+                name: formData.name,
+                rate: parseFloat(formData.percentage),
+                type: "percentage",
+                applicable_to: "all",
+                is_active: formData.is_active,
                 restaurant_id: restaurantId,
             };
 
@@ -112,16 +115,6 @@ export function TaxDialog({ open, onOpenChange, tax, onSuccess, restaurantId }: 
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-slate-50">
-                        <div className="space-y-0.5">
-                            <Label>Is Service Charge?</Label>
-                            <p className="text-[10px] text-muted-foreground">Applies before VAT calculation.</p>
-                        </div>
-                        <Switch 
-                            checked={formData.is_service_charge} 
-                            onCheckedChange={(val) => setFormData({...formData, is_service_charge: val})}
-                        />
-                    </div>
 
                     <div className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="space-y-0.5">

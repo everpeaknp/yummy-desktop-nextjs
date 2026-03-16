@@ -16,6 +16,8 @@ export interface TableData {
   table_type_id?: number;
   table_type_name?: string;
   active_order_ids?: number[];
+  space_kind?: string;
+  price_per_night?: number;
 }
 
 interface RoomContainerProps {
@@ -86,7 +88,7 @@ export function RoomContainer({
               {title}
             </p>
             <p className="text-xs text-muted-foreground">
-              {tables.length} Tables
+              {tables.length} {tables[0]?.space_kind === 'room' ? 'Rooms' : 'Tables'}
             </p>
           </div>
           {isLayoutMode && (
@@ -238,11 +240,14 @@ function SpatialLayout({
                 }
                 : undefined
             }
-            onClick={() => {
-              if (!isLayoutMode) {
+            onClick={(e) => {
+              if (isLayoutMode) {
+                bringToFront(table.id);
+                // Also trigger the click handler so the edit modal opens, but don't prevent defaults 
+                // heavily so drag isn't broken
                 onTableClick?.(table);
               } else {
-                bringToFront(table.id);
+                onTableClick?.(table);
               }
             }}
           >

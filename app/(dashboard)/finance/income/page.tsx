@@ -8,12 +8,13 @@ import { IncomeApis, ExpenseApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, DollarSign, TrendingUp, Receipt, Download, ArrowLeft, TrendingDown } from "lucide-react";
+import { Loader2, DollarSign, TrendingUp, Receipt, Download, ArrowLeft, TrendingDown, Utensils, Hotel } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
 // import * as XLSX from "xlsx"; // Removed for optimization
 import Link from "next/link";
+import { useRestaurant } from "@/hooks/use-restaurant";
 
 export default function IncomePage() {
   const [loading, setLoading] = useState(false);
@@ -21,6 +22,9 @@ export default function IncomePage() {
   const [expenseSummary, setExpenseSummary] = useState<any>(null);
   const [dateFilter, setDateFilter] = useState("this_month");
   const [selectedStation, setSelectedStation] = useState("all");
+  const [businessLine, setBusinessLine] = useState("all");
+
+  const { restaurant } = useRestaurant();
 
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
@@ -63,13 +67,20 @@ export default function IncomePage() {
         restaurantId: user.restaurant_id,
         dateFrom: start,
         dateTo: end,
-        station: stationParam
+        station: stationParam,
+        businessLine: businessLine === 'all' ? undefined : businessLine
       });
 
       const [dashboardRes, recentRes, expenseSummaryRes] = await Promise.all([
         apiClient.get(dashboardUrl),
         apiClient.get(IncomeApis.recent, {
-          params: { restaurant_id: user.restaurant_id, date_from: start, date_to: end, station: stationParam }
+          params: { 
+            restaurant_id: user.restaurant_id, 
+            date_from: start, 
+            date_to: end, 
+            station: stationParam,
+            business_line: businessLine === 'all' ? undefined : businessLine
+          }
         }),
         apiClient.get(ExpenseApis.summaryTotal, {
           params: {
@@ -101,7 +112,7 @@ export default function IncomePage() {
     if (user?.restaurant_id) {
       fetchData();
     }
-  }, [user, selectedStation, dateFilter]);
+  }, [user, selectedStation, dateFilter, businessLine]);
 
   const handleExport = async () => {
     if (!incomeData?.recent_entries?.length) return;
@@ -141,6 +152,37 @@ export default function IncomePage() {
           </Link>
         </div>
         <div className="flex items-center gap-2">
+          {restaurant?.hotel_enabled && (
+             <div className="flex items-center bg-muted/50 p-1 rounded-lg border border-border mr-2">
+               <Button
+                 variant={businessLine === 'all' ? 'secondary' : 'ghost'}
+                 size="sm"
+                 className={cn("h-8 px-3 text-xs gap-2", businessLine === 'all' && "bg-background shadow-sm")}
+                 onClick={() => setBusinessLine('all')}
+               >
+                 All
+               </Button>
+               <Button
+                 variant={businessLine === 'restaurant' ? 'secondary' : 'ghost'}
+                 size="sm"
+                 className={cn("h-8 px-3 text-xs gap-2", businessLine === 'restaurant' && "bg-background shadow-sm")}
+                 onClick={() => setBusinessLine('restaurant')}
+               >
+                 <Utensils className="h-3.5 w-3.5 text-orange-500" />
+                 Restaurant
+               </Button>
+               <Button
+                 variant={businessLine === 'hotel' ? 'secondary' : 'ghost'}
+                 size="sm"
+                 className={cn("h-8 px-3 text-xs gap-2", businessLine === 'hotel' && "bg-background shadow-sm")}
+                 onClick={() => setBusinessLine('hotel')}
+               >
+                 <Hotel className="h-3.5 w-3.5 text-blue-500" />
+                 Hotel
+               </Button>
+             </div>
+          )}
+
           <Select value={selectedStation} onValueChange={setSelectedStation}>
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Station" />
@@ -150,6 +192,9 @@ export default function IncomePage() {
               <SelectItem value="kitchen">Kitchen</SelectItem>
               <SelectItem value="bar">Bar</SelectItem>
               <SelectItem value="cafe">Cafe</SelectItem>
+              {restaurant?.hotel_enabled && (
+                <SelectItem value="rooms">Rooms / Hotel</SelectItem>
+              )}
               <SelectItem value="general">General</SelectItem>
             </SelectContent>
           </Select>

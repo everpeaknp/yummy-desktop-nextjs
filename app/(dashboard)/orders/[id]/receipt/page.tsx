@@ -26,6 +26,8 @@ import {
   Wallet,
 } from "lucide-react";
 import type { ReceiptData, OrderItem, OrderPayment } from "@/types/order";
+import { ThermalReceipt } from "@/components/receipts/thermal-receipt";
+import { RestaurantApis } from "@/lib/api/endpoints";
 
 function formatCurrency(amount: number) {
   return `Rs. ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -38,14 +40,39 @@ const PAYMENT_ICONS: Record<string, any> = {
   credit: Wallet,
 };
 
+function getDefaultTemplate(): any[] {
+  return [
+    { type: 'global_settings', id: 'metadata', global_font_type: 'A', global_font_size: 12, line_spacing: 1.2, paper_size: '80mm', column_capacity: 42 },
+    { id: '1', type: 'header', is_visible: true, show_on_bill: true, show_on_receipt: true },
+    { id: '2', type: 'bill_info', is_visible: true, show_on_bill: true, show_on_receipt: true },
+    { id: '3', type: 'customer', is_visible: true, show_on_bill: true, show_on_receipt: true },
+    { id: '4', type: 'items', is_visible: true, show_on_bill: true, show_on_receipt: true },
+    { id: '5', type: 'totals', is_visible: true, show_on_bill: true, show_on_receipt: true },
+    { id: '6', type: 'payments', is_visible: true, show_on_bill: false, show_on_receipt: true },
+    { id: '7', type: 'footer', is_visible: true, show_on_bill: true, show_on_receipt: true },
+  ];
+}
+
 export default function ReceiptPage() {
   const params = useParams();
   const orderId = Number(params.id);
   const router = useRouter();
+  
+  // Extract returnTo from URL if present
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      setReturnTo(urlParams.get("returnTo"));
+    }
+  }, []);
+
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
+  const [template, setTemplate] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +80,7 @@ export default function ReceiptPage() {
   
   const { context, allKotsServed } = useOrderFull(orderId);
   const autoPrintDone = useRef(false);
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   // Auth guard
   useEffect(() => {
@@ -66,13 +94,31 @@ export default function ReceiptPage() {
     return () => clearTimeout(timer);
   }, [user, me, router]);
 
-  // Fetch receipt data
-  const fetchReceipt = useCallback(async () => {
+  // Fetch receipt data, then fetch template using the receipt's restaurant_id
+  const fetchData = useCallback(async () => {
     if (!orderId) return;
     try {
-      const res = await apiClient.get(ReceiptApis.getReceiptData(orderId));
-      if (res.data.status === "success") {
-        setReceipt(res.data.data);
+      const receiptRes = await apiClient.get(ReceiptApis.getReceiptData(orderId));
+      if (receiptRes.data.status === "success") {
+        const receiptData: ReceiptData = receiptRes.data.data;
+        setReceipt(receiptData);
+
+        // Use restaurant_id from the receipt response (avoids user?.restaurant_id being 0)
+        const restaurantId = receiptData.restaurant?.id || user?.restaurant_id;
+        if (restaurantId) {
+          try {
+            const templateRes = await apiClient.get(RestaurantApis.getTemplates(restaurantId));
+            if (templateRes.data.status === "success" && templateRes.data.data?.receipt_template?.length > 0) {
+              setTemplate(templateRes.data.data.receipt_template);
+            } else {
+              setTemplate(getDefaultTemplate());
+            }
+          } catch {
+            setTemplate(getDefaultTemplate());
+          }
+        } else {
+          setTemplate(getDefaultTemplate());
+        }
       }
       setError(null);
     } catch (err: any) {
@@ -80,15 +126,15 @@ export default function ReceiptPage() {
     } finally {
       setLoading(false);
     }
-  }, [orderId]);
+  }, [orderId, user?.restaurant_id]);
 
   useEffect(() => {
-    fetchReceipt();
-  }, [fetchReceipt]);
+    fetchData();
+  }, [fetchData]);
 
   // Auto-print on mount if configured
   useEffect(() => {
-    if (receipt?.should_auto_print && !autoPrintDone.current && !printed) {
+    if (receipt?.should_auto_print && template && !autoPrintDone.current && !printed) {
       autoPrintDone.current = true;
       const timer = setTimeout(() => {
         window.print();
@@ -96,10 +142,57 @@ export default function ReceiptPage() {
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [receipt?.should_auto_print, printed]);
+  }, [receipt?.should_auto_print, template, printed]);
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!receiptRef.current) return;
+
+    const globalBlock = template?.find((b: any) => b.type === 'global_settings');
+    const paperSizeStr = globalBlock?.config?.paper_size || globalBlock?.paper_size || '80mm';
+    const paperWidthMm = paperSizeStr === '58mm' ? 58 : 80;
+
+    try {
+      // Dynamic import to avoid SSR issues
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+
+      // Capture the receipt element as a canvas image
+      const canvas = await html2canvas(receiptRef.current, {
+        scale: 3, // High resolution for thermal printer quality
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const imgWidthPx = canvas.width;
+      const imgHeightPx = canvas.height;
+
+      // Calculate page height proportionally to match 80mm width
+      const pageHeightMm = (imgHeightPx / imgWidthPx) * paperWidthMm;
+
+      // Create a PDF with exact thermal dimensions
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [paperWidthMm, pageHeightMm],
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, paperWidthMm, pageHeightMm);
+
+      // Open as blob URL for printing — the PDF viewer respects exact page dims
+      const pdfBlob = pdf.output('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      const pdfWindow = window.open(blobUrl, '_blank');
+      if (pdfWindow) {
+        pdfWindow.addEventListener('load', () => {
+          pdfWindow.print();
+        });
+      }
+    } catch (err) {
+      console.error('PDF print failed, falling back to window.print()', err);
+      window.print();
+    }
     setPrinted(true);
   };
 
@@ -128,7 +221,13 @@ export default function ReceiptPage() {
     setCompleting(true);
     try {
       await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
-      router.push("/orders/active");
+      if (returnTo) {
+        router.push(returnTo);
+      } else if (receipt?.order?.channel === "room_service") {
+        router.push("/rooms/checkin");
+      } else {
+        router.push("/orders/active");
+      }
     } catch (err: any) {
       console.error("Failed to complete order:", err);
     } finally {
@@ -155,46 +254,37 @@ export default function ReceiptPage() {
       <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
         <AlertCircle className="h-12 w-12 text-destructive" />
         <p className="text-destructive font-medium">{error}</p>
-        <Button variant="outline" onClick={fetchReceipt}>
+        <Button variant="outline" onClick={fetchData}>
           <RefreshCw className="h-4 w-4 mr-2" /> Retry
         </Button>
       </div>
     );
   }
 
-  if (!receipt) return null;
+  if (!receipt || !template) return null;
 
-  const { order, restaurant } = receipt;
+  const { order } = receipt;
   const orderLabel = order.table_name
     ? `${order.table_name} • #${order.restaurant_order_id || order.id}`
     : `Order #${order.restaurant_order_id || order.id}`;
 
+  const globalBlock = template.find(b => b.type === 'global_settings');
+  const paperSize = globalBlock?.paper_size || '80mm';
+
   return (
     <>
       {/* Print-only styles */}
-      <style jsx global>{`
-        @media print {
-          body * { visibility: hidden; }
-          #receipt-printable, #receipt-printable * { visibility: visible; }
-          #receipt-printable { 
-            position: absolute; 
-            left: 0; 
-            top: 0; 
-            width: 100%;
-            max-width: 80mm;
-            margin: 0 auto;
-            padding: 8px;
-            font-size: 12px;
-          }
-          .no-print { display: none !important; }
-        }
-      `}</style>
 
-      <div className="flex flex-col gap-6 max-w-3xl mx-auto pb-8">
+
+      <div className="flex flex-col gap-6 max-w-3xl mx-auto pb-8 min-h-screen">
         {/* ── Header (no-print) ── */}
-        <div className="flex items-center justify-between no-print">
+        <div className="flex items-center justify-between no-print px-4 pt-4">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-xl hover:bg-muted/50">
+            <Button variant="ghost" size="icon" onClick={() => {
+              if (returnTo) router.push(returnTo);
+              else if (receipt?.order?.channel === "room_service") router.push("/rooms/checkin");
+              else router.back();
+            }} className="rounded-xl hover:bg-muted/50">
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
@@ -215,204 +305,45 @@ export default function ReceiptPage() {
 
         {/* ── Fully Paid Banner ── */}
         {receipt.is_fully_paid && (
-          <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl no-print">
+          <div className="mx-4 flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl no-print">
             <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
             <div>
               <p className="font-bold text-emerald-700 dark:text-emerald-300">Payment Complete</p>
               <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">
-                This order has been fully paid. Total: {formatCurrency(receipt.total_paid)}
+                This order has been fully paid. Total: Rs. {receipt.total_paid.toLocaleString()}
               </p>
             </div>
           </div>
         )}
 
-        {/* ── Receipt Card (printable) ── */}
-        <Card className="border-border/40 bg-white dark:bg-[#1a1a1a] overflow-hidden" id="receipt-printable">
-          <CardContent className="p-6 space-y-6">
-            {/* Restaurant Header */}
-            <div className="text-center space-y-2">
-              <h2 className="text-xl font-black tracking-tight">{restaurant.name}</h2>
-              <p className="text-sm text-muted-foreground">{restaurant.address}</p>
-              <p className="text-sm text-muted-foreground">{restaurant.phone}</p>
-              {restaurant.pan_number && (
-                <p className="text-xs text-muted-foreground">PAN: {restaurant.pan_number}</p>
-              )}
-            </div>
-
-            <Separator />
-
-            {/* Order Info */}
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <span className="text-muted-foreground text-xs">Order</span>
-                <p className="font-bold">#{order.restaurant_order_id || order.id}</p>
-              </div>
-              <div className="text-right">
-                <span className="text-muted-foreground text-xs">Date</span>
-                <p className="font-bold">{new Date(order.created_at).toLocaleDateString()}</p>
-              </div>
-              {order.table_name && (
-                <div>
-                  <span className="text-muted-foreground text-xs">Table</span>
-                  <p className="font-bold">{order.table_name}</p>
-                </div>
-              )}
-              <div className={order.table_name ? "text-right" : ""}>
-                <span className="text-muted-foreground text-xs">Time</span>
-                <p className="font-bold">
-                  {new Date(order.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </p>
-              </div>
-              {order.customer_name && (
-                <div className="col-span-2">
-                  <span className="text-muted-foreground text-xs">Customer</span>
-                  <p className="font-bold">{order.customer_name}</p>
-                </div>
-              )}
-            </div>
-
-            <Separator />
-
-            {/* Items */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-muted-foreground pb-2">
-                <span className="flex-1">Item</span>
-                <span className="w-12 text-center">Qty</span>
-                <span className="w-24 text-right">Amount</span>
-              </div>
-              {order.items.map((item: OrderItem) => (
-                <div key={item.id} className="flex items-start justify-between py-1.5">
-                  <div className="flex-1 min-w-0 pr-2">
-                    <p className="text-sm font-medium">{item.name_snapshot}</p>
-                    {item.modifiers && item.modifiers.length > 0 && (
-                      <p className="text-[10px] text-muted-foreground">
-                        {item.modifiers.map(m => m.modifier_name_snapshot).join(", ")}
-                      </p>
-                    )}
-                    {item.notes && (
-                      <p className="text-[10px] text-muted-foreground italic">{item.notes}</p>
-                    )}
-                  </div>
-                  <span className="w-12 text-center text-sm tabular-nums">{item.qty}</span>
-                  <span className="w-24 text-right text-sm font-medium tabular-nums">
-                    {formatCurrency(item.line_total)}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <Separator />
-
-            {/* Totals */}
-            <div className="space-y-2">
-              {receipt.subtotal_pre_tax !== null && receipt.subtotal_pre_tax !== undefined && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal (Pre-Tax)</span>
-                  <span className="tabular-nums">{formatCurrency(receipt.subtotal_pre_tax)}</span>
-                </div>
-              )}
-
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="tabular-nums">{formatCurrency(order.subtotal)}</span>
-              </div>
-
-              {order.tax_total > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Tax</span>
-                  <span className="tabular-nums">{formatCurrency(order.tax_total)}</span>
-                </div>
-              )}
-
-              {order.service_charge > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Service Charge</span>
-                  <span className="tabular-nums">{formatCurrency(order.service_charge)}</span>
-                </div>
-              )}
-
-              {((order.discount_total || 0) + (order.manual_discount_amount || 0)) > 0 && (
-                <div className="flex justify-between text-sm text-emerald-600">
-                  <span>Discount</span>
-                  <span className="tabular-nums">
-                    -{formatCurrency((order.discount_total || 0) + (order.manual_discount_amount || 0))}
-                  </span>
-                </div>
-              )}
-
-              <Separator />
-
-              <div className="flex justify-between text-lg font-black">
-                <span>Grand Total</span>
-                <span className="tabular-nums">{formatCurrency(order.grand_total)}</span>
-              </div>
-            </div>
-
-            {/* Payments */}
-            {order.payments && order.payments.length > 0 && (
-              <>
-                <Separator />
-                <div className="space-y-2">
-                  <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Payments</span>
-                  {order.payments.map((p: OrderPayment) => {
-                    const Icon = PAYMENT_ICONS[p.method] || CreditCard;
-                    return (
-                      <div key={p.id} className="flex items-center justify-between py-1">
-                        <div className="flex items-center gap-2">
-                          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="text-sm capitalize font-medium">{p.method}</span>
-                          {p.reference && (
-                            <span className="text-[10px] text-muted-foreground">(Ref: {p.reference})</span>
-                          )}
-                        </div>
-                        <span className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(p.amount)}
-                        </span>
-                      </div>
-                    );
-                  })}
-
-                  <div className="flex justify-between text-sm font-bold pt-1">
-                    <span>Total Paid</span>
-                    <span className="tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(receipt.total_paid)}</span>
-                  </div>
-
-                  {receipt.balance_due > 0 && (
-                    <div className="flex justify-between text-sm font-bold text-destructive">
-                      <span>Balance Due</span>
-                      <span className="tabular-nums">{formatCurrency(receipt.balance_due)}</span>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* Footer */}
-            <Separator />
-            <div className="text-center space-y-1">
-              <p className="text-xs text-muted-foreground">Thank you for dining with us!</p>
-              <p className="text-[10px] text-muted-foreground">Powered by Yummy</p>
-            </div>
-          </CardContent>
-        </Card>
+        {/* ── Receipt Rendering (Thermal Slip) ── */}
+        <div className="flex-1 flex items-start justify-center p-4 bg-muted/30 overflow-y-auto">
+             <div ref={receiptRef} id="receipt-printable-wrapper" className="shadow-2xl border border-border/40 bg-white">
+                <ThermalReceipt data={receipt} template={template} />
+             </div>
+        </div>
 
         {/* Bottom Actions (no-print) */}
-        <div className="flex flex-col sm:flex-row items-center gap-3 no-print">
-          {receipt.is_fully_paid && allKotsServed && order.status !== 'completed' && (
+        <div className="flex flex-col sm:flex-row items-center gap-3 no-print px-4 pb-4">
+          {receipt.is_fully_paid && (allKotsServed || receipt?.order?.channel === "room_service") && order.status !== 'completed' && (
             <Button 
               className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
               onClick={handleComplete}
               disabled={completing}
             >
               {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-              Complete Order
+              Complete {receipt?.order?.channel === "room_service" ? "Checkout" : "Order"}
             </Button>
           )}
           <Button
             className="flex-1 w-full sm:w-auto h-12 text-base font-bold gap-2 rounded-xl shadow-lg"
-            onClick={() => router.push("/orders/active")}
+            onClick={() => {
+              if (returnTo) router.push(returnTo);
+              else if (receipt?.order?.channel === "room_service") router.push("/rooms/checkin");
+              else router.push("/orders/active");
+            }}
           >
-            <CheckCircle className="h-4 w-4" /> Back to Orders
+            <CheckCircle className="h-4 w-4" /> {receipt?.order?.channel === "room_service" ? "Back to Rooms" : "Back to Orders"}
           </Button>
           <div className="flex gap-2 w-full sm:w-auto">
             <Button
@@ -435,3 +366,4 @@ export default function ReceiptPage() {
     </>
   );
 }
+

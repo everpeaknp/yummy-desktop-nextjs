@@ -102,6 +102,7 @@ function getStatusConfig(s: string) {
     case "ready": return { label: "Ready", color: "#10b981", bg: "bg-emerald-500/10", icon: CheckCircle };
     case "completed": return { label: "Completed", color: "#10b981", bg: "bg-emerald-500/10", icon: CheckCircle };
     case "canceled": return { label: "Canceled", color: "#ef4444", bg: "bg-red-500/10", icon: XCircle };
+    case "requested": return { label: "Pending Verification", color: "#6366f1", bg: "bg-indigo-500/10", icon: Timer };
     default: return { label: s, color: "#64748b", bg: "bg-slate-500/10", icon: Circle };
   }
 }
@@ -380,6 +381,41 @@ export default function OrderDetailPage() {
                   <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Add Items</span>
                 </Button>
               </Link>
+
+              {order.status === 'requested' && (
+                <div className="flex items-center gap-2 border-l border-border/40 pl-3">
+                  <Button 
+                    size="sm" 
+                    className="gap-2 rounded-xl h-9 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-bold"
+                    onClick={async () => {
+                      setCompleting(true);
+                      try {
+                        await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "pending" });
+                        await fetchContext();
+                      } catch (err) {
+                        console.error("Failed to verify order:", err);
+                      } finally {
+                        setCompleting(false);
+                      }
+                    }}
+                    disabled={completing}
+                  >
+                    {completing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                    Verify Order
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="gap-2 rounded-xl h-9 text-destructive hover:text-destructive hover:bg-destructive/10 font-semibold"
+                    onClick={() => {
+                      setCancelReason("Rejected by staff");
+                      setCancelOpen(true);
+                    }}
+                  >
+                    <Ban className="h-4 w-4" /> Reject
+                  </Button>
+                </div>
+              )}
               
               {!isFullyPaid && (
                   <Link href={`/orders/${orderId}/checkout`}>
@@ -389,7 +425,7 @@ export default function OrderDetailPage() {
                   </Link>
               )}
               
-             {isFullyPaid && allKotsServed && order.status !== 'completed' && (
+              {isFullyPaid && order.status !== 'completed' && (
                 <Button 
                   size="sm"
                   className="gap-2 rounded-xl h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-bold"
@@ -603,7 +639,7 @@ export default function OrderDetailPage() {
                       </Link>
                   )}
                   
-                  {isFullyPaid && allKotsServed && order.status !== 'completed' && (
+                  {isFullyPaid && order.status !== 'completed' && (
                     <Button 
                       className="w-full gap-2 h-11 font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg"
                       onClick={handleComplete}

@@ -7,8 +7,8 @@ export const STATUS_COLORS: Record<string, { bg: string; border: string; text: s
   FREE: { bg: "bg-emerald-500/20", border: "border-emerald-500/60", text: "text-emerald-500", dot: "bg-emerald-500" },
   OCCUPIED: { bg: "bg-red-500/20", border: "border-red-500/60", text: "text-red-500", dot: "bg-red-500" },
   RESERVED: { bg: "bg-orange-500/20", border: "border-orange-500/60", text: "text-orange-500", dot: "bg-orange-500" },
-  "BILL PRINTED": { bg: "bg-amber-500/20", border: "border-amber-500/60", text: "text-amber-500", dot: "bg-amber-500" },
-  PAYMENT_COMPLETED: { bg: "bg-emerald-500/20", border: "border-emerald-500/60", text: "text-emerald-500", dot: "bg-emerald-500" },
+  "BILL PRINTED": { bg: "bg-red-500/20", border: "border-red-500/60", text: "text-red-500", dot: "bg-red-500" },
+  PAYMENT_COMPLETED: { bg: "bg-red-500/20", border: "border-red-500/60", text: "text-red-500", dot: "bg-red-500" },
 };
 
 const DEFAULT_COLORS = { bg: "bg-gray-500/20", border: "border-gray-500/60", text: "text-gray-500", dot: "bg-gray-500" };

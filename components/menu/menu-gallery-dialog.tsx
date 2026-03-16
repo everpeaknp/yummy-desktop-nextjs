@@ -8,7 +8,6 @@ export type { MenuGalleryItem };
 import { cn } from "@/lib/utils";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/lib/supabase";
 import { ImagePlus, Loader2 } from "lucide-react";
 
 interface MenuGalleryDialogProps {

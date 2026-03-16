@@ -21,6 +21,9 @@ export const AuthApis = {
   updatePreferences: '/users/profile/preferences',
   deleteMe: '/users/me',
   changePassword: '/users/change-password',
+  listPermissions: '/users/permissions/',
+  updateUserPermissions: (id: number | string) => `/users/${id}/permissions/`,
+  uploadProfilePicture: '/users/me/profile-picture',
 };
 
 export const DashboardApis = {
@@ -88,6 +91,7 @@ export const OrderApis = {
   activateReservation: (id: number) => `/orders/${id}/activate`,
   cancelOrder: (id: number) => `/orders/${id}/cancel`,
   refundOrder: (id: number) => `/orders/${id}/refund`,
+  checkinRoom: '/orders/room/checkin',
 };
 
 export const PaymentApis = {
@@ -113,23 +117,34 @@ export const MenuApis = {
   createMenu: (restaurantId: number) => `/menus/${restaurantId}`,
   updateMenu: (id: number) => `/menus/${id}`,
   deleteMenu: (id: number) => `/menus/${id}`,
+  upload: '/menus/upload',
 };
 
 export const TableApis = {
   createTable: (restaurantId: number) => `/restaurants/tables/${restaurantId}`,
   updateTable: (tableId: number) => `/restaurants/tables/${tableId}`,
-  getTables: (restaurantId: number) => `/restaurants/tables/all/${restaurantId}`,
-  tableSummary: (restaurantId: number, fields?: string) => {
-    const base = `/restaurants/tables/summary/${restaurantId}`;
-    return fields ? `${base}?fields=${encodeURIComponent(fields)}` : base;
+  getTables: (restaurantId: number, spaceKind?: string) => {
+    const base = `/restaurants/tables/all/${restaurantId}`;
+    return spaceKind ? `${base}?space_kind=${spaceKind}` : base;
+  },
+  tableSummary: (restaurantId: number, fields?: string, spaceKind?: string) => {
+    const params = new URLSearchParams();
+    if (fields) params.append('fields', fields);
+    if (spaceKind) params.append('space_kind', spaceKind);
+    const query = params.toString();
+    return query ? `/restaurants/tables/summary/${restaurantId}?${query}` : `/restaurants/tables/summary/${restaurantId}`;
   },
   getTableById: (tableId: number) => `/restaurants/tables/single/${tableId}`,
   deleteTable: (tableId: number) => `/restaurants/tables/${tableId}`,
   freeTable: (tableId: number) => `/restaurants/tables/${tableId}/free`,
+  qrGenerate: (tableId: number) => `/qr/tables/${tableId}/generate`,
 };
 
 export const TableTypeApis = {
-  getTableTypes: (restaurantId: number) => `/restaurants/table-types/${restaurantId}`,
+  getTableTypes: (restaurantId: number, spaceKind?: string) => {
+    const base = `/restaurants/table-types/${restaurantId}`;
+    return spaceKind ? `${base}?space_kind=${spaceKind}` : base;
+  },
   createTableType: (restaurantId: number) => `/restaurants/table-types/${restaurantId}`,
   updateTableType: (tableTypeId: number) => `/restaurants/table-types/${tableTypeId}`,
   deleteTableType: (tableTypeId: number) => `/restaurants/table-types/${tableTypeId}`,
@@ -142,6 +157,7 @@ export const RestaurantApis = {
   updateFonepay: (id: number) => `/restaurants/${id}/fonepay-config`,
   getTemplates: (id: number) => `/restaurants/${id}/templates`,
   updateTemplates: (id: number) => `/restaurants/${id}/templates`,
+  upload: '/restaurants/upload',
 };
 
 export const AdminManagementApis = {
@@ -233,6 +249,7 @@ export const AnalyticsApis = {
     endTime,
     timezone,
     station,
+    businessLine,
   }: {
     restaurantId: number;
     dateFrom?: string;
@@ -241,6 +258,7 @@ export const AnalyticsApis = {
     endTime?: string;
     timezone?: string;
     station?: string;
+    businessLine?: string;
   }) => {
     const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
     if (startTime && endTime) {
@@ -252,6 +270,7 @@ export const AnalyticsApis = {
     }
     if (timezone) params.append('timezone', timezone);
     if (station) params.append('station', station);
+    if (businessLine) params.append('business_line', businessLine);
     return `/analytics/dashboard?${params.toString()}`;
   },
   overview: ({ restaurantId, dateFrom, dateTo, timezone, station }: any) => {
@@ -316,12 +335,14 @@ export const IncomeApis = {
     dateTo,
     timezone,
     station,
+    businessLine,
   }: {
     restaurantId: number;
     dateFrom: string;
     dateTo: string;
     timezone?: string;
     station?: string;
+    businessLine?: string;
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
@@ -330,6 +351,7 @@ export const IncomeApis = {
     });
     if (timezone) params.append('timezone', timezone);
     if (station) params.append('station', station);
+    if (businessLine) params.append('business_line', businessLine);
     return `/income/dashboard?${params.toString()}`;
   },
 };

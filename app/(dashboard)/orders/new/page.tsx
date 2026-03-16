@@ -4,9 +4,10 @@ import { useState, useEffect, Suspense, useCallback } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import POSSystem from "@/components/orders/pos-system";
-import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair } from "lucide-react";
+import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, Bed, BedDouble } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import { cn, getImageUrl } from "@/lib/utils";
 import { TableApis, TableTypeApis } from "@/lib/api/endpoints";
 import { useRouter } from "next/navigation";
@@ -25,14 +26,20 @@ interface TableType {
 export default function NewOrderPage() {
     const [activeTab, setActiveTab] = useState("tables");
     const [selectedTable, setSelectedTable] = useState<number | null>(null);
+    const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
     const [tables, setTables] = useState<TableData[]>([]);
+    const [rooms, setRooms] = useState<TableData[]>([]);
     const [tableTypes, setTableTypes] = useState<TableType[]>([]);
     const [selectedArea, setSelectedArea] = useState("All Areas");
+    const [selectedWing, setSelectedWing] = useState("All Wings");
     const [loading, setLoading] = useState(false);
+    const [loadingRooms, setLoadingRooms] = useState(false);
 
     const user = useAuth(state => state.user);
     const me = useAuth(state => state.me);
+    const { restaurant } = useRestaurant();
     const router = useRouter();
+    const hotelEnabled = restaurant?.hotel_enabled ?? false;
 
     // 1. Session Restoration & Auth Guard
     useEffect(() => {
@@ -53,8 +60,8 @@ export default function NewOrderPage() {
         setLoading(true);
         try {
             const [tablesRes, typesRes] = await Promise.all([
-                apiClient.get(TableApis.getTables(user.restaurant_id)),
-                apiClient.get(TableTypeApis.getTableTypes(user.restaurant_id)),
+                apiClient.get(`${TableApis.getTables(user.restaurant_id)}?space_kind=table`),
+                apiClient.get(`${TableTypeApis.getTableTypes(user.restaurant_id)}?space_kind=table`),
             ]);
             if (tablesRes.data.status === "success") {
                 setTables(tablesRes.data.data || []);
@@ -69,6 +76,22 @@ export default function NewOrderPage() {
         }
     }, [user?.restaurant_id]);
 
+    // 3. Data Fetching — rooms (space_kind=room)
+    const fetchRooms = useCallback(async () => {
+        if (!user?.restaurant_id) return;
+        setLoadingRooms(true);
+        try {
+            const res = await apiClient.get(`${TableApis.getTables(user.restaurant_id)}?space_kind=room`);
+            if (res.data.status === "success") {
+                setRooms(res.data.data || []);
+            }
+        } catch (err) {
+            console.error("Failed to fetch rooms:", err);
+        } finally {
+            setLoadingRooms(false);
+        }
+    }, [user?.restaurant_id]);
+
     useEffect(() => {
         if (activeTab === "tables" && user?.restaurant_id) {
             fetchData();
@@ -76,6 +99,14 @@ export default function NewOrderPage() {
             return () => clearInterval(interval);
         }
     }, [activeTab, user?.restaurant_id, fetchData]);
+
+    useEffect(() => {
+        if (activeTab === "rooms" && user?.restaurant_id) {
+            fetchRooms();
+            const interval = setInterval(fetchRooms, 15000);
+            return () => clearInterval(interval);
+        }
+    }, [activeTab, user?.restaurant_id, fetchRooms]);
 
     // ─── Area options ───
     const areaOptions = (() => {
@@ -134,23 +165,61 @@ export default function NewOrderPage() {
         );
     }
 
+    // If a room is selected, show POS for room service
+    if (selectedRoom) {
+        const roomDetails = rooms.find(r => r.id === selectedRoom);
+        const existingOrderId = roomDetails?.active_order_ids?.[0] || 'create';
+
+        return (
+            <div className="flex flex-col h-full gap-2">
+                <div className="flex items-center gap-2 pb-2">
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedRoom(null)}>
+                        <ChevronLeft className="h-4 w-4 mr-1" /> Back to Rooms
+                    </Button>
+                    <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                            <Bed className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <h2 className="text-lg font-semibold">Room Service — {roomDetails?.table_name || `Room ${selectedRoom}`}</h2>
+                    </div>
+                </div>
+                <Suspense fallback={<div>Loading...</div>}>
+                    <POSSystem 
+                        orderId={existingOrderId.toString()} 
+                        defaultTableId={selectedRoom}
+                        defaultChannel="room_service"
+                    />
+                </Suspense>
+            </div>
+        );
+    }
+
     // Order Type Cards Configuration
     const orderTypes = [
         { 
             id: 'tables', 
-            label: 'Tables', 
+            label: 'Dine-In', 
             icon: Sofa, 
-            description: 'Dine-in service', 
+            description: 'Table service', 
             activeColor: 'bg-orange-600',
-            borderColor: 'group-hover:border-orange-200'
+            show: true,
         },
+        // Room service — only shown when hotel is enabled
+        ...(hotelEnabled ? [{
+            id: 'rooms',
+            label: 'Room Service',
+            icon: BedDouble,
+            description: 'Hotel room orders',
+            activeColor: 'bg-blue-600',
+            show: true,
+        }] : []),
         { 
             id: 'quick_bill', 
             label: 'Quick Bill', 
             icon: Zap, 
             description: 'Fast checkout', 
-            activeColor: 'bg-blue-600',
-            borderColor: 'group-hover:border-blue-200'
+            activeColor: 'bg-indigo-600',
+            show: true,
         },
         { 
             id: 'delivery', 
@@ -158,7 +227,7 @@ export default function NewOrderPage() {
             icon: Truck, 
             description: 'Online orders', 
             activeColor: 'bg-purple-600',
-            borderColor: 'group-hover:border-purple-200'
+            show: true,
         },
         { 
             id: 'pickup', 
@@ -166,7 +235,7 @@ export default function NewOrderPage() {
             icon: ShoppingBag, 
             description: 'Takeaway service', 
             activeColor: 'bg-green-600',
-            borderColor: 'group-hover:border-green-200'
+            show: true,
         },
     ];
 
@@ -219,7 +288,45 @@ export default function NewOrderPage() {
 
 
             <div className="mt-4 flex-1 flex flex-col min-h-0 overflow-hidden">
-                {activeTab === "tables" ? (
+                {activeTab === "rooms" ? (
+                    <div className="flex-1 overflow-y-auto no-scrollbar animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {/* Room Status Legend */}
+                        <div className="flex items-center gap-6 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-6 ml-2 shrink-0">
+                            <div className="flex items-center gap-2">
+                                <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]" />
+                                <span>Available</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]" />
+                                <span>Occupied</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="w-3 h-3 rounded-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.3)]" />
+                                <span>Reserved</span>
+                            </div>
+                        </div>
+
+                        {loadingRooms ? (
+                            <div className="h-64 flex flex-col items-center justify-center gap-4 text-muted-foreground border-2 border-dashed border-border/40 rounded-[2rem] bg-muted/5">
+                                <Loader2 className="w-10 h-10 animate-spin text-primary" />
+                                <p className="font-bold uppercase tracking-widest text-xs">Loading Rooms</p>
+                            </div>
+                        ) : rooms.length === 0 ? (
+                            <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border/40 rounded-[2rem] gap-4 bg-muted/5">
+                                <BedDouble className="w-16 h-16 opacity-10" />
+                                <p className="font-bold uppercase tracking-widest text-xs">No rooms configured</p>
+                                <p className="text-xs text-muted-foreground">Add rooms with space_kind=room from the Rooms management page</p>
+                            </div>
+                        ) : (
+                            <RoomContainer
+                                title="Hotel Rooms"
+                                tables={rooms}
+                                layoutHeight={300}
+                                onTableClick={(room) => setSelectedRoom(room.id)}
+                            />
+                        )}
+                    </div>
+                ) : activeTab === "tables" ? (
                     <div className="flex-1 overflow-y-auto no-scrollbar animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* Area Filter Chips */}
                         <div className="flex flex-wrap items-center gap-2 mb-6 p-1 bg-muted/30 rounded-2xl w-fit shrink-0">

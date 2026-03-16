@@ -5,9 +5,6 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://yummy-container
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
 // Request Interceptor: Attach Token

@@ -423,10 +423,31 @@ export default function RestaurantSettingsPage() {
                             </div>
                             <div className="flex items-center justify-between p-4 border rounded-lg">
                                 <div className="space-y-0.5">
-                                    <Label>Enable Service Charge</Label>
-                                    <p className="text-xs text-muted-foreground">Automatically add service charge to all bills.</p>
+                                    <Label>Enable Tax (VAT)</Label>
+                                    <p className="text-xs text-muted-foreground mr-8">Enable or disable global tax calculation for all orders.</p>
                                 </div>
-                                <Switch checked={true} />
+                                <Switch 
+                                    checked={restaurant?.tax_enabled ?? false} 
+                                    onCheckedChange={async (val) => {
+                                        if (!user?.restaurant_id) return;
+                                        try {
+                                            const updated = { ...restaurant, tax_enabled: val };
+                                            setRestaurant(updated);
+                                            await apiClient.put(RestaurantApis.update(user.restaurant_id), { tax_enabled: val });
+                                            toast.success(`Tax calculation ${val ? 'enabled' : 'disabled'}`);
+                                        } catch (err) {
+                                            toast.error("Failed to update tax status");
+                                            setRestaurant({...restaurant}); // revert
+                                        }
+                                    }}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between p-4 border rounded-lg opacity-50">
+                                <div className="space-y-0.5">
+                                    <Label>Enable Service Charge</Label>
+                                    <p className="text-xs text-muted-foreground italic">Restricted: Service charges are not recommended.</p>
+                                </div>
+                                <Switch checked={false} disabled />
                             </div>
                             <div className="flex items-center justify-between p-4 border rounded-lg">
                                 <div className="space-y-0.5">
