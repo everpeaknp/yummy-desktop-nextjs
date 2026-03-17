@@ -119,7 +119,9 @@ function formatTime(ts: string): string {
 
 // ── WebSocket URL ──────────────────────────────────────────────────────
 function buildWsUrl(token: string, restaurantId: number): string {
-  const base = process.env.NEXT_PUBLIC_API_URL || "https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io";
+  const base =
+    process.env.NEXT_PUBLIC_API_URL ||
+    "https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io";
   let wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
   wsBase = wsBase.replace(/\/+$/, "");
   return `${wsBase}/ws/kots?token=${encodeURIComponent(token)}&restaurant_id=${restaurantId}`;

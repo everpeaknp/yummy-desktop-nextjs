@@ -480,12 +480,12 @@ export default function TablesPage() {
   };
 
   const getQrUrl = (token: string) => {
-    // For production, this might need to be dynamic, but for local dev we point to :3000
+    // Keep this aligned with backend qr_controller.cloud_url (/v/{token})
     if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-      return `http://localhost:3000/qr/${token}`;
+      return `http://localhost:3000/v/${token}`;
     }
     const baseUrl = typeof window !== 'undefined' ? window.location.origin.replace("-web", "-menu") : "";
-    return `${baseUrl}/qr/${token}`;
+    return `${baseUrl}/v/${token}`;
   };
 
   const handlePrintQr = () => {

@@ -229,7 +229,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
 // ── WS URL builder ───────────────────────────────────────────────────
 function buildWsBase(): string {
-  const base = process.env.NEXT_PUBLIC_API_URL || "https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io";
+  const base =
+    process.env.NEXT_PUBLIC_API_URL ||
+    "https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io";
   return base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://").replace(/\/+$/, "");
 }
 

@@ -79,16 +79,30 @@ export default function Home() {
   // Helper: handle successful auth response (login or google)
   const handleAuthSuccess = useCallback((data: any) => {
     setRedirecting(true);
-    const { access_token, refresh_token, user_id, user_name, email: userEmail, user_role, user_roles, primary_role, restaurant_id } = data;
-    const roles: string[] = user_roles || (user_role ? [user_role] : []);
+    const {
+      access_token,
+      refresh_token,
+      user_id,
+      user_name,
+      email: userEmail,
+      user_role,
+      user_roles,
+      primary_role,
+      restaurant_id,
+      permissions,
+    } = data;
+    const roles: string[] = Array.isArray(user_roles)
+      ? user_roles
+      : (user_role ? [user_role] : (primary_role ? [primary_role] : []));
     const user = {
       id: user_id,
       full_name: user_name,
       email: userEmail,
-      role: user_role,
+      role: user_role || primary_role || roles[0] || "",
       roles,
-      primary_role: primary_role || user_role || null,
+      primary_role: primary_role || user_role || roles[0] || null,
       restaurant_id: restaurant_id,
+      permissions: Array.isArray(permissions) ? permissions : [],
     };
     setAuth(user, access_token, refresh_token);
     // Use router.push for faster client-side navigation.
@@ -135,36 +149,45 @@ export default function Home() {
     try {
       const idToken = await signInWithGoogle();
       const response = await apiClient.post("/auth/firebase/google", { idToken });
-      if (response.data.status === "success") {
-        const payload = response.data.data;
-        // Backend returns standard login with flat structure or Google auth with nested "user" object
-        let flatData;
-        if (payload.user) {
-          flatData = {
-            access_token: payload.access_token,
-            refresh_token: payload.access_token, // Backend doesn't return refresh token for Google auth currently, using access token as fallback or empty
-            user_id: payload.user.id,
-            user_name: payload.user.name,
-            email: payload.user.email,
-            user_role: payload.user.role,
-            user_roles: payload.user.roles,
-            primary_role: payload.user.primary_role,
-            restaurant_id: payload.user.restaurant_id,
-          };
-        } else {
-          flatData = payload;
-        }
-        
-        handleAuthSuccess(flatData);
-        // Keep isGoogleLoading(true) during redirection
-        return;
+      const wrapper = response?.data ?? {};
+      const payload = wrapper?.data ?? wrapper;
+      if (!payload?.access_token) {
+        throw new Error(wrapper?.message || "Google login failed: invalid response from server");
       }
+
+      // Backend may return nested "user" object (Firebase) or flat login payload.
+      let flatData;
+      if (payload.user) {
+        flatData = {
+          access_token: payload.access_token,
+          refresh_token: payload.refresh_token || null,
+          user_id: payload.user.id,
+          user_name: payload.user.name,
+          email: payload.user.email,
+          user_role: payload.user.role,
+          user_roles: payload.user.roles,
+          primary_role: payload.user.primary_role,
+          restaurant_id: payload.user.restaurant_id,
+          permissions: payload.user.permissions || [],
+        };
+      } else {
+        flatData = {
+          ...payload,
+          refresh_token: payload.refresh_token || null,
+          permissions: payload.permissions || [],
+        };
+      }
+
+      handleAuthSuccess(flatData);
+      // Keep isGoogleLoading(true) during redirection
+      return;
     } catch (err: any) {
       // User closed popup is not an error
       if (err?.code === "auth/popup-closed-by-user") {
         setIsGoogleLoading(false);
         return;
       }
+      console.error("Google sign-in failed", err?.response?.data || err);
       setError(extractError(err));
       setIsGoogleLoading(false);
     }

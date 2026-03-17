@@ -1,7 +1,8 @@
 import axios from 'axios';
 
-// TODO: Move to .env
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  'https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -41,7 +42,12 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Skip refresh for auth endpoints themselves
       const url = originalRequest.url || '';
-      if (url.includes('/auth/login') || url.includes('/auth/refresh')) {
+      if (
+        url.includes('/auth/login') ||
+        url.includes('/auth/refresh') ||
+        url.includes('/auth/firebase/google') ||
+        url.includes('/auth/firebase/apple')
+      ) {
         return Promise.reject(error);
       }
 
