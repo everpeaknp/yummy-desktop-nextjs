@@ -58,13 +58,61 @@ export const hasAnyRole = (roles: UserRole[], targets: UserRole[]) =>
 // ─── Granular Permissions (Backend-Driven) ──────────────────────────────────
 
 export type PermissionKey =
+  // POS Module
   | "pos.view"
-  | "pos.order"
-  | "pos.void"
+  | "pos.order.create"
+  | "pos.order.edit"
+  | "pos.order.void"
+  | "pos.order.void_item"
+  | "pos.order.transfer"
+  | "pos.order.discount.apply"
+  | "pos.order.discount.override"
+  | "pos.order.serve_override"
+  // Billing Module
+  | "billing.view"
+  | "billing.payment.process"
+  | "billing.payment.split"
+  | "billing.refund.process"
+  | "billing.refund.approve"
+  | "billing.receipt.print"
+  // Tables & Reservation
+  | "tables.view"
+  | "tables.manage"
+  | "tables.qr.manage"
+  | "reservations.view"
+  | "reservations.manage"
+  // Hotel Module
   | "hotel.manage"
-  | "user.manage"
-  | "staff.manage"
-  | "reports.view";
+  | "hotel.checkin"
+  | "hotel.checkout"
+  // Menu & Category
+  | "menu.view"
+  | "menu.manage"
+  | "menu.items.manage"
+  // Inventory
+  | "inventory.view"
+  | "inventory.stock.manage"
+  | "inventory.manage"
+  // Customers
+  | "customers.view"
+  | "customers.manage"
+  | "customers.loyalty.manage"
+  | "customers.credit.manage"
+  // Reports
+  | "reports.daily"
+  | "reports.analytics"
+  // Finance
+  | "finance.expenses.view"
+  | "finance.expenses.manage"
+  | "finance.expenses.approve"
+  | "finance.payroll.view"
+  | "finance.payroll.manage"
+  | "finance.income_view"
+  // Admin & Settings
+  | "admin.staff.view"
+  | "admin.staff.manage"
+  | "admin.roles.manage"
+  | "settings.manage_restaurant";
 
 /**
  * Check if user has a specific permission.
@@ -144,7 +192,7 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Dashboard",
     href: "/dashboard",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reports.view", // General dashboard access
+    requiredPermission: "reports.daily", 
   },
   {
     title: "Orders",
@@ -156,13 +204,13 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "New Order",
     href: "/orders/new",
     allowedRoles: ORDER_ROLES,
-    requiredPermission: "pos.order",
+    requiredPermission: "pos.order.create",
   },
   {
     title: "Analytics",
     href: "/analytics",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reports.view",
+    requiredPermission: "reports.analytics",
   },
   // ── Kitchen (matches KitchenDashboardScreen) ──
   {
@@ -188,18 +236,19 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Finance",
     href: "/finance/income",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reports.view",
+    requiredPermission: "finance.income_view",
   },
   {
     title: "Customers",
     href: "/customers",
     allowedRoles: ADMIN_SHELL_ROLES,
+    requiredPermission: "customers.view",
   },
   {
     title: "Tables",
     href: "/tables",
     allowedRoles: ADMIN_MANAGER,
-    requiredPermission: "pos.view",
+    requiredPermission: "tables.view",
   },
   {
     title: "Rooms",
@@ -211,17 +260,19 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Reservations",
     href: "/reservations",
     allowedRoles: ADMIN_SHELL_ROLES,
+    requiredPermission: "reservations.view",
   },
   {
     title: "Discounts",
     href: "/discounts",
     allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "pos.order.discount.apply",
   },
   {
     title: "Manage",
     href: "/manage",
     allowedRoles: ADMIN_MANAGER,
-    requiredPermission: "staff.manage",
+    requiredPermission: "admin.staff.view",
   },
   {
     title: "Feedback",
@@ -256,13 +307,13 @@ export function getSidebarItemsForRoles(roles: UserRole[], user?: { role: string
 // ─── Route-level Permission ACL ─────────────────────────────────────────────
 
 export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
-  "/dashboard": "reports.view",
-  "/analytics": "reports.view",
+  "/dashboard": "reports.daily",
+  "/analytics": "reports.analytics",
   "/orders": "pos.view",
   "/rooms": "hotel.manage",
-  "/staff": "user.manage",
-  "/manage": "staff.manage",
-  "/finance": "reports.view",
+  "/staff": "admin.staff.view",
+  "/manage": "admin.staff.view",
+  "/finance": "finance.income_view",
 };
 
 // ─── Route-level ACL ────────────────────────────────────────────────────────

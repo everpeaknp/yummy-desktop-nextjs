@@ -66,7 +66,11 @@ export const useRestaurant = create<RestaurantState>()(
             set({ restaurant: nextData, error: null });
           }
         } catch (err: any) {
-          console.error('Failed to fetch restaurant:', err);
+          // If the user hasn't created or been assigned a restaurant yet, the backend correctly returns 404.
+          // We don't need to log this as a critical error in the console.
+          if (err.response?.status !== 404) {
+            console.error('Failed to fetch restaurant:', err);
+          }
           set({ error: err.response?.data?.detail || 'Failed to fetch restaurant profile' });
         } finally {
           set({ loading: false });

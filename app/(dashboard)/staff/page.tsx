@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { StaffApis } from "@/lib/api/endpoints";
+import { StaffApis, RoleApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,7 @@ export default function StaffPage() {
     permissions: [] as string[]
   });
   const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const user = useAuth(state => state.user);
@@ -71,7 +72,7 @@ export default function StaffPage() {
 
   const fetchPermissions = async () => {
     try {
-      const response = await apiClient.get(AuthApis.listPermissions);
+      const response = await apiClient.get(RoleApis.listPermissions);
       if (response.data.status === "success") {
         setAvailablePermissions(response.data.data || []);
       }
@@ -80,9 +81,21 @@ export default function StaffPage() {
     }
   };
 
+  const fetchRoles = async () => {
+    try {
+      const response = await apiClient.get(RoleApis.listRoles);
+      if (response.data.status === "success") {
+        setAvailableRoles(response.data.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch roles:", err);
+    }
+  };
+
   useEffect(() => {
     fetchStaff();
     fetchPermissions();
+    fetchRoles();
   }, []);
 
   const handleOpenDialog = (member: any = null) => {
@@ -397,18 +410,17 @@ export default function StaffPage() {
               </div>
             )}
             <div className="space-y-3">
-              <Label>Roles (Select all that apply)</Label>
-              <div className="grid grid-cols-2 gap-2 border rounded-md p-3 bg-muted/30">
-                {["admin", "manager", "chef", "waiter", "cashier"].map((role) => (
-                  <div key={role} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id={`role-${role}`}
-                      checked={formData.roles.includes(role)}
-                      onChange={(e) => {
-                        const newRoles = e.target.checked
-                          ? [...formData.roles, role]
-                          : formData.roles.filter(r => r !== role);
+              <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Assigned Roles</Label>
+              <div className="grid grid-cols-2 gap-2 border border-border/40 rounded-xl p-4 bg-muted/30">
+                {availableRoles.map((roleObj) => (
+                  <div key={roleObj.id} className="flex items-center space-x-2 group">
+                    <Checkbox
+                      id={`role-${roleObj.name}`}
+                      checked={formData.roles.includes(roleObj.name)}
+                      onCheckedChange={(checked) => {
+                        const newRoles = checked
+                          ? [...formData.roles, roleObj.name]
+                          : formData.roles.filter(r => r !== roleObj.name);
                         
                         // Ensure at least one role is selected
                         if (newRoles.length === 0) return;
@@ -424,13 +436,17 @@ export default function StaffPage() {
                           primary_role: newPrimary
                         });
                       }}
-                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                     />
-                    <Label htmlFor={`role-${role}`} className="text-sm font-normal capitalize">
-                      {role}
+                    <Label htmlFor={`role-${roleObj.name}`} className="text-xs font-bold capitalize cursor-pointer group-hover:text-primary transition-colors">
+                      {roleObj.name}
+                      {roleObj.is_system_role && <span className="ml-1 text-[8px] opacity-40 uppercase font-black">Sys</span>}
                     </Label>
                   </div>
                 ))}
+                {availableRoles.length === 0 && (
+                  <p className="col-span-2 text-[10px] text-center text-muted-foreground italic py-2">Loading roles...</p>
+                )}
               </div>
             </div>
 

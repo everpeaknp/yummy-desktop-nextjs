@@ -26,6 +26,14 @@ export const AuthApis = {
   uploadProfilePicture: '/users/me/profile-picture',
 };
 
+export const RoleApis = {
+  listPermissions: '/roles/permissions',
+  listRoles: '/roles/',
+  createRole: '/roles/',
+  updateRole: (id: number) => `/roles/${id}`,
+  deleteRole: (id: number) => `/roles/${id}`,
+};
+
 export const DashboardApis = {
   dashboardData: (id: number) => `/admin/dashboard?restaurant_id=${id}`,
   dashboardDataV2: ({

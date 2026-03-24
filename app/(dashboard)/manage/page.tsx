@@ -24,7 +24,8 @@ import {
     ShoppingCart,
     Clock,
     Store,
-    Settings
+    Settings,
+    Shield
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -143,6 +144,14 @@ const sections = [
                 icon: Users,
                 iconColor: "text-blue-600",
                 iconBg: "bg-blue-50 dark:bg-blue-900/20",
+            },
+            {
+                title: "Custom Roles",
+                description: "Permissions & access",
+                href: "/manage/roles",
+                icon: Shield,
+                iconColor: "text-rose-600",
+                iconBg: "bg-rose-50 dark:bg-rose-900/20",
             },
             {
                 title: "Payroll",
