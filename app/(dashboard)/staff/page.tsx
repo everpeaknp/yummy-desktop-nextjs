@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { StaffApis, RoleApis } from "@/lib/api/endpoints";
+import { StaffApis, RoleApis, StaffProfileApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, UserPlus, Search, Filter, Mail, Phone, MoreVertical, Edit, Trash2, Shield, User as UserIcon, ArrowLeft } from "lucide-react";
+import { Loader2, UserPlus, Search, Filter, Mail, Phone, MoreVertical, Edit, Trash2, Shield, User as UserIcon, ArrowLeft, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,9 +24,18 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
+type StaffProfile = {
+  id: number;
+  user_id: number;
+  account_number: string;
+  salary_type: string;
+  salary_amount: number;
+};
+
 export default function StaffPage() {
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<any[]>([]);
+  const [staffProfilesByUserId, setStaffProfilesByUserId] = useState<Map<number, StaffProfile>>(new Map());
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -41,10 +52,24 @@ export default function StaffPage() {
   const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
   const [availableRoles, setAvailableRoles] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [isPayrollDialogOpen, setIsPayrollDialogOpen] = useState(false);
+  const [payrollTarget, setPayrollTarget] = useState<any>(null);
+  const [payrollSubmitting, setPayrollSubmitting] = useState(false);
+  const [payrollForm, setPayrollForm] = useState({
+    account_number: "",
+    salary_type: "monthly",
+    salary_amount: "",
+    phone: "",
+    address: "",
+    age: "",
+    weekly_hours: "",
+    daily_hours: "",
+  });
 
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
   const router = useRouter();
+  const { restaurant } = useRestaurant();
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -67,6 +92,21 @@ export default function StaffPage() {
       toast.error("Failed to fetch staff list");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchStaffProfiles = async () => {
+    try {
+      const res = await apiClient.get(StaffProfileApis.list({ skip: 0, limit: 500 }));
+      if (res.data?.status === "success") {
+        const profiles = (res.data.data || []) as StaffProfile[];
+        const map = new Map<number, StaffProfile>();
+        profiles.forEach((p) => map.set(p.user_id, p));
+        setStaffProfilesByUserId(map);
+      }
+    } catch (err) {
+      // Not fatal; payroll setup buttons will still work when called.
+      console.warn("Failed to fetch staff profiles", err);
     }
   };
 
@@ -94,9 +134,101 @@ export default function StaffPage() {
 
   useEffect(() => {
     fetchStaff();
+    fetchStaffProfiles();
     fetchPermissions();
     fetchRoles();
   }, []);
+
+  const openPayrollDialog = (member: any) => {
+    const existing = staffProfilesByUserId.get(member.id);
+    setPayrollTarget(member);
+    setPayrollForm({
+      account_number: existing?.account_number || `ACC-${member.id}`,
+      salary_type: existing?.salary_type || "monthly",
+      salary_amount: existing?.salary_amount != null ? String(existing.salary_amount) : "",
+      phone: "",
+      address: "",
+      age: "",
+      weekly_hours: "",
+      daily_hours: "",
+    });
+    setIsPayrollDialogOpen(true);
+  };
+
+  const savePayrollProfile = async () => {
+    if (!payrollTarget) return;
+    const amount = Number(payrollForm.salary_amount);
+    if (!payrollForm.account_number.trim()) return toast.error("Account number is required");
+    if (!amount || Number.isNaN(amount) || amount < 0) return toast.error("Salary amount must be valid");
+    if (payrollForm.salary_type !== "monthly" && payrollForm.salary_type !== "daily") {
+      return toast.error("Payroll supports monthly or daily salary type only");
+    }
+
+    setPayrollSubmitting(true);
+    try {
+      // Ensure the user is assigned to a restaurant (required by backend staff profile creation).
+      // Use the *selected* restaurant context (admin association users may have user.restaurant_id = null).
+      const activeRestaurantId = restaurant?.id || user?.restaurant_id || null;
+      if (!activeRestaurantId) {
+        toast.error("Select a restaurant first (restaurant context is required for payroll profiles).");
+        return;
+      }
+      if (!payrollTarget.restaurant_id) {
+        try {
+          await apiClient.patch(AuthApis.updateUser(payrollTarget.id), { restaurant_id: activeRestaurantId });
+        } catch {
+          // Backend can still create the staff profile using the requester's restaurant context.
+        }
+      }
+
+      const payload: any = {
+        user_id: payrollTarget.id,
+        account_number: payrollForm.account_number.trim(),
+        salary_type: payrollForm.salary_type,
+        salary_amount: amount,
+      };
+      if (payrollForm.phone.trim()) payload.phone = payrollForm.phone.trim();
+      if (payrollForm.address.trim()) payload.address = payrollForm.address.trim();
+      if (payrollForm.age.trim()) {
+        const age = Number(payrollForm.age);
+        if (Number.isNaN(age) || age < 0) {
+          toast.error("Age must be a valid number");
+          return;
+        }
+        payload.age = age;
+      }
+      if (payrollForm.weekly_hours.trim()) {
+        const weekly = Number(payrollForm.weekly_hours);
+        if (Number.isNaN(weekly) || weekly < 0) {
+          toast.error("Weekly hours must be a valid number");
+          return;
+        }
+        payload.weekly_hours = weekly;
+      }
+      if (payrollForm.daily_hours.trim()) {
+        const daily = Number(payrollForm.daily_hours);
+        if (Number.isNaN(daily) || daily < 0) {
+          toast.error("Daily hours must be a valid number");
+          return;
+        }
+        payload.daily_hours = daily;
+      }
+
+      const res = await apiClient.post("/staff", payload);
+      if (res.data?.status === "success") {
+        toast.success("Payroll profile created");
+        setIsPayrollDialogOpen(false);
+        await fetchStaffProfiles();
+        return;
+      }
+      toast.error(res.data?.message || "Failed to create payroll profile");
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to create payroll profile";
+      toast.error(typeof msg === "string" ? msg : "Failed to create payroll profile");
+    } finally {
+      setPayrollSubmitting(false);
+    }
+  };
 
   const handleOpenDialog = (member: any = null) => {
     if (member) {
@@ -291,6 +423,7 @@ export default function StaffPage() {
                 <TableHead className="w-[350px]">Employee</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Payroll</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -298,7 +431,7 @@ export default function StaffPage() {
             <TableBody>
               {filteredStaff.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-48 text-center">
+                  <TableCell colSpan={6} className="h-48 text-center">
                     <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
                       <UserIcon className="w-8 h-8 opacity-20" />
                       <p className="font-medium">No staff members found</p>
@@ -331,6 +464,19 @@ export default function StaffPage() {
                       </div>
                     </TableCell>
                     <TableCell>
+                      {staffProfilesByUserId.has(member.id) ? (
+                        <Badge variant="outline" className="border-emerald-300/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                          <Wallet className="w-3.5 h-3.5 mr-1" />
+                          Ready
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-amber-300/40 text-amber-600 dark:text-amber-400 bg-amber-500/5">
+                          <Wallet className="w-3.5 h-3.5 mr-1" />
+                          Not Set
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Badge variant="success" className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30">
                         Active
                       </Badge>
@@ -345,6 +491,9 @@ export default function StaffPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => router.push(`/staff/${member.id}`)}>
                             <UserIcon className="w-4 h-4 mr-2" /> View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openPayrollDialog(member)}>
+                            <Wallet className="w-4 h-4 mr-2" /> Setup Payroll Profile
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleOpenDialog(member)}>
                             <Edit className="w-4 h-4 mr-2" /> Edit Profile
@@ -362,6 +511,131 @@ export default function StaffPage() {
           </Table>
         </Card>
       )}
+
+      <Dialog open={isPayrollDialogOpen} onOpenChange={setIsPayrollDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Setup Payroll Profile</DialogTitle>
+            <DialogDescription>
+              Payroll requires salary and account details. This creates a Staff Profile used by payroll runs.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-xl border bg-muted/20 p-3">
+              <p className="text-sm font-semibold">{payrollTarget?.name || "Staff"}</p>
+              <p className="text-xs text-muted-foreground">{payrollTarget?.email || "No email"}</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Account Number</Label>
+                <Input
+                  value={payrollForm.account_number}
+                  onChange={(e) => setPayrollForm({ ...payrollForm, account_number: e.target.value })}
+                  placeholder="e.g. ACC-001"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Salary Type</Label>
+                <Select value={payrollForm.salary_type} onValueChange={(v) => setPayrollForm({ ...payrollForm, salary_type: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="daily">Daily</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Salary Amount</Label>
+              <Input
+                type="number"
+                min={0}
+                step={0.01}
+                value={payrollForm.salary_amount}
+                onChange={(e) => setPayrollForm({ ...payrollForm, salary_amount: e.target.value })}
+                placeholder="0.00"
+              />
+              <p className="text-xs text-muted-foreground">
+                Use monthly or daily salary; weekly/hourly payroll is not supported by current payroll calculations.
+              </p>
+            </div>
+
+            <div className="pt-2 border-t border-border/60" />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Phone (optional)</Label>
+                <Input
+                  value={payrollForm.phone}
+                  onChange={(e) => setPayrollForm({ ...payrollForm, phone: e.target.value })}
+                  placeholder="98XXXXXXXX"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Age (optional)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={payrollForm.age}
+                  onChange={(e) => setPayrollForm({ ...payrollForm, age: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Address (optional)</Label>
+              <Textarea
+                value={payrollForm.address}
+                onChange={(e) => setPayrollForm({ ...payrollForm, address: e.target.value })}
+                placeholder="Address"
+                className="min-h-[84px]"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Weekly Hours (optional)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={payrollForm.weekly_hours}
+                  onChange={(e) => setPayrollForm({ ...payrollForm, weekly_hours: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Daily Hours (optional)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={payrollForm.daily_hours}
+                  onChange={(e) => setPayrollForm({ ...payrollForm, daily_hours: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPayrollDialogOpen(false)} disabled={payrollSubmitting}>
+              Cancel
+            </Button>
+            <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={savePayrollProfile} disabled={payrollSubmitting}>
+              {payrollSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Wallet className="w-4 h-4 mr-2" />}
+              Save Payroll Profile
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">

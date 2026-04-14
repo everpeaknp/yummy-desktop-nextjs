@@ -125,7 +125,7 @@ export const useAuth = create<AuthState>()(
               if (userId) {
                 // Only Admins can fetch by ID usually,
                 try {
-                  const response = await apiClient.get('/users/me/profile');
+                  const response = await apiClient.get(AuthApis.meProfile);
                   if (response.data.status === 'success') {
                     const user = response.data.data;
                     console.log("[useAuth] Current User (me):", { id: user.id, email: user.email, role: user.role, restaurant_id: user.restaurant_id });

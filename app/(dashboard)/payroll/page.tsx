@@ -8,19 +8,39 @@ import { PayrollApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Search, Filter, DollarSign, Calendar, ArrowLeft, CheckCircle2, AlertCircle, Clock, FileText } from "lucide-react";
+import { Loader2, Plus, Search, Filter, DollarSign, Calendar, ArrowLeft, CheckCircle2, AlertCircle, Clock, FileText, Crown, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Link from "next/link";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import { toast } from "sonner";
+
+type PayrollRunList = {
+  id: number;
+  date_from: string;
+  date_to: string;
+  status: string;
+  paid_at?: string | null;
+  total_payroll_amount?: number;
+  total_amount?: number;
+};
 
 export default function PayrollPage() {
   const [loading, setLoading] = useState(true);
-  const [runs, setRuns] = useState<any[]>([]);
+  const [runs, setRuns] = useState<PayrollRunList[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [staffCountByRunId, setStaffCountByRunId] = useState<Record<number, number>>({});
 
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
   const router = useRouter();
+  const { restaurant } = useRestaurant();
+
+  const planState = restaurant?.plan_state?.toLowerCase() || "free";
+  const effectivePlan = restaurant?.effective_plan?.toLowerCase() || "free";
+  const isPaid =
+    (effectivePlan === "paid" || effectivePlan === "trial_paid") &&
+    (planState === "paid" || planState === "trialing");
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -37,20 +57,46 @@ export default function PayrollPage() {
       const statuses = statusFilter === 'all' ? undefined : [statusFilter];
       const response = await apiClient.get(PayrollApis.listRuns(statuses));
       if (response.data.status === "success") {
-        setRuns(response.data.data || []);
+        const list = (response.data.data || []) as PayrollRunList[];
+        setRuns(list);
+        setStaffCountByRunId({});
+
+        // List endpoint does not include item count; fetch a few details to show accurate staff counts.
+        const top = list.slice(0, 12);
+        const settled = await Promise.allSettled(
+          top.map(async (r) => {
+            const detail = await apiClient.get(PayrollApis.getRun(r.id));
+            const items = detail.data?.data?.items;
+            const count = Array.isArray(items) ? items.length : undefined;
+            return { id: r.id, count };
+          })
+        );
+        const nextCounts: Record<number, number> = {};
+        for (const s of settled) {
+          if (s.status === "fulfilled" && typeof s.value.count === "number") {
+            nextCounts[s.value.id] = s.value.count;
+          }
+        }
+        if (Object.keys(nextCounts).length) setStaffCountByRunId(nextCounts);
       }
     } catch (err) {
       console.error("Failed to fetch payroll runs:", err);
+      const e: any = err;
+      toast.error(e?.response?.data?.message || e?.response?.data?.detail || "Failed to fetch payroll runs");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!isPaid) {
+      setLoading(false);
+      return;
+    }
     if (user?.restaurant_id) {
       fetchRuns();
     }
-  }, [user, statusFilter]);
+  }, [user, statusFilter, isPaid]);
 
   const getStatusBadge = (status: string) => {
     const s = status.toLowerCase();
@@ -61,7 +107,7 @@ export default function PayrollPage() {
     return <Badge variant="outline">{status}</Badge>;
   };
 
-  const totalPayroll = runs.reduce((acc, run) => acc + (run.total_amount || 0), 0);
+  const totalPayroll = runs.reduce((acc, run) => acc + (run.total_payroll_amount || run.total_amount || 0), 0);
   const pendingApproval = runs.filter(r => r.status === 'draft').length;
 
   return (
@@ -78,10 +124,36 @@ export default function PayrollPage() {
             <p className="text-muted-foreground">Manage staff compensation and payroll runs.</p>
           </div>
         </div>
-        <Button className="bg-amber-600 hover:bg-amber-700 text-white">
+        <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => router.push('/payroll/create')}>
           <Plus className="w-4 h-4 mr-2" /> New Payroll Run
         </Button>
       </div>
+
+      {!isPaid ? (
+        <Card className="border-border">
+          <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="p-3 rounded-2xl border bg-amber-500/10 border-amber-500/20">
+                <Crown className="h-6 w-6 text-amber-600" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-lg font-bold">Payroll is a Premium feature</h2>
+                <p className="text-sm text-muted-foreground">
+                  Your current plan doesn’t include payroll management. Upgrade to enable payroll runs, approvals, and PDF exports.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Link href="/premium">
+                <Button className="bg-amber-600 hover:bg-amber-700 text-white">
+                  <Zap className="w-4 h-4 mr-2" />
+                  View Premium
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <MetricCard label="Total Payroll (Historic)" value={`Rs. ${totalPayroll.toLocaleString()}`} icon={<DollarSign className="w-5 h-5" />} color="text-emerald-600" />
@@ -112,6 +184,10 @@ export default function PayrollPage() {
         <div className="h-64 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
         </div>
+      ) : !isPaid ? (
+        <div className="h-40 flex items-center justify-center text-muted-foreground">
+          Upgrade to Premium to view payroll runs.
+        </div>
       ) : (
         <Card className="border-border shadow-sm overflow-hidden">
           <Table>
@@ -139,12 +215,18 @@ export default function PayrollPage() {
                     <TableCell>
                       <div className="flex flex-col text-sm">
                         <span>{new Date(run.date_from).toLocaleDateString()} - {new Date(run.date_to).toLocaleDateString()}</span>
-                        <span className="text-xs text-muted-foreground">Paid on: {new Date(run.date_to).toLocaleDateString()}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {run.paid_at ? `Paid on: ${new Date(run.paid_at).toLocaleDateString()}` : "Paid on: —"}
+                        </span>
                       </div>
                     </TableCell>
-                    <TableCell className="font-semibold text-emerald-600 dark:text-emerald-500">Rs. {Number(run.total_amount || 0).toLocaleString()}</TableCell>
+                    <TableCell className="font-semibold text-emerald-600 dark:text-emerald-500">
+                      Rs. {Number(run.total_payroll_amount || run.total_amount || 0).toLocaleString()}
+                    </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{run.items?.length || 0} Staff</Badge>
+                      <Badge variant="outline">
+                        {typeof staffCountByRunId[run.id] === "number" ? `${staffCountByRunId[run.id]} Staff` : "—"}
+                      </Badge>
                     </TableCell>
                     <TableCell>{getStatusBadge(run.status)}</TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>

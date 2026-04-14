@@ -17,6 +17,7 @@ export const AuthApis = {
   forgotPassword: '/auth/forgot-password',
   verifyResetOtp: '/auth/verify-reset-otp',
   resetPassword: '/auth/reset-password',
+  meProfile: '/users/me/profile',
   preferences: '/users/profile/preferences',
   updatePreferences: '/users/profile/preferences',
   deleteMe: '/users/me',
@@ -281,6 +282,159 @@ export const AnalyticsApis = {
     if (businessLine) params.append('business_line', businessLine);
     return `/analytics/dashboard?${params.toString()}`;
   },
+  compare: ({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    startTime,
+    endTime,
+    timezone,
+    station,
+    businessLine,
+  }: {
+    restaurantId: number;
+    dateFrom?: string;
+    dateTo?: string;
+    startTime?: string;
+    endTime?: string;
+    timezone?: string;
+    station?: string;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (startTime) params.append('start_time', startTime);
+    if (endTime) params.append('end_time', endTime);
+    if (!startTime && dateFrom) params.append('date_from', dateFrom);
+    if (!startTime && dateTo) params.append('date_to', dateTo);
+    if (timezone) params.append('timezone', timezone);
+    if (station) params.append('station', station);
+    if (businessLine) params.append('business_line', businessLine);
+    return `/analytics/compare?${params.toString()}`;
+  },
+  menuDetails: ({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    timezone,
+    page = 1,
+    pageSize = 20,
+    sortBy = 'revenue',
+    sortDir = 'desc',
+    search,
+    category,
+    businessLine,
+  }: {
+    restaurantId: number;
+    dateFrom: string;
+    dateTo: string;
+    timezone?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: 'revenue' | 'quantity_sold' | 'name' | 'avg_price' | string;
+    sortDir?: 'asc' | 'desc' | string;
+    search?: string;
+    category?: string;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      date_from: dateFrom,
+      date_to: dateTo,
+      page: page.toString(),
+      page_size: pageSize.toString(),
+      sort_by: sortBy,
+      sort_dir: sortDir,
+    });
+    if (timezone) params.append('timezone', timezone);
+    if (search) params.append('search', search);
+    if (category) params.append('category', category);
+    if (businessLine) params.append('business_line', businessLine);
+    return `/analytics/menu/details?${params.toString()}`;
+  },
+  staffDetails: ({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    timezone,
+    page = 1,
+    pageSize = 20,
+    businessLine,
+  }: {
+    restaurantId: number;
+    dateFrom: string;
+    dateTo: string;
+    timezone?: string;
+    page?: number;
+    pageSize?: number;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      date_from: dateFrom,
+      date_to: dateTo,
+      page: page.toString(),
+      page_size: pageSize.toString(),
+    });
+    if (timezone) params.append('timezone', timezone);
+    if (businessLine) params.append('business_line', businessLine);
+    return `/analytics/staff/details?${params.toString()}`;
+  },
+  kitchenDetails: ({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    timezone,
+    page = 1,
+    pageSize = 20,
+    businessLine,
+  }: {
+    restaurantId: number;
+    dateFrom: string;
+    dateTo: string;
+    timezone?: string;
+    page?: number;
+    pageSize?: number;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      date_from: dateFrom,
+      date_to: dateTo,
+      page: page.toString(),
+      page_size: pageSize.toString(),
+    });
+    if (timezone) params.append('timezone', timezone);
+    if (businessLine) params.append('business_line', businessLine);
+    return `/analytics/kitchen/details?${params.toString()}`;
+  },
+  inventoryDetails: ({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    timezone,
+    page = 1,
+    pageSize = 20,
+    view = 'item',
+  }: {
+    restaurantId: number;
+    dateFrom: string;
+    dateTo: string;
+    timezone?: string;
+    page?: number;
+    pageSize?: number;
+    view?: 'item' | 'category' | string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      date_from: dateFrom,
+      date_to: dateTo,
+      page: page.toString(),
+      page_size: pageSize.toString(),
+      view,
+    });
+    if (timezone) params.append('timezone', timezone);
+    return `/analytics/inventory/details?${params.toString()}`;
+  },
   overview: ({ restaurantId, dateFrom, dateTo, timezone, station }: any) => {
     const params = new URLSearchParams();
     if (restaurantId) params.append('restaurant_id', restaurantId.toString());
@@ -460,6 +614,10 @@ export const DayCloseApis = {
   generateSnapshot: '/day-closes/generate-snapshot',
   confirm: (id: number) => `/day-closes/${id}/confirm`,
   cancel: (id: number) => `/day-closes/${id}/cancel`,
+  adjustCashReconciliation: (id: number) => `/day-closes/${id}/adjust-cash-reconciliation`,
+  listAdjustments: (id: number) => `/day-closes/${id}/adjustments`,
+  addExpenseAdjustment: (id: number) => `/day-closes/${id}/adjustments/expense`,
+  addIncomeAdjustment: (id: number) => `/day-closes/${id}/adjustments/income`,
   list: ({ restaurantId, start, end, status }: { restaurantId?: number; start?: string; end?: string; status?: string }) => {
     const params = new URLSearchParams();
     if (restaurantId) params.append('restaurant_id', restaurantId.toString());
@@ -473,6 +631,8 @@ export const DayCloseApis = {
   auditLog: (id: number) => `/day-closes/${id}/audit-log`,
   savedSnapshot: (id: number) => `/day-closes/${id}/snapshot`,
   reopen: (id: number) => `/day-closes/${id}/reopen`,
+  exportPdf: (id: number) => `/day-closes/${id}/export/pdf`,
+  exportExcel: (id: number) => `/day-closes/${id}/export/excel`,
 };
 
 export const HistoryApis = {
@@ -513,11 +673,21 @@ export const StaffApis = {
   delete: (id: number | string) => `/users/${id}`,
 };
 
+export const StaffProfileApis = {
+  list: ({ skip = 0, limit = 200, search }: { skip?: number; limit?: number; search?: string } = {}) => {
+    const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
+    if (search) params.append('search', search);
+    return `/staff?${params.toString()}`;
+  },
+  get: (staffId: number) => `/staff/${staffId}`,
+};
+
 export const PayrollApis = {
   listRuns: (statuses?: string[]) => {
     const params = new URLSearchParams();
     if (statuses) statuses.forEach(s => params.append('statuses', s));
-    return `/payroll/runs?${params.toString()}`;
+    const q = params.toString();
+    return q ? `/payroll/runs?${q}` : '/payroll/runs';
   },
   getRun: (id: number) => `/payroll/runs/${id}`,
   createRun: '/payroll/runs',
@@ -525,6 +695,8 @@ export const PayrollApis = {
   markPaid: (id: number) => `/payroll/runs/${id}/paid`,
   cancelRun: (id: number) => `/payroll/runs/${id}/cancel`,
   addAdjustments: (id: number) => `/payroll/runs/${id}/adjustments`,
+  deleteAdjustment: (adjustmentId: number) => `/payroll/adjustments/${adjustmentId}`,
+  runPdf: (id: number) => `/payroll/runs/${id}/pdf`,
 };
 
 export const PeriodCloseApis = {
@@ -532,20 +704,26 @@ export const PeriodCloseApis = {
     `/period-closes/weekly/preview?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
   confirmWeekly: (restaurantId: number, year: number, week: number) => 
     `/period-closes/weekly/confirm?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
+  weeklyRebuild: (restaurantId: number, year: number, week: number) =>
+    `/period-closes/weekly/rebuild?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
   listWeekly: (restaurantId: number, year?: number) => {
     const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
     if (year) params.append('year', year.toString());
     return `/period-closes/weekly?${params.toString()}`;
   },
+  weeklySnapshot: (weeklyCloseId: number) => `/period-closes/weekly/${weeklyCloseId}/snapshot`,
   monthlyPreview: (restaurantId: number, year: number, month: number) => 
     `/period-closes/monthly/preview?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
   confirmMonthly: (restaurantId: number, year: number, month: number) => 
     `/period-closes/monthly/confirm?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
+  monthlyRebuild: (restaurantId: number, year: number, month: number) =>
+    `/period-closes/monthly/rebuild?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
   listMonthly: (restaurantId: number, year?: number) => {
     const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
     if (year) params.append('year', year.toString());
     return `/period-closes/monthly?${params.toString()}`;
   },
+  monthlySnapshot: (monthlyCloseId: number) => `/period-closes/monthly/${monthlyCloseId}/snapshot`,
 };
 
 export const GeneralPurchaseApis = {
