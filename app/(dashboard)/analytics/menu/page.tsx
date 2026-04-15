@@ -95,12 +95,12 @@ export default function AnalyticsMenuPage() {
     setCategoriesLoading(true);
     try {
       const res = await apiClient.get(ItemCategoryApis.getItemCategories(restaurantId));
-      const list = Array.isArray(res.data?.data) ? res.data.data : [];
-      const names = Array.from(
+      const list: any[] = Array.isArray(res.data?.data) ? res.data.data : [];
+      const names: string[] = Array.from(
         new Set(
           list
             .map((item: any) => String(item?.name || "").trim())
-            .filter(Boolean),
+            .filter(Boolean) as string[],
         ),
       ).sort((a, b) => a.localeCompare(b));
       setCategories(names);
@@ -204,7 +204,7 @@ export default function AnalyticsMenuPage() {
             <p className="text-muted-foreground">Sales performance by menu item.</p>
           </div>
         </div>
-        <Button variant="outline" onClick={fetchDetails} disabled={loading}>
+        <Button variant="outline" onClick={() => fetchDetails()} disabled={loading}>
           {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
           Refresh
         </Button>
