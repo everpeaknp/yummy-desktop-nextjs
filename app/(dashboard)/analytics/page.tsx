@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, TrendingUp, TrendingDown, DollarSign, CreditCard, Activity, Lock, Wallet, ArrowUpRight, ArrowDownRight, ReceiptText, ChevronRight, Bed, Utensils, LayoutGrid } from "lucide-react";
+import { Calendar, TrendingUp, TrendingDown, DollarSign, CreditCard, Activity, Lock, Wallet, ArrowUpRight, ArrowDownRight, ReceiptText, ChevronRight, Bed, Utensils, LayoutGrid, Users, ChefHat, Boxes, ArrowLeftRight } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { AnalyticsApis } from "@/lib/api/endpoints";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 import { RevenueChart } from "@/components/analytics/revenue-chart";
 import { CategoryPieChart } from "@/components/analytics/category-pie";
@@ -182,6 +183,40 @@ export default function AnalyticsPage() {
                     </div>
                 </div>
             )}
+
+            {/* Drilldowns */}
+            <div className="flex flex-wrap items-center gap-2">
+                <Link href="/analytics/menu">
+                    <Button variant="outline" className="rounded-full gap-2">
+                        <LayoutGrid className="w-4 h-4" />
+                        Menu Details
+                    </Button>
+                </Link>
+                <Link href="/analytics/staff">
+                    <Button variant="outline" className="rounded-full gap-2">
+                        <Users className="w-4 h-4" />
+                        Staff Details
+                    </Button>
+                </Link>
+                <Link href="/analytics/kitchen">
+                    <Button variant="outline" className="rounded-full gap-2">
+                        <ChefHat className="w-4 h-4" />
+                        Kitchen Details
+                    </Button>
+                </Link>
+                <Link href="/analytics/inventory">
+                    <Button variant="outline" className="rounded-full gap-2">
+                        <Boxes className="w-4 h-4" />
+                        Inventory Details
+                    </Button>
+                </Link>
+                <Link href="/analytics/compare">
+                    <Button variant="outline" className="rounded-full gap-2">
+                        <ArrowLeftRight className="w-4 h-4" />
+                        Compare
+                    </Button>
+                </Link>
+            </div>
 
             {loading && !data ? (
                 <AnalyticsSkeleton />
