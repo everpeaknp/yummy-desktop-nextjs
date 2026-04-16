@@ -98,7 +98,7 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider", badgeClass)}>
-                        {order.status === 'requested' ? 'Pending Verification' : order.status}
+                        {String(order.status).toLowerCase() === "requested" ? "Pending Verification" : order.status}
                      </span>
                      <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
                         <Clock className="h-3 w-3" /> {timeLabel}

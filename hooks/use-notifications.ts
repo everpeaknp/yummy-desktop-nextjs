@@ -2,7 +2,6 @@
 
 import { create } from "zustand";
 import { useEffect, useRef, useCallback } from "react";
-import apiClient from "@/lib/api-client";
 import { NotificationApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -256,6 +255,14 @@ export function useNotifications() {
     (user?.roles?.length ? user.roles : user?.role ? [user.role] : []).map((r) => r.toLowerCase())
   );
 
+  const headersWithAuth = (extra?: Record<string, string>) => {
+    const h: Record<string, string> = { ...(extra || {}) };
+    const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+    if (token) h.authorization = `Bearer ${token}`;
+    return h;
+  };
+  const proxyPath = (p: string) => `/api${p}`;
+
   // ── Request browser notification permission on mount ───────────
   useEffect(() => {
     store.setBrowserPermission(getBrowserPermission());
@@ -279,15 +286,18 @@ export function useNotifications() {
 
       try {
         const skip = loadMore ? store.allNotifications.length : 0;
-        const res = await apiClient.get(
-          NotificationApis.list({
-            restaurantId: isAdmin ? restaurantId ?? undefined : undefined,
-            skip,
-            limit: 50,
-          })
-        );
-        if (res.data.status === "success") {
-          const data = res.data.data;
+        const path = NotificationApis.list({
+          restaurantId: isAdmin ? restaurantId ?? undefined : undefined,
+          skip,
+          limit: 50,
+        });
+        const res = await fetch(proxyPath(path), {
+          headers: headersWithAuth({ accept: "application/json" }),
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.status === "success") {
+          const data = json.data;
           const items: AppNotification[] = data.notifications || [];
           const total: number = data.total || 0;
           if (loadMore) {
@@ -310,11 +320,14 @@ export function useNotifications() {
   const fetchUnreadCount = useCallback(async () => {
     if (!restaurantId && !isAdmin) return;
     try {
-      const res = await apiClient.get(
-        NotificationApis.unreadCount(isAdmin ? restaurantId ?? undefined : undefined)
-      );
-      if (res.data.status === "success") {
-        store.setUnreadCount(res.data.data?.count ?? 0);
+      const path = NotificationApis.unreadCount(isAdmin ? restaurantId ?? undefined : undefined);
+      const res = await fetch(proxyPath(path), {
+        headers: headersWithAuth({ accept: "application/json" }),
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.status === "success") {
+        store.setUnreadCount(json.data?.count ?? 0);
       }
     } catch {
       // silent
@@ -329,7 +342,12 @@ export function useNotifications() {
       const params = new URLSearchParams();
       if (isAdmin && restaurantId) params.append("restaurant_id", String(restaurantId));
       const url = `${NotificationApis.markRead}${params.toString() ? `?${params}` : ""}`;
-      await apiClient.patch(url, { mark_all: true });
+      await fetch(proxyPath(url), {
+        method: "PATCH",
+        headers: headersWithAuth({ "content-type": "application/json", accept: "application/json" }),
+        body: JSON.stringify({ mark_all: true }),
+        cache: "no-store",
+      });
       store.setUnreadCount(0);
     } catch (err) {
       console.error("[Notifications] Mark read error:", err);

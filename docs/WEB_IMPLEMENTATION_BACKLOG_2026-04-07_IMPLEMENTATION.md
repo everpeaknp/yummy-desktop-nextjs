@@ -2,57 +2,63 @@
 
 Source backlog: `../yummy_backend/reports/WEB_IMPLEMENTATION_BACKLOG_2026-04-07.md` (dated **2026-04-07**).
 
-This assessment is for this repo: `yummy-desktop-nextjs` (checked **2026-04-14**).
+This assessment is for this repo: `yummy-desktop-nextjs` (updated **2026-04-16**).
 
 ## Decision: Does desktop-nextjs need updates?
 
-**Yes.** The app has good baseline coverage, but it is still missing several parity-critical (P0) web routes and UIs that the backlog calls out. Some API helper gaps from the backlog have already been addressed in `lib/api/endpoints.ts`, but key flows are not wired in the UI yet.
+**Yes (but mostly P1 now).** The backlog P0 parity items are now largely implemented in the web UI; remaining work is primarily operational P1 modules and a few follow-up polish/consistency tasks.
 
 ## Current State (What’s Already In Place)
 
 ### Already present in `lib/api/endpoints.ts`
 
-- Payroll: list/get/create/approve/paid/cancel/add-adjustments exist (`PayrollApis.*`), but **PDF** + **adjustment delete** are missing.
-- Day close: validate/snapshot/initiate/confirm + **cancel/audit-log/snapshot/reopen** exist (`DayCloseApis.*`), but **cash reconciliation adjustment**, **adjustments ledger**, **exports (PDF/Excel)** are missing.
+- Payroll: list/get/create/approve/paid/cancel/add-adjustments + **PDF** + **adjustment delete** exist (`PayrollApis.*`).
+- Day close: validate/snapshot/initiate/confirm + cancel/reopen/audit-log/snapshot + cash reconciliation adjustment + adjustments endpoints + exports (PDF/Excel) exist (`DayCloseApis.*`).
 - Inventory: **ledger** + adjustment **payment/reject** endpoints exist (`InventoryApis.getLedger`, `InventoryApis.markAdjustmentPayment`, `InventoryApis.rejectAdjustmentPayment`), but **modifier-link** endpoints are missing.
 - KOT: item-level endpoints exist (`KotApis.updateKotItemFulfillment`, etc.) but appear **unused** by the current kitchen UI.
 
 ### Existing routes/pages
 
-- Payroll list exists: `app/(dashboard)/payroll/page.tsx` (deep-links to `/payroll/{id}` but the detail route is missing).
+- Payroll lifecycle exists end-to-end:
+  - List: `app/(dashboard)/payroll/page.tsx`
+  - Create: `app/(dashboard)/payroll/create/page.tsx`
+  - Detail/actions: `app/(dashboard)/payroll/[id]/page.tsx`
 - Analytics dashboard exists: `app/(dashboard)/analytics/page.tsx` (uses only dashboard endpoints; includes day-close modal).
-- Period close list/preview/confirm exists: `app/(dashboard)/period-reports/page.tsx` (missing rebuild/snapshot actions).
+- Analytics drilldowns exist:
+  - `app/(dashboard)/analytics/compare/page.tsx`
+  - `app/(dashboard)/analytics/menu/page.tsx`
+  - `app/(dashboard)/analytics/staff/page.tsx`
+  - `app/(dashboard)/analytics/kitchen/page.tsx`
+  - `app/(dashboard)/analytics/inventory/page.tsx`
+- Period close now includes rebuild + snapshot + PDF download fallbacks:
+  - `app/(dashboard)/period-reports/page.tsx`
+- Day close advanced ops now exist with dedicated page + actions:
+  - `app/(dashboard)/day-close/page.tsx`
+  - `components/analytics/day-close-history.tsx`
 - Settings fragmentation exists exactly as backlog states:
   - Placeholder: `app/(dashboard)/settings/page.tsx`
   - Real settings: `app/(dashboard)/manage/settings/page.tsx`
 
-## Confirmed Gaps (What’s Missing Here)
+## What’s Still Missing (Backlog Remaining)
 
-### P0 gaps (parity blockers)
-
-1. **Payroll lifecycle UI**
-   - Missing routes: `app/(dashboard)/payroll/[id]/page.tsx`, `app/(dashboard)/payroll/create/page.tsx`
-   - Missing endpoints: `GET /payroll/runs/{id}/pdf`, `DELETE /payroll/adjustments/{adjustment_id}`
-   - Missing UX: approve/paid/cancel/adjustments/PDF actions on detail screen; “New Payroll Run” button is not wired.
-
-2. **Analytics drilldowns**
-   - Missing routes: `app/(dashboard)/analytics/menu/page.tsx`, `.../staff/page.tsx`, `.../kitchen/page.tsx`, `.../inventory/page.tsx` (and optionally a compare page)
-   - Missing endpoints: `/analytics/compare` and `/analytics/*/details`
-
-3. **Period close rebuild + snapshots**
-   - Missing endpoints: weekly/monthly `rebuild` and `snapshot`
-   - Missing UI actions in `app/(dashboard)/period-reports/page.tsx`
-
-4. **Day-close advanced ops (post-close corrections + exports)**
-   - Missing endpoints in `DayCloseApis`: adjust cash reconciliation, adjustments CRUD/list, exports (PDF/Excel)
-   - Missing UI: history view, adjustments ledger view, audit timeline view, export actions
+### P0
+- No remaining P0 parity blockers from the 2026-04-07 backlog found in this repo. (Most remaining issues are polish/bugs rather than missing routes.)
 
 ### P1 gaps (ops modules)
 
-- Inventory advanced ops UI: payment state transitions + stock movement ledger screen is not surfaced (even though ledger/payment endpoints exist); modifier-inventory linking is missing.
-- Kitchen item-level controls: item accept/reject/progress + activity timeline not wired into `app/(dashboard)/kitchen/page.tsx`.
-- Scoped notifications: missing `GET /notifications/orders/{id}`, `/kots/{id}`, `/inventory/{id}` endpoints + UI panels.
-- Transactions module: missing routes (`/transactions`, `/transactions/[id]`) and API helper.
+- Inventory advanced ops UI:
+  - Ledger screen for inventory item movements is not surfaced.
+  - Adjustment payment state transitions UI is not surfaced.
+  - Modifier <-> inventory linkage endpoints + UI are missing.
+- Kitchen item-level controls:
+  - Item accept/reject/progress actions exist as endpoints but are not wired in UI.
+  - KOT activity timeline UI is missing.
+- Scoped notifications:
+  - Implemented via Next.js proxy routes under `/api/notifications/*` to avoid localhost CORS, and wired into the order detail "Order Activity" panel.
+  - Note: whether any events appear depends on backend actually emitting/storing notifications for that entity.
+- Transactions module:
+  - `/transactions` list is implemented with filters + modal details.
+  - `/transactions/[id]` exists as a deep-link route (redirects to `/transactions?tx=<id>` to open the modal).
 
 ### P2 gaps (platform/admin)
 
@@ -60,6 +66,12 @@ This assessment is for this repo: `yummy-desktop-nextjs` (checked **2026-04-14**
 - Admin/platform endpoints: `/admin/dashboard/lite`, `/api/v1/app/version`, `/device-tokens*`, `/roles/built-in`, `/history/menu/{id}`, `/history/config/{type}/{id}`, `/menus/upload/signature`, `/restaurants/upload/signature`, `/qr/verify/{token}`, `/sales` (decide what is actually needed for desktop web).
 - `/users/me/profile` is used directly in code but not declared in `lib/api/endpoints.ts`:
   - Direct usage: `hooks/use-auth.ts`
+
+## Suggested Next Steps (Order)
+
+1. Kitchen item-level controls + activity timeline
+2. Inventory advanced ops (ledger + adjustment payment/reject + modifier-inventory linking)
+3. Platform/admin cleanup (only if needed)
 
 ## Implementation Plan (Recommended)
 
@@ -158,4 +170,3 @@ Acceptance: all new helpers are used by at least one screen or are covered by a 
 ## Notes / Backlog Drift Since 2026-04-07
 
 This repo already includes several endpoint helpers the backlog listed as missing (notably inventory ledger/payment and multiple day-close helpers). The remaining work is primarily **UI routing + wiring**, plus a handful of still-missing helpers (analytics compare/details, payroll PDF/delete adjustment, period close rebuild/snapshot, day-close adjustments/exports, notifications scoped, transactions, access-scopes).
-

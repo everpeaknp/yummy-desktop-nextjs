@@ -8,6 +8,17 @@ import { KotApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import {
   Loader2,
   ChefHat,
@@ -18,10 +29,11 @@ import {
   X,
   Calendar as CalendarIcon,
   Archive,
-  CheckCircle2
+  CheckCircle2,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface KotItem {
@@ -56,6 +68,18 @@ interface Kot {
   order?: {
       business_line?: string;
   };
+}
+
+interface KotActivityItem {
+  id: number;
+  event: string;
+  change_field?: string | null;
+  old_value?: Record<string, any> | null;
+  new_value?: Record<string, any> | null;
+  actor_id?: number | null;
+  actor_name?: string | null;
+  actor_role?: string | null;
+  created_at: string;
 }
 
 type KotStatus = "PENDING" | "PREPARING" | "READY" | "SERVED" | "REJECTED";
@@ -117,6 +141,44 @@ function formatTime(ts: string): string {
   catch { return ""; }
 }
 
+function eventLabel(e: string): string {
+  const s = String(e || "").trim();
+  if (!s) return "Activity";
+  return s
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function toKvList(obj: any): Array<{ k: string; v: string }> {
+  if (!obj || typeof obj !== "object") return [];
+  const out: Array<{ k: string; v: string }> = [];
+  for (const [k, v] of Object.entries(obj as Record<string, any>)) {
+    if (v === undefined) continue;
+    const key = String(k).replace(/_/g, " ").replace(/\s+/g, " ").trim();
+    let value = "";
+    if (v === null) value = "—";
+    else if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") value = String(v);
+    else value = JSON.stringify(v);
+    out.push({ k: key, v: value });
+  }
+  return out;
+}
+
+function prettyStatus(s: string): string {
+  const v = String(s || "").toLowerCase();
+  if (!v) return "—";
+  return v.replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function nextTargetForItem(item: KotItem): KotStatus {
+  const ordered = Math.abs(item.qty_change);
+  const isReady = item.qty_ready >= ordered && ordered > 0;
+  return isReady ? "SERVED" : "READY";
+}
+
 // ── WebSocket URL ──────────────────────────────────────────────────────
 function buildWsUrl(token: string, restaurantId: number): string {
   const base =
@@ -137,8 +199,20 @@ export default function KitchenPage() {
   const [stationTab, setStationTab] = useState("All");
   const [wsConnected, setWsConnected] = useState(false);
   const [updatingIds, setUpdatingIds] = useState<Set<number>>(new Set());
+  const [updatingItemKeys, setUpdatingItemKeys] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [activeKot, setActiveKot] = useState<Kot | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityItems, setActivityItems] = useState<KotActivityItem[]>([]);
+
+  const [rejectKotOpen, setRejectKotOpen] = useState(false);
+  const [rejectKotId, setRejectKotId] = useState<number | null>(null);
+  const [rejectItemOpen, setRejectItemOpen] = useState(false);
+  const [rejectItemCtx, setRejectItemCtx] = useState<{ kotId: number; itemId: number } | null>(null);
 
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
@@ -315,19 +389,114 @@ export default function KitchenPage() {
     }
   }, [restaurantId, doFetch]);
 
-  const handleReject = useCallback(async (kotId: number) => {
+  const openRejectKot = useCallback((kotId: number) => {
+    setRejectKotId(kotId);
+    setRejectKotOpen(true);
+  }, []);
+
+  const doRejectKot = useCallback(async (kotId: number, reason: string) => {
     setUpdatingIds((prev) => new Set(prev).add(kotId));
     try {
-      await apiClient.post(KotApis.rejectKot(kotId));
+      await apiClient.post(KotApis.rejectKot(kotId), undefined, { params: reason ? { reason } : undefined });
       setMessage({ text: "KOT rejected", type: "success" });
       if (restaurantId) await doFetch(restaurantId);
     } catch (err: any) {
       const detail = err.response?.data?.detail || "Failed to reject";
       setMessage({ text: typeof detail === "string" ? detail : JSON.stringify(detail), type: "error" });
     } finally {
-      setUpdatingIds((prev) => { const s = new Set(prev); s.delete(kotId); return s; });
+      setUpdatingIds((prev) => {
+        const s = new Set(prev);
+        s.delete(kotId);
+        return s;
+      });
     }
   }, [restaurantId, doFetch]);
+
+  const itemKey = (kotId: number, itemId: number) => `${kotId}:${itemId}`;
+
+  const doAcceptItem = useCallback(async (kotId: number, itemId: number) => {
+    const key = itemKey(kotId, itemId);
+    setUpdatingItemKeys((prev) => new Set(prev).add(key));
+    try {
+      await apiClient.post(KotApis.acceptKotItem(kotId, itemId));
+      setMessage({ text: "Item accepted", type: "success" });
+      if (restaurantId) await doFetch(restaurantId);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || "Failed to accept item";
+      setMessage({ text: typeof detail === "string" ? detail : JSON.stringify(detail), type: "error" });
+    } finally {
+      setUpdatingItemKeys((prev) => {
+        const s = new Set(prev);
+        s.delete(key);
+        return s;
+      });
+    }
+  }, [restaurantId, doFetch]);
+
+  const openRejectItem = useCallback((kotId: number, itemId: number) => {
+    setRejectItemCtx({ kotId, itemId });
+    setRejectItemOpen(true);
+  }, []);
+
+  const doRejectItem = useCallback(async (kotId: number, itemId: number, reason: string) => {
+    const key = itemKey(kotId, itemId);
+    setUpdatingItemKeys((prev) => new Set(prev).add(key));
+    try {
+      await apiClient.post(KotApis.rejectKotItem(kotId, itemId), undefined, { params: reason ? { reason } : undefined });
+      setMessage({ text: "Item rejected", type: "success" });
+      if (restaurantId) await doFetch(restaurantId);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || "Failed to reject item";
+      setMessage({ text: typeof detail === "string" ? detail : JSON.stringify(detail), type: "error" });
+    } finally {
+      setUpdatingItemKeys((prev) => {
+        const s = new Set(prev);
+        s.delete(key);
+        return s;
+      });
+    }
+  }, [restaurantId, doFetch]);
+
+  const doMarkItemAll = useCallback(async (kotId: number, itemId: number, target: KotStatus) => {
+    const key = itemKey(kotId, itemId);
+    setUpdatingItemKeys((prev) => new Set(prev).add(key));
+    try {
+      await apiClient.post(KotApis.markKotItemAll(kotId, itemId), { target });
+      setMessage({ text: target === "READY" ? "Item marked ready" : "Item marked served", type: "success" });
+      if (restaurantId) await doFetch(restaurantId);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || "Failed to update item";
+      setMessage({ text: typeof detail === "string" ? detail : JSON.stringify(detail), type: "error" });
+    } finally {
+      setUpdatingItemKeys((prev) => {
+        const s = new Set(prev);
+        s.delete(key);
+        return s;
+      });
+    }
+  }, [restaurantId, doFetch]);
+
+  const doFetchActivity = useCallback(async (kotId: number) => {
+    setActivityLoading(true);
+    try {
+      const res = await apiClient.get(KotApis.getKotActivity(kotId), { params: { skip: 0, limit: 100 } });
+      if (res.data?.status === "success") {
+        setActivityItems(res.data?.data?.items || []);
+      } else {
+        setActivityItems([]);
+      }
+    } catch {
+      setActivityItems([]);
+    } finally {
+      setActivityLoading(false);
+    }
+  }, []);
+
+  // ── KOT detail dialog activity load ───────────────────────────────────
+  useEffect(() => {
+    if (!detailOpen || !activeKot) return;
+    doFetchActivity(activeKot.id);
+  }, [detailOpen, activeKot?.id, doFetchActivity]);
 
   // ── Filtering ────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -362,11 +531,9 @@ export default function KitchenPage() {
     return base.filter(isDelayed).length;
   }, [kots, stationTab]);
 
-  // Handle Date Change
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.value) {
-      setSelectedDate(new Date(e.target.value));
-    }
+  const setDayAndClose = (d: Date) => {
+    setSelectedDate(d);
+    setDatePickerOpen(false);
   };
 
   // ════════════════════════════════════════════════════════════════════
@@ -390,16 +557,61 @@ export default function KitchenPage() {
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-black tracking-tighter">Kitchen</h1>
           
-          {/* Date Picker */}
-          <div className="relative">
-             <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-             <input
-               type="date"
-               value={format(selectedDate, "yyyy-MM-dd")}
-               onChange={handleDateChange}
-               className="h-10 pl-9 pr-3 rounded-lg border border-input bg-background text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-             />
-          </div>
+          {/* Date Picker (styled, consistent) */}
+          <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-10 rounded-xl gap-2 font-bold text-xs uppercase tracking-widest px-4"
+              >
+                <CalendarIcon className="h-4 w-4" />
+                {format(selectedDate, "MM/dd/yyyy")}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-auto p-0 flex shadow-2xl border border-border/40 rounded-[24px] overflow-hidden bg-background"
+              align="start"
+            >
+              <div className="flex flex-col p-5 border-r border-border/40 bg-muted/20 w-[150px] shrink-0">
+                <p className="text-[9px] font-black uppercase tracking-[0.3em] text-orange-500 mb-4">Quick Select</p>
+                <div className="flex flex-col gap-1 flex-1">
+                  <button
+                    className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
+                    onClick={() => setDayAndClose(new Date())}
+                  >
+                    Today
+                  </button>
+                  <button
+                    className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
+                    onClick={() => setDayAndClose(subDays(new Date(), 1))}
+                  >
+                    Yesterday
+                  </button>
+                </div>
+                <button
+                  className="text-[9px] font-bold uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
+                  onClick={() => setDayAndClose(new Date())}
+                >
+                  Reset
+                </button>
+              </div>
+              <div className="p-4">
+                <CalendarComponent
+                  initialFocus
+                  mode="single"
+                  selected={selectedDate}
+                  defaultMonth={selectedDate}
+                  onSelect={(d) => {
+                    if (!d) return;
+                    setDayAndClose(d);
+                  }}
+                  numberOfMonths={1}
+                  className="p-0"
+                  weekStartsOn={1}
+                />
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div className="flex items-center gap-3">
@@ -499,20 +711,305 @@ export default function KitchenPage() {
                const visibleItems = kot.items.filter(i => !i.item_name.toLowerCase().includes("room charge"));
                if (visibleItems.length === 0) return null;
 
-               return (
-                 <KotTicketCard
-                   key={kot.id}
-                   kot={kot}
-                   isUpdating={updatingIds.has(kot.id)}
-                   onStatusChange={handleStatusChange}
-                   onReject={handleReject}
-                   tick={elapsedTick}
-                 />
-               );
-            })}
-          </div>
+	               return (
+	                 <KotTicketCard
+	                   key={kot.id}
+	                   kot={kot}
+	                   isUpdating={updatingIds.has(kot.id)}
+	                   onStatusChange={handleStatusChange}
+	                   onReject={openRejectKot}
+	                   onOpenDetails={(k) => { setActiveKot(k); setDetailOpen(true); }}
+	                   tick={elapsedTick}
+	                 />
+	               );
+	            })}
+	          </div>
         )}
       </div>
+
+      {/* KOT Detail (Item-Level Controls + Activity Timeline) */}
+      <Dialog
+        open={detailOpen}
+        onOpenChange={(open) => {
+          setDetailOpen(open);
+          if (!open) {
+            setActiveKot(null);
+            setActivityItems([]);
+          }
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[980px] bg-card border-border p-0 overflow-hidden rounded-2xl sm:rounded-3xl shadow-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="p-6 sm:p-8 pb-4 sm:pb-5 bg-muted/20 border-b border-border/40">
+            <DialogTitle className="text-2xl font-black tracking-tight">KOT Details</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Review items, accept or reject, mark ready/served, and see the activity log.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 sm:p-8 pt-6 overflow-auto no-scrollbar flex-1 min-h-0">
+            {!activeKot ? (
+              <div className="h-32 flex items-center justify-center text-muted-foreground">No KOT selected.</div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">
+                          #{activeKot.kot_number} • {activeKot.station}
+                        </p>
+                        <p className="text-lg font-black text-foreground truncate mt-1">
+                          {activeKot.order?.business_line === "hotel"
+                            ? (activeKot.table_name || "Room Service")
+                            : (activeKot.table_name || `Order #${activeKot.restaurant_order_id || activeKot.order_id}`)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Created {activeKot.created_at ? format(new Date(activeKot.created_at), "MMM dd, yyyy HH:mm") : "—"}
+                          {activeKot.created_by_staff_name ? ` • by ${activeKot.created_by_staff_name}` : ""}
+                        </p>
+                      </div>
+                      <KotStatusBadge status={activeKot.status} delayed={isDelayed(activeKot)} />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 px-1">
+                      Items
+                    </p>
+
+                    <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
+                      <div className="max-h-[420px] overflow-auto no-scrollbar">
+                        {activeKot.items
+                          .filter((i) => !i.item_name.toLowerCase().includes("room charge"))
+                          .map((item) => {
+                            const ordered = Math.abs(item.qty_change);
+                            const statusText = itemStatusLabel(item);
+                            const isReady = ordered > 0 && item.qty_ready >= ordered;
+                            const isServed = ordered > 0 && item.qty_served >= ordered;
+                            const canInteract =
+                              activeKot.status !== "SERVED" &&
+                              activeKot.status !== "REJECTED" &&
+                              item.qty_change > 0 &&
+                              !item.is_deleted;
+
+                            const key = `${activeKot.id}:${item.id}`;
+                            const itemUpdating = updatingItemKeys.has(key);
+
+                            return (
+                              <div key={item.id} className="px-5 py-4 border-b border-border/30 last:border-none">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <p className={cn("text-sm font-black text-foreground truncate", item.is_deleted ? "line-through decoration-red-500 opacity-60" : "")}>
+                                        {item.item_name} × {ordered}
+                                      </p>
+                                      <span className={cn(
+                                        "px-2 py-0.5 rounded-md text-[10px] font-extrabold shrink-0",
+                                        statusText === "Pending"
+                                          ? "bg-muted text-muted-foreground"
+                                          : statusText === "Partial"
+                                          ? "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
+                                          : statusText === "Ready"
+                                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
+                                          : statusText === "Served"
+                                          ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                                          : "bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400"
+                                      )}>
+                                        {statusText}
+                                      </span>
+                                    </div>
+
+                                    {item.modifiers?.length ? (
+                                      <p className="text-[11px] text-muted-foreground mt-1">
+                                        {item.modifiers.map((m) => `+ ${m.modifier_name_snapshot}`).join(", ")}
+                                      </p>
+                                    ) : null}
+                                    {item.notes ? (
+                                      <p className="text-[11px] text-amber-600 italic mt-1">
+                                        Note: {item.notes}
+                                      </p>
+                                    ) : null}
+                                    {ordered > 0 ? (
+                                      <p className="text-[11px] text-muted-foreground mt-2">
+                                        Ready: <span className="font-bold text-foreground">{item.qty_ready}</span> • Served:{" "}
+                                        <span className="font-bold text-foreground">{item.qty_served}</span>
+                                      </p>
+                                    ) : null}
+                                  </div>
+
+                                  <div className="shrink-0 flex flex-col items-end gap-2">
+                                    {statusText === "Pending" && canInteract ? (
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-9 rounded-xl border-red-500/20 text-red-600 hover:bg-red-500/10"
+                                          onClick={() => openRejectItem(activeKot.id, item.id)}
+                                          disabled={itemUpdating}
+                                        >
+                                          Reject
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700"
+                                          onClick={() => doAcceptItem(activeKot.id, item.id)}
+                                          disabled={itemUpdating}
+                                        >
+                                          <Check className="h-4 w-4 mr-1" /> Accept
+                                        </Button>
+                                      </div>
+                                    ) : canInteract && statusText !== "Rejected" && !isServed ? (
+                                      <Button
+                                        size="sm"
+                                        className={cn(
+                                          "h-9 rounded-xl font-bold",
+                                          isReady ? "bg-emerald-600 hover:bg-emerald-700" : "bg-amber-600 hover:bg-amber-700"
+                                        )}
+                                        onClick={() => doMarkItemAll(activeKot.id, item.id, nextTargetForItem(item))}
+                                        disabled={itemUpdating}
+                                      >
+                                        {isReady ? "Mark Served" : "Mark Ready"}
+                                      </Button>
+                                    ) : null}
+
+                                    {itemUpdating ? (
+                                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Updating…
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 px-1">
+                      Activity Log
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-9 rounded-xl"
+                      onClick={() => activeKot && doFetchActivity(activeKot.id)}
+                      disabled={activityLoading}
+                    >
+                      {activityLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                      Refresh
+                    </Button>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
+                    <div className="max-h-[520px] overflow-auto no-scrollbar">
+                      {activityLoading ? (
+                        <div className="p-6 text-sm text-muted-foreground flex items-center justify-center">
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading activity…
+                        </div>
+                      ) : activityItems.length === 0 ? (
+                        <div className="p-6 text-sm text-muted-foreground">
+                          No activity yet for this KOT.
+                        </div>
+                      ) : (
+                        activityItems.map((a) => (
+                          <div key={a.id} className="px-5 py-4 border-b border-border/30 last:border-none">
+                            <div className="flex items-start justify-between gap-6">
+                              <div className="min-w-0">
+                                <p className="text-sm font-black text-foreground truncate">{eventLabel(a.event)}</p>
+                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                  {(a.actor_name || a.actor_role) ? `${a.actor_name || "Staff"}${a.actor_role ? ` • ${a.actor_role}` : ""}` : "System"}
+                                  {a.change_field ? ` • ${a.change_field}` : ""}
+                                </p>
+                              </div>
+                              <p className="text-[11px] font-bold text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">
+                                {a.created_at ? format(new Date(a.created_at), "MMM dd, HH:mm") : "—"}
+                              </p>
+                            </div>
+                            {(a.new_value || a.old_value) ? (
+                              <div className="mt-3 rounded-xl border border-border/60 bg-background/40 p-3 text-[11px] text-muted-foreground">
+                                {a.old_value ? (
+                                  <div className="mb-2">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 mb-1">From</p>
+                                    <div className="space-y-1">
+                                      {toKvList(a.old_value).map((row, idx) => (
+                                        <div key={idx} className="flex items-start justify-between gap-6">
+                                          <span className="font-semibold text-muted-foreground">{row.k}</span>
+                                          <span className="font-bold text-foreground text-right">
+                                            {row.k.toLowerCase() === "status" ? prettyStatus(row.v) : row.v}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null}
+                                {a.new_value ? (
+                                  <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 mb-1">To</p>
+                                    <div className="space-y-1">
+                                      {toKvList(a.new_value).map((row, idx) => (
+                                        <div key={idx} className="flex items-start justify-between gap-6">
+                                          <span className="font-semibold text-muted-foreground">{row.k}</span>
+                                          <span className="font-bold text-foreground text-right">
+                                            {row.k.toLowerCase() === "status" ? prettyStatus(row.v) : row.v}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="p-6 sm:p-8 pt-4 bg-muted/30 border-t border-border/40">
+            <Button variant="outline" className="h-12 rounded-2xl w-full" onClick={() => setDetailOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ReasonDialog
+        open={rejectKotOpen}
+        onOpenChange={setRejectKotOpen}
+        title="Reject KOT"
+        description="Write the reason so it shows in the audit/activity log."
+        confirmLabel="Reject"
+        onConfirm={async (reason) => {
+          const id = rejectKotId;
+          setRejectKotOpen(false);
+          setRejectKotId(null);
+          if (!id) return;
+          await doRejectKot(id, reason);
+        }}
+      />
+
+      <ReasonDialog
+        open={rejectItemOpen}
+        onOpenChange={setRejectItemOpen}
+        title="Reject Item"
+        description="Write the reason so it shows in the activity log."
+        confirmLabel="Reject"
+        onConfirm={async (reason) => {
+          const ctx = rejectItemCtx;
+          setRejectItemOpen(false);
+          setRejectItemCtx(null);
+          if (!ctx) return;
+          await doRejectItem(ctx.kotId, ctx.itemId, reason);
+        }}
+      />
     </div>
   );
 }
@@ -552,6 +1049,60 @@ function StatusChip({ label, count, active, onClick }: { label: string; count: n
   );
 }
 
+function ReasonDialog({
+  open,
+  title,
+  description,
+  confirmLabel = "Confirm",
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  description?: string;
+  confirmLabel?: string;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    if (open) setReason("");
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[520px] bg-card border-border rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-black tracking-tight">{title}</DialogTitle>
+          {description ? <DialogDescription>{description}</DialogDescription> : null}
+        </DialogHeader>
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">Reason</p>
+          <Textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Write a short reason…"
+            className="rounded-xl min-h-[110px]"
+          />
+        </div>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button variant="outline" className="h-11 rounded-xl" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            className="h-11 rounded-xl bg-destructive hover:bg-destructive/90"
+            onClick={() => onConfirm(reason.trim())}
+            disabled={!reason.trim()}
+          >
+            {confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // ██  KOT TICKET CARD (Redesigned)
 // ═══════════════════════════════════════════════════════════════════════
@@ -560,12 +1111,14 @@ function KotTicketCard({
   isUpdating,
   onStatusChange,
   onReject,
+  onOpenDetails,
   tick,
 }: {
   kot: Kot;
   isUpdating: boolean;
   onStatusChange: (id: number, s: KotStatus) => void;
   onReject: (id: number) => void;
+  onOpenDetails: (kot: Kot) => void;
   tick: number;
 }) {
   const delayed = isDelayed(kot);
@@ -594,10 +1147,17 @@ function KotTicketCard({
 
   return (
     <div className={cn(
-      "group relative flex flex-col rounded-xl border bg-card shadow-sm transition-all hover:shadow-md",
+      "group relative flex flex-col rounded-xl border bg-card shadow-sm transition-all hover:shadow-md cursor-pointer",
       borderColor,
       lightBg
-    )}>
+    )}
+      onClick={() => onOpenDetails(kot)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onOpenDetails(kot);
+      }}
+    >
       {isUpdating && (
         <div className="absolute inset-0 bg-background/50 z-20 flex items-center justify-center backdrop-blur-[1px] rounded-xl">
            <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -661,7 +1221,7 @@ function KotTicketCard({
              size="sm" 
              variant="ghost" 
              className="h-8 flex-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-             onClick={() => onReject(kot.id)}
+             onClick={(e) => { e.stopPropagation(); onReject(kot.id); }}
              disabled={isUpdating}
           >
               Reject
@@ -675,7 +1235,7 @@ function KotTicketCard({
                     kot.status === "PREPARING" ? "bg-amber-600 hover:bg-amber-700" : 
                     "bg-emerald-600 hover:bg-emerald-700"
                 )}
-                onClick={() => onStatusChange(kot.id, next!)}
+                onClick={(e) => { e.stopPropagation(); onStatusChange(kot.id, next!); }}
                 disabled={isUpdating}
             >
                 {actionLabel(kot.status, delayed, kot.order?.business_line)}

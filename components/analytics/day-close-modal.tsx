@@ -13,16 +13,18 @@ interface DayCloseModalProps {
   isOpen: boolean;
   onClose: () => void;
   restaurantId: number;
+  businessDate?: string; // YYYY-MM-DD (defaults to today)
 }
 
 type Step = 'health-check' | 'financial-snapshot' | 'cash-reconciliation' | 'success';
 
-export function DayCloseModal({ isOpen, onClose, restaurantId }: DayCloseModalProps) {
+export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: DayCloseModalProps) {
   const [currentStep, setCurrentStep] = useState<Step>('health-check');
   const [snapshotData, setSnapshotData] = useState<any>(null);
   const [dayCloseId, setDayCloseId] = useState<number | null>(null);
   const [confirmedData, setConfirmedData] = useState<any>(null);
-  const today = new Date();
+  const dateStr = businessDate ?? new Date().toISOString().split("T")[0];
+  const dateObj = new Date(dateStr + "T00:00:00");
 
   // Reset state on close
   const handleClose = () => {
@@ -51,7 +53,7 @@ export function DayCloseModal({ isOpen, onClose, restaurantId }: DayCloseModalPr
                   <div>
                     <h2 className="text-xl font-bold">End of Day Close</h2>
                     <p className="text-muted-foreground text-sm">
-                        {format(today, 'MMMM do, yyyy')}
+                        {format(dateObj, 'MMMM do, yyyy')}
                     </p>
                   </div>
                   <div className="px-3 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-full text-xs font-semibold border border-orange-200 dark:border-orange-900/50">
@@ -81,11 +83,12 @@ export function DayCloseModal({ isOpen, onClose, restaurantId }: DayCloseModalPr
           {/* Content Body */}
           <div className="flex-1 overflow-y-auto p-6 min-h-[400px]">
              {currentStep === 'health-check' && (
-                 <HealthCheckStep onNext={() => setCurrentStep('financial-snapshot')} restaurantId={restaurantId} />
+                 <HealthCheckStep onNext={() => setCurrentStep('financial-snapshot')} restaurantId={restaurantId} businessDate={dateStr} />
              )}
              {currentStep === 'financial-snapshot' && (
                  <FinancialSnapshotStep 
                     restaurantId={restaurantId}
+                    businessDate={dateStr}
                     onNext={(data, id) => {
                         setSnapshotData(data);
                         setDayCloseId(id);
@@ -116,7 +119,7 @@ export function DayCloseModal({ isOpen, onClose, restaurantId }: DayCloseModalPr
 // Step Components
 // --------------------------------------------------------------------------
 
-function HealthCheckStep({ onNext, restaurantId }: { onNext: () => void; restaurantId: number }) {
+function HealthCheckStep({ onNext, restaurantId, businessDate }: { onNext: () => void; restaurantId: number; businessDate: string }) {
     const [checks, setChecks] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [canProceed, setCanProceed] = useState(false);
@@ -124,9 +127,8 @@ function HealthCheckStep({ onNext, restaurantId }: { onNext: () => void; restaur
     useEffect(() => {
         const validate = async () => {
             try {
-                const today = new Date().toISOString().split('T')[0];
                 const res = await apiClient.get(DayCloseApis.validateClose, {
-                    params: { restaurant_id: restaurantId, business_date: today }
+                    params: { restaurant_id: restaurantId, business_date: businessDate }
                 });
                 
                 if (res.data.status === 'success') {
@@ -192,7 +194,7 @@ function HealthCheckStep({ onNext, restaurantId }: { onNext: () => void; restaur
             }
         };
         validate();
-    }, [restaurantId]);
+    }, [restaurantId, businessDate]);
 
     return (
         <div className="space-y-6">
@@ -243,7 +245,7 @@ function CheckItem({ label, status, message }: { label: string, status: 'pass' |
     )
 }
 
-function FinancialSnapshotStep({ onNext, restaurantId }: { onNext: (data: any, id: number) => void; restaurantId: number }) {
+function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext: (data: any, id: number) => void; restaurantId: number; businessDate: string }) {
     const [snapshot, setSnapshot] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [initiating, setInitiating] = useState(false);
@@ -252,11 +254,10 @@ function FinancialSnapshotStep({ onNext, restaurantId }: { onNext: (data: any, i
     useEffect(() => {
         const generate = async () => {
             try {
-                const today = new Date().toISOString().split('T')[0];
                 const res = await apiClient.get(DayCloseApis.generateSnapshot, {
                     params: { 
                         restaurant_id: restaurantId, 
-                        business_date: today 
+                        business_date: businessDate 
                     }
                 });
                 if (res.data.status === 'success') {
@@ -272,15 +273,14 @@ function FinancialSnapshotStep({ onNext, restaurantId }: { onNext: (data: any, i
             }
         };
         generate();
-    }, [restaurantId]);
+    }, [restaurantId, businessDate]);
 
     const handleContinue = async () => {
         setInitiating(true);
         try {
-            const today = new Date().toISOString().split('T')[0];
             const res = await apiClient.post(DayCloseApis.initiate, {
                 restaurant_id: restaurantId,
-                business_date: today
+                business_date: businessDate
             });
             
             if (res.data.status === 'success') {
@@ -333,7 +333,7 @@ function FinancialSnapshotStep({ onNext, restaurantId }: { onNext: (data: any, i
                 </div>
                 <div>
                     <h3 className="font-semibold">Financial Snapshot</h3>
-                    <p className="text-xs opacity-80">Review today's calculated totals</p>
+                    <p className="text-xs opacity-80">Review calculated totals for this business day</p>
                 </div>
             </div>
 

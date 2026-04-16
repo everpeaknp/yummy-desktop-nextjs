@@ -30,7 +30,7 @@ export default function ActiveOrdersPage() {
     );
 }
 
-export function LegacyActiveOrdersPage() {
+function LegacyActiveOrdersPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState("all");
@@ -323,5 +323,4 @@ function FilterPill({ label, active, onClick, icon }: any) {
         </button>
     )
 }
-
 

@@ -229,7 +229,7 @@ export default function CheckInPage() {
         isOpen={checkinModalOpen}
         onOpenChange={setCheckinModalOpen}
         room={activeRoom}
-        restaurantId={user?.restaurant_id}
+        restaurantId={user?.restaurant_id ?? undefined}
         onSuccess={() => fetchRooms()}
       />
 

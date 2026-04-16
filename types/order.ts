@@ -179,6 +179,9 @@ export interface PrinterConfig {
 }
 
 export interface ReceiptData {
+  // Some API responses include these convenience identifiers at the top-level.
+  restaurant_order_id?: number;
+  order_id?: number;
   order: Order;
   restaurant: RestaurantInfo;
   total_paid: number;

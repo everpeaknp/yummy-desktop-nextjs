@@ -584,12 +584,16 @@ export const NotificationApis = {
     restaurantId,
     type,
     status,
+    entityType,
+    entityId,
     skip = 0,
     limit = 100,
   }: {
     restaurantId?: number;
     type?: string;
     status?: string;
+    entityType?: string;
+    entityId?: number;
     skip?: number;
     limit?: number;
   }) => {
@@ -597,6 +601,8 @@ export const NotificationApis = {
     if (restaurantId) params.append('restaurant_id', restaurantId.toString());
     if (type) params.append('type', type);
     if (status) params.append('status', status);
+    if (entityType) params.append("entity_type", entityType);
+    if (entityId) params.append("entity_id", entityId.toString());
     return `/notifications?${params.toString()}`;
   },
   unreadCount: (restaurantId?: number) => {
@@ -605,6 +611,24 @@ export const NotificationApis = {
     return `/notifications/unread-count?${params.toString()}`;
   },
   markRead: '/notifications/read',
+  forOrder: (orderId: number, { restaurantId, skip = 0, limit = 100 }: { restaurantId?: number; skip?: number; limit?: number } = {}) => {
+    const params = new URLSearchParams({ skip: skip.toString(), limit: limit.toString() });
+    if (restaurantId) params.append("restaurant_id", restaurantId.toString());
+    return `/notifications/orders/${orderId}?${params.toString()}`;
+  },
+  forKot: (kotId: number, { restaurantId, skip = 0, limit = 100 }: { restaurantId?: number; skip?: number; limit?: number } = {}) => {
+    const params = new URLSearchParams({ skip: skip.toString(), limit: limit.toString() });
+    if (restaurantId) params.append("restaurant_id", restaurantId.toString());
+    return `/notifications/kots/${kotId}?${params.toString()}`;
+  },
+  forInventoryItem: (
+    inventoryItemId: number,
+    { restaurantId, skip = 0, limit = 100 }: { restaurantId?: number; skip?: number; limit?: number } = {},
+  ) => {
+    const params = new URLSearchParams({ skip: skip.toString(), limit: limit.toString() });
+    if (restaurantId) params.append("restaurant_id", restaurantId.toString());
+    return `/notifications/inventory/${inventoryItemId}?${params.toString()}`;
+  },
 };
 
 export const DayCloseApis = {
@@ -712,6 +736,10 @@ export const PeriodCloseApis = {
     return `/period-closes/weekly?${params.toString()}`;
   },
   weeklySnapshot: (weeklyCloseId: number) => `/period-closes/weekly/${weeklyCloseId}/snapshot`,
+  weeklyPreviewPdf: (restaurantId: number, year: number, week: number, doc: string) =>
+    `/period-closes/weekly/preview/export/pdf?restaurant_id=${restaurantId}&year=${year}&week_number=${week}&doc=${encodeURIComponent(doc)}`,
+  weeklyClosePdf: (weeklyCloseId: number, doc: string) =>
+    `/period-closes/weekly/${weeklyCloseId}/export/pdf?doc=${encodeURIComponent(doc)}`,
   monthlyPreview: (restaurantId: number, year: number, month: number) => 
     `/period-closes/monthly/preview?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
   confirmMonthly: (restaurantId: number, year: number, month: number) => 
@@ -724,6 +752,10 @@ export const PeriodCloseApis = {
     return `/period-closes/monthly?${params.toString()}`;
   },
   monthlySnapshot: (monthlyCloseId: number) => `/period-closes/monthly/${monthlyCloseId}/snapshot`,
+  monthlyPreviewPdf: (restaurantId: number, year: number, month: number, doc: string) =>
+    `/period-closes/monthly/preview/export/pdf?restaurant_id=${restaurantId}&year=${year}&month=${month}&doc=${encodeURIComponent(doc)}`,
+  monthlyClosePdf: (monthlyCloseId: number, doc: string) =>
+    `/period-closes/monthly/${monthlyCloseId}/export/pdf?doc=${encodeURIComponent(doc)}`,
 };
 
 export const GeneralPurchaseApis = {
@@ -752,4 +784,35 @@ export const TaxConfigApis = {
 
 export const FeedbackApis = {
   submit: "/feedbacks/",
+};
+
+export const TransactionsApis = {
+  list: ({
+    restaurantId,
+    userId,
+    types,
+    dateFrom,
+    dateTo,
+    skip = 0,
+    limit = 100,
+  }: {
+    restaurantId: number;
+    userId?: number;
+    types?: string[];
+    dateFrom?: string; // YYYY-MM-DD
+    dateTo?: string; // YYYY-MM-DD
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+    if (userId) params.append("user_id", userId.toString());
+    if (types?.length) types.forEach((t) => params.append("types", t));
+    if (dateFrom) params.append("date_from", dateFrom);
+    if (dateTo) params.append("date_to", dateTo);
+    return `/transactions?${params.toString()}`;
+  },
 };

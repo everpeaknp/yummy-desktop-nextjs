@@ -74,6 +74,7 @@ import type {
   OrderItem,
   OrderPayment,
 } from "@/types/order";
+import { EntityNotificationsCard } from "@/components/notifications/entity-notifications-card";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
@@ -382,7 +383,7 @@ export default function OrderDetailPage() {
                 </Button>
               </Link>
 
-              {order.status === 'requested' && (
+              {String(order.status).toLowerCase() === "requested" && (
                 <div className="flex items-center gap-2 border-l border-border/40 pl-3">
                   <Button 
                     size="sm" 
@@ -560,6 +561,14 @@ export default function OrderDetailPage() {
               </span>
             </div>
           </Card>
+
+          {/* Order Notifications */}
+          <EntityNotificationsCard
+            title="Order Notifications"
+            restaurantId={order.restaurant_id}
+            entity="order"
+            entityId={order.id}
+          />
 
           {/* Quick Info */}
           <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">

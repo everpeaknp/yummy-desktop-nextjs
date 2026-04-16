@@ -212,6 +212,12 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     allowedRoles: ADMIN_SHELL_ROLES,
     requiredPermission: "reports.analytics",
   },
+  {
+    title: "Day Close",
+    href: "/day-close",
+    allowedRoles: ADMIN_SHELL_ROLES,
+    requiredPermission: "reports.daily",
+  },
   // ── Kitchen (matches KitchenDashboardScreen) ──
   {
     title: "Kitchen",
@@ -237,6 +243,12 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     href: "/finance/income",
     allowedRoles: ADMIN_SHELL_ROLES,
     requiredPermission: "finance.income_view",
+  },
+  {
+    title: "Transactions",
+    href: "/transactions",
+    allowedRoles: ADMIN_SHELL_ROLES,
+    requiredPermission: "reports.analytics",
   },
   {
     title: "Customers",
@@ -309,6 +321,8 @@ export function getSidebarItemsForRoles(roles: UserRole[], user?: { role: string
 export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/dashboard": "reports.daily",
   "/analytics": "reports.analytics",
+  "/day-close": "reports.daily",
+  "/transactions": "reports.analytics",
   "/orders": "pos.view",
   "/rooms": "hotel.manage",
   "/staff": "admin.staff.view",
@@ -323,6 +337,8 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/dashboard": ADMIN_SHELL_ROLES,
   "/orders": ORDER_ROLES,
   "/analytics": ADMIN_SHELL_ROLES,
+  "/day-close": ADMIN_SHELL_ROLES,
+  "/transactions": ADMIN_SHELL_ROLES,
   "/menu": ADMIN_MANAGER,
   "/kitchen": KITCHEN_ROLES,
   "/inventory": ADMIN_MANAGER,
