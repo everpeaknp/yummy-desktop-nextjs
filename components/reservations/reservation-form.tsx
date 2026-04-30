@@ -56,8 +56,8 @@ export function ReservationForm({
   onSuccess,
   initialTableId 
 }: ReservationFormProps) {
-  const { user } = useAuth();
-  const { restaurant } = useRestaurant();
+  const user = useAuth((s) => s.user);
+  const restaurant = useRestaurant((s) => s.restaurant);
   const [loading, setLoading] = useState(false);
   const [searchingCustomer, setSearchingCustomer] = useState(false);
   const [customers, setCustomers] = useState<any[]>([]);

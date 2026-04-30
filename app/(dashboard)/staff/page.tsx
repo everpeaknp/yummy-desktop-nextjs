@@ -51,6 +51,8 @@ export default function StaffPage() {
   });
   const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
   const [availableRoles, setAvailableRoles] = useState<any[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesLoadError, setRolesLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [isPayrollDialogOpen, setIsPayrollDialogOpen] = useState(false);
   const [payrollTarget, setPayrollTarget] = useState<any>(null);
@@ -69,7 +71,7 @@ export default function StaffPage() {
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
   const router = useRouter();
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -122,13 +124,84 @@ export default function StaffPage() {
   };
 
   const fetchRoles = async () => {
+    setRolesLoading(true);
+    setRolesLoadError(null);
     try {
-      const response = await apiClient.get(RoleApis.listRoles);
-      if (response.data.status === "success") {
-        setAvailableRoles(response.data.data || []);
+      // Try to load both custom roles and built-in roles (if supported).
+      const [customRes, builtInRes] = await Promise.allSettled([
+        apiClient.get(RoleApis.listRoles),
+        apiClient.get((RoleApis as any).listBuiltInRoles || "/roles/built-in"),
+      ]);
+
+      const collect = (res: any) => {
+        const payload = res?.data;
+        if (!payload) return [] as any[];
+        // Most endpoints: { status:"success", data: Role[] }
+        if (payload?.status === "success") {
+          if (Array.isArray(payload.data)) return payload.data;
+          // Some variants: {data:{roles:[...]}}
+          if (Array.isArray(payload.data?.roles)) return payload.data.roles;
+          return [];
+        }
+        // Some endpoints may return raw arrays.
+        if (Array.isArray(payload)) return payload;
+        // Or {roles:[...]}
+        if (Array.isArray(payload?.roles)) return payload.roles;
+        return [];
+      };
+
+      const custom = customRes.status === "fulfilled" ? collect(customRes.value) : [];
+      const builtIns = builtInRes.status === "fulfilled" ? collect(builtInRes.value) : [];
+
+      // Fallback: ensure common system roles exist in UI even if backend doesn't return them.
+      const defaultRoleNames = ["waiter", "cashier", "manager", "kitchen", "bar", "cafe", "captain", "admin"];
+      const defaults = defaultRoleNames.map((name, idx) => ({
+        id: `default-${idx}-${name}`,
+        name,
+        description: "",
+        is_system_role: true,
+        permissions: [],
+      }));
+
+      const merged = [
+        ...(Array.isArray(builtIns) ? builtIns : []),
+        ...(Array.isArray(custom) ? custom : []),
+        ...defaults,
+      ];
+      const byName = new Map<string, any>();
+      for (const r of merged) {
+        const name = String(r?.name || "").trim();
+        if (!name) continue;
+        // Prefer a "real" backend role over defaults.
+        const existing = byName.get(name);
+        if (!existing) byName.set(name, r);
+        else if (String(existing?.id || "").startsWith("default-") && !String(r?.id || "").startsWith("default-")) {
+          byName.set(name, r);
+        }
+      }
+
+      // Ensure any roles already selected on the form are present (editing legacy users).
+      for (const name of formData.roles || []) {
+        const n = String(name || "").trim();
+        if (!n) continue;
+        if (!byName.has(n)) {
+          byName.set(n, { id: `adhoc-${n}`, name: n, description: "", is_system_role: true, permissions: [] });
+        }
+      }
+
+      const list = Array.from(byName.values()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      setAvailableRoles(list);
+
+      if (list.length === 0) {
+        setRolesLoadError("No roles returned");
       }
     } catch (err) {
       console.error("Failed to fetch roles:", err);
+      setAvailableRoles([]);
+      setRolesLoadError("Failed to load roles");
+      // Avoid noisy toasts on first load; the UI will show a retry affordance.
+    } finally {
+      setRolesLoading(false);
     }
   };
 
@@ -214,7 +287,7 @@ export default function StaffPage() {
         payload.daily_hours = daily;
       }
 
-      const res = await apiClient.post("/staff", payload);
+      const res = await apiClient.post(StaffProfileApis.create, payload);
       if (res.data?.status === "success") {
         toast.success("Payroll profile created");
         setIsPayrollDialogOpen(false);
@@ -684,7 +757,12 @@ export default function StaffPage() {
               </div>
             )}
             <div className="space-y-3">
-              <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Assigned Roles</Label>
+              <div className="flex items-center justify-between gap-3">
+                <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Assigned Roles</Label>
+                <Link href="/manage/roles" className="text-[11px] font-semibold text-primary hover:underline">
+                  + Create / manage roles
+                </Link>
+              </div>
               <div className="grid grid-cols-2 gap-2 border border-border/40 rounded-xl p-4 bg-muted/30">
                 {availableRoles.map((roleObj) => (
                   <div key={roleObj.id} className="flex items-center space-x-2 group">
@@ -718,8 +796,19 @@ export default function StaffPage() {
                     </Label>
                   </div>
                 ))}
-                {availableRoles.length === 0 && (
+                {rolesLoading && (
                   <p className="col-span-2 text-[10px] text-center text-muted-foreground italic py-2">Loading roles...</p>
+                )}
+                {!rolesLoading && rolesLoadError && (
+                  <div className="col-span-2 flex flex-col items-center justify-center gap-2 py-2">
+                    <p className="text-[10px] text-center text-muted-foreground italic">{rolesLoadError}</p>
+                    <Button type="button" variant="outline" size="sm" onClick={fetchRoles}>
+                      Retry
+                    </Button>
+                  </div>
+                )}
+                {!rolesLoading && !rolesLoadError && availableRoles.length === 0 && (
+                  <p className="col-span-2 text-[10px] text-center text-muted-foreground italic py-2">No roles available.</p>
                 )}
               </div>
             </div>

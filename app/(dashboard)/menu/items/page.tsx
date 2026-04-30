@@ -88,8 +88,9 @@ export default function MenuItemsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
-  const { user, me } = useAuth();
-  const { restaurant } = useRestaurant();
+  const user = useAuth((s) => s.user);
+  const me = useAuth((s) => s.me);
+  const restaurant = useRestaurant((s) => s.restaurant);
 
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);

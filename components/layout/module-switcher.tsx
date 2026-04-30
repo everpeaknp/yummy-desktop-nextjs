@@ -13,7 +13,9 @@ import {
 import { Button } from "@/components/ui/button";
 
 export function ModuleSwitcher() {
-  const { restaurant, selectedModule, setSelectedModule } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
+  const selectedModule = useRestaurant((s) => s.selectedModule);
+  const setSelectedModule = useRestaurant((s) => s.setSelectedModule);
   const router = useRouter();
 
   if (!restaurant || (!restaurant.hotel_enabled && !restaurant.restaurant_enabled)) {

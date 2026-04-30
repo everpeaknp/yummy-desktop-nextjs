@@ -48,7 +48,7 @@ export default function AnalyticsInventoryPage() {
   const router = useRouter();
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
 
   const restaurantId = restaurant?.id || user?.restaurant_id || null;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
@@ -302,4 +302,3 @@ export default function AnalyticsInventoryPage() {
     </div>
   );
 }
-

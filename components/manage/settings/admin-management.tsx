@@ -57,6 +57,7 @@ interface AdminManagementProps {
 export function AdminManagement({ restaurantId }: AdminManagementProps) {
     const [admins, setAdmins] = useState<Admin[]>([]);
     const [loading, setLoading] = useState(true);
+    const [forbidden, setForbidden] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [isRemoving, setIsRemoving] = useState<number | null>(null);
     const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -66,11 +67,18 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
     const fetchAdmins = useCallback(async () => {
         try {
             setLoading(true);
+            setForbidden(false);
             const response = await apiClient.get(AdminManagementApis.restaurantAdmins(restaurantId));
             if (response.data.status === 'success') {
                 setAdmins(response.data.data);
             }
-        } catch (err) {
+        } catch (err: any) {
+            const status = err?.response?.status;
+            if (status === 403) {
+                setForbidden(true);
+                setAdmins([]);
+                return;
+            }
             console.error('Failed to fetch admins:', err);
             toast.error("Failed to load restaurant admins");
         } finally {
@@ -126,6 +134,26 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
         admin.email.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    if (forbidden) {
+        return (
+            <div className="py-8">
+                <div className="rounded-xl border border-border bg-muted/30 p-5">
+                    <div className="flex items-start gap-3">
+                        <div className="mt-0.5 rounded-lg bg-destructive/10 p-2">
+                            <Shield className="h-5 w-5 text-destructive" />
+                        </div>
+                        <div className="min-w-0">
+                            <p className="font-bold text-sm">Access restricted</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                Your role isn&apos;t allowed to view or manage restaurant administrators.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center py-10 space-y-4">
@@ -178,8 +206,17 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                                 <TableRow key={admin.id}>
                                     <TableCell className="py-2.5">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
-                                                {admin.name.charAt(0)}
+                                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs overflow-hidden shrink-0">
+                                                {admin.photo_url ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img
+                                                        src={admin.photo_url}
+                                                        alt={admin.name}
+                                                        className="h-full w-full object-cover"
+                                                    />
+                                                ) : (
+                                                    admin.name.charAt(0)
+                                                )}
                                             </div>
                                             <div className="flex flex-col">
                                                 <span className="font-bold text-sm">{admin.name}</span>
@@ -189,11 +226,14 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                                     </TableCell>
                                     <TableCell className="py-2.5">
                                         {admin.is_owner ? (
-                                            <Badge variant="default" className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200 text-[10px] h-5 font-bold uppercase tracking-wider">
+                                            <Badge
+                                                variant="outline"
+                                                className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px] h-5 font-bold uppercase tracking-wider"
+                                            >
                                                 Owner
                                             </Badge>
                                         ) : (
-                                            <Badge variant="secondary" className="capitalize text-[10px] h-5 opacity-70">
+                                            <Badge variant="secondary" className="capitalize text-[10px] h-5">
                                                 Administrator
                                             </Badge>
                                         )}

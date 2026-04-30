@@ -66,7 +66,7 @@ export default function OrdersPage() {
 
     // Set initial tab from URL if present
     useEffect(() => {
-        const tab = searchParams.get("tab");
+        const tab = searchParams?.get("tab");
         if (tab === "history") setActiveTab("history");
     }, [searchParams]);
 

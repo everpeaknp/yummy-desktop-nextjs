@@ -35,7 +35,8 @@ export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const { user, me } = useAuth();
+  const user = useAuth((s) => s.user);
+  const me = useAuth((s) => s.me);
   const { toast } = useToast();
 
   const [dialogOpen, setDialogOpen] = useState(false);

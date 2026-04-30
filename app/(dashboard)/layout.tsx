@@ -3,7 +3,7 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { RoleGuard } from "@/components/auth/role-guard";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
@@ -12,15 +12,29 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { restaurant, selectedModule, setSelectedModule, fetchRestaurant, loading } = useRestaurant();
+  // NOTE: Selecting individual fields avoids returning a new object snapshot each time,
+  // which can trigger `useSyncExternalStore` infinite-loop warnings in React 18.
+  const restaurant = useRestaurant((s) => s.restaurant);
+  const selectedModule = useRestaurant((s) => s.selectedModule);
+  const setSelectedModule = useRestaurant((s) => s.setSelectedModule);
+  const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
+  const loading = useRestaurant((s) => s.loading);
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() || "";
+  const [mounted, setMounted] = useState(false);
+
+  // Keep the server render and the first client render identical to prevent hydration mismatches.
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
+    if (!mounted) return;
     fetchRestaurant();
-  }, [fetchRestaurant]);
+  }, [fetchRestaurant, mounted]);
 
   useEffect(() => {
+    if (!mounted) return;
     if (loading || !restaurant) return;
 
     const hotelEnabled = restaurant.hotel_enabled;
@@ -53,9 +67,9 @@ export default function DashboardLayout({
     if (["/rooms", "/gateway"].includes(pathname)) {
       router.replace("/dashboard");
     }
-  }, [restaurant, selectedModule, pathname, router, setSelectedModule, loading]);
+  }, [restaurant, selectedModule, pathname, router, setSelectedModule, loading, mounted]);
 
-  if (loading || !restaurant) {
+  if (!mounted || loading || !restaurant) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>

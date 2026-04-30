@@ -3,7 +3,7 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, Trash2, Loader2, AlertCircle } from "lucide-react";
+import { Plus, Edit, Trash2, Loader2, AlertCircle, Link as LinkIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import apiClient from "@/lib/api-client";
 import { ModifierApis } from "@/lib/api/endpoints";
@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ModifierGroup } from "./modifier-group-dialog";
+import { ModifierInventoryLinker } from "@/components/inventory/modifier-inventory-linker";
 
 interface ModifierOptionsSheetProps {
   open: boolean;
@@ -39,6 +40,9 @@ export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOpti
   
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<ModifierItem | null>(null);
+
+  const [linkerOpen, setLinkerOpen] = useState(false);
+  const [linkerItem, setLinkerItem] = useState<ModifierItem | null>(null);
 
   useEffect(() => {
     if (open && group) {
@@ -122,6 +126,11 @@ export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOpti
      setDeleteDialogOpen(true);
   };
 
+  const openLinker = (item: ModifierItem) => {
+    setLinkerItem(item);
+    setLinkerOpen(true);
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-[600px] sm:max-w-[600px] flex flex-col p-6">
@@ -175,16 +184,24 @@ export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOpti
                                         {item.is_active ? "Active" : "Inactive"}
                                     </Badge>
                                 </TableCell>
-                                <TableCell className="text-right">
-                                    <div className="flex justify-end gap-2">
-                                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(item)}>
-                                            <Edit className="h-4 w-4" />
+	                                <TableCell className="text-right">
+	                                    <div className="flex justify-end gap-2">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          title="Link inventory"
+                                          onClick={() => openLinker(item)}
+                                        >
+                                          <LinkIcon className="h-4 w-4" />
                                         </Button>
-                                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/90" onClick={() => openDeleteDialog(item)}>
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </TableCell>
+	                                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(item)}>
+	                                            <Edit className="h-4 w-4" />
+	                                        </Button>
+	                                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/90" onClick={() => openDeleteDialog(item)}>
+	                                            <Trash2 className="h-4 w-4" />
+	                                        </Button>
+	                                    </div>
+	                                </TableCell>
                             </TableRow>
                         ))
                     )}
@@ -200,7 +217,7 @@ export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOpti
             groupName={group?.name || ""}
         />
 
-        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+	        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>Delete Option?</AlertDialogTitle>
@@ -213,9 +230,19 @@ export function ModifierOptionsSheet({ open, onOpenChange, group }: ModifierOpti
                     <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={handleDeleteItem}>Delete</AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
-        </AlertDialog>
+	        </AlertDialog>
 
-      </SheetContent>
-    </Sheet>
-  );
+          <ModifierInventoryLinker
+            open={linkerOpen}
+            onOpenChange={(v) => {
+              setLinkerOpen(v);
+              if (!v) setLinkerItem(null);
+            }}
+            modifierId={linkerItem?.id ?? null}
+            modifierName={linkerItem?.name}
+          />
+
+	      </SheetContent>
+	    </Sheet>
+	  );
 }

@@ -24,7 +24,7 @@ export default function IncomePage() {
   const [selectedStation, setSelectedStation] = useState("all");
   const [businessLine, setBusinessLine] = useState("all");
 
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
 
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);

@@ -51,7 +51,7 @@ export default function PayrollCreatePage() {
   const router = useRouter();
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
 
   const planState = restaurant?.plan_state?.toLowerCase() || "free";
   const effectivePlan = restaurant?.effective_plan?.toLowerCase() || "free";

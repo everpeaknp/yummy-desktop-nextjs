@@ -75,6 +75,7 @@ import type {
   OrderPayment,
 } from "@/types/order";
 import { EntityNotificationsCard } from "@/components/notifications/entity-notifications-card";
+import { toast } from "sonner";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
@@ -125,8 +126,9 @@ type TabKey = "details" | "kots" | "events";
 
 // ── Main Page ────────────────────────────────────────
 export default function OrderDetailPage() {
-  const params = useParams();
-  const orderId = Number(params.id);
+  const params = useParams() as { id?: string | string[] } | null;
+  const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
+  const orderId = Number(rawId || 0);
   const router = useRouter();
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
@@ -139,6 +141,7 @@ export default function OrderDetailPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [canceling, setCanceling] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [changeTableOpen, setChangeTableOpen] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string>("");
   const [changingTable, setChangingTable] = useState(false);
@@ -206,6 +209,29 @@ export default function OrderDetailPage() {
       console.error("Failed to complete order:", err);
     } finally {
       setCompleting(false);
+    }
+  };
+
+  const handleVerifyOrder = async () => {
+    setVerifying(true);
+    try {
+      const res = await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "pending" });
+      const updatedOrder = res?.data?.data || res?.data;
+
+      if (updatedOrder?.id && Number(updatedOrder.id) !== Number(orderId)) {
+        toast.success(`Order verified and merged into #${updatedOrder.id}`);
+        router.push(`/orders/${updatedOrder.id}`);
+        return;
+      }
+
+      await fetchContext();
+      toast.success("Order verified successfully");
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.response?.data?.message || "Failed to verify order";
+      console.error("Failed to verify order:", err);
+      toast.error(detail);
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -388,20 +414,10 @@ export default function OrderDetailPage() {
                   <Button 
                     size="sm" 
                     className="gap-2 rounded-xl h-9 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-bold"
-                    onClick={async () => {
-                      setCompleting(true);
-                      try {
-                        await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "pending" });
-                        await fetchContext();
-                      } catch (err) {
-                        console.error("Failed to verify order:", err);
-                      } finally {
-                        setCompleting(false);
-                      }
-                    }}
-                    disabled={completing}
+                    onClick={handleVerifyOrder}
+                    disabled={verifying}
                   >
-                    {completing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                    {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
                     Verify Order
                   </Button>
                   <Button 

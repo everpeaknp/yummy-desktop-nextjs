@@ -7,7 +7,10 @@ import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 
 export default function GatewayPage() {
-  const { restaurant, setSelectedModule, fetchRestaurant, loading } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
+  const setSelectedModule = useRestaurant((s) => s.setSelectedModule);
+  const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
+  const loading = useRestaurant((s) => s.loading);
   const router = useRouter();
   const logout = useAuth((state) => state.logout);
 

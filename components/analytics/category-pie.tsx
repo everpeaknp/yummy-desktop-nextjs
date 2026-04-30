@@ -31,7 +31,7 @@ export function CategoryPieChart({ data, loading, title = "Sales by Category", d
               <span className="text-muted-foreground text-sm">Loading chart...</span>
             </div>
           ) : data && data.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
               <PieChart>
                 <Pie
                   data={data}

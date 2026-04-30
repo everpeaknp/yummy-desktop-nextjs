@@ -48,7 +48,7 @@ export default function ExpensesPage() {
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
   const router = useRouter();
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
 
   useEffect(() => {
     const checkAuth = async () => {

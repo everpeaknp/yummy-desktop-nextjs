@@ -237,11 +237,11 @@ export default function POSSystem({
   const [tableData, setTableData] = useState<any>(null);
 
   const user = useAuth(state => state.user);
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
   const searchParams = useSearchParams();
   const router = useRouter();
-  const tableIdFromQuery = defaultTableId?.toString() || searchParams.get("table");
-  const channelFromQuery = defaultChannel || searchParams.get("channel") || "table";
+  const tableIdFromQuery = defaultTableId?.toString() || searchParams?.get("table") || null;
+  const channelFromQuery = defaultChannel || searchParams?.get("channel") || "table";
 
   useEffect(() => {
     const fetchData = async () => {
@@ -717,4 +717,3 @@ export default function POSSystem({
     </div>
   );
 }
-

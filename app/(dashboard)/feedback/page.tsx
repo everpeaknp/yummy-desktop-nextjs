@@ -15,7 +15,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 export default function FeedbackPage() {
-  const { user } = useAuth();
+  const user = useAuth((s) => s.user);
   const [description, setDescription] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);

@@ -26,7 +26,8 @@ interface UserRestaurant {
 }
 
 export function SwitchRestaurant() {
-    const { restaurant: currentRestaurant, setRestaurant } = useRestaurant();
+    const currentRestaurant = useRestaurant((s) => s.restaurant);
+    const setRestaurant = useRestaurant((s) => s.setRestaurant);
     const [restaurants, setRestaurants] = useState<UserRestaurant[]>([]);
     const [loading, setLoading] = useState(true);
     const [switchingTo, setSwitchingTo] = useState<number | null>(null);

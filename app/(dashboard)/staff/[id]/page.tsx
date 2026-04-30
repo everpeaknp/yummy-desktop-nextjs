@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import apiClient from "@/lib/api-client";
-import { StaffApis } from "@/lib/api/endpoints";
+import { StaffApis, UserAccessScopeApis } from "@/lib/api/endpoints";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft, Mail, Phone, MapPin, Calendar, Briefcase, Wallet, Clock, Shield, Trash2, Edit } from "lucide-react";
@@ -12,22 +12,197 @@ import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { AuthApis } from "@/lib/api/endpoints";
+import { AuthApis, RoleApis } from "@/lib/api/endpoints";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
+
+type ScopeKey = "analytics" | "orders" | "receipts";
+type AccessScopeRow = {
+  scope_key: ScopeKey;
+  max_lookback_days?: number | null;
+  window_start?: string | null;
+  window_end?: string | null;
+};
+
+function DateInputWithPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const selected = value ? new Date(`${value}T00:00:00`) : undefined;
+
+  const setSelected = (d?: Date) => {
+    if (!d) return onChange("");
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const yyyyMmDd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    onChange(yyyyMmDd);
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-left text-sm ring-offset-background",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            !selected && "text-muted-foreground"
+          )}
+          aria-label="Pick date"
+        >
+          <span>{selected ? format(selected, "PPP") : "mm/dd/yyyy"}</span>
+          <Calendar className="h-4 w-4 opacity-70" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <CalendarComponent
+          mode="single"
+          selected={selected}
+          onSelect={setSelected}
+          initialFocus
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function StaffDetailPage() {
-  const { id } = useParams();
+  const params = useParams() as { id?: string | string[] } | null;
+  const id = Array.isArray(params?.id) ? params?.id[0] : params?.id;
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<any>(null);
   const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [isPermDialogOpen, setIsPermDialogOpen] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [submittingPerms, setSubmittingPerms] = useState(false);
+
+  const [scopesLoading, setScopesLoading] = useState(false);
+  const [scopesByKey, setScopesByKey] = useState<Partial<Record<ScopeKey, AccessScopeRow>>>({});
+  const [scopeDrafts, setScopeDrafts] = useState<Record<ScopeKey, { max_lookback_days: string; window_start: string; window_end: string }>>({
+    analytics: { max_lookback_days: "", window_start: "", window_end: "" },
+    orders: { max_lookback_days: "", window_start: "", window_end: "" },
+    receipts: { max_lookback_days: "", window_start: "", window_end: "" },
+  });
+  const [scopeSavingKey, setScopeSavingKey] = useState<ScopeKey | null>(null);
+  const [scopeDeletingKey, setScopeDeletingKey] = useState<ScopeKey | null>(null);
+
   const user = useAuth(state => state.user);
   const router = useRouter();
+
+  const coerceDate = (raw: string) => {
+    const v = String(raw || "").trim();
+    return v ? v : null;
+  };
+
+  const hydrateScopeDrafts = (rows: AccessScopeRow[]) => {
+    const next: any = {
+      analytics: { max_lookback_days: "", window_start: "", window_end: "" },
+      orders: { max_lookback_days: "", window_start: "", window_end: "" },
+      receipts: { max_lookback_days: "", window_start: "", window_end: "" },
+    };
+    for (const r of rows) {
+      const k = r.scope_key;
+      if (!next[k]) continue;
+      next[k] = {
+        max_lookback_days: r.max_lookback_days != null ? String(r.max_lookback_days) : "",
+        window_start: r.window_start ? String(r.window_start).slice(0, 10) : "",
+        window_end: r.window_end ? String(r.window_end).slice(0, 10) : "",
+      };
+    }
+    setScopeDrafts(next);
+  };
+
+  const fetchScopes = async (userId: string | number) => {
+    setScopesLoading(true);
+    try {
+      const res = await apiClient.get(UserAccessScopeApis.list(userId));
+      if (res.data?.status === "success") {
+        const rows = (res.data.data || []) as AccessScopeRow[];
+        const map: Partial<Record<ScopeKey, AccessScopeRow>> = {};
+        for (const r of rows) map[r.scope_key] = r;
+        setScopesByKey(map);
+        hydrateScopeDrafts(rows);
+      } else {
+        setScopesByKey({});
+        hydrateScopeDrafts([]);
+      }
+    } catch (err: any) {
+      setScopesByKey({});
+      hydrateScopeDrafts([]);
+      toast.error(err?.response?.data?.detail || "Failed to load access scopes");
+    } finally {
+      setScopesLoading(false);
+    }
+  };
+
+  const saveScope = async (scopeKey: ScopeKey) => {
+    if (!id) return;
+    const draft = scopeDrafts[scopeKey];
+    const maxDaysRaw = String(draft.max_lookback_days || "").trim();
+    const maxDays = maxDaysRaw ? Number(maxDaysRaw) : null;
+    const windowStart = coerceDate(draft.window_start);
+    const windowEnd = coerceDate(draft.window_end);
+
+    if (!maxDays && !windowStart && !windowEnd) {
+      toast.error("Set at least one constraint: max lookback days or a date window.");
+      return;
+    }
+    if (maxDaysRaw && (!Number.isFinite(maxDays) || (maxDays as number) < 1 || (maxDays as number) > 3650)) {
+      toast.error("Max lookback days must be between 1 and 3650.");
+      return;
+    }
+    if (windowStart && windowEnd && windowStart > windowEnd) {
+      toast.error("Start date cannot be after end date.");
+      return;
+    }
+
+    setScopeSavingKey(scopeKey);
+    try {
+      const payload: any = {};
+      if (maxDays) payload.max_lookback_days = maxDays;
+      if (windowStart) payload.window_start = windowStart;
+      if (windowEnd) payload.window_end = windowEnd;
+
+      const res = await apiClient.put(UserAccessScopeApis.upsert(id as string, scopeKey), payload);
+      if (res.data?.status === "success") {
+        toast.success("Access scope saved");
+        await fetchScopes(id as string);
+      } else {
+        toast.error(res.data?.message || "Failed to save access scope");
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to save access scope");
+    } finally {
+      setScopeSavingKey(null);
+    }
+  };
+
+  const deleteScope = async (scopeKey: ScopeKey) => {
+    if (!id) return;
+    setScopeDeletingKey(scopeKey);
+    try {
+      const res = await apiClient.delete(UserAccessScopeApis.remove(id as string, scopeKey));
+      if (res.data?.status === "success") {
+        toast.success("Access scope removed");
+        await fetchScopes(id as string);
+      } else {
+        toast.error(res.data?.message || "Failed to remove access scope");
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to remove access scope");
+    } finally {
+      setScopeDeletingKey(null);
+    }
+  };
 
   useEffect(() => {
     const fetchStaffDetail = async () => {
@@ -39,6 +214,7 @@ export default function StaffDetailPage() {
           const staffDetail = response.data.data;
           setStaff(staffDetail);
           setSelectedPermissions(staffDetail.permissions || []);
+          fetchScopes(id as string);
         }
       } catch (err) {
         console.error("Failed to fetch staff detail:", err);
@@ -48,13 +224,17 @@ export default function StaffDetailPage() {
     };
 
     const fetchPermissions = async () => {
+      setPermissionsLoading(true);
       try {
-        const response = await apiClient.get(AuthApis.listPermissions);
-        if (response.data.status === "success") {
-          setAvailablePermissions(response.data.data || []);
-        }
+        // Align with staff list page: permission catalog is served by /roles/permissions.
+        const response = await apiClient.get(RoleApis.listPermissions);
+        if (response.data?.status === "success") setAvailablePermissions(response.data.data || []);
+        else setAvailablePermissions([]);
       } catch (err) {
         console.error("Failed to fetch permissions:", err);
+        setAvailablePermissions([]);
+      } finally {
+        setPermissionsLoading(false);
       }
     };
 
@@ -207,6 +387,104 @@ export default function StaffDetailPage() {
 
         <Card>
           <CardHeader>
+            <CardTitle>Access Scopes</CardTitle>
+            <CardDescription>
+              Limit how far back this staff can view analytics/orders/receipts (time window or lookback days).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {scopesLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading scopes…
+              </div>
+            ) : (
+              (["analytics", "orders", "receipts"] as ScopeKey[]).map((k) => {
+                const exists = Boolean(scopesByKey[k]);
+                const draft = scopeDrafts[k];
+                return (
+                  <div key={k} className="p-4 rounded-2xl border border-border/60 bg-muted/10">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold capitalize">{k}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {exists
+                            ? "Scope is active (restrictions apply)."
+                            : "No scope set (full access allowed)."}
+                        </p>
+                      </div>
+                      <Badge variant={exists ? "secondary" : "outline"} className="uppercase text-[10px] font-bold">
+                        {exists ? "Scoped" : "Unscoped"}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Max Lookback Days</Label>
+                        <Input
+                          inputMode="numeric"
+                          placeholder="e.g. 30"
+                          value={draft.max_lookback_days}
+                          onChange={(e) =>
+                            setScopeDrafts((prev) => ({
+                              ...prev,
+                              [k]: { ...prev[k], max_lookback_days: e.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Window Start</Label>
+                        <DateInputWithPicker
+                          value={draft.window_start}
+                          onChange={(next) =>
+                            setScopeDrafts((prev) => ({
+                              ...prev,
+                              [k]: { ...prev[k], window_start: next },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Window End</Label>
+                        <DateInputWithPicker
+                          value={draft.window_end}
+                          onChange={(next) =>
+                            setScopeDrafts((prev) => ({
+                              ...prev,
+                              [k]: { ...prev[k], window_end: next },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                      <Button
+                        className="sm:w-auto"
+                        onClick={() => saveScope(k)}
+                        disabled={scopeSavingKey === k || scopeDeletingKey === k}
+                      >
+                        {scopeSavingKey === k ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                        Save Scope
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => deleteScope(k)}
+                        disabled={!exists || scopeSavingKey === k || scopeDeletingKey === k}
+                      >
+                        {scopeDeletingKey === k ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                        Remove Scope
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Activity Logs</CardTitle>
             <CardDescription>Recent actions performed by this staff member.</CardDescription>
           </CardHeader>
@@ -228,51 +506,77 @@ export default function StaffDetailPage() {
           </DialogHeader>
           <div className="py-4">
             <ScrollArea className="h-[350px] pr-4">
-              <div className="grid grid-cols-1 gap-4">
-                {Object.entries(
-                  availablePermissions.reduce((acc: any, curr: any) => {
-                    if (!acc[curr.module]) acc[curr.module] = [];
-                    acc[curr.module].push(curr);
-                    return acc;
-                  }, {})
-                ).map(([module, perms]: [string, any]) => (
-                  <div key={module} className="space-y-2">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
-                      {module}
-                    </h4>
-                    <div className="grid grid-cols-1 gap-3">
-                      {perms.map((p: any) => (
-                        <div key={p.key} className="flex items-start space-x-3">
-                          <Checkbox 
-                            id={`perm-detail-${p.key}`}
-                            checked={selectedPermissions.includes(p.key)}
-                            onCheckedChange={(checked) => {
-                              setSelectedPermissions(prev => 
-                                checked 
-                                  ? [...prev, p.key] 
-                                  : prev.filter(k => k !== p.key)
-                              );
-                            }}
-                          />
-                          <div className="grid gap-1.5 leading-none">
-                            <label
-                              htmlFor={`perm-detail-${p.key}`}
-                              className="text-sm font-medium leading-none cursor-pointer"
-                            >
-                              {p.key}
-                            </label>
-                            {p.description && (
-                              <p className="text-xs text-muted-foreground">
-                                {p.description}
-                              </p>
-                            )}
+              {permissionsLoading ? (
+                <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Loading permissions…
+                </div>
+              ) : availablePermissions.length === 0 ? (
+                <div className="h-[300px] flex flex-col items-center justify-center text-sm text-muted-foreground gap-3">
+                  <p>No permission catalog returned.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        setPermissionsLoading(true);
+                        const response = await apiClient.get(RoleApis.listPermissions);
+                        if (response.data?.status === "success") setAvailablePermissions(response.data.data || []);
+                      } catch {
+                        // ignore
+                      } finally {
+                        setPermissionsLoading(false);
+                      }
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {Object.entries(
+                    availablePermissions.reduce((acc: any, curr: any) => {
+                      if (!acc[curr.module]) acc[curr.module] = [];
+                      acc[curr.module].push(curr);
+                      return acc;
+                    }, {})
+                  ).map(([module, perms]: [string, any]) => (
+                    <div key={module} className="space-y-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                        {module}
+                      </h4>
+                      <div className="grid grid-cols-1 gap-3">
+                        {perms.map((p: any) => (
+                          <div key={p.key} className="flex items-start space-x-3">
+                            <Checkbox
+                              id={`perm-detail-${p.key}`}
+                              checked={selectedPermissions.includes(p.key)}
+                              onCheckedChange={(checked) => {
+                                setSelectedPermissions((prev) =>
+                                  checked ? [...prev, p.key] : prev.filter((k) => k !== p.key)
+                                );
+                              }}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                              <label
+                                htmlFor={`perm-detail-${p.key}`}
+                                className="text-sm font-medium leading-none cursor-pointer"
+                              >
+                                {p.key}
+                              </label>
+                              {p.description && (
+                                <p className="text-xs text-muted-foreground">
+                                  {p.description}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </ScrollArea>
           </div>
           <DialogFooter>

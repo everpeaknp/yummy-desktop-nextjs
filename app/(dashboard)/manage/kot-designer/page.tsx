@@ -9,7 +9,8 @@ import { useEffect, useState } from "react";
 import apiClient from "@/lib/api-client";
 
 export default function KOTDesignerPage() {
-    const { restaurant, loading } = useRestaurant();
+    const restaurant = useRestaurant((s) => s.restaurant);
+    const loading = useRestaurant((s) => s.loading);
     const router = useRouter();
     const [template, setTemplate] = useState<any[] | undefined>(undefined);
     const [templateLoading, setTemplateLoading] = useState(true);

@@ -46,7 +46,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
-import { HistoryApis } from "@/lib/api/endpoints";
+import { TransactionsApis } from "@/lib/api/endpoints";
 import { useRouter } from "next/navigation";
 
 function formatLogDateTime(dateStr: string | Date) {
@@ -90,15 +90,47 @@ export default function AuditLogsPage() {
         if (!user?.restaurant_id) return;
         setLoading(true);
         try {
-            const params = new URLSearchParams();
-            params.set('restaurant_id', user.restaurant_id.toString());
-            params.set('limit', '100');
-            if (entityFilter !== 'all') params.set('entity_type', entityFilter);
-            if (actionFilter !== 'all') params.set('event', actionFilter);
-            
-            const res = await apiClient.get(HistoryApis.listAuditLogs(params.toString()));
+            const end = new Date();
+            const start = new Date();
+            start.setDate(end.getDate() - 30);
+
+            const dateFrom = start.toISOString().split("T")[0];
+            const dateTo = end.toISOString().split("T")[0];
+
+            const types = actionFilter === "all" ? undefined : [actionFilter];
+
+            const res = await apiClient.get(
+                TransactionsApis.list({
+                    restaurantId: user.restaurant_id,
+                    dateFrom,
+                    dateTo,
+                    types,
+                    skip: 0,
+                    limit: 200,
+                })
+            );
             if (res.data.status === "success") {
-                setLogs(res.data.data.items || []);
+                const raw = res.data.data.items || [];
+                const mapped = raw.map((r: any) => ({
+                    id: r.id,
+                    event: r.type,
+                    actor_name: r.user_name || 'System',
+                    actor_role: 'USER',
+                    entity_type: r.type || 'transaction',
+                    entity_id: null,
+                    change_field: null,
+                    old_value: null,
+                    new_value: null,
+                    details: r.title,
+                    source: 'transactions',
+                    created_at: r.created_at,
+                }));
+
+                const filtered = entityFilter === 'all'
+                    ? mapped
+                    : mapped.filter((m: any) => String(m.entity_type || '').toLowerCase() === entityFilter.toLowerCase());
+
+                setLogs(filtered);
             }
         } catch (error) {
             console.error("Failed to fetch logs:", error);

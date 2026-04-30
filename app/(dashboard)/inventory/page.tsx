@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { InventoryApis, SupplierApis } from "@/lib/api/endpoints";
+import { AwaitingPaymentApis, InventoryApis, SupplierApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Plus, Package, AlertTriangle, ArrowUpDown, Loader2, Filter } from "lucide-react";
+import { Search, Plus, Package, AlertTriangle, ArrowUpDown, Loader2, Filter, History, CheckCircle2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,17 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Advanced ops: ledger + adjustments
+  const [opsOpen, setOpsOpen] = useState(false);
+  const [opsItem, setOpsItem] = useState<any | null>(null);
+  const [opsTab, setOpsTab] = useState<"ledger" | "adjustments">("ledger");
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledger, setLedger] = useState<{ movements: any[]; total: number } | null>(null);
+  const [adjustmentsLoading, setAdjustmentsLoading] = useState(false);
+  const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [awaitingByAdjustmentId, setAwaitingByAdjustmentId] = useState<Map<number, any>>(new Map());
+  const [adjustmentActionLoading, setAdjustmentActionLoading] = useState<Set<number>>(new Set());
   
   // Adjustment Modal State
   const [adjustingItem, setAdjustingItem] = useState<any>(null);
@@ -45,6 +56,8 @@ export default function InventoryPage() {
     quantity: "",
     reason: "",
     cost: "",
+    supplier_id: "none",
+    payment_status: "pending",
   });
   const [adjustSubmitting, setAdjustSubmitting] = useState(false);
 
@@ -132,6 +145,243 @@ export default function InventoryPage() {
     }
   }, [user, activeTab]);
 
+  const timezone = typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+
+  const normalizePaymentStatus = (raw: any): "paid" | "pending" | "rejected" | "unknown" => {
+    if (raw === null || raw === undefined) return "unknown";
+
+    if (typeof raw === "boolean") return raw ? "paid" : "pending";
+
+    if (typeof raw === "number") {
+      // Some backends represent paid/pending as 1/0.
+      if (raw === 1) return "paid";
+      if (raw === 0) return "pending";
+    }
+
+    const s = String(raw).trim().toLowerCase();
+    if (!s) return "unknown";
+
+    if (["paid", "success", "completed", "settled", "true", "yes", "1"].includes(s)) return "paid";
+    if (["pending", "unpaid", "awaiting", "due", "false", "no", "0"].includes(s)) return "pending";
+    if (["rejected", "declined", "failed", "cancelled", "canceled"].includes(s)) return "rejected";
+
+    return "unknown";
+  };
+
+  const openOps = (item: any, tab: "ledger" | "adjustments" = "ledger") => {
+    setOpsItem(item);
+    setOpsTab(tab);
+    setOpsOpen(true);
+  };
+
+  const fetchLedger = async (itemId: number) => {
+    setLedgerLoading(true);
+    try {
+      const url = InventoryApis.getLedger({ itemId, skip: 0, limit: 200, timezone });
+      const res = await apiClient.get(url);
+      if (res.data?.status === "success") {
+        const data = res.data?.data;
+        setLedger({
+          movements: data?.movements || [],
+          total: Number(data?.total || 0),
+        });
+      } else {
+        setLedger({ movements: [], total: 0 });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Ledger Failed",
+        description: err.response?.data?.detail || "Could not load ledger.",
+        variant: "destructive",
+      });
+      setLedger({ movements: [], total: 0 });
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
+  const fetchAdjustments = async (itemId: number) => {
+    setAdjustmentsLoading(true);
+    try {
+      const res = await apiClient.get(InventoryApis.getAdjustments(itemId), {
+        params: { skip: 0, limit: 200, timezone, include: "payment_status" },
+      });
+      if (res.data?.status === "success") {
+        const data = res.data?.data;
+        const raw = Array.isArray(data)
+          ? data
+          : (data?.items || data?.adjustments || []);
+        const rows = Array.isArray(raw) ? raw : [];
+        setAdjustments(rows);
+
+        // Map active awaiting-payments to adjustments so "Mark Paid" works correctly.
+        // Backend requires using awaiting-payments endpoints for unpaid inventory adjustments.
+        try {
+          const restaurantId = user?.restaurant_id;
+          if (restaurantId) {
+            const ap = await apiClient.get(AwaitingPaymentApis.list(restaurantId, { status: "active", limit: 200 }));
+            const items = ap.data?.data?.items || [];
+            const ids = new Set(rows.map((r: any) => Number(r?.id)).filter(Boolean));
+            const map = new Map<number, any>();
+            for (const r of items) {
+              const adjId = Number(r?.inventory_adjustment_id);
+              if (!adjId) continue;
+              if (ids.has(adjId) || Number(r?.inventory_item_id) === Number(itemId)) {
+                map.set(adjId, r);
+              }
+            }
+            setAwaitingByAdjustmentId(map);
+          } else {
+            setAwaitingByAdjustmentId(new Map());
+          }
+        } catch {
+          setAwaitingByAdjustmentId(new Map());
+        }
+      } else {
+        setAdjustments([]);
+        setAwaitingByAdjustmentId(new Map());
+      }
+    } catch (err: any) {
+      toast({
+        title: "Adjustments Failed",
+        description: err.response?.data?.detail || "Could not load adjustments.",
+        variant: "destructive",
+      });
+      setAdjustments([]);
+      setAwaitingByAdjustmentId(new Map());
+    } finally {
+      setAdjustmentsLoading(false);
+    }
+  };
+
+  const markAwaitingPaymentPaidForAdjustment = async (adjId: number) => {
+    const restaurantId = user?.restaurant_id;
+    if (!restaurantId) return;
+
+    const awaiting = awaitingByAdjustmentId.get(adjId);
+    if (!awaiting?.id) {
+      toast({
+        title: "Cannot Mark Paid",
+        description: "No awaiting-payment record found for this adjustment.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAdjustmentActionLoading((prev) => new Set(prev).add(adjId));
+    try {
+      const amount = Number(awaiting.amount || 0);
+      const paid = Number(awaiting.paid_amount || 0);
+      const remaining = Math.max(0, amount - paid);
+
+      const res = await apiClient.post(
+        AwaitingPaymentApis.markPaid(Number(awaiting.id), restaurantId),
+        { paid_amount: remaining || undefined, payment_method: "cash" }
+      );
+
+      if (res.data?.status === "success") {
+        toast({ title: "Marked Paid", description: "Payment converted to expense successfully." });
+        if (opsItem?.id) fetchAdjustments(opsItem.id);
+      } else {
+        toast({ title: "Failed", description: res.data?.message || "Could not mark paid.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.response?.data?.detail || "Could not mark paid.", variant: "destructive" });
+    } finally {
+      setAdjustmentActionLoading((prev) => {
+        const n = new Set(prev);
+        n.delete(adjId);
+        return n;
+      });
+    }
+  };
+
+  const rejectAwaitingPaymentForAdjustment = async (adjId: number) => {
+    const restaurantId = user?.restaurant_id;
+    if (!restaurantId) return;
+
+    const awaiting = awaitingByAdjustmentId.get(adjId);
+    if (!awaiting?.id) {
+      toast({
+        title: "Cannot Reject",
+        description: "No awaiting-payment record found for this adjustment.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAdjustmentActionLoading((prev) => new Set(prev).add(adjId));
+    try {
+      const res = await apiClient.post(
+        AwaitingPaymentApis.reject(Number(awaiting.id), restaurantId),
+        { note: "Rejected from inventory history" }
+      );
+      if (res.data?.status === "success") {
+        toast({ title: "Rejected", description: "Awaiting payment rejected (stock may be reverted)." });
+        if (opsItem?.id) fetchAdjustments(opsItem.id);
+      } else {
+        toast({ title: "Failed", description: res.data?.message || "Could not reject.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.response?.data?.detail || "Could not reject.", variant: "destructive" });
+    } finally {
+      setAdjustmentActionLoading((prev) => {
+        const n = new Set(prev);
+        n.delete(adjId);
+        return n;
+      });
+    }
+  };
+
+  const markAdjustmentPaid = async (adjId: number) => {
+    setAdjustmentActionLoading((prev) => new Set(prev).add(adjId));
+    try {
+      const res = await apiClient.patch(InventoryApis.markAdjustmentPayment(adjId), { payment_status: "paid" });
+      if (res.data?.status === "success") {
+        toast({ title: "Marked Paid", description: "Payment status updated." });
+        if (opsItem?.id) fetchAdjustments(opsItem.id);
+      } else {
+        toast({ title: "Failed", description: res.data?.message || "Could not mark paid.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.response?.data?.detail || "Could not mark paid.", variant: "destructive" });
+    } finally {
+      setAdjustmentActionLoading((prev) => {
+        const n = new Set(prev);
+        n.delete(adjId);
+        return n;
+      });
+    }
+  };
+
+  const rejectAdjustmentPayment = async (adjId: number) => {
+    setAdjustmentActionLoading((prev) => new Set(prev).add(adjId));
+    try {
+      const res = await apiClient.post(InventoryApis.rejectAdjustmentPayment(adjId));
+      if (res.data?.status === "success") {
+        toast({ title: "Rejected", description: "Adjustment payment was rejected." });
+        if (opsItem?.id) fetchAdjustments(opsItem.id);
+      } else {
+        toast({ title: "Failed", description: res.data?.message || "Could not reject.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.response?.data?.detail || "Could not reject.", variant: "destructive" });
+    } finally {
+      setAdjustmentActionLoading((prev) => {
+        const n = new Set(prev);
+        n.delete(adjId);
+        return n;
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!opsOpen || !opsItem?.id) return;
+    if (opsTab === "ledger") fetchLedger(opsItem.id);
+    if (opsTab === "adjustments") fetchAdjustments(opsItem.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opsOpen, opsItem?.id, opsTab]);
+
 
   const handleAdjust = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,6 +389,9 @@ export default function InventoryPage() {
 
     setAdjustSubmitting(true);
     try {
+      const selectedPayment = normalizePaymentStatus((adjustForm as any).payment_status);
+      const wantPaid = adjustForm.type === "add" && selectedPayment === "paid";
+
       const payload: any = {
         adjustment_type: adjustForm.type,
         quantity: Number(adjustForm.quantity),
@@ -149,11 +402,49 @@ export default function InventoryPage() {
       if (adjustForm.type === 'add') {
         payload.payment_status = (adjustForm as any).payment_status || 'pending';
         if ((adjustForm as any).supplier_id && (adjustForm as any).supplier_id !== "none") {
-            payload.supplier_id = Number((adjustForm as any).supplier_id);
+          payload.supplier_id = Number((adjustForm as any).supplier_id);
         }
       }
 
-      await apiClient.post(InventoryApis.adjustInventory(adjustingItem.id), payload);
+      const res = await apiClient.post(InventoryApis.adjustInventory(adjustingItem.id), payload);
+
+      const created = res.data?.data;
+      const createdId = Number(created?.id || created?.adjustment?.id || created?.adjustment_id || created?.adjustmentId);
+
+      // If the user picked "Paid", convert the linked awaiting-payment record to an expense immediately.
+      if (wantPaid) {
+        const restaurantId = user?.restaurant_id;
+        if (restaurantId) {
+          try {
+            const ap = await apiClient.get(AwaitingPaymentApis.list(restaurantId, { status: "active", limit: 200 }));
+            const items = ap.data?.data?.items || [];
+            let record = createdId ? items.find((r: any) => Number(r?.inventory_adjustment_id) === createdId) : null;
+            if (!record) {
+              // Fallback: latest awaiting-payment for this item
+              const matches = items
+                .filter((r: any) => r?.source_type === "inventory_adjustment" && Number(r?.inventory_item_id) === Number(adjustingItem.id))
+                .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+              record = matches[0];
+            }
+            if (record?.id) {
+              const amount = Number(record.amount || 0);
+              const paid = Number(record.paid_amount || 0);
+              const remaining = Math.max(0, amount - paid);
+              await apiClient.post(
+                AwaitingPaymentApis.markPaid(Number(record.id), restaurantId),
+                { paid_amount: remaining || undefined, payment_method: "cash" }
+              );
+            }
+          } catch (err: any) {
+            console.error("[inventory] auto convert awaiting-payment failed", err);
+            toast({
+              title: "Saved as Pending",
+              description: err.response?.data?.detail || "Saved, but could not auto-mark paid. Use Mark Paid in history.",
+              variant: "destructive",
+            });
+          }
+        }
+      }
       
       toast({
         title: "Success",
@@ -161,7 +452,14 @@ export default function InventoryPage() {
       });
       
       setAdjustingItem(null);
-      setAdjustForm({ type: "add", quantity: "", reason: "", cost: "" });
+      setAdjustForm({
+        type: "add",
+        quantity: "",
+        reason: "",
+        cost: "",
+        supplier_id: "none",
+        payment_status: "pending",
+      });
       
       // Refresh inventory
       if (user?.restaurant_id) {
@@ -249,7 +547,8 @@ export default function InventoryPage() {
         quantity: "", 
         reason: "", 
         cost: "",
-        ...({ payment_status: "pending", supplier_id: item.supplier_id?.toString() || "none" } as any)
+        payment_status: "pending",
+        supplier_id: item.supplier_id?.toString() || "none",
     });
   };
 
@@ -390,6 +689,16 @@ export default function InventoryPage() {
                   </td>
                   <td className="px-6 py-4 text-muted-foreground">Rs. {item.cost_per_unit || 0}</td>
                   <td className="px-6 py-4 text-right space-x-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => openOps(item, "ledger")}
+                      title="View ledger & adjustments"
+                    >
+                      <History className="w-4 h-4 mr-1.5" />
+                      History
+                    </Button>
                     <Button 
                       variant="ghost" 
                       size="sm" 
@@ -765,6 +1074,212 @@ export default function InventoryPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Inventory Advanced Ops: Ledger + Adjustments */}
+      <Dialog
+        open={opsOpen}
+        onOpenChange={(open) => {
+          setOpsOpen(open);
+          if (!open) {
+            setOpsItem(null);
+            setLedger(null);
+            setAdjustments([]);
+          }
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[980px] max-h-[90vh] overflow-hidden p-0 rounded-2xl flex flex-col">
+          <DialogHeader className="p-6 border-b border-border/60 bg-muted/20">
+            <DialogTitle className="text-xl font-black tracking-tight">
+              Inventory History
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Ledger movements and adjustment payment status for <span className="font-semibold text-foreground">{opsItem?.name || "item"}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 flex-1 min-h-0 overflow-auto">
+            <Tabs value={opsTab} onValueChange={(v) => setOpsTab(v as any)} className="w-full">
+              <TabsList className="bg-muted/30 border border-border/60 rounded-2xl p-1 h-11">
+                <TabsTrigger value="ledger" className="rounded-xl px-4 font-bold">Ledger</TabsTrigger>
+                <TabsTrigger value="adjustments" className="rounded-xl px-4 font-bold">Adjustments</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="ledger" className="mt-5">
+                {ledgerLoading ? (
+                  <div className="h-48 flex items-center justify-center text-muted-foreground">
+                    <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading ledger…
+                  </div>
+                ) : (ledger?.movements || []).length === 0 ? (
+                  <div className="h-48 flex items-center justify-center text-muted-foreground border border-dashed border-border rounded-2xl bg-muted/10">
+                    No ledger movements found.
+                  </div>
+                ) : (
+                  <div className="border border-border/60 rounded-2xl overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border">
+                        <tr>
+                          <th className="px-5 py-3">Time</th>
+                          <th className="px-5 py-3">Source</th>
+                          <th className="px-5 py-3">Reason</th>
+                          <th className="px-5 py-3 text-right">Delta</th>
+                          <th className="px-5 py-3 text-right">Balance</th>
+                          <th className="px-5 py-3 text-right">Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {(ledger?.movements || []).map((m, idx) => {
+                          const delta = Number(m.qty_delta ?? 0);
+                          const neg = !!m.is_negative || delta < 0;
+                          const balance = m.resulting_balance ?? m.resultingBalance;
+                          const unitCost = m.unit_cost ?? m.unitCost;
+                          const totalCost = m.total_cost ?? m.totalCost;
+                          return (
+                            <tr key={m.id || idx} className="hover:bg-muted/20 transition-colors">
+                              <td className="px-5 py-3 font-semibold">
+                                {m.created_at ? new Date(m.created_at).toLocaleString() : "—"}
+                              </td>
+                              <td className="px-5 py-3 text-muted-foreground">{m.source_type || "—"}</td>
+                              <td className="px-5 py-3 text-muted-foreground">{m.reason || "—"}</td>
+                              <td className={cn("px-5 py-3 text-right font-bold", neg ? "text-red-500" : "text-emerald-500")}>
+                                {delta.toLocaleString()}
+                              </td>
+                              <td className="px-5 py-3 text-right font-bold">{Number(balance ?? 0).toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right text-muted-foreground">
+                                {totalCost != null
+                                  ? `Rs. ${Number(totalCost).toLocaleString()}`
+                                  : unitCost != null
+                                  ? `Rs. ${Number(unitCost).toLocaleString()}/unit`
+                                  : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="adjustments" className="mt-5">
+                {adjustmentsLoading ? (
+                  <div className="h-48 flex items-center justify-center text-muted-foreground">
+                    <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading adjustments…
+                  </div>
+                ) : adjustments.length === 0 ? (
+                  <div className="h-48 flex items-center justify-center text-muted-foreground border border-dashed border-border rounded-2xl bg-muted/10">
+                    No adjustments found.
+                  </div>
+                ) : (
+                  <div className="border border-border/60 rounded-2xl overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border">
+                        <tr>
+                          <th className="px-5 py-3">Time</th>
+                          <th className="px-5 py-3">Type</th>
+                          <th className="px-5 py-3">Qty</th>
+                          <th className="px-5 py-3">Stock</th>
+                          <th className="px-5 py-3">Cost</th>
+                          <th className="px-5 py-3">Payment</th>
+                          <th className="px-5 py-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+	                      <tbody className="divide-y divide-border">
+	                        {adjustments.map((a) => {
+	                          const awaiting = awaitingByAdjustmentId.get(Number(a.id));
+	                          const rawPaymentStatus =
+	                            a.payment_status ??
+	                            (a as any).paymentStatus ??
+	                            (a as any).source_payment_status ??
+	                            (a as any).sourcePaymentStatus ??
+	                            (a as any).awaiting_payment_status ??
+	                            (a as any).awaitingPaymentStatus ??
+	                            (a as any).awaiting_payment?.payment_status ??
+	                            (a as any).awaitingPayment?.payment_status ??
+	                            (a as any).payment?.status ??
+	                            (a as any).paid ??
+	                            (a as any).is_paid ??
+	                            (a as any).isPaid ??
+	                            (a as any).paid_at ??
+	                            (a as any).paidAt;
+
+	                          const payment = normalizePaymentStatus(rawPaymentStatus);
+	                          const awaitingStatus = awaiting?.payment_status ? String(awaiting.payment_status).toLowerCase() : "";
+	                          const isPaid = payment === "paid";
+	                          const isRejected = payment === "rejected";
+	                          const isPending = !isPaid && (awaiting ? true : (payment === "pending" || payment === "unknown"));
+	                          const canAct = Boolean(awaiting?.id) && isPending;
+	                          const busy = adjustmentActionLoading.has(Number(a.id));
+	                          return (
+	                            <tr key={a.id} className="hover:bg-muted/20 transition-colors">
+                              <td className="px-5 py-3 font-semibold">
+                                {a.created_at ? new Date(a.created_at).toLocaleString() : "—"}
+                              </td>
+                              <td className="px-5 py-3 text-muted-foreground capitalize">{a.adjustment_type || "—"}</td>
+                              <td className="px-5 py-3 font-bold">{Number(a.quantity ?? 0).toLocaleString()}</td>
+                              <td className="px-5 py-3 text-muted-foreground">
+                                {Number(a.previous_stock ?? 0).toLocaleString()} →{" "}
+                                <span className="font-bold text-foreground">{Number(a.new_stock ?? 0).toLocaleString()}</span>
+                              </td>
+                              <td className="px-5 py-3 text-muted-foreground">
+                                {a.cost != null ? `Rs. ${Number(a.cost).toLocaleString()}` : "—"}
+	                              </td>
+	                              <td className="px-5 py-3">
+	                                {isPaid ? (
+	                                  <Badge className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-500 border-none">Paid</Badge>
+	                                ) : isRejected ? (
+	                                  <Badge className="bg-red-500/10 text-red-700 dark:text-red-500 border-none">Rejected</Badge>
+	                                ) : awaitingStatus === "unpaid" ? (
+	                                  <Badge className="bg-red-500/10 text-red-700 dark:text-red-500 border-none">Unpaid</Badge>
+	                                ) : awaitingStatus === "partial" ? (
+	                                  <Badge className="bg-amber-500/10 text-amber-700 dark:text-amber-500 border-none">Partial</Badge>
+	                                ) : (
+	                                  <Badge className="bg-amber-500/10 text-amber-700 dark:text-amber-500 border-none">Pending</Badge>
+	                                )}
+	                              </td>
+	                              <td className="px-5 py-3 text-right">
+	                                {canAct ? (
+	                                  <div className="flex items-center justify-end gap-2">
+	                                    <Button
+	                                      size="sm"
+	                                      className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white"
+	                                      onClick={() => markAwaitingPaymentPaidForAdjustment(Number(a.id))}
+	                                      disabled={busy}
+	                                    >
+	                                      {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
+	                                      Mark Paid
+	                                    </Button>
+	                                    <Button
+	                                      size="sm"
+	                                      variant="outline"
+	                                      className="h-9 rounded-xl border-red-500/20 text-red-600 hover:bg-red-500/10"
+	                                      onClick={() => rejectAwaitingPaymentForAdjustment(Number(a.id))}
+	                                      disabled={busy}
+	                                    >
+	                                      <XCircle className="w-4 h-4 mr-1" /> Reject
+	                                    </Button>
+	                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          <DialogFooter className="p-6 border-t border-border/60 bg-muted/20">
+            <Button variant="outline" className="h-11 rounded-xl w-full" onClick={() => setOpsOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

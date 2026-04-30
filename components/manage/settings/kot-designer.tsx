@@ -57,7 +57,7 @@ interface KOTDesignerProps {
 }
 
 export function KOTDesigner({ restaurantId, initialTemplate }: KOTDesignerProps) {
-    const { restaurant } = useRestaurant();
+    const restaurant = useRestaurant((s) => s.restaurant);
     const [blocks, setBlocks] = useState<ReceiptBlock[]>([]);
     const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(DEFAULT_GLOBAL_CONFIG);
     const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);

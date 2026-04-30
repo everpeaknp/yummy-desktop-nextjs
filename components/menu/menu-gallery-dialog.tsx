@@ -17,7 +17,7 @@ interface MenuGalleryDialogProps {
 }
 
 export function MenuGalleryDialog({ open, onOpenChange, onSelect }: MenuGalleryDialogProps) {
-  const { user } = useAuth();
+  const user = useAuth((s) => s.user);
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [customImages, setCustomImages] = useState<MenuGalleryItem[]>([]);
   const [loadingCustom, setLoadingCustom] = useState(false);

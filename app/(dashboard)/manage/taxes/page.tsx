@@ -44,7 +44,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function TaxesPage() {
     const user = useAuth(state => state.user);
-    const { restaurant, fetchRestaurant } = useRestaurant();
+    const restaurant = useRestaurant((s) => s.restaurant);
+    const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
     const router = useRouter();
     const [taxes, setTaxes] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);

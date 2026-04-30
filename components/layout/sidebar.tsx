@@ -45,8 +45,11 @@ export const Sidebar = memo(function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const logout = useAuth(state => state.logout);
-  const { restaurant, fetchRestaurant, selectedModule } = useRestaurant();
-  const { collapsed, toggle } = useSidebar();
+  const restaurant = useRestaurant((s) => s.restaurant);
+  const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
+  const selectedModule = useRestaurant((s) => s.selectedModule);
+  const collapsed = useSidebar((s) => s.collapsed);
+  const toggle = useSidebar((s) => s.toggle);
   const items = useSidebarItems();
 
   // Home link depends on active module

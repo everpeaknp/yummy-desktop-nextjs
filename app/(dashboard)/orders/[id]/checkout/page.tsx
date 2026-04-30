@@ -124,7 +124,7 @@ function formatCurrency(amount: number, currency = "Rs.") {
 
 // ── Main Checkout Page ─────────────────────────────
 export default function CheckoutPage() {
-  const params = useParams();
+  const params = useParams() as { id?: string | string[] } | null;
   const router = useRouter();
   
   // Extract returnTo from URL if present
@@ -137,9 +137,10 @@ export default function CheckoutPage() {
     }
   }, []);
 
-  const orderId = Number(params.id);
+  const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
+  const orderId = Number(rawId || 0);
   const user = useAuth((s) => s.user);
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
   const curr = restaurant?.currency || "Rs.";
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
@@ -202,8 +203,42 @@ export default function CheckoutPage() {
       const { data } = await apiClient.get(CustomerApis.listCustomers(user.restaurant_id));
       if (data.status === "success") {
         setCustomers(data.data.customers || []);
+        return;
       }
-    } catch (err) {
+    } catch (err: any) {
+      // Fallback for roles that can checkout but don't have `customers.view`.
+      // Build a selectable customer list from order history (requires `pos.view`).
+      if (err?.response?.status === 403) {
+        try {
+          const { data: ordersData } = await apiClient.get(OrderApis.listOrders, {
+            params: {
+              restaurant_id: user.restaurant_id,
+              limit: 1000,
+              skip: 0,
+            },
+          });
+          const orders = ordersData?.data?.orders || [];
+          const seen = new Set<number>();
+          const derivedCustomers = orders
+            .filter((o: any) => o?.customer_id)
+            .map((o: any) => ({
+              id: Number(o.customer_id),
+              full_name: o.customer_name || "Guest",
+              name: o.customer_name || "Guest",
+              phone: o.customer_phone || "",
+              credit: undefined,
+            }))
+            .filter((c: any) => {
+              if (!c.id || seen.has(c.id)) return false;
+              seen.add(c.id);
+              return true;
+            });
+          setCustomers(derivedCustomers);
+          return;
+        } catch (fallbackErr) {
+          console.error("Failed to load fallback customers from orders:", fallbackErr);
+        }
+      }
       console.error("Failed to load customers:", err);
     }
   }, [user?.restaurant_id]);
@@ -742,7 +777,8 @@ export default function CheckoutPage() {
                   <SelectContent>
                     {customers.map((c: any) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        {c.full_name || c.name || "Guest"} ({c.phone || "No phone"}) - Balance: {formatCurrency(c.credit || 0, curr)}
+                        {c.full_name || c.name || "Guest"} ({c.phone || "No phone"})
+                        {typeof c.credit === "number" ? ` - Balance: ${formatCurrency(c.credit || 0, curr)}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>

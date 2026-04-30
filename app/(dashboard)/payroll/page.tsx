@@ -34,7 +34,7 @@ export default function PayrollPage() {
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
   const router = useRouter();
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
 
   const planState = restaurant?.plan_state?.toLowerCase() || "free";
   const effectivePlan = restaurant?.effective_plan?.toLowerCase() || "free";

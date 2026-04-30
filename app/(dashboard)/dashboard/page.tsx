@@ -9,7 +9,7 @@ import apiClient from "@/lib/api-client"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { cn } from "@/lib/utils"
-import { DashboardApis, HistoryApis, AnalyticsApis, TableApis } from "@/lib/api/endpoints"
+import { DashboardApis, AnalyticsApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
 import dynamic from "next/dynamic"
 
 const RevenueChart = dynamic(() => import("@/components/analytics/revenue-chart").then(mod => mod.RevenueChart), {
@@ -88,10 +88,18 @@ export default function DashboardPage() {
         `/analytics/dashboard?restaurant_id=${user.restaurant_id}&date_from=${last30DaysStr}&date_to=${todayStr}`
       ).catch(err => { console.error("Analytics failed:", err); return null })
 
-      // Fetch History
-      const historyRes = await apiClient.get(HistoryApis.listAuditLogs(
-        new URLSearchParams({ restaurant_id: user.restaurant_id.toString(), limit: "15" }).toString()
-      )).catch(err => { console.error("History failed:", err); return null })
+      // Audit logs were removed; use Transactions as the unified activity timeline.
+      const historyRes = await apiClient
+        .get(
+          TransactionsApis.list({
+            restaurantId: user.restaurant_id,
+            dateFrom: last30DaysStr,
+            dateTo: todayStr,
+            skip: 0,
+            limit: 15,
+          })
+        )
+        .catch(err => { console.error("History failed:", err); return null })
 
       // Fetch Occupancy
       const occupancyRes = await apiClient.get(TableApis.tableSummary(user.restaurant_id))
@@ -118,7 +126,18 @@ export default function DashboardPage() {
       }
 
       if (historyRes?.data?.status === "success") {
-        setActivities(historyRes.data.data.items || [])
+        const items = historyRes.data.data.items || []
+        setActivities(
+          items.map((it: any) => ({
+            id: it.id,
+            actor_name: it.user_name || it.actor_name || "System",
+            created_at: it.created_at,
+            event: it.type || "transaction",
+            title: it.title,
+            entity_type: it.type,
+            entity_id: null,
+          }))
+        )
       }
 
       if (occupancyRes?.data?.status === "success") {
@@ -502,20 +521,25 @@ function ActivityFeed({ activities }: { activities: any[] }) {
                     <Users className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-xs font-black text-foreground truncate uppercase tracking-tight">
-                      {log.actor_name || "System"}
-                    </span>
+	                  <div className="flex items-center justify-between gap-2 mb-1">
+	                    <span className="text-xs font-black text-foreground truncate uppercase tracking-tight">
+	                      {log.actor_name || "System"}
+	                    </span>
                     <span className="text-[10px] font-bold text-muted-foreground whitespace-nowrap bg-muted/50 px-2 py-0.5 rounded">
                       {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground leading-snug">
-                    <span className="font-bold text-foreground uppercase text-[10px]">{log.event.split('.').pop()}</span> for {log.entity_type} {log.entity_id ? `#${log.entity_id}` : ""}
-                  </p>
-                </div>
-              </div>
-            ))
+	                  </div>
+	                  <p className="text-[11px] text-muted-foreground leading-snug">
+	                    <span className="font-bold text-foreground uppercase text-[10px]">{String(log.event || "").split('.').pop()}</span>
+	                    {log.title ? (
+	                      <>: {log.title}</>
+	                    ) : (
+	                      <> for {log.entity_type} {log.entity_id ? `#${log.entity_id}` : ""}</>
+	                    )}
+	                  </p>
+	                </div>
+	              </div>
+	            ))
           ) : (
             <div className="p-16 text-center">
               <p className="text-sm text-muted-foreground font-medium opacity-50 italic">No activity logs found for today.</p>

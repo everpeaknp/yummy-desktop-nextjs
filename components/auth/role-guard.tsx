@@ -11,7 +11,7 @@ import {
 import { Loader2, ShieldAlert } from "lucide-react";
 
 export function RoleGuard({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname() || "";
   const router = useRouter();
   const user = useAuth((state) => state.user);
   const token = useAuth((state) => state.token);

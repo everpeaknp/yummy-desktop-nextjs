@@ -401,8 +401,8 @@ export default function RestaurantSettingsPage() {
                                         <Badge variant="secondary" className="text-[10px] h-4">Recommended</Badge>
                                     </Label>
                                     <p className="text-xs text-muted-foreground mr-8">
-                                        Enabling KOT will allow the system to generate kitchen order tickets for orders. 
-                                        Make sure your printers are configured correctly.
+                                        When disabled, KOTs will be auto-printed instead of shown digitally.
+                                        Kitchen screen will be hidden for all staff.
                                     </p>
                                 </div>
                                 <Switch 

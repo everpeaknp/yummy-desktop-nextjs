@@ -29,7 +29,8 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export default function ModifiersPage() {
-  const { user, me } = useAuth();
+  const user = useAuth((s) => s.user);
+  const me = useAuth((s) => s.me);
   const [groups, setGroups] = useState<ModifierGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");

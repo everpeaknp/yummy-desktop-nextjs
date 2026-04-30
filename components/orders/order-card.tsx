@@ -49,7 +49,7 @@ export const getChannelIcon = (channel: string) => {
 };
 
 export function OrderCard({ order, onClick }: OrderCardProps) {
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
   const statusClass = getStatusColor(order.status);
   const badgeClass = getStatusBadgeColor(order.status);
   const ChannelIcon = getChannelIcon(order.channel);

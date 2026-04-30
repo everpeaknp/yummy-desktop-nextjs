@@ -85,7 +85,8 @@ const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
 
 export function useSidebarItems(): SidebarItem[] {
   const user = useAuth((state) => state.user);
-  const { restaurant, selectedModule } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
+  const selectedModule = useRestaurant((s) => s.selectedModule);
 
   return useMemo(() => {
     const roles = normalizeRoles(user?.roles?.length ? user.roles : user?.role ? [user.role] : []);

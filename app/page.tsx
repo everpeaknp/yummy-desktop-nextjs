@@ -118,18 +118,41 @@ export default function Home() {
     return "Something went wrong. Please try again.";
   };
 
+  const normalizeLoginIdentifier = (value: string): string => {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    return trimmed.includes("@") ? trimmed.toLowerCase() : trimmed;
+  };
+
   // ── Login ──────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
     try {
+      const username = normalizeLoginIdentifier(email);
       const formData = new FormData();
-      formData.append("username", email.trim().toLowerCase());
+      formData.append("username", username);
       formData.append("password", password);
-      const response = await apiClient.post("/auth/login", formData, {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      });
+      let response;
+      try {
+        response = await apiClient.post("/auth/login", formData, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+      } catch (primaryErr: any) {
+        const status = primaryErr?.response?.status;
+        const detail = String(primaryErr?.response?.data?.detail || primaryErr?.response?.data?.message || "").toLowerCase();
+        const shouldTrySuperadmin =
+          !username.includes("@") &&
+          (status === 401 || status === 404) &&
+          detail.includes("invalid email or password");
+
+        if (!shouldTrySuperadmin) throw primaryErr;
+
+        response = await apiClient.post("/auth/superadmin/login", formData, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+      }
       if (response.data.status === "success") {
         handleAuthSuccess(response.data.data);
         // We DO NOT setIsLoading(false) here because we want to keep the loading state active during redirection
@@ -414,11 +437,12 @@ export default function Home() {
                     <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{error}</div>
                   )}
                   <div className="space-y-2">
-                    <Label htmlFor="login-email">Email</Label>
+                    <Label htmlFor="login-email">Email or Username</Label>
                     <Input
                       id="login-email"
-                      type="email"
-                      placeholder="admin@restaurant.com"
+                      type="text"
+                      autoComplete="username"
+                      placeholder="admin@restaurant.com or admin"
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}

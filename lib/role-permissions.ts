@@ -361,13 +361,21 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
 
 export function isRouteAllowed(
   pathname: string,
-  user: { role: string; permissions?: string[] } | null
+  user: { role: string; roles?: string[]; primary_role?: string | null; permissions?: string[] } | null
 ): boolean {
   if (!user) return false;
-  if (user.role === "admin") return true;
+  const legacyRole = normalizeRole(user.role);
+  const primaryRole = normalizeRole(user.primary_role || undefined);
+  const declaredRoles = normalizeRoles(user.roles || []);
+  const roleSet = new Set<UserRole>([
+    ...declaredRoles,
+    ...(legacyRole ? [legacyRole] : []),
+    ...(primaryRole ? [primaryRole] : []),
+  ]);
+  const roles = Array.from(roleSet);
 
-  const roles = normalizeRoles(user.role ? [user.role] : []);
   if (!roles.length) return false;
+  if (roles.includes("admin")) return true;
 
   // 1. Check Granular Permissions first
   const sortedPermissionPrefixes = Object.keys(ROUTE_PERMISSIONS).sort(
@@ -397,7 +405,7 @@ export function isRouteAllowed(
 
 export function isRouteAllowedMulti(
   pathname: string,
-  user: { role: string; permissions?: string[] } | null
+  user: { role: string; roles?: string[]; primary_role?: string | null; permissions?: string[] } | null
 ): boolean {
   return isRouteAllowed(pathname, user);
 }

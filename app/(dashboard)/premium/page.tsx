@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { format, differenceInDays } from "date-fns";
 
 export default function PremiumPage() {
-  const { restaurant } = useRestaurant();
+  const restaurant = useRestaurant((s) => s.restaurant);
 
   const SUPPORT_EMAIL = "yummyever.np@gmail.com";
   const SUPPORT_PHONE = "9862936014";

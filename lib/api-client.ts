@@ -4,8 +4,15 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   'https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io';
 
+const isLocalhost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const PROXY_BASE = '/api/proxy';
+
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  // In local dev we proxy API calls through Next.js rewrites to avoid CORS when hitting a remote backend.
+  baseURL: isLocalhost ? PROXY_BASE : API_BASE_URL,
 });
 
 // Request Interceptor: Attach Token
@@ -69,7 +76,8 @@ apiClient.interceptors.response.use(
         const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
         if (!refreshToken) throw new Error('No refresh token');
 
-        const res = await axios.post(`${API_BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
+        const refreshBase = isLocalhost ? PROXY_BASE : API_BASE_URL;
+        const res = await axios.post(`${refreshBase}/auth/refresh`, { refresh_token: refreshToken });
         if (res.data?.status === 'success' && res.data.data?.access_token) {
           const newToken = res.data.data.access_token;
           const newRefresh = res.data.data.refresh_token;

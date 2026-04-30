@@ -480,11 +480,18 @@ export default function TablesPage() {
   };
 
   const getQrUrl = (token: string) => {
-    // Keep this aligned with backend qr_controller.cloud_url (/v/{token})
-    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-      return `http://localhost:3000/v/${token}`;
+    const configuredQrBase = process.env.NEXT_PUBLIC_MENU_QR_BASE_URL;
+    if (configuredQrBase) {
+      return `${configuredQrBase.replace(/\/+$/, "")}/${token}`;
     }
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin.replace("-web", "-menu") : "";
+
+    // Local default: customer menu app route
+    if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+      return `http://localhost:3002/qr/${token}`;
+    }
+
+    // Production fallback aligned with existing public menu path style.
+    const baseUrl = typeof window !== "undefined" ? window.location.origin.replace("-web", "-menu") : "";
     return `${baseUrl}/v/${token}`;
   };
 

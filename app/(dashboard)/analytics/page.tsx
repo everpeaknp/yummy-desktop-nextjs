@@ -29,7 +29,7 @@ export default function AnalyticsPage() {
     const user = useAuth(state => state.user);
     const me = useAuth(state => state.me);
     const router = useRouter();
-    const { restaurant } = useRestaurant();
+    const restaurant = useRestaurant((s) => s.restaurant);
 
     // 1. Session Restoration & Auth Guard
     useEffect(() => {
@@ -425,10 +425,10 @@ function BigMetricCard({ label, value, trend, icon, color, tagColor, noCurrency,
 function AnalyticsSkeleton() {
     return (
         <div className="flex flex-col gap-6 animate-pulse">
-            <div className="h-48 bg-slate-900 rounded-lg w-full" />
+            <div className="h-48 bg-muted rounded-lg w-full" />
             <div className="grid grid-cols-2 gap-4">
-                <div className="h-64 bg-slate-900 rounded-lg" />
-                <div className="h-64 bg-slate-900 rounded-lg" />
+                <div className="h-64 bg-muted rounded-lg" />
+                <div className="h-64 bg-muted rounded-lg" />
             </div>
         </div>
     )

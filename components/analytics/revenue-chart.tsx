@@ -30,7 +30,7 @@ export function RevenueChart({ data, loading }: RevenueChartProps) {
                     <span className="text-muted-foreground text-sm">Loading chart...</span>
                  </div>
             ) : chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
                     <AreaChart data={chartData}>
                     <defs>
                         <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">

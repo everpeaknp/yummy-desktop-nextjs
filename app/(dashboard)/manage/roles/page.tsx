@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
@@ -30,17 +31,7 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogDescription, 
-  DialogFooter, 
-  DialogHeader, 
-  DialogTitle 
-} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import Link from "next/link";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -139,22 +130,33 @@ export default function RolesPage() {
     if (!formData.name.trim()) return toast.error("Role name is required");
     
     setSubmitting(true);
+    let payloadForDebug: any = null;
     try {
+      // Backend OpenAPI: RoleCreate / RoleUpdate accept { name, description, permissions: string[] }.
+      const payload: any = {
+        name: formData.name.trim(),
+        description: (formData.description || "").trim(),
+        permissions: formData.permissions,
+      };
+      payloadForDebug = payload;
+
       if (editingRole) {
-        await apiClient.put(RoleApis.updateRole(editingRole.id), formData);
+        await apiClient.put(RoleApis.updateRole(editingRole.id), payload);
         toast.success("Role updated successfully");
       } else {
-        await apiClient.post(RoleApis.createRole, {
-          ...formData,
-          is_system_role: false
-        });
+        await apiClient.post(RoleApis.createRole, payload);
         toast.success("New role created successfully");
       }
       setIsDialogOpen(false);
       fetchData();
     } catch (err: any) {
-      console.error("Failed to save role:", err);
-      toast.error(err.response?.data?.detail || "Failed to save role");
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      console.error("Failed to save role:", { status, data, payload: payloadForDebug, err });
+      const detail = data?.detail || data?.message;
+      if (typeof detail === "string" && detail.trim()) toast.error(detail);
+      else if (typeof data === "string" && data.trim()) toast.error(data.slice(0, 200));
+      else toast.error("Failed to save role");
     } finally {
       setSubmitting(false);
     }
@@ -320,19 +322,24 @@ export default function RolesPage() {
         </div>
       )}
 
-      {/* Role Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] p-0 overflow-hidden bg-card border-border/40 shadow-2xl">
+      {/* Role Dialog (Custom Modal)
+          Radix Dialog/Presence has been triggering an infinite ref/update loop in dev on this page.
+          This lightweight modal avoids that entire class of issues. */}
+      {isDialogOpen ? (
+        <SimpleModal
+          onClose={() => setIsDialogOpen(false)}
+          className="w-full max-w-[700px] p-0 overflow-hidden bg-card border border-border/40 shadow-2xl rounded-lg"
+        >
           <form onSubmit={handleSaveRole}>
             <div className="p-8 pb-4 space-y-6">
-              <DialogHeader>
-                <DialogTitle className="text-2xl font-black">
+              <div className="space-y-2">
+                <h2 className="text-2xl font-black">
                   {editingRole ? `Edit Role: ${editingRole.name}` : "Create New Custom Role"}
-                </DialogTitle>
-                <DialogDescription className="font-medium">
+                </h2>
+                <p className="text-sm text-muted-foreground font-medium">
                   Custom roles allow you to define precise access levels for your staff members.
-                </DialogDescription>
-              </DialogHeader>
+                </p>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -372,7 +379,8 @@ export default function RolesPage() {
               </div>
 
               <div className="bg-muted/30 rounded-xl border border-border/20">
-                <ScrollArea className="h-[400px] w-full p-6">
+                {/* Avoid Radix ScrollArea here: it has caused presence/ref loops in some dev setups. */}
+                <div className="h-[400px] w-full overflow-y-auto p-6 pr-5 custom-scrollbar">
                   <div className="space-y-8">
                     {Object.entries(groupedPermissions).map(([module, perms]) => (
                       <div key={module} className="space-y-4">
@@ -388,13 +396,13 @@ export default function RolesPage() {
                                 "flex items-start gap-4 p-3 rounded-lg border border-transparent transition-all cursor-pointer hover:bg-white/5 hover:border-border/40",
                                 formData.permissions.includes(perm.key) && "bg-white/5 border-primary/20"
                               )}
-                              onClick={() => togglePermission(perm.key)}
                             >
-                              <Checkbox 
+                              <input
                                 id={`perm-${perm.id}`}
+                                type="checkbox"
                                 checked={formData.permissions.includes(perm.key)}
-                                onCheckedChange={() => togglePermission(perm.key)}
-                                className="mt-1 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                                onChange={() => togglePermission(perm.key)}
+                                className="mt-1 h-4 w-4 rounded-sm border border-primary bg-transparent accent-primary"
                               />
                               <div className="space-y-1">
                                 <label 
@@ -413,20 +421,78 @@ export default function RolesPage() {
                       </div>
                     ))}
                   </div>
-                </ScrollArea>
+                </div>
               </div>
             </div>
 
-            <DialogFooter className="p-8 bg-muted/20 border-t border-border/20 pt-6">
-              <Button type="button" variant="ghost" className="font-black uppercase tracking-widest text-xs" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+            <div className="p-8 bg-muted/20 border-t border-border/20 pt-6 flex items-center justify-end gap-2">
+              <Button type="button" variant="ghost" className="font-black uppercase tracking-widest text-xs" onClick={() => setIsDialogOpen(false)}>
+                Cancel
+              </Button>
               <Button type="submit" className="bg-primary font-black uppercase tracking-widest text-xs h-11 px-8 shadow-lg shadow-primary/20" disabled={submitting}>
                 {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {editingRole ? "Update Role" : "Create Custom Role"}
               </Button>
-            </DialogFooter>
+            </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SimpleModal>
+      ) : null}
     </div>
+  );
+}
+
+function SimpleModal({
+  onClose,
+  children,
+  className,
+}: {
+  onClose: () => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+
+    // Lock scroll while modal is open.
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  if (!mounted) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50">
+      <div
+        className="absolute inset-0 bg-black/80"
+        onMouseDown={() => onClose()}
+      />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div
+          className={cn("relative", className)}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            onClick={onClose}
+          >
+            <span className="text-xl leading-none">×</span>
+          </button>
+          {children}
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }

@@ -340,9 +340,11 @@ export default function AdditionalSettingsPage() {
     const galleryFileInputRef = useRef<HTMLInputElement>(null);
     
     // Auth and Restaurant
-    const { user, me } = useAuth();
-    const { restaurant, fetchRestaurant } = useRestaurant();
-    const { logout } = useAuth();
+    const user = useAuth((s) => s.user);
+    const me = useAuth((s) => s.me);
+    const logout = useAuth((s) => s.logout);
+    const restaurant = useRestaurant((s) => s.restaurant);
+    const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
     const { theme, setTheme } = useTheme();
     const { preferences, updatePreference } = usePreferences();
     const router = useRouter();

@@ -37,7 +37,7 @@ export default function NewOrderPage() {
 
     const user = useAuth(state => state.user);
     const me = useAuth(state => state.me);
-    const { restaurant } = useRestaurant();
+    const restaurant = useRestaurant((s) => s.restaurant);
     const router = useRouter();
     const hotelEnabled = restaurant?.hotel_enabled ?? false;
 

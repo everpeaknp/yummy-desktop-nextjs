@@ -27,10 +27,20 @@ export const AuthApis = {
   uploadProfilePicture: '/users/me/profile-picture',
 };
 
+export const UserAccessScopeApis = {
+  list: (userId: number | string) => `/users/${userId}/access-scopes/`,
+  upsert: (userId: number | string, scopeKey: string) => `/users/${userId}/access-scopes/${encodeURIComponent(scopeKey)}`,
+  remove: (userId: number | string, scopeKey: string) => `/users/${userId}/access-scopes/${encodeURIComponent(scopeKey)}`,
+};
+
 export const RoleApis = {
   listPermissions: '/roles/permissions',
-  listRoles: '/roles/',
-  createRole: '/roles/',
+  // Avoid trailing-slash redirects in Next dev (/api/proxy/roles/ -> 308 -> /api/proxy/roles),
+  // which can cause Authorization to be dropped and roles to appear as "Loading...".
+  listRoles: '/roles',
+  // Optional: some backends expose built-in/system roles separately.
+  listBuiltInRoles: '/roles/built-in',
+  createRole: '/roles',
   updateRole: (id: number) => `/roles/${id}`,
   deleteRole: (id: number) => `/roles/${id}`,
 };
@@ -234,6 +244,10 @@ export const InventoryApis = {
   linkMenuInventory: '/inventory/menu-link',
   unlinkMenuInventory: (linkId: number) => `/inventory/menu-link/${linkId}`,
   getMenuInventory: (menuItemId: number) => `/inventory/menu/${menuItemId}`,
+  // Modifier <-> inventory linking (used to deduct inventory when a modifier is applied).
+  linkModifierInventory: '/inventory/modifier-link',
+  unlinkModifierInventory: (linkId: number) => `/inventory/modifier-link/${linkId}`,
+  getInventoryForModifier: (modifierId: number) => `/inventory/modifier/${modifierId}`,
   awaitingPayments: '/awaiting-payments',
   awaitingPaymentById: (id: number) => `/awaiting-payments/${id}`,
   markAwaitingPaymentPaid: (id: number) => `/awaiting-payments/${id}/mark-paid`,
@@ -701,9 +715,11 @@ export const StaffProfileApis = {
   list: ({ skip = 0, limit = 200, search }: { skip?: number; limit?: number; search?: string } = {}) => {
     const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
     if (search) params.append('search', search);
+    // apiClient already uses baseURL `/api/proxy` in local dev; don't double-prefix.
     return `/staff?${params.toString()}`;
   },
   get: (staffId: number) => `/staff/${staffId}`,
+  create: "/staff",
 };
 
 export const PayrollApis = {

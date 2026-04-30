@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { CustomerApis } from "@/lib/api/endpoints";
+import { CustomerApis, OrderApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { CustomerDetailsSheet } from "@/components/customers/customer-details-sh
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFallbackMode, setIsFallbackMode] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -47,9 +48,67 @@ export default function CustomersPage() {
       const response = await apiClient.get(CustomerApis.listCustomers(user.restaurant_id));
       if (response.data.status === "success") {
         setCustomers(response.data.data.customers || []);
+        setIsFallbackMode(false);
+        return;
       }
-    } catch (err) {
+    } catch (err: any) {
+      // Keep page usable when /customers is blocked for this token on web.
+      // Build a read-only customer list from order snapshots as fallback.
+      if (err?.response?.status === 403) {
+        try {
+          console.error("Customers endpoint returned 403:", err?.response?.data);
+          const ordersRes = await apiClient.get(OrderApis.listOrders, {
+            params: {
+              restaurant_id: user.restaurant_id,
+              limit: 1000,
+              skip: 0,
+            },
+          });
+          if (ordersRes.data?.status === "success") {
+            const orders = ordersRes.data?.data?.orders || [];
+            const byId = new Map<number, any>();
+
+            for (const o of orders) {
+              const cid = Number(o?.customer_id || 0);
+              if (cid <= 0) continue; // keep only real linked customers
+              const name = o?.customer_name || "Guest";
+              const phone = o?.customer_phone || "";
+              if (!byId.has(cid)) {
+                byId.set(cid, {
+                  id: cid,
+                  name,
+                  full_name: name,
+                  phone,
+                  email: "",
+                  loyalty_points: 0,
+                  // Unknown in fallback mode; avoid fake totals.
+                  credit: undefined,
+                  visits: 1,
+                  is_active: true,
+                  is_vip: false,
+                });
+              } else {
+                const existing = byId.get(cid);
+                existing.visits = (existing.visits || 0) + 1;
+                if (!existing.phone && phone) existing.phone = phone;
+                if (!existing.name && name) {
+                  existing.name = name;
+                  existing.full_name = name;
+                }
+              }
+            }
+
+            setCustomers(Array.from(byId.values()));
+            setIsFallbackMode(true);
+            return;
+          }
+        } catch (fallbackErr) {
+          console.error("Fallback customers from orders failed:", fallbackErr);
+        }
+      }
       console.error("Failed to fetch customers:", err);
+      setCustomers([]);
+      setIsFallbackMode(false);
     } finally {
       setLoading(false);
     }
@@ -98,14 +157,23 @@ export default function CustomersPage() {
               <DollarSign className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm font-medium text-muted-foreground text-emerald-800 dark:text-emerald-400">Total Credit Balance</p>
+              <p className="text-sm font-medium text-muted-foreground text-emerald-800 dark:text-emerald-400">
+                Total Credit Balance
+              </p>
               <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-500">
-                Rs. {customers.reduce((acc, c) => acc + (c.credit || 0), 0).toLocaleString()}
+                {isFallbackMode
+                  ? "Unavailable"
+                  : `Rs. ${customers.reduce((acc, c) => acc + (c.credit || 0), 0).toLocaleString()}`}
               </h3>
             </div>
           </CardContent>
         </Card>
       </div>
+      {isFallbackMode && (
+        <p className="text-xs text-amber-600">
+          Customer API is plan-locked on web for this restaurant; showing linked order customers only.
+        </p>
+      )}
 
       <div className="relative w-full max-w-sm">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -160,7 +228,7 @@ export default function CustomersPage() {
 
                 <div className="mt-4 pt-4 border-t border-border flex justify-between items-center text-xs">
                   <span className="text-muted-foreground font-medium">
-                    {customer.credit > 0 ? (
+                    {typeof customer.credit === "number" && customer.credit > 0 ? (
                       <span className="text-red-600 flex items-center gap-1">
                         <DollarSign className="w-3 h-3" />
                         Credit: Rs. {customer.credit.toLocaleString()}

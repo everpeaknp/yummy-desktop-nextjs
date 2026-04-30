@@ -44,28 +44,19 @@ This assessment is for this repo: `yummy-desktop-nextjs` (updated **2026-04-16**
 ### P0
 - No remaining P0 parity blockers from the 2026-04-07 backlog found in this repo. (Most remaining issues are polish/bugs rather than missing routes.)
 
-### P1 gaps (ops modules)
+### Status Update (As Of 2026-04-20)
 
-- Inventory advanced ops UI:
-  - Ledger screen for inventory item movements is not surfaced.
-  - Adjustment payment state transitions UI is not surfaced.
-  - Modifier <-> inventory linkage endpoints + UI are missing.
-- Kitchen item-level controls:
-  - Item accept/reject/progress actions exist as endpoints but are not wired in UI.
-  - KOT activity timeline UI is missing.
-- Scoped notifications:
-  - Implemented via Next.js proxy routes under `/api/notifications/*` to avoid localhost CORS, and wired into the order detail "Order Activity" panel.
-  - Note: whether any events appear depends on backend actually emitting/storing notifications for that entity.
-- Transactions module:
-  - `/transactions` list is implemented with filters + modal details.
-  - `/transactions/[id]` exists as a deep-link route (redirects to `/transactions?tx=<id>` to open the modal).
+The repo has progressed beyond the originally-assessed P1 gaps:
 
-### P2 gaps (platform/admin)
+- Inventory advanced ops are now surfaced on `/inventory` (History dialog with Ledger + Adjustments, including Mark Paid / Reject for pending adjustments) and modifier linking is present.
+- Kitchen item-level controls and activity fetching are present on `/kitchen` (printing remains constrained by browser sandboxing, so “fallback/request print” is the viable approach).
+- Access scope management is implemented on staff detail (`/staff/[id]`) under the “Access Scopes” card (analytics/orders/receipts).
 
-- Access scope management: missing endpoints + admin UI.
-- Admin/platform endpoints: `/admin/dashboard/lite`, `/api/v1/app/version`, `/device-tokens*`, `/roles/built-in`, `/history/menu/{id}`, `/history/config/{type}/{id}`, `/menus/upload/signature`, `/restaurants/upload/signature`, `/qr/verify/{token}`, `/sales` (decide what is actually needed for desktop web).
-- `/users/me/profile` is used directly in code but not declared in `lib/api/endpoints.ts`:
-  - Direct usage: `hooks/use-auth.ts`
+### What’s Likely Still Left (P2 / Cleanup)
+
+- Admin/platform endpoints that are not yet surfaced in the web UI (only add these if the desktop app actually needs them for workflows).
+- Settings consolidation: `/settings` is still a placeholder while active settings live under `/manage/settings`.
+- Ongoing stability fixes: proxy/auth reliability in local dev and Next.js dev-server chunking issues (when they appear).
 
 ## Suggested Next Steps (Order)
 
