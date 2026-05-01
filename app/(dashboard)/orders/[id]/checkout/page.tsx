@@ -122,6 +122,13 @@ function formatCurrency(amount: number, currency = "Rs.") {
   return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function formatCustomerLabel(c: any, currency: string) {
+  const name = c?.full_name || c?.name || "Guest";
+  const phone = c?.phone || "No phone";
+  const bal = typeof c?.credit === "number" ? ` - Balance: ${formatCurrency(c.credit || 0, currency)}` : "";
+  return `${name} (${phone})${bal}`;
+}
+
 // ── Main Checkout Page ─────────────────────────────
 export default function CheckoutPage() {
   const params = useParams() as { id?: string | string[] } | null;
@@ -161,6 +168,14 @@ export default function CheckoutPage() {
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddSubmitting, setQuickAddSubmitting] = useState(false);
+  const [quickAddError, setQuickAddError] = useState<string | null>(null);
+  const [quickAddForm, setQuickAddForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+  });
 
   // Discount dialog
   const [discountOpen, setDiscountOpen] = useState(false);
@@ -280,6 +295,38 @@ export default function CheckoutPage() {
       console.error("Failed to complete order:", err);
     } finally {
       setCompleting(false);
+    }
+  };
+
+  const handleQuickAddCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.restaurant_id) return;
+
+    setQuickAddSubmitting(true);
+    setQuickAddError(null);
+    try {
+      const payload = {
+        name: quickAddForm.name.trim(),
+        phone: quickAddForm.phone.trim(),
+        email: quickAddForm.email.trim() || undefined,
+        restaurant_id: user.restaurant_id,
+        is_active: true,
+      };
+      const res = await apiClient.post(CustomerApis.createCustomer, payload);
+      if (res.data?.status !== "success") {
+        throw new Error(res.data?.message || "Failed to create customer");
+      }
+
+      const created = res.data?.data;
+      await fetchCustomers();
+      if (created?.id) setSelectedCustomerId(String(created.id));
+
+      setQuickAddForm({ name: "", phone: "", email: "" });
+      setQuickAddOpen(false);
+    } catch (err: any) {
+      setQuickAddError(err?.response?.data?.detail || err?.message || "Failed to add customer");
+    } finally {
+      setQuickAddSubmitting(false);
     }
   };
 
@@ -730,7 +777,7 @@ export default function CheckoutPage() {
 
       {/* ── Payment Dialog ── */}
       <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Payment</DialogTitle>
             <DialogDescription>
@@ -769,16 +816,32 @@ export default function CheckoutPage() {
             {/* Customer Selection for Credit Method */}
             {payMethod === "credit" && !orderMeta?.customer_id && (
               <div className="space-y-2">
-                <Label>Select Customer</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Select Customer</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2 text-[11px] font-bold"
+                    onClick={() => setQuickAddOpen(true)}
+                  >
+                    + Quick Add
+                  </Button>
+                </div>
                 <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a customer to assign credit tracking" />
+                  <SelectTrigger className="w-full pr-8 [&>span]:truncate">
+                    <SelectValue placeholder="Select a customer to assign credit tracking">
+                      {selectedCustomerId
+                        ? formatCustomerLabel(customers.find((c: any) => String(c.id) === selectedCustomerId), curr)
+                        : undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {customers.map((c: any) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        {c.full_name || c.name || "Guest"} ({c.phone || "No phone"})
-                        {typeof c.credit === "number" ? ` - Balance: ${formatCurrency(c.credit || 0, curr)}` : ""}
+                        <span className="block max-w-[280px] truncate" title={formatCustomerLabel(c, curr)}>
+                          {formatCustomerLabel(c, curr)}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -843,6 +906,64 @@ export default function CheckoutPage() {
               {paySubmitting ? "Processing..." : "Add Payment"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Quick Add Customer Dialog ── */}
+      <Dialog open={quickAddOpen} onOpenChange={setQuickAddOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Quick Add Customer</DialogTitle>
+            <DialogDescription>
+              Add a new customer and attach credit payment quickly.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleQuickAddCustomer} className="space-y-4 py-2">
+            {quickAddError && (
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+                {quickAddError}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="qa-name">Full Name</Label>
+              <Input
+                id="qa-name"
+                value={quickAddForm.name}
+                onChange={(e) => setQuickAddForm((s) => ({ ...s, name: e.target.value }))}
+                placeholder="Customer name"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="qa-phone">Phone Number</Label>
+              <Input
+                id="qa-phone"
+                value={quickAddForm.phone}
+                onChange={(e) => setQuickAddForm((s) => ({ ...s, phone: e.target.value }))}
+                placeholder="+977 98..."
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="qa-email">Email (Optional)</Label>
+              <Input
+                id="qa-email"
+                type="email"
+                value={quickAddForm.email}
+                onChange={(e) => setQuickAddForm((s) => ({ ...s, email: e.target.value }))}
+                placeholder="customer@example.com"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setQuickAddOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={quickAddSubmitting} className="gap-2">
+                {quickAddSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {quickAddSubmitting ? "Adding..." : "Add Customer"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
