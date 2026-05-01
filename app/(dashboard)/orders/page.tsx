@@ -38,6 +38,12 @@ import Link from "next/link";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { DateRange } from "react-day-picker";
 
+function getOrderTimeMs(order: any): number {
+    const raw = order?.started_at || order?.created_at || order?.updated_at;
+    const ms = raw ? new Date(raw).getTime() : 0;
+    return Number.isFinite(ms) ? ms : 0;
+}
+
 export default function OrdersPage() {
     const [activeTab, setActiveTab] = useState<"active" | "history">("active");
     const [orders, setOrders] = useState<any[]>([]);
@@ -104,7 +110,8 @@ export default function OrdersPage() {
             ]);
 
             if (ordersRes.data.status === "success") {
-                const fetchedOrders = ordersRes.data.data.orders || [];
+                const fetchedOrders = [...(ordersRes.data.data.orders || [])]
+                    .sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
                 setOrders(fetchedOrders);
                 
                 const pending = fetchedOrders.filter((o: any) => 
@@ -173,7 +180,8 @@ export default function OrdersPage() {
             const res = await apiClient.get(`${OrderApis.listOrders}?${queryString.toString()}`);
             if (res.data.status === "success") {
                 const data = res.data.data;
-                const list = data.orders || [];
+                const list = [...(data.orders || [])]
+                    .sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
                 setHistoryOrders(list);
             }
         } catch (err) {
@@ -231,7 +239,7 @@ export default function OrdersPage() {
             (order.customer_name || "").toLowerCase().includes(q) ||
             String(order.restaurant_order_id || order.id).includes(q)
         );
-    });
+    }).sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
 
     return (
         <div className="flex flex-col gap-8 max-w-[1600px] mx-auto pb-10">

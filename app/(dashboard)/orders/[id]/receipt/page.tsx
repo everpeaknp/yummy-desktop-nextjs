@@ -79,7 +79,7 @@ export default function ReceiptPage() {
   const [error, setError] = useState<string | null>(null);
   const [printed, setPrinted] = useState(false);
   
-  const { context, allKotsServed } = useOrderFull(orderId);
+  useOrderFull(orderId);
   const autoPrintDone = useRef(false);
   const receiptRef = useRef<HTMLDivElement>(null);
 
@@ -133,9 +133,11 @@ export default function ReceiptPage() {
     fetchData();
   }, [fetchData]);
 
-  // Auto-print on mount if configured
+  // Auto-print once on open (default behavior for POS receipt page).
+  // If backend sends should_auto_print explicitly false, we still auto-print
+  // to preserve expected cashier workflow on web.
   useEffect(() => {
-    if (receipt?.should_auto_print && template && !autoPrintDone.current && !printed) {
+    if (receipt && template && !autoPrintDone.current && !printed) {
       autoPrintDone.current = true;
       const timer = setTimeout(() => {
         window.print();
@@ -143,7 +145,7 @@ export default function ReceiptPage() {
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [receipt?.should_auto_print, template, printed]);
+  }, [receipt, template, printed]);
 
   const handlePrint = async () => {
     if (!receiptRef.current) return;
@@ -275,7 +277,38 @@ export default function ReceiptPage() {
   return (
     <>
       {/* Print-only styles */}
-
+      <style jsx global>{`
+        @media print {
+          @page {
+            margin: 0;
+            size: auto;
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          #receipt-printable-wrapper,
+          #receipt-printable-wrapper * {
+            visibility: visible !important;
+          }
+          #receipt-printable-wrapper {
+            position: absolute !important;
+            left: 50% !important;
+            top: 0 !important;
+            transform: translateX(-50%) !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
 
       <div className="flex flex-col gap-6 max-w-3xl mx-auto pb-8 min-h-screen">
         {/* ── Header (no-print) ── */}
@@ -295,6 +328,17 @@ export default function ReceiptPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {receipt.is_fully_paid && order.status !== 'completed' && (
+              <Button
+                size="sm"
+                onClick={handleComplete}
+                disabled={completing}
+                className="gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700"
+              >
+                {completing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                Complete Order
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleShare} className="gap-2 rounded-xl" id="share-btn">
               <Share2 className="h-3.5 w-3.5" /> Share
             </Button>
@@ -326,7 +370,7 @@ export default function ReceiptPage() {
 
         {/* Bottom Actions (no-print) */}
         <div className="flex flex-col sm:flex-row items-center gap-3 no-print px-4 pb-4">
-          {receipt.is_fully_paid && (allKotsServed || receipt?.order?.channel === "room_service") && order.status !== 'completed' && (
+          {receipt.is_fully_paid && order.status !== 'completed' && (
             <Button 
               className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
               onClick={handleComplete}

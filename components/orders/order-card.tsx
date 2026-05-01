@@ -69,8 +69,15 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
   
   const customerInfo = order.customer_name || (order.channel === 'table' ? 'Guest' : 'Walk-in');
 
-  // Time
-  const timeLabel = new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Time (prefer started_at when available; fallback to created/updated)
+  const orderTimeRaw =
+    (order as any).started_at ||
+    order.created_at ||
+    order.updated_at;
+  const orderTime = new Date(orderTimeRaw);
+  const timeLabel = Number.isNaN(orderTime.getTime())
+    ? "--:--"
+    : orderTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const itemsCount = order.items.reduce((acc, item) => acc + item.qty, 0);
 
   // Extract just the left border color for the card container style
