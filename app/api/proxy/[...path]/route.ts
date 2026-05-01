@@ -3,10 +3,10 @@ import { NextRequest } from "next/server";
 function getBackendBaseUrl() {
   const explicit = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL;
   if (explicit) return explicit;
-  if (process.env.NODE_ENV !== "production") {
-    return "http://127.0.0.1:8001";
-  }
-  return "https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io";
+  // if (process.env.NODE_ENV !== "production") {
+  //   return "http://127.0.0.1:8001";
+  // }
+  return "https://api.yummyever.com";
 }
 
 function filterRequestHeaders(req: NextRequest): HeadersInit {

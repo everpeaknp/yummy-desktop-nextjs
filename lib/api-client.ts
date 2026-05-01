@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
-  'https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io';
+  'https://api.yummyever.com';
 
 const isLocalhost =
   typeof window !== 'undefined' &&
