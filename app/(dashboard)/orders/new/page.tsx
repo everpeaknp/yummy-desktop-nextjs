@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense, useCallback } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import POSSystem from "@/components/orders/pos-system";
-import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, Bed, BedDouble } from "lucide-react";
+import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, Bed, BedDouble, Filter } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -140,6 +140,14 @@ export default function NewOrderPage() {
         {} as Record<string, TableData[]>
     );
     const sortedRooms = Object.keys(groupedTables).sort();
+    const areaStats = areaOptions.map((area) => {
+        const bucket =
+            area === "All Areas"
+                ? tables
+                : tables.filter((t) => (t.table_type_name || "General") === area);
+        const occupied = bucket.filter((t) => String(t.status).toLowerCase() === "occupied").length;
+        return { area, total: bucket.length, occupied };
+    });
 
     const handleTableClick = (table: TableData) => {
         setSelectedTable(table.id);
@@ -240,7 +248,7 @@ export default function NewOrderPage() {
     ];
 
     return (
-        <div className="flex flex-col min-h-screen lg:h-[calc(100vh-2rem)] max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8 overflow-hidden">
+        <div className="flex flex-col w-full max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8">
 
             <div className="flex flex-col gap-1 mb-6 flex-shrink-0">
                 <h1 className="text-2xl font-bold tracking-tight">Point of Sale</h1>
@@ -287,9 +295,9 @@ export default function NewOrderPage() {
 
 
 
-            <div className="mt-4 flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="mt-4 flex flex-col">
                 {activeTab === "rooms" ? (
-                    <div className="flex-1 overflow-y-auto no-scrollbar animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* Room Status Legend */}
                         <div className="flex items-center gap-6 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-6 ml-2 shrink-0">
                             <div className="flex items-center gap-2">
@@ -327,23 +335,33 @@ export default function NewOrderPage() {
                         )}
                     </div>
                 ) : activeTab === "tables" ? (
-                    <div className="flex-1 overflow-y-auto no-scrollbar animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* Area Filter Chips */}
-                        <div className="flex flex-wrap items-center gap-2 mb-6 p-1 bg-muted/30 rounded-2xl w-fit shrink-0">
-                            {areaOptions.map((area) => (
-                                <button
-                                    key={area}
-                                    onClick={() => setSelectedArea(area)}
-                                    className={cn(
-                                        "px-6 py-2 rounded-xl text-sm font-bold transition-all duration-300",
-                                        selectedArea === area
-                                            ? "bg-white dark:bg-zinc-800 text-foreground shadow-sm ring-1 ring-border/50"
-                                            : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                                    )}
-                                >
-                                    {area}
-                                </button>
-                            ))}
+                        <div className="pb-3 pt-1">
+                            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2 ml-1">
+                                <Filter className="w-3.5 h-3.5" />
+                                <span>Filter Area</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 mb-3 pr-2">
+                                {areaStats.map(({ area, total, occupied }) => (
+                                    <button
+                                        key={area}
+                                        onClick={() => setSelectedArea(area)}
+                                        className={cn(
+                                            "shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 border",
+                                            selectedArea === area
+                                                ? "bg-orange-50 dark:bg-orange-950/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800 shadow-sm ring-1 ring-orange-200/60"
+                                                : "text-muted-foreground border-transparent bg-muted/30 hover:text-foreground hover:bg-muted"
+                                        )}
+                                    >
+                                        <span>{area}</span>
+                                        <span className="ml-2 text-xs opacity-80">{total}</span>
+                                        {occupied > 0 && (
+                                            <span className="ml-1 text-[10px] text-red-500">•{occupied}</span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
                         {/* Status Legend */}
@@ -373,12 +391,14 @@ export default function NewOrderPage() {
                                 <p className="font-bold uppercase tracking-widest text-xs">No floor plan data found</p>
                             </div>
                         ) : selectedArea !== "All Areas" ? (
-                            <RoomContainer
-                                title={selectedArea}
-                                tables={filteredTables}
-                                layoutHeight={getLayoutHeight(selectedArea)}
-                                onTableClick={handleTableClick}
-                            />
+                            <div className="w-full lg:w-[calc(50%-1rem)]">
+                                <RoomContainer
+                                    title={selectedArea}
+                                    tables={filteredTables}
+                                    layoutHeight={getLayoutHeight(selectedArea)}
+                                    onTableClick={handleTableClick}
+                                />
+                            </div>
                         ) : (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 {sortedRooms.map((roomName) => (

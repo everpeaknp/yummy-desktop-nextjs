@@ -24,6 +24,8 @@ interface RoomContainerProps {
   title: string;
   tables: TableData[];
   layoutHeight: number;
+  fitToContent?: boolean;
+  compactView?: boolean;
   isLayoutMode?: boolean;
   onTableClick?: (table: TableData) => void;
   onTableDrop?: (tableId: number, posX: number, posY: number) => void;
@@ -38,6 +40,8 @@ export function RoomContainer({
   title,
   tables,
   layoutHeight,
+  fitToContent = false,
+  compactView = false,
   isLayoutMode = false,
   onTableClick,
   onTableDrop,
@@ -118,6 +122,8 @@ export function RoomContainer({
           <SpatialLayout
             tables={tables}
             layoutHeight={layoutHeight}
+            fitToContent={fitToContent}
+            compactView={compactView}
             isLayoutMode={isLayoutMode}
             onTableClick={onTableClick}
             onTableDrop={onTableDrop}
@@ -141,6 +147,8 @@ export function RoomContainer({
 function SpatialLayout({
   tables,
   layoutHeight,
+  fitToContent = false,
+  compactView = false,
   isLayoutMode,
   onTableClick,
   onTableDrop,
@@ -148,6 +156,8 @@ function SpatialLayout({
 }: {
   tables: TableData[];
   layoutHeight: number;
+  fitToContent?: boolean;
+  compactView?: boolean;
   isLayoutMode?: boolean;
   onTableClick?: (table: TableData) => void;
   onTableDrop?: (tableId: number, posX: number, posY: number) => void;
@@ -159,6 +169,8 @@ function SpatialLayout({
 
   const [zMap, setZMap] = useState<Record<number, number>>({});
   const zCounter = useRef(1);
+  const TABLE_WIDTH = compactView ? 12 : 15;
+  const TABLE_HEIGHT = TABLE_WIDTH * 1.15;
 
   const bringToFront = useCallback((tableId: number) => {
     zCounter.current += 1;
@@ -189,6 +201,38 @@ function SpatialLayout({
     [onTableDrop, bringToFront]
   );
 
+  const fittedBounds = (() => {
+    if (!fitToContent || isLayoutMode || tables.length === 0) return null;
+    const valid = tables.filter(
+      (t) => t.pos_x != null && t.pos_y != null && (t.pos_x !== 0 || t.pos_y !== 0)
+    );
+    if (valid.length === 0) return null;
+
+    const minX = Math.min(...valid.map((t) => t.pos_x));
+    const minY = Math.min(...valid.map((t) => t.pos_y));
+    const maxX = Math.max(...valid.map((t) => t.pos_x + TABLE_WIDTH));
+    const maxY = Math.max(...valid.map((t) => t.pos_y + TABLE_HEIGHT));
+
+    const rangeX = Math.max(1, maxX - minX);
+    const rangeY = Math.max(1, maxY - minY);
+    return { minX, minY, rangeX, rangeY };
+  })();
+
+  const containerPaddingBottom = (() => {
+    if (!fittedBounds) {
+      return `${(layoutHeight / BASELINE_WIDTH) * 100}%`;
+    }
+    // In read-only "fit" mode, size each canvas to actual table spread
+    // so we avoid large dead space and make scanning faster while scrolling.
+    const spreadRatio = (fittedBounds.rangeY / fittedBounds.rangeX) * 100;
+    // Keep table architecture dense and readable:
+    // avoid very tall boards when focused on a single area.
+    const minRatio = compactView ? 24 : 28;
+    const maxRatio = compactView ? 48 : 62;
+    const clampedRatio = Math.max(minRatio, Math.min(maxRatio, spreadRatio));
+    return `${clampedRatio}%`;
+  })();
+
   return (
     <div
       ref={containerRef}
@@ -197,14 +241,21 @@ function SpatialLayout({
         isLayoutMode ? "border-orange-500/30" : "border-orange-500/10"
       )}
       style={{
-        paddingBottom: `${(layoutHeight / BASELINE_WIDTH) * 100}%`,
+        paddingBottom: containerPaddingBottom,
       }}
       onDragOver={isLayoutMode ? handleDragOver : undefined}
       onDrop={isLayoutMode ? handleDrop : undefined}
     >
       {tables.map((table) => {
-        const leftPct = table.pos_x ?? 0;
-        const topPct = table.pos_y ?? 0;
+        const rawLeftPct = table.pos_x ?? 0;
+        const rawTopPct = table.pos_y ?? 0;
+
+        const leftPct = fittedBounds
+          ? 6 + ((rawLeftPct - fittedBounds.minX) / fittedBounds.rangeX) * 78
+          : rawLeftPct;
+        const topPct = fittedBounds
+          ? 6 + ((rawTopPct - fittedBounds.minY) / fittedBounds.rangeY) * 78
+          : rawTopPct;
 
         return (
           <div
@@ -219,7 +270,7 @@ function SpatialLayout({
             style={{
               left: `${leftPct}%`,
               top: `${topPct}%`,
-              width: "15%",
+              width: `${TABLE_WIDTH}%`,
               aspectRatio: "1 / 1.15",
               zIndex: zMap[table.id] ?? 0,
             }}

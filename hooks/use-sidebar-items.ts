@@ -44,6 +44,7 @@ export interface SidebarItem {
 const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboard,
   "/orders": ClipboardList,
+  "/orders/active": ClipboardList,
   "/orders/new": Plus,
   "/analytics": Activity,
   "/day-close": Receipt,

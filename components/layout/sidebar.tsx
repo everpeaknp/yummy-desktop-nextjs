@@ -5,31 +5,16 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { cn, getImageUrl } from "@/lib/utils";
 import {
-  LayoutDashboard,
-  UtensilsCrossed,
-  ChefHat,
-  ClipboardList,
-  Users,
-  Settings,
   LogOut,
-  CreditCard,
-  Package,
-  Plus,
-  Activity,
-  Armchair,
-  Calendar,
-  Percent,
   Store,
   ChevronsLeft,
   ChevronsRight,
-  Bed,
   ArrowLeftRight,
-  LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSidebar } from "@/hooks/use-sidebar";
-import { useEffect, useMemo, memo } from "react";
+import { useEffect, memo, useRef } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -42,6 +27,9 @@ import {
 } from "@/hooks/use-sidebar-items";
 
 export const Sidebar = memo(function Sidebar() {
+  const MIN_WIDTH = 240;
+  const MAX_WIDTH = 420;
+
   const pathname = usePathname();
   const router = useRouter();
   const logout = useAuth(state => state.logout);
@@ -49,8 +37,11 @@ export const Sidebar = memo(function Sidebar() {
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
   const selectedModule = useRestaurant((s) => s.selectedModule);
   const collapsed = useSidebar((s) => s.collapsed);
+  const width = useSidebar((s) => s.width);
   const toggle = useSidebar((s) => s.toggle);
+  const setWidth = useSidebar((s) => s.setWidth);
   const items = useSidebarItems();
+  const resizingRef = useRef(false);
 
   // Home link depends on active module
   const homeHref = selectedModule === "hotel" ? "/rooms" : "/dashboard";
@@ -61,13 +52,43 @@ export const Sidebar = memo(function Sidebar() {
     }
   }, [restaurant, fetchRestaurant]);
 
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!resizingRef.current || collapsed) return;
+      const nextWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, event.clientX));
+      setWidth(nextWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (!resizingRef.current) return;
+      resizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [collapsed, setWidth]);
+
+  const startResize = () => {
+    if (collapsed) return;
+    resizingRef.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
   return (
     <TooltipProvider delayDuration={0}>
       <div
         className={cn(
-          "hidden md:flex h-full flex-col border-r bg-card transition-all duration-300 ease-in-out shrink-0",
-          collapsed ? "w-[68px]" : "w-72"
+          "hidden md:flex h-full flex-col border-r bg-card transition-[width] duration-300 ease-in-out shrink-0 relative",
+          collapsed ? "w-[68px]" : ""
         )}
+        style={collapsed ? undefined : { width: `${Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, width || 288))}px` }}
       >
         {/* Logo / Brand + Collapse Toggle */}
         <div className={cn(
@@ -108,7 +129,7 @@ export const Sidebar = memo(function Sidebar() {
         </div>
 
         {/* Nav Items */}
-        <div className="flex-1 overflow-y-auto py-4 min-h-0">
+        <div className="flex-1 overflow-y-auto py-4 min-h-0 sidebar-scroll">
           <nav className={cn("grid items-start text-sm font-medium gap-1", collapsed ? "px-2" : "px-4 gap-2")}>
             {items.map((item, index) => {
               const isActive = pathname === item.href || (pathname && pathname.startsWith(item.href + "/"));
@@ -202,6 +223,15 @@ export const Sidebar = memo(function Sidebar() {
             </button>
           )}
         </div>
+
+        {!collapsed && (
+          <button
+            aria-label="Resize sidebar"
+            onMouseDown={startResize}
+            className="absolute right-0 top-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-primary/40 transition-colors"
+            type="button"
+          />
+        )}
       </div>
     </TooltipProvider>
   );

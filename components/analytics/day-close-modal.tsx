@@ -1,13 +1,13 @@
 "use client";
 
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ChevronRight, Calculator, AlertTriangle, Receipt } from "lucide-react";
 import apiClient from "@/lib/api-client";
-import { DayCloseApis } from "@/lib/api/endpoints";
+import { DayCloseApis, TableApis } from "@/lib/api/endpoints";
 
 interface DayCloseModalProps {
   isOpen: boolean;
@@ -47,6 +47,12 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="max-w-3xl p-0 gap-0 overflow-hidden sm:rounded-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="sr-only">
+            <DialogTitle>End of Day Close</DialogTitle>
+            <DialogDescription>
+              Review system health, financial snapshot, and reconcile cash to close the day.
+            </DialogDescription>
+          </DialogHeader>
           {/* Header */}
           <div className="bg-slate-50 dark:bg-slate-900 border-b p-6 flex flex-col gap-4">
               <div className="flex items-center justify-between">
@@ -247,6 +253,7 @@ function CheckItem({ label, status, message }: { label: string, status: 'pass' |
 
 function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext: (data: any, id: number) => void; restaurantId: number; businessDate: string }) {
     const [snapshot, setSnapshot] = useState<any>(null);
+    const [tableNameMap, setTableNameMap] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [initiating, setInitiating] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -254,16 +261,35 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
     useEffect(() => {
         const generate = async () => {
             try {
-                const res = await apiClient.get(DayCloseApis.generateSnapshot, {
-                    params: { 
-                        restaurant_id: restaurantId, 
-                        business_date: businessDate 
-                    }
-                });
+                const [res, tablesRes] = await Promise.all([
+                    apiClient.get(DayCloseApis.generateSnapshot, {
+                        params: {
+                            restaurant_id: restaurantId,
+                            business_date: businessDate
+                        }
+                    }),
+                    apiClient.get(TableApis.getTables(restaurantId))
+                ]);
                 if (res.data.status === 'success') {
                     setSnapshot(res.data.data);
                 } else {
                     setError(res.data.message || "Failed to generate snapshot");
+                }
+                if (tablesRes.data?.status === "success" && Array.isArray(tablesRes.data?.data)) {
+                    const map: Record<string, string> = {};
+                    tablesRes.data.data.forEach((t: any) => {
+                        const area = t?.table_type_name || t?.area_name || t?.table_category_name;
+                        const table = t?.table_name;
+                        const label = area && table ? `${area} - ${table}` : table;
+                        if (!label) return;
+                        const idKey = String(t.id);
+                        const tableKey = String(table);
+                        map[idKey] = label;
+                        map[idKey.toLowerCase()] = label;
+                        map[tableKey] = label;
+                        map[tableKey.toLowerCase()] = label;
+                    });
+                    setTableNameMap(map);
                 }
             } catch (err: any) {
                 console.error("Snapshot generation failed", err);
@@ -325,6 +351,321 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
         )
     }
 
+    const readPath = (obj: any, path: string) =>
+        path.split(".").reduce((acc: any, part: string) => (acc == null ? undefined : acc[part]), obj);
+    const toNumeric = (value: any): number | null => {
+        if (typeof value === "number" && Number.isFinite(value)) return value;
+        if (typeof value === "string") {
+            const cleaned = value.replace(/[^0-9.-]/g, "");
+            if (cleaned && !Number.isNaN(Number(cleaned))) return Number(cleaned);
+        }
+        return null;
+    };
+    const extractNumericDeep = (value: any): number | null => {
+        const direct = toNumeric(value);
+        if (direct != null) return direct;
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                const found = extractNumericDeep(item);
+                if (found != null) return found;
+            }
+            return null;
+        }
+        if (value && typeof value === "object") {
+            const priorityKeys = ["amount", "total", "value", "sales", "sum", "count", "qty", "quantity"];
+            for (const key of priorityKeys) {
+                if (key in value) {
+                    const found = extractNumericDeep(value[key]);
+                    if (found != null) return found;
+                }
+            }
+            for (const nested of Object.values(value)) {
+                const found = extractNumericDeep(nested);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    };
+    const flattenPairs = (obj: any, prefix = ""): Array<{ label: string; value: any }> => {
+        if (!obj || typeof obj !== "object") return [];
+        const out: Array<{ label: string; value: any }> = [];
+        Object.entries(obj).forEach(([k, v]) => {
+            const label = prefix ? `${prefix} ${k}` : k;
+            if (Array.isArray(v)) {
+                out.push({ label, value: v });
+                return;
+            }
+            if (v && typeof v === "object") {
+                out.push(...flattenPairs(v, label));
+                return;
+            }
+            out.push({ label, value: v });
+        });
+        return out;
+    };
+    const walkObject = (
+        obj: any,
+        visitor: (key: string, value: any, path: string[]) => void,
+        path: string[] = []
+    ) => {
+        if (!obj || typeof obj !== "object") return;
+        Object.entries(obj).forEach(([key, value]) => {
+            visitor(key, value, [...path, key]);
+            if (value && typeof value === "object" && !Array.isArray(value)) {
+                walkObject(value, visitor, [...path, key]);
+            }
+        });
+    };
+    const mapObjectToRows = (obj: Record<string, any>) =>
+        Object.entries(obj)
+            .map(([name, value]) => ({ name, amount: extractNumericDeep(value) ?? 0 }))
+            .filter((r) => r.name);
+    const normalizeRows = (rows: any[]): any[] =>
+        rows
+            .map((row: any, idx: number) => {
+                if (row == null) return null;
+                if (typeof row === "object") return row;
+                if (typeof row === "string") return { name: row, amount: 0, _idx: idx };
+                return { name: `Item ${idx + 1}`, amount: extractNumericDeep(row) ?? 0, _idx: idx };
+            })
+            .filter(Boolean);
+    const findBreakdownByTokens = (tokens: string[]): any[] => {
+        const lowerTokens = tokens.map((t) => t.toLowerCase());
+        const candidates: any[] = [];
+        walkObject(snapshot, (key, value, path) => {
+            const pathText = [...path, key].join(".").toLowerCase();
+            const matches = lowerTokens.every((t) => pathText.includes(t));
+            if (!matches) return;
+            if (Array.isArray(value)) {
+                candidates.push(normalizeRows(value));
+                return;
+            }
+            if (value && typeof value === "object") {
+                candidates.push(mapObjectToRows(value as Record<string, any>));
+            }
+        });
+        return candidates.find((c) => Array.isArray(c) && c.length > 0) || [];
+    };
+
+    const roots = [
+        snapshot,
+        snapshot?.snapshot_data,
+        snapshot?.totals,
+        snapshot?.summary,
+        snapshot?.financial_snapshot,
+        snapshot?.operational_snapshot,
+        snapshot?.breakdowns,
+        snapshot?.snapshot_data?.financial_snapshot,
+        snapshot?.snapshot_data?.operational_snapshot,
+        snapshot?.snapshot_data?.breakdowns,
+    ].filter(Boolean);
+
+    const pickNumber = (obj: any, keys: string[], fallback = 0): number => {
+        for (const root of [obj, ...roots]) {
+            for (const key of keys) {
+                const value = readPath(root, key);
+                if (typeof value === "number") return value;
+                if (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value))) return Number(value);
+            }
+        }
+        return fallback;
+    };
+
+    const pickList = (obj: any, keys: string[]): any[] => {
+        for (const root of [obj, ...roots]) {
+            for (const key of keys) {
+                const value = readPath(root, key);
+                if (Array.isArray(value)) return value;
+            }
+        }
+        return [];
+    };
+    const flattened = flattenPairs(snapshot?.snapshot_data || snapshot);
+    const pickNumberByLabel = (needles: string[], fallback = 0): number => {
+        const normalizedNeedles = needles.map((n) => n.toLowerCase());
+        for (const row of flattened) {
+            const label = String(row.label || "").toLowerCase();
+            if (normalizedNeedles.some((n) => label.includes(n))) {
+                const n = extractNumericDeep(row.value);
+                if (n != null) return n;
+            }
+        }
+        return fallback;
+    };
+    const pickBreakdownRows = (needles: string[]): any[] => {
+        const normalizedNeedles = needles.map((n) => n.toLowerCase());
+        for (const row of flattened) {
+            const label = String(row.label || "").toLowerCase();
+            if (normalizedNeedles.some((n) => label.includes(n))) {
+                if (Array.isArray(row.value)) return row.value;
+                if (row.value && typeof row.value === "object") {
+                    return Object.entries(row.value).map(([name, value]) => ({ name, amount: extractNumericDeep(value) ?? 0 }));
+                }
+            }
+        }
+        return [];
+    };
+    const pickNumberByPathTokens = (mustInclude: string[], mustExclude: string[] = []): number => {
+        const include = mustInclude.map((t) => t.toLowerCase());
+        const exclude = mustExclude.map((t) => t.toLowerCase());
+        let best: number | null = null;
+        walkObject(snapshot, (key, value, path) => {
+            const pathText = [...path, key].join(".").toLowerCase();
+            const matchesInclude = include.every((t) => pathText.includes(t));
+            const matchesExclude = exclude.some((t) => pathText.includes(t));
+            if (!matchesInclude || matchesExclude) return;
+            const n = extractNumericDeep(value);
+            if (n == null || n <= 0) return;
+            if (best == null || n > best) best = n;
+        });
+        return best ?? 0;
+    };
+    const sumQuantitiesFromItemArrays = (): number => {
+        const qtyKeys = ["quantity", "qty", "item_count", "count", "total_items", "items_count"];
+        const lineItemArrayKeys = ["items", "order_items", "line_items", "products"];
+        let total = 0;
+        walkObject(snapshot, (key, value) => {
+            const k = String(key || "").toLowerCase();
+            if (!Array.isArray(value)) return;
+            if (lineItemArrayKeys.includes(k)) {
+                for (const row of value) {
+                    if (!row || typeof row !== "object") continue;
+                    let lineQty = 0;
+                    for (const qKey of qtyKeys) {
+                        const qVal = (row as Record<string, any>)[qKey];
+                        const qNum = extractNumericDeep(qVal);
+                        if (qNum != null) {
+                            lineQty = qNum;
+                            break;
+                        }
+                    }
+                    if (lineQty <= 0) lineQty = 1;
+                    total += lineQty;
+                }
+            }
+            for (const row of value) {
+                if (!row || typeof row !== "object") continue;
+                const hasSalesShape =
+                    "amount" in row || "sales" in row || "total" in row || "value" in row;
+                if (!hasSalesShape) continue;
+                for (const qKey of qtyKeys) {
+                    const qVal = (row as Record<string, any>)[qKey];
+                    const qNum = extractNumericDeep(qVal);
+                    if (qNum != null && qNum > 0) {
+                        total += qNum;
+                        break;
+                    }
+                }
+            }
+        });
+        return total;
+    };
+
+    const amount = (v: number) => `Rs. ${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const grossSales = pickNumber(snapshot, ["gross_sales", "gross", "total_gross_sales"]);
+    const netSales = pickNumber(snapshot, ["net_sales", "net", "total_net_sales"]);
+    const totalIncome = pickNumber(snapshot, ["total_income", "income_total", "income"]);
+    const totalOrders = pickNumber(snapshot, ["total_orders", "order_count", "orders_count"]);
+    const taxCollected = pickNumber(snapshot, ["tax_collected", "taxes_collected", "tax_total"]);
+    const discounts = pickNumber(snapshot, ["discounts", "total_discounts", "discount_amount"]);
+    const refunds = pickNumber(snapshot, ["refunds", "total_refunds", "refund_amount"]);
+    const expenses = pickNumber(snapshot, ["expenses", "total_expenses", "expense_total"]);
+    const manualIncome = pickNumber(snapshot, ["manual_income", "other_income", "manual_income_total"]);
+    const avgOrderValue = pickNumber(snapshot, ["avg_order_value", "average_order_value"]);
+    const avgItemsPerOrder = pickNumber(snapshot, [
+        "avg_items_per_order",
+        "average_items_per_order",
+        "avg_item_per_order",
+        "average_item_per_order",
+    ]);
+    const creditSales = pickNumber(snapshot, ["credit_sales", "credit_sales_total"]);
+    const creditCollection = pickNumber(snapshot, ["credit_collection", "credit_collections", "credit_collected"]);
+    const receivables = pickNumber(snapshot, ["receivables", "accounts_receivable", "credit_receivable"]);
+    const creditOrders = pickNumber(snapshot, ["credit_orders", "credit_order_count"]);
+    const cashCollected = pickNumber(snapshot, ["cash_collected", "cash_total", "cash_in"]);
+
+    const derivedGrossSales = grossSales || pickNumberByLabel(["gross sales", "gross_total"]);
+    const derivedNetSales = netSales || pickNumberByLabel(["net sales", "net_total"]);
+    const derivedTotalIncome = totalIncome || pickNumberByLabel(["total income", "income total"]);
+    const derivedTotalOrders = totalOrders || pickNumberByLabel(["total orders", "order count"]);
+    const derivedTaxCollected = taxCollected || pickNumberByLabel(["tax collected", "tax total"]);
+    const derivedDiscounts = discounts || pickNumberByLabel(["discount", "total discounts"]);
+    const derivedRefunds = refunds || pickNumberByLabel(["refund", "total refunds"]);
+    const derivedExpenses = expenses || pickNumberByLabel(["expense", "total expenses"]);
+    const derivedManualIncome = manualIncome || pickNumberByLabel(["manual income", "other income"]);
+    const derivedAvgOrderValue =
+        avgOrderValue ||
+        pickNumberByLabel(["avg order", "average order"]) ||
+        ((derivedTotalOrders || 0) > 0 ? (derivedNetSales || derivedGrossSales) / derivedTotalOrders : 0);
+    const totalItems = pickNumber(snapshot, [
+        "total_items",
+        "items_total",
+        "total_quantity",
+        "items_count",
+        "item_count",
+        "total_items_sold",
+        "items_sold",
+        "sold_items_count",
+        "order_items_count",
+        "total_order_items",
+        "total_qty",
+    ]) || pickNumberByLabel(["total items", "total quantity", "items total", "item count", "items sold", "order items"]);
+    const discoveredTotalItems =
+        totalItems > 0
+            ? totalItems
+            : pickNumberByPathTokens(["item", "count"], ["avg", "average"]) ||
+              pickNumberByPathTokens(["items", "total"], ["avg", "average"]) ||
+              pickNumberByPathTokens(["quantity", "total"], ["avg", "average"]) ||
+              sumQuantitiesFromItemArrays();
+    const derivedAvgItemsPerOrder =
+        avgItemsPerOrder ||
+        pickNumberByLabel(["avg items", "average items", "items per order"]) ||
+        ((derivedTotalOrders || 0) > 0 ? discoveredTotalItems / derivedTotalOrders : 0);
+    const derivedCreditSales = creditSales || pickNumberByLabel(["credit sales"]);
+    const derivedCreditCollection = creditCollection || pickNumberByLabel(["credit collection", "credit collected"]);
+    const derivedReceivables = receivables || pickNumberByLabel(["receivable", "accounts receivable"]);
+    const derivedCreditOrders = creditOrders || pickNumberByLabel(["credit orders"]);
+    const derivedCashCollected = cashCollected || pickNumberByLabel(["cash collected", "cash in"]);
+
+    const paymentDistribution = pickList(snapshot, ["payment_distribution", "payment_methods", "by_payment_method"]).length
+        ? pickList(snapshot, ["payment_distribution", "payment_methods", "by_payment_method"])
+        : pickBreakdownRows(["payment distribution", "payment methods"]).length
+            ? pickBreakdownRows(["payment distribution", "payment methods"])
+            : findBreakdownByTokens(["payment"]);
+    const salesByCategory = pickList(snapshot, ["sales_by_category", "category_sales", "by_category"]).length
+        ? pickList(snapshot, ["sales_by_category", "category_sales", "by_category"])
+        : pickBreakdownRows(["sales by category", "category sales"]).length
+            ? pickBreakdownRows(["sales by category", "category sales"])
+            : findBreakdownByTokens(["category"]);
+    const salesByTable = pickList(snapshot, ["sales_by_table", "table_sales", "by_table"]).length
+        ? pickList(snapshot, ["sales_by_table", "table_sales", "by_table"])
+        : pickBreakdownRows(["sales by table", "table sales"]).length
+            ? pickBreakdownRows(["sales by table", "table sales"])
+            : findBreakdownByTokens(["table"]);
+
+    const financialCards = [
+        { label: "Gross Sales", value: amount(derivedGrossSales) },
+        { label: "Net Sales", value: amount(derivedNetSales) },
+        { label: "Total Income", value: amount(derivedTotalIncome) },
+        { label: "Tax Collected", value: amount(derivedTaxCollected) },
+        { label: "Discounts", value: amount(derivedDiscounts) },
+        { label: "Refunds", value: amount(derivedRefunds) },
+        { label: "Expenses", value: amount(derivedExpenses) },
+        { label: "Manual Income", value: amount(derivedManualIncome) },
+        { label: "Credit Sales", value: amount(derivedCreditSales) },
+        { label: "Credit Collection", value: amount(derivedCreditCollection) },
+        { label: "Receivables", value: amount(derivedReceivables) },
+        { label: "Cash Collected", value: amount(derivedCashCollected) },
+    ];
+
+    const operationalCards = [
+        { label: "Total Orders", value: Number(derivedTotalOrders || 0).toLocaleString() },
+        { label: "Credit Orders", value: Number(derivedCreditOrders || 0).toLocaleString() },
+        { label: "Avg Order", value: amount(derivedAvgOrderValue) },
+        { label: "Avg Items / Order", value: Number(derivedAvgItemsPerOrder || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }) },
+    ];
+
     return (
         <div className="space-y-6">
              <div className="flex items-center gap-4 p-4 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-xl border border-purple-100 dark:border-purple-900/50">
@@ -337,23 +678,50 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border text-center">
-                    <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Gross Sales</p>
-                    <p className="text-2xl font-bold">Rs. {Number(snapshot?.gross_sales || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+            <div className="space-y-3">
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Financial Snapshot</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {financialCards.map((card) => (
+                        <div key={card.label} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border">
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold mb-1">{card.label}</p>
+                            <p className="text-lg font-bold leading-tight">{card.value}</p>
+                        </div>
+                    ))}
                 </div>
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border text-center">
-                    <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Net Sales</p>
-                    <p className="text-2xl font-bold">Rs. {Number(snapshot?.net_sales || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+            </div>
+
+            <div className="space-y-3">
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Operational Snapshot</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {operationalCards.map((card) => (
+                        <div key={card.label} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border">
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold mb-1">{card.label}</p>
+                            <p className="text-lg font-bold leading-tight">{card.value}</p>
+                        </div>
+                    ))}
                 </div>
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border text-center">
-                    <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Total Orders</p>
-                    <p className="text-2xl font-bold">{snapshot?.total_orders || 0}</p>
-                </div>
-                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border text-center">
-                    <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Cash Collected</p>
-                    <p className="text-2xl font-bold">Rs. {Number(snapshot?.cash_collected || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <SnapshotListCard
+                    title="Payment Distribution (Methods)"
+                    rows={paymentDistribution}
+                    labelKeys={["method", "name", "payment_method"]}
+                    valueKeys={["amount", "total", "value"]}
+                />
+                <SnapshotListCard
+                    title="Sales By Category"
+                    rows={salesByCategory}
+                    labelKeys={["category", "category_name", "name"]}
+                    valueKeys={["sales", "amount", "total"]}
+                />
+                <SnapshotListCard
+                    title="Sales By Table"
+                    rows={salesByTable}
+                    labelKeys={["table", "table_name", "name"]}
+                    valueKeys={["sales", "amount", "total"]}
+                    tableNameMap={tableNameMap}
+                />
             </div>
             
             <div className="pt-4 flex justify-end">
@@ -363,6 +731,96 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
             </div>
         </div>
     )
+}
+
+function SnapshotListCard({
+    title,
+    rows,
+    labelKeys,
+    valueKeys,
+    tableNameMap,
+}: {
+    title: string;
+    rows: any[];
+    labelKeys: string[];
+    valueKeys: string[];
+    tableNameMap?: Record<string, string>;
+}) {
+    const formatTableLabel = (row: any): string | null => {
+        if (!row || typeof row !== "object") return null;
+        const area =
+            row.table_category_name ||
+            row.table_type_name ||
+            row.area_name ||
+            row.area ||
+            row.section ||
+            row.zone ||
+            row.hall ||
+            row.floor ||
+            null;
+        const table =
+            row.table_name ||
+            row.table ||
+            row.name ||
+            row.label ||
+            row.table_no ||
+            row.table_number ||
+            null;
+        if (!table) return null;
+        return area ? `${area} - ${table}` : String(table);
+    };
+
+    const readValue = (row: any, keys: string[]) => {
+        for (const key of keys) {
+            const v = row?.[key];
+            if (v != null && `${v}`.trim() !== "") return v;
+        }
+        return null;
+    };
+
+    return (
+        <div className="rounded-xl border bg-slate-50 dark:bg-slate-900 p-3">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold mb-2">{title}</p>
+            {rows.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No data available</p>
+            ) : (
+                <div className="space-y-1.5 max-h-44 overflow-auto pr-1">
+                    {rows.slice(0, 12).map((row, idx) => {
+                        const rawLabel = readValue(row, labelKeys);
+                        const rawLabelText = rawLabel != null ? String(rawLabel) : null;
+                        const mappedLabel = rawLabelText != null
+                            ? (tableNameMap?.[rawLabelText] ?? tableNameMap?.[rawLabelText.toLowerCase()])
+                            : undefined;
+                        const label =
+                            title.toLowerCase().includes("sales by table")
+                                ? (formatTableLabel(row) ?? mappedLabel ?? rawLabel ?? `Table ${idx + 1}`)
+                                : (rawLabel ?? `Item ${idx + 1}`);
+                        const rawValue = readValue(row, valueKeys);
+                        const num = typeof rawValue === "number"
+                            ? rawValue
+                            : typeof rawValue === "string"
+                                ? Number(rawValue.replace(/[^0-9.-]/g, "")) || 0
+                                : (() => {
+                                    if (!rawValue || typeof rawValue !== "object") return 0;
+                                    const amountLike = (rawValue as Record<string, any>).amount
+                                        ?? (rawValue as Record<string, any>).total
+                                        ?? (rawValue as Record<string, any>).value
+                                        ?? (rawValue as Record<string, any>).sales;
+                                    if (typeof amountLike === "number") return amountLike;
+                                    if (typeof amountLike === "string") return Number(amountLike.replace(/[^0-9.-]/g, "")) || 0;
+                                    return 0;
+                                })();
+                        return (
+                            <div key={`${label}-${idx}`} className="flex items-center justify-between rounded-lg border border-black/5 dark:border-white/10 bg-background px-2 py-1.5">
+                                <span className="text-xs font-medium truncate pr-2">{label}</span>
+                                <span className="text-xs font-bold whitespace-nowrap">Rs. {num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
 }
 
 function CashReconciliationStep({ onNext, snapshot, dayCloseId }: { onNext: (data: any) => void; snapshot: any; dayCloseId: number | null }) {
