@@ -6,13 +6,14 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, CustomerApis } from "@/lib/api/endpoints";
+import { OrderApis, CustomerApis, PaymentApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -44,8 +45,46 @@ import {
   RefreshCw,
   CheckCircle,
   User,
+  QrCode,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
+  if (!input) return null;
+  const hints = keyHints.map((h) => h.toLowerCase());
+  const queue: unknown[] = [input];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    if (Array.isArray(current)) {
+      for (const item of current) queue.push(item);
+      continue;
+    }
+    for (const [rawKey, rawValue] of Object.entries(current as Record<string, unknown>)) {
+      const key = rawKey.toLowerCase();
+      if (hints.some((h) => key.includes(h)) && typeof rawValue === "string" && rawValue.trim()) {
+        return rawValue.trim();
+      }
+      if (rawValue && typeof rawValue === "object") queue.push(rawValue);
+    }
+  }
+  return null;
+}
+
+function resolveQrDisplay(rawQr: string | null, payloadText: string | null, prn: string): string | null {
+  const qrCandidate = rawQr?.trim();
+  if (qrCandidate) {
+    if (qrCandidate.startsWith("data:") || qrCandidate.startsWith("http")) return qrCandidate;
+    if (/^[A-Za-z0-9+/=]+$/.test(qrCandidate) && qrCandidate.length > 120) {
+      return `data:image/png;base64,${qrCandidate}`;
+    }
+    // If backend returns QR payload text in qr field, render a generated QR image.
+    return `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(qrCandidate)}`;
+  }
+  const text = payloadText?.trim() || prn;
+  if (!text) return null;
+  return `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(text)}`;
+}
 
 // ── Types matching backend schema ──────────────────
 interface BillItemModifier {
@@ -114,6 +153,7 @@ interface OrderMeta {
 const PAYMENT_METHODS = [
   { value: "cash", label: "Cash", icon: Banknote, color: "text-emerald-600" },
   { value: "card", label: "Card", icon: CreditCard, color: "text-blue-600" },
+  { value: "fonepay", label: "Fonepay", icon: QrCode, color: "text-fuchsia-600" },
   { value: "digital", label: "Digital/QR", icon: Smartphone, color: "text-purple-600" },
   { value: "credit", label: "Credit", icon: Wallet, color: "text-orange-600" },
 ];
@@ -164,6 +204,13 @@ export default function CheckoutPage() {
   const [payReference, setPayReference] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const [fonepayDialogOpen, setFonepayDialogOpen] = useState(false);
+  const [fonepayPrn, setFonepayPrn] = useState<string | null>(null);
+  const [fonepayQr, setFonepayQr] = useState<string | null>(null);
+  const [fonepayPayloadText, setFonepayPayloadText] = useState<string | null>(null);
+  const [fonepayStatus, setFonepayStatus] = useState<string>("pending");
+  const [fonepayLoading, setFonepayLoading] = useState(false);
+  const [fonepayVerifying, setFonepayVerifying] = useState(false);
 
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
@@ -330,6 +377,43 @@ export default function CheckoutPage() {
     }
   };
 
+  const handleStartFonepay = useCallback(async () => {
+    if (!bill) return;
+    const amount = parseFloat(payAmount || String(bill.balance_due || 0));
+    if (!amount || amount <= 0) {
+      setPayError("Enter a valid amount");
+      return;
+    }
+
+    const initPayload = {
+      order_id: orderId,
+      amount: Math.min(amount, bill?.balance_due || amount),
+      reference: payReference.trim() || undefined,
+      restaurant_id: user?.restaurant_id,
+      customer_id: orderMeta?.customer_id || undefined,
+    };
+    const initRes = await apiClient.post(PaymentApis.fonepayQr, initPayload);
+    const payload = initRes?.data?.data || initRes?.data || {};
+    const prn = String(
+      findFirstStringByKey(payload, ["prn", "merchant_txn", "merchanttxn", "transaction_id"]) || ""
+    );
+    const qrRaw = findFirstStringByKey(payload, ["qr_image", "qrurl", "qr_url", "qr", "base64"]);
+    const rawText = findFirstStringByKey(payload, ["qr_payload", "payload", "qr_string", "deeplink", "content"]);
+    const qrUrl = resolveQrDisplay(qrRaw, rawText, prn);
+
+    if (!prn) {
+      throw new Error("Fonepay response missing PRN");
+    }
+
+    setFonepayPrn(prn);
+    setFonepayQr(qrUrl);
+    setFonepayPayloadText(typeof rawText === "string" ? rawText : null);
+    setFonepayStatus("pending");
+    setPaymentOpen(false);
+    setFonepayDialogOpen(true);
+    toast.success("Fonepay QR generated. Ask customer to complete payment.");
+  }, [bill, orderId, orderMeta?.customer_id, payAmount, payReference, user?.restaurant_id]);
+
   // ── Add Payment ──────────────────────────────────
   const handleAddPayment = async () => {
     const amount = parseFloat(payAmount);
@@ -348,6 +432,11 @@ export default function CheckoutPage() {
     setPaySubmitting(true);
     setPayError(null);
     try {
+      if (payMethod === "fonepay") {
+        await handleStartFonepay();
+        return;
+      }
+
       // If paying with credit and assigning a new customer to this order
       if (payMethod === "credit" && selectedCustomerId && String(orderMeta?.customer_id) !== selectedCustomerId) {
         await apiClient.patch(OrderApis.updateOrder(orderId), {
@@ -379,6 +468,81 @@ export default function CheckoutPage() {
       setPaySubmitting(false);
     }
   };
+
+  const handleVerifyFonepay = useCallback(async () => {
+    if (!fonepayPrn || !bill || fonepayVerifying) return;
+
+    setFonepayVerifying(true);
+    try {
+      const statusRes = await apiClient.get(PaymentApis.fonepayStatus(fonepayPrn), {
+        params: { order_id: orderId, restaurant_id: user?.restaurant_id },
+      });
+      const payload = statusRes?.data?.data || statusRes?.data || {};
+      const statusRaw = String(payload?.status ?? payload?.payment_status ?? payload?.state ?? "").toLowerCase();
+      const isSuccess = Boolean(
+        payload?.is_paid ||
+        payload?.paid ||
+        payload?.success ||
+        payload?.payment_complete ||
+        statusRaw === "success" ||
+        statusRaw === "paid" ||
+        statusRaw === "completed" ||
+        statusRaw === "settled"
+      );
+
+      setFonepayStatus(statusRaw || (isSuccess ? "success" : "pending"));
+
+      if (!isSuccess) return;
+
+      const paidAmountRaw = Number(payload?.amount ?? payload?.paid_amount ?? payload?.total_amount ?? 0);
+      const amountToApply = Math.min(
+        paidAmountRaw > 0 ? paidAmountRaw : (bill.balance_due || 0),
+        bill.balance_due || 0
+      );
+
+      if (amountToApply > 0.009) {
+        try {
+          await apiClient.post(OrderApis.addPayment(orderId), {
+            payment: {
+              method: "fonepay",
+              amount: amountToApply,
+              reference: fonepayPrn,
+              status: "success",
+            },
+          });
+        } catch (payErr: any) {
+          // Backend may have already posted payment via callback/webhook.
+          const msg = String(payErr?.response?.data?.detail || payErr?.message || "");
+          if (!msg.toLowerCase().includes("already") && !msg.toLowerCase().includes("duplicate")) {
+            throw payErr;
+          }
+        }
+      }
+
+      await Promise.all([fetchBill(), fetchContext()]);
+      setFonepayDialogOpen(false);
+      setFonepayPrn(null);
+      setFonepayQr(null);
+      setFonepayPayloadText(null);
+      setFonepayStatus("success");
+      setPayAmount("");
+      setPayReference("");
+      setPayMethod("cash");
+      toast.success("Fonepay payment verified and synced.");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || err?.message || "Failed to verify Fonepay payment");
+    } finally {
+      setFonepayVerifying(false);
+    }
+  }, [bill, fetchBill, fetchContext, fonepayPrn, fonepayVerifying, orderId, user?.restaurant_id]);
+
+  useEffect(() => {
+    if (!fonepayDialogOpen || !fonepayPrn) return;
+    const timer = window.setInterval(() => {
+      handleVerifyFonepay();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [fonepayDialogOpen, fonepayPrn, handleVerifyFonepay]);
 
   // ── Apply Discount ────────────────────────────────
   const handleApplyDiscount = async () => {
@@ -903,7 +1067,55 @@ export default function CheckoutPage() {
             <Button variant="outline" onClick={() => setPaymentOpen(false)}>Cancel</Button>
             <Button onClick={handleAddPayment} disabled={paySubmitting} className="gap-2">
               {paySubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-              {paySubmitting ? "Processing..." : "Add Payment"}
+              {paySubmitting ? "Processing..." : (payMethod === "fonepay" ? "Generate Fonepay QR" : "Add Payment")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={fonepayDialogOpen} onOpenChange={setFonepayDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Fonepay Payment</DialogTitle>
+            <DialogDescription>
+              PRN: <span className="font-semibold text-foreground">{fonepayPrn || "-"}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+              Status: <span className="font-semibold capitalize">{fonepayStatus}</span>
+            </div>
+            {fonepayQr ? (
+              <div className="mx-auto w-[220px] h-[220px] rounded-xl border bg-white p-2">
+                <img src={fonepayQr} alt="Fonepay QR" className="h-full w-full object-contain" />
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                QR image not returned by backend. Use PRN/reference for payment confirmation.
+              </div>
+            )}
+            {fonepayPayloadText && (
+              <div className="rounded-lg border bg-muted/20 p-3 text-xs break-all">{fonepayPayloadText}</div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                setFonepayLoading(true);
+                try {
+                  await handleStartFonepay();
+                } finally {
+                  setFonepayLoading(false);
+                }
+              }}
+              disabled={fonepayLoading || fonepayVerifying}
+            >
+              {fonepayLoading ? "Refreshing QR..." : "Refresh QR"}
+            </Button>
+            <Button onClick={handleVerifyFonepay} disabled={fonepayVerifying} className="gap-2">
+              {fonepayVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              {fonepayVerifying ? "Verifying..." : "Verify Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
