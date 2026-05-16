@@ -114,6 +114,9 @@ export const Sidebar = memo(function Sidebar() {
     const allNonFixed = items.filter((item) => !coreHrefs.has(item.href)).map((item) => item.href);
     setPinnedExtras((prev) => {
       const next = prev.filter((href) => allNonFixed.includes(href));
+      if (next.length === prev.length && next.every((href, index) => href === prev[index])) {
+        return prev;
+      }
       localStorage.setItem("sidebar:pinned-extras", JSON.stringify(next));
       return next;
     });
@@ -122,6 +125,9 @@ export const Sidebar = memo(function Sidebar() {
       .map((item) => item.href);
     setExtraOrder((prev) => {
       const next = [...prev.filter((href) => currentHrefs.includes(href)), ...currentHrefs.filter((href) => !prev.includes(href))];
+      if (next.length === prev.length && next.every((href, index) => href === prev[index])) {
+        return prev;
+      }
       localStorage.setItem("sidebar:extra-order", JSON.stringify(next));
       return next;
     });
