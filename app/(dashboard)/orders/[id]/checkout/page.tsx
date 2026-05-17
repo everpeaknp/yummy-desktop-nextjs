@@ -46,6 +46,7 @@ import {
   CheckCircle,
   User,
   QrCode,
+  Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -211,6 +212,7 @@ export default function CheckoutPage() {
   const [fonepayStatus, setFonepayStatus] = useState<string>("pending");
   const [fonepayLoading, setFonepayLoading] = useState(false);
   const [fonepayVerifying, setFonepayVerifying] = useState(false);
+  const [selectedStaticQrIndex, setSelectedStaticQrIndex] = useState(0);
 
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
@@ -231,6 +233,15 @@ export default function CheckoutPage() {
   const [manualDiscountAmount, setManualDiscountAmount] = useState("");
   const [discountSubmitting, setDiscountSubmitting] = useState(false);
   const [discountError, setDiscountError] = useState<string | null>(null);
+  const [loyaltyOpen, setLoyaltyOpen] = useState(false);
+  const [loyaltyPoints, setLoyaltyPoints] = useState("");
+  const [loyaltySubmitting, setLoyaltySubmitting] = useState(false);
+  const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
+  const staticPaymentQrs: Array<{ name: string; payload: string }> = Array.isArray((restaurant as any)?.payment_qrs)
+    ? (restaurant as any).payment_qrs
+        .filter((q: any) => q && typeof q.payload === "string" && q.payload.trim())
+        .map((q: any) => ({ name: String(q.name || "QR"), payload: String(q.payload) }))
+    : [];
 
   // ── Fetch Bill ────────────────────────────────────
   const fetchBill = useCallback(async () => {
@@ -331,6 +342,7 @@ export default function CheckoutPage() {
     setCompleting(true);
     try {
       await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
+      await fetchCustomers();
       if (returnTo) {
         router.push(returnTo);
       } else if (orderMeta?.channel === "room_service") {
@@ -432,16 +444,28 @@ export default function CheckoutPage() {
     setPaySubmitting(true);
     setPayError(null);
     try {
+      // Persist selected checkout customer to order for all payment methods,
+      // so backend loyalty earning can attribute points correctly.
+      if (selectedCustomerId && String(orderMeta?.customer_id || "") !== selectedCustomerId) {
+        await apiClient.patch(OrderApis.updateOrder(orderId), {
+          customer_id: parseInt(selectedCustomerId, 10),
+        });
+        setOrderMeta((prev) => (
+          prev
+            ? { ...prev, customer_id: parseInt(selectedCustomerId, 10) }
+            : prev
+        ));
+      }
+
       if (payMethod === "fonepay") {
         await handleStartFonepay();
         return;
       }
 
       // If paying with credit and assigning a new customer to this order
-      if (payMethod === "credit" && selectedCustomerId && String(orderMeta?.customer_id) !== selectedCustomerId) {
-        await apiClient.patch(OrderApis.updateOrder(orderId), {
-            customer_id: parseInt(selectedCustomerId, 10)
-        });
+      if (payMethod === "credit" && !orderMeta?.customer_id && !selectedCustomerId) {
+        setPayError("Select a customer for credit payment");
+        return;
       }
 
       const res = await apiClient.post(OrderApis.addPayment(orderId), {
@@ -456,7 +480,7 @@ export default function CheckoutPage() {
       setPayAmount("");
       setPayReference("");
       setPayMethod("cash");
-      await fetchBill();
+      await Promise.all([fetchBill(), fetchCustomers()]);
       
       // Check if payment completed the order
       if (res.data?.data?.payment_complete) {
@@ -519,7 +543,7 @@ export default function CheckoutPage() {
         }
       }
 
-      await Promise.all([fetchBill(), fetchContext()]);
+      await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
       setFonepayDialogOpen(false);
       setFonepayPrn(null);
       setFonepayQr(null);
@@ -543,6 +567,17 @@ export default function CheckoutPage() {
     }, 5000);
     return () => window.clearInterval(timer);
   }, [fonepayDialogOpen, fonepayPrn, handleVerifyFonepay]);
+
+  useEffect(() => {
+    if (payMethod !== "digital") return;
+    if (staticPaymentQrs.length === 0) {
+      setSelectedStaticQrIndex(0);
+      return;
+    }
+    if (selectedStaticQrIndex >= staticPaymentQrs.length) {
+      setSelectedStaticQrIndex(0);
+    }
+  }, [payMethod, selectedStaticQrIndex, staticPaymentQrs.length]);
 
   // ── Apply Discount ────────────────────────────────
   const handleApplyDiscount = async () => {
@@ -621,6 +656,19 @@ export default function CheckoutPage() {
   if (!bill) return null;
 
   const hasDiscount = bill.discount_total > 0 || bill.manual_discount_amount > 0;
+  const checkoutCustomerId = orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
+  const checkoutCustomer = checkoutCustomerId
+    ? customers.find((c: any) => Number(c?.id) === Number(checkoutCustomerId))
+    : null;
+  const availableLoyaltyPoints = Number(checkoutCustomer?.loyalty_points || 0);
+  const customerTotalSpent = Number(checkoutCustomer?.total_spent ?? checkoutCustomer?.totalSpent ?? checkoutCustomer?.lifetime_spent ?? 0);
+  const customerCredit = Number(checkoutCustomer?.credit ?? checkoutCustomer?.outstanding_credit ?? 0);
+  const customerMaxDiscount = Number(
+    checkoutCustomer?.max_discount ??
+    checkoutCustomer?.max_discount_amount ??
+    checkoutCustomer?.loyalty_max_discount ??
+    0
+  );
   const orderLabel = orderMeta?.table_name
     ? `${orderMeta.table_name} • Order #${orderMeta.restaurant_order_id || orderId}`
     : `Order #${orderMeta?.restaurant_order_id || orderId}`;
@@ -870,6 +918,86 @@ export default function CheckoutPage() {
           {/* Action Buttons */}
           {!bill.is_fully_paid && (
             <div className="space-y-3">
+              <Card className="border-border/40">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Award className="h-4 w-4 text-orange-600" />
+                      <span className="text-sm font-semibold">Loyalty & Customer</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {checkoutCustomer ? "Customer selected" : "Select customer"}
+                    </span>
+                  </div>
+
+                  {!orderMeta?.customer_id && (
+                    <div className="space-y-2">
+                      <Label className="text-xs">Customer</Label>
+                      <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                        <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
+                          <SelectValue placeholder="Select customer to view loyalty details" />
+                        </SelectTrigger>
+                        <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
+                          {customers.map((c: any) => (
+                            <SelectItem key={c.id} value={String(c.id)}>
+                              <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
+                                {formatCustomerLabel(c, curr)}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {checkoutCustomer ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-lg border p-2">
+                          <p className="text-muted-foreground">Points</p>
+                          <p className="font-bold tabular-nums">{availableLoyaltyPoints}</p>
+                        </div>
+                        <div className="rounded-lg border p-2">
+                          <p className="text-muted-foreground">Total Spent</p>
+                          <p className="font-bold tabular-nums">{formatCurrency(customerTotalSpent, curr)}</p>
+                        </div>
+                        <div className="rounded-lg border p-2">
+                          <p className="text-muted-foreground">Credit</p>
+                          <p className="font-bold tabular-nums">{formatCurrency(customerCredit, curr)}</p>
+                        </div>
+                        <div className="rounded-lg border p-2">
+                          <p className="text-muted-foreground">Max Discount</p>
+                          <p className="font-bold tabular-nums">{formatCurrency(customerMaxDiscount, curr)}</p>
+                        </div>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          setLoyaltyError(null);
+                          setLoyaltyPoints("");
+                          setLoyaltyOpen(true);
+                        }}
+                        disabled={availableLoyaltyPoints <= 0}
+                      >
+                        Redeem Loyalty Points
+                      </Button>
+                      {availableLoyaltyPoints <= 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          No redeemable points available for this customer.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Select a customer to view loyalty details and redeem points before payment.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
               <Button
                 className="w-full h-12 text-base font-semibold shadow-lg gap-2"
                 onClick={() => {
@@ -941,7 +1069,7 @@ export default function CheckoutPage() {
 
       {/* ── Payment Dialog ── */}
       <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
-        <DialogContent className="sm:max-w-md max-h-[88vh] overflow-y-auto">
+        <DialogContent className="w-[96vw] sm:w-[92vw] sm:max-w-2xl max-h-[90vh] overflow-x-hidden overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Payment</DialogTitle>
             <DialogDescription>
@@ -949,7 +1077,7 @@ export default function CheckoutPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 min-w-0">
             {payError && (
               <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{payError}</div>
             )}
@@ -957,21 +1085,21 @@ export default function CheckoutPage() {
             {/* Payment Method */}
             <div className="space-y-2">
               <Label>Payment Method</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 min-w-0">
                 {PAYMENT_METHODS.map((m) => (
                   <button
                     key={m.value}
                     type="button"
                     onClick={() => setPayMethod(m.value)}
                     className={cn(
-                      "flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-sm font-medium",
+                      "flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-sm font-medium min-w-0",
                       payMethod === m.value
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border/50 hover:border-border text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    <m.icon className="h-4 w-4" />
-                    {m.label}
+                    <m.icon className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{m.label}</span>
                   </button>
                 ))}
               </div>
@@ -993,17 +1121,17 @@ export default function CheckoutPage() {
                   </Button>
                 </div>
                 <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                  <SelectTrigger className="w-full pr-8 [&>span]:truncate">
+                  <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
                     <SelectValue placeholder="Select a customer to assign credit tracking">
                       {selectedCustomerId
                         ? formatCustomerLabel(customers.find((c: any) => String(c.id) === selectedCustomerId), curr)
                         : undefined}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
                     {customers.map((c: any) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        <span className="block max-w-[280px] truncate" title={formatCustomerLabel(c, curr)}>
+                        <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
                           {formatCustomerLabel(c, curr)}
                         </span>
                       </SelectItem>
@@ -1018,6 +1146,54 @@ export default function CheckoutPage() {
                   <User className="h-4 w-4" />
                   Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
                </div>
+            )}
+
+            {payMethod === "digital" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Static QR</Label>
+                  {staticPaymentQrs.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {selectedStaticQrIndex + 1}/{staticPaymentQrs.length}
+                    </span>
+                  )}
+                </div>
+                {staticPaymentQrs.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                    No static QR configured in settings. Add one in Manage / Settings / Payments & POS.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      {staticPaymentQrs.map((qr, idx) => (
+                        <button
+                          key={`${qr.name}-${idx}`}
+                          type="button"
+                          onClick={() => setSelectedStaticQrIndex(idx)}
+                          className={cn(
+                            "rounded-lg border px-3 py-2 text-left text-sm",
+                            selectedStaticQrIndex === idx
+                              ? "border-primary bg-primary/5 text-primary"
+                              : "border-border/50 text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <div className="font-medium truncate">{qr.name}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mx-auto h-[210px] w-[210px] rounded-xl border bg-white p-2">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(staticPaymentQrs[selectedStaticQrIndex]?.payload || "")}`}
+                        alt={staticPaymentQrs[selectedStaticQrIndex]?.name || "Static payment QR"}
+                        className="h-full w-full object-contain"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground break-all">
+                      {staticPaymentQrs[selectedStaticQrIndex]?.payload}
+                    </p>
+                  </>
+                )}
+              </div>
             )}
 
             {/* Amount */}
@@ -1068,6 +1244,82 @@ export default function CheckoutPage() {
             <Button onClick={handleAddPayment} disabled={paySubmitting} className="gap-2">
               {paySubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
               {paySubmitting ? "Processing..." : (payMethod === "fonepay" ? "Generate Fonepay QR" : "Add Payment")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={loyaltyOpen} onOpenChange={setLoyaltyOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Redeem Loyalty Points</DialogTitle>
+            <DialogDescription>
+              {checkoutCustomer
+                ? `Customer: ${checkoutCustomer.full_name || checkoutCustomer.name || checkoutCustomer.phone || "Customer"}`
+                : "Select a customer first to redeem points."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {loyaltyError && (
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+                {loyaltyError}
+              </div>
+            )}
+            <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+              Available points: <span className="font-semibold">{availableLoyaltyPoints}</span>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="loyalty-points">Points to redeem</Label>
+              <Input
+                id="loyalty-points"
+                type="number"
+                min="1"
+                value={loyaltyPoints}
+                onChange={(e) => setLoyaltyPoints(e.target.value)}
+                placeholder="Enter points"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setLoyaltyOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={loyaltySubmitting || !checkoutCustomerId}
+              onClick={async () => {
+                if (!checkoutCustomerId) {
+                  setLoyaltyError("No customer attached to this order");
+                  return;
+                }
+                const points = Math.floor(Number(loyaltyPoints || 0));
+                if (!Number.isFinite(points) || points <= 0) {
+                  setLoyaltyError("Enter valid points to redeem");
+                  return;
+                }
+                if (availableLoyaltyPoints > 0 && points > availableLoyaltyPoints) {
+                  setLoyaltyError("Cannot redeem more points than available");
+                  return;
+                }
+                setLoyaltySubmitting(true);
+                setLoyaltyError(null);
+                try {
+                  await apiClient.post(CustomerApis.redeemLoyaltyPoints(checkoutCustomerId), {
+                    points,
+                    order_id: orderId,
+                  });
+                  await Promise.all([fetchBill(), fetchCustomers()]);
+                  setLoyaltyOpen(false);
+                  setLoyaltyPoints("");
+                  toast.success("Loyalty points redeemed");
+                } catch (err: any) {
+                  setLoyaltyError(err?.response?.data?.detail || err?.response?.data?.message || "Failed to redeem loyalty points");
+                } finally {
+                  setLoyaltySubmitting(false);
+                }
+              }}
+            >
+              {loyaltySubmitting ? "Redeeming..." : "Redeem"}
             </Button>
           </DialogFooter>
         </DialogContent>
