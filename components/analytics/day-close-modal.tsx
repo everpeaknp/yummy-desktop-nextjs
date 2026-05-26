@@ -708,6 +708,9 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
     const salesByTable = pickList(snapshot, ["sales_by_table", "table_sales", "by_table"]).length
         ? pickList(snapshot, ["sales_by_table", "table_sales", "by_table"])
         : pickBreakdownRows(["sales by table", "table sales"]).length
+            ? pickBreakdownRows(["sales by table", "table sales"])
+            : findBreakdownByTokens(["table"]);
+
     const allMetrics = [
         { label: "Gross Sales", value: derivedGrossSales, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
         { label: "Net Sales", value: derivedNetSales, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
