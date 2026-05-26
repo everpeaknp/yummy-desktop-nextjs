@@ -51,7 +51,9 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
       ? "roles/"
       : joined === "orders"
         ? "orders/"
-        : joined;
+        : joined === "expenses"
+          ? "expenses/"
+          : joined;
   const url = new URL(`${backend}/${normalizedPath}`);
   req.nextUrl.searchParams.forEach((v, k) => url.searchParams.append(k, v));
 

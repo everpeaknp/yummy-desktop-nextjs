@@ -194,6 +194,8 @@ export default function OrderDetailPage() {
       await fetchContext();
     } catch (err: any) {
       console.error("Failed to cancel order:", err);
+      const detail = err?.response?.data?.detail || err?.response?.data?.message || "Failed to cancel order";
+      toast.error(detail);
     } finally {
       setCanceling(false);
     }
@@ -207,6 +209,8 @@ export default function OrderDetailPage() {
       await fetchContext();
     } catch (err: any) {
       console.error("Failed to complete order:", err);
+      const detail = err?.response?.data?.detail || err?.response?.data?.message || "Failed to complete order";
+      toast.error(detail);
     } finally {
       setCompleting(false);
     }

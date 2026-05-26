@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
+import { toast } from "sonner";
 import { ReceiptApis, OrderApis } from "@/lib/api/endpoints";
 import { useOrderFull } from "@/hooks/use-order-full";
 import { cn } from "@/lib/utils";
@@ -224,6 +225,7 @@ export default function ReceiptPage() {
     setCompleting(true);
     try {
       await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
+      toast.success("Order completed successfully!");
       if (returnTo) {
         router.push(returnTo);
       } else if (receipt?.order?.channel === "room_service") {
@@ -233,6 +235,11 @@ export default function ReceiptPage() {
       }
     } catch (err: any) {
       console.error("Failed to complete order:", err);
+      const detail =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to complete order";
+      toast.error(detail);
     } finally {
       setCompleting(false);
     }

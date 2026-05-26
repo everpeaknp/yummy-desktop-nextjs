@@ -5,9 +5,10 @@ import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, ChevronRight, Calculator, AlertTriangle, Receipt } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CheckCircle2, ChevronRight, Calculator, AlertTriangle, Receipt, ChevronDown } from "lucide-react";
 import apiClient from "@/lib/api-client";
-import { DayCloseApis, TableApis } from "@/lib/api/endpoints";
+import { DayCloseApis, TableApis, ExpenseApis, OrderApis } from "@/lib/api/endpoints";
 
 interface DayCloseModalProps {
   isOpen: boolean;
@@ -257,24 +258,88 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
     const [loading, setLoading] = useState(true);
     const [initiating, setInitiating] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showZeroes, setShowZeroes] = useState(false);
 
     useEffect(() => {
         const generate = async () => {
             try {
-                const [res, tablesRes] = await Promise.all([
+                const [res, tablesRes, expensesRes, ordersRes] = await Promise.all([
                     apiClient.get(DayCloseApis.generateSnapshot, {
                         params: {
                             restaurant_id: restaurantId,
                             business_date: businessDate
                         }
                     }),
-                    apiClient.get(TableApis.getTables(restaurantId))
+                    apiClient.get(TableApis.getTables(restaurantId)),
+                    // Fetch recent expenses to catch those paid today (limit 200 max)
+                    apiClient.get(ExpenseApis.list, {
+                        params: { 
+                            restaurant_id: restaurantId, 
+                            limit: 200 
+                        }
+                    }).catch(() => null),
+                    // Fetch proper orders (limit 100 max to avoid 422)
+                    apiClient.get(OrderApis.listOrders, {
+                        params: { restaurant_id: restaurantId, date_from: businessDate, date_to: businessDate, limit: 100 }
+                    }).catch(() => null)
                 ]);
+
+                let snapshotData = null;
                 if (res.data.status === 'success') {
-                    setSnapshot(res.data.data);
+                    snapshotData = { ...res.data.data };
+
+                    // 1. Properly calculate expenses
+                    const rawExpenses = expensesRes?.data?.data?.expenses || expensesRes?.data?.data?.items;
+                    if (rawExpenses) {
+                        const expensesArr = rawExpenses.filter((e: any) => {
+                            const dateStr = (e.paid_on || e.expense_date || "").split('T')[0];
+                            return dateStr === businessDate;
+                        });
+                        
+                        const realExpenses = expensesArr.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+                        snapshotData.manual_expense_total = realExpenses;
+
+                        // Group by category for the list card
+                        const catMap: Record<string, number> = {};
+                        expensesArr.forEach((e: any) => {
+                            const catName = e.category?.name || "Uncategorized";
+                            catMap[catName] = (catMap[catName] || 0) + (Number(e.amount) || 0);
+                        });
+                        snapshotData.manual_expenses_by_category = Object.entries(catMap).map(([name, amount]) => ({ name, amount }));
+                    }
+
+                    // 2. Properly calculate avg items / order
+                    const ordersArr = ordersRes?.data?.data?.orders || ordersRes?.data?.data?.items;
+                    if (ordersArr) {
+                        const orders = ordersArr.filter((o: any) => 
+                            o.status === 'completed' || o.status === 'ready' || o.status === 'settled' || o.status === 'paid'
+                        );
+                        if (orders.length > 0) {
+                            const totalItems = orders.reduce((acc: number, curr: any) => {
+                                if (curr.items && Array.isArray(curr.items)) {
+                                    return acc + curr.items.reduce((sum: number, item: any) => sum + (Number(item.qty || item.quantity) || 1), 0);
+                                }
+                                return acc + (Number(curr.total_items || curr.total_qty || curr.items_count) || 0);
+                            }, 0);
+                            snapshotData.manual_avg_items = totalItems / orders.length;
+                        } else {
+                            snapshotData.manual_avg_items = 0;
+                        }
+                        
+                        // 3. Properly count credit orders
+                        const creditOrderList = orders.filter((o: any) => {
+                            const method = String(o.payment_method || o.payment_type || "").toLowerCase();
+                            const status = String(o.payment_status || "").toLowerCase();
+                            return method === "credit" || status === "credit" || o.is_credit === true;
+                        });
+                        snapshotData.manual_credit_orders = creditOrderList.length;
+                    }
+
+                    setSnapshot(snapshotData);
                 } else {
                     setError(res.data.message || "Failed to generate snapshot");
                 }
+                
                 if (tablesRes.data?.status === "success" && Array.isArray(tablesRes.data?.data)) {
                     const map: Record<string, string> = {};
                     tablesRes.data.data.forEach((t: any) => {
@@ -592,7 +657,7 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
     const derivedTaxCollected = taxCollected || pickNumberByLabel(["tax collected", "tax total"]);
     const derivedDiscounts = discounts || pickNumberByLabel(["discount", "total discounts"]);
     const derivedRefunds = refunds || pickNumberByLabel(["refund", "total refunds"]);
-    const derivedExpenses = expenses || pickNumberByLabel(["expense", "total expenses"]);
+    const derivedExpenses = snapshot?.manual_expense_total ?? (expenses || pickNumberByLabel(["expense", "total expenses"]));
     const derivedManualIncome = manualIncome || pickNumberByLabel(["manual income", "other income"]);
     const derivedAvgOrderValue =
         avgOrderValue ||
@@ -619,13 +684,15 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
               pickNumberByPathTokens(["quantity", "total"], ["avg", "average"]) ||
               sumQuantitiesFromItemArrays();
     const derivedAvgItemsPerOrder =
-        avgItemsPerOrder ||
-        pickNumberByLabel(["avg items", "average items", "items per order"]) ||
-        ((derivedTotalOrders || 0) > 0 ? discoveredTotalItems / derivedTotalOrders : 0);
+        snapshot?.manual_avg_items ?? (
+            avgItemsPerOrder ||
+            pickNumberByLabel(["avg items", "average items", "items per order"]) ||
+            ((derivedTotalOrders || 0) > 0 ? discoveredTotalItems / derivedTotalOrders : 0)
+        );
     const derivedCreditSales = creditSales || pickNumberByLabel(["credit sales"]);
     const derivedCreditCollection = creditCollection || pickNumberByLabel(["credit collection", "credit collected"]);
     const derivedReceivables = receivables || pickNumberByLabel(["receivable", "accounts receivable"]);
-    const derivedCreditOrders = creditOrders || pickNumberByLabel(["credit orders"]);
+    const derivedCreditOrders = snapshot?.manual_credit_orders ?? (creditOrders || pickNumberByLabel(["credit orders"]));
     const derivedCashCollected = cashCollected || pickNumberByLabel(["cash collected", "cash in"]);
 
     const paymentDistribution = pickList(snapshot, ["payment_distribution", "payment_methods", "by_payment_method"]).length
@@ -641,30 +708,48 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
     const salesByTable = pickList(snapshot, ["sales_by_table", "table_sales", "by_table"]).length
         ? pickList(snapshot, ["sales_by_table", "table_sales", "by_table"])
         : pickBreakdownRows(["sales by table", "table sales"]).length
-            ? pickBreakdownRows(["sales by table", "table sales"])
-            : findBreakdownByTokens(["table"]);
-
-    const financialCards = [
-        { label: "Gross Sales", value: amount(derivedGrossSales) },
-        { label: "Net Sales", value: amount(derivedNetSales) },
-        { label: "Total Income", value: amount(derivedTotalIncome) },
-        { label: "Tax Collected", value: amount(derivedTaxCollected) },
-        { label: "Discounts", value: amount(derivedDiscounts) },
-        { label: "Refunds", value: amount(derivedRefunds) },
-        { label: "Expenses", value: amount(derivedExpenses) },
-        { label: "Manual Income", value: amount(derivedManualIncome) },
-        { label: "Credit Sales", value: amount(derivedCreditSales) },
-        { label: "Credit Collection", value: amount(derivedCreditCollection) },
-        { label: "Receivables", value: amount(derivedReceivables) },
-        { label: "Cash Collected", value: amount(derivedCashCollected) },
+    const allMetrics = [
+        { label: "Gross Sales", value: derivedGrossSales, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
+        { label: "Net Sales", value: derivedNetSales, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
+        { label: "Total Income", value: derivedTotalIncome, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
+        { label: "Expected Cash", value: snapshot?.expected_cash ?? 0, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
+        { label: "Expenses", value: derivedExpenses, isAmount: true, color: "text-rose-600 dark:text-rose-400" },
+        { label: "Credit Sales", value: derivedCreditSales, isAmount: true, color: "text-blue-600 dark:text-blue-400" },
+        { label: "Receivables", value: derivedReceivables, isAmount: true, color: "text-blue-600 dark:text-blue-400" },
+        { label: "Cash Collected", value: derivedCashCollected, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
+        { label: "Avg Order", value: derivedAvgOrderValue, isAmount: true },
+        { label: "Avg Items / Order", value: derivedAvgItemsPerOrder, isAmount: false, format: (v: number) => Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }) },
+        { label: "Total Orders", value: derivedTotalOrders, isAmount: false },
+        { label: "Tax Collected", value: derivedTaxCollected, isAmount: true },
+        { label: "Discounts", value: derivedDiscounts, isAmount: true, color: "text-rose-600 dark:text-rose-400" },
+        { label: "Refunds", value: derivedRefunds, isAmount: true, color: "text-rose-600 dark:text-rose-400" },
+        { label: "Manual Income", value: derivedManualIncome, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
+        { label: "Credit Collection", value: derivedCreditCollection, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
+        { label: "Credit Orders", value: derivedCreditOrders, isAmount: false },
     ];
 
-    const operationalCards = [
-        { label: "Total Orders", value: Number(derivedTotalOrders || 0).toLocaleString() },
-        { label: "Credit Orders", value: Number(derivedCreditOrders || 0).toLocaleString() },
-        { label: "Avg Order", value: amount(derivedAvgOrderValue) },
-        { label: "Avg Items / Order", value: Number(derivedAvgItemsPerOrder || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }) },
-    ];
+    const primaryLabels = ["Gross Sales", "Net Sales", "Total Income", "Expected Cash"];
+    
+    const primaryCards = allMetrics.filter(m => primaryLabels.includes(m.label));
+    const secondaryCards = allMetrics.filter(m => !primaryLabels.includes(m.label));
+
+    const renderCard = (card: any, isPrimary = false) => {
+        const val = card.format ? card.format(card.value) : card.isAmount ? amount(card.value) : Number(card.value || 0).toLocaleString();
+        
+        let valColor = card.color;
+        if (card.isAmount && Number(card.value) < 0) {
+             valColor = "text-rose-600 dark:text-rose-400";
+        } else if (!valColor) {
+             valColor = isPrimary ? "text-slate-800 dark:text-slate-100" : "text-slate-800 dark:text-slate-200";
+        }
+
+        return (
+            <div key={card.label} className={cn("p-3 rounded-xl border bg-slate-50 dark:bg-slate-900", isPrimary ? "bg-white dark:bg-slate-950 shadow-sm" : "")}>
+                <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold mb-1">{card.label}</p>
+                <p className={cn("font-bold leading-tight", isPrimary ? "text-2xl" : "text-lg", valColor)}>{val}</p>
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-6">
@@ -679,49 +764,43 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
             </div>
 
             <div className="space-y-3">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Financial Snapshot</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {financialCards.map((card) => (
-                        <div key={card.label} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border">
-                            <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold mb-1">{card.label}</p>
-                            <p className="text-lg font-bold leading-tight">{card.value}</p>
-                        </div>
-                    ))}
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Primary Metrics</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {primaryCards.map(c => renderCard(c, true))}
                 </div>
             </div>
 
             <div className="space-y-3">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Operational Snapshot</h4>
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Additional Metrics</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {operationalCards.map((card) => (
-                        <div key={card.label} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border">
-                            <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold mb-1">{card.label}</p>
-                            <p className="text-lg font-bold leading-tight">{card.value}</p>
-                        </div>
-                    ))}
+                    {secondaryCards.map(c => renderCard(c))}
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                <SnapshotListCard
-                    title="Payment Distribution (Methods)"
-                    rows={paymentDistribution}
-                    labelKeys={["method", "name", "payment_method"]}
-                    valueKeys={["amount", "total", "value"]}
-                />
-                <SnapshotListCard
-                    title="Sales By Category"
-                    rows={salesByCategory}
-                    labelKeys={["category", "category_name", "name"]}
-                    valueKeys={["sales", "amount", "total"]}
-                />
-                <SnapshotListCard
-                    title="Sales By Table"
-                    rows={salesByTable}
-                    labelKeys={["table", "table_name", "name"]}
-                    valueKeys={["sales", "amount", "total"]}
-                    tableNameMap={tableNameMap}
-                />
+            <div className="pt-4">
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-3">Detailed Breakdowns</h4>
+                <Tabs defaultValue="payments" className="w-full">
+                    <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                        <TabsTrigger value="payments" className="rounded-lg">Payments</TabsTrigger>
+                        <TabsTrigger value="categories" className="rounded-lg">Categories</TabsTrigger>
+                        <TabsTrigger value="tables" className="rounded-lg">Tables</TabsTrigger>
+                        <TabsTrigger value="expenses" className="rounded-lg">Expenses</TabsTrigger>
+                    </TabsList>
+                    <div className="mt-4">
+                        <TabsContent value="payments" className="m-0">
+                            <SnapshotListCard title="Payment Distribution (Methods)" rows={paymentDistribution} labelKeys={["method", "name", "payment_method"]} valueKeys={["amount", "total", "value"]} />
+                        </TabsContent>
+                        <TabsContent value="categories" className="m-0">
+                            <SnapshotListCard title="Sales By Category" rows={salesByCategory} labelKeys={["category", "category_name", "name"]} valueKeys={["sales", "amount", "total"]} />
+                        </TabsContent>
+                        <TabsContent value="tables" className="m-0">
+                            <SnapshotListCard title="Sales By Table" rows={salesByTable} labelKeys={["table", "table_name", "name"]} valueKeys={["sales", "amount", "total"]} tableNameMap={tableNameMap} />
+                        </TabsContent>
+                        <TabsContent value="expenses" className="m-0">
+                            <SnapshotListCard title="Expenses By Category" rows={snapshot?.manual_expenses_by_category || []} labelKeys={["name"]} valueKeys={["amount"]} />
+                        </TabsContent>
+                    </div>
+                </Tabs>
             </div>
             
             <div className="pt-4 flex justify-end">
@@ -746,6 +825,8 @@ function SnapshotListCard({
     valueKeys: string[];
     tableNameMap?: Record<string, string>;
 }) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+
     const formatTableLabel = (row: any): string | null => {
         if (!row || typeof row !== "object") return null;
         const area =
@@ -781,11 +862,11 @@ function SnapshotListCard({
     return (
         <div className="rounded-xl border bg-slate-50 dark:bg-slate-900 p-3">
             <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold mb-2">{title}</p>
-            {rows.length === 0 ? (
+            {safeRows.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No data available</p>
             ) : (
                 <div className="space-y-1.5 max-h-44 overflow-auto pr-1">
-                    {rows.slice(0, 12).map((row, idx) => {
+                    {safeRows.slice(0, 12).map((row, idx) => {
                         const rawLabel = readValue(row, labelKeys);
                         const rawLabelText = rawLabel != null ? String(rawLabel) : null;
                         const mappedLabel = rawLabelText != null
@@ -810,10 +891,15 @@ function SnapshotListCard({
                                     if (typeof amountLike === "string") return Number(amountLike.replace(/[^0-9.-]/g, "")) || 0;
                                     return 0;
                                 })();
+                        
+                        const isExpense = title.toLowerCase().includes("expense");
+                        let valColor = isExpense ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400";
+                        if (num < 0) valColor = "text-rose-600 dark:text-rose-400";
+
                         return (
                             <div key={`${label}-${idx}`} className="flex items-center justify-between rounded-lg border border-black/5 dark:border-white/10 bg-background px-2 py-1.5">
                                 <span className="text-xs font-medium truncate pr-2">{label}</span>
-                                <span className="text-xs font-bold whitespace-nowrap">Rs. {num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                <span className={cn("text-xs font-bold whitespace-nowrap", valColor)}>Rs. {num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                         );
                     })}
@@ -871,7 +957,7 @@ function CashReconciliationStep({ onNext, snapshot, dayCloseId }: { onNext: (dat
                  <div className="p-4 border rounded-xl bg-slate-50 dark:bg-slate-900">
                      <p className="text-sm font-medium mb-2">Expected Cash</p>
                      <p className="text-2xl font-bold text-slate-700 dark:text-slate-200">
-                        Rs. {Number(snapshot?.cash_collected || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        Rs. {Number(snapshot?.expected_cash ?? snapshot?.cash_collected ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                      </p>
                  </div>
                  

@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import apiClient from "@/lib/api-client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -20,12 +22,61 @@ import { format, differenceInDays } from "date-fns";
 
 export default function PremiumPage() {
   const restaurant = useRestaurant((s) => s.restaurant);
+  const [plansData, setPlansData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  const SUPPORT_EMAIL = "yummyever.np@gmail.com";
-  const SUPPORT_PHONE = "9862936014";
-  const WHATSAPP_NUMBER = "9862936014";
-  const PREMIUM_PRICE = "Rs. 12,000 / year";
-  const REGULAR_PRICE = "Rs. 19,999";
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        const res = await apiClient.get("/api/v1/subscription/plans");
+        if (res.data?.status === "success") {
+          setPlansData(res.data.data);
+        }
+      } catch (err) {
+        console.error("Failed to load subscription plans", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPlans();
+  }, []);
+
+  const contact = plansData?.contact || {
+    support_email: "yummyever.np@gmail.com",
+    support_phone: "9862936014",
+    whatsapp_number: "9862936014"
+  };
+
+  const freePlan = plansData?.plans?.find((p: any) => p.id === "free") || {
+    name: "Free Plan",
+    subtitle: "Basic setup for daily operations",
+    price_display: "Free",
+    features: [
+      { label: "Up to 3 users & staff profiles", included: true },
+      { label: "Up to 100 menu items", included: true },
+      { label: "Up to 10 tables", included: true },
+      { label: "KOT & Billing included", included: true },
+      { label: "Standard support", included: true },
+      { label: "Advanced reporting", included: false },
+      { label: "Custom receipt designer", included: false },
+    ]
+  };
+
+  const premiumPlan = plansData?.plans?.find((p: any) => p.id === "premium") || {
+    name: "Premium Plan",
+    subtitle: "Everything included, no limits",
+    price_display: "Rs. 12,000 / year",
+    regular_price_display: "Rs. 19,999",
+    features: [
+      { label: "Unlimited users & staff", included: true },
+      { label: "Unlimited menu & inventory", included: true },
+      { label: "Advanced finance & Period closure", included: true },
+      { label: "Full station designer access", included: true },
+      { label: "Custom receipt templates", included: true },
+      { label: "Daily automatic backups", included: true },
+      { label: "Priority support 24/7", included: true, highlight: true },
+    ]
+  };
 
   const planState = restaurant?.plan_state?.toLowerCase() || "free";
   const effectivePlan = restaurant?.effective_plan?.toLowerCase() || "free";
@@ -59,9 +110,13 @@ export default function PremiumPage() {
   };
 
   const openWhatsApp = () => {
-    const msg = `Hello Yummy Team, I want to upgrade my restaurant (${restaurant?.name || "Restaurant"}) to the Premium Plan (${PREMIUM_PRICE}).`;
-    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`, "_blank");
+    const msg = `Hello Yummy Team, I want to upgrade my restaurant (${restaurant?.name || "Restaurant"}) to the Premium Plan (${premiumPlan.price_display}).`;
+    window.open(`https://wa.me/${contact.whatsapp_number}?text=${encodeURIComponent(msg)}`, "_blank");
   };
+
+  if (loading) {
+    return <div className="max-w-4xl mx-auto py-12 px-6 flex justify-center"><div className="animate-pulse bg-muted h-32 w-full rounded-2xl"></div></div>;
+  }
 
   return (
     <div className="max-w-4xl mx-auto py-12 px-6 space-y-12">
@@ -91,18 +146,14 @@ export default function PremiumPage() {
         {/* Free Plan */}
         <div className="group relative flex flex-col p-8 rounded-2xl border border-border bg-card hover:border-border/80 transition-all">
           <div className="mb-6">
-            <h3 className="text-lg font-bold">Free Plan</h3>
-            <p className="text-xs text-muted-foreground mt-1">Basic setup for daily operations</p>
+            <h3 className="text-lg font-bold">{freePlan.name}</h3>
+            <p className="text-xs text-muted-foreground mt-1">{freePlan.subtitle}</p>
           </div>
           
           <div className="flex-1 space-y-3.5 mb-8">
-            <FeatureItem label="Up to 3 users & staff profiles" included />
-            <FeatureItem label="Up to 100 menu items" included />
-            <FeatureItem label="Up to 10 tables" included />
-            <FeatureItem label="KOT & Billing included" included />
-            <FeatureItem label="Standard support" included />
-            <FeatureItem label="Advanced reporting" included={false} />
-            <FeatureItem label="Custom receipt designer" included={false} />
+            {freePlan.features.map((feat: any, idx: number) => (
+              <FeatureItem key={idx} label={feat.label} included={feat.included} highlight={feat.highlight} />
+            ))}
           </div>
 
           <div className="mt-auto pt-6 border-t border-border/40">
@@ -119,26 +170,24 @@ export default function PremiumPage() {
           </div>
 
           <div className="mb-6">
-            <h3 className="text-lg font-bold text-primary">Premium Plan</h3>
-            <p className="text-xs text-muted-foreground mt-1">Everything included, no limits</p>
+            <h3 className="text-lg font-bold text-primary">{premiumPlan.name}</h3>
+            <p className="text-xs text-muted-foreground mt-1">{premiumPlan.subtitle}</p>
           </div>
 
           <div className="mb-8 p-5 rounded-xl bg-card border border-border/50">
-            <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold text-muted-foreground line-through">{REGULAR_PRICE}</span>
-                <span className="text-[9px] font-black bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-500/20">SAVE 40%</span>
-            </div>
-            <div className="text-2xl font-black">{PREMIUM_PRICE}</div>
+            {premiumPlan.regular_price_display && (
+              <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-bold text-muted-foreground line-through">{premiumPlan.regular_price_display}</span>
+                  <span className="text-[9px] font-black bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-500/20">SAVE 40%</span>
+              </div>
+            )}
+            <div className="text-2xl font-black">{premiumPlan.price_display}</div>
           </div>
           
           <div className="flex-1 space-y-3.5 mb-8">
-            <FeatureItem label="Unlimited users & staff" included />
-            <FeatureItem label="Unlimited menu & inventory" included />
-            <FeatureItem label="Advanced finance & Period closure" included />
-            <FeatureItem label="Full station designer access" included />
-            <FeatureItem label="Custom receipt templates" included />
-            <FeatureItem label="Daily automatic backups" included />
-            <FeatureItem label="Priority support 24/7" included highlight />
+            {premiumPlan.features.map((feat: any, idx: number) => (
+              <FeatureItem key={idx} label={feat.label} included={feat.included} highlight={feat.highlight} />
+            ))}
           </div>
 
           <div className="mt-auto">
@@ -154,12 +203,12 @@ export default function PremiumPage() {
       <div className="pt-8 text-center sm:flex sm:items-center sm:justify-center sm:gap-6 text-xs text-muted-foreground font-medium">
         <p>Need a custom quote?</p>
         <div className="hidden sm:block h-1 w-1 rounded-full bg-border" />
-        <a href={`tel:${SUPPORT_PHONE}`} className="hover:text-primary transition-colors font-bold">
-          Call us: {SUPPORT_PHONE}
+        <a href={`tel:${contact.support_phone}`} className="hover:text-primary transition-colors font-bold">
+          Call us: {contact.support_phone}
         </a>
         <div className="hidden sm:block h-1 w-1 rounded-full bg-border" />
-        <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-primary transition-colors font-bold">
-          Email: {SUPPORT_EMAIL}
+        <a href={`mailto:${contact.support_email}`} className="hover:text-primary transition-colors font-bold">
+          Email: {contact.support_email}
         </a>
       </div>
     </div>

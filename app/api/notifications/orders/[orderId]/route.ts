@@ -6,17 +6,35 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ orderId: st
   const url = new URL(req.url);
   const upstream = `${getUpstreamBaseUrl()}/notifications/orders/${orderId}?${url.searchParams.toString()}`;
 
-  const res = await fetch(upstream, {
-    method: "GET",
-    headers: {
-      ...authHeadersFrom(req),
-      accept: "application/json",
-    },
-    cache: "no-store",
-  });
+  try {
+    const res = await fetch(upstream, {
+      method: "GET",
+      headers: {
+        ...authHeadersFrom(req),
+        accept: "application/json",
+      },
+      cache: "no-store",
+    });
 
-  const contentType = res.headers.get("content-type") || "application/json";
-  const buf = await res.arrayBuffer();
-  return new NextResponse(buf, { status: res.status, headers: { "content-type": contentType } });
+    const contentType = res.headers.get("content-type") || "application/json";
+    const buf = await res.arrayBuffer();
+    return new NextResponse(buf, { status: res.status, headers: { "content-type": contentType } });
+  } catch (err: any) {
+    console.error("[api/notifications/orders] Upstream fetch failed", {
+      url: upstream,
+      error: String(err?.message || err),
+    });
+    return new NextResponse(
+      JSON.stringify({
+        status: "error",
+        message: "Proxy upstream fetch failed",
+        error: String(err?.message || err),
+      }),
+      {
+        status: 502,
+        headers: { "content-type": "application/json" },
+      }
+    );
+  }
 }
 

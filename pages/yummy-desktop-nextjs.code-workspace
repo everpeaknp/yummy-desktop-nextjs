@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../yummy_backend"
+		},
+		{
+			"path": "../../yummy-menu"
+		}
+	],
+	"settings": {}
+}

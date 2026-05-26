@@ -325,14 +325,14 @@ export default function CheckoutPage() {
   // ── Auto-navigate on full payment ─────────────────
   useEffect(() => {
     if (bill?.is_fully_paid) {
-      // Navigate to receipt page after a short delay
+      // Navigate to receipt page after a short delay so user sees the success state
       const timer = setTimeout(() => {
         if (returnTo) {
           router.push(`/orders/${orderId}/receipt?returnTo=${encodeURIComponent(returnTo)}`);
         } else {
           router.push(`/orders/${orderId}/receipt`);
         }
-      }, 1500);
+      }, 2000);
       return () => clearTimeout(timer);
     }
   }, [bill?.is_fully_paid, orderId, router, returnTo]);
@@ -524,6 +524,9 @@ export default function CheckoutPage() {
         bill.balance_due || 0
       );
 
+      // Only attempt to record the payment if there's still a balance due.
+      // The webhook may have already posted it — any 400 from addPayment here
+      // means the payment is already recorded, so we safely swallow it.
       if (amountToApply > 0.009) {
         try {
           await apiClient.post(OrderApis.addPayment(orderId), {
@@ -535,11 +538,14 @@ export default function CheckoutPage() {
             },
           });
         } catch (payErr: any) {
-          // Backend may have already posted payment via callback/webhook.
-          const msg = String(payErr?.response?.data?.detail || payErr?.message || "");
-          if (!msg.toLowerCase().includes("already") && !msg.toLowerCase().includes("duplicate")) {
+          // Swallow any 400 — the webhook likely already recorded this payment.
+          // Only re-throw network errors or 5xx server errors.
+          const statusCode = payErr?.response?.status;
+          if (!statusCode || statusCode >= 500) {
             throw payErr;
           }
+          // 400/409 etc — payment already posted, continue to sync bill
+          console.warn("[Fonepay] Payment already recorded by webhook, skipping duplicate post.");
         }
       }
 
@@ -554,7 +560,12 @@ export default function CheckoutPage() {
       setPayMethod("cash");
       toast.success("Fonepay payment verified and synced.");
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || err?.message || "Failed to verify Fonepay payment");
+      const detail =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to verify Fonepay payment";
+      toast.error(detail);
     } finally {
       setFonepayVerifying(false);
     }
@@ -1326,28 +1337,41 @@ export default function CheckoutPage() {
       </Dialog>
 
       <Dialog open={fonepayDialogOpen} onOpenChange={setFonepayDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[96vw] sm:w-[92vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Fonepay Payment</DialogTitle>
+            <DialogTitle className="text-lg">Fonepay Payment</DialogTitle>
             <DialogDescription>
               PRN: <span className="font-semibold text-foreground">{fonepayPrn || "-"}</span>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="rounded-lg border bg-muted/20 p-3 text-sm">
-              Status: <span className="font-semibold capitalize">{fonepayStatus}</span>
+            <div className="rounded-lg border bg-muted/20 p-3 text-sm flex items-center justify-between">
+              <div>
+                Status: <span className={cn("font-semibold capitalize", fonepayStatus === "success" ? "text-emerald-600" : "text-orange-600")}>{fonepayStatus}</span>
+              </div>
+              {fonepayStatus === "pending" && <Loader2 className="h-5 w-5 animate-spin text-orange-500" />}
             </div>
-            {fonepayQr ? (
-              <div className="mx-auto w-[220px] h-[220px] rounded-xl border bg-white p-2">
-                <img src={fonepayQr} alt="Fonepay QR" className="h-full w-full object-contain" />
+            
+            {fonepayStatus === "success" ? (
+              <div className="mx-auto w-[300px] h-[300px] rounded-xl border bg-emerald-50 dark:bg-emerald-900/20 p-2 flex flex-col items-center justify-center gap-4">
+                <div className="h-24 w-24 rounded-full bg-emerald-100 dark:bg-emerald-800/40 flex items-center justify-center">
+                  <CheckCircle className="h-14 w-14 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <p className="font-bold text-lg text-emerald-700 dark:text-emerald-400">Payment Successful</p>
+                <p className="text-sm text-emerald-600/80">Redirecting to receipt...</p>
+              </div>
+            ) : fonepayQr ? (
+              <div className="mx-auto w-[300px] h-[300px] rounded-xl border bg-white p-3 relative shadow-md">
+                <img src={fonepayQr} alt="Fonepay QR" className={cn("h-full w-full object-contain transition-opacity", fonepayStatus === "success" ? "opacity-0" : "opacity-100")} />
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground text-center">
                 QR image not returned by backend. Use PRN/reference for payment confirmation.
               </div>
             )}
-            {fonepayPayloadText && (
-              <div className="rounded-lg border bg-muted/20 p-3 text-xs break-all">{fonepayPayloadText}</div>
+            
+            {fonepayPayloadText && fonepayStatus !== "success" && (
+              <div className="rounded-lg border bg-muted/20 p-3 text-xs break-all text-center">{fonepayPayloadText}</div>
             )}
           </div>
           <DialogFooter>
@@ -1361,11 +1385,11 @@ export default function CheckoutPage() {
                   setFonepayLoading(false);
                 }
               }}
-              disabled={fonepayLoading || fonepayVerifying}
+              disabled={fonepayLoading || fonepayVerifying || fonepayStatus === "success"}
             >
               {fonepayLoading ? "Refreshing QR..." : "Refresh QR"}
             </Button>
-            <Button onClick={handleVerifyFonepay} disabled={fonepayVerifying} className="gap-2">
+            <Button onClick={handleVerifyFonepay} disabled={fonepayVerifying || fonepayStatus === "success"} className="gap-2">
               {fonepayVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
               {fonepayVerifying ? "Verifying..." : "Verify Payment"}
             </Button>
