@@ -3,6 +3,7 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { RoleGuard } from "@/components/auth/role-guard";
+import { GlobalKotPrinter } from "@/components/receipts/global-kot-printer";
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -86,6 +87,7 @@ export default function DashboardLayout({
           <RoleGuard>{children}</RoleGuard>
         </main>
       </div>
+      <GlobalKotPrinter />
     </div>
   );
 }

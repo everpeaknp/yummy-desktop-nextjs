@@ -715,7 +715,7 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
         { label: "Gross Sales", value: derivedGrossSales, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
         { label: "Net Sales", value: derivedNetSales, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
         { label: "Total Income", value: derivedTotalIncome, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
-        { label: "Expected Cash", value: snapshot?.expected_cash ?? 0, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
+        { label: "Expected Cash", value: pickNumber(snapshot, ["expected_cash", "net_cash_position"]) || pickNumberByLabel(["expected cash"]), isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
         { label: "Expenses", value: derivedExpenses, isAmount: true, color: "text-rose-600 dark:text-rose-400" },
         { label: "Credit Sales", value: derivedCreditSales, isAmount: true, color: "text-blue-600 dark:text-blue-400" },
         { label: "Receivables", value: derivedReceivables, isAmount: true, color: "text-blue-600 dark:text-blue-400" },
@@ -823,7 +823,7 @@ function SnapshotListCard({
     tableNameMap,
 }: {
     title: string;
-    rows: any[];
+    rows: any;
     labelKeys: string[];
     valueKeys: string[];
     tableNameMap?: Record<string, string>;

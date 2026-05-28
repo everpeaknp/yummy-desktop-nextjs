@@ -18,6 +18,7 @@ function filterRequestHeaders(req: NextRequest): HeadersInit {
     "accept",
     "accept-language",
     "x-requested-with",
+    "x-restaurant-id",
   ]);
   req.headers.forEach((value, key) => {
     if (allow.has(key.toLowerCase())) headers.set(key, value);
@@ -53,6 +54,8 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
         ? "orders/"
         : joined === "expenses"
           ? "expenses/"
+          : /^printers\/restaurants\/[^/]+\/station-config$/.test(joined)
+            ? `${joined}/`
           : joined;
   const url = new URL(`${backend}/${normalizedPath}`);
   req.nextUrl.searchParams.forEach((v, k) => url.searchParams.append(k, v));

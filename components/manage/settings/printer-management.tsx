@@ -42,7 +42,8 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
-import { PrinterApis } from "@/lib/api/endpoints";
+import { PrinterApis, RestaurantApis } from "@/lib/api/endpoints";
+import { useRestaurant } from "@/hooks/use-restaurant";
 
 import { 
     Table, 
@@ -80,9 +81,11 @@ interface PrinterManagementProps {
 }
 
 export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
+    const restaurant = useRestaurant((s) => s.restaurant);
     const [printers, setPrinters] = useState<Printer[]>([]);
     const [stations, setStations] = useState<StationConfigItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [unauthorized, setUnauthorized] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [testingId, setTestingId] = useState<number | null>(null);
     
@@ -94,24 +97,42 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
-            const [printersRes, stationRes] = await Promise.all([
-                apiClient.get(PrinterApis.list(restaurantId)),
-                apiClient.get(PrinterApis.stationConfig(restaurantId))
-            ]);
+            setUnauthorized(false);
+            const printersRes = await apiClient.get(PrinterApis.list(restaurantId));
             
             if (printersRes.data.status === 'success') {
                 setPrinters(printersRes.data.data);
             }
+
+            // First prefer station config already present in restaurant payload.
+            // If this field exists, trust it even when the list is empty.
+            const hasEmbeddedConfig = !!restaurant && Object.prototype.hasOwnProperty.call(restaurant as any, "kot_station_config");
+            if (hasEmbeddedConfig) {
+                const embeddedStations = (restaurant as any)?.kot_station_config?.stations;
+                setStations(Array.isArray(embeddedStations) ? embeddedStations : []);
+                return;
+            }
+
+            // Fallback: dedicated station-config endpoint.
+            const stationRes = await apiClient.get(PrinterApis.stationConfig(restaurantId), {
+                headers: {
+                    "x-restaurant-id": String(restaurantId),
+                },
+            });
             if (stationRes.data.status === 'success') {
-                // Handle the backend station config format (list of stations)
                 setStations(stationRes.data.data.stations || []);
             }
-        } catch (err) {
+        } catch (err: any) {
+            const status = err?.response?.status;
+            if (status === 401 || status === 403) {
+                setUnauthorized(true);
+                return;
+            }
             toast.error("Failed to load printer settings");
         } finally {
             setLoading(false);
         }
-    }, [restaurantId]);
+    }, [restaurantId, restaurant]);
 
     useEffect(() => {
         fetchData();
@@ -150,6 +171,39 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
         try {
             setTestingId(id);
             toast.loading("Testing printer connectivity...", { id: `test-${id}` });
+            const printer = printers.find((p) => p.id === id);
+
+            // In Electron, prefer local desktop-to-printer network test.
+            // @ts-ignore
+            const electronAPI = typeof window !== "undefined" ? window.electronAPI : undefined;
+            const printerType = String(printer?.printer_type || "").toLowerCase();
+            const isNetworkPrinter =
+                printerType.includes("network") ||
+                /^\d{1,3}(\.\d{1,3}){3}$/.test(String(printer?.address || "").trim());
+
+            if (electronAPI?.testNetworkPrinter && isNetworkPrinter && printer?.address) {
+                const host =
+                    String(printer?.connection_config?.ip_address || "").trim() ||
+                    String(printer.address).trim();
+                const testRes = await electronAPI.testNetworkPrinter({
+                    host,
+                    port: Number(printer.connection_config?.port || 9100),
+                    timeoutMs: 10000,
+                });
+                toast.dismiss(`test-${id}`);
+                if (testRes?.success) {
+                    toast.success("Connection Successful (Local Electron)", {
+                        description: testRes.message,
+                    });
+                } else {
+                    toast.error("Connection Failed (Local Electron)", {
+                        description: testRes?.message || "Could not reach printer from this desktop.",
+                    });
+                }
+                return;
+            }
+
+            // Browser/backend fallback: server-side test endpoint.
             const response = await apiClient.post(PrinterApis.test(id));
             toast.dismiss(`test-${id}`);
             
@@ -224,11 +278,14 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
             const updatedStations = stations.map(s => 
                 s.id === stationId ? { ...s, printer_id: printerId === 'none' ? null : parseInt(printerId) } : s
             );
-            
-            // Check if it's already there or not (backend expects the whole stations list)
+
             const payload = { stations: updatedStations };
-            
-            await apiClient.put(PrinterApis.stationConfig(restaurantId), payload);
+
+            // Persist station routing via restaurant settings payload.
+            // This avoids unstable/unauthorized station-config endpoint behavior in current backend gateway.
+            await apiClient.put(RestaurantApis.update(restaurantId), {
+                kot_station_config: payload,
+            });
             setStations(updatedStations);
             toast.success("Station configuration updated");
         } catch (err) {
@@ -240,6 +297,17 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
         return (
             <div className="flex items-center justify-center py-20">
                 <Loader2 className="w-8 h-8 animate-spin text-primary opacity-20" />
+            </div>
+        );
+    }
+
+    if (unauthorized) {
+        return (
+            <div className="rounded-xl border border-border/40 bg-card/50 p-6">
+                <p className="text-sm font-semibold">You do not have permission to view printer management.</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                    Ask an admin to configure station-printer routing for this restaurant.
+                </p>
             </div>
         );
     }

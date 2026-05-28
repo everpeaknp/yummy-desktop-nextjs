@@ -100,9 +100,9 @@ function shouldShowNotificationForRole(
   if (userRoles.size === 0) return true; // Default allow if unknown
 
   if (isCreationEvent) {
-    // Block waiters from seeing new KOT. Allow kitchen/bar/cafe/admin.
-    const allowed = new Set(["kitchen", "bar", "cafe", "admin"]);
-    return Array.from(userRoles).some((r) => allowed.has(r));
+    // We want the frontend to ALWAYS receive kot_created events so the GlobalKotPrinter 
+    // can auto-print the KOT if connected to a wired printer.
+    return true;
   }
 
   if (isRejectionEvent) {
@@ -450,7 +450,18 @@ export function useNotifications() {
           if (content) {
             showBrowserNotification(content.title, content.body);
           }
-        } catch { }
+
+          // Auto-print logic for KOTs
+          if (event === "kot_print_fallback" || event === "kot_print_released") {
+            const payload = data.payload || data.data || data;
+            window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: payload }));
+          } else if (event === "kot_created") {
+            const payload = data.payload || data.data || data;
+            window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: payload }));
+          }
+        } catch (e) { 
+            console.error("[KOT WS] Error parsing message:", e);
+        }
       };
 
       ws.onerror = () => { };

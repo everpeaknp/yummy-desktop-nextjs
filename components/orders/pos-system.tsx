@@ -16,7 +16,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { cn, getImageUrl } from "@/lib/utils";
 import Image from "next/image";
 import { ItemCustomizationDialog } from "./item-customization-dialog";
-import { TaxConfigApis } from "@/lib/api/endpoints";
+import { KotApis, TaxConfigApis } from "@/lib/api/endpoints";
 import { toast } from "sonner";
 
 
@@ -435,6 +435,24 @@ export default function POSSystem({
 
       console.log("[POS] Order update response:", response?.status, response?.data);
       if (response && response.data) {
+        const emitKotPrintEventsForOrder = async (orderLike: any) => {
+          try {
+            const orderEntity = orderLike?.data || orderLike;
+            const orderIdForKot = orderEntity?.id || orderData?.id;
+            if (!orderIdForKot || typeof window === "undefined") return;
+
+            const kotRes = await apiClient.get(KotApis.getKotUpdatesByOrder(orderIdForKot));
+            const kots = kotRes?.data?.data || [];
+            if (!Array.isArray(kots) || kots.length === 0) return;
+
+            for (const kot of kots) {
+              window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: kot }));
+            }
+          } catch (err) {
+            console.error("[POS] Failed to emit KOT print events:", err);
+          }
+        };
+
         if (isEditing) {
           console.log("[POS] Success: Order updated");
           toast.success("Order updated successfully");
@@ -457,9 +475,11 @@ export default function POSSystem({
               revenue_category: item.revenue_category
             })));
           }
+          await emitKotPrintEventsForOrder(updatedOrder);
         } else {
           console.log("[POS] Success: Order placed");
           toast.success("Order placed successfully");
+          await emitKotPrintEventsForOrder(response.data);
           router.push('/orders/active');
         }
       } else {

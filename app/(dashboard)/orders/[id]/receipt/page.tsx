@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
-import { ReceiptApis, OrderApis } from "@/lib/api/endpoints";
+import { ReceiptApis, OrderApis, PrinterApis } from "@/lib/api/endpoints";
 import { useOrderFull } from "@/hooks/use-order-full";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,85 @@ function getDefaultTemplate(): any[] {
   ];
 }
 
+function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: number): string {
+  const order = receipt?.order as any;
+  const restaurant = receipt?.restaurant as any;
+  const blocks = (template || [])
+    .filter((b: any) => b?.type !== "global_settings")
+    .map((b: any) => ({ ...b, cfg: b?.config ? { ...b, ...b.config } : b }))
+    .filter((b: any) => (b?.is_visible ?? b?.isVisible ?? true) && (b?.show_on_receipt ?? b?.showOnReceipt ?? true));
+
+  const lines: string[] = [];
+
+  const header = blocks.find((b: any) => b.type === "header")?.cfg || {};
+  lines.push(String(header.title || restaurant?.name || "YUMMY RECEIPT"));
+  if (header.show_address !== false && restaurant?.address) lines.push(String(restaurant.address));
+  if (header.show_phone !== false && restaurant?.phone) lines.push(`${header.phone_label || "Contact"}: ${restaurant.phone}`);
+
+  lines.push("---------------------------");
+  lines.push(`Order: #${order?.restaurant_order_id || order?.id || orderId}`);
+  lines.push(`Table: ${order?.table_name || "-"}`);
+  lines.push(`Date: ${new Date(order?.created_at || Date.now()).toLocaleString()}`);
+  lines.push("---------------------------");
+
+  const itemsCfg = blocks.find((b: any) => b.type === "items")?.cfg || {};
+  const showRate = itemsCfg.show_rate !== false;
+  const orderItems = Array.isArray(order?.items) ? order.items : [];
+  orderItems.forEach((item: any, idx: number) => {
+    const name = item?.name_snapshot || item?.item_name || "Item";
+    const qty = Number(item?.qty ?? 1);
+    const rate = Number(item?.unit_price ?? 0);
+    const amount = Number(item?.line_total ?? rate * qty);
+    if (showRate) {
+      lines.push(`${idx + 1}. ${name} x${qty} @${rate.toFixed(2)} = ${amount.toFixed(2)}`);
+    } else {
+      lines.push(`${idx + 1}. ${name} x${qty}`);
+    }
+  });
+
+  lines.push("---------------------------");
+  const totalsCfg = blocks.find((b: any) => b.type === "totals")?.cfg || {};
+  const subtotal = Number(order?.subtotal ?? 0);
+  const tax = Number(order?.tax_total ?? 0);
+  const total = Number(order?.grand_total ?? 0);
+  lines.push(`${totalsCfg.subtotal_label || "Subtotal"}: Rs.${subtotal.toFixed(2)}`);
+  if (totalsCfg.show_tax !== false) {
+    lines.push(`${totalsCfg.tax_label || "Tax"}: Rs.${tax.toFixed(2)}`);
+  }
+  lines.push(`${totalsCfg.total_label || "Grand Total"}: Rs.${total.toFixed(2)}`);
+
+  const paymentsCfg = blocks.find((b: any) => b.type === "payments")?.cfg || {};
+  const payments = Array.isArray(order?.payments) ? order.payments : [];
+  if (payments.length) {
+    lines.push("---------------------------");
+    payments.forEach((p: any) => {
+      lines.push(`${String(p?.method || paymentsCfg.method_label || "payment").toUpperCase()}: Rs.${Number(p?.amount || 0).toFixed(2)}`);
+    });
+  }
+
+  const footer = blocks.find((b: any) => b.type === "footer")?.cfg || {};
+  lines.push("---------------------------");
+  lines.push(String(footer.message || "THANK YOU"));
+  lines.push("\n\n\n");
+
+  return lines.join("\n");
+}
+
+function resolveReceiptAssignedPrinter(printers: any[], restaurantLike: any): any | null {
+  const stations = restaurantLike?.kot_station_config?.stations;
+  const receiptStation = Array.isArray(stations)
+    ? stations.find((s: any) => String(s?.name || "").trim().toLowerCase() === "receipt")
+    : null;
+  const receiptPrinterId = receiptStation?.printer_id;
+
+  if (receiptPrinterId) {
+    const mapped = (printers || []).find((p: any) => p?.id === receiptPrinterId && p?.enabled);
+    if (mapped) return mapped;
+  }
+
+  return (printers || []).find((p: any) => p?.enabled && p?.is_default) || (printers || []).find((p: any) => p?.enabled) || null;
+}
+
 export default function ReceiptPage() {
   const params = useParams() as { id?: string | string[] } | null;
   const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
@@ -82,7 +161,15 @@ export default function ReceiptPage() {
   
   useOrderFull(orderId);
   const autoPrintDone = useRef(false);
+  const autoPrintedOrderRef = useRef<number | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
+
+  // Reset print guard when navigating to a different receipt id.
+  useEffect(() => {
+    autoPrintDone.current = false;
+    autoPrintedOrderRef.current = null;
+    setPrinted(false);
+  }, [orderId]);
 
   // Auth guard
   useEffect(() => {
@@ -134,21 +221,83 @@ export default function ReceiptPage() {
     fetchData();
   }, [fetchData]);
 
+  const tryElectronNetworkReceiptPrint = useCallback(async (): Promise<boolean> => {
+    try {
+      // @ts-ignore
+      if (typeof window === "undefined" || !window.electronAPI?.printNetworkRaw) {
+        return false;
+      }
+      const restaurantId = receipt?.restaurant?.id || user?.restaurant_id;
+      if (!restaurantId) return false;
+
+      const res = await apiClient.get(PrinterApis.list(restaurantId));
+      const printers = res?.data?.data || [];
+      const printer = resolveReceiptAssignedPrinter(printers, receipt?.restaurant);
+      if (!printer) return false;
+
+      const host = String(printer?.connection_config?.ip_address || printer?.address || "").trim();
+      const port = Number(printer?.connection_config?.port || 9100);
+      const type = String(printer?.printer_type || "").toLowerCase();
+      const isNetwork = type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+      if (!isNetwork || !host) return false;
+
+      const payload = buildReceiptRawPayload(receipt, template || [], orderId);
+
+      // @ts-ignore
+      const printRes = await window.electronAPI.printNetworkRaw({
+        host,
+        port,
+        payload,
+      });
+      if (!printRes?.success) {
+        console.warn("[ReceiptPage] Network raw print failed:", printRes?.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn("[ReceiptPage] Network raw print error:", err);
+      return false;
+    }
+  }, [receipt, user?.restaurant_id, orderId]);
+
   // Auto-print once on open (default behavior for POS receipt page).
   // If backend sends should_auto_print explicitly false, we still auto-print
   // to preserve expected cashier workflow on web.
   useEffect(() => {
-    if (receipt && template && !autoPrintDone.current && !printed) {
-      autoPrintDone.current = true;
-      const timer = setTimeout(() => {
-        window.print();
+    if (!receipt || !template) return;
+    if (autoPrintedOrderRef.current === orderId) return;
+    autoPrintedOrderRef.current = orderId;
+    autoPrintDone.current = true;
+
+    const timer = setTimeout(() => {
+      (async () => {
+        const ok = await tryElectronNetworkReceiptPrint();
+        if (!ok) {
+          window.print();
+        }
         setPrinted(true);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [receipt, template, printed]);
+      })();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [receipt, template, orderId, tryElectronNetworkReceiptPrint]);
 
   const handlePrint = async () => {
+    const sentToNetwork = await tryElectronNetworkReceiptPrint();
+    if (sentToNetwork) {
+      setPrinted(true);
+      return;
+    }
+
+    // In browser/web mode, prefer native print dialog directly.
+    // Blob/PDF preview tabs can be blocked/closed by browser policies.
+    // @ts-ignore
+    const isElectron = typeof window !== "undefined" && !!window.electronAPI;
+    if (!isElectron) {
+      window.print();
+      setPrinted(true);
+      return;
+    }
+
     if (!receiptRef.current) return;
 
     const globalBlock = template?.find((b: any) => b.type === 'global_settings');
