@@ -117,9 +117,24 @@ export function ReceiptDetailSheet({
       lines.push(`${idx + 1}. ${(item?.name_snapshot || item?.item_name || "Item")} x${item?.qty ?? 1} @${Number(item?.unit_price || 0).toFixed(2)} = ${Number(item?.line_total || 0).toFixed(2)}`);
     });
     lines.push("---------------------------");
-    lines.push(`Subtotal: Rs.${Number(order?.subtotal || 0).toFixed(2)}`);
-    lines.push(`Tax: Rs.${Number(order?.tax_total || 0).toFixed(2)}`);
-    lines.push(`Grand Total: Rs.${Number(order?.grand_total || 0).toFixed(2)}`);
+    const subtotal = Number(order?.subtotal || 0);
+    const tax = Number(order?.tax_total || 0);
+    const total = Number(order?.grand_total || 0);
+    const serviceCharge = Number(order?.service_charge || 0);
+    const discount = Math.max(0, Number((subtotal + tax + serviceCharge - total).toFixed(2)));
+    const discountReason =
+      order?.discount_reason ||
+      order?.manual_discount_reason ||
+      order?.discount_note ||
+      order?.discount_code ||
+      null;
+    lines.push(`Subtotal: Rs.${subtotal.toFixed(2)}`);
+    lines.push(`Tax: Rs.${tax.toFixed(2)}`);
+    if (discount > 0) {
+      lines.push(`Discount: -Rs.${discount.toFixed(2)}`);
+      if (discountReason) lines.push(`Reason: ${String(discountReason)}`);
+    }
+    lines.push(`Grand Total: Rs.${total.toFixed(2)}`);
     (order?.payments || []).forEach((p: any) => {
       lines.push(`${String(p?.method || "payment").toUpperCase()}: Rs.${Number(p?.amount || 0).toFixed(2)}`);
     });

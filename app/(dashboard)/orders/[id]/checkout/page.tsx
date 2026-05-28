@@ -666,7 +666,11 @@ export default function CheckoutPage() {
 
   if (!bill) return null;
 
-  const hasDiscount = bill.discount_total > 0 || bill.manual_discount_amount > 0;
+  const computedDiscount = Math.max(
+    0,
+    Number((bill.subtotal + bill.tax_total + bill.service_charge - bill.grand_total).toFixed(2))
+  );
+  const hasDiscount = computedDiscount > 0;
   const checkoutCustomerId = orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
   const checkoutCustomer = checkoutCustomerId
     ? customers.find((c: any) => Number(c?.id) === Number(checkoutCustomerId))
@@ -859,9 +863,7 @@ export default function CheckoutPage() {
                       </button>
                     )}
                   </div>
-                  <span className="tabular-nums text-emerald-600 font-medium">
-                    -{formatCurrency(bill.discount_total + bill.manual_discount_amount, curr)}
-                  </span>
+                  <span className="tabular-nums text-emerald-600 font-medium">-{formatCurrency(computedDiscount, curr)}</span>
                 </div>
               )}
 
@@ -1303,6 +1305,10 @@ export default function CheckoutPage() {
                   setLoyaltyError("No customer attached to this order");
                   return;
                 }
+                if (!bill) {
+                  setLoyaltyError("Bill data unavailable");
+                  return;
+                }
                 const points = Math.floor(Number(loyaltyPoints || 0));
                 if (!Number.isFinite(points) || points <= 0) {
                   setLoyaltyError("Enter valid points to redeem");
@@ -1312,17 +1318,58 @@ export default function CheckoutPage() {
                   setLoyaltyError("Cannot redeem more points than available");
                   return;
                 }
+                const maxAllowedByProfile = customerMaxDiscount > 0 ? customerMaxDiscount : Number.MAX_SAFE_INTEGER;
+                const redeemAmount = Math.min(
+                  points, // 1 point = 1 currency unit
+                  bill.grand_total || 0,
+                  maxAllowedByProfile
+                );
+                if (!Number.isFinite(redeemAmount) || redeemAmount <= 0) {
+                  setLoyaltyError("Redeem amount is not valid for this order");
+                  return;
+                }
                 setLoyaltySubmitting(true);
                 setLoyaltyError(null);
                 try {
+                  const beforeGrandTotal = Number(bill.grand_total || 0);
+
+                  // Ensure order has selected customer before applying loyalty discount.
+                  if (String(orderMeta?.customer_id || "") !== String(checkoutCustomerId)) {
+                    await apiClient.patch(OrderApis.updateOrder(orderId), {
+                      customer_id: Number(checkoutCustomerId),
+                    });
+                    setOrderMeta((prev) => (
+                      prev
+                        ? { ...prev, customer_id: Number(checkoutCustomerId) }
+                        : prev
+                    ));
+                  }
+
                   await apiClient.post(CustomerApis.redeemLoyaltyPoints(checkoutCustomerId), {
                     points,
                     order_id: orderId,
                   });
+
+                  // Check whether backend already reflected loyalty discount in order totals.
+                  const postRedeemBillRes = await apiClient.get(OrderApis.getOrderBill(orderId));
+                  const postRedeemBill = postRedeemBillRes?.data?.data;
+                  const afterGrandTotal = Number(postRedeemBill?.grand_total ?? beforeGrandTotal);
+                  const reducedBy = Math.max(0, beforeGrandTotal - afterGrandTotal);
+
+                  // Apply fallback discount only if backend did not reduce totals.
+                  if (reducedBy < 0.009) {
+                    const loyaltyReason = `Loyalty Points - ${checkoutCustomer?.full_name || checkoutCustomer?.name || orderMeta?.customer_name || "Customer"} (${points} pts)`;
+                    await apiClient.patch(OrderApis.updateOrder(orderId), {
+                      manual_discount_amount: redeemAmount,
+                      loyalty_points_redeemed: points,
+                      discount_reason: loyaltyReason,
+                    });
+                  }
+
                   await Promise.all([fetchBill(), fetchCustomers()]);
                   setLoyaltyOpen(false);
                   setLoyaltyPoints("");
-                  toast.success("Loyalty points redeemed");
+                  toast.success(`Loyalty points redeemed. ${formatCurrency(redeemAmount, curr)} applied to bill.`);
                 } catch (err: any) {
                   setLoyaltyError(err?.response?.data?.detail || err?.response?.data?.message || "Failed to redeem loyalty points");
                 } finally {

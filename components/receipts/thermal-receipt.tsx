@@ -72,6 +72,24 @@ function renderBlock(block: any, global: any, data: ReceiptData, ff: string, bas
     const { config, type } = block;
     const { order, restaurant } = data;
     const fs = config.font_size || baseFs;
+    const computedDiscount = Math.max(
+        0,
+        Number(((order.subtotal || 0) + (order.tax_total || 0) + (order.service_charge || 0) - (order.grand_total || 0)).toFixed(2))
+    );
+    const loyaltyPointsRedeemed =
+        Number(
+            (order as any)?.loyalty_points_redeemed ??
+            (order as any)?.redeemed_points ??
+            (order as any)?.points_redeemed ??
+            0
+        ) || 0;
+    const discountReason =
+        (order as any)?.discount_reason ||
+        (order as any)?.manual_discount_reason ||
+        (order as any)?.discount_note ||
+        (order as any)?.discount_code ||
+        (loyaltyPointsRedeemed > 0 ? `Loyalty Points - ${order?.customer_name || "Customer"} (${loyaltyPointsRedeemed} pts)` : null) ||
+        ((order as any)?.manual_discount_amount > 0 ? "Manual discount" : null);
 
     const base: React.CSSProperties = { fontFamily: ff, fontSize: `${fs}px`, width: '100%', boxSizing: 'border-box' };
     const row = (a: React.ReactNode, b: React.ReactNode, style?: React.CSSProperties): React.ReactNode => (
@@ -217,6 +235,21 @@ function renderBlock(block: any, global: any, data: ReceiptData, ff: string, bas
                             </div>
                         )}
 
+                        {/* Discount */}
+                        {config.show_discount !== false && computedDiscount > 0 && (
+                            <div style={{ marginTop: '5px' }}>
+                                {row(
+                                    <span style={{ fontSize: `${fs}px`, color: '#333' }}>{config.discount_label || 'Discount'}:</span>,
+                                    <span style={{ fontSize: `${fs}px`, color: '#333' }}>- Rs. {computedDiscount.toFixed(2)}</span>
+                                )}
+                                {discountReason && (
+                                    <div style={{ fontSize: `${fs - 2}px`, color: '#555', fontStyle: 'italic', marginTop: '2px' }}>
+                                        {config.discount_reason_label || 'Reason'}: {String(discountReason)}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* Separator */}
                         <div style={{ borderTop: '1px solid #000', margin: '10px 0', opacity: 0.8 }} />
 
@@ -235,9 +268,21 @@ function renderBlock(block: any, global: any, data: ReceiptData, ff: string, bas
             );
 
         case 'payments':
-            if (!order.payments || order.payments.length === 0) return null;
+            if ((!order.payments || order.payments.length === 0) && !(data.total_paid > 0 || data.balance_due > 0)) return null;
             return (
                 <div style={{ ...base, marginTop: '8px', padding: '0 4px' }}>
+                    {(data.total_paid > 0 || data.balance_due > 0) && (
+                        <div style={{ marginBottom: '6px' }}>
+                            {row(
+                                <span style={{ fontSize: `${fs}px`, fontWeight: 700 }}>Paid:</span>,
+                                <span style={{ fontSize: `${fs}px`, fontWeight: 700 }}>Rs. {Number(data.total_paid || 0).toFixed(2)}</span>
+                            )}
+                            {Number(data.balance_due || 0) > 0 && row(
+                                <span style={{ fontSize: `${fs}px`, fontWeight: 700 }}>Balance Due:</span>,
+                                <span style={{ fontSize: `${fs}px`, fontWeight: 700 }}>Rs. {Number(data.balance_due || 0).toFixed(2)}</span>
+                            )}
+                        </div>
+                    )}
                     {order.payments.map(p => (
                         <div key={p.id} style={{ marginBottom: '5px' }}>
                             {row(

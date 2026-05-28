@@ -95,9 +95,27 @@ function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: 
   const subtotal = Number(order?.subtotal ?? 0);
   const tax = Number(order?.tax_total ?? 0);
   const total = Number(order?.grand_total ?? 0);
+  const serviceCharge = Number(order?.service_charge ?? 0);
+  const computedDiscount = Math.max(0, Number((subtotal + tax + serviceCharge - total).toFixed(2)));
+  const loyaltyPointsRedeemed =
+    Number(order?.loyalty_points_redeemed ?? order?.redeemed_points ?? order?.points_redeemed ?? 0) || 0;
+  const discountReason =
+    order?.discount_reason ||
+    order?.manual_discount_reason ||
+    order?.discount_note ||
+    order?.discount_code ||
+    (loyaltyPointsRedeemed > 0 ? `Loyalty Points - ${order?.customer_name || "Customer"} (${loyaltyPointsRedeemed} pts)` : null) ||
+    (Number(order?.manual_discount_amount || 0) > 0 ? "Manual discount" : null) ||
+    null;
   lines.push(`${totalsCfg.subtotal_label || "Subtotal"}: Rs.${subtotal.toFixed(2)}`);
   if (totalsCfg.show_tax !== false) {
     lines.push(`${totalsCfg.tax_label || "Tax"}: Rs.${tax.toFixed(2)}`);
+  }
+  if (totalsCfg.show_discount !== false && computedDiscount > 0) {
+    lines.push(`${totalsCfg.discount_label || "Discount"}: -Rs.${computedDiscount.toFixed(2)}`);
+    if (discountReason) {
+      lines.push(`${totalsCfg.discount_reason_label || "Reason"}: ${String(discountReason)}`);
+    }
   }
   lines.push(`${totalsCfg.total_label || "Grand Total"}: Rs.${total.toFixed(2)}`);
 
@@ -105,6 +123,10 @@ function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: 
   const payments = Array.isArray(order?.payments) ? order.payments : [];
   if (payments.length) {
     lines.push("---------------------------");
+    lines.push(`Paid: Rs.${Number(receipt?.total_paid ?? 0).toFixed(2)}`);
+    if (Number(receipt?.balance_due ?? 0) > 0) {
+      lines.push(`Balance Due: Rs.${Number(receipt?.balance_due ?? 0).toFixed(2)}`);
+    }
     payments.forEach((p: any) => {
       lines.push(`${String(p?.method || paymentsCfg.method_label || "payment").toUpperCase()}: Rs.${Number(p?.amount || 0).toFixed(2)}`);
     });
