@@ -425,3 +425,20 @@ function AnalyticsSkeleton() {
         </div>
     )
 }
+
+function FilterButton({ label, active, onClick, icon }: any) {
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
+                active
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-card"
+            )}
+        >
+            {icon}
+            {label}
+        </button>
+    )
+}
