@@ -9,7 +9,8 @@ export type UserRole =
   | "kitchen"
   | "bar"
   | "cafe"
-  | "barista";
+  | "barista"
+  | "user";
 
 // ─── Role helpers ───────────────────────────────────────────────────────────
 
@@ -27,13 +28,21 @@ export function normalizeRole(role?: string | null): UserRole | null {
     "bar",
     "cafe",
     "barista",
+    "user",
   ];
   return valid.includes(r as UserRole) ? (r as UserRole) : null;
 }
 
 export function normalizeRoles(roles?: string[] | null): UserRole[] {
   if (!roles || roles.length === 0) return [];
-  return roles
+  
+  // Backend sometimes returns concatenated roles like "Waiter + Cashier + Rooms"
+  const splitRoles = roles.flatMap(r => {
+    if (!r) return [];
+    return r.split(/[\+,\&]/).map(part => part.trim());
+  });
+
+  return splitRoles
     .map((r) => normalizeRole(r))
     .filter((r): r is UserRole => r !== null);
 }
@@ -357,6 +366,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/settings": ALL_DASHBOARD_ROLES,
   "/feedback": ALL_DASHBOARD_ROLES,
   "/premium": ADMIN_MANAGER,
+  "/welcome": ["user", ...ALL_DASHBOARD_ROLES],
 };
 
 export function isRouteAllowed(
@@ -439,5 +449,6 @@ export function getHomeRouteForRoles(roles: UserRole[]): string {
   if (hasAnyRole(roles, ["admin", "manager", "cashier"])) return "/dashboard";
   if (roles.includes("waiter")) return "/orders/active";
   if (hasAnyRole(roles, ["kitchen", "bar", "cafe", "barista"])) return "/kitchen";
+  if (roles.includes("user")) return "/welcome";
   return "/";
 }

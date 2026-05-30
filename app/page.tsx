@@ -94,6 +94,10 @@ export default function Home() {
     const roles: string[] = Array.isArray(user_roles)
       ? user_roles
       : (user_role ? [user_role] : (primary_role ? [primary_role] : []));
+      
+    console.log("[Auth] Raw data from backend:", data);
+    console.log("[Auth] Extracted Roles:", roles);
+    
     const user = {
       id: user_id,
       full_name: user_name,
@@ -104,10 +108,18 @@ export default function Home() {
       restaurant_id: restaurant_id,
       permissions: Array.isArray(permissions) ? permissions : [],
     };
+    
+    console.log("[Auth] Constructed User Object:", user);
+    
     setAuth(user, access_token, refresh_token);
+    
+    const targetRoute = getHomeRouteForRoles(normalizeRoles(roles));
+    console.log(`[Auth] Normalized roles:`, normalizeRoles(roles));
+    console.log(`[Auth] Redirecting to: ${targetRoute}`);
+    
     // Use router.push for faster client-side navigation.
     // The GlobalLoaderOverlay will still provide instant visual feedback.
-    router.push(getHomeRouteForRoles(normalizeRoles(roles)));
+    router.push(targetRoute);
   }, [setAuth, router]);
 
   // Helper: extract error message
@@ -159,6 +171,11 @@ export default function Home() {
         return; 
       }
     } catch (err: any) {
+      console.error("[Auth] Login request failed!", err);
+      if (err?.response) {
+        console.error("[Auth] Backend Error Status:", err.response.status);
+        console.error("[Auth] Backend Error Data:", err.response.data);
+      }
       setError(extractError(err));
       setIsLoading(false);
     }
