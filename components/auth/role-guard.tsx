@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  normalizeRoles,
+  normalizeRolesForUser,
   isRouteAllowedMulti,
-  getHomeRouteForRoles,
+  getHomeRouteForUser,
 } from "@/lib/role-permissions";
 import { Loader2, ShieldAlert } from "lucide-react";
 
@@ -58,12 +58,13 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const roles = normalizeRoles(
-      user?.roles?.length ? user.roles : user?.role ? [user.role] : []
-    );
+    const roles = normalizeRolesForUser(user);
 
-    if (!roles.length) {
-      // No valid roles → redirect to login
+    // A user with no recognized legacy roles but with permissions
+    // is a valid custom-role user — don't redirect them to login
+    const hasAnyPermissions = (user?.permissions?.length ?? 0) > 0;
+    if (!roles.length && !hasAnyPermissions) {
+      // No valid roles AND no permissions → redirect to login
       router.replace("/");
       return;
     }
@@ -75,7 +76,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
       setStatus("denied");
       // Auto-redirect after a brief moment so user sees the denied message
       const timer = setTimeout(() => {
-        router.replace(getHomeRouteForRoles(roles));
+        router.replace(getHomeRouteForUser(user));
       }, 2000);
       return () => clearTimeout(timer);
     }

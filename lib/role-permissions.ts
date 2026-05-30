@@ -33,6 +33,11 @@ export function normalizeRole(role?: string | null): UserRole | null {
   return valid.includes(r as UserRole) ? (r as UserRole) : null;
 }
 
+/**
+ * Normalizes a list of role strings to known UserRole values.
+ * Custom role names (e.g. "Head Waiter") are dropped from the list — 
+ * use `normalizeRolesWithFallback` when you also have a legacy role field.
+ */
 export function normalizeRoles(roles?: string[] | null): UserRole[] {
   if (!roles || roles.length === 0) return [];
   
@@ -45,6 +50,33 @@ export function normalizeRoles(roles?: string[] | null): UserRole[] {
   return splitRoles
     .map((r) => normalizeRole(r))
     .filter((r): r is UserRole => r !== null);
+}
+
+/**
+ * Get normalized roles for a full user object.
+ * Falls back to `user.role` (legacy field) if `user.roles` only contains
+ * custom role names that don't map to known UserRole values.
+ * This is critical for custom-role users where `roles: ["Head Waiter"]`
+ * would otherwise produce an empty array.
+ */
+export function normalizeRolesForUser(
+  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null } | null
+): UserRole[] {
+  if (!user) return [];
+
+  // Try normalizing all declared roles first
+  const fromRoles = normalizeRoles(user.roles);
+  if (fromRoles.length > 0) return fromRoles;
+
+  // Fallback: use legacy role field (always a system role like "cashier")
+  const fromLegacy = normalizeRole(user.role);
+  if (fromLegacy) return [fromLegacy];
+
+  // Fallback: use primary_role
+  const fromPrimary = normalizeRole(user.primary_role);
+  if (fromPrimary) return [fromPrimary];
+
+  return [];
 }
 
 export const isAdmin = (r: UserRole | null) => r === "admin";
@@ -67,6 +99,8 @@ export const hasAnyRole = (roles: UserRole[], targets: UserRole[]) =>
 // ─── Granular Permissions (Backend-Driven) ──────────────────────────────────
 
 export type PermissionKey =
+  // Dashboard
+  | "dashboard.view"
   // POS Module
   | "pos.view"
   | "pos.order.create"
@@ -77,60 +111,103 @@ export type PermissionKey =
   | "pos.order.discount.apply"
   | "pos.order.discount.override"
   | "pos.order.serve_override"
+  | "pos.quick_bill"
+  | "pos.delivery"
+  | "pos.pickup"
   // Billing Module
   | "billing.view"
   | "billing.payment.process"
   | "billing.payment.split"
   | "billing.refund.process"
   | "billing.refund.approve"
+  | "billing.receipt.view"
   | "billing.receipt.print"
   // Tables & Reservation
   | "tables.view"
   | "tables.manage"
   | "tables.qr.manage"
-  | "reservations.view"
-  | "reservations.manage"
+  | "tables.reservation.view"
+  | "tables.reservation.manage"
   // Hotel Module
+  | "hotel.view"
   | "hotel.manage"
   | "hotel.checkin"
   | "hotel.checkout"
+  | "hotel.folio.view"
+  | "hotel.folio.edit"
   // Menu & Category
   | "menu.view"
   | "menu.manage"
   | "menu.items.manage"
+  | "menu.categories.manage"
+  | "menu.pricing.manage"
   // Inventory
   | "inventory.view"
   | "inventory.stock.manage"
   | "inventory.manage"
+  | "inventory.suppliers.manage"
+  | "inventory.recipes.manage"
   // Customers
   | "customers.view"
   | "customers.manage"
   | "customers.loyalty.manage"
   | "customers.credit.manage"
-  // Reports
-  | "reports.daily"
-  | "reports.analytics"
+  // Reports & Day Close
+  | "reports.daily.view"
+  | "reports.dayclose.view"
+  | "reports.dayclose.initiate"
+  | "reports.dayclose.confirm"
+  | "reports.dayclose.cancel"
+  | "reports.dayclose.reopen"
+  | "reports.dayclose.adjust.cash"
+  | "reports.dayclose.adjust.financial"
+  | "reports.dayclose.audit.view"
+  | "reports.dayclose.export"
+  | "reports.analytics.view"
+  | "reports.analytics.drilldown"
+  | "reports.periodic"
+  | "reports.periodic.view"
+  | "reports.periodic.confirm"
+  | "reports.periodic.rebuild"
+  | "reports.periodic.snapshot.view"
+  | "reports.period.insights"
+  | "reports.export"
   // Finance
+  | "finance.income.view"
   | "finance.expenses.view"
   | "finance.expenses.manage"
   | "finance.expenses.approve"
   | "finance.payroll.view"
   | "finance.payroll.manage"
-  | "finance.income_view"
   // Admin & Settings
   | "admin.staff.view"
   | "admin.staff.manage"
   | "admin.roles.manage"
-  | "settings.manage_restaurant";
+  | "admin.settings.manage"
+  | "settings.manage_restaurant"
+  // QR
+  | "qr.manage"
+  | "qr.print"
+  // Stations
+  | "station.kitchen.view"
+  | "station.bar.view"
+  | "station.cafe.view";
 
 /**
  * Check if user has a specific permission.
  * Admins ALWAYS have all permissions.
+ * Custom-role users are checked via their permissions array.
  */
-export function hasPermission(user: { role: string; permissions?: string[] } | null, permission: PermissionKey): boolean {
+export function hasPermission(
+  user: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null,
+  permission: PermissionKey
+): boolean {
   if (!user) return false;
-  if (user.role === "admin") return true;
-  return user.permissions?.includes(permission) || false;
+  // Admin bypass — works for both legacy role field and roles array
+  const roles = normalizeRolesForUser(user);
+  if (roles.includes("admin")) return true;
+  // Granular permission check (works for all custom-role users)
+  return user.permissions?.includes(permission) ?? false;
 }
 
 // ─── Permission checks (match Flutter RolePermissions) ──────────────────────
@@ -201,7 +278,7 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Dashboard",
     href: "/dashboard",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reports.daily", 
+    requiredPermission: "dashboard.view",
   },
   {
     title: "Orders",
@@ -219,80 +296,80 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Analytics",
     href: "/analytics",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reports.analytics",
+    requiredPermission: "reports.analytics.view",
   },
   {
     title: "Day Close",
     href: "/day-close",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reports.daily",
+    requiredPermission: "reports.daily.view",
   },
-  // ── Kitchen (matches KitchenDashboardScreen) ──
+  // ── Kitchen stations ──
   {
     title: "Kitchen",
     href: "/kitchen",
     allowedRoles: KITCHEN_ROLES,
-    // Note: kitchen doesn't have a granular permission yet, 
-    // but in reality POS users don't see it unless they are kitchen/bar staff.
+    requiredPermission: "station.kitchen.view",
   },
-  // ── Manage sub-items (from RestaurantHubScreen, admin/manager only) ──
+  // ── Manage sub-items ──
   {
     title: "Menu",
     href: "/menu/items",
-    allowedRoles: ADMIN_MANAGER,
-    // Add menu permission if we create one, for now role fallback
+    allowedRoles: ALL_DASHBOARD_ROLES,
+    requiredPermission: "menu.view",
   },
   {
     title: "Inventory",
     href: "/inventory",
-    allowedRoles: ADMIN_MANAGER,
+    allowedRoles: ALL_DASHBOARD_ROLES,
+    requiredPermission: "inventory.view",
   },
   {
     title: "Finance",
     href: "/finance/income",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "finance.income_view",
+    requiredPermission: "finance.income.view",
   },
   {
     title: "Transactions",
     href: "/transactions",
     allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reports.analytics",
+    requiredPermission: "reports.analytics.view",
   },
   {
     title: "Customers",
     href: "/customers",
-    allowedRoles: ADMIN_SHELL_ROLES,
+    allowedRoles: ALL_DASHBOARD_ROLES,
     requiredPermission: "customers.view",
   },
   {
     title: "Tables",
     href: "/tables",
-    allowedRoles: ADMIN_MANAGER,
+    allowedRoles: ALL_DASHBOARD_ROLES,
     requiredPermission: "tables.view",
   },
   {
     title: "Rooms",
     href: "/rooms",
-    allowedRoles: ["admin", "manager", "cashier", "waiter"],
+    allowedRoles: ALL_DASHBOARD_ROLES,
     requiredPermission: "hotel.manage",
   },
   {
     title: "Reservations",
     href: "/reservations",
-    allowedRoles: ADMIN_SHELL_ROLES,
-    requiredPermission: "reservations.view",
+    allowedRoles: ALL_DASHBOARD_ROLES,
+    requiredPermission: "tables.reservation.view",
   },
   {
     title: "Discounts",
     href: "/discounts",
-    allowedRoles: ADMIN_MANAGER,
+    allowedRoles: ALL_DASHBOARD_ROLES,
     requiredPermission: "pos.order.discount.apply",
   },
   {
     title: "Manage",
     href: "/manage",
-    allowedRoles: ADMIN_MANAGER,
+    allowedRoles: ALL_DASHBOARD_ROLES,
     requiredPermission: "admin.staff.view",
   },
   {
@@ -309,34 +386,51 @@ export function getSidebarItemsForRole(role: UserRole | null) {
   );
 }
 
-export function getSidebarItemsForRoles(roles: UserRole[], user?: { role: string; permissions?: string[] } | null) {
-  if (!roles.length) return [];
+export function getSidebarItemsForRoles(
+  roles: UserRole[],
+  user?: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null
+) {
   return SIDEBAR_ROLE_MAP.filter((item) => {
-    // 1. Check if ANY of the user's roles matches the item's allowedRoles
-    const roleAllowed = roles.some((role) => item.allowedRoles.includes(role));
-    if (!roleAllowed) return false;
-
-    // 2. If item has a requiredPermission, check if user has it
+    // ─── Key design principle ─────────────────────────────────────────────
+    // If an item has a `requiredPermission`, that permission is the SOLE gate.
+    // The `allowedRoles` list is IGNORED for permission-protected items.
+    // This means: if an admin grants "menu.view" to a cashier via a custom role,
+    // the cashier WILL see Menu in the sidebar — the ADMIN_MANAGER role restriction
+    // is overridden by the explicit permission grant.
+    // ─────────────────────────────────────────────────────────────────────
     if (item.requiredPermission) {
       return hasPermission(user || null, item.requiredPermission);
     }
 
-    return true;
+    // Items WITHOUT a requiredPermission (e.g. Feedback) fall back to legacy role check.
+    if (!roles.length) return false;
+    return roles.some((role) => item.allowedRoles.includes(role));
   });
 }
 
 // ─── Route-level Permission ACL ─────────────────────────────────────────────
 
 export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
-  "/dashboard": "reports.daily",
-  "/analytics": "reports.analytics",
-  "/day-close": "reports.daily",
-  "/transactions": "reports.analytics",
+  // Core pages
+  "/dashboard": "dashboard.view",
+  "/analytics": "reports.analytics.view",
+  "/day-close": "reports.daily.view",
+  "/transactions": "reports.analytics.view",
   "/orders": "pos.view",
+  "/kitchen": "station.kitchen.view",
+  // Management
+  "/menu": "menu.view",
+  "/inventory": "inventory.view",
+  "/tables": "tables.view",
+  "/reservations": "tables.reservation.view",
+  "/discounts": "pos.order.discount.apply",
+  "/customers": "customers.view",
   "/rooms": "hotel.manage",
+  // Finance
+  "/finance": "finance.income.view",
+  // Admin
   "/staff": "admin.staff.view",
   "/manage": "admin.staff.view",
-  "/finance": "finance.income_view",
 };
 
 // ─── Route-level ACL ────────────────────────────────────────────────────────
@@ -371,35 +465,33 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
 
 export function isRouteAllowed(
   pathname: string,
-  user: { role: string; roles?: string[]; primary_role?: string | null; permissions?: string[] } | null
+  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[] } | null
 ): boolean {
   if (!user) return false;
-  const legacyRole = normalizeRole(user.role);
-  const primaryRole = normalizeRole(user.primary_role || undefined);
-  const declaredRoles = normalizeRoles(user.roles || []);
-  const roleSet = new Set<UserRole>([
-    ...declaredRoles,
-    ...(legacyRole ? [legacyRole] : []),
-    ...(primaryRole ? [primaryRole] : []),
-  ]);
-  const roles = Array.from(roleSet);
 
-  if (!roles.length) return false;
-  if (roles.includes("admin")) return true;
+  // Build the set of normalized legacy roles for this user
+  const roles = normalizeRolesForUser(user);
+  const isAdmin = roles.includes("admin");
 
-  // 1. Check Granular Permissions first
+  if (isAdmin) return true;
+
+  // 1. Check Granular Permissions first (works for both legacy & custom-role users)
   const sortedPermissionPrefixes = Object.keys(ROUTE_PERMISSIONS).sort(
     (a, b) => b.length - a.length
   );
   for (const prefix of sortedPermissionPrefixes) {
     if (pathname === prefix || pathname.startsWith(prefix + "/")) {
       const required = ROUTE_PERMISSIONS[prefix];
-      if (!hasPermission(user, required)) return false;
-      break; // Found specific permission, now fall through to legacy role check if needed
+      // If user has the required permission → they're allowed regardless of legacy role
+      if (hasPermission(user, required)) return true;
+      // If user does NOT have the required permission → deny immediately
+      return false;
     }
   }
 
-  // 2. Legacy Role Check fallback
+  // 2. No permission guard on this route — fall back to legacy role check
+  if (!roles.length) return false;
+
   const sortedPrefixes = Object.keys(ROUTE_ROLES).sort(
     (a, b) => b.length - a.length
   );
@@ -451,4 +543,26 @@ export function getHomeRouteForRoles(roles: UserRole[]): string {
   if (hasAnyRole(roles, ["kitchen", "bar", "cafe", "barista"])) return "/kitchen";
   if (roles.includes("user")) return "/welcome";
   return "/";
+}
+
+/**
+ * Get home route for a full user object.
+ * Uses permissions as a fallback for custom-role users who have no
+ * normalized legacy role but still have granular permissions.
+ */
+export function getHomeRouteForUser(
+  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[] } | null
+): string {
+  if (!user) return "/";
+
+  const roles = normalizeRolesForUser(user);
+  if (roles.length > 0) return getHomeRouteForRoles(roles);
+
+  // Custom-role user with no recognized legacy role — use permissions to decide
+  const perms = user.permissions || [];
+  if (perms.includes("dashboard.view")) return "/dashboard";
+  if (perms.includes("pos.view")) return "/orders/active";
+  if (perms.includes("station.kitchen.view")) return "/kitchen";
+
+  return "/dashboard"; // Sensible default for any authenticated custom-role user
 }

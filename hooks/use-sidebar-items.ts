@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  normalizeRoles,
+  normalizeRolesForUser,
   getSidebarItemsForRoles,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -90,7 +90,7 @@ export function useSidebarItems(): SidebarItem[] {
   const selectedModule = useRestaurant((s) => s.selectedModule);
 
   return useMemo(() => {
-    const roles = normalizeRoles(user?.roles?.length ? user.roles : user?.role ? [user.role] : []);
+    const roles = normalizeRolesForUser(user);
     const isAdminOrManager = roles.some(r => r === "admin" || r === "manager");
     const isCashier = roles.some(r => r === "cashier");
 
@@ -119,5 +119,5 @@ export function useSidebarItems(): SidebarItem[] {
         href: item.href,
         icon: RESTAURANT_ICON_MAP[item.href] ?? LayoutDashboard,
       }));
-  }, [user?.roles, user?.role, restaurant?.hotel_enabled, restaurant?.restaurant_enabled, selectedModule]);
+  }, [user?.roles, user?.role, user?.primary_role, user?.permissions, restaurant?.hotel_enabled, restaurant?.restaurant_enabled, selectedModule]);
 }

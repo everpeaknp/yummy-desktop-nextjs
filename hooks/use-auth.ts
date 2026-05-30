@@ -123,13 +123,26 @@ export const useAuth = create<AuthState>()(
               const userId = decoded.sub || decoded.user_id || decoded.id;
 
               if (userId) {
-                // Only Admins can fetch by ID usually,
                 try {
                   const response = await apiClient.get(AuthApis.meProfile);
                   if (response.data.status === 'success') {
-                    const user = response.data.data;
-                    console.log("[useAuth] Current User (me):", { id: user.id, email: user.email, role: user.role, restaurant_id: user.restaurant_id });
-                    set({ user });
+                    const p = response.data.data;
+                    // /users/me/profile returns: { id, name, email, role, roles, primary_role, restaurant_id, permissions }
+                    // Map to our User interface which uses `full_name` not `name`
+                    const roles: string[] = Array.isArray(p.roles) ? p.roles : (p.role ? [p.role] : []);
+                    const mappedUser: User = {
+                      id: p.id,
+                      email: p.email,
+                      full_name: p.name || p.full_name || '',
+                      role: p.role || '',
+                      roles,
+                      primary_role: p.primary_role || p.role || null,
+                      restaurant_id: p.restaurant_id,
+                      currency: p.currency,
+                      permissions: Array.isArray(p.permissions) ? p.permissions : [],
+                    };
+                    console.log("[useAuth] Current User (me):", { id: mappedUser.id, email: mappedUser.email, role: mappedUser.role, permissions: mappedUser.permissions?.length });
+                    set({ user: mappedUser });
                   }
                 } catch (error) {
                   console.warn("[useAuth] Failed to fetch user profile via /users/me/profile", error);

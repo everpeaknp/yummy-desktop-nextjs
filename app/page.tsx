@@ -19,7 +19,7 @@ import apiClient from "@/lib/api-client";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "next-themes";
-import { normalizeRoles, getHomeRouteForRoles } from "@/lib/role-permissions";
+import { getHomeRouteForUser } from "@/lib/role-permissions";
 import { signInWithGoogle } from "@/lib/firebase";
 
 function GoogleIcon({ className }: { className?: string }) {
@@ -113,8 +113,7 @@ export default function Home() {
     
     setAuth(user, access_token, refresh_token);
     
-    const targetRoute = getHomeRouteForRoles(normalizeRoles(roles));
-    console.log(`[Auth] Normalized roles:`, normalizeRoles(roles));
+    const targetRoute = getHomeRouteForUser(user);
     console.log(`[Auth] Redirecting to: ${targetRoute}`);
     
     // Use router.push for faster client-side navigation.
