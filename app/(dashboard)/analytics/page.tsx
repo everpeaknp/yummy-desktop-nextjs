@@ -11,6 +11,8 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { AnalyticsApis } from "@/lib/api/endpoints";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown";
+import { DateRange } from "react-day-picker";
 import Link from "next/link";
 
 import { RevenueChart } from "@/components/analytics/revenue-chart";
@@ -18,12 +20,13 @@ import { CategoryPieChart } from "@/components/analytics/category-pie";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
 
 export default function AnalyticsPage() {
-    const [activeRange, setActiveRange] = useState("today");
+    const [activeRange, setActiveRange] = useState<DateRangePreset>("today");
     const [data, setData] = useState<any>(null);
     const [trendsData, setTrendsData] = useState<any[]>([]);
     const [categoryData, setCategoryData] = useState<any[]>([]);
     const [breakdownType, setBreakdownType] = useState<'source' | 'payment' | 'category'>('source');
     const [loading, setLoading] = useState(true);
+    const [date, setDate] = useState<DateRange | undefined>();
     const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
     const [businessLine, setBusinessLine] = useState<string | undefined>(undefined);
     const user = useAuth(state => state.user);
@@ -77,6 +80,9 @@ export default function AnalyticsPage() {
                 } else if (activeRange === 'month') {
                     const m = new Date(now.getFullYear(), now.getMonth(), 1);
                     dateFrom = formatDate(m);
+                } else if (activeRange === 'custom' && date?.from && date?.to) {
+                    dateFrom = formatDate(date.from);
+                    dateTo = formatDate(date.to);
                 }
 
                 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -114,9 +120,12 @@ export default function AnalyticsPage() {
         };
 
         if (user?.restaurant_id) {
+            if (activeRange === 'custom' && (!date?.from || !date?.to)) {
+                return; // Wait until range is fully selected
+            }
             fetchAnalytics();
         }
-    }, [user, activeRange, businessLine]);
+    }, [user, activeRange, businessLine, date]);
 
     // Derive breakdown pie data from cached dashboard data when tab changes (no refetch)
     useEffect(() => {
@@ -148,13 +157,12 @@ export default function AnalyticsPage() {
                     </p>
                 </div>
 
-                <div className="flex bg-muted p-1 rounded-lg border border-border overflow-x-auto">
-                    <FilterButton label="Today" active={activeRange === 'today'} onClick={() => setActiveRange('today')} icon={<Calendar className="w-3 h-3" />} />
-                    <FilterButton label="Yesterday" active={activeRange === 'yesterday'} onClick={() => setActiveRange('yesterday')} />
-                    <FilterButton label="Last 7 Days" active={activeRange === 'last7'} onClick={() => setActiveRange('last7')} />
-                    <FilterButton label="Last 30 Days" active={activeRange === 'last30'} onClick={() => setActiveRange('last30')} />
-                    <FilterButton label="This Month" active={activeRange === 'month'} onClick={() => setActiveRange('month')} />
-                </div>
+                <DateRangeDropdown 
+                    activeRange={activeRange}
+                    setActiveRange={setActiveRange}
+                    date={date}
+                    setDate={setDate}
+                />
             </div>
 
             {/* Module Selector (Only if both enabled) */}
@@ -352,22 +360,6 @@ export default function AnalyticsPage() {
     );
 }
 
-function FilterButton({ label, active, onClick, icon }: any) {
-    return (
-        <button
-            onClick={onClick}
-            className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
-                active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-card"
-            )}
-        >
-            {icon}
-            {label}
-        </button>
-    )
-}
 
 function SnapshotCard({ label, value, icon, color, bgColor, borderColor }: any) {
     return (

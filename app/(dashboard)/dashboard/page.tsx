@@ -11,6 +11,8 @@ import { useAuth } from "@/hooks/use-auth"
 import { cn } from "@/lib/utils"
 import { DashboardApis, AnalyticsApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
 import dynamic from "next/dynamic"
+import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown"
+import { DateRange } from "react-day-picker"
 
 const RevenueChart = dynamic(() => import("@/components/analytics/revenue-chart").then(mod => mod.RevenueChart), {
   ssr: false,
@@ -39,7 +41,8 @@ import {
   XCircle,
   CreditCard,
   DollarSign,
-  Briefcase
+  Briefcase,
+  Calendar
 } from "lucide-react"
 
 export default function DashboardPage() {
@@ -52,6 +55,8 @@ export default function DashboardPage() {
   const [activities, setActivities] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activeRange, setActiveRange] = useState<DateRangePreset>("today")
+  const [date, setDate] = useState<DateRange | undefined>()
 
   const me = useAuth(state => state.me)
   const router = useRouter()
@@ -72,20 +77,46 @@ export default function DashboardPage() {
     if (!user?.restaurant_id) return
 
     try {
-      const today = new Date()
-      const todayStr = today.toISOString().split('T')[0]
-      const last30Days = new Date()
-      last30Days.setDate(today.getDate() - 30)
-      const last30DaysStr = last30Days.toISOString().split('T')[0]
+      const formatDate = (date: Date) => {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+      };
+
+      const now = new Date();
+      let dateFrom = formatDate(now);
+      let dateTo = formatDate(now);
+
+      if (activeRange === 'yesterday') {
+          const y = new Date(now);
+          y.setDate(y.getDate() - 1);
+          dateFrom = formatDate(y);
+          dateTo = formatDate(y);
+      } else if (activeRange === 'last7') {
+          const l7 = new Date(now);
+          l7.setDate(l7.getDate() - 6);
+          dateFrom = formatDate(l7);
+      } else if (activeRange === 'last30') {
+          const l30 = new Date(now);
+          l30.setDate(l30.getDate() - 29);
+          dateFrom = formatDate(l30);
+      } else if (activeRange === 'month') {
+          const m = new Date(now.getFullYear(), now.getMonth(), 1);
+          dateFrom = formatDate(m);
+      } else if (activeRange === 'custom' && date?.from && date?.to) {
+          dateFrom = formatDate(date.from);
+          dateTo = formatDate(date.to);
+      }
 
       // Fetch V2 Dashboard (Health, Basic KPIs)
       const v2Res = await apiClient.get(DashboardApis.dashboardDataV2({
         restaurantId: user.restaurant_id
       })).catch(err => { console.error("V2 failed:", err); return null })
 
-      // Fetch Advanced Analytics (Last 30 Days to match Analytics page)
+      // Fetch Advanced Analytics (Date filtered)
       const analyticsRes = await apiClient.get(
-        `/analytics/dashboard?restaurant_id=${user.restaurant_id}&date_from=${last30DaysStr}&date_to=${todayStr}`
+        `/analytics/dashboard?restaurant_id=${user.restaurant_id}&date_from=${dateFrom}&date_to=${dateTo}`
       ).catch(err => { console.error("Analytics failed:", err); return null })
 
       // Audit logs were removed; use Transactions as the unified activity timeline.
@@ -93,8 +124,8 @@ export default function DashboardPage() {
         .get(
           TransactionsApis.list({
             restaurantId: user.restaurant_id,
-            dateFrom: last30DaysStr,
-            dateTo: todayStr,
+            dateFrom: dateFrom,
+            dateTo: dateTo,
             skip: 0,
             limit: 15,
           })
@@ -154,11 +185,15 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (user?.restaurant_id) {
+      if (activeRange === 'custom' && (!date?.from || !date?.to)) {
+        return; // wait until full range is selected
+      }
+      setLoading(true)
       fetchDashboard()
       const interval = setInterval(fetchDashboard, 60000)
       return () => clearInterval(interval)
     }
-  }, [user])
+  }, [user, activeRange, date])
 
   // Export Reporting
   const handleExport = async () => {
@@ -205,15 +240,23 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
       {/* 0. Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Executive Dashboard</h1>
           <p className="text-muted-foreground text-sm font-medium">Real-time operational overview for {data?.meta?.outlet_name || "your outlet"}</p>
         </div>
-        <Badge variant="secondary" className="gap-2 py-1 px-3 bg-green-500/10 text-green-600 border border-green-200">
-           <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-           System Online
-        </Badge>
+        <div className="flex items-center gap-3">
+          <DateRangeDropdown 
+              activeRange={activeRange}
+              setActiveRange={setActiveRange}
+              date={date}
+              setDate={setDate}
+          />
+          <Badge variant="secondary" className="gap-2 py-1 px-3 bg-green-500/10 text-green-600 border border-green-200 shrink-0">
+             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+             System Online
+          </Badge>
+        </div>
       </div>
 
       {/* 1. Health Cards (Top) */}
@@ -633,3 +676,4 @@ function DashboardSkeleton() {
     </div>
   )
 }
+

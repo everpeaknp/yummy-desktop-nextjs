@@ -31,6 +31,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   ArrowLeft,
   Loader2,
   ShoppingCart,
@@ -384,27 +390,50 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Secondary / Icons */}
-          <div className="flex items-center gap-1 mr-2 border-r border-border/40 pr-3">
-             <Button variant="ghost" size="icon" onClick={fetchContext} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground" title="Refresh">
-                <RefreshCw className="h-4 w-4" />
-             </Button>
+          <div className="flex items-center gap-2">
+            {/* Secondary / Icons */}
+            <TooltipProvider delayDuration={200}>
+              <div className="flex items-center gap-1 mr-2 border-r border-border/40 pr-3">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={fetchContext} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
+                        <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Refresh Order</p>
+                  </TooltipContent>
+                </Tooltip>
 
-             <Link href={`/orders/${orderId}/receipt`}>
-                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground" title="View Receipt">
-                   <Eye className="h-4 w-4" />
-                </Button>
-             </Link>
-             
-             {isTableOrder && isEditable && (
-                <Button variant="ghost" size="icon" onClick={handleOpenChangeTable} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground" title="Change Table">
-                   <Table2 className="h-4 w-4" />
-                </Button>
-             )}
-          </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link href={`/orders/${orderId}/receipt`}>
+                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>View Receipt</p>
+                  </TooltipContent>
+                </Tooltip>
+                
+                {isTableOrder && isEditable && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" onClick={handleOpenChangeTable} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
+                        <Table2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Change Table</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TooltipProvider>
 
-          {/* Primary Actions */}
+            {/* Primary Actions */}
           {isEditable && (
             <>
                <Link href={`/orders/${orderId}/edit`}>
