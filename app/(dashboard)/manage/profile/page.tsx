@@ -188,6 +188,101 @@ export default function RestaurantProfilePage() {
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
+                            <Camera className="w-5 h-5 text-primary" />
+                            Branding & Media
+                        </CardTitle>
+                        <CardDescription>
+                            Upload your logo and cover image.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <div className="relative w-full rounded-xl mb-16 border bg-slate-50 shadow-sm">
+                            {/* Cover Upload */}
+                            <div className="h-48 md:h-64 w-full relative group rounded-t-xl overflow-hidden">
+                                {uploadingCover ? (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
+                                        <Loader2 className="w-8 h-8 animate-spin" />
+                                    </div>
+                                ) : formData.cover_photo ? (
+                                    <img 
+                                        src={getImageUrl(formData.cover_photo)} 
+                                        alt="Cover" 
+                                        className="w-full h-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground bg-slate-100">
+                                        <Camera className="w-8 h-8 mb-2" />
+                                        <span className="text-[10px]">16:9 Landscape</span>
+                                    </div>
+                                )}
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <button 
+                                        type="button"
+                                        onClick={() => coverInputRef.current?.click()}
+                                        className="cursor-pointer bg-white/20 p-2 rounded-full backdrop-blur-sm hover:bg-white/30"
+                                    >
+                                        <Upload className="w-6 h-6 text-white" />
+                                    </button>
+                                </div>
+                                <Input 
+                                    ref={coverInputRef}
+                                    type="file" 
+                                    className="hidden" 
+                                    accept="image/*"
+                                    onChange={(e) => handleImageUpload(e, 'cover')}
+                                />
+                            </div>
+
+                            {/* Logo Upload */}
+                            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 z-10">
+                                <div className="w-32 h-32 rounded-full bg-white border-4 border-white shadow-md flex flex-col items-center justify-center text-muted-foreground relative group overflow-hidden">
+                                    {uploadingLogo ? (
+                                        <Loader2 className="w-8 h-8 animate-spin" />
+                                    ) : formData.profile_picture ? (
+                                        <img 
+                                            src={getImageUrl(formData.profile_picture)} 
+                                            alt="Logo" 
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        <>
+                                            <Store className="w-8 h-8 mb-2" />
+                                            <span className="text-[10px]">1:1 Ratio</span>
+                                        </>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <button 
+                                            type="button"
+                                            onClick={() => logoInputRef.current?.click()}
+                                            className="cursor-pointer"
+                                        >
+                                            <Upload className="w-6 h-6 text-white" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <Input 
+                                    ref={logoInputRef}
+                                    type="file" 
+                                    className="hidden" 
+                                    accept="image/*"
+                                    onChange={(e) => handleImageUpload(e, 'logo')}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex justify-center gap-4 mt-8">
+                            <Button type="button" variant="outline" size="sm" onClick={() => coverInputRef.current?.click()} disabled={uploadingCover}>
+                                {uploadingCover ? "Uploading Cover..." : "Change Cover"}
+                            </Button>
+                            <Button type="button" variant="outline" size="sm" onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo}>
+                                {uploadingLogo ? "Uploading Logo..." : "Change Logo"}
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
                             <Store className="w-5 h-5 text-primary" />
                             General Information
                         </CardTitle>
@@ -269,26 +364,6 @@ export default function RestaurantProfilePage() {
                             </div>
                         </div>
 
-                        <div className="p-4 border border-orange-200 bg-orange-50/30 rounded-xl space-y-3">
-                            <div className="flex items-center gap-2 text-orange-800 font-semibold">
-                                <RefreshCw className="w-4 h-4" />
-                                <h3>Local POS Server Integration</h3>
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="local_pos_ip" className="text-orange-900">Local POS IP Address</Label>
-                                <Input 
-                                    id="local_pos_ip" 
-                                    value={formData.local_pos_ip} 
-                                    onChange={(e) => setFormData(p => ({ ...p, local_pos_ip: e.target.value }))} 
-                                    placeholder="e.g. 192.168.1.139"
-                                    className="bg-white border-orange-200 focus-visible:ring-orange-500"
-                                />
-                                <p className="text-[10px] text-orange-700/70">
-                                    When set, customers on your local Wi-Fi will be automatically routed to this IP for faster ordering. Leave empty if using Cloud only.
-                                </p>
-                            </div>
-                        </div>
-
                         <div className="space-y-2">
                             <Label>Location Marker (Tap Map to Set Location)</Label>
                             <div className="h-[400px] w-full rounded-xl overflow-hidden border bg-muted relative">
@@ -316,100 +391,6 @@ export default function RestaurantProfilePage() {
                     </CardContent>
                 </Card>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Camera className="w-5 h-5 text-primary" />
-                            Branding & Media
-                        </CardTitle>
-                        <CardDescription>
-                            Upload your logo and cover image.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                        <div className="flex flex-col md:flex-row gap-8">
-                            {/* Logo Upload */}
-                            <div className="space-y-4 flex flex-col items-center">
-                                <Label>Restaurant Logo</Label>
-                                <div className="w-32 h-32 rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-muted-foreground relative group overflow-hidden">
-                                    {uploadingLogo ? (
-                                        <Loader2 className="w-8 h-8 animate-spin" />
-                                    ) : formData.profile_picture ? (
-                                        <img 
-                                            src={getImageUrl(formData.profile_picture)} 
-                                            alt="Logo" 
-                                            className="w-full h-full object-cover"
-                                        />
-                                    ) : (
-                                        <>
-                                            <Store className="w-8 h-8 mb-2" />
-                                            <span className="text-[10px]">1:1 Ratio</span>
-                                        </>
-                                    )}
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                        <button 
-                                            type="button"
-                                            onClick={() => logoInputRef.current?.click()}
-                                            className="cursor-pointer"
-                                        >
-                                            <Upload className="w-6 h-6 text-white" />
-                                        </button>
-                                    </div>
-                                </div>
-                                <Input 
-                                    ref={logoInputRef}
-                                    type="file" 
-                                    className="hidden" 
-                                    accept="image/*"
-                                    onChange={(e) => handleImageUpload(e, 'logo')}
-                                />
-                                <Button type="button" variant="outline" size="sm" onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo}>
-                                    {uploadingLogo ? "Uploading..." : "Change Logo"}
-                                </Button>
-                            </div>
-
-                            {/* Cover Upload */}
-                            <div className="space-y-4 flex-1">
-                                <Label>Cover Image</Label>
-                                <div className="h-40 rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-muted-foreground relative group overflow-hidden">
-                                    {uploadingCover ? (
-                                        <Loader2 className="w-8 h-8 animate-spin" />
-                                    ) : formData.cover_photo ? (
-                                        <img 
-                                            src={getImageUrl(formData.cover_photo)} 
-                                            alt="Cover" 
-                                            className="w-full h-full object-cover"
-                                        />
-                                    ) : (
-                                        <>
-                                            <Camera className="w-8 h-8 mb-2" />
-                                            <span className="text-[10px]">16:9 Landscape</span>
-                                        </>
-                                    )}
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                        <button 
-                                            type="button"
-                                            onClick={() => coverInputRef.current?.click()}
-                                            className="cursor-pointer"
-                                        >
-                                            <Upload className="w-6 h-6 text-white" />
-                                        </button>
-                                    </div>
-                                </div>
-                                <Input 
-                                    ref={coverInputRef}
-                                    type="file" 
-                                    className="hidden" 
-                                    accept="image/*"
-                                    onChange={(e) => handleImageUpload(e, 'cover')}
-                                />
-                                <Button type="button" variant="outline" size="sm" onClick={() => coverInputRef.current?.click()} disabled={uploadingCover}>
-                                    {uploadingCover ? "Uploading..." : "Change Cover"}
-                                </Button>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
 
                 <div className="flex justify-end gap-3">
                     <Button type="button" variant="outline" onClick={() => router.push('/manage')}>

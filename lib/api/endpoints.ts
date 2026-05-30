@@ -22,8 +22,8 @@ export const AuthApis = {
   updatePreferences: '/users/profile/preferences',
   deleteMe: '/users/me',
   changePassword: '/users/change-password',
-  listPermissions: '/users/permissions/',
-  updateUserPermissions: (id: number | string) => `/users/${id}/permissions/`,
+  listPermissions: '/users/permissions',
+  updateUserPermissions: (id: number | string) => `/users/${id}/permissions`,
   uploadProfilePicture: '/users/me/profile-picture',
 };
 

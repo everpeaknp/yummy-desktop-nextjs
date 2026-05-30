@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Pin,
   PinOff,
+  Search,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -30,6 +31,7 @@ import {
   useSidebarItems,
   type SidebarItem
 } from "@/hooks/use-sidebar-items";
+import { GlobalSearch } from "./global-search";
 
 export const Sidebar = memo(function Sidebar() {
   const MIN_WIDTH = 240;
@@ -50,6 +52,7 @@ export const Sidebar = memo(function Sidebar() {
   const [pinnedExtras, setPinnedExtras] = useState<string[]>([]);
   const [extraOrder, setExtraOrder] = useState<string[]>([]);
   const [draggingHref, setDraggingHref] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const resizingRef = useRef(false);
   const coreHrefs = useMemo(
     () => new Set(["/dashboard", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"]),
@@ -179,6 +182,18 @@ export const Sidebar = memo(function Sidebar() {
   // Home link depends on active module
   const homeHref = selectedModule === "hotel" ? "/rooms" : "/dashboard";
 
+  // Ctrl+K to open search
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setSearchOpen((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, []);
+
   useEffect(() => {
     if (!restaurant) {
       fetchRestaurant();
@@ -259,6 +274,37 @@ export const Sidebar = memo(function Sidebar() {
           >
             {collapsed ? <ChevronsRight className="h-3.5 w-3.5" /> : <ChevronsLeft className="h-4 w-4" />}
           </button>
+        </div>
+
+        {/* Global Search Component */}
+        <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
+
+        {/* Search Trigger */}
+        <div className={cn("px-4 py-3 border-b", collapsed && "px-2")}>
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button 
+                  onClick={() => setSearchOpen(true)}
+                  className="flex w-full items-center justify-center rounded-lg py-2.5 text-muted-foreground hover:text-primary hover:bg-muted transition-all"
+                >
+                  <Search className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>Search (Ctrl+K)</TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground bg-muted/50 hover:bg-muted hover:text-foreground transition-all border border-transparent hover:border-border"
+            >
+              <Search className="h-4 w-4 shrink-0" />
+              <span className="flex-1 text-left">Search pages...</span>
+              <kbd className="hidden sm:inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
+                <span className="text-xs">⌘</span>K
+              </kbd>
+            </button>
+          )}
         </div>
 
         {/* Nav Items */}

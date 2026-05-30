@@ -118,7 +118,7 @@ export default function IncomePage() {
     if (!incomeData?.recent_entries?.length) return;
     const XLSX = await import("xlsx");
     const dataToExport = incomeData.recent_entries.map((entry: any) => ({
-      "Description": entry.description || "Manual Entry",
+      "Description": entry.name || entry.title || entry.source_name || entry.notes || entry.description || "Manual Entry",
       "Amount": entry.amount,
       "Date": new Date(entry.paid_at).toLocaleDateString(),
       "Source": entry.source || "Day Close",
@@ -277,7 +277,7 @@ export default function IncomePage() {
                     <tbody className="divide-y divide-border">
                       {incomeData.recent_entries.map((entry: any, idx: number) => (
                         <tr key={idx} className="hover:bg-muted/30 transition-colors">
-                          <td className="px-6 py-4 font-medium">{entry.description || "Manual Entry"}</td>
+                          <td className="px-6 py-4 font-medium">{entry.name || entry.title || entry.source_name || entry.notes || entry.description || "Manual Entry"}</td>
                           <td className="px-6 py-4 font-bold text-emerald-600 dark:text-emerald-500">+ Rs. {Number(entry.amount).toLocaleString()}</td>
                           <td className="px-6 py-4 text-muted-foreground">{new Date(entry.paid_at).toLocaleDateString()}</td>
                           <td className="px-6 py-4">

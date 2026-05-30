@@ -74,6 +74,12 @@ const CartContent = ({
   router: any;
   isDirty?: boolean;
   fixedTaxRate: number;
+  customerName: string;
+  setCustomerName: (n: string) => void;
+  customerPhone: string;
+  setCustomerPhone: (p: string) => void;
+  deliveryAddress: string;
+  setDeliveryAddress: (a: string) => void;
 }) => {
   const subtotal = cart.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
   const taxRate = restaurant?.tax_enabled ? fixedTaxRate : 0;
@@ -159,6 +165,33 @@ const CartContent = ({
       </div>
 
       <div className="p-4 border-t bg-muted/20 space-y-4">
+        {(!orderId || orderId === 'create') && (channelFromQuery === 'pickup' || channelFromQuery === 'delivery') && (
+          <div className="space-y-3 bg-card p-3 rounded-lg border text-sm">
+            <h4 className="font-semibold text-xs uppercase text-muted-foreground">Customer Details</h4>
+            <div className="space-y-2">
+              <Input 
+                placeholder="Customer Name *" 
+                value={customerName} 
+                onChange={(e) => setCustomerName(e.target.value)} 
+                className="h-8 text-xs"
+              />
+              <Input 
+                placeholder="Phone Number *" 
+                value={customerPhone} 
+                onChange={(e) => setCustomerPhone(e.target.value)} 
+                className="h-8 text-xs"
+              />
+              {channelFromQuery === 'delivery' && (
+                <Input 
+                  placeholder="Delivery Address *" 
+                  value={deliveryAddress} 
+                  onChange={(e) => setDeliveryAddress(e.target.value)} 
+                  className="h-8 text-xs"
+                />
+              )}
+            </div>
+          </div>
+        )}
         <div className="space-y-2 text-sm">
           <div className="flex justify-between text-muted-foreground">
             <span>Subtotal</span>
@@ -235,6 +268,10 @@ export default function POSSystem({
   const [searchQuery, setSearchQuery] = useState("");
   const [orderData, setOrderData] = useState<any>(null);
   const [tableData, setTableData] = useState<any>(null);
+
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
 
   const user = useAuth(state => state.user);
   const restaurant = useRestaurant((s) => s.restaurant);
@@ -417,12 +454,28 @@ export default function POSSystem({
         })) : []
       });
 
-      const payload = {
+      const payload: any = {
         restaurant_id: user?.restaurant_id,
         channel: orderData?.channel || channelFromQuery,
         table_id: tableData?.id || orderData?.table_id || (tableIdFromQuery ? parseInt(tableIdFromQuery) : null),
         items: cart.map(buildItemPayload)
       };
+
+      if (!isEditing && (channelFromQuery === 'delivery' || channelFromQuery === 'pickup')) {
+        if (!customerName.trim() || !customerPhone.trim()) {
+          toast.error("Customer Name and Phone are required.");
+          setProcessing(false);
+          return;
+        }
+        if (channelFromQuery === 'delivery' && !deliveryAddress.trim()) {
+          toast.error("Delivery address is required.");
+          setProcessing(false);
+          return;
+        }
+        payload.customer_name = customerName;
+        payload.customer_phone = customerPhone;
+        payload.delivery_address = deliveryAddress;
+      }
 
       let response;
       if (isEditing) {
@@ -687,6 +740,12 @@ export default function POSSystem({
             router={router}
             isDirty={isDirty}
             fixedTaxRate={fixedTaxRate}
+            customerName={customerName}
+            setCustomerName={setCustomerName}
+            customerPhone={customerPhone}
+            setCustomerPhone={setCustomerPhone}
+            deliveryAddress={deliveryAddress}
+            setDeliveryAddress={setDeliveryAddress}
         />
       </Card>
 
@@ -721,6 +780,12 @@ export default function POSSystem({
                 router={router}
                 isDirty={isDirty}
                 fixedTaxRate={fixedTaxRate}
+                customerName={customerName}
+                setCustomerName={setCustomerName}
+                customerPhone={customerPhone}
+                setCustomerPhone={setCustomerPhone}
+                deliveryAddress={deliveryAddress}
+                setDeliveryAddress={setDeliveryAddress}
             />
           </SheetContent>
         </Sheet>

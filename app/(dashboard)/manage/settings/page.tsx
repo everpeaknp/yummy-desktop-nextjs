@@ -30,7 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { RestaurantApis } from "@/lib/api/endpoints";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { 
     Dialog, 
     DialogContent, 
@@ -44,8 +44,12 @@ import { Badge } from "@/components/ui/badge";
 export default function RestaurantSettingsPage() {
     const user = useAuth(state => state.user);
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    
+    const initialTab = searchParams.get("tab") || "payments";
+    const [activeTab, setActiveTab] = useState(initialTab);
     
     // FonePay State
     const [fonepay, setFonepay] = useState({
@@ -91,6 +95,13 @@ export default function RestaurantSettingsPage() {
         };
         fetchData();
     }, [user?.restaurant_id]);
+
+    useEffect(() => {
+        const tabParam = searchParams.get("tab");
+        if (tabParam) {
+            setActiveTab(tabParam);
+        }
+    }, [searchParams]);
 
     const handleFonePaySave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -222,7 +233,7 @@ export default function RestaurantSettingsPage() {
                 </p>
             </div>
 
-            <Tabs defaultValue="payments" className="space-y-6">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
                 <TabsList className="bg-muted/50 p-1">
                     <TabsTrigger value="payments" className="gap-2">
                         <CreditCard className="w-4 h-4" />

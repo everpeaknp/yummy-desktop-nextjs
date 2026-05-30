@@ -73,7 +73,7 @@ import { ReceiptDesigner } from "@/components/manage/settings/receipt-designer";
 import { KOTDesigner } from "@/components/manage/settings/kot-designer";
 import { PrinterManagement } from "@/components/manage/settings/printer-management";
 import { DataExporter } from "@/components/manage/settings/data-exporter";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AuthApis } from "@/lib/api/endpoints";
 import { useRef } from "react";
 import { ImageService } from "@/services/image-service";
@@ -328,7 +328,9 @@ const categories = [
 
 export default function AdditionalSettingsPage() {
     const [searchQuery, setSearchQuery] = useState("");
-    const [selectedSetting, setSelectedSetting] = useState<string | null>(null);
+    const searchParams = useSearchParams();
+    const initialSetting = searchParams.get("setting");
+    const [selectedSetting, setSelectedSetting] = useState<string | null>(initialSetting);
     const [isUpdating, setIsUpdating] = useState(false);
     const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
     const [passwordLoading, setPasswordLoading] = useState(false);
@@ -429,6 +431,14 @@ export default function AdditionalSettingsPage() {
       fetchGalleryImages();
     }
   }, [selectedSetting, fetchGalleryImages]);
+
+  // Sync state when URL parameter changes
+  useEffect(() => {
+      const settingParam = searchParams.get("setting");
+      if (settingParam) {
+          setSelectedSetting(settingParam);
+      }
+  }, [searchParams]);
 
   const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

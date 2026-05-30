@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 
+export const dynamic = 'force-dynamic';
+
 function getBackendBaseUrl() {
   const explicit = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL;
   if (explicit) return explicit;
@@ -38,6 +40,12 @@ function filterResponseHeaders(upstream: Response): Headers {
   upstream.headers.forEach((value, key) => {
     if (allow.has(key.toLowerCase())) headers.set(key, value);
   });
+  
+  // Force disable browser caching for dashboard API proxy
+  headers.set("cache-control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  headers.set("pragma", "no-cache");
+  headers.set("expires", "0");
+  
   return headers;
 }
 
@@ -55,6 +63,10 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
         : joined === "expenses"
           ? "expenses/"
           : /^printers\/restaurants\/[^/]+\/station-config$/.test(joined)
+            ? `${joined}/`
+          : /^users\/[^/]+\/permissions$/.test(joined)
+            ? `${joined}/`
+          : /^users\/[^/]+\/access-scopes$/.test(joined)
             ? `${joined}/`
           : joined;
   const url = new URL(`${backend}/${normalizedPath}`);

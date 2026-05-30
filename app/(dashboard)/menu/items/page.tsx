@@ -33,7 +33,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { MenuApis, ModifierApis } from "@/lib/api/endpoints";
+import { MenuApis, ModifierApis, ItemCategoryApis } from "@/lib/api/endpoints";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { ImageService } from "@/services/image-service";
@@ -124,18 +124,23 @@ export default function MenuItemsPage() {
   const fetchItems = useCallback(async () => {
     if (!user?.restaurant_id) return;
     try {
-      const response = await apiClient.get(MenuApis.getMenusGroupedByRestaurant(user.restaurant_id));
+      const [response, catRes] = await Promise.all([
+        apiClient.get(MenuApis.getMenusGroupedByRestaurant(user.restaurant_id)),
+        apiClient.get(ItemCategoryApis.getItemCategories(user.restaurant_id))
+      ]);
+      
+      if (catRes.data.status === "success") {
+        setCategories(catRes.data.data.map((c: any) => ({ id: c.id, name: c.name })));
+      }
+
       if (response.data.status === "success") {
         const groups: CategoryGroup[] = response.data.data;
-        const cats: { id: number; name: string }[] = [];
         const items: MenuItem[] = [];
         groups.forEach((g) => {
-          cats.push({ id: g.category_id, name: g.category_name });
           g.items.forEach((item) => {
             items.push({ ...item, category_name: g.category_name });
           });
         });
-        setCategories(cats);
         setAllItems(items);
       }
       
@@ -361,7 +366,13 @@ export default function MenuItemsPage() {
       </div>
 
       {/* Category Filter Tabs */}
-      {categories.length > 0 && (
+      {loading ? (
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-24 rounded-lg flex-shrink-0" />
+          ))}
+        </div>
+      ) : categories.length > 0 ? (
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
           <button
             onClick={() => setSelectedCategory(null)}
@@ -392,7 +403,7 @@ export default function MenuItemsPage() {
             );
           })}
         </div>
-      )}
+      ) : null}
 
       {/* Content */}
       {loading ? (

@@ -87,7 +87,21 @@ export default function StaffPage() {
     try {
       const response = await apiClient.get(StaffApis.list());
       if (response.data.status === "success") {
-        setStaff(response.data.data || []);
+        const cleanedStaff = (response.data.data || []).map((s: any) => {
+          const cleanRoles = (s.roles || []).filter((r: string) => !r?.startsWith("__user_"));
+          let primaryRole = s.primary_role;
+          if (!primaryRole || primaryRole.startsWith("__user_")) {
+             primaryRole = cleanRoles[0] || s.role;
+             if (primaryRole?.startsWith("__user_")) primaryRole = "waiter";
+          }
+          return {
+             ...s,
+             roles: cleanRoles.length > 0 ? cleanRoles : ["waiter"],
+             primary_role: primaryRole || "waiter",
+             role: primaryRole || "waiter",
+          };
+        });
+        setStaff(cleanedStaff);
       }
     } catch (err) {
       console.error("Failed to fetch staff:", err);
@@ -711,14 +725,17 @@ export default function StaffPage() {
       </Dialog>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>{editingStaff ? "Edit Staff Member" : "Add New Staff Member"}</DialogTitle>
-            <DialogDescription>
-              {editingStaff ? "Update profile details for this staff member." : "Create a new account for your employee. They will be added to your restaurant."}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSaveStaff} className="space-y-4 py-4">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <div className="px-6 pt-6 pb-2 shrink-0">
+            <DialogHeader>
+              <DialogTitle>{editingStaff ? "Edit Staff Member" : "Add Staff Member"}</DialogTitle>
+              <DialogDescription>
+                {editingStaff ? "Update profile details for this staff member." : "Create a new account for your employee. They will be added to your restaurant."}
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <form onSubmit={handleSaveStaff} className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 custom-scrollbar">
             <div className="space-y-2">
               <Label htmlFor="name">Full Name</Label>
               <Input 
@@ -889,13 +906,16 @@ export default function StaffPage() {
                 ))}
               </div>
             </div>
-            <DialogFooter className="pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                {editingStaff ? "Save Changes" : "Create Account"}
-              </Button>
-            </DialogFooter>
+            </div>
+            <div className="px-6 py-4 border-t bg-muted/10 shrink-0">
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {editingStaff ? "Save Changes" : "Create Account"}
+                </Button>
+              </DialogFooter>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

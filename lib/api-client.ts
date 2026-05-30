@@ -1,8 +1,12 @@
 import axios from 'axios';
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  'https://api.yummyever.com';
+const API_BASE_URL = (() => {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && envUrl.startsWith('http://')) {
+    return envUrl.replace('http://', 'https://');
+  }
+  return envUrl;
+})();
 
 const isLocalhost =
   typeof window !== 'undefined' &&
