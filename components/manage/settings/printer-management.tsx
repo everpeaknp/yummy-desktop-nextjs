@@ -89,6 +89,9 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
     const [isSaving, setIsSaving] = useState(false);
     const [testingId, setTestingId] = useState<number | null>(null);
     
+    // Local Device Settings
+    const [localDeviceStations, setLocalDeviceStations] = useState<string[]>([]);
+    
     // Create/Edit Dialog State
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingPrinter, setEditingPrinter] = useState<Partial<Printer> | null>(null);
@@ -136,7 +139,27 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
 
     useEffect(() => {
         fetchData();
+        // Load local device settings
+        try {
+            const saved = localStorage.getItem("yummy_local_kot_stations");
+            if (saved) {
+                setLocalDeviceStations(JSON.parse(saved));
+            }
+        } catch (e) {
+            console.error("Failed to parse local stations", e);
+        }
     }, [fetchData]);
+
+    const handleToggleLocalStation = (stationName: string) => {
+        setLocalDeviceStations(prev => {
+            const newStations = prev.includes(stationName) 
+                ? prev.filter(s => s !== stationName)
+                : [...prev, stationName];
+            
+            localStorage.setItem("yummy_local_kot_stations", JSON.stringify(newStations));
+            return newStations;
+        });
+    };
 
     const handleToggleEnabled = async (printer: Printer) => {
         try {
@@ -510,6 +533,54 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
                             )}
                         </TableBody>
                     </Table>
+                </div>
+            </div>
+
+            {/* Local Device Settings */}
+            <div className="space-y-3 pt-4 border-t border-border/20">
+                <div className="space-y-0.5">
+                    <h2 className="text-[11px] font-black tracking-[0.2em] text-orange-500 uppercase">This Computer's Print Duties</h2>
+                    <p className="text-sm font-bold tracking-tight">Select which KOT stations should auto-print on THIS specific device</p>
+                    <p className="text-[11px] text-muted-foreground">If none are selected, this computer will not auto-print any KOTs (useful for front-desk PCs).</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {stations.map((station) => {
+                        const isSelected = localDeviceStations.includes(station.name);
+                        return (
+                            <div 
+                                key={station.id}
+                                onClick={() => handleToggleLocalStation(station.name)}
+                                className={cn(
+                                    "flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all",
+                                    isSelected ? "border-orange-500/50 bg-orange-500/10" : "border-border/40 bg-card/50 hover:bg-muted/50"
+                                )}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={cn(
+                                        "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                                        isSelected ? "bg-orange-500/20 text-orange-500" : "bg-muted text-muted-foreground"
+                                    )}>
+                                        <MapPin className="w-4 h-4" />
+                                    </div>
+                                    <span className={cn(
+                                        "font-bold text-sm tracking-tight uppercase",
+                                        isSelected ? "text-orange-600 dark:text-orange-400" : "text-foreground"
+                                    )}>{station.name}</span>
+                                </div>
+                                <Switch 
+                                    checked={isSelected}
+                                    onCheckedChange={() => handleToggleLocalStation(station.name)}
+                                    className="data-[state=checked]:bg-orange-500"
+                                />
+                            </div>
+                        );
+                    })}
+                    {stations.length === 0 && (
+                        <div className="col-span-full p-6 text-center border border-dashed rounded-xl border-border/40 text-muted-foreground text-xs uppercase tracking-widest font-bold">
+                            Please configure KOT stations first
+                        </div>
+                    )}
                 </div>
             </div>
 

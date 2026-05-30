@@ -111,20 +111,23 @@ export default function AuditLogsPage() {
             );
             if (res.data.status === "success") {
                 const raw = res.data.data.items || [];
-                const mapped = raw.map((r: any) => ({
-                    id: r.id,
-                    event: r.type,
-                    actor_name: r.user_name || 'System',
-                    actor_role: 'USER',
-                    entity_type: r.type || 'transaction',
-                    entity_id: null,
-                    change_field: null,
-                    old_value: null,
-                    new_value: null,
-                    details: r.title,
-                    source: 'transactions',
-                    created_at: r.created_at,
-                }));
+                const mapped = raw.map((r: any) => {
+                    const { id, type, user_name, title, created_at, updated_at, restaurant_id, ...rest } = r;
+                    return {
+                        id: r.id,
+                        event: r.type,
+                        actor_name: r.user_name || 'System',
+                        actor_role: 'USER',
+                        entity_type: r.type || 'transaction',
+                        entity_id: r.transaction_id || r.id,
+                        change_field: null,
+                        old_value: null,
+                        new_value: Object.keys(rest).length > 0 ? rest : null,
+                        details: r.title,
+                        source: 'transactions',
+                        created_at: r.created_at,
+                    };
+                });
 
                 const filtered = entityFilter === 'all'
                     ? mapped
@@ -291,12 +294,12 @@ export default function AuditLogsPage() {
                             filteredLogs.map((log) => (
                                 <TableRow 
                                     key={log.id} 
-                                    className="hover:bg-slate-50/50 cursor-pointer"
+                                    className="hover:bg-muted/50 cursor-pointer"
                                     onClick={() => setSelectedLog(log)}
                                 >
                                     <TableCell className="text-xs font-mono text-muted-foreground">
                                         <div className="flex items-center gap-2">
-                                            <Calendar className="w-3 h-3 text-slate-400" />
+                                            <Calendar className="w-3 h-3 text-muted-foreground" />
                                             {formatLogDateTime(log.created_at)}
                                         </div>
                                     </TableCell>
@@ -310,8 +313,16 @@ export default function AuditLogsPage() {
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex flex-col">
-                                            <span className="text-xs font-bold text-slate-700">{log.entity_type}</span>
+                                            <span className="text-xs font-bold text-foreground capitalize">{log.entity_type}</span>
                                             <span className="text-[10px] text-muted-foreground">ID: #{log.entity_id}</span>
+                                            {(() => {
+                                                const obj = log.new_value || log.old_value || {};
+                                                const receipt = obj.receipt_number || obj.receipt_no;
+                                                if (receipt) {
+                                                    return <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Receipt: {receipt}</span>;
+                                                }
+                                                return null;
+                                            })()}
                                         </div>
                                     </TableCell>
                                     <TableCell>
@@ -319,7 +330,7 @@ export default function AuditLogsPage() {
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-sm text-slate-600 line-clamp-1">
+                                            <span className="text-sm text-muted-foreground line-clamp-1">
                                                 {getLogSummary(log)}
                                             </span>
                                         </div>
@@ -344,17 +355,17 @@ export default function AuditLogsPage() {
                             </DialogHeader>
 
                             {/* Summary Card */}
-                            <Card className="border-slate-200">
+                            <Card className="border-border">
                                 <CardContent className="p-4">
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-start gap-3">
-                                            <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mt-0.5">
-                                                <RefreshCw className="w-5 h-5 text-slate-500" />
+                                            <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center mt-0.5">
+                                                <RefreshCw className="w-5 h-5 text-muted-foreground" />
                                             </div>
                                             <div>
                                                 <h3 className="font-bold text-base">{getEventTitle(selectedLog)}</h3>
                                                 {selectedLog.change_field && (
-                                                    <p className="text-sm text-emerald-600 font-medium">Changed: {selectedLog.change_field}</p>
+                                                    <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Changed: {selectedLog.change_field}</p>
                                                 )}
                                                 <p className="text-sm text-muted-foreground">{selectedLog.entity_type}</p>
                                                 <p className="text-xs text-muted-foreground">{formatLogDateTime(selectedLog.created_at)}</p>
@@ -371,7 +382,7 @@ export default function AuditLogsPage() {
                             </Card>
 
                             {/* Action Information */}
-                            <Card>
+                            <Card className="border-border">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-sm font-bold">Action Information</CardTitle>
                                 </CardHeader>
@@ -406,11 +417,51 @@ export default function AuditLogsPage() {
                                             </div>
                                         </div>
                                     )}
+                                    {(() => {
+                                        const obj = selectedLog.new_value || selectedLog.old_value || {};
+                                        if (typeof obj !== 'object' || obj === null) return null;
+                                        
+                                        const receipt = obj.receipt_number || obj.receipt_no;
+                                        const channel = obj.order_channel || obj.channel;
+                                        const customer = obj.customer_name || obj.customer;
+
+                                        return (
+                                            <>
+                                                {receipt && (
+                                                    <div className="flex items-center gap-3">
+                                                        <FileText className="w-5 h-5 text-emerald-500 shrink-0" />
+                                                        <div>
+                                                            <p className="text-xs text-muted-foreground">Receipt Number</p>
+                                                            <p className="text-sm font-medium">{String(receipt)}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {channel && (
+                                                    <div className="flex items-center gap-3">
+                                                        <Layers className="w-5 h-5 text-indigo-500 shrink-0" />
+                                                        <div>
+                                                            <p className="text-xs text-muted-foreground">Order Channel</p>
+                                                            <p className="text-sm font-medium capitalize">{String(channel).replace(/_/g, ' ')}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {customer && (
+                                                    <div className="flex items-center gap-3">
+                                                        <User className="w-5 h-5 text-sky-500 shrink-0" />
+                                                        <div>
+                                                            <p className="text-xs text-muted-foreground">Customer Name</p>
+                                                            <p className="text-sm font-medium">{String(customer)}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </CardContent>
                             </Card>
 
                             {/* Actor Information */}
-                            <Card>
+                            <Card className="border-border">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-sm font-bold">Actor Information</CardTitle>
                                 </CardHeader>
@@ -456,27 +507,27 @@ export default function AuditLogsPage() {
                                 // Simple value change (not objects)
                                 if (!isObjOld && !isObjNew) {
                                     return (
-                                        <Card>
-                                            <CardHeader className="pb-2">
-                                                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                                                    <ArrowRight className="w-4 h-4 text-purple-500" />
-                                                    Changes
-                                                </CardTitle>
-                                            </CardHeader>
-                                            <CardContent>
-                                                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
-                                                    <div className="flex-1 text-center">
-                                                        <p className="text-[10px] uppercase text-muted-foreground mb-1">Before</p>
-                                                        <p className="text-sm font-medium text-red-600 bg-red-50 rounded px-2 py-1">{String(oldVal || '—')}</p>
-                                                    </div>
-                                                    <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
-                                                    <div className="flex-1 text-center">
-                                                        <p className="text-[10px] uppercase text-muted-foreground mb-1">After</p>
-                                                        <p className="text-sm font-medium text-emerald-600 bg-emerald-50 rounded px-2 py-1">{String(newVal || '—')}</p>
-                                                    </div>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
+                                <Card className="border-border">
+                                    <CardHeader className="pb-2">
+                                        <CardTitle className="text-sm font-bold flex items-center gap-2">
+                                            <ArrowRight className="w-4 h-4 text-purple-500" />
+                                            Changes
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                                            <div className="flex-1 text-center">
+                                                <p className="text-[10px] uppercase text-muted-foreground mb-1">Before</p>
+                                                <p className="text-sm font-medium text-red-600 dark:text-red-400 bg-red-500/10 rounded px-2 py-1">{String(oldVal || '—')}</p>
+                                            </div>
+                                            <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                                            <div className="flex-1 text-center">
+                                                <p className="text-[10px] uppercase text-muted-foreground mb-1">After</p>
+                                                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 rounded px-2 py-1">{String(newVal || '—')}</p>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
                                     );
                                 }
 
@@ -489,7 +540,17 @@ export default function AuditLogsPage() {
                                 const formatCellValue = (v: any): string => {
                                     if (v === null || v === undefined) return '—';
                                     if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-                                    if (typeof v === 'object') return JSON.stringify(v);
+                                    if (typeof v === 'object') {
+                                        // Flatten or pretty print the object
+                                        try {
+                                            const parts = Object.entries(v)
+                                                .filter(([_, val]) => val !== null && val !== undefined && val !== '')
+                                                .map(([k, val]) => `${formatFieldName(k)}: ${val}`);
+                                            return parts.length > 0 ? parts.join(' • ') : '—';
+                                        } catch(e) {
+                                            return JSON.stringify(v);
+                                        }
+                                    }
                                     return String(v);
                                 };
 
@@ -500,7 +561,7 @@ export default function AuditLogsPage() {
                                 };
 
                                 return (
-                                    <Card>
+                                    <Card className="border-border">
                                         <CardHeader className="pb-2">
                                             <CardTitle className="text-sm font-bold flex items-center gap-2">
                                                 <ArrowRight className="w-4 h-4 text-purple-500" />
@@ -510,10 +571,10 @@ export default function AuditLogsPage() {
                                         <CardContent className="p-0">
                                             <table className="w-full text-sm">
                                                 <thead>
-                                                    <tr className="border-b bg-slate-50">
+                                                    <tr className="border-b border-border bg-muted/50">
                                                         <th className="text-left py-2 px-4 text-xs font-semibold text-muted-foreground">Field</th>
-                                                        <th className="text-left py-2 px-4 text-xs font-semibold text-red-500">Before</th>
-                                                        <th className="text-left py-2 px-4 text-xs font-semibold text-emerald-600">After</th>
+                                                        <th className="text-left py-2 px-4 text-xs font-semibold text-red-500 dark:text-red-400">Before</th>
+                                                        <th className="text-left py-2 px-4 text-xs font-semibold text-emerald-600 dark:text-emerald-400">After</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -522,12 +583,12 @@ export default function AuditLogsPage() {
                                                         const newV = isObjNew ? formatCellValue(newVal[key]) : '—';
                                                         const changed = oldV !== newV;
                                                         return (
-                                                            <tr key={key} className={`border-b last:border-0 ${changed ? 'bg-amber-50/30' : ''}`}>
-                                                                <td className="py-2 px-4 font-medium text-slate-700 text-xs">{formatFieldName(key)}</td>
-                                                                <td className={`py-2 px-4 text-xs ${changed ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+                                                            <tr key={key} className={`border-b border-border last:border-0 ${changed ? 'bg-amber-500/10' : ''}`}>
+                                                                <td className="py-2 px-4 font-medium text-foreground text-xs">{formatFieldName(key)}</td>
+                                                                <td className={`py-2 px-4 text-xs ${changed ? 'text-red-600 dark:text-red-400 font-medium' : 'text-muted-foreground'}`}>
                                                                     {oldV}
                                                                 </td>
-                                                                <td className={`py-2 px-4 text-xs ${changed ? 'text-emerald-600 font-medium' : 'text-muted-foreground'}`}>
+                                                                <td className={`py-2 px-4 text-xs ${changed ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}`}>
                                                                     {newV}
                                                                 </td>
                                                             </tr>

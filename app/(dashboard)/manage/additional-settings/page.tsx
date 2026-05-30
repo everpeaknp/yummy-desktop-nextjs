@@ -436,9 +436,17 @@ export default function AdditionalSettingsPage() {
   useEffect(() => {
       const settingParam = searchParams.get("setting");
       if (settingParam) {
+          if (settingParam === 'receipt_designer') {
+              router.push('/manage/receipt-designer');
+              return;
+          }
+          if (settingParam === 'kot_designer') {
+              router.push('/manage/kot-designer');
+              return;
+          }
           setSelectedSetting(settingParam);
       }
-  }, [searchParams]);
+  }, [searchParams, router]);
 
   const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

@@ -143,6 +143,21 @@ export function GlobalKotPrinter() {
 
             // Resolve strict station-level printer routing.
             const stationName = data.station || data.kot?.station;
+            
+            // LOCAL DEVICE FILTERING (Ensure only the assigned POS computer prints the KOT)
+            try {
+                const savedLocalStationsStr = localStorage.getItem("yummy_local_kot_stations");
+                if (savedLocalStationsStr) {
+                    const localStations: string[] = JSON.parse(savedLocalStationsStr);
+                    if (!localStations.includes(stationName || "")) {
+                        console.log(`[GlobalKotPrinter] Skipping auto-print on this device. Device is configured for [${localStations.join(",")}], but KOT is for "${stationName || "unknown"}".`);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn("[GlobalKotPrinter] Failed to read local device settings", e);
+            }
+
             const explicitPrinterName = data.printer_config?.printer_name;
             let assignedPrinter: any | null = null;
             if (restId) {
@@ -223,10 +238,26 @@ export function GlobalKotPrinter() {
                         }
                     } else {
                         console.log("🚀 [GlobalKotPrinter] Routing silently via Electron IPC!");
-                        // @ts-ignore
-                        window.electronAPI.printSilent({ 
-                            printerName: printJob.kotData.printer_config?.printer_name
-                        });
+                        const targetPrinter = printJob.kotData.printer_config?.printer_name;
+                        
+                        // Verify the printer exists locally before printing to avoid fallback-to-default bug!
+                        if (targetPrinter && window.electronAPI.getPrinters) {
+                            window.electronAPI.getPrinters().then((printers: any[]) => {
+                                const exists = printers.find((p: any) => p.name === targetPrinter);
+                                if (!exists) {
+                                    console.warn(`[GlobalKotPrinter] Printer "${targetPrinter}" not found on this machine. Ignoring print job to prevent fallback to default printer.`);
+                                    return;
+                                }
+                                // @ts-ignore
+                                window.electronAPI.printSilent({ printerName: targetPrinter });
+                            }).catch(() => {
+                                // @ts-ignore
+                                window.electronAPI.printSilent({ printerName: targetPrinter });
+                            });
+                        } else {
+                            // @ts-ignore
+                            window.electronAPI.printSilent({ printerName: targetPrinter });
+                        }
                     }
                 } else {
                     const clear = () => setPrintJob(null);
