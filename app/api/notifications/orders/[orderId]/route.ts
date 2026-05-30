@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authHeadersFrom, getUpstreamBaseUrl } from "@/lib/server/upstream";
 
-export async function GET(req: NextRequest, ctx: { params: Promise<{ orderId: string }> }) {
-  const { orderId } = await ctx.params;
+export async function GET(req: NextRequest, ctx: { params: { orderId: string } }) {
+  const { orderId } = ctx.params;
   const url = new URL(req.url);
   const upstream = `${getUpstreamBaseUrl()}/notifications/orders/${orderId}?${url.searchParams.toString()}`;
 

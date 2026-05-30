@@ -59,7 +59,13 @@ const CartContent = ({
     handlePlaceOrder, 
     router,
     isDirty,
-    fixedTaxRate
+    fixedTaxRate,
+    customerName,
+    setCustomerName,
+    customerPhone,
+    setCustomerPhone,
+    deliveryAddress,
+    setDeliveryAddress
 }: {
   cart: CartItem[];
   orderId: string | undefined;

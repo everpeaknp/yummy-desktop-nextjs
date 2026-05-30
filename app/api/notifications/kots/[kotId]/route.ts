@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authHeadersFrom, getUpstreamBaseUrl } from "@/lib/server/upstream";
 
-export async function GET(req: NextRequest, ctx: { params: Promise<{ kotId: string }> }) {
-  const { kotId } = await ctx.params;
+export async function GET(req: NextRequest, ctx: { params: { kotId: string } }) {
+  const { kotId } = ctx.params;
   const url = new URL(req.url);
   const upstream = `${getUpstreamBaseUrl()}/notifications/kots/${kotId}?${url.searchParams.toString()}`;
 

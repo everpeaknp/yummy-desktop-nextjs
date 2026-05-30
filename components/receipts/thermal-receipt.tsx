@@ -3,6 +3,8 @@
 import React from "react";
 import { ReceiptData } from "@/types/order";
 import { numberToWords } from "@/lib/utils/number-to-words";
+import { QrCode } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ThermalReceiptProps {
     data: ReceiptData;
@@ -29,7 +31,6 @@ export function ThermalReceipt({ data, template, mode = 'receipt' }: ThermalRece
             isVisible: b.is_visible ?? b.isVisible ?? true,
             showOnBill: b.show_on_bill ?? b.showOnBill ?? true,
             showOnReceipt: b.show_on_receipt ?? b.showOnReceipt ?? true,
-            // Config is spread at root by the designer, so we use the whole block as config
             config: b.config ? { ...b, ...b.config } : b,
         }));
 
@@ -40,308 +41,299 @@ export function ThermalReceipt({ data, template, mode = 'receipt' }: ThermalRece
         return true;
     });
 
-    const paperWidth = globalConfig.paper_size === '58mm' ? '58mm' : '80mm';
-    const baseFontSize = globalConfig.global_font_size || 12;
-    const ff = "'Helvetica Neue', Helvetica, Arial, sans-serif";
-
-    const wrap: React.CSSProperties = {
-        width: paperWidth,
-        maxWidth: paperWidth,
-        minWidth: paperWidth,
-        backgroundColor: '#fff',
-        color: '#000',
-        fontFamily: ff,
-        fontSize: `${baseFontSize}px`,
-        lineHeight: String(globalConfig.line_spacing),
-        padding: '5mm 5mm 8mm 5mm',
-        boxSizing: 'border-box',
-    };
+    const is58mm = globalConfig.paper_size === '58mm';
+    const paperWidth = is58mm ? "220px" : "300px";
 
     return (
-        <div className="thermal-receipt" style={wrap}>
-            {filteredBlocks.map((block, idx) => (
-                <div key={block.id} style={{ width: '100%', marginBottom: idx < filteredBlocks.length - 1 ? '12px' : '0' }}>
-                    {renderBlock(block, globalConfig, data, ff, baseFontSize)}
-                </div>
-            ))}
+        <div 
+            className="thermal-receipt bg-white text-black font-mono leading-tight p-4 relative overflow-hidden transition-all duration-500 ease-in-out origin-top border-x-4 border-white group"
+            style={{ 
+                width: paperWidth,
+                maxWidth: paperWidth,
+                minWidth: paperWidth,
+                fontSize: `${globalConfig.global_font_size}px`,
+                lineHeight: globalConfig.line_spacing,
+                boxSizing: 'border-box'
+            }}
+        >
+            <div className="space-y-4">
+                {filteredBlocks.map((block) => (
+                    <div 
+                        key={block.id}
+                        style={{ 
+                            paddingTop: `${block.config.padding_top || 0}px`,
+                            paddingBottom: `${block.config.padding_bottom || 0}px`,
+                            textAlign: block.config.align as any || 'center',
+                            width: '100%'
+                        }}
+                    >
+                        {renderBlock(block, globalConfig, data)}
+                    </div>
+                ))}
+            </div>
+            {/* Bottom edge indicator like preview */}
+            <div className="mt-8 border-t border-dashed border-gray-300 w-full" />
         </div>
     );
 }
 
-function renderBlock(block: any, global: any, data: ReceiptData, ff: string, baseFs: number) {
+function renderBlock(block: any, global: any, data: ReceiptData) {
     const { config, type } = block;
     const { order, restaurant } = data;
-    const fs = config.font_size || baseFs;
+    
+    const effectiveFontType = config.font_type || global.global_font_type || 'A';
+    const effectiveFontSize = config.font_size || global.global_font_size || 12;
+    const isFontB = effectiveFontType === 'B';
+    
+    const style: React.CSSProperties = {
+        fontWeight: config.bold ? 'bold' : 'normal',
+        fontSize: `${effectiveFontSize}px`,
+        transform: `scale(${isFontB ? (config.width_mult || 1) * 0.8 : (config.width_mult || 1)}, ${config.height_mult || 1})`,
+        transformOrigin: config.align === 'center' ? 'center' : config.align === 'right' ? 'right' : 'left',
+        display: 'inline-block',
+        width: isFontB ? '125%' : '100%',
+        marginLeft: isFontB && config.align === 'center' ? '-12.5%' : isFontB && config.align === 'right' ? '-25%' : '0',
+        fontFamily: 'monospace',
+        letterSpacing: isFontB ? '-0.5px' : 'normal',
+        opacity: block.isVisible === false ? 0.3 : 1,
+        lineHeight: '1.2'
+    };
+
     const computedDiscount = Math.max(
         0,
         Number(((order.subtotal || 0) + (order.tax_total || 0) + (order.service_charge || 0) - (order.grand_total || 0)).toFixed(2))
-    );
-    const loyaltyPointsRedeemed =
-        Number(
-            (order as any)?.loyalty_points_redeemed ??
-            (order as any)?.redeemed_points ??
-            (order as any)?.points_redeemed ??
-            0
-        ) || 0;
-    const discountReason =
-        (order as any)?.discount_reason ||
-        (order as any)?.manual_discount_reason ||
-        (order as any)?.discount_note ||
-        (order as any)?.discount_code ||
-        (loyaltyPointsRedeemed > 0 ? `Loyalty Points - ${order?.customer_name || "Customer"} (${loyaltyPointsRedeemed} pts)` : null) ||
-        ((order as any)?.manual_discount_amount > 0 ? "Manual discount" : null);
-
-    const base: React.CSSProperties = { fontFamily: ff, fontSize: `${fs}px`, width: '100%', boxSizing: 'border-box' };
-    const row = (a: React.ReactNode, b: React.ReactNode, style?: React.CSSProperties): React.ReactNode => (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', ...style }}>{a}{b}</div>
     );
 
     switch (type) {
         case 'header':
             return (
-                <div style={{ ...base, textAlign: 'center', paddingBottom: '8px' }}>
-                    {/* Restaurant Name */}
-                    <div style={{ fontWeight: 700, fontSize: `${fs + 8}px`, lineHeight: 1.1, marginBottom: '6px' }}>
-                        {config.title || restaurant.name}
+                <div style={style}>
+                    <div className="font-black truncate">
+                        {(config.title || restaurant.name || "YUMMY").toUpperCase()}
                     </div>
-                    {/* Address */}
                     {config.show_address !== false && restaurant.address && (
-                        <div style={{ fontSize: `${fs - 1}px`, lineHeight: 1.5, marginBottom: '4px', color: '#1a1a1a' }}>
-                            {restaurant.address}
+                        <div className="text-[0.8em] truncate">
+                            {restaurant.address.toUpperCase()}
                         </div>
                     )}
-                    {/* Phone */}
                     {config.show_phone !== false && restaurant.phone && (
-                        <div style={{ fontSize: `${fs - 1}px`, marginBottom: '3px' }}>
-                            {config.phone_label || 'Contact No'}: {restaurant.phone}
+                        <div className="text-[0.8em]">
+                            {config.phone_label || 'Phone'}: {restaurant.phone}
                         </div>
                     )}
-                    {/* PAN */}
-                    {restaurant.pan_number && (
-                        <div style={{ fontSize: `${fs - 1}px`, marginBottom: '8px' }}>
-                            PAN No: {restaurant.pan_number}
+                    {config.show_email === true && (restaurant as any).email && (
+                        <div className="text-[0.8em]">
+                            Email: {(restaurant as any).email}
                         </div>
                     )}
-                    {/* Title divider */}
-                    <div style={{ borderTop: '1px solid #000', margin: '8px 0' }} />
-                    <div style={{ fontWeight: 700, fontSize: `${fs + 3}px`, letterSpacing: '0.2px', paddingTop: '4px' }}>
-                        Bill Receipt
-                    </div>
+                    {config.show_pan === true && restaurant.pan_number && (
+                        <div className="text-[0.8em]">
+                            {config.pan_label || 'PAN No'}: {restaurant.pan_number}
+                        </div>
+                    )}
+                    {config.tagline && <div className="text-[0.7em] italic mt-1">{config.tagline}</div>}
+                    <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
                 </div>
             );
-
+            
         case 'divider':
-            return <div style={{ borderTop: '1px dashed #000', width: '100%', margin: '4px 0' }} />;
-
-        case 'bill_info': {
-            const date = new Date(order.created_at);
-            const dateStr = date.toLocaleDateString('en-GB');
-            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
             return (
-                <div style={{ ...base, marginTop: '4px' }}>
-                    <div style={{ borderTop: '1px solid #000', marginBottom: '8px' }} />
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '8px' }}>
-                        <div style={{ textAlign: 'left' }}>
-                            <div style={{ fontSize: `${fs - 3}px`, color: '#666', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '2px' }}>Date</div>
-                            <div style={{ fontWeight: 500, fontSize: `${fs}px` }}>{dateStr}</div>
-                            <div style={{ fontWeight: 500, fontSize: `${fs}px` }}>{timeStr}</div>
-                        </div>
-                        <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: `${fs - 3}px`, color: '#666', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '2px' }}>Order No.</div>
-                            <div style={{ fontWeight: 500, fontSize: `${fs}px` }}>{order.restaurant_order_id || order.id}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: `${fs - 3}px`, color: '#666', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '2px' }}>Table</div>
-                            <div style={{ fontWeight: 600, fontSize: `${fs + 2}px` }}>{order.table_name || 'N/A'}</div>
-                        </div>
-                    </div>
-                    <div style={{ borderBottom: '1px solid #000' }} />
+                <div className="w-full overflow-hidden border-t border-dashed border-black/80 my-1 py-0.5" />
+            );
+            
+        case 'bill_info': {
+            const dateObj = new Date(order.created_at);
+            const dateStr = dateObj.toLocaleDateString('en-GB');
+            const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            
+            const showTable = config.show_table ?? true;
+            const showOrderId = config.show_order_id ?? true;
+            const showStation = config.show_station === true;
+            const showKotNum = config.show_kot_number === true;
+            const showType = config.show_kot_type === true;
+            const showDate = config.show_date === true;
+            const showUser = config.show_user === true;
+            const showTime = config.show_time === true;
+            const showCategory = config.show_category === true;
+
+            const hasDetailFlags = showKotNum || showStation || showType || showDate || showUser || showTime || showCategory;
+
+            return (
+                <div style={style} className="space-y-0.5 text-left">
+                    {hasDetailFlags ? (
+                        <>
+                            {(showKotNum || showStation) && (
+                                <div className="flex justify-between">
+                                    {showKotNum && <span>{config.kot_label || 'KOT'}: #{order.id}</span>}
+                                    {showStation && <span className="text-right">{config.station_label || 'STATION'}: {(order as any).station_name || '-'}</span>}
+                                </div>
+                            )}
+                            {(showType || showTable) && (
+                                <div className="flex justify-between">
+                                    {showType && <span>{config.type_label || 'TYPE'}: {order.channel || 'INITIAL'}</span>}
+                                    {showTable && <span className="text-right">{config.table_label || 'TABLE'}: {order.table_name || '-'}</span>}
+                                </div>
+                            )}
+                            {(showOrderId || showDate) && (
+                                <div className="flex justify-between">
+                                    {showOrderId && <span>{config.order_label || 'Ref'}: #{order.restaurant_order_id || order.id}</span>}
+                                    {showDate && <span className="text-right">{config.date_label || 'DATE'}: {dateStr}</span>}
+                                </div>
+                            )}
+                            {(showUser || showTime) && (
+                                <div className="flex justify-between">
+                                    {showUser && <span>{config.user_label || 'USER'}: {order.created_by_name || '-'}</span>}
+                                    {showTime && <span className="text-right">{config.time_label || 'TIME'}: {timeStr}</span>}
+                                </div>
+                            )}
+                            {showCategory && (
+                                <div>
+                                    <span>{config.category_label || 'CATEGORY'}: -</span>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <div className="flex justify-between">
+                                <span>{config.bill_label || 'BILL'} #{order.restaurant_order_id || order.id}</span>
+                                <span className="text-right">{dateStr}</span>
+                            </div>
+                            {showOrderId && (
+                                <div>
+                                    <span>{config.order_label || 'Order'} #{order.id}</span>
+                                </div>
+                            )}
+                            {showTable && (
+                                <div>
+                                    <span>{config.table_label || 'Table'}: {order.table_name || '-'}</span>
+                                </div>
+                            )}
+                        </>
+                    )}
+                    <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
                 </div>
             );
         }
-
+        
         case 'customer':
             if (!order.customer_name) return null;
             return (
-                <div style={{ ...base, fontSize: `${fs - 1}px`, padding: '4px 0', borderBottom: '1px solid #eee' }}>
-                    <strong>{config.customer_label || 'Customer'}:</strong> {order.customer_name}
-                    {config.show_phone !== false && order.customer_phone && (
-                        <span style={{ color: '#666', marginLeft: '6px' }}>({order.customer_phone})</span>
-                    )}
+                <div style={style} className="text-left py-0.5">
+                    <div className="font-bold">{order.customer_name}</div>
+                    {config.show_phone !== false && order.customer_phone && <div>{order.customer_phone}</div>}
+                    <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
                 </div>
             );
-
-        case 'items': {
-            const showSN  = config.show_serial  !== false;
-            const showRate = config.show_rate   !== false;
-            const showAmt  = config.show_amount !== false;
-
-            // Column widths optimized for spacing
-            const snW    = '24px';
-            const qtyW   = '32px';
-            const rateW  = showRate ? '50px' : '0';
-            const amtW   = showAmt  ? '54px' : '0';
-
-            const cellH: React.CSSProperties = { fontWeight: 700, fontSize: `${fs - 2}px`, textTransform: 'uppercase', flexShrink: 0, letterSpacing: '0.5px' };
-            const cellB: React.CSSProperties = { fontSize: `${fs}px`, flexShrink: 0 };
-
+            
+        case 'items':
             return (
-                <div style={{ ...base, marginTop: '4px' }}>
-                    {/* Header */}
-                    <div style={{ display: 'flex', alignItems: 'center', borderBottom: '2px solid #000', paddingBottom: '6px', marginBottom: '8px' }}>
-                        {showSN && <span style={{ ...cellH, width: snW, textAlign: 'left' }}>SN</span>}
-                        <span style={{ ...cellH, flex: 1, paddingLeft: '6px', textAlign: 'left' }}>{config.item_label || 'Particular'}</span>
-                        <span style={{ ...cellH, width: qtyW, textAlign: 'center' }}>{config.qty_label || 'Qty'}</span>
-                        {showRate && <span style={{ ...cellH, width: rateW, textAlign: 'right' }}>{config.rate_label || 'Rate'}</span>}
-                        {showAmt  && <span style={{ ...cellH, width: amtW,  textAlign: 'right', paddingLeft: '8px' }}>{config.amount_label || 'Amt'}</span>}
+                <div style={style}>
+                    <div className="flex justify-between border-b border-dashed border-black pb-0.5 mb-1 font-bold">
+                        {config.show_serial !== false && <span className="w-8">{config.sn_label || 'S.N'}</span>}
+                        <span className="flex-1 text-left px-2">{config.item_label || 'ITEM'}</span>
+                        {config.show_rate !== false && <span className="w-12 text-right">{config.rate_label || 'RATE'}</span>}
+                        <span className="w-8 text-right">{config.qty_label || 'QTY'}</span>
+                        {config.show_amount !== false && <span className="w-12 text-right">{config.amount_label || 'AMT'}</span>}
                     </div>
-
-                    {/* Rows */}
                     {order.items.map((item, idx) => (
-                        <div key={item.id} style={{ marginBottom: '10px' }}>
-                            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                                {showSN && <span style={{ ...cellB, width: snW, flexShrink: 0, fontWeight: 500 }}>{idx + 1}</span>}
-                                <span style={{ flex: 1, paddingLeft: '6px' }}>
-                                    <div style={{ fontWeight: 600, lineHeight: 1.2 }}>{item.name_snapshot}</div>
-                                    {item.notes && <div style={{ fontSize: `${fs - 2}px`, color: '#666', fontStyle: 'italic', marginTop: '2px' }}>({item.notes})</div>}
-                                </span>
-                                <span style={{ ...cellB, width: qtyW, textAlign: 'center', fontWeight: 500 }}>{item.qty}</span>
-                                {showRate && <span style={{ ...cellB, width: rateW, textAlign: 'right' }}>{item.unit_price.toFixed(0)}</span>}
-                                {showAmt  && <span style={{ ...cellB, width: amtW, textAlign: 'right', paddingLeft: '8px', fontWeight: 800 }}>{item.line_total.toFixed(0)}</span>}
-                            </div>
+                        <div key={item.id} className="flex justify-between mb-1 items-start">
+                            {config.show_serial !== false && <span className="w-8">{idx + 1}</span>}
+                            <span className="flex-1 text-left px-2">
+                                {item.name_snapshot || item.item_name}
+                                {item.notes && <div className="text-[0.8em] italic">({item.notes})</div>}
+                            </span>
+                            {config.show_rate !== false && <span className="w-12 text-right">{Number(item.unit_price).toFixed(2)}</span>}
+                            <span className="w-8 text-right">{item.qty}</span>
+                            {config.show_amount !== false && <span className="w-12 text-right">{Number(item.line_total).toFixed(2)}</span>}
                         </div>
                     ))}
+                    <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
                 </div>
             );
-        }
-
+            
         case 'totals':
             return (
-                <div style={{ ...base, marginTop: '8px' }}>
-                    <div style={{ border: '1.5px solid #000', padding: '12px 14px' }}>
-                        {/* Subtotal */}
-                        {row(
-                            <span style={{ fontWeight: 500, fontSize: `${fs + 1}px` }}>{config.subtotal_label || 'Subtotal'}:</span>,
-                            <span style={{ fontWeight: 500, fontSize: `${fs + 1}px` }}>Rs. {order.subtotal.toFixed(2)}</span>
-                        )}
-
-                        {/* Tax */}
-                        {config.show_tax !== false && order.tax_total > 0 && (
-                            <div style={{ marginTop: '5px' }}>
-                                {row(
-                                    <span style={{ fontSize: `${fs}px`, color: '#333' }}>{config.tax_label || 'Tax (13%)'}:</span>,
-                                    <span style={{ fontSize: `${fs}px`, color: '#333' }}>Rs. {order.tax_total.toFixed(2)}</span>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Discount */}
-                        {config.show_discount !== false && computedDiscount > 0 && (
-                            <div style={{ marginTop: '5px' }}>
-                                {row(
-                                    <span style={{ fontSize: `${fs}px`, color: '#333' }}>{config.discount_label || 'Discount'}:</span>,
-                                    <span style={{ fontSize: `${fs}px`, color: '#333' }}>- Rs. {computedDiscount.toFixed(2)}</span>
-                                )}
-                                {discountReason && (
-                                    <div style={{ fontSize: `${fs - 2}px`, color: '#555', fontStyle: 'italic', marginTop: '2px' }}>
-                                        {config.discount_reason_label || 'Reason'}: {String(discountReason)}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Separator */}
-                        <div style={{ borderTop: '1px solid #000', margin: '10px 0', opacity: 0.8 }} />
-
-                        {/* Grand Total */}
-                        {row(
-                            <span style={{ fontWeight: 900, fontSize: `${fs + 5}px`, letterSpacing: '-0.5px' }}>{config.total_label || 'Grand Total'}:</span>,
-                            <span style={{ fontWeight: 900, fontSize: `${fs + 5}px`, letterSpacing: '-0.5px' }}>Rs. {order.grand_total.toFixed(2)}</span>
-                        )}
-
-                        {/* Amount in words */}
-                        <div style={{ borderTop: '1px solid #eee', marginTop: '8px', paddingTop: '8px', fontSize: `${fs - 1}px`, fontStyle: 'italic', lineHeight: 1.4, color: '#1a1a1a', fontWeight: 500 }}>
-                            Total in Words: {numberToWords(order.grand_total)} Only
-                        </div>
-                    </div>
-                </div>
-            );
-
-        case 'payments':
-            if ((!order.payments || order.payments.length === 0) && !(data.total_paid > 0 || data.balance_due > 0)) return null;
-            return (
-                <div style={{ ...base, marginTop: '8px', padding: '0 4px' }}>
-                    {(data.total_paid > 0 || data.balance_due > 0) && (
-                        <div style={{ marginBottom: '6px' }}>
-                            {row(
-                                <span style={{ fontSize: `${fs}px`, fontWeight: 700 }}>Paid:</span>,
-                                <span style={{ fontSize: `${fs}px`, fontWeight: 700 }}>Rs. {Number(data.total_paid || 0).toFixed(2)}</span>
-                            )}
-                            {Number(data.balance_due || 0) > 0 && row(
-                                <span style={{ fontSize: `${fs}px`, fontWeight: 700 }}>Balance Due:</span>,
-                                <span style={{ fontSize: `${fs}px`, fontWeight: 700 }}>Rs. {Number(data.balance_due || 0).toFixed(2)}</span>
-                            )}
+                <div style={style} className="space-y-0.5">
+                    {config.show_discount !== false && computedDiscount > 0 && (
+                        <div className="flex justify-between">
+                            <span>{config.discount_label || 'Discount'}</span>
+                            <span>-Rs. {computedDiscount.toFixed(2)}</span>
                         </div>
                     )}
-                    {order.payments.map(p => (
-                        <div key={p.id} style={{ marginBottom: '5px' }}>
-                            {row(
-                                <span style={{ fontSize: `${fs}px`, fontWeight: 700, textTransform: 'capitalize' }}>{p.method} Received:</span>,
-                                <span style={{ fontSize: `${fs}px`, fontWeight: 600 }}>Rs. {p.amount.toFixed(2)}</span>
-                            )}
-                        </div>
-                    ))}
+                    <div className="border-t-2 border-double border-black pt-0.5 mt-0.5" />
+                    <div className="flex justify-between font-black">
+                        <span>{config.total_label || 'TOTAL'}</span>
+                        <span>Rs. {Number(order.grand_total).toFixed(2)}</span>
+                    </div>
                 </div>
             );
-
+            
+        case 'payments':
+            const hasPayments = order.payments && order.payments.length > 0;
+            const totalPaid = Number(data.total_paid || 0);
+            const balanceDue = Number(data.balance_due || 0);
+            
+            if (!hasPayments && totalPaid === 0 && balanceDue === 0) return null;
+            
+            return (
+                <div style={style} className="space-y-0.5">
+                    <div className="w-full overflow-hidden border-t border-dashed border-black" />
+                    
+                    {hasPayments && (
+                        <>
+                            <div className="font-black mt-1">
+                                <span>{config.header_label || 'PAYMENTS'}</span>
+                            </div>
+                            {order.payments?.map(p => (
+                                <div key={p.id} className="flex justify-between">
+                                    <span className="capitalize">{p.method}</span>
+                                    <span>Rs. {Number(p.amount).toFixed(2)}</span>
+                                </div>
+                            ))}
+                            <div className="w-full overflow-hidden border-t border-dashed border-black mt-1 mb-1" />
+                        </>
+                    )}
+                    
+                    <div className="flex justify-between font-bold">
+                        <span>Paid:</span>
+                        <span>Rs. {totalPaid.toFixed(2)}</span>
+                    </div>
+                    {balanceDue > 0 && (
+                        <div className="flex justify-between font-bold text-[1.1em]">
+                            <span>Due:</span>
+                            <span>Rs. {balanceDue.toFixed(2)}</span>
+                        </div>
+                    )}
+                </div>
+            );
+            
         case 'qr':
             return (
-                <div style={{ ...base, textAlign: 'center', padding: '12px 0', borderTop: '1px dashed #ccc', borderBottom: '1px dashed #ccc', margin: '8px 0' }}>
-                    <div style={{ width: '85px', height: '85px', border: '1px solid #000', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px', background: '#fff', padding: '5px' }}>
-                        <svg width="65" height="65" viewBox="0 0 100 100" fill="#000">
-                            <rect x="10" y="10" width="30" height="30" /><rect x="60" y="10" width="30" height="30" />
-                            <rect x="10" y="60" width="30" height="30" /><rect x="50" y="50" width="10" height="10" />
-                            <rect x="65" y="65" width="10" height="10" />
-                        </svg>
+                <div style={style} className="flex flex-col items-center gap-1 py-2">
+                    <div className="w-20 h-20 border border-black flex items-center justify-center p-2 rounded">
+                        <QrCode className="w-full h-full" />
                     </div>
-                    {config.label && <div style={{ fontSize: `${fs - 1}px`, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>{config.label}</div>}
+                    {config.label && <div className="font-bold text-[0.8em]">{config.label}</div>}
                 </div>
             );
-
+            
         case 'footer':
             return (
-                <div style={{ ...base, marginTop: '10px' }}>
-                    {/* Printed By / Print Time */}
-                    <div style={{ borderTop: '1px solid #eee', paddingTop: '8px', marginBottom: '8px' }}>
-                        {row(
-                            <div>
-                                <div style={{ fontSize: `${fs - 3}px`, color: '#666', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Printed By</div>
-                                <div style={{ fontSize: `${fs}px`, fontWeight: 500 }}>{order.created_by_name || 'default'}</div>
-                            </div>,
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: `${fs - 3}px`, color: '#666', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Print Time</div>
-                                <div style={{ fontSize: `${fs}px`, fontWeight: 500 }}>
-                                    {new Date().toLocaleDateString('en-GB')} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Disclaimer */}
-                    <div style={{ fontSize: `${fs - 2}px`, fontStyle: 'italic', color: '#444', textAlign: 'center', lineHeight: 1.6, marginTop: '12px', marginBottom: '15px', padding: '0 8px' }}>
-                        {config.message_hint || 'This bill is provided for estimation purposes only. Kindly collect the original invoice from the counter.'}
-                    </div>
-
-                    {/* Thank You */}
-                    <div style={{ borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '10px 0', textAlign: 'center', fontWeight: 800, fontSize: `${fs + 4}px`, letterSpacing: '5px', textTransform: 'uppercase' }}>
-                        {config.message || 'THANK YOU'}
+                <div style={style} className="py-1">
+                    <div className="w-full overflow-hidden border-t border-dashed border-black mb-2" />
+                    <div className="text-center text-[0.9em]">
+                        {config.message || "THANK YOU"}
                     </div>
                 </div>
             );
-
+            
         case 'text':
-            return <div style={{ ...base, padding: '4px 0', lineHeight: 1.6 }}>{config.text}</div>;
-
+            return (
+                <div style={style}>
+                    {config.text || ""}
+                </div>
+            );
+            
         default:
             return null;
     }

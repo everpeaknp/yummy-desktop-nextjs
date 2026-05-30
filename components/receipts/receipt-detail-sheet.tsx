@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { ThermalReceipt } from "@/components/receipts/thermal-receipt";
 import { ReceiptApis, RestaurantApis, PrinterApis } from "@/lib/api/endpoints";
 import { ReceiptData } from "@/types/order";
+import { useAuth } from "@/hooks/use-auth";
 
 // Types matching ReceiptModel.dart
 interface ReceiptDetailSheetProps {
@@ -43,6 +44,7 @@ export function ReceiptDetailSheet({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
+  const user = useAuth((state) => state.user);
 
   useEffect(() => {
     if (open && orderId) {
@@ -65,12 +67,20 @@ export function ReceiptDetailSheet({
         setReceipt(receiptData);
 
         // Fetch template
-        const restaurantId = receiptData.restaurant?.id;
+        const restaurantId = receiptData.restaurant?.id || user?.restaurant_id;
         if (restaurantId) {
-           const tempRes = await apiClient.get(RestaurantApis.getTemplates(restaurantId));
-           if (tempRes.data.status === "success" && tempRes.data.data?.receipt_template) {
-             setTemplate(tempRes.data.data.receipt_template);
+           try {
+             const tempRes = await apiClient.get(RestaurantApis.getTemplates(restaurantId));
+             if (tempRes.data.status === "success" && tempRes.data.data?.receipt_template?.length > 0) {
+               setTemplate(tempRes.data.data.receipt_template);
+             } else {
+               setTemplate(defaultTemplate);
+             }
+           } catch {
+             setTemplate(defaultTemplate);
            }
+        } else {
+           setTemplate(defaultTemplate);
         }
       } else {
         setError("Failed to load receipt data");

@@ -262,6 +262,7 @@ export default function ReceiptPage() {
       const type = String(printer?.printer_type || "").toLowerCase();
       const isNetwork = type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
       if (!isNetwork || !host) return false;
+      if (!receipt) return false;
 
       const payload = buildReceiptRawPayload(receipt, template || [], orderId);
 

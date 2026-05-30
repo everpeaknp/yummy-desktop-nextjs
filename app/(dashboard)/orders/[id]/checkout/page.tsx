@@ -1040,6 +1040,14 @@ export default function CheckoutPage() {
                   Edit Order
                 </Button>
               </div>
+              <Button
+                variant="outline"
+                className="w-full gap-2 mt-3"
+                onClick={() => router.push(`/orders/${orderId}/receipt${returnTo ? '?returnTo=' + encodeURIComponent(returnTo) : ''}`)}
+              >
+                <Printer className="h-4 w-4" />
+                Print Pre-Bill
+              </Button>
             </div>
           )}
 

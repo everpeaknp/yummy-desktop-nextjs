@@ -3,9 +3,9 @@ import { authHeadersFrom, getUpstreamBaseUrl } from "@/lib/server/upstream";
 
 export async function GET(
   req: NextRequest,
-  ctx: { params: Promise<{ inventoryItemId: string }> },
+  ctx: { params: { inventoryItemId: string } },
 ) {
-  const { inventoryItemId } = await ctx.params;
+  const { inventoryItemId } = ctx.params;
   const url = new URL(req.url);
   const upstream = `${getUpstreamBaseUrl()}/notifications/inventory/${inventoryItemId}?${url.searchParams.toString()}`;
 
