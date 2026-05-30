@@ -56,6 +56,7 @@ import {
   Timer,
   Ban,
   Plus,
+  Minus,
   CreditCard,
   Armchair,
   Eye,
@@ -537,7 +538,7 @@ export default function OrderDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Main Content */}
         <div className="lg:col-span-2 space-y-4">
-          {activeTab === "details" && <DetailsTab order={order} tables={context.tables} />}
+          {activeTab === "details" && <DetailsTab order={order} tables={context.tables} onRefresh={fetchContext} />}
           {activeTab === "kots" && <KOTsTab kots={context.kots} />}
           {activeTab === "events" && <EventsTab events={events} loading={eventsLoading} />}
         </div>
@@ -854,7 +855,63 @@ export default function OrderDetailPage() {
 }
 
 // ── Details Tab ─────────────────────────────────────
-function DetailsTab({ order, tables }: { order: Order; tables: OrderTableSummary[] }) {
+function DetailsTab({ order, tables, onRefresh }: { order: Order; tables: OrderTableSummary[], onRefresh: () => void }) {
+  const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
+  const [editQty, setEditQty] = useState(1);
+  const [editNotes, setEditNotes] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleOpenEdit = (item: OrderItem) => {
+    setEditingItem(item);
+    setEditQty(item.qty);
+    setEditNotes(item.notes || "");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingItem) return;
+    setIsUpdating(true);
+    try {
+      // Build the bulk-update payload representing the new desired state
+      const payload = {
+        items: order.items.map((item) => {
+          let finalQty = item.qty;
+          let finalNotes = item.notes;
+          
+          if (item.id === editingItem.id) {
+            finalQty = editQty;
+            finalNotes = editNotes;
+          }
+
+          return {
+            menu_item_id: item.menu_item_id,
+            name_snapshot: item.name_snapshot,
+            category_name_snapshot: item.category_name_snapshot,
+            category_type_snapshot: item.category_type_snapshot,
+            revenue_category: (item as any).revenue_category,
+            unit_price: item.unit_price,
+            qty: finalQty,
+            notes: finalNotes || null,
+            modifiers: item.modifiers ? item.modifiers.map((m) => ({
+              modifier_id: m.modifier_id,
+              modifier_name_snapshot: m.modifier_name_snapshot,
+              price_adjustment_snapshot: m.price_adjustment_snapshot
+            })) : []
+          };
+        })
+      };
+
+      await apiClient.post(OrderApis.updateOrderItems(order.id), payload);
+      toast.success("Item updated successfully");
+      setEditingItem(null);
+      onRefresh();
+    } catch (err: any) {
+      console.error("Failed to update item:", err);
+      toast.error(err.response?.data?.detail || "Failed to update item");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Items Card */}
@@ -899,14 +956,26 @@ function DetailsTab({ order, tables }: { order: Order; tables: OrderTableSummary
                       <p className="text-xs text-muted-foreground italic mt-1.5">📝 {item.notes}</p>
                     )}
                   </div>
-                  <div className="text-right flex-shrink-0">
+                  <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-muted-foreground tabular-nums">×{item.qty}</span>
                       <span className="font-bold text-sm tabular-nums">{formatCurrency(item.line_total)}</span>
                     </div>
-                    <span className="text-[10px] text-muted-foreground tabular-nums">
-                      @ {formatCurrency(item.unit_price)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground tabular-nums">
+                        @ {formatCurrency(item.unit_price)}
+                      </span>
+                      {order.status !== 'completed' && order.status !== 'canceled' && (
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-muted"
+                          onClick={() => handleOpenEdit(item)}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -937,6 +1006,54 @@ function DetailsTab({ order, tables }: { order: Order; tables: OrderTableSummary
           </CardContent>
         </Card>
       )}
+
+      {/* Edit Item Dialog */}
+      <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Item</DialogTitle>
+            <DialogDescription>Update quantity or add special instructions.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase text-muted-foreground">Quantity</label>
+              <div className="flex items-center gap-3">
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => setEditQty(Math.max(0, editQty - 1))}
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <div className="flex-1 text-center font-bold text-lg">{editQty}</div>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => setEditQty(editQty + 1)}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              {editQty === 0 && <p className="text-[10px] text-destructive mt-1">Item will be removed from order.</p>}
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase text-muted-foreground">Notes</label>
+              <Input 
+                placeholder="e.g., Less spicy, no onions" 
+                value={editNotes} 
+                onChange={(e) => setEditNotes(e.target.value)} 
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingItem(null)}>Cancel</Button>
+            <Button onClick={handleSaveEdit} disabled={isUpdating}>
+              {isUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

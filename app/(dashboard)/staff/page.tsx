@@ -46,8 +46,7 @@ export default function StaffPage() {
     password: "",
     role: "waiter",
     roles: ["waiter"] as string[],
-    primary_role: "waiter",
-    permissions: [] as string[]
+    primary_role: "waiter"
   });
   const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
   const [availableRoles, setAvailableRoles] = useState<any[]>([]);
@@ -326,8 +325,7 @@ export default function StaffPage() {
         password: "", // Don't show existing password
         role: member.role || "waiter",
         roles: member.roles || [member.role || "waiter"],
-        primary_role: member.primary_role || member.role || "waiter",
-        permissions: member.permissions || []
+        primary_role: member.primary_role || member.role || "waiter"
       });
     } else {
       setEditingStaff(null);
@@ -337,8 +335,7 @@ export default function StaffPage() {
         password: "",
         role: "waiter",
         roles: ["waiter"],
-        primary_role: "waiter",
-        permissions: []
+        primary_role: "waiter"
       });
     }
     setIsDialogOpen(true);
@@ -353,7 +350,7 @@ export default function StaffPage() {
         const payload: any = {
           name: formData.name,
           email: formData.email,
-          role: formData.primary_role, // Keep 'role' for backward compatibility or primary
+          role: formData.primary_role,
           roles: formData.roles,
           primary_role: formData.primary_role
         };
@@ -361,13 +358,6 @@ export default function StaffPage() {
         if (formData.password) payload.password = formData.password;
         
         await apiClient.patch(StaffApis.update(editingStaff.id), payload);
-        
-        // Update permissions for existing staff
-        if (formData.permissions) {
-          await apiClient.post(AuthApis.updateUserPermissions(editingStaff.id), {
-            permission_keys: formData.permissions
-          });
-        }
         
         toast.success("Staff profile updated successfully");
       } else {
@@ -385,14 +375,6 @@ export default function StaffPage() {
 
         const response = await apiClient.post(StaffApis.create, createPayload);
         const newUserId = response.data.data.id;
-
-        // If specific permissions were selected (beyond roles), assign them
-        // Note: For now, we'll just handle it after creation
-        if (formData.permissions && formData.permissions.length > 0) {
-           await apiClient.post(AuthApis.updateUserPermissions(newUserId), {
-             permission_keys: formData.permissions
-           });
-        }
         
         toast.success("New staff member added successfully");
       }
@@ -787,25 +769,15 @@ export default function StaffPage() {
                       id={`role-${roleObj.name}`}
                       checked={formData.roles.includes(roleObj.name)}
                       onCheckedChange={(checked) => {
-                        const newRoles = checked
-                          ? [...formData.roles, roleObj.name]
-                          : formData.roles.filter(r => r !== roleObj.name);
-                        
-                        // Ensure at least one role is selected
-                        if (newRoles.length === 0) return;
-
-                        let newPrimary = formData.primary_role;
-                        if (!newRoles.includes(newPrimary)) {
-                          newPrimary = newRoles[0];
+                        if (checked) {
+                          setFormData({
+                            ...formData,
+                            roles: [roleObj.name],
+                            primary_role: roleObj.name
+                          });
                         }
-
-                        setFormData({
-                          ...formData,
-                          roles: newRoles,
-                          primary_role: newPrimary
-                        });
                       }}
-                      className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                      className="data-[state=checked]:bg-primary data-[state=checked]:border-primary rounded-full"
                     />
                     <Label htmlFor={`role-${roleObj.name}`} className="text-xs font-bold capitalize cursor-pointer group-hover:text-primary transition-colors">
                       {roleObj.name}
@@ -829,84 +801,7 @@ export default function StaffPage() {
                 )}
               </div>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="primary_role">Primary Role</Label>
-              <Select 
-                value={formData.primary_role} 
-                onValueChange={(val) => setFormData({...formData, primary_role: val})}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select primary role" />
-                </SelectTrigger>
-                <SelectContent>
-                  {formData.roles.map((role: string) => (
-                    <SelectItem key={role} value={role} className="capitalize">
-                      {role}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[10px] text-muted-foreground">This is the main role shown in the staff list.</p>
-            </div>
-
-            <div className="space-y-4 pt-4 border-t">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-primary" /> Permission Access
-                </Label>
-              </div>
-              <p className="text-[10px] text-muted-foreground -mt-2">
-                Roles include defaults. Use these to grant specific module access.
-              </p>
-              
-              <div className="space-y-4 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
-                {Object.entries(
-                  availablePermissions.reduce((acc: any, curr: any) => {
-                    const module = curr.module || (curr.key.split('.')[0]) || "General";
-                    if (!acc[module]) acc[module] = [];
-                    acc[module].push(curr);
-                    return acc;
-                  }, {})
-                ).map(([module, perms]: [string, any]) => (
-                  <div key={module} className="bg-muted/30 rounded-lg p-3 space-y-3">
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-primary/70 mb-2 border-b border-primary/10 pb-1">{module}</h4>
-                    <div className="grid grid-cols-1 gap-4">
-                      {perms.map((p: any) => (
-                        <div key={p.key} className="flex items-start gap-3 group">
-                          <Checkbox 
-                            id={`perm-${p.key}`}
-                            className="mt-1 border-primary/30 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                            checked={(formData as any).permissions?.includes(p.key)}
-                            onCheckedChange={(checked) => {
-                              const currentPerms = (formData as any).permissions || [];
-                              const newPerms = checked
-                                ? [...currentPerms, p.key]
-                                : currentPerms.filter((k: string) => k !== p.key);
-                              setFormData({...formData, permissions: newPerms} as any);
-                            }}
-                          />
-                          <div className="grid gap-1 lowercase">
-                            <label
-                              htmlFor={`perm-${p.key}`}
-                              className="text-xs font-bold leading-none cursor-pointer group-hover:text-primary transition-colors"
-                            >
-                              {p.key.replace(/\./g, ' ')}
-                            </label>
-                            {p.description && (
-                              <p className="text-[11px] text-muted-foreground leading-normal">
-                                {p.description}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            </div>
+          </div>
             <div className="px-6 py-4 border-t bg-muted/10 shrink-0">
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>

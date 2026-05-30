@@ -94,20 +94,24 @@ export default function OrdersPage() {
             const todayStr = format(new Date(), "yyyy-MM-dd");
             const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-            const [ordersRes, analyticsRes] = await Promise.all([
-                apiClient.get(`${OrderApis.activeOrders}`, {
-                    params: { 
-                        restaurant_id: user.restaurant_id,
-                        timezone: timezone
-                    }
-                }),
-                apiClient.get(AnalyticsApis.dashboard({
-                    restaurantId: user.restaurant_id,
-                    dateFrom: todayStr,
-                    dateTo: todayStr,
+            const ordersPromise = apiClient.get(`${OrderApis.activeOrders}`, {
+                params: { 
+                    restaurant_id: user.restaurant_id,
                     timezone: timezone
-                }))
-            ]);
+                }
+            });
+
+            const analyticsPromise = apiClient.get(AnalyticsApis.dashboard({
+                restaurantId: user.restaurant_id,
+                dateFrom: todayStr,
+                dateTo: todayStr,
+                timezone: timezone
+            })).catch(err => {
+                console.warn("User does not have permission to view analytics, or it failed.", err.message);
+                return { data: { status: "error", data: null } };
+            });
+
+            const [ordersRes, analyticsRes] = await Promise.all([ordersPromise, analyticsPromise]);
 
             if (ordersRes.data.status === "success") {
                 const fetchedOrders = [...(ordersRes.data.data.orders || [])]
