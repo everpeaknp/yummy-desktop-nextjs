@@ -153,6 +153,12 @@ export function GlobalKotPrinter() {
                         console.log(`[GlobalKotPrinter] Skipping auto-print on this device. Device is configured for [${localStations.join(",")}], but KOT is for "${stationName || "unknown"}".`);
                         return;
                     }
+                } else {
+                    // Default behavior for unconfigured devices: DO NOT pop up the print dialog.
+                    // This prevents front-desk PCs from getting spammed with window.print() dialogs
+                    // before they have explicitly configured their printer duties.
+                    console.log(`[GlobalKotPrinter] Skipping auto-print because this device has not configured 'This Computer's Print Duties' in settings.`);
+                    return;
                 }
             } catch (e) {
                 console.warn("[GlobalKotPrinter] Failed to read local device settings", e);

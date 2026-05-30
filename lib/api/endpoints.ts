@@ -23,21 +23,21 @@ export const AuthApis = {
   deleteMe: '/users/me',
   changePassword: '/users/change-password',
   listPermissions: '/users/permissions',
-  updateUserPermissions: (id: number | string) => `/users/${id}/permissions`,
+  updateUserPermissions: (id: number | string) => `/users/${id}/permissions/`,
   uploadProfilePicture: '/users/me/profile-picture',
 };
 
 export const UserAccessScopeApis = {
   list: (userId: number | string) => `/users/${userId}/access-scopes/`,
-  upsert: (userId: number | string, scopeKey: string) => `/users/${userId}/access-scopes/${encodeURIComponent(scopeKey)}`,
-  remove: (userId: number | string, scopeKey: string) => `/users/${userId}/access-scopes/${encodeURIComponent(scopeKey)}`,
+  upsert: (userId: number | string, scopeKey: string) => `/users/${userId}/access-scopes/${encodeURIComponent(scopeKey)}/`,
+  remove: (userId: number | string, scopeKey: string) => `/users/${userId}/access-scopes/${encodeURIComponent(scopeKey)}/`,
 };
 
 export const RoleApis = {
   listPermissions: '/roles/permissions',
   // Avoid trailing-slash redirects in Next dev (/api/proxy/roles/ -> 308 -> /api/proxy/roles),
   // which can cause Authorization to be dropped and roles to appear as "Loading...".
-  listRoles: '/roles',
+  listRoles: '/roles/',
   // Optional: some backends expose built-in/system roles separately.
   listBuiltInRoles: '/roles/built-in',
   createRole: '/roles',
