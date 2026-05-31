@@ -462,11 +462,13 @@ export const AnalyticsApis = {
     const query = params.toString();
     return query ? `/analytics/overview?${query}` : '/analytics/overview';
   },
-  trends: ({ metric, restaurantId, dateFrom, dateTo, timezone, station }: any) => {
+  trends: ({ metric, restaurantId, dateFrom, dateTo, startTime, endTime, timezone, station }: any) => {
     const params = new URLSearchParams({ metric });
     if (restaurantId) params.append('restaurant_id', restaurantId.toString());
     if (dateFrom) params.append('date_from', dateFrom);
     if (dateTo) params.append('date_to', dateTo);
+    if (startTime) params.append('start_time', startTime);
+    if (endTime) params.append('end_time', endTime);
     if (timezone) params.append('timezone', timezone);
     if (station) params.append('station', station);
     return `/analytics/trends?${params.toString()}`;

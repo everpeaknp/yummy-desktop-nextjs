@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, TrendingUp, TrendingDown, DollarSign, CreditCard, Activity, Lock, Wallet, ArrowUpRight, ArrowDownRight, ReceiptText, ChevronRight, Bed, Utensils, LayoutGrid, Users, ChefHat, Boxes, ArrowLeftRight } from "lucide-react";
 import apiClient from "@/lib/api-client";
@@ -272,12 +272,108 @@ export default function AnalyticsPage() {
                         </div>
                     </section>
 
+                    {/* Period Comparison & Credit Receivables Exposure Section */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Period Comparison Widget */}
+                        <Card className="bg-card border-border shadow-sm">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-base font-bold flex items-center gap-2">
+                                    <ArrowLeftRight className="w-4 h-4 text-orange-500" />
+                                    Period Comparison
+                                </CardTitle>
+                                <CardDescription>Comparison with preceding period of identical length</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="grid grid-cols-3 gap-2 text-center border-b border-border/40 pb-3">
+                                    <div>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Metric</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Current</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Change (%)</p>
+                                    </div>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between py-1">
+                                        <span className="text-sm font-semibold text-muted-foreground">Income</span>
+                                        <div className="flex items-center gap-6">
+                                            <span className="text-sm font-bold">Rs. {Number(data?.comparison?.current?.income || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                                            <Badge className={cn("text-[10px] font-bold px-2 py-0.5", 
+                                                (data?.comparison?.deltas?.income_pct ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+                                            )}>
+                                                {(data?.comparison?.deltas?.income_pct ?? 0) >= 0 ? "+" : ""}{data?.comparison?.deltas?.income_pct ?? 0}%
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between py-1">
+                                        <span className="text-sm font-semibold text-muted-foreground">Expense</span>
+                                        <div className="flex items-center gap-6">
+                                            <span className="text-sm font-bold">Rs. {Number(data?.comparison?.current?.expense || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                                            <Badge className={cn("text-[10px] font-bold px-2 py-0.5", 
+                                                (data?.comparison?.deltas?.expense_pct ?? 0) <= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+                                            )}>
+                                                {(data?.comparison?.deltas?.expense_pct ?? 0) >= 0 ? "+" : ""}{data?.comparison?.deltas?.expense_pct ?? 0}%
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between py-1">
+                                        <span className="text-sm font-semibold text-muted-foreground">Profit</span>
+                                        <div className="flex items-center gap-6">
+                                            <span className="text-sm font-bold">Rs. {Number(data?.comparison?.current?.profit || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                                            <Badge className={cn("text-[10px] font-bold px-2 py-0.5", 
+                                                (data?.comparison?.deltas?.profit_pct ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+                                            )}>
+                                                {(data?.comparison?.deltas?.profit_pct ?? 0) >= 0 ? "+" : ""}{data?.comparison?.deltas?.profit_pct ?? 0}%
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Credit Exposure & Receivables snapshot */}
+                        <Card className="bg-card border-border shadow-sm">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-base font-bold flex items-center gap-2">
+                                    <CreditCard className="w-4 h-4 text-blue-500" />
+                                    Receivables & Credit Exposure
+                                </CardTitle>
+                                <CardDescription>Outstanding books, collections and exposed credits</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3.5 flex flex-col justify-between">
+                                        <span className="text-[10px] font-black text-blue-500 uppercase tracking-wider mb-1">Credit Sales (Period)</span>
+                                        <span className="text-xl font-bold text-foreground">Rs. {Number(data?.receivables?.credit_sales ?? 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                                        <span className="text-[9px] text-muted-foreground mt-1 font-medium">{data?.receivables?.credit_orders_count ?? 0} credit bills generated</span>
+                                    </div>
+                                    <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3.5 flex flex-col justify-between">
+                                        <span className="text-[10px] font-black text-red-500 uppercase tracking-wider mb-1">Total Outstanding Unpaid</span>
+                                        <span className="text-xl font-bold text-foreground">Rs. {Number(data?.receivables?.total_outstanding ?? 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                                        <span className="text-[9px] text-muted-foreground mt-1 font-medium">Exposed outstanding debt portfolio</span>
+                                    </div>
+                                </div>
+                                <div className="bg-muted/30 border border-border/40 rounded-xl p-3 text-xs flex justify-between items-center text-muted-foreground">
+                                    <span className="font-semibold">Cash Sales vs. Credits ratio:</span>
+                                    <span className="font-bold text-foreground">
+                                        {data?.kpis?.gross_sales > 0 
+                                            ? `${Math.round(((data?.receivables?.credit_sales ?? 0) / data.kpis.gross_sales) * 100)}% credit`
+                                            : "0% credit"}
+                                    </span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
                     {/* Charts Section */}
                     <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
                         <div className="lg:col-span-4 min-w-0">
                             <RevenueChart
                                 data={trendsData}
                                 loading={loading}
+                                hourlyData={data?.trends_chart?.hourly}
                                 title={
                                     preferHourlyTrends(activeRange)
                                         ? "Hourly Revenue"

@@ -44,6 +44,11 @@ export default function ExpensesPage() {
     category_id: "",
     payment_method: "cash"
   });
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [customStartTime, setCustomStartTime] = useState("00:00");
+  const [customEndTime, setCustomEndTime] = useState("23:59");
+  const [recentLimit, setRecentLimit] = useState(25);
 
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
@@ -77,10 +82,17 @@ export default function ExpensesPage() {
 
     if (dateFilter === 'today') {
       start = now.toISOString().split('T')[0];
+    } else if (dateFilter === 'yesterday') {
+      const yesterday = subDays(now, 1);
+      start = yesterday.toISOString().split('T')[0];
+      end = endOfDay(yesterday).toISOString().split('T')[0];
     } else if (dateFilter === 'this_week') {
       start = startOfWeek(now, { weekStartsOn: 1 }).toISOString().split('T')[0];
     } else if (dateFilter === 'this_month') {
       start = startOfMonth(now).toISOString().split('T')[0];
+    } else if (dateFilter === 'custom') {
+      start = customStartDate || now.toISOString().split('T')[0];
+      end = customEndDate || now.toISOString().split('T')[0];
     } else {
       start = subDays(now, 365).toISOString().split('T')[0];
     }
@@ -92,6 +104,7 @@ export default function ExpensesPage() {
     setLoading(true);
     const { start, end } = getDateRange();
     const stationParam = selectedStation === 'all' ? undefined : selectedStation;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     try {
       const res = await apiClient.get(ExpenseApis.list, {
@@ -100,7 +113,9 @@ export default function ExpensesPage() {
           date_from: start,
           date_to: end,
           station: stationParam,
-          category_id: selectedCategory === 'all' ? undefined : selectedCategory
+          category_id: selectedCategory === 'all' ? undefined : selectedCategory,
+          limit: recentLimit,
+          timezone: tz
         }
       });
       if (res.data.status === 'success') {
@@ -154,12 +169,24 @@ export default function ExpensesPage() {
     if (user?.restaurant_id) {
       fetchData();
     }
-  }, [user, selectedStation, dateFilter, selectedCategory]);
+  }, [user, selectedStation, dateFilter, selectedCategory, recentLimit, customStartDate, customEndDate, customStartTime, customEndTime]);
+
+  const filteredExpenses = expenses.filter((expense: any) => {
+    if (dateFilter !== 'custom') return true;
+    try {
+      const expenseDate = new Date(expense.expense_date || expense.paid_on || expense.created_at);
+      const startLocal = new Date(`${customStartDate || new Date().toISOString().split('T')[0]}T${customStartTime || "00:00"}:00`);
+      const endLocal = new Date(`${customEndDate || new Date().toISOString().split('T')[0]}T${customEndTime || "23:59"}:59`);
+      return expenseDate >= startLocal && expenseDate <= endLocal;
+    } catch (e) {
+      return true;
+    }
+  });
 
   const handleExport = async () => {
-    if (!expenses.length) return;
+    if (!filteredExpenses.length) return;
     const XLSX = await import("xlsx");
-    const dataToExport = expenses.map((expense: any) => ({
+    const dataToExport = filteredExpenses.map((expense: any) => ({
       "Description": expense.description || "Untitled",
       "Category": expense.category?.name || "General",
       "Amount": expense.amount,
@@ -175,66 +202,101 @@ export default function ExpensesPage() {
 
   return (
     <div className="flex flex-col gap-8 max-w-[1600px] mx-auto p-6">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/manage">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-red-600 dark:text-red-500">Expenses</h1>
-            <p className="text-muted-foreground whitespace-nowrap">Manage and track your operational costs.</p>
+      <div className="flex flex-col gap-4 w-full">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full">
+          <div className="flex items-center gap-4">
+            <Link href="/manage">
+              <Button variant="ghost" size="icon" className="rounded-full">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-red-600 dark:text-red-500">Expenses</h1>
+              <p className="text-muted-foreground whitespace-nowrap">Manage and track your operational costs.</p>
+            </div>
+            <Link href="/finance/income">
+              <Button variant="outline" size="sm" className="hidden sm:flex border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600 dark:border-emerald-900/30 dark:hover:bg-emerald-950/20 gap-2">
+                <TrendingUp className="h-4 w-4" />
+                View Income
+              </Button>
+            </Link>
           </div>
-          <Link href="/finance/income">
-            <Button variant="outline" size="sm" className="hidden sm:flex border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600 dark:border-emerald-900/30 dark:hover:bg-emerald-950/20 gap-2">
-              <TrendingUp className="h-4 w-4" />
-              View Income
-            </Button>
-          </Link>
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={selectedStation} onValueChange={setSelectedStation}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Station" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Stations</SelectItem>
-              <SelectItem value="kitchen">Kitchen</SelectItem>
-              <SelectItem value="bar">Bar</SelectItem>
-              <SelectItem value="cafe">Cafe</SelectItem>
-              {restaurant?.hotel_enabled && (
-                <SelectItem value="rooms">Rooms / Hotel</SelectItem>
-              )}
-              <SelectItem value="general">General</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end">
+            <Select value={selectedStation} onValueChange={setSelectedStation}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Station" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Stations</SelectItem>
+                <SelectItem value="kitchen">Kitchen</SelectItem>
+                <SelectItem value="bar">Bar</SelectItem>
+                <SelectItem value="cafe">Cafe</SelectItem>
+                {restaurant?.hotel_enabled && (
+                  <SelectItem value="rooms">Rooms / Hotel</SelectItem>
+                )}
+                <SelectItem value="general">General</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select value={dateFilter} onValueChange={setDateFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Date Range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="this_week">This Week</SelectItem>
-              <SelectItem value="this_month">This Month</SelectItem>
-              <SelectItem value="all">All Time</SelectItem>
-            </SelectContent>
-          </Select>
+            <Select value={dateFilter} onValueChange={setDateFilter}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Date Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="yesterday">Yesterday</SelectItem>
+                <SelectItem value="this_week">This Week</SelectItem>
+                <SelectItem value="this_month">This Month</SelectItem>
+                <SelectItem value="custom">Custom Date</SelectItem>
+                <SelectItem value="all">All Time</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+
+        {dateFilter === 'custom' && (
+          <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end w-full animate-in fade-in slide-in-from-top-1 duration-200 bg-muted/30 p-3 rounded-xl border border-border">
+            <span className="text-xs font-semibold text-muted-foreground mr-1">Time Slice:</span>
+            <input
+              type="date"
+              value={customStartDate}
+              onChange={(e) => setCustomStartDate(e.target.value)}
+              className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+            <input
+              type="time"
+              value={customStartTime}
+              onChange={(e) => setCustomStartTime(e.target.value || "00:00")}
+              className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+            <span className="text-xs text-muted-foreground font-semibold px-1">to</span>
+            <input
+              type="date"
+              value={customEndDate}
+              onChange={(e) => setCustomEndDate(e.target.value)}
+              className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+            <input
+              type="time"
+              value={customEndTime}
+              onChange={(e) => setCustomEndTime(e.target.value || "23:59")}
+              className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <MetricCard
           label="Total Expenses"
-          value={expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)}
+          value={filteredExpenses.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0)}
           icon={<TrendingDown className="w-5 h-5" />}
           color="text-red-500"
           bg="bg-red-50 dark:bg-red-950/20"
         />
         <MetricCard
           label="Expense Entries"
-          value={expenses.length}
+          value={filteredExpenses.length}
           icon={<Receipt className="w-5 h-5" />}
           color="text-amber-500"
           bg="bg-amber-50 dark:bg-amber-950/20"
@@ -266,7 +328,7 @@ export default function ExpensesPage() {
           </Select>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleExport} disabled={!expenses.length}>
+          <Button variant="outline" onClick={handleExport} disabled={!filteredExpenses.length}>
             <Download className="w-4 h-4 mr-2" /> Export Excel
           </Button>
           <Button 
@@ -383,7 +445,7 @@ export default function ExpensesPage() {
         <div className="h-64 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-red-500" />
         </div>
-      ) : expenses.length === 0 ? (
+      ) : filteredExpenses.length === 0 ? (
         <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/20">
           <Receipt className="w-12 h-12 mb-4 opacity-20" />
           <p>No expenses found for the selected period.</p>
@@ -403,7 +465,7 @@ export default function ExpensesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {expenses.map((expense: any) => (
+                  {filteredExpenses.map((expense: any) => (
                     <tr key={expense.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-6 py-4 font-medium">{expense.description || "Untitled"}</td>
                       <td className="px-6 py-4 text-muted-foreground">{expense.category?.name || "General"}</td>
@@ -424,6 +486,18 @@ export default function ExpensesPage() {
                 </tbody>
               </table>
             </div>
+            {expenses.length >= recentLimit && (
+              <div className="p-4 border-t border-border flex justify-center bg-muted/10">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 font-semibold"
+                  onClick={() => setRecentLimit(prev => prev + 25)}
+                >
+                  View More Expenses
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

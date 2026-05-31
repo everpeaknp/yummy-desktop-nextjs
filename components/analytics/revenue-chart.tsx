@@ -1,7 +1,6 @@
-"use client";
-
+import { useState } from "react";
 import { useTheme } from "next-themes";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface RevenueChartProps {
@@ -9,6 +8,11 @@ interface RevenueChartProps {
   loading?: boolean;
   title?: string;
   description?: string;
+  hourlyData?: {
+    labels: string[];
+    revenue: number[];
+    orders: number[];
+  } | null;
 }
 
 function formatChartLabel(value: string): string {
@@ -22,7 +26,8 @@ function formatChartLabel(value: string): string {
   }
 }
 
-function formatTooltipLabel(label: string): string {
+function formatTooltipLabel(label: string, isHourly: boolean): string {
+  if (isHourly) return `Hour: ${label}`;
   if (/^\d{1,2}:\d{2}/.test(label)) return label;
   try {
     const d = new Date(label);
@@ -41,79 +46,221 @@ function formatTooltipLabel(label: string): string {
 export function RevenueChart({
   data,
   loading,
-  title = "Revenue Trend",
-  description = "Your gross sales over the selected period.",
+  title,
+  description,
+  hourlyData,
 }: RevenueChartProps) {
   const { theme } = useTheme();
-  
-  // Mock data if empty or loading (for skeleton effect or empty state)
-  const chartData = data?.length ? data : [];
+  const [chartType, setChartType] = useState<"area" | "bar">("area");
+
+  const isHourly = !!(hourlyData && hourlyData.labels && hourlyData.labels.length > 0);
+
+  const chartData = isHourly
+    ? hourlyData!.labels.map((label, idx) => ({
+        date: label,
+        revenue: hourlyData!.revenue[idx] || 0,
+        orders: hourlyData!.orders[idx] || 0,
+      }))
+    : data?.length
+      ? data
+      : [];
+
+  const chartTitle = title ?? (isHourly ? "Hourly Performance" : "Revenue Trend");
+  const chartDescription =
+    description ??
+    (isHourly
+      ? "Hourly income and orders distribution today."
+      : "Your gross sales over the selected period.");
 
   return (
     <Card className="col-span-4 bg-card border-border shadow-sm">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>
-          {description}
-        </CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <div>
+          <CardTitle>{chartTitle}</CardTitle>
+          <CardDescription>{chartDescription}</CardDescription>
+        </div>
+        <div className="flex bg-muted p-1 rounded-lg text-xs">
+          <button
+            onClick={() => setChartType("area")}
+            className={`px-3 py-1.5 rounded-md transition-all ${
+              chartType === "area"
+                ? "bg-background text-foreground shadow-sm font-medium"
+                : "text-muted-foreground"
+            }`}
+          >
+            Area/Line
+          </button>
+          <button
+            onClick={() => setChartType("bar")}
+            className={`px-3 py-1.5 rounded-md transition-all ${
+              chartType === "bar"
+                ? "bg-background text-foreground shadow-sm font-medium"
+                : "text-muted-foreground"
+            }`}
+          >
+            Bar
+          </button>
+        </div>
       </CardHeader>
       <CardContent className="pl-2">
         <div className="h-[300px] w-full min-w-0 shrink-0">
-            {loading ? (
-                 <div className="h-full w-full flex items-center justify-center bg-muted/20 animate-pulse rounded-md">
-                    <span className="text-muted-foreground text-sm">Loading chart...</span>
-                 </div>
-            ) : chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300} debounce={50}>
-                    <AreaChart data={chartData}>
-                    <defs>
-                        <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                        </linearGradient>
-                    </defs>
-                    <XAxis
-                        dataKey="date"
-                        stroke="#888888"
-                        fontSize={12}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={formatChartLabel}
-                    />
+          {loading ? (
+            <div className="h-full w-full flex items-center justify-center bg-muted/20 animate-pulse rounded-md">
+              <span className="text-muted-foreground text-sm">Loading chart...</span>
+            </div>
+          ) : chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
+              {chartType === "area" ? (
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.8} />
+                      <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                    </linearGradient>
+                    {isHourly && (
+                      <linearGradient id="colorOrders" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    )}
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === "dark" ? "#333" : "#eee"} />
+                  <XAxis
+                    dataKey="date"
+                    stroke="#888888"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => (isHourly ? value : formatChartLabel(value))}
+                  />
+                  <YAxis
+                    yAxisId="left"
+                    stroke="#888888"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) =>
+                      `Rs.${value >= 1000 ? (value / 1000).toFixed(1) + "k" : value}`
+                    }
+                  />
+                  {isHourly && (
                     <YAxis
-                        stroke="#888888"
-                        fontSize={12}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={(value) => `Rs.${value >= 1000 ? (value / 1000).toFixed(1) + 'k' : value}`}
+                      yAxisId="right"
+                      orientation="right"
+                      stroke="#888888"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(value) => `${value}`}
                     />
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
-                    <Tooltip 
-                         contentStyle={{ 
-                             backgroundColor: theme === 'dark' ? '#1e1e1e' : '#fff',
-                             borderRadius: '8px',
-                             border: 'none',
-                             boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                         }}
-                         itemStyle={{ color: '#f97316', fontWeight: 'bold' }}
-                         formatter={(value: any) => [`Rs. ${Number(value).toLocaleString()}`, "Revenue"]}
-                         labelFormatter={formatTooltipLabel}
-                    />
+                  )}
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: theme === "dark" ? "#1e1e1e" : "#fff",
+                      borderRadius: "8px",
+                      border: "none",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    }}
+                    formatter={(value: any, name: any) => {
+                      if (name === "revenue") return [`Rs. ${Number(value).toLocaleString()}`, "Revenue"];
+                      return [value, "Orders"];
+                    }}
+                    labelFormatter={(label) => formatTooltipLabel(String(label), isHourly)}
+                  />
+                  <Area
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey={isHourly ? "revenue" : "value"}
+                    name="revenue"
+                    stroke="#f97316"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#colorRevenue)"
+                  />
+                  {isHourly && (
                     <Area
-                        type="monotone"
-                        dataKey="value"
-                        stroke="#f97316"
-                        strokeWidth={3}
-                        fillOpacity={1}
-                        fill="url(#colorRevenue)"
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="orders"
+                      name="orders"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      fillOpacity={0.1}
+                      fill="url(#colorOrders)"
                     />
-                    </AreaChart>
-                </ResponsiveContainer>
-            ) : (
-                <div className="h-full w-full flex items-center justify-center text-muted-foreground">
-                    No data available for this period
-                </div>
-            )}
+                  )}
+                  {isHourly && <Legend />}
+                </AreaChart>
+              ) : (
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === "dark" ? "#333" : "#eee"} />
+                  <XAxis
+                    dataKey="date"
+                    stroke="#888888"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => (isHourly ? value : formatChartLabel(value))}
+                  />
+                  <YAxis
+                    yAxisId="left"
+                    stroke="#888888"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) =>
+                      `Rs.${value >= 1000 ? (value / 1000).toFixed(1) + "k" : value}`
+                    }
+                  />
+                  {isHourly && (
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      stroke="#888888"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(value) => `${value}`}
+                    />
+                  )}
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: theme === "dark" ? "#1e1e1e" : "#fff",
+                      borderRadius: "8px",
+                      border: "none",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    }}
+                    formatter={(value: any, name: any) => {
+                      if (name === "revenue") return [`Rs. ${Number(value).toLocaleString()}`, "Revenue"];
+                      return [value, "Orders"];
+                    }}
+                    labelFormatter={(label) => formatTooltipLabel(String(label), isHourly)}
+                  />
+                  <Bar
+                    yAxisId="left"
+                    dataKey={isHourly ? "revenue" : "value"}
+                    name="revenue"
+                    fill="#f97316"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  {isHourly && (
+                    <Bar
+                      yAxisId="right"
+                      dataKey="orders"
+                      name="orders"
+                      fill="#3b82f6"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  )}
+                  {isHourly && <Legend />}
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+              No data available for this period
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
