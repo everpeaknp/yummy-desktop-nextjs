@@ -274,6 +274,7 @@ export const AnalyticsApis = {
     timezone,
     station,
     businessLine,
+    include,
   }: {
     restaurantId: number;
     dateFrom?: string;
@@ -283,6 +284,7 @@ export const AnalyticsApis = {
     timezone?: string;
     station?: string;
     businessLine?: string;
+    include?: string;
   }) => {
     const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
     if (startTime && endTime) {
@@ -295,6 +297,7 @@ export const AnalyticsApis = {
     if (timezone) params.append('timezone', timezone);
     if (station) params.append('station', station);
     if (businessLine) params.append('business_line', businessLine);
+    if (include) params.append('include', include);
     return `/analytics/dashboard?${params.toString()}`;
   },
   compare: ({

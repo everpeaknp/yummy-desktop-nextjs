@@ -149,6 +149,8 @@ export default function RolesPage() {
       }
       setIsDialogOpen(false);
       fetchData();
+      await useAuth.getState().syncUserProfile();
+      await useAuth.getState().refreshSession();
     } catch (err: any) {
       const status = err?.response?.status;
       const data = err?.response?.data;

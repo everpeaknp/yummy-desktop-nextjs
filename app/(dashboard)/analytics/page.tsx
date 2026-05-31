@@ -6,52 +6,61 @@ import { Button } from "@/components/ui/button";
 import { Calendar, TrendingUp, TrendingDown, DollarSign, CreditCard, Activity, Lock, Wallet, ArrowUpRight, ArrowDownRight, ReceiptText, ChevronRight, Bed, Utensils, LayoutGrid, Users, ChefHat, Boxes, ArrowLeftRight } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
+import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { Badge } from "@/components/ui/badge";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { AnalyticsApis } from "@/lib/api/endpoints";
-import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown";
 import { DateRange } from "react-day-picker";
 import Link from "next/link";
+import {
+  AnalyticsAccessDenied,
+  AnalyticsAccessLoading,
+  AnalyticsFetchError,
+} from "@/components/analytics/analytics-access-states";
 
 import { RevenueChart } from "@/components/analytics/revenue-chart";
 import { CategoryPieChart } from "@/components/analytics/category-pie";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
+import {
+    breakdownPieCopy,
+    formatCancellationRate,
+    mapAnalyticsTrends,
+    mapBreakdownToPie,
+    preferHourlyTrends,
+    topItemQuantitySold,
+    type BreakdownTab,
+} from "@/lib/analytics-dashboard-mapper";
 
 export default function AnalyticsPage() {
     const [activeRange, setActiveRange] = useState<DateRangePreset>("today");
     const [data, setData] = useState<any>(null);
     const [trendsData, setTrendsData] = useState<any[]>([]);
     const [categoryData, setCategoryData] = useState<any[]>([]);
-    const [breakdownType, setBreakdownType] = useState<'source' | 'payment' | 'category'>('source');
+    const [breakdownType, setBreakdownType] = useState<BreakdownTab>('source');
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
+    const [fetchTrigger, setFetchTrigger] = useState(0);
     const [date, setDate] = useState<DateRange | undefined>();
     const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
     const [businessLine, setBusinessLine] = useState<string | undefined>(undefined);
     const user = useAuth(state => state.user);
-    const me = useAuth(state => state.me);
-    const router = useRouter();
+    const { ready, canViewAnalytics } = useAnalyticsViewAccess();
     const restaurant = useRestaurant((s) => s.restaurant);
-
-    // 1. Session Restoration & Auth Guard
-    useEffect(() => {
-        const checkAuth = async () => {
-            const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-            if (!user && token) await me();
-
-            const updatedToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-            if (!user && !updatedToken) router.push('/');
-        };
-        const timer = setTimeout(checkAuth, 500);
-        return () => clearTimeout(timer);
-    }, [user, me, router]);
 
     // Fetch all analytics from unified /analytics/dashboard (same as Flutter)
     useEffect(() => {
         const fetchAnalytics = async () => {
-            if (!user?.restaurant_id) return;
+            if (!user?.restaurant_id || !canViewAnalytics) {
+                setData(null);
+                setTrendsData([]);
+                setCategoryData([]);
+                setLoading(false);
+                return;
+            }
             setLoading(true);
+            setFetchError(null);
             try {
                 const formatDate = (date: Date) => {
                     const year = date.getFullYear();
@@ -92,7 +101,8 @@ export default function AnalyticsPage() {
                     dateFrom,
                     dateTo,
                     timezone,
-                    businessLine
+                    businessLine,
+                    include: "core",
                 });
 
                 const res = await apiClient.get(dashboardUrl);
@@ -100,54 +110,55 @@ export default function AnalyticsPage() {
                 if (res.data?.status === "success") {
                     const d = res.data.data;
                     setData(d);
-
-                    // Trends from unified response
-                    if (Array.isArray(d.trends) && d.trends.length > 0) {
-                        setTrendsData(d.trends.map((item: any) => ({
-                            date: item.date,
-                            value: item.income
-                        })));
-                    } else {
-                        setTrendsData([]);
-                    }
+                    setTrendsData(
+                        mapAnalyticsTrends(d, preferHourlyTrends(activeRange))
+                    );
+                } else {
+                    setFetchError(res.data?.message || "Failed to load analytics dashboard");
                 }
 
-            } catch (err) {
-                console.error("Failed to fetch analytics:", err);
+            } catch (err: any) {
+                const message =
+                    err?.response?.data?.detail ||
+                    err?.response?.data?.message ||
+                    "Failed to load analytics dashboard";
+                setFetchError(message);
             } finally {
                 setLoading(false);
             }
         };
 
+        if (!ready) return;
         if (user?.restaurant_id) {
             if (activeRange === 'custom' && (!date?.from || !date?.to)) {
                 return; // Wait until range is fully selected
             }
             fetchAnalytics();
         }
-    }, [user, activeRange, businessLine, date]);
+    }, [ready, canViewAnalytics, user, activeRange, businessLine, date, fetchTrigger]);
 
-    // Derive breakdown pie data from cached dashboard data when tab changes (no refetch)
     useEffect(() => {
         if (!data?.breakdown) {
             setCategoryData([]);
             return;
         }
-        const bd = data.breakdown;
-        let list: any[] = [];
-        if (breakdownType === 'category') list = bd.income_by_category || [];
-        else if (breakdownType === 'source') list = bd.income_by_source || [];
-        else if (breakdownType === 'payment') list = bd.income_by_payment_method || [];
-        else if (breakdownType === 'supplier') list = bd.purchase_by_supplier || [];
-
-        setCategoryData(list.map((item: any) => ({
-            name: item.label || "Unknown",
-            value: item.amount || 0,
-        })));
+        setCategoryData(mapBreakdownToPie(data.breakdown, breakdownType));
     }, [data, breakdownType]);
+
+    const pieCopy = breakdownPieCopy(breakdownType);
+    const topMenuItems = data?.menu_snapshot?.top_items || [];
+
+    if (!ready) return <AnalyticsAccessLoading />;
+    if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
     return (
         <div className="flex flex-col gap-8 max-w-[1600px] mx-auto pb-10">
+            {fetchError ? (
+                <AnalyticsFetchError
+                    message={fetchError}
+                    onRetry={() => setFetchTrigger((t) => t + 1)}
+                />
+            ) : null}
             {/* Header & Filters */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
@@ -358,18 +369,26 @@ export default function AnalyticsPage() {
 
                     {/* Charts Section */}
                     <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
-                        <div className="lg:col-span-4">
-                            <RevenueChart 
-                                data={trendsData} 
-                                loading={loading} 
+                        <div className="lg:col-span-4 min-w-0">
+                            <RevenueChart
+                                data={trendsData}
+                                loading={loading}
                                 hourlyData={data?.trends_chart?.hourly}
+                                title={
+                                    preferHourlyTrends(activeRange)
+                                        ? "Hourly Revenue"
+                                        : "Revenue Trends"
+                                }
                             />
                         </div>
-                        <div className="lg:col-span-3">
+                        <div className="lg:col-span-3 min-w-0">
                             {/* Breakdown Tabs */}
-                            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden h-full flex flex-col">
+                            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
                                 <div className="p-4 border-b border-border flex flex-col sm:flex-row justify-between items-center gap-4">
-                                    <h3 className="font-semibold text-lg">Breakdown</h3>
+                                    <div>
+                                        <h3 className="font-semibold text-lg">{pieCopy.title}</h3>
+                                        <p className="text-sm text-muted-foreground mt-0.5">{pieCopy.description}</p>
+                                    </div>
                                     <div className="flex bg-muted p-1 rounded-lg text-xs">
                                         {/* Tabs: Source, Payment, Category (matching Flutter) */}
                                         {(['source', 'payment', 'category'] as const).map((type) => (
@@ -381,13 +400,17 @@ export default function AnalyticsPage() {
                                                     : 'text-muted-foreground hover:text-foreground'
                                                     }`}
                                             >
-                                                {type}
+                                                {type === 'source' ? 'channel' : type === 'category' ? 'menu' : type}
                                             </button>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="flex-1 p-4 min-h-[300px]">
-                                    <CategoryPieChart data={categoryData} loading={loading} />
+                                <div className="p-4 min-w-0">
+                                    <CategoryPieChart
+                                        embedded
+                                        data={categoryData}
+                                        loading={loading}
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -419,13 +442,43 @@ export default function AnalyticsPage() {
                             color="text-pink-500"
                         />
                         <BigMetricCard
-                            label="CANCELLATIONS"
-                            value={data?.operations?.cancellations || 0}
+                            label="CANCELLATION RATE"
+                            value={formatCancellationRate(data?.operations)}
                             noCurrency
                             icon={<ArrowDownRight className="w-4 h-4" />}
                             color="text-rose-500"
                         />
                     </div>
+
+                    {topMenuItems.length > 0 ? (
+                        <section className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <h3 className="font-semibold text-lg">Top Menu Items</h3>
+                                <Link href="/analytics/menu">
+                                    <Button variant="ghost" size="sm" className="gap-1">
+                                        View all <ChevronRight className="w-4 h-4" />
+                                    </Button>
+                                </Link>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {topMenuItems.slice(0, 5).map((item: any) => (
+                                    <Card key={item.id ?? item.name} className="border-border shadow-sm">
+                                        <CardContent className="p-4 flex items-center justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <p className="font-semibold truncate">{item.name}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {topItemQuantitySold(item)} sold
+                                                </p>
+                                            </div>
+                                            <p className="text-sm font-bold shrink-0">
+                                                Rs. {Number(item.revenue || 0).toLocaleString()}
+                                            </p>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+                        </section>
+                    ) : null}
 
                     {/* Day Close Action */}
                     <section>

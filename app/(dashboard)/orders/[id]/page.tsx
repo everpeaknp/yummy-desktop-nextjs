@@ -83,6 +83,7 @@ import type {
 } from "@/types/order";
 import { EntityNotificationsCard } from "@/components/notifications/entity-notifications-card";
 import { toast } from "sonner";
+import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
@@ -156,6 +157,8 @@ export default function OrderDetailPage() {
   const [tableTypes, setTableTypes] = useState<any[]>([]);
   const [selectedArea, setSelectedArea] = useState("All Areas");
 
+  const { canVoidOrder, canVoidItem, canTransferOrder } = usePosBillingPermissions();
+
   // Auth guard
   useEffect(() => {
     const checkAuth = async () => {
@@ -192,6 +195,10 @@ export default function OrderDetailPage() {
 
   // Cancel order
   const handleCancel = async () => {
+    if (!canVoidOrder) {
+      toast.error("You do not have permission to void orders.");
+      return;
+    }
     if (!cancelReason.trim()) return;
     setCanceling(true);
     try {
@@ -273,6 +280,10 @@ export default function OrderDetailPage() {
 
   // Change table
   const handleChangeTable = async () => {
+    if (!canTransferOrder) {
+      toast.error("You do not have permission to transfer orders.");
+      return;
+    }
     if (!selectedTableId) return;
     setChangingTable(true);
     try {
@@ -419,7 +430,7 @@ export default function OrderDetailPage() {
                   </TooltipContent>
                 </Tooltip>
                 
-                {isTableOrder && isEditable && (
+                {isTableOrder && isEditable && canTransferOrder && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon" onClick={handleOpenChangeTable} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
@@ -459,9 +470,14 @@ export default function OrderDetailPage() {
                     size="sm" 
                     className="gap-2 rounded-xl h-9 text-destructive hover:text-destructive hover:bg-destructive/10 font-semibold"
                     onClick={() => {
+                      if (!canVoidOrder) {
+                        toast.error("You do not have permission to void orders.");
+                        return;
+                      }
                       setCancelReason("Rejected by staff");
                       setCancelOpen(true);
                     }}
+                    disabled={!canVoidOrder}
                   >
                     <Ban className="h-4 w-4" /> Reject
                   </Button>
@@ -489,7 +505,7 @@ export default function OrderDetailPage() {
           )}
           
           {/* Destructive Action */}
-          {isCancellable && (
+          {isCancellable && canVoidOrder && (
              <Button
                variant="ghost"
                size="sm"
@@ -536,7 +552,9 @@ export default function OrderDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Main Content */}
         <div className="lg:col-span-2 space-y-4">
-          {activeTab === "details" && <DetailsTab order={order} tables={context.tables} onRefresh={fetchContext} />}
+          {activeTab === "details" && (
+            <DetailsTab order={order} tables={context.tables} onRefresh={fetchContext} canVoidItem={canVoidItem} />
+          )}
           {activeTab === "kots" && <KOTsTab kots={context.kots} />}
           {activeTab === "events" && <EventsTab events={events} loading={eventsLoading} />}
         </div>
@@ -708,7 +726,7 @@ export default function OrderDetailPage() {
               )}
 
               {/* Cancel Order - Available for all non-cancelled orders */}
-              {isCancellable && (
+              {isCancellable && canVoidOrder && (
                 <Button
                   variant="outline"
                   className="w-full gap-2 h-11 font-bold rounded-xl text-destructive hover:text-destructive hover:bg-destructive/5 border-destructive/20 mt-2"
@@ -851,7 +869,17 @@ export default function OrderDetailPage() {
 }
 
 // ── Details Tab ─────────────────────────────────────
-function DetailsTab({ order, tables, onRefresh }: { order: Order; tables: OrderTableSummary[], onRefresh: () => void }) {
+function DetailsTab({
+  order,
+  tables,
+  onRefresh,
+  canVoidItem,
+}: {
+  order: Order;
+  tables: OrderTableSummary[];
+  onRefresh: () => void;
+  canVoidItem: boolean;
+}) {
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
   const [editQty, setEditQty] = useState(1);
   const [editNotes, setEditNotes] = useState("");
@@ -865,6 +893,13 @@ function DetailsTab({ order, tables, onRefresh }: { order: Order; tables: OrderT
 
   const handleSaveEdit = async () => {
     if (!editingItem) return;
+
+    const isRemovingItem = editQty === 0;
+    if (isRemovingItem && !canVoidItem) {
+      toast.error("You do not have permission to void order items.");
+      return;
+    }
+
     setIsUpdating(true);
     try {
       // Build the bulk-update payload representing the new desired state
@@ -1017,7 +1052,14 @@ function DetailsTab({ order, tables, onRefresh }: { order: Order; tables: OrderT
                 <Button 
                   variant="outline" 
                   size="icon" 
-                  onClick={() => setEditQty(Math.max(0, editQty - 1))}
+                  onClick={() => {
+                    if (editQty <= 1 && !canVoidItem) {
+                      toast.error("You do not have permission to void order items.");
+                      return;
+                    }
+                    setEditQty(Math.max(0, editQty - 1));
+                  }}
+                  disabled={editQty <= 0 || (editQty <= 1 && !canVoidItem)}
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
@@ -1043,7 +1085,7 @@ function DetailsTab({ order, tables, onRefresh }: { order: Order; tables: OrderT
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingItem(null)}>Cancel</Button>
-            <Button onClick={handleSaveEdit} disabled={isUpdating}>
+            <Button onClick={handleSaveEdit} disabled={isUpdating || (editQty === 0 && !canVoidItem)}>
               {isUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Save Changes
             </Button>

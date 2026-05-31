@@ -13,6 +13,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { usePosBillingPermissions, isOrderRefundHistorical } from "@/hooks/use-pos-billing-permissions";
+import {
   ArrowLeft,
   Printer,
   Share2,
@@ -25,6 +36,7 @@ import {
   Banknote,
   Smartphone,
   Wallet,
+  RotateCcw,
 } from "lucide-react";
 import type { ReceiptData, OrderItem, OrderPayment } from "@/types/order";
 import { ThermalReceipt } from "@/components/receipts/thermal-receipt";
@@ -173,6 +185,11 @@ export default function ReceiptPage() {
 
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
+  const {
+    canProcessRefund,
+    canApproveHistoricalRefund,
+    canRefundOrder,
+  } = usePosBillingPermissions();
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
   const [template, setTemplate] = useState<any[] | null>(null);
@@ -180,6 +197,12 @@ export default function ReceiptPage() {
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [printed, setPrinted] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundReference, setRefundReference] = useState("");
+  const [refundSubmitting, setRefundSubmitting] = useState(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
   
   useOrderFull(orderId);
   const autoPrintDone = useRef(false);
@@ -417,6 +440,54 @@ export default function ReceiptPage() {
     }
   };
 
+  const handleProcessRefund = async () => {
+    const orderCreatedAt = receipt?.order?.created_at;
+    if (!canRefundOrder(orderCreatedAt)) {
+      if (!canProcessRefund) {
+        setRefundError("You do not have permission to process refunds.");
+      } else if (isOrderRefundHistorical(orderCreatedAt) && !canApproveHistoricalRefund) {
+        setRefundError("Historical refunds require billing.refund.approve permission.");
+      } else {
+        setRefundError("You cannot process this refund.");
+      }
+      return;
+    }
+
+    const amount = parseFloat(refundAmount);
+    if (!amount || amount <= 0) {
+      setRefundError("Enter a valid refund amount.");
+      return;
+    }
+    if (!refundReason.trim()) {
+      setRefundError("A refund reason is required.");
+      return;
+    }
+    if (receipt && amount > receipt.total_paid) {
+      setRefundError("Refund amount cannot exceed total paid.");
+      return;
+    }
+
+    setRefundSubmitting(true);
+    setRefundError(null);
+    try {
+      await apiClient.post(OrderApis.refundOrder(orderId), {
+        amount,
+        reason: refundReason.trim(),
+        reference: refundReference.trim() || undefined,
+      });
+      toast.success("Refund processed successfully.");
+      setRefundOpen(false);
+      setRefundAmount("");
+      setRefundReason("");
+      setRefundReference("");
+      await fetchData();
+    } catch (err: any) {
+      setRefundError(err?.response?.data?.detail || "Failed to process refund.");
+    } finally {
+      setRefundSubmitting(false);
+    }
+  };
+
   // ── Loading ──
   if (loading) {
     return (
@@ -449,6 +520,11 @@ export default function ReceiptPage() {
   const orderLabel = order.table_name
     ? `${order.table_name} • #${order.restaurant_order_id || order.id}`
     : `Order #${order.restaurant_order_id || order.id}`;
+
+  const orderCreatedAt = order.created_at;
+  const refundIsHistorical = isOrderRefundHistorical(orderCreatedAt);
+  const refundAllowed = canRefundOrder(orderCreatedAt);
+  const showRefundAction = (receipt.total_paid || 0) > 0 && (canProcessRefund || canApproveHistoricalRefund);
 
   const globalBlock = template.find(b => b.type === 'global_settings');
   const paperSize = globalBlock?.paper_size || '80mm';
@@ -507,6 +583,21 @@ export default function ReceiptPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {showRefundAction && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 rounded-xl text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                disabled={!refundAllowed}
+                onClick={() => {
+                  setRefundError(null);
+                  setRefundAmount(String(receipt.total_paid || ""));
+                  setRefundOpen(true);
+                }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Refund
+              </Button>
+            )}
             {receipt.is_fully_paid && order.status !== 'completed' && (
               <Button
                 size="sm"
@@ -549,6 +640,20 @@ export default function ReceiptPage() {
 
         {/* Bottom Actions (no-print) */}
         <div className="flex flex-col sm:flex-row items-center gap-3 no-print px-4 pb-4">
+          {showRefundAction && (
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto h-12 gap-2 rounded-xl font-bold text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+              disabled={!refundAllowed}
+              onClick={() => {
+                setRefundError(null);
+                setRefundAmount(String(receipt.total_paid || ""));
+                setRefundOpen(true);
+              }}
+            >
+              <RotateCcw className="h-4 w-4" /> Process Refund
+            </Button>
+          )}
           {receipt.is_fully_paid && order.status !== 'completed' && (
             <Button 
               className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
@@ -587,6 +692,87 @@ export default function ReceiptPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Process Refund</DialogTitle>
+            <DialogDescription>
+              {refundIsHistorical
+                ? "This order is outside the standard refund window and requires historical refund approval."
+                : "Issue a refund for today's transaction."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {refundError && (
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+                {refundError}
+              </div>
+            )}
+
+            {!refundAllowed && (
+              <div className="p-3 rounded-lg bg-muted text-sm">
+                {!canProcessRefund
+                  ? "You need billing.refund.process to issue refunds."
+                  : "You need billing.refund.approve for historical refunds."}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-amount">Refund Amount</Label>
+              <Input
+                id="refund-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={refundAmount}
+                onChange={(e) => setRefundAmount(e.target.value)}
+                disabled={!refundAllowed}
+              />
+              <p className="text-xs text-muted-foreground">
+                Maximum refundable: {formatCurrency(receipt.total_paid || 0)}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-reason">Reason</Label>
+              <Input
+                id="refund-reason"
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                placeholder="Reason for refund"
+                disabled={!refundAllowed}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-reference">Reference (optional)</Label>
+              <Input
+                id="refund-reference"
+                value={refundReference}
+                onChange={(e) => setRefundReference(e.target.value)}
+                placeholder="Receipt or transaction reference"
+                disabled={!refundAllowed}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefundOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleProcessRefund}
+              disabled={refundSubmitting || !refundAllowed}
+              className="gap-2"
+            >
+              {refundSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              {refundSubmitting ? "Processing..." : "Confirm Refund"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

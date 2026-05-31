@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { OrderApis, AnalyticsApis, TableApis } from "@/lib/api/endpoints";
+import { hasAnalyticsViewPermission } from "@/lib/role-permissions";
 import { 
   Search, 
   RefreshCw, 
@@ -128,15 +129,19 @@ export default function OrdersPage() {
                 }
             });
 
-            const analyticsPromise = apiClient.get(AnalyticsApis.dashboard({
-                restaurantId: user.restaurant_id,
-                dateFrom: todayStr,
-                dateTo: todayStr,
-                timezone: timezone
-            })).catch(err => {
-                console.warn("User does not have permission to view analytics, or it failed.", err.message);
-                return { data: { status: "error", data: null } };
-            });
+            const canViewAnalytics = hasAnalyticsViewPermission(user);
+            const analyticsPromise = canViewAnalytics
+                ? apiClient.get(AnalyticsApis.dashboard({
+                    restaurantId: user.restaurant_id,
+                    dateFrom: todayStr,
+                    dateTo: todayStr,
+                    timezone: timezone,
+                    include: "core",
+                })).catch(err => {
+                    console.warn("Analytics revenue stat unavailable:", err.message);
+                    return { data: { status: "error", data: null } };
+                })
+                : Promise.resolve({ data: { status: "skipped", data: null } });
 
             const [ordersRes, analyticsRes] = await Promise.all([ordersPromise, analyticsPromise]);
 
@@ -162,13 +167,15 @@ export default function OrdersPage() {
                     ...prev,
                     totalRevenue: d.overview?.total_income || d.kpis?.gross_sales || 0
                 }));
+            } else if (!canViewAnalytics) {
+                setStats(prev => ({ ...prev, totalRevenue: 0 }));
             }
         } catch (err) {
             console.error("Failed to fetch active data:", err);
         } finally {
             setLoading(false);
         }
-    }, [user?.restaurant_id]);
+    }, [user?.restaurant_id, user]);
 
     // 3. Fetch History Orders
     const fetchHistoryData = useCallback(async () => {

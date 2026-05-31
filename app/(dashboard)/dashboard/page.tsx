@@ -8,6 +8,13 @@ import { Skeleton } from "@/components/ui/skeleton"
 import apiClient from "@/lib/api-client"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
+import { hasAnalyticsViewPermission } from "@/lib/role-permissions"
+import {
+  mapAnalyticsTrends,
+  mapBreakdownToPie,
+  preferHourlyTrends,
+  topItemQuantitySold,
+} from "@/lib/analytics-dashboard-mapper"
 import { cn } from "@/lib/utils"
 import { DashboardApis, AnalyticsApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
 import dynamic from "next/dynamic"
@@ -55,6 +62,8 @@ export default function DashboardPage() {
   const [activities, setActivities] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
+  const [analyticsUnavailable, setAnalyticsUnavailable] = useState(false)
   const [activeRange, setActiveRange] = useState<DateRangePreset>("today")
   const [date, setDate] = useState<DateRange | undefined>()
 
@@ -76,7 +85,19 @@ export default function DashboardPage() {
   const fetchDashboard = async () => {
     if (!user?.restaurant_id) return
 
+    const canViewAnalytics = hasAnalyticsViewPermission(user)
+
     try {
+      setError(null)
+      setAnalyticsError(null)
+      if (!canViewAnalytics) {
+        setAnalyticsData(null)
+        setTrendsData([])
+        setCategoryData([])
+        setAnalyticsUnavailable(true)
+      } else {
+        setAnalyticsUnavailable(false)
+      }
       const formatDate = (date: Date) => {
           const year = date.getFullYear();
           const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -114,23 +135,46 @@ export default function DashboardPage() {
         restaurantId: user.restaurant_id
       })).catch(err => { console.error("V2 failed:", err); return null })
 
-      // Fetch Advanced Analytics (Date filtered)
-      const analyticsRes = await apiClient.get(
-        `/analytics/dashboard?restaurant_id=${user.restaurant_id}&date_from=${dateFrom}&date_to=${dateTo}`
-      ).catch(err => { console.error("Analytics failed:", err); return null })
+      // Fetch Advanced Analytics (Date filtered) — only when explicitly permitted
+      let analyticsRes = null
+      if (canViewAnalytics) {
+        analyticsRes = await apiClient
+          .get(
+            AnalyticsApis.dashboard({
+              restaurantId: user.restaurant_id,
+              dateFrom,
+              dateTo,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              include: "core,insights",
+            })
+          )
+          .catch((err) => {
+            const message =
+              err?.response?.data?.detail ||
+              err?.response?.data?.message ||
+              "Analytics data is unavailable."
+            setAnalyticsError(message)
+            return null
+          })
+      }
 
       // Audit logs were removed; use Transactions as the unified activity timeline.
-      const historyRes = await apiClient
-        .get(
-          TransactionsApis.list({
-            restaurantId: user.restaurant_id,
-            dateFrom: dateFrom,
-            dateTo: dateTo,
-            skip: 0,
-            limit: 15,
-          })
-        )
-        .catch(err => { console.error("History failed:", err); return null })
+      const historyRes = canViewAnalytics
+        ? await apiClient
+            .get(
+              TransactionsApis.list({
+                restaurantId: user.restaurant_id,
+                dateFrom: dateFrom,
+                dateTo: dateTo,
+                skip: 0,
+                limit: 15,
+              })
+            )
+            .catch((err) => {
+              console.error("History failed:", err)
+              return null
+            })
+        : null
 
       // Fetch Occupancy
       const occupancyRes = await apiClient.get(TableApis.tableSummary(user.restaurant_id))
@@ -141,18 +185,13 @@ export default function DashboardPage() {
       if (analyticsRes?.data?.status === "success") {
         const analytics = analyticsRes.data.data
         setAnalyticsData(analytics)
-        
-        if (analytics.trends) {
-          setTrendsData(analytics.trends.map((item: any) => ({
-            date: item.date,
-            value: item.income
-          })))
-        }
-        
+
+        setTrendsData(
+          mapAnalyticsTrends(analytics, preferHourlyTrends(activeRange))
+        )
+
         if (analytics.breakdown) {
-          // User requested 'source breakdown' from analytics page to be used here
-          const list = analytics.breakdown.income_by_source || [] 
-          setCategoryData(list.map((item: any) => ({ name: item.label, value: item.amount })))
+          setCategoryData(mapBreakdownToPie(analytics.breakdown, "source"))
         }
       }
 
@@ -233,8 +272,8 @@ export default function DashboardPage() {
     total_orders: overview?.orders_count ?? v2Kpis?.total_orders ?? 0,
     average_order_value: overview?.avg_order_value ?? v2Kpis?.average_order_value ?? 0,
     total_expense: overview?.total_expense ?? 0,
-    cancelled_today: overview?.cancelled_count || 0,
-    refunded_today: overview?.refunded_count || 0,
+    cancelled_today: health?.cancelled_today ?? 0,
+    refunded_today: health?.refunded_today ?? 0,
   }
 
   return (
@@ -312,17 +351,43 @@ export default function DashboardPage() {
 
       {/* 2. Charts (Side-by-Side) */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="h-[400px]">
-           <RevenueChart data={trendsData} loading={loading} />
-        </div>
-        <div className="h-[400px]">
-           <CategoryPieChart 
-              data={categoryData} 
-              loading={loading} 
-              title="Sales by Source" 
-              description="Breakdown of sales by order source (Dine-in, Takeaway, etc.)"
-           />
-        </div>
+        {analyticsUnavailable ? (
+          <Card className="lg:col-span-2 border-dashed">
+            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+              Revenue and source breakdown charts require the reports.analytics.view permission.
+            </CardContent>
+          </Card>
+        ) : analyticsError ? (
+          <Card className="lg:col-span-2 border-destructive/30 bg-destructive/5">
+            <CardContent className="py-8 text-center space-y-2">
+              <p className="text-sm font-medium text-destructive">Analytics data unavailable</p>
+              <p className="text-xs text-muted-foreground">{analyticsError}</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <div className="h-[400px]">
+              <RevenueChart
+                data={trendsData}
+                loading={loading}
+                title={preferHourlyTrends(activeRange) ? "Hourly Revenue" : "Revenue Trend"}
+                description={
+                  preferHourlyTrends(activeRange)
+                    ? "Hour-by-hour gross sales for the selected day."
+                    : "Your gross sales over the selected period."
+                }
+              />
+            </div>
+            <div className="h-[400px]">
+              <CategoryPieChart
+                data={categoryData}
+                loading={loading}
+                title="Sales by Source"
+                description="Breakdown of sales by order source (Dine-in, Takeaway, etc.)"
+              />
+            </div>
+          </>
+        )}
       </section>
 
       {/* 3. Operational Pulse & Intelligence */}
@@ -348,7 +413,7 @@ export default function DashboardPage() {
                          <div key={item.name} className="flex items-center justify-between group">
                             <div className="min-w-0 flex-1">
                                 <p className="text-sm font-bold truncate pr-4 group-hover:text-primary transition-colors">{item.name}</p>
-                                <p className="text-[10px] text-muted-foreground font-medium">{item.quantity} units sold</p>
+                                <p className="text-[10px] text-muted-foreground font-medium">{topItemQuantitySold(item)} units sold</p>
                             </div>
                             <div className="text-right">
                                 <p className="text-sm font-black">{currency} {item.revenue?.toLocaleString()}</p>

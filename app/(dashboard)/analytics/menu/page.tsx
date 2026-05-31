@@ -2,14 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Search, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { AnalyticsApis, ItemCategoryApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
+import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { cn } from "@/lib/utils";
+import {
+  AnalyticsAccessDenied,
+  AnalyticsAccessLoading,
+  AnalyticsFetchError,
+} from "@/components/analytics/analytics-access-states";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,16 +50,15 @@ function yyyyMmDd(d: Date) {
 }
 
 export default function AnalyticsMenuPage() {
-  const router = useRouter();
   const user = useAuth((s) => s.user);
-  const me = useAuth((s) => s.me);
+  const { ready, canViewAnalytics } = useAnalyticsViewAccess();
   const restaurant = useRestaurant((s) => s.restaurant);
 
   const restaurantId = restaurant?.id || user?.restaurant_id || null;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
-  const [authLoading, setAuthLoading] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [data, setData] = useState<MenuDetailsResponse | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
@@ -74,16 +78,6 @@ export default function AnalyticsMenuPage() {
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
   const skipNextAutoFetchRef = useRef(false);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-      if (!user && token) await me();
-      if (!user && !token) router.push("/");
-      setAuthLoading(false);
-    };
-    checkAuth();
-  }, [user, me, router]);
 
   const money = useMemo(() => {
     return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
@@ -112,6 +106,10 @@ export default function AnalyticsMenuPage() {
   };
 
   const fetchDetails = async (overrides?: { page?: number; category?: string; search?: string }) => {
+    if (!canViewAnalytics) {
+      setFetchError("You do not have permission to view analytics.");
+      return;
+    }
     if (!restaurantId) {
       toast.error("Restaurant not set");
       return;
@@ -122,6 +120,7 @@ export default function AnalyticsMenuPage() {
     const nextSearch = overrides?.search ?? search;
 
     setLoading(true);
+    setFetchError(null);
     try {
       const url = AnalyticsApis.menuDetails({
         restaurantId,
@@ -140,25 +139,31 @@ export default function AnalyticsMenuPage() {
       if (res.data?.status === "success") {
         setData(res.data.data);
       } else {
-        toast.error(res.data?.message || "Failed to load menu analytics details");
+        const message = res.data?.message || "Failed to load menu analytics details";
+        setFetchError(message);
+        toast.error(message);
       }
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail || e?.response?.data?.message || "Failed to load menu analytics details");
+      const message =
+        e?.response?.data?.detail ||
+        e?.response?.data?.message ||
+        "Failed to load menu analytics details";
+      setFetchError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!authLoading && restaurantId) {
-      if (skipNextAutoFetchRef.current) {
-        skipNextAutoFetchRef.current = false;
-        return;
-      }
-      fetchDetails();
+    if (!ready || !canViewAnalytics || !restaurantId) return;
+    if (skipNextAutoFetchRef.current) {
+      skipNextAutoFetchRef.current = false;
+      return;
     }
+    fetchDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, restaurantId, dateFrom, dateTo, sortBy, sortDir, pageSize, page, category]);
+  }, [ready, canViewAnalytics, restaurantId, dateFrom, dateTo, sortBy, sortDir, pageSize, page, category]);
 
   useEffect(() => {
     if (!restaurantId) return;
@@ -182,16 +187,14 @@ export default function AnalyticsMenuPage() {
     fetchDetails({ page: nextPage, category: resolvedCategory });
   };
 
-  if (authLoading) {
-    return (
-      <div className="h-64 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
-      </div>
-    );
-  }
+  if (!ready) return <AnalyticsAccessLoading />;
+  if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
     <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
+      {fetchError ? (
+        <AnalyticsFetchError message={fetchError} onRetry={() => fetchDetails()} />
+      ) : null}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/analytics">

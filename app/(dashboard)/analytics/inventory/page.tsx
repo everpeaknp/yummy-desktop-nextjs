@@ -2,13 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { AnalyticsApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
+import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import {
+  AnalyticsAccessDenied,
+  AnalyticsAccessLoading,
+  AnalyticsFetchError,
+} from "@/components/analytics/analytics-access-states";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,16 +50,15 @@ function yyyyMmDd(d: Date) {
 }
 
 export default function AnalyticsInventoryPage() {
-  const router = useRouter();
   const user = useAuth((s) => s.user);
-  const me = useAuth((s) => s.me);
+  const { ready, canViewAnalytics } = useAnalyticsViewAccess();
   const restaurant = useRestaurant((s) => s.restaurant);
 
   const restaurantId = restaurant?.id || user?.restaurant_id || null;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
-  const [authLoading, setAuthLoading] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [data, setData] = useState<InventoryDetailsResponse | null>(null);
 
   const today = useMemo(() => new Date(), []);
@@ -69,24 +73,19 @@ export default function AnalyticsInventoryPage() {
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-      if (!user && token) await me();
-      if (!user && !token) router.push("/");
-      setAuthLoading(false);
-    };
-    checkAuth();
-  }, [user, me, router]);
-
   const money = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }), []);
 
   const fetchDetails = async () => {
+    if (!canViewAnalytics) {
+      setFetchError("You do not have permission to view analytics.");
+      return;
+    }
     if (!restaurantId) {
       toast.error("Restaurant not set");
       return;
     }
     setLoading(true);
+    setFetchError(null);
     try {
       const url = AnalyticsApis.inventoryDetails({
         restaurantId,
@@ -102,30 +101,36 @@ export default function AnalyticsInventoryPage() {
       if (res.data?.status === "success") {
         setData(res.data.data);
       } else {
-        toast.error(res.data?.message || "Failed to load inventory analytics details");
+        const message = res.data?.message || "Failed to load inventory analytics details";
+        setFetchError(message);
+        toast.error(message);
       }
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail || e?.response?.data?.message || "Failed to load inventory analytics details");
+      const message =
+        e?.response?.data?.detail ||
+        e?.response?.data?.message ||
+        "Failed to load inventory analytics details";
+      setFetchError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!authLoading && restaurantId) fetchDetails();
+    if (!ready || !canViewAnalytics || !restaurantId) return;
+    fetchDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, restaurantId, dateFrom, dateTo, view, pageSize, page]);
+  }, [ready, canViewAnalytics, restaurantId, dateFrom, dateTo, view, pageSize, page]);
 
-  if (authLoading) {
-    return (
-      <div className="h-64 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
-      </div>
-    );
-  }
+  if (!ready) return <AnalyticsAccessLoading />;
+  if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
     <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
+      {fetchError ? (
+        <AnalyticsFetchError message={fetchError} onRetry={fetchDetails} />
+      ) : null}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/analytics">
@@ -144,21 +149,13 @@ export default function AnalyticsInventoryPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="border-border">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-muted-foreground">Purchase To Sales</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Expense To Sales</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">
             {data ? `${Number(data.purchase_to_sales_pct || 0).toFixed(2)}%` : "—"}
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-muted-foreground">Wastage</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {data ? `${Number(data.wastage_pct || 0).toFixed(2)}%` : "—"}
           </CardContent>
         </Card>
         <Card className="border-border">

@@ -49,6 +49,7 @@ import {
   Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 
 function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
   if (!input) return null;
@@ -218,6 +219,7 @@ export default function CheckoutPage() {
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const curr = restaurant?.currency || "Rs.";
+  const { canApplyDiscount, canProcessPayment } = usePosBillingPermissions();
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
   const [bill, setBill] = useState<OrderBill | null>(null);
@@ -434,6 +436,10 @@ export default function CheckoutPage() {
   };
 
   const handleStartFonepay = useCallback(async () => {
+    if (!canProcessPayment) {
+      setPayError("You do not have permission to process payments.");
+      return;
+    }
     if (!bill) return;
     const amount = parseFloat(payAmount || String(bill.balance_due || 0));
     if (!amount || amount <= 0) {
@@ -468,7 +474,7 @@ export default function CheckoutPage() {
     setPaymentOpen(false);
     setFonepayDialogOpen(true);
     toast.success("Fonepay QR generated. Ask customer to complete payment.");
-  }, [bill, orderId, orderMeta?.customer_id, payAmount, payReference, user?.restaurant_id]);
+  }, [bill, canProcessPayment, orderId, orderMeta?.customer_id, payAmount, payReference, user?.restaurant_id]);
 
   const buildPaymentInstrument = useCallback(
     (
@@ -575,6 +581,11 @@ export default function CheckoutPage() {
 
   // ── Add Payment ──────────────────────────────────
   const handleAddPayment = async () => {
+    if (!canProcessPayment) {
+      setPayError("You do not have permission to process payments.");
+      return;
+    }
+
     const amount = parseFloat(payAmount);
     if (!amount || amount <= 0) {
       setPayError("Enter a valid amount");
@@ -786,6 +797,11 @@ export default function CheckoutPage() {
 
   // ── Apply Discount ────────────────────────────────
   const handleApplyDiscount = async () => {
+    if (!canApplyDiscount) {
+      setDiscountError("You do not have permission to apply discounts.");
+      return;
+    }
+
     setDiscountSubmitting(true);
     setDiscountError(null);
     try {
@@ -829,6 +845,11 @@ export default function CheckoutPage() {
 
   // ── Remove Discount ───────────────────────────────
   const handleRemoveDiscount = async () => {
+    if (!canApplyDiscount) {
+      toast.error("You do not have permission to modify discounts.");
+      return;
+    }
+
     try {
       await apiClient.patch(OrderApis.updateOrder(orderId), {
         discount_code: "",
@@ -1059,7 +1080,7 @@ export default function CheckoutPage() {
                   <div className="flex items-center gap-1.5">
                     <Percent className="h-3.5 w-3.5 text-emerald-600" />
                     <span className="text-emerald-600 font-medium">Discount</span>
-                    {!bill.is_fully_paid && (
+                    {!bill.is_fully_paid && canApplyDiscount && (
                       <button onClick={handleRemoveDiscount} className="text-destructive hover:text-destructive/80 ml-1">
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -1203,19 +1224,21 @@ export default function CheckoutPage() {
                         </div>
                       </div>
 
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => {
-                          setLoyaltyError(null);
-                          setLoyaltyPoints("");
-                          setLoyaltyOpen(true);
-                        }}
-                        disabled={availableLoyaltyPoints <= 0}
-                      >
-                        Redeem Loyalty Points
-                      </Button>
+                      {canApplyDiscount && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            setLoyaltyError(null);
+                            setLoyaltyPoints("");
+                            setLoyaltyOpen(true);
+                          }}
+                          disabled={availableLoyaltyPoints <= 0}
+                        >
+                          Redeem Loyalty Points
+                        </Button>
+                      )}
                       {availableLoyaltyPoints <= 0 && (
                         <p className="text-xs text-muted-foreground">
                           No redeemable points available for this customer.
@@ -1230,26 +1253,34 @@ export default function CheckoutPage() {
                 </CardContent>
               </Card>
 
-              <Button
-                className="w-full h-12 text-base font-semibold shadow-lg gap-2"
-                onClick={() => {
-                  setPayAmount(bill.balance_due.toFixed(2));
-                  setPaymentOpen(true);
-                }}
-              >
-                <CreditCard className="h-4 w-4" />
-                Take Payment ({formatCurrency(bill.balance_due, curr)})
-              </Button>
+              {canProcessPayment ? (
+                <Button
+                  className="w-full h-12 text-base font-semibold shadow-lg gap-2"
+                  onClick={() => {
+                    setPayAmount(bill.balance_due.toFixed(2));
+                    setPaymentOpen(true);
+                  }}
+                >
+                  <CreditCard className="h-4 w-4" />
+                  Take Payment ({formatCurrency(bill.balance_due, curr)})
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center px-2">
+                  Payment processing requires the billing.payment.process permission.
+                </p>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => setDiscountOpen(true)}
-                >
-                  <Tag className="h-4 w-4" />
-                  {hasDiscount ? "Change Discount" : "Add Discount"}
-                </Button>
+                {canApplyDiscount && (
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => setDiscountOpen(true)}
+                  >
+                    <Tag className="h-4 w-4" />
+                    {hasDiscount ? "Change Discount" : "Add Discount"}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   className="gap-2"
@@ -1703,6 +1734,10 @@ export default function CheckoutPage() {
               type="button"
               disabled={loyaltySubmitting || !checkoutCustomerId}
               onClick={async () => {
+                if (!canApplyDiscount) {
+                  setLoyaltyError("You do not have permission to apply discounts.");
+                  return;
+                }
                 if (!checkoutCustomerId) {
                   setLoyaltyError("No customer attached to this order");
                   return;

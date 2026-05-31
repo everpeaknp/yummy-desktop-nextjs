@@ -29,6 +29,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { isPathAccessible } from "@/lib/role-permissions";
+import { useMemo } from "react";
 
 const sections = [
     {
@@ -251,6 +254,21 @@ const sections = [
 ];
 
 export default function ManagePage() {
+    const user = useAuth((s) => s.user);
+
+    const visibleSections = useMemo(
+        () =>
+            sections
+                .map((section) => ({
+                    ...section,
+                    items: section.items.filter((item) =>
+                        isPathAccessible(item.href, user)
+                    ),
+                }))
+                .filter((section) => section.items.length > 0),
+        [user?.permissions, user?.role, user?.roles, user?.primary_role]
+    );
+
     return (
         <div className="p-8 max-w-[1600px] mx-auto space-y-12 pb-24">
             <div className="space-y-1">
@@ -261,7 +279,7 @@ export default function ManagePage() {
             </div>
 
             <div className="space-y-12">
-                {sections.map((section) => (
+                {visibleSections.map((section) => (
                     <div key={section.title} className="space-y-5">
                         <h2 className="text-[11px] font-black tracking-[0.2em] text-muted-foreground/70 uppercase">
                             {section.title}
