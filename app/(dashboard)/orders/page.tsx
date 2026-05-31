@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
@@ -63,6 +63,32 @@ export default function OrdersPage() {
 
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+    const [historyLimit, setHistoryLimit] = useState(50);
+    const observerTarget = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (activeTab !== "history" || historyLoading) return;
+
+        const observer = new IntersectionObserver(
+            entries => {
+                if (entries[0].isIntersecting && historyOrders.length >= historyLimit) {
+                    setHistoryLimit(prev => prev + 50);
+                }
+            },
+            { threshold: 0.1 }
+        );
+
+        const currentTarget = observerTarget.current;
+        if (currentTarget) {
+            observer.observe(currentTarget);
+        }
+
+        return () => {
+            if (currentTarget) {
+                observer.unobserve(currentTarget);
+            }
+        };
+    }, [activeTab, historyLoading, historyOrders.length, historyLimit]);
 
     const user = useAuth(state => state.user);
     const me = useAuth(state => state.me);
@@ -153,7 +179,8 @@ export default function OrdersPage() {
             const params: any = {
                 restaurant_id: user.restaurant_id,
                 status: ['completed', 'canceled'],
-                timezone: timezone
+                timezone: timezone,
+                limit: historyLimit
             };
 
             if (dateRange?.from) {
@@ -193,7 +220,7 @@ export default function OrdersPage() {
         } finally {
             setHistoryLoading(false);
         }
-    }, [user?.restaurant_id, activeTab, dateRange, searchQuery]);
+    }, [user?.restaurant_id, activeTab, dateRange, searchQuery, historyLimit]);
 
     useEffect(() => {
         if (user?.restaurant_id) {
@@ -417,22 +444,29 @@ export default function OrdersPage() {
                         ) : historyOrders.length === 0 ? (
                             <EmptyState label="No order history found" icon={<History />} />
                         ) : (
-                            Object.entries(groupedHistory).map(([label, orders]) => (
-                                <div key={label} className="flex flex-col gap-4">
-                                    <h2 className="text-sm font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-3">
-                                        <span className="h-[1px] flex-1 bg-border/40" />
-                                        {label}
-                                        <span className="h-[1px] flex-1 bg-border/40" />
-                                    </h2>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                        {orders.map((order) => (
-                                            <div key={order.id} onClick={() => openReceipt(order.id)}>
-                                                <OrderCard order={order} />
-                                            </div>
-                                        ))}
+                            <div className="flex flex-col gap-8">
+                                {Object.entries(groupedHistory).map(([label, orders]) => (
+                                    <div key={label} className="flex flex-col gap-4">
+                                        <h2 className="text-sm font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-3">
+                                            <span className="h-[1px] flex-1 bg-border/40" />
+                                            {label}
+                                            <span className="h-[1px] flex-1 bg-border/40" />
+                                        </h2>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                            {orders.map((order) => (
+                                                <div key={order.id} onClick={() => openReceipt(order.id)}>
+                                                    <OrderCard order={order} />
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
+                                ))}
+                                <div ref={observerTarget} className="h-16 w-full flex items-center justify-center mt-6">
+                                    {historyOrders.length >= historyLimit && (
+                                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                    )}
                                 </div>
-                            ))
+                            </div>
                         )
                     )}
                 </div>
