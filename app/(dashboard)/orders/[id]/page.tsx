@@ -468,13 +468,11 @@ export default function OrderDetailPage() {
                 </div>
               )}
               
-              {!isFullyPaid && (
-                  <Link href={`/orders/${orderId}/checkout`}>
-                    <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold">
-                      <Receipt className="h-4 w-4" /> Checkout
-                    </Button>
-                  </Link>
-              )}
+              <Link href={`/orders/${orderId}/checkout`}>
+                <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold">
+                  <Receipt className="h-4 w-4" /> {isFullyPaid ? "Payments" : "Checkout"}
+                </Button>
+              </Link>
               
               {isFullyPaid && order.status !== 'completed' && (
                 <Button 
@@ -690,13 +688,11 @@ export default function OrderDetailPage() {
 
               {isEditable && (
                 <>
-                  {!isFullyPaid && (
-                      <Link href={`/orders/${orderId}/checkout`} className="block">
-                        <Button className="w-full gap-2 h-11 font-bold shadow-lg rounded-xl">
-                          <Receipt className="h-4 w-4" /> Checkout
-                        </Button>
-                      </Link>
-                  )}
+                  <Link href={`/orders/${orderId}/checkout`} className="block">
+                    <Button className="w-full gap-2 h-11 font-bold shadow-lg rounded-xl">
+                      <Receipt className="h-4 w-4" /> {isFullyPaid ? "Payments" : "Checkout"}
+                    </Button>
+                  </Link>
                   
                   {isFullyPaid && order.status !== 'completed' && (
                     <Button 

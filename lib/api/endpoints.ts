@@ -103,6 +103,7 @@ export const OrderApis = {
   addItemsToOrder: (id: number) => `/orders/${id}/items/bulk-add`,
   updateOrderItems: (id: number) => `/orders/${id}/items/bulk-update`,
   addPayment: (id: number) => `/orders/${id}/payments`,
+  updatePayment: (orderId: number, paymentId: number) => `/orders/${orderId}/payments/${paymentId}`,
   getOrderEvents: (id: number) => `/orders/${id}/events`,
   getOrderBill: (id: number) => `/orders/${id}/bill`,
   updateOrderStatus: (id: number) => `/orders/${id}/status`,

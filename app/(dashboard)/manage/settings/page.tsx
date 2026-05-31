@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { RestaurantApis } from "@/lib/api/endpoints";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import { 
     Dialog, 
     DialogContent, 
@@ -43,12 +44,13 @@ import { Badge } from "@/components/ui/badge";
 
 export default function RestaurantSettingsPage() {
     const user = useAuth(state => state.user);
+    const setGlobalRestaurant = useRestaurant(state => state.setRestaurant);
     const router = useRouter();
     const searchParams = useSearchParams();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     
-    const initialTab = searchParams.get("tab") || "payments";
+    const initialTab = searchParams?.get("tab") || "payments";
     const [activeTab, setActiveTab] = useState(initialTab);
     
     // FonePay State
@@ -71,6 +73,11 @@ export default function RestaurantSettingsPage() {
     const [qrForm, setQrForm] = useState({ name: "", payload: "" });
     const qrInputRef = useRef<HTMLInputElement>(null);
     const [isExtracting, setIsExtracting] = useState(false);
+    const [cardDialog, setCardDialog] = useState<{ open: boolean; index: number | null }>({
+        open: false,
+        index: null,
+    });
+    const [cardForm, setCardForm] = useState({ name: "", identifier: "" });
 
     useEffect(() => {
         const fetchData = async () => {
@@ -80,6 +87,7 @@ export default function RestaurantSettingsPage() {
 
                 if (res.data.status === "success") {
                     setRestaurant(res.data.data);
+                    setGlobalRestaurant(res.data.data);
                     if (res.data.data.fonepay_config) {
                         setFonepay({
                             ...res.data.data.fonepay_config,
@@ -97,7 +105,7 @@ export default function RestaurantSettingsPage() {
     }, [user?.restaurant_id]);
 
     useEffect(() => {
-        const tabParam = searchParams.get("tab");
+        const tabParam = searchParams?.get("tab");
         if (tabParam) {
             setActiveTab(tabParam);
         }
@@ -139,6 +147,7 @@ export default function RestaurantSettingsPage() {
             });
             if (res.data.status === "success") {
                 setRestaurant(res.data.data);
+                setGlobalRestaurant(res.data.data);
                 toast.success("QR configurations updated");
                 setQrDialog({ open: false, index: null });
                 setQrForm({ name: "", payload: "" });
@@ -199,10 +208,74 @@ export default function RestaurantSettingsPage() {
             });
             if (res.data.status === "success") {
                 setRestaurant(res.data.data);
+                setGlobalRestaurant(res.data.data);
                 toast.success("QR removed");
             }
         } catch (err) {
             toast.error("Failed to remove QR");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCardSave = async () => {
+        if (!user?.restaurant_id || !cardForm.name.trim()) return;
+
+        const currentCards = Array.isArray(restaurant?.payment_cards)
+            ? [...restaurant.payment_cards]
+            : [];
+        const payloadCard = {
+            name: cardForm.name.trim(),
+            identifier: cardForm.identifier.trim() || null,
+        };
+
+        if (cardDialog.index !== null) {
+            currentCards[cardDialog.index] = payloadCard;
+        } else {
+            if (currentCards.length >= 20) {
+                toast.error("Maximum 20 cards allowed");
+                return;
+            }
+            currentCards.push(payloadCard);
+        }
+
+        try {
+            setSaving(true);
+            const res = await apiClient.put(RestaurantApis.update(user.restaurant_id), {
+                payment_cards: currentCards,
+            });
+            if (res.data.status === "success") {
+                setRestaurant(res.data.data);
+                setGlobalRestaurant(res.data.data);
+                toast.success("Card configurations updated");
+                setCardDialog({ open: false, index: null });
+                setCardForm({ name: "", identifier: "" });
+            }
+        } catch (err) {
+            toast.error("Failed to update card configurations");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCardDelete = async (index: number) => {
+        if (!user?.restaurant_id || !Array.isArray(restaurant?.payment_cards)) return;
+
+        const currentCards = [...restaurant.payment_cards];
+        currentCards.splice(index, 1);
+
+        try {
+            setSaving(true);
+            const res = await apiClient.put(RestaurantApis.update(user.restaurant_id), {
+                payment_cards: currentCards,
+            });
+            if (res.data.status === "success") {
+                setRestaurant(res.data.data);
+                setGlobalRestaurant(res.data.data);
+                toast.success("Card removed");
+            }
+        } catch (err) {
+            toast.error("Failed to remove card");
         } finally {
             setSaving(false);
         }
@@ -394,6 +467,82 @@ export default function RestaurantSettingsPage() {
                             )}
                         </CardContent>
                     </Card>
+
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                            <div className="space-y-1">
+                                <CardTitle className="flex items-center gap-2">
+                                    <CreditCard className="w-5 h-5 text-primary" />
+                                    Card Accounts Manager
+                                </CardTitle>
+                                <CardDescription>
+                                    Add your card accounts/terminals to record exactly which card received payment.
+                                </CardDescription>
+                            </div>
+                            <Button
+                                size="sm"
+                                className="h-8"
+                                disabled={(restaurant?.payment_cards?.length || 0) >= 20}
+                                onClick={() => {
+                                    setCardForm({ name: "", identifier: "" });
+                                    setCardDialog({ open: true, index: null });
+                                }}
+                            >
+                                <Plus className="w-4 h-4 mr-1" />
+                                Add Card
+                            </Button>
+                        </CardHeader>
+                        <CardContent>
+                            {!restaurant?.payment_cards?.length ? (
+                                <div className="text-center py-8 border-2 border-dashed rounded-lg bg-muted/20">
+                                    <CreditCard className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                                    <p className="text-sm text-muted-foreground">No card accounts configured.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {restaurant.payment_cards.map((card: any, idx: number) => (
+                                        <div key={idx} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30 group">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded bg-primary/10 flex items-center justify-center text-primary">
+                                                    <CreditCard className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-medium">{card.name}</p>
+                                                    <p className="text-[10px] text-muted-foreground truncate max-w-[180px]">
+                                                        {card.identifier || "No identifier"}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-primary"
+                                                    onClick={() => {
+                                                        setCardForm({
+                                                            name: String(card?.name || ""),
+                                                            identifier: String(card?.identifier || ""),
+                                                        });
+                                                        setCardDialog({ open: true, index: idx });
+                                                    }}
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-destructive"
+                                                    onClick={() => handleCardDelete(idx)}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
                 </TabsContent>
 
 
@@ -525,6 +674,42 @@ export default function RestaurantSettingsPage() {
                         <Button onClick={handleQrSave} disabled={saving || !qrForm.name || !qrForm.payload}>
                             {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                             {qrDialog.index !== null ? "Update QR" : "Save QR"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={cardDialog.open} onOpenChange={(open) => setCardDialog({ ...cardDialog, open })}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{cardDialog.index !== null ? "Edit Card Configuration" : "Add New Card Configuration"}</DialogTitle>
+                        <DialogDescription>
+                            Set a clear card name and optional identifier (e.g., last 4 digits or terminal code).
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>Card Name</Label>
+                            <Input
+                                value={cardForm.name}
+                                onChange={(e) => setCardForm({ ...cardForm, name: e.target.value })}
+                                placeholder="e.g. Nabil Visa Terminal, NIC Debit POS"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Identifier (Optional)</Label>
+                            <Input
+                                value={cardForm.identifier}
+                                onChange={(e) => setCardForm({ ...cardForm, identifier: e.target.value })}
+                                placeholder="e.g. **** 4921 / Terminal-02"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCardDialog({ open: false, index: null })}>Cancel</Button>
+                        <Button onClick={handleCardSave} disabled={saving || !cardForm.name.trim()}>
+                            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                            {cardDialog.index !== null ? "Update Card" : "Save Card"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
