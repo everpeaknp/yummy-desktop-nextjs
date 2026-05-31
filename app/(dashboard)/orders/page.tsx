@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
@@ -215,8 +216,19 @@ export default function OrdersPage() {
                     .sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
                 setHistoryOrders(list);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error("Failed to fetch history:", err);
+            if (err.response?.status === 403) {
+                const detail = err.response?.data?.detail;
+                const maxDays = (detail && typeof detail === 'object' && detail.max_days) ? detail.max_days : 7;
+                toast.warning(`Your plan has lookback limits. Auto-adjusting view to the last ${maxDays} days.`);
+                setDateRange({
+                    from: subDays(new Date(), maxDays - 1),
+                    to: new Date()
+                });
+            } else {
+                toast.error("Failed to load history");
+            }
         } finally {
             setHistoryLoading(false);
         }
