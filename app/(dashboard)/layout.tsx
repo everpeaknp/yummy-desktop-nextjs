@@ -7,6 +7,7 @@ import { GlobalKotPrinter } from "@/components/receipts/global-kot-printer";
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { usePermissionsSync } from "@/hooks/use-permissions-sync";
 
 export default function DashboardLayout({
   children,
@@ -23,6 +24,8 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname() || "";
   const [mounted, setMounted] = useState(false);
+
+  usePermissionsSync();
 
   // Keep the server render and the first client render identical to prevent hydration mismatches.
   useEffect(() => {

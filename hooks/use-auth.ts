@@ -24,6 +24,8 @@ interface AuthState {
   logout: () => void;
   me: () => Promise<void>;
   refreshSession: () => Promise<void>;
+  /** Reload permissions (and profile fields) from /users/me/profile without rotating tokens. */
+  syncUserProfile: () => Promise<void>;
 }
 
 import apiClient from '@/lib/api-client';
@@ -74,6 +76,46 @@ export const useAuth = create<AuthState>()(
         } catch (error) {
           console.warn('[useAuth] refreshSession failed', error);
           await get().me();
+        }
+      },
+      syncUserProfile: async () => {
+        const token =
+          typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+        if (!token) return;
+
+        try {
+          const response = await apiClient.get(AuthApis.meProfile);
+          if (response.data.status !== 'success') return;
+
+          const p = response.data.data;
+          const current = get().user;
+          if (!current) {
+            await get().me();
+            return;
+          }
+
+          const roles: string[] = Array.isArray(p.roles)
+            ? p.roles
+            : p.role
+              ? [p.role]
+              : current.roles;
+
+          set({
+            user: {
+              ...current,
+              id: p.id ?? current.id,
+              email: p.email ?? current.email,
+              full_name: p.name || p.full_name || current.full_name,
+              role: p.role || current.role,
+              roles,
+              primary_role: p.primary_role || p.role || current.primary_role,
+              restaurant_id: p.restaurant_id ?? current.restaurant_id,
+              currency: p.currency ?? current.currency,
+              permissions: Array.isArray(p.permissions) ? p.permissions : [],
+            },
+          });
+        } catch (error) {
+          console.warn('[useAuth] syncUserProfile failed', error);
         }
       },
       me: async () => {

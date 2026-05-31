@@ -269,6 +269,10 @@ export default function StaffDetailPage() {
       if (response.data.status === "success") {
         setStaff(response.data.data);
       }
+
+      if (user && String(user.id) === String(id)) {
+        await useAuth.getState().syncUserProfile();
+      }
     } catch (err) {
       console.error("Failed to update permissions:", err);
       toast.error("Failed to update permissions");

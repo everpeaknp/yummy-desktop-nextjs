@@ -14,6 +14,9 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || "";
   const router = useRouter();
   const user = useAuth((state) => state.user);
+  const userPermissionsKey = useAuth((state) =>
+    state.user?.permissions?.slice().sort().join("|") ?? ""
+  );
   const token = useAuth((state) => state.token);
   const me = useAuth((state) => state.me);
   const logout = useAuth((state) => state.logout);
@@ -107,7 +110,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [pathname, user, token, router, me]);
+  }, [pathname, user, userPermissionsKey, token, router, setRedirecting]);
 
   if (status === "loading") {
     return (

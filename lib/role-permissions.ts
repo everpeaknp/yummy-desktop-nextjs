@@ -198,6 +198,14 @@ export type PermissionKey =
  */
 export const ANALYTICS_VIEW_PERMISSION = "reports.analytics.view" as const;
 
+/** Canonical keys used for page/sidebar gating (must match backend catalog). */
+export const CANONICAL_ROUTE_GATES = {
+  analytics: ANALYTICS_VIEW_PERMISSION,
+  reservations: "tables.reservation.view",
+  income: "finance.income.view",
+  inventory: "inventory.view",
+} as const satisfies Record<string, PermissionKey>;
+
 function isAnalyticsGatedPath(pathname: string): boolean {
   return (
     pathname === "/analytics" ||
