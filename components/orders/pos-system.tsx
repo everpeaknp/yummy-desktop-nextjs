@@ -18,6 +18,7 @@ import Image from "next/image";
 import { ItemCustomizationDialog } from "./item-customization-dialog";
 import { KotApis, TaxConfigApis } from "@/lib/api/endpoints";
 import { toast } from "sonner";
+import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 
 
 interface MenuItem {
@@ -280,6 +281,7 @@ export default function POSSystem({
   const [deliveryAddress, setDeliveryAddress] = useState("");
 
   const user = useAuth(state => state.user);
+  const { canVoidItem } = usePosBillingPermissions();
   const restaurant = useRestaurant((s) => s.restaurant);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -426,17 +428,28 @@ export default function POSSystem({
 
 
   const updateQuantity = (cartItemId: number, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === cartItemId) {
-        // Prevent deleting fixed folio items (room charges) via '-' button
-        if (item.revenue_category === 'rent' && item.quantity + delta < 1) {
-          toast.error("Fixed folio items cannot be removed from here. Use room management if needed.");
-          return item;
-        }
-        return { ...item, quantity: Math.max(0, item.quantity + delta) };
+    const isEditingExistingOrder = Boolean(orderId && orderId !== "create");
+
+    setCart(prev => {
+      const target = prev.find((item) => item.id === cartItemId);
+      if (!target) return prev;
+
+      if (isEditingExistingOrder && delta < 0 && target.quantity + delta <= 0 && !canVoidItem) {
+        toast.error("You do not have permission to void order items.");
+        return prev;
       }
-      return item;
-    }).filter(item => item.quantity > 0));
+
+      return prev.map(item => {
+        if (item.id === cartItemId) {
+          if (item.revenue_category === 'rent' && item.quantity + delta < 1) {
+            toast.error("Fixed folio items cannot be removed from here. Use room management if needed.");
+            return item;
+          }
+          return { ...item, quantity: Math.max(0, item.quantity + delta) };
+        }
+        return item;
+      }).filter(item => item.quantity > 0);
+    });
   };
 
   const handlePlaceOrder = async () => {
