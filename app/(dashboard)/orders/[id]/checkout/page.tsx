@@ -220,7 +220,7 @@ export default function CheckoutPage() {
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const curr = restaurant?.currency || "Rs.";
-  const { canApplyDiscount, canProcessPayment } = usePosBillingPermissions();
+  const { canApplyDiscount, canProcessPayment, canEditPayment, canDeletePayment } = usePosBillingPermissions();
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
   const [bill, setBill] = useState<OrderBill | null>(null);
@@ -515,6 +515,10 @@ export default function CheckoutPage() {
 
   const openEditPaymentDialog = useCallback(
     (payment: BillPayment) => {
+      if (!canEditPayment) {
+        toast.error("You do not have permission to edit payments.");
+        return;
+      }
       const instrument = readPaymentInstrument(payment);
       let nextQrIndex = 0;
       let nextCardIndex = 0;
@@ -532,11 +536,15 @@ export default function CheckoutPage() {
       setEditPayError(null);
       setEditPaymentOpen(true);
     },
-    [staticPaymentCards, staticPaymentQrs],
+    [canEditPayment, staticPaymentCards, staticPaymentQrs],
   );
 
   const handleUpdatePayment = useCallback(async () => {
     if (!editingPayment) return;
+    if (!canEditPayment) {
+      setEditPayError("You do not have permission to edit payments.");
+      return;
+    }
 
     if (editPayMethod === "digital" && staticPaymentQrs.length === 0) {
       setEditPayError("No static QR configured. Add one in Manage / Settings / Payments & POS.");
@@ -579,11 +587,12 @@ export default function CheckoutPage() {
     orderId,
     staticPaymentCards.length,
     staticPaymentQrs.length,
+    canEditPayment,
   ]);
 
   const handleRemovePayment = useCallback(async (payment: BillPayment) => {
-    if (!canProcessPayment) {
-      toast.error("You do not have permission to process payments.");
+    if (!canDeletePayment) {
+      toast.error("You do not have permission to remove payments.");
       return;
     }
     if (removingPaymentId !== null) return;
@@ -611,7 +620,7 @@ export default function CheckoutPage() {
       setRemovingPaymentId(null);
     }
   }, [
-    canProcessPayment,
+    canDeletePayment,
     curr,
     fetchBill,
     fetchContext,
@@ -1194,17 +1203,19 @@ export default function CheckoutPage() {
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="font-semibold tabular-nums">{formatCurrency(p.amount, curr)}</span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-2 text-[11px]"
-                          disabled={isRemoving}
-                          onClick={() => openEditPaymentDialog(p)}
-                        >
-                          Edit
-                        </Button>
-                        {canProcessPayment && (
+                        {canEditPayment && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[11px]"
+                            disabled={isRemoving}
+                            onClick={() => openEditPaymentDialog(p)}
+                          >
+                            Edit
+                          </Button>
+                        )}
+                        {canDeletePayment && (
                           <Button
                             type="button"
                             variant="outline"

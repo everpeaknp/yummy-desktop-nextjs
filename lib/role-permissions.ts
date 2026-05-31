@@ -117,6 +117,8 @@ export type PermissionKey =
   // Billing Module
   | "billing.view"
   | "billing.payment.process"
+  | "billing.payment.edit"
+  | "billing.payment.delete"
   | "billing.payment.split"
   | "billing.refund.process"
   | "billing.refund.approve"
