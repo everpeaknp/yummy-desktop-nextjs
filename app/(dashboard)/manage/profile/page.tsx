@@ -30,6 +30,20 @@ import { useCallback, useRef } from "react";
 import { ImageService } from "@/services/image-service";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
+function toHourMinute(value?: string | null) {
+    if (!value) return "00:00";
+    const match = String(value).trim().match(/^(\d{1,2}):(\d{1,2})/);
+    if (!match) return "00:00";
+    const hour = Math.max(0, Math.min(23, Number(match[1]) || 0));
+    const minute = Math.max(0, Math.min(59, Number(match[2]) || 0));
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function toApiBusinessDayTime(value?: string | null) {
+    const normalized = toHourMinute(value);
+    return `${normalized}:00`;
+}
+
 export default function RestaurantProfilePage() {
     const user = useAuth(state => state.user);
     const router = useRouter();
@@ -49,6 +63,7 @@ export default function RestaurantProfilePage() {
         profile_picture: "",
         cover_photo: "",
         timezone: "UTC",
+        business_day_start_time: "00:00",
         latitude: "",
         longitude: "",
         local_pos_ip: "",
@@ -73,6 +88,7 @@ export default function RestaurantProfilePage() {
                         profile_picture: r.profile_picture || "",
                         cover_photo: r.cover_photo || "",
                         timezone: r.timezone || "UTC",
+                        business_day_start_time: toHourMinute(r.business_day_start_time),
                         latitude: r.latitude || "",
                         longitude: r.longitude || "",
                         local_pos_ip: r.local_pos_ip || "",
@@ -140,7 +156,11 @@ export default function RestaurantProfilePage() {
 
         setSaving(true);
         try {
-            const res = await apiClient.put(RestaurantApis.update(user.restaurant_id), formData);
+            const payload = {
+                ...formData,
+                business_day_start_time: toApiBusinessDayTime(formData.business_day_start_time),
+            };
+            const res = await apiClient.put(RestaurantApis.update(user.restaurant_id), payload);
             console.log("Update Response:", res.data);
             if (res.data.status === "success") {
                 toast.success("Profile updated successfully");
@@ -340,6 +360,24 @@ export default function RestaurantProfilePage() {
                                     placeholder="e.g. Asia/Kathmandu"
                                     required
                                 />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="business_day_start_time">Business Day Starts At</Label>
+                                <Input
+                                    id="business_day_start_time"
+                                    type="time"
+                                    step={60}
+                                    value={formData.business_day_start_time}
+                                    onChange={(e) =>
+                                        setFormData((p) => ({
+                                            ...p,
+                                            business_day_start_time: toHourMinute(e.target.value),
+                                        }))
+                                    }
+                                />
+                                <p className="text-[11px] text-muted-foreground">
+                                    Orders before this time are counted toward the previous business day.
+                                </p>
                             </div>
                         </div>
 

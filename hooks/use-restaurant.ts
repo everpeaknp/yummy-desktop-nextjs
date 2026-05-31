@@ -7,6 +7,8 @@ interface Restaurant {
   name: string;
   address: string;
   phone: string;
+  timezone?: string;
+  business_day_start_time?: string;
   profile_picture: string | null;
   cover_photo: string | null;
   currency: string;

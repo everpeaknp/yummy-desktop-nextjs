@@ -231,6 +231,7 @@ export default function CheckoutPage() {
   const [discountType, setDiscountType] = useState<"code" | "manual">("code");
   const [discountCode, setDiscountCode] = useState("");
   const [manualDiscountAmount, setManualDiscountAmount] = useState("");
+  const [manualDiscountPercent, setManualDiscountPercent] = useState("");
   const [discountSubmitting, setDiscountSubmitting] = useState(false);
   const [discountError, setDiscountError] = useState<string | null>(null);
   const [loyaltyOpen, setLoyaltyOpen] = useState(false);
@@ -605,19 +606,26 @@ export default function CheckoutPage() {
           discount_code: discountCode.trim(),
         });
       } else {
+        const dueAmountForManualDiscount = Math.max(0, Number(bill?.balance_due || 0));
         const amt = parseFloat(manualDiscountAmount);
         if (!amt || amt <= 0) {
           setDiscountError("Enter a valid amount");
           setDiscountSubmitting(false);
           return;
         }
+        if (dueAmountForManualDiscount > 0 && amt > dueAmountForManualDiscount) {
+          setDiscountError("Discount cannot exceed balance due");
+          setDiscountSubmitting(false);
+          return;
+        }
         await apiClient.patch(OrderApis.updateOrder(orderId), {
-          manual_discount_amount: amt,
+          manual_discount_amount: Number(amt.toFixed(2)),
         });
       }
       setDiscountOpen(false);
       setDiscountCode("");
       setManualDiscountAmount("");
+      setManualDiscountPercent("");
       await fetchBill();
     } catch (err: any) {
       setDiscountError(err?.response?.data?.detail || "Failed to apply discount");
@@ -671,6 +679,7 @@ export default function CheckoutPage() {
     Number((bill.subtotal + bill.tax_total + bill.service_charge - bill.grand_total).toFixed(2))
   );
   const hasDiscount = computedDiscount > 0;
+  const dueAmountForManualDiscount = Math.max(0, Number(bill.balance_due || 0));
   const checkoutCustomerId = orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
   const checkoutCustomer = checkoutCustomerId
     ? customers.find((c: any) => Number(c?.id) === Number(checkoutCustomerId))
@@ -1569,19 +1578,71 @@ export default function CheckoutPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                <Label htmlFor="manual-discount">Discount Amount</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">{curr}</span>
-                  <Input
-                    id="manual-discount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={manualDiscountAmount}
-                    onChange={(e) => setManualDiscountAmount(e.target.value)}
-                    className="pl-12"
-                    autoFocus
-                  />
+                <div className="text-xs text-muted-foreground">
+                  Balance due: <span className="font-semibold text-foreground">{formatCurrency(dueAmountForManualDiscount, curr)}</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-discount">Discount Amount</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">{curr}</span>
+                      <Input
+                        id="manual-discount"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={manualDiscountAmount}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setManualDiscountAmount(value);
+                          const trimmed = value.trim();
+                          if (!trimmed) {
+                            setManualDiscountPercent("");
+                            return;
+                          }
+                          const amount = parseFloat(trimmed);
+                          if (!Number.isFinite(amount) || amount < 0 || dueAmountForManualDiscount <= 0) {
+                            setManualDiscountPercent("");
+                            return;
+                          }
+                          const pct = (amount / dueAmountForManualDiscount) * 100;
+                          setManualDiscountPercent(pct.toFixed(2));
+                        }}
+                        className="pl-12"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-discount-percent">Discount Percent (%)</Label>
+                    <div className="relative">
+                      <Input
+                        id="manual-discount-percent"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={manualDiscountPercent}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setManualDiscountPercent(value);
+                          const trimmed = value.trim();
+                          if (!trimmed) {
+                            setManualDiscountAmount("");
+                            return;
+                          }
+                          const pct = parseFloat(trimmed);
+                          if (!Number.isFinite(pct) || pct < 0 || dueAmountForManualDiscount <= 0) {
+                            setManualDiscountAmount("");
+                            return;
+                          }
+                          const amount = dueAmountForManualDiscount * (pct / 100);
+                          setManualDiscountAmount(amount.toFixed(2));
+                        }}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">%</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

@@ -14,17 +14,31 @@ interface DayCloseModalProps {
   isOpen: boolean;
   onClose: () => void;
   restaurantId: number;
-  businessDate?: string; // YYYY-MM-DD (defaults to today)
+  businessDate?: string; // YYYY-MM-DD (optional explicit override)
 }
 
 type Step = 'health-check' | 'financial-snapshot' | 'cash-reconciliation' | 'success';
+
+function todayDateStringLocal() {
+  return format(new Date(), "yyyy-MM-dd");
+}
+
+function normalizeDateString(value?: string | null) {
+  if (!value) return null;
+  const match = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
+}
 
 export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: DayCloseModalProps) {
   const [currentStep, setCurrentStep] = useState<Step>('health-check');
   const [snapshotData, setSnapshotData] = useState<any>(null);
   const [dayCloseId, setDayCloseId] = useState<number | null>(null);
   const [confirmedData, setConfirmedData] = useState<any>(null);
-  const dateStr = businessDate ?? new Date().toISOString().split("T")[0];
+  const [resolvedBusinessDate, setResolvedBusinessDate] = useState<string>(
+    normalizeDateString(businessDate) ?? todayDateStringLocal(),
+  );
+  const [resolvingBusinessDate, setResolvingBusinessDate] = useState(false);
+  const dateStr = resolvedBusinessDate;
   const dateObj = new Date(dateStr + "T00:00:00");
 
   // Reset state on close
@@ -34,6 +48,58 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
     setDayCloseId(null);
     setConfirmedData(null);
     onClose();
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const fallbackDate = normalizeDateString(businessDate) ?? todayDateStringLocal();
+
+    // Manual override / history path: trust explicit date.
+    if (businessDate) {
+      setResolvedBusinessDate(fallbackDate);
+      setResolvingBusinessDate(false);
+      return;
+    }
+
+    // Default path: resolve business date from backend.
+    let cancelled = false;
+    const resolveCurrentBusinessDate = async () => {
+      setResolvingBusinessDate(true);
+      try {
+        const res = await apiClient.get(DayCloseApis.current, {
+          params: { restaurant_id: restaurantId },
+        });
+        const fromServer = normalizeDateString(res?.data?.data?.business_date);
+        if (!cancelled) {
+          setResolvedBusinessDate(fromServer ?? fallbackDate);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setResolvedBusinessDate(fallbackDate);
+        }
+      } finally {
+        if (!cancelled) {
+          setResolvingBusinessDate(false);
+        }
+      }
+    };
+
+    resolveCurrentBusinessDate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, restaurantId, businessDate]);
+
+  const handleDateOverride = (value: string) => {
+    if (!value) return;
+    if (value === resolvedBusinessDate) return;
+    setResolvedBusinessDate(value);
+    setCurrentStep("health-check");
+    setSnapshotData(null);
+    setDayCloseId(null);
+    setConfirmedData(null);
   };
 
   const steps = [
@@ -59,6 +125,9 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
               <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-bold">End of Day Close</h2>
+                    <p className="text-muted-foreground text-sm min-h-[20px]">
+                        {resolvingBusinessDate ? "Resolving current business date..." : null}
+                    </p>
                     <p className="text-muted-foreground text-sm">
                         {format(dateObj, 'MMMM do, yyyy')}
                     </p>
@@ -66,6 +135,22 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
                   <div className="px-3 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-full text-xs font-semibold border border-orange-200 dark:border-orange-900/50">
                       Step {currentStepIndex + 1} of 4
                   </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <label
+                  htmlFor="day-close-business-date"
+                  className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Business Date
+                </label>
+                <input
+                  id="day-close-business-date"
+                  type="date"
+                  className="h-9 w-full sm:w-auto rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"
+                  value={resolvedBusinessDate}
+                  onChange={(e) => handleDateOverride(e.target.value)}
+                />
               </div>
 
               {/* Progress Bar */}

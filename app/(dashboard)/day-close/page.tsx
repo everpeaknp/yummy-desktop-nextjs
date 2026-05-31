@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,14 +8,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import { DayCloseHistory } from "@/components/analytics/day-close-history";
 import { Calendar, CheckCircle2 } from "lucide-react";
-import { format } from "date-fns";
 
 export default function DayClosePage() {
   const user = useAuth((s) => s.user);
   const restaurantId = user?.restaurant_id ?? undefined;
   const [closeOpen, setCloseOpen] = useState(false);
-
-  const todayLabel = useMemo(() => format(new Date(), "MMMM do, yyyy"), []);
 
   return (
     <div className="flex flex-col gap-6 max-w-7xl mx-auto p-6">
@@ -26,7 +23,7 @@ export default function DayClosePage() {
               <h1 className="text-3xl font-black tracking-tight">Day Close</h1>
               <div className="flex items-center gap-2 text-muted-foreground/80">
                 <Calendar className="w-4 h-4" />
-                <p className="text-sm font-semibold">{todayLabel}</p>
+                <p className="text-sm font-semibold">Business date is resolved from server settings</p>
               </div>
               <p className="text-sm text-muted-foreground max-w-2xl">
                 Close your business day, export reports, and review corrections with a full audit trail.
