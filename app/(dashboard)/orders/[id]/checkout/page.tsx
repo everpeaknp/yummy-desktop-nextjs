@@ -47,6 +47,7 @@ import {
   User,
   QrCode,
   Award,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
@@ -252,6 +253,7 @@ export default function CheckoutPage() {
   const [editPayError, setEditPayError] = useState<string | null>(null);
   const [editSelectedStaticQrIndex, setEditSelectedStaticQrIndex] = useState(0);
   const [editSelectedCardIndex, setEditSelectedCardIndex] = useState(0);
+  const [removingPaymentId, setRemovingPaymentId] = useState<number | null>(null);
   const [shouldAutoRedirectAfterPayment, setShouldAutoRedirectAfterPayment] = useState(false);
 
   // Customer selection for Credit
@@ -577,6 +579,45 @@ export default function CheckoutPage() {
     orderId,
     staticPaymentCards.length,
     staticPaymentQrs.length,
+  ]);
+
+  const handleRemovePayment = useCallback(async (payment: BillPayment) => {
+    if (!canProcessPayment) {
+      toast.error("You do not have permission to process payments.");
+      return;
+    }
+    if (removingPaymentId !== null) return;
+
+    const amount = Number(payment.amount || 0);
+    if (amount < 0) {
+      toast.error("Refund payments cannot be removed.");
+      return;
+    }
+
+    const shouldRemove = window.confirm(
+      `Remove this payment?\n\nMethod: ${String(payment.method || "").toUpperCase()}\nAmount: ${formatCurrency(Math.abs(amount), curr)}`
+    );
+    if (!shouldRemove) return;
+
+    setRemovingPaymentId(payment.id);
+    try {
+      await apiClient.delete(OrderApis.removePayment(orderId, payment.id));
+      await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
+      setShouldAutoRedirectAfterPayment(false);
+      toast.success("Payment removed");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to remove payment");
+    } finally {
+      setRemovingPaymentId(null);
+    }
+  }, [
+    canProcessPayment,
+    curr,
+    fetchBill,
+    fetchContext,
+    fetchCustomers,
+    orderId,
+    removingPaymentId,
   ]);
 
   // ── Add Payment ──────────────────────────────────
@@ -1126,6 +1167,8 @@ export default function CheckoutPage() {
                   const method = PAYMENT_METHODS.find((m) => m.value === p.method);
                   const Icon = method?.icon || Banknote;
                   const instrument = readPaymentInstrument(p);
+                  const isRemoving = removingPaymentId === p.id;
+                  const canRemovePayment = Number(p.amount || 0) >= 0;
                   return (
                     <div key={p.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
                       <div className="flex items-center gap-3">
@@ -1156,10 +1199,28 @@ export default function CheckoutPage() {
                           variant="outline"
                           size="sm"
                           className="h-7 px-2 text-[11px]"
+                          disabled={isRemoving}
                           onClick={() => openEditPaymentDialog(p)}
                         >
                           Edit
                         </Button>
+                        {canProcessPayment && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[11px] text-destructive hover:text-destructive"
+                            disabled={isRemoving || !canRemovePayment}
+                            onClick={() => handleRemovePayment(p)}
+                          >
+                            {isRemoving ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                            <span className="ml-1">Remove</span>
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );

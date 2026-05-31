@@ -56,7 +56,9 @@ export function mapBreakdownToPie(
   } else if (type === "source") {
     list = (breakdown.income_by_source as typeof list) || [];
   } else if (type === "payment") {
-    list = (breakdown.income_by_payment_method as typeof list) || [];
+    const byInstrument = (breakdown.income_by_payment_instrument as typeof list) || [];
+    const byMethod = (breakdown.income_by_payment_method as typeof list) || [];
+    list = byInstrument.length > 0 ? byInstrument : byMethod;
   }
 
   return list.map((item) => ({
@@ -72,8 +74,8 @@ export function breakdownPieCopy(type: BreakdownTab): {
   switch (type) {
     case "payment":
       return {
-        title: "Sales by Payment Method",
-        description: "Revenue split by payment method in the selected period.",
+        title: "Sales by Payment Instrument",
+        description: "Revenue split by card/QR instrument in the selected period.",
       };
     case "category":
       return {
