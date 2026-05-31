@@ -31,6 +31,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   normalizeRolesForUser,
   getSidebarItemsForRoles,
+  hasPermission,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
@@ -62,18 +63,38 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/premium": Zap,
 };
 
-// Hotel-specific sidebar items (always shown for admin/manager in hotel mode)
-const HOTEL_SIDEBAR_ITEMS: SidebarItem[] = [
+const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
   { title: "Overview",        href: "/rooms",           icon: BedDouble,     section: "Hotel" },
-  { title: "Orders",          href: "/orders",   icon: ClipboardList, section: "Hotel" },
+  { title: "Orders",          href: "/orders",          icon: ClipboardList, section: "Hotel" },
   { title: "New Order",       href: "/orders/new",      icon: Plus,          section: "Hotel" },
   { title: "Check In/Out",    href: "/rooms/checkin",   icon: KeyRound,      section: "Hotel" },
   { title: "Reservations",    href: "/reservations",    icon: Calendar,      section: "Hotel" },
-  { title: "Analytics",       href: "/analytics",       icon: BarChart3,     section: "Hotel" },
   { title: "Finance",         href: "/finance/income",  icon: CreditCard,    section: "Hotel" },
   { title: "Customers",       href: "/customers",       icon: Users,         section: "Hotel" },
   { title: "Manage",          href: "/manage",          icon: Settings,      section: "Hotel" },
 ];
+
+function getHotelSidebarItems(
+  user: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null
+): SidebarItem[] {
+  if (!hasPermission(user, "reports.analytics.view")) {
+    return HOTEL_SIDEBAR_BASE;
+  }
+
+  const financeIndex = HOTEL_SIDEBAR_BASE.findIndex((item) => item.href === "/finance/income");
+  const analyticsItem: SidebarItem = {
+    title: "Analytics",
+    href: "/analytics",
+    icon: BarChart3,
+    section: "Hotel",
+  };
+
+  return [
+    ...HOTEL_SIDEBAR_BASE.slice(0, financeIndex),
+    analyticsItem,
+    ...HOTEL_SIDEBAR_BASE.slice(financeIndex),
+  ];
+}
 
 const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
   { title: "Overview",     href: "/rooms",          icon: BedDouble,     section: "Hotel" },
@@ -96,7 +117,7 @@ export function useSidebarItems(): SidebarItem[] {
 
     // --- HOTEL MODE ---
     if (selectedModule === "hotel" && restaurant?.hotel_enabled) {
-      if (isAdminOrManager) return HOTEL_SIDEBAR_ITEMS;
+      if (isAdminOrManager) return getHotelSidebarItems(user);
       if (isCashier) return HOTEL_CASHIER_ITEMS;
       // Other staff in hotel mode see basic view
       return [{ title: "Rooms", href: "/rooms", icon: Bed }];

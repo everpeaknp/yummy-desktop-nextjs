@@ -2,13 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { AnalyticsApis } from "@/lib/api/endpoints";
-import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
+import {
+  AnalyticsAccessDenied,
+  AnalyticsAccessLoading,
+  AnalyticsFetchError,
+} from "@/components/analytics/analytics-access-states";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,16 +32,14 @@ function yyyyMmDd(d: Date) {
 }
 
 export default function AnalyticsComparePage() {
-  const router = useRouter();
-  const user = useAuth((s) => s.user);
-  const me = useAuth((s) => s.me);
+  const { user, ready, canViewAnalytics } = useAnalyticsViewAccess();
   const restaurant = useRestaurant((s) => s.restaurant);
 
   const restaurantId = restaurant?.id || user?.restaurant_id || null;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
-  const [authLoading, setAuthLoading] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [data, setData] = useState<ComparisonResponse | null>(null);
 
   const today = useMemo(() => new Date(), []);
@@ -52,24 +54,19 @@ export default function AnalyticsComparePage() {
   const showBusinessLine = Boolean(restaurant?.hotel_enabled && restaurant?.restaurant_enabled);
   const [businessLine, setBusinessLine] = useState<string>("all");
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-      if (!user && token) await me();
-      if (!user && !token) router.push("/");
-      setAuthLoading(false);
-    };
-    checkAuth();
-  }, [user, me, router]);
-
   const money = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }), []);
 
   const fetchCompare = async () => {
+    if (!canViewAnalytics) {
+      setFetchError("You do not have permission to view analytics.");
+      return;
+    }
     if (!restaurantId) {
       toast.error("Restaurant not set");
       return;
     }
     setLoading(true);
+    setFetchError(null);
     try {
       const url = AnalyticsApis.compare({
         restaurantId,
@@ -83,40 +80,54 @@ export default function AnalyticsComparePage() {
       if (res.data?.status === "success") {
         setData(res.data.data);
       } else {
-        toast.error(res.data?.message || "Failed to load comparison");
+        const message = res.data?.message || "Failed to load comparison";
+        setFetchError(message);
+        toast.error(message);
       }
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail || e?.response?.data?.message || "Failed to load comparison");
+      const message =
+        e?.response?.data?.detail ||
+        e?.response?.data?.message ||
+        "Failed to load comparison";
+      setFetchError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!authLoading && restaurantId) fetchCompare();
+    if (!ready || !canViewAnalytics || !restaurantId) return;
+    fetchCompare();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, restaurantId, dateFrom, dateTo, station, businessLine]);
+  }, [ready, canViewAnalytics, restaurantId, dateFrom, dateTo, station, businessLine]);
 
   const Delta = ({ value }: { value: number }) => {
-    const v = Number(value || 0);
-    const positive = v >= 0;
+    const positive = value >= 0;
     return (
-      <Badge variant={positive ? "success" : "destructive"}>
-        {positive ? "+" : ""}{v.toFixed(2)}%
+      <Badge
+        variant="outline"
+        className={positive ? "text-emerald-700 border-emerald-200" : "text-red-700 border-red-200"}
+      >
+        {positive ? "+" : ""}
+        {value.toFixed(1)}%
       </Badge>
     );
   };
 
-  if (authLoading) {
-    return (
-      <div className="h-64 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
-      </div>
-    );
-  }
+  if (!ready) return <AnalyticsAccessLoading />;
+  if (!canViewAnalytics) return <AnalyticsAccessDenied />;
+
+  const current = data?.current;
+  const previous = data?.previous;
+  const deltas = data?.deltas;
 
   return (
     <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
+      {fetchError ? (
+        <AnalyticsFetchError message={fetchError} onRetry={fetchCompare} />
+      ) : null}
+
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/analytics">
@@ -126,7 +137,7 @@ export default function AnalyticsComparePage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Period Comparison</h1>
-            <p className="text-muted-foreground">Compare this range to the previous period.</p>
+            <p className="text-muted-foreground">Compare income, expense, and profit vs the prior period.</p>
           </div>
         </div>
         <Button variant="outline" onClick={fetchCompare} disabled={loading}>
@@ -139,17 +150,16 @@ export default function AnalyticsComparePage() {
         <CardHeader>
           <CardTitle className="text-base">Filters</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-4">
-          <div className="space-y-2 md:col-span-1">
+        <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="space-y-2">
             <Label>From</Label>
             <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           </div>
-          <div className="space-y-2 md:col-span-1">
+          <div className="space-y-2">
             <Label>To</Label>
             <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </div>
-
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-2">
             <Label>Station</Label>
             <Select value={station} onValueChange={setStation}>
               <SelectTrigger>
@@ -163,10 +173,13 @@ export default function AnalyticsComparePage() {
               </SelectContent>
             </Select>
           </div>
-
           <div className="space-y-2 md:col-span-2">
             <Label>Business Line</Label>
-            <Select value={businessLine} onValueChange={setBusinessLine} disabled={!showBusinessLine}>
+            <Select
+              value={businessLine}
+              onValueChange={setBusinessLine}
+              disabled={!showBusinessLine}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="All" />
               </SelectTrigger>
@@ -180,38 +193,44 @@ export default function AnalyticsComparePage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-muted-foreground">Income</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="text-2xl font-semibold">Rs. {money.format(Number(data?.current?.income || 0))}</div>
-            <div className="text-sm text-muted-foreground">Prev: Rs. {money.format(Number(data?.previous?.income || 0))}</div>
-            {data ? <Delta value={data.deltas?.income_pct} /> : null}
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-muted-foreground">Expense</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="text-2xl font-semibold">Rs. {money.format(Number(data?.current?.expense || 0))}</div>
-            <div className="text-sm text-muted-foreground">Prev: Rs. {money.format(Number(data?.previous?.expense || 0))}</div>
-            {data ? <Delta value={data.deltas?.expense_pct} /> : null}
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-muted-foreground">Profit</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="text-2xl font-semibold">Rs. {money.format(Number(data?.current?.profit || 0))}</div>
-            <div className="text-sm text-muted-foreground">Prev: Rs. {money.format(Number(data?.previous?.profit || 0))}</div>
-            {data ? <Delta value={data.deltas?.profit_pct} /> : null}
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {[
+          { label: "Income", key: "income" as const, delta: deltas?.income_pct },
+          { label: "Expense", key: "expense" as const, delta: deltas?.expense_pct },
+          { label: "Profit", key: "profit" as const, delta: deltas?.profit_pct },
+        ].map(({ label, key, delta }) => (
+          <Card key={key} className="border-border">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center justify-between gap-2">
+                <span>{label}</span>
+                {typeof delta === "number" ? <Delta value={delta} /> : null}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Current</span>
+                <span className="font-semibold tabular-nums">
+                  {money.format(current?.[key] ?? 0)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Previous</span>
+                <span className="font-medium tabular-nums text-muted-foreground">
+                  {money.format(previous?.[key] ?? 0)}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
+
+      {!loading && !data && !fetchError ? (
+        <Card className="border-dashed">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No comparison data for the selected range.
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

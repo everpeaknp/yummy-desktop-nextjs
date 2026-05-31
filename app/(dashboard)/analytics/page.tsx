@@ -6,14 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Calendar, TrendingUp, TrendingDown, DollarSign, CreditCard, Activity, Lock, Wallet, ArrowUpRight, ArrowDownRight, ReceiptText, ChevronRight, Bed, Utensils, LayoutGrid, Users, ChefHat, Boxes, ArrowLeftRight } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
+import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { Badge } from "@/components/ui/badge";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { AnalyticsApis } from "@/lib/api/endpoints";
-import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown";
 import { DateRange } from "react-day-picker";
 import Link from "next/link";
+import {
+  AnalyticsAccessDenied,
+  AnalyticsAccessLoading,
+  AnalyticsFetchError,
+} from "@/components/analytics/analytics-access-states";
 
 import { RevenueChart } from "@/components/analytics/revenue-chart";
 import { CategoryPieChart } from "@/components/analytics/category-pie";
@@ -26,32 +31,27 @@ export default function AnalyticsPage() {
     const [categoryData, setCategoryData] = useState<any[]>([]);
     const [breakdownType, setBreakdownType] = useState<'source' | 'payment' | 'category'>('source');
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
+    const [fetchTrigger, setFetchTrigger] = useState(0);
     const [date, setDate] = useState<DateRange | undefined>();
     const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
     const [businessLine, setBusinessLine] = useState<string | undefined>(undefined);
     const user = useAuth(state => state.user);
-    const me = useAuth(state => state.me);
-    const router = useRouter();
+    const { ready, canViewAnalytics } = useAnalyticsViewAccess();
     const restaurant = useRestaurant((s) => s.restaurant);
-
-    // 1. Session Restoration & Auth Guard
-    useEffect(() => {
-        const checkAuth = async () => {
-            const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-            if (!user && token) await me();
-
-            const updatedToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-            if (!user && !updatedToken) router.push('/');
-        };
-        const timer = setTimeout(checkAuth, 500);
-        return () => clearTimeout(timer);
-    }, [user, me, router]);
 
     // Fetch all analytics from unified /analytics/dashboard (same as Flutter)
     useEffect(() => {
         const fetchAnalytics = async () => {
-            if (!user?.restaurant_id) return;
+            if (!user?.restaurant_id || !canViewAnalytics) {
+                setData(null);
+                setTrendsData([]);
+                setCategoryData([]);
+                setLoading(false);
+                return;
+            }
             setLoading(true);
+            setFetchError(null);
             try {
                 const formatDate = (date: Date) => {
                     const year = date.getFullYear();
@@ -110,22 +110,29 @@ export default function AnalyticsPage() {
                     } else {
                         setTrendsData([]);
                     }
+                } else {
+                    setFetchError(res.data?.message || "Failed to load analytics dashboard");
                 }
 
-            } catch (err) {
-                console.error("Failed to fetch analytics:", err);
+            } catch (err: any) {
+                const message =
+                    err?.response?.data?.detail ||
+                    err?.response?.data?.message ||
+                    "Failed to load analytics dashboard";
+                setFetchError(message);
             } finally {
                 setLoading(false);
             }
         };
 
+        if (!ready) return;
         if (user?.restaurant_id) {
             if (activeRange === 'custom' && (!date?.from || !date?.to)) {
                 return; // Wait until range is fully selected
             }
             fetchAnalytics();
         }
-    }, [user, activeRange, businessLine, date]);
+    }, [ready, canViewAnalytics, user, activeRange, businessLine, date, fetchTrigger]);
 
     // Derive breakdown pie data from cached dashboard data when tab changes (no refetch)
     useEffect(() => {
@@ -146,8 +153,17 @@ export default function AnalyticsPage() {
         })));
     }, [data, breakdownType]);
 
+    if (!ready) return <AnalyticsAccessLoading />;
+    if (!canViewAnalytics) return <AnalyticsAccessDenied />;
+
     return (
         <div className="flex flex-col gap-8 max-w-[1600px] mx-auto pb-10">
+            {fetchError ? (
+                <AnalyticsFetchError
+                    message={fetchError}
+                    onRetry={() => setFetchTrigger((t) => t + 1)}
+                />
+            ) : null}
             {/* Header & Filters */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>

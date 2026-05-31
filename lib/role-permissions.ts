@@ -164,7 +164,6 @@ export type PermissionKey =
   | "reports.dayclose.audit.view"
   | "reports.dayclose.export"
   | "reports.analytics.view"
-  | "reports.analytics.drilldown"
   | "reports.periodic"
   | "reports.periodic.view"
   | "reports.periodic.confirm"
@@ -194,8 +193,46 @@ export type PermissionKey =
   | "station.cafe.view";
 
 /**
+ * Single permission gate for all analytics routes and APIs (Option A).
+ * Admin role does NOT bypass this check — explicit permission required.
+ */
+export const ANALYTICS_VIEW_PERMISSION = "reports.analytics.view" as const;
+
+function isAnalyticsGatedPath(pathname: string): boolean {
+  return (
+    pathname === "/analytics" ||
+    pathname.startsWith("/analytics/") ||
+    pathname === "/transactions" ||
+    pathname.startsWith("/transactions/")
+  );
+}
+
+/**
+ * Permission check without admin role bypass.
+ */
+export function hasExplicitPermission(
+  user: { permissions?: string[] } | null,
+  permission: PermissionKey
+): boolean {
+  if (!user) return false;
+  return user.permissions?.includes(permission) ?? false;
+}
+
+/** Analytics access — requires reports.analytics.view on the user, no admin bypass. */
+export function hasAnalyticsViewPermission(
+  user: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null
+): boolean {
+  if (!user) return false;
+  const perms = user.permissions ?? [];
+  return (
+    perms.includes(ANALYTICS_VIEW_PERMISSION) ||
+    perms.includes("reports.analytics.drilldown")
+  );
+}
+
+/**
  * Check if user has a specific permission.
- * Admins ALWAYS have all permissions.
+ * Admins ALWAYS have all permissions (except analytics — use hasAnalyticsViewPermission).
  * Custom-role users are checked via their permissions array.
  */
 export function hasPermission(
@@ -203,6 +240,9 @@ export function hasPermission(
   permission: PermissionKey
 ): boolean {
   if (!user) return false;
+  if (permission === ANALYTICS_VIEW_PERMISSION) {
+    return hasAnalyticsViewPermission(user);
+  }
   // Admin bypass — works for both legacy role field and roles array
   const roles = normalizeRolesForUser(user);
   if (roles.includes("admin")) return true;
@@ -221,8 +261,6 @@ export const canViewInventory = (r: UserRole | null) =>
   isAdmin(r) || isManager(r);
 export const canManageInventory = (r: UserRole | null) =>
   isAdmin(r) || isManager(r);
-export const canViewAnalytics = (r: UserRole | null) =>
-  isAdmin(r) || isManager(r) || isCashier(r);
 export const canViewPayroll = (r: UserRole | null) =>
   isAdmin(r) || isCashier(r);
 export const canManageExpenses = (r: UserRole | null) =>
@@ -468,6 +506,11 @@ export function isRouteAllowed(
   user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[] } | null
 ): boolean {
   if (!user) return false;
+
+  // Analytics routes never bypass via admin role — explicit permission only
+  if (isAnalyticsGatedPath(pathname)) {
+    return hasAnalyticsViewPermission(user);
+  }
 
   // Build the set of normalized legacy roles for this user
   const roles = normalizeRolesForUser(user);

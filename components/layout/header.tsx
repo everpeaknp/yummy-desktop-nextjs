@@ -17,6 +17,7 @@ import { NotificationPanel } from "@/components/notifications/notification-panel
 import apiClient from "@/lib/api-client";
 import { DashboardApis } from "@/lib/api/endpoints";
 import { ModuleSwitcher } from "./module-switcher";
+import { hasPermission } from "@/lib/role-permissions";
 
 import { memo } from "react";
 
@@ -24,12 +25,7 @@ const LiveStats = memo(function LiveStats() {
   const user = useAuth(state => state.user);
   const [stats, setStats] = useState<{ activeOrders: number; kotPending: number; todaySales: number } | null>(null);
 
-  // Only admin, manager, cashier can see today's sales
-  const canSeeSales = (() => {
-    const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
-    const allowed = ["admin", "manager", "cashier"];
-    return roles.some((r) => allowed.includes(r.toLowerCase()));
-  })();
+  const canViewAnalytics = hasPermission(user, "reports.analytics.view");
 
   const fetchStats = useCallback(async () => {
     if (!user?.restaurant_id) return;
@@ -81,7 +77,7 @@ const LiveStats = memo(function LiveStats() {
         <span className="text-xs font-bold text-foreground">{stats.kotPending}</span>
         <span className="text-[10px] text-muted-foreground uppercase font-black">KOT</span>
       </Link>
-      {canSeeSales && (
+      {canViewAnalytics && (
         <Link
           href="/analytics"
           className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"

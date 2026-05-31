@@ -9,7 +9,12 @@ import type { DateRange } from "react-day-picker";
 import apiClient from "@/lib/api-client";
 import { TransactionsApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
+import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import {
+  AnalyticsAccessDenied,
+  AnalyticsAccessLoading,
+} from "@/components/analytics/analytics-access-states";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -204,13 +209,11 @@ function getTransactionAmount(it: TransactionItem): number | null {
 export default function TransactionsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const user = useAuth((s) => s.user);
-  const me = useAuth((s) => s.me);
+  const { user, ready, canViewAnalytics } = useAnalyticsViewAccess();
   const restaurant = useRestaurant((s) => s.restaurant);
 
   const restaurantId = restaurant?.id || user?.restaurant_id || null;
 
-  const [authLoading, setAuthLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TransactionsResponse | null>(null);
 
@@ -229,17 +232,8 @@ export default function TransactionsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const txParam = searchParams?.get("tx") || "";
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-      if (!user && token) await me();
-      if (!user && !token) router.push("/");
-      setAuthLoading(false);
-    };
-    checkAuth();
-  }, [user, me, router]);
-
   const fetchTransactions = async () => {
+    if (!canViewAnalytics) return;
     if (!restaurantId) {
       toast.error("Restaurant not set");
       return;
@@ -274,13 +268,14 @@ export default function TransactionsPage() {
   };
 
   useEffect(() => {
-    if (!authLoading && restaurantId) fetchTransactions();
+    if (!ready || !canViewAnalytics || !restaurantId) return;
+    fetchTransactions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, restaurantId]);
+  }, [ready, canViewAnalytics, restaurantId]);
 
   // Auto-apply filter changes.
   useEffect(() => {
-    if (authLoading || !restaurantId) return;
+    if (!ready || !canViewAnalytics || !restaurantId) return;
     const t = setTimeout(() => {
       setSkip(0);
       fetchTransactions();
@@ -290,7 +285,7 @@ export default function TransactionsPage() {
   }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), limit, userId, Array.from(types).join("|")]);
 
   useEffect(() => {
-    if (authLoading || !restaurantId) return;
+    if (!ready || !canViewAnalytics || !restaurantId) return;
     fetchTransactions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skip]);
@@ -317,13 +312,8 @@ export default function TransactionsPage() {
     });
   };
 
-  if (authLoading) {
-    return (
-      <div className="h-64 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
-      </div>
-    );
-  }
+  if (!ready) return <AnalyticsAccessLoading />;
+  if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
     <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
