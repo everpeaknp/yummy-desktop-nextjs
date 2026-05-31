@@ -30,7 +30,7 @@ import {
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { hasPermission } from "@/lib/role-permissions";
+import { isPathAccessible } from "@/lib/role-permissions";
 import { useMemo } from "react";
 
 const sections = [
@@ -255,17 +255,18 @@ const sections = [
 
 export default function ManagePage() {
     const user = useAuth((s) => s.user);
-    const canViewAnalytics = hasPermission(user, "reports.analytics.view");
 
     const visibleSections = useMemo(
         () =>
-            sections.map((section) => ({
-                ...section,
-                items: section.items.filter(
-                    (item) => item.href !== "/analytics" || canViewAnalytics
-                ),
-            })),
-        [canViewAnalytics]
+            sections
+                .map((section) => ({
+                    ...section,
+                    items: section.items.filter((item) =>
+                        isPathAccessible(item.href, user)
+                    ),
+                }))
+                .filter((section) => section.items.length > 0),
+        [user?.permissions, user?.role, user?.roles, user?.primary_role]
     );
 
     return (

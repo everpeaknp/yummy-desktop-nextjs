@@ -23,10 +23,12 @@ interface AuthState {
   setRedirecting: (isRedirecting: boolean) => void;
   logout: () => void;
   me: () => Promise<void>;
+  refreshSession: () => Promise<void>;
 }
 
 import apiClient from '@/lib/api-client';
 import { AuthApis } from '@/lib/api/endpoints';
+import { syncAuthFromRefreshResponse } from '@/lib/auth-session';
 import { useRestaurant } from './use-restaurant';
 
 export const useAuth = create<AuthState>()(
@@ -53,6 +55,26 @@ export const useAuth = create<AuthState>()(
         // Clear module selection on logout
         useRestaurant.getState().setSelectedModule(null);
         // Redirection should be handled by the caller using router.push for performance
+      },
+      refreshSession: async () => {
+        const refreshToken =
+          typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
+        if (!refreshToken) {
+          await get().me();
+          return;
+        }
+
+        try {
+          const res = await apiClient.post(AuthApis.refresh, {
+            refresh_token: refreshToken,
+          });
+          if (res.data.status === 'success') {
+            syncAuthFromRefreshResponse(res.data.data);
+          }
+        } catch (error) {
+          console.warn('[useAuth] refreshSession failed', error);
+          await get().me();
+        }
       },
       me: async () => {
         const state = get();
@@ -81,28 +103,7 @@ export const useAuth = create<AuthState>()(
             try {
               const res = await apiClient.post(AuthApis.refresh, { refresh_token: refreshToken });
               if (res.data.status === 'success') {
-                const data = res.data.data;
-                const roles: string[] = data.user_roles || (data.user_role ? [data.user_role] : []);
-                const user: User = {
-                  id: data.user_id,
-                  email: data.email,
-                  full_name: data.user_name,
-                  role: data.user_role,
-                  roles,
-                  primary_role: data.primary_role || data.user_role || null,
-                  restaurant_id: data.restaurant_id,
-                  currency: data.currency,
-                  permissions: data.permissions || []
-                };
-
-                set({
-                  user,
-                  token: data.access_token,
-                  refreshToken: data.refresh_token,
-                  isRedirecting: false // Success, stop redirecting
-                });
-                localStorage.setItem('accessToken', data.access_token);
-                localStorage.setItem('refreshToken', data.refresh_token);
+                syncAuthFromRefreshResponse(res.data.data);
                 return;
               }
             } catch (refreshError) {

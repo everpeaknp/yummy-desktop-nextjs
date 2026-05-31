@@ -16,10 +16,14 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
   const user = useAuth((state) => state.user);
   const token = useAuth((state) => state.token);
   const me = useAuth((state) => state.me);
+  const logout = useAuth((state) => state.logout);
   const setRedirecting = useAuth((state) => state.setRedirecting);
   const [status, setStatus] = useState<"loading" | "allowed" | "denied">(
     "loading"
   );
+  const [sessionWaitExpired, setSessionWaitExpired] = useState(false);
+
+  const SESSION_WAIT_MS = 10000;
 
   // Restore session on mount if we have a token but no user
   useEffect(() => {
@@ -35,6 +39,29 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
       }
     }
   }, [token, user, me]);
+
+  // Abort infinite spinner when session restore never completes
+  useEffect(() => {
+    const hasStoredTokens =
+      typeof window !== "undefined" &&
+      (Boolean(localStorage.getItem("accessToken")) ||
+        Boolean(localStorage.getItem("refreshToken")));
+
+    if ((token || hasStoredTokens) && !user && status === "loading") {
+      setSessionWaitExpired(false);
+      const timer = setTimeout(() => setSessionWaitExpired(true), SESSION_WAIT_MS);
+      return () => clearTimeout(timer);
+    }
+
+    setSessionWaitExpired(false);
+  }, [token, user, status]);
+
+  useEffect(() => {
+    if (sessionWaitExpired && !user) {
+      logout();
+      router.replace("/");
+    }
+  }, [sessionWaitExpired, user, logout, router]);
 
   useEffect(() => {
     // Still loading user data

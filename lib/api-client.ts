@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { syncAuthFromRefreshResponse } from '@/lib/auth-session';
 
 const API_BASE_URL = (() => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
@@ -83,10 +84,9 @@ apiClient.interceptors.response.use(
         const refreshBase = isLocalhost ? PROXY_BASE : API_BASE_URL;
         const res = await axios.post(`${refreshBase}/auth/refresh`, { refresh_token: refreshToken });
         if (res.data?.status === 'success' && res.data.data?.access_token) {
-          const newToken = res.data.data.access_token;
-          const newRefresh = res.data.data.refresh_token;
-          localStorage.setItem('accessToken', newToken);
-          if (newRefresh) localStorage.setItem('refreshToken', newRefresh);
+          const refreshData = res.data.data;
+          syncAuthFromRefreshResponse(refreshData);
+          const newToken = refreshData.access_token;
 
           // Update Authorization header and retry
           originalRequest.headers.Authorization = `Bearer ${newToken}`;

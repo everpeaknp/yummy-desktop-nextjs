@@ -32,6 +32,7 @@ import {
   normalizeRolesForUser,
   getSidebarItemsForRoles,
   hasPermission,
+  filterSidebarLinksByAccess,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
@@ -77,11 +78,17 @@ const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
 function getHotelSidebarItems(
   user: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null
 ): SidebarItem[] {
+  const base = filterSidebarLinksByAccess(HOTEL_SIDEBAR_BASE, user);
+
   if (!hasPermission(user, "reports.analytics.view")) {
-    return HOTEL_SIDEBAR_BASE;
+    return base;
   }
 
-  const financeIndex = HOTEL_SIDEBAR_BASE.findIndex((item) => item.href === "/finance/income");
+  const financeIndex = base.findIndex((item) => item.href === "/finance/income");
+  if (financeIndex < 0) {
+    return base;
+  }
+
   const analyticsItem: SidebarItem = {
     title: "Analytics",
     href: "/analytics",
@@ -90,9 +97,9 @@ function getHotelSidebarItems(
   };
 
   return [
-    ...HOTEL_SIDEBAR_BASE.slice(0, financeIndex),
+    ...base.slice(0, financeIndex),
     analyticsItem,
-    ...HOTEL_SIDEBAR_BASE.slice(financeIndex),
+    ...base.slice(financeIndex),
   ];
 }
 
@@ -118,7 +125,7 @@ export function useSidebarItems(): SidebarItem[] {
     // --- HOTEL MODE ---
     if (selectedModule === "hotel" && restaurant?.hotel_enabled) {
       if (isAdminOrManager) return getHotelSidebarItems(user);
-      if (isCashier) return HOTEL_CASHIER_ITEMS;
+      if (isCashier) return filterSidebarLinksByAccess(HOTEL_CASHIER_ITEMS, user);
       // Other staff in hotel mode see basic view
       return [{ title: "Rooms", href: "/rooms", icon: Bed }];
     }

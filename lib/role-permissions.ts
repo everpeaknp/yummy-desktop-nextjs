@@ -555,6 +555,40 @@ export function isRouteAllowedMulti(
   return isRouteAllowed(pathname, user);
 }
 
+/** Route guard helper for sidebar/manage links (strips query strings). */
+export function isPathAccessible(
+  href: string,
+  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[] } | null
+): boolean {
+  const path = href.split("?")[0];
+  return isRouteAllowed(path, user);
+}
+
+/** Hotel sidebar href → permission key (matches ROUTE_PERMISSIONS where applicable). */
+export const HOTEL_SIDEBAR_PERMISSIONS: Partial<Record<string, PermissionKey>> = {
+  "/rooms": "hotel.manage",
+  "/rooms/checkin": "hotel.manage",
+  "/orders": "pos.view",
+  "/orders/new": "pos.order.create",
+  "/reservations": "tables.reservation.view",
+  "/finance/income": "finance.income.view",
+  "/customers": "customers.view",
+  "/manage": "admin.staff.view",
+  "/analytics": "reports.analytics.view",
+};
+
+export function filterSidebarLinksByAccess<
+  T extends { href: string }
+>(items: T[], user: Parameters<typeof isPathAccessible>[1]): T[] {
+  return items.filter((item) => {
+    const hotelPerm = HOTEL_SIDEBAR_PERMISSIONS[item.href];
+    if (hotelPerm) {
+      return hasPermission(user, hotelPerm);
+    }
+    return isPathAccessible(item.href, user);
+  });
+}
+
 // ─── Default home route per role ────────────────────────────────────────────
 // Where to redirect a user who tries to access a forbidden route.
 

@@ -7,7 +7,7 @@ import { Search, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useSidebarItems } from "@/hooks/use-sidebar-items";
 import { useAuth } from "@/hooks/use-auth";
-import { hasPermission } from "@/lib/role-permissions";
+import { isPathAccessible } from "@/lib/role-permissions";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
     Users, CreditCard, ClipboardList, UserCircle, Package, 
@@ -82,7 +82,6 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
     const [query, setQuery] = useState("");
     const router = useRouter();
     const user = useAuth((s) => s.user);
-    const canViewAnalytics = hasPermission(user, "reports.analytics.view");
     const sidebarItems = useSidebarItems();
 
     // Reset query when closed
@@ -96,19 +95,18 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
         const items = new Map();
 
         sidebarItems.forEach((item) => {
-            if (item.href === "/analytics" && !canViewAnalytics) return;
             items.set(item.href, { ...item, section: item.section || "Main Menu" });
         });
 
         MANAGE_ITEMS.forEach((item) => {
-            if (item.href === "/analytics" && !canViewAnalytics) return;
+            if (!isPathAccessible(item.href, user)) return;
             if (!items.has(item.href)) {
                 items.set(item.href, item);
             }
         });
 
         return Array.from(items.values());
-    }, [sidebarItems, canViewAnalytics]);
+    }, [sidebarItems, user?.permissions, user?.role, user?.roles, user?.primary_role]);
 
     const filteredItems = useMemo(() => {
         if (!query.trim()) return allItems;
