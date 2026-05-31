@@ -147,21 +147,13 @@ export default function AnalyticsKitchenPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="border-border">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm text-muted-foreground">Overall Avg Prep Time</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">
             {data ? `${Number(data.overall_avg_prep_time || 0).toFixed(2)} min` : "—"}
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-muted-foreground">Delayed Orders</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {data ? `${Number(data.delayed_orders_pct || 0).toFixed(2)}%` : "—"}
           </CardContent>
         </Card>
         <Card className="border-border">

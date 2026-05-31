@@ -7,9 +7,43 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 interface RevenueChartProps {
   data: any[];
   loading?: boolean;
+  title?: string;
+  description?: string;
 }
 
-export function RevenueChart({ data, loading }: RevenueChartProps) {
+function formatChartLabel(value: string): string {
+  if (/^\d{1,2}:\d{2}/.test(value)) return value;
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return value;
+  }
+}
+
+function formatTooltipLabel(label: string): string {
+  if (/^\d{1,2}:\d{2}/.test(label)) return label;
+  try {
+    const d = new Date(label);
+    if (isNaN(d.getTime())) return label;
+    return d.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return label;
+  }
+}
+
+export function RevenueChart({
+  data,
+  loading,
+  title = "Revenue Trend",
+  description = "Your gross sales over the selected period.",
+}: RevenueChartProps) {
   const { theme } = useTheme();
   
   // Mock data if empty or loading (for skeleton effect or empty state)
@@ -18,19 +52,19 @@ export function RevenueChart({ data, loading }: RevenueChartProps) {
   return (
     <Card className="col-span-4 bg-card border-border shadow-sm">
       <CardHeader>
-        <CardTitle>Revenue Trend</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription>
-          Your gross sales over the selected period.
+          {description}
         </CardDescription>
       </CardHeader>
       <CardContent className="pl-2">
-        <div className="h-[300px] w-full">
+        <div className="h-[300px] w-full min-w-0 shrink-0">
             {loading ? (
                  <div className="h-full w-full flex items-center justify-center bg-muted/20 animate-pulse rounded-md">
                     <span className="text-muted-foreground text-sm">Loading chart...</span>
                  </div>
             ) : chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
+                <ResponsiveContainer width="100%" height={300} debounce={50}>
                     <AreaChart data={chartData}>
                     <defs>
                         <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
@@ -44,15 +78,7 @@ export function RevenueChart({ data, loading }: RevenueChartProps) {
                         fontSize={12}
                         tickLine={false}
                         axisLine={false}
-                        tickFormatter={(value) => {
-                            try {
-                                const d = new Date(value);
-                                if (isNaN(d.getTime())) return value;
-                                return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                            } catch (e) {
-                                return value;
-                            }
-                        }}
+                        tickFormatter={formatChartLabel}
                     />
                     <YAxis
                         stroke="#888888"
@@ -71,15 +97,7 @@ export function RevenueChart({ data, loading }: RevenueChartProps) {
                          }}
                          itemStyle={{ color: '#f97316', fontWeight: 'bold' }}
                          formatter={(value: any) => [`Rs. ${Number(value).toLocaleString()}`, "Revenue"]}
-                         labelFormatter={(label) => {
-                             try {
-                                 const d = new Date(label);
-                                 if (isNaN(d.getTime())) return label;
-                                 return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-                             } catch (e) {
-                                 return label;
-                             }
-                         }}
+                         labelFormatter={formatTooltipLabel}
                     />
                     <Area
                         type="monotone"

@@ -108,7 +108,8 @@ export default function OrdersPage() {
                     restaurantId: user.restaurant_id,
                     dateFrom: todayStr,
                     dateTo: todayStr,
-                    timezone: timezone
+                    timezone: timezone,
+                    include: "core",
                 })).catch(err => {
                     console.warn("Analytics revenue stat unavailable:", err.message);
                     return { data: { status: "error", data: null } };

@@ -9,6 +9,12 @@ import apiClient from "@/lib/api-client"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions"
+import {
+  mapAnalyticsTrends,
+  mapBreakdownToPie,
+  preferHourlyTrends,
+  topItemQuantitySold,
+} from "@/lib/analytics-dashboard-mapper"
 import { cn } from "@/lib/utils"
 import { DashboardApis, AnalyticsApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
 import dynamic from "next/dynamic"
@@ -139,6 +145,7 @@ export default function DashboardPage() {
               dateFrom,
               dateTo,
               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              include: "core,insights",
             })
           )
           .catch((err) => {
@@ -178,18 +185,13 @@ export default function DashboardPage() {
       if (analyticsRes?.data?.status === "success") {
         const analytics = analyticsRes.data.data
         setAnalyticsData(analytics)
-        
-        if (analytics.trends) {
-          setTrendsData(analytics.trends.map((item: any) => ({
-            date: item.date,
-            value: item.income
-          })))
-        }
-        
+
+        setTrendsData(
+          mapAnalyticsTrends(analytics, preferHourlyTrends(activeRange))
+        )
+
         if (analytics.breakdown) {
-          // User requested 'source breakdown' from analytics page to be used here
-          const list = analytics.breakdown.income_by_source || [] 
-          setCategoryData(list.map((item: any) => ({ name: item.label, value: item.amount })))
+          setCategoryData(mapBreakdownToPie(analytics.breakdown, "source"))
         }
       }
 
@@ -270,8 +272,8 @@ export default function DashboardPage() {
     total_orders: overview?.orders_count ?? v2Kpis?.total_orders ?? 0,
     average_order_value: overview?.avg_order_value ?? v2Kpis?.average_order_value ?? 0,
     total_expense: overview?.total_expense ?? 0,
-    cancelled_today: overview?.cancelled_count || 0,
-    refunded_today: overview?.refunded_count || 0,
+    cancelled_today: health?.cancelled_today ?? 0,
+    refunded_today: health?.refunded_today ?? 0,
   }
 
   return (
@@ -365,7 +367,16 @@ export default function DashboardPage() {
         ) : (
           <>
             <div className="h-[400px]">
-              <RevenueChart data={trendsData} loading={loading} />
+              <RevenueChart
+                data={trendsData}
+                loading={loading}
+                title={preferHourlyTrends(activeRange) ? "Hourly Revenue" : "Revenue Trend"}
+                description={
+                  preferHourlyTrends(activeRange)
+                    ? "Hour-by-hour gross sales for the selected day."
+                    : "Your gross sales over the selected period."
+                }
+              />
             </div>
             <div className="h-[400px]">
               <CategoryPieChart
@@ -402,7 +413,7 @@ export default function DashboardPage() {
                          <div key={item.name} className="flex items-center justify-between group">
                             <div className="min-w-0 flex-1">
                                 <p className="text-sm font-bold truncate pr-4 group-hover:text-primary transition-colors">{item.name}</p>
-                                <p className="text-[10px] text-muted-foreground font-medium">{item.quantity} units sold</p>
+                                <p className="text-[10px] text-muted-foreground font-medium">{topItemQuantitySold(item)} units sold</p>
                             </div>
                             <div className="text-right">
                                 <p className="text-sm font-black">{currency} {item.revenue?.toLocaleString()}</p>

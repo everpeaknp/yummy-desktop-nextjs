@@ -149,21 +149,13 @@ export default function AnalyticsInventoryPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="border-border">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-muted-foreground">Purchase To Sales</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Expense To Sales</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">
             {data ? `${Number(data.purchase_to_sales_pct || 0).toFixed(2)}%` : "—"}
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-muted-foreground">Wastage</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {data ? `${Number(data.wastage_pct || 0).toFixed(2)}%` : "—"}
           </CardContent>
         </Card>
         <Card className="border-border">
