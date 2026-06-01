@@ -220,7 +220,7 @@ export default function CheckoutPage() {
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const curr = restaurant?.currency || "Rs.";
-  const { canApplyDiscount, canProcessPayment, canEditPayment, canDeletePayment } = usePosBillingPermissions();
+  const { canApplyDiscount, canProcessPayment, canEditPayment, canDeletePayment, canProcessRefund } = usePosBillingPermissions();
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
   const [bill, setBill] = useState<OrderBill | null>(null);
@@ -255,6 +255,15 @@ export default function CheckoutPage() {
   const [editSelectedCardIndex, setEditSelectedCardIndex] = useState(0);
   const [removingPaymentId, setRemovingPaymentId] = useState<number | null>(null);
   const [shouldAutoRedirectAfterPayment, setShouldAutoRedirectAfterPayment] = useState(false);
+
+  // Refund dialog
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundMethod, setRefundMethod] = useState("cash");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundReference, setRefundReference] = useState("");
+  const [refundSubmitting, setRefundSubmitting] = useState(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
 
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
@@ -711,6 +720,43 @@ export default function CheckoutPage() {
       setPayError(err?.response?.data?.detail || "Failed to add payment");
     } finally {
       setPaySubmitting(false);
+    }
+  };
+
+  const handleIssueRefund = async () => {
+    const entered = parseFloat(refundAmount) || 0;
+    if (entered <= 0) {
+      setRefundError("Amount must be greater than zero");
+      return;
+    }
+    if (entered > bill!.total_paid) {
+      setRefundError(`Amount cannot exceed total paid: ${formatCurrency(bill!.total_paid, curr)}`);
+      return;
+    }
+    if (!refundReason.trim()) {
+      setRefundError("Reason is required");
+      return;
+    }
+
+    setRefundSubmitting(true);
+    setRefundError(null);
+    try {
+      await apiClient.post(OrderApis.refundOrder(orderId), {
+        amount: entered,
+        reason: refundReason.trim(),
+        method: refundMethod,
+        reference: refundReference.trim() || null,
+      });
+      setRefundOpen(false);
+      setRefundAmount("");
+      setRefundReason("");
+      setRefundReference("");
+      await fetchBill();
+      toast.success("Refund processed successfully");
+    } catch (err: any) {
+      setRefundError(err?.response?.data?.detail || "Failed to process refund");
+    } finally {
+      setRefundSubmitting(false);
     }
   };
 
@@ -1342,6 +1388,23 @@ export default function CheckoutPage() {
                 </p>
               )}
 
+              {canProcessRefund && bill.total_paid > 0 && (
+                <Button
+                  variant="destructive"
+                  className="w-full h-12 text-base font-semibold shadow-lg gap-2 mt-3"
+                  onClick={() => {
+                    setRefundAmount("");
+                    setRefundReason("");
+                    setRefundReference("");
+                    setRefundError(null);
+                    setRefundOpen(true);
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Issue Refund
+                </Button>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 {canApplyDiscount && (
                   <Button
@@ -1385,6 +1448,24 @@ export default function CheckoutPage() {
                   Complete {orderMeta?.channel === "room_service" ? "Stay & Checkout" : "Order"}
                 </Button>
               )}
+
+              {canProcessRefund && bill.total_paid > 0 && (
+                <Button
+                  variant="destructive"
+                  className="w-full h-12 text-base font-semibold shadow-lg gap-2"
+                  onClick={() => {
+                    setRefundAmount("");
+                    setRefundReason("");
+                    setRefundReference("");
+                    setRefundError(null);
+                    setRefundOpen(true);
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Issue Refund
+                </Button>
+              )}
+
               <Button
                 variant="outline"
                 className="w-full h-12 text-base font-semibold gap-2"
@@ -2145,6 +2226,109 @@ export default function CheckoutPage() {
             <Button onClick={handleApplyDiscount} disabled={discountSubmitting} className="gap-2">
               {discountSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
               {discountSubmitting ? "Applying..." : "Apply Discount"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Issue Refund Dialog ── */}
+      <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Issue Refund</DialogTitle>
+            <DialogDescription>
+              Process a refund for this order. Maximum refundable amount is{" "}
+              <span className="font-bold text-foreground">
+                {bill ? formatCurrency(bill.total_paid, curr) : ""}
+              </span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {refundError && (
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+                {refundError}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-amount">Refund Amount</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">
+                  {curr}
+                </span>
+                <Input
+                  id="refund-amount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max={bill?.total_paid || 0}
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(e.target.value)}
+                  className="pl-12"
+                  placeholder="0.00"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-method">Refund Method</Label>
+              <Select value={refundMethod} onValueChange={setRefundMethod}>
+                <SelectTrigger id="refund-method">
+                  <SelectValue placeholder="Select refund method" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      <span className="flex items-center gap-2">
+                        <m.icon className={cn("h-4 w-4", m.color)} />
+                        {m.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-reason">Reason for Refund</Label>
+              <Input
+                id="refund-reason"
+                placeholder="Why is this order being refunded?"
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-reference">Reference / Notes (Optional)</Label>
+              <Input
+                id="refund-reference"
+                placeholder="Transaction ID, customer notes, etc."
+                value={refundReference}
+                onChange={(e) => setRefundReference(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefundOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleIssueRefund}
+              disabled={refundSubmitting}
+              className="gap-2"
+            >
+              {refundSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              {refundSubmitting ? "Processing..." : "Confirm Refund"}
             </Button>
           </DialogFooter>
         </DialogContent>
