@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, ChevronRight, Calculator, AlertTriangle, Receipt, ChevronDown } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { DayCloseApis, TableApis, ExpenseApis, OrderApis } from "@/lib/api/endpoints";
+import { DayClosePaymentSummary } from "@/components/analytics/day-close-payment-summary";
 
 interface DayCloseModalProps {
   isOpen: boolean;
@@ -780,11 +781,6 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
     const derivedCreditOrders = snapshot?.manual_credit_orders ?? (creditOrders || pickNumberByLabel(["credit orders"]));
     const derivedCashCollected = cashCollected || pickNumberByLabel(["cash collected", "cash in"]);
 
-    const paymentDistribution = pickList(snapshot, ["payment_distribution", "payment_methods", "by_payment_method"]).length
-        ? pickList(snapshot, ["payment_distribution", "payment_methods", "by_payment_method"])
-        : pickBreakdownRows(["payment distribution", "payment methods"]).length
-            ? pickBreakdownRows(["payment distribution", "payment methods"])
-            : findBreakdownByTokens(["payment"]);
     const salesByCategory = pickList(snapshot, ["sales_by_category", "category_sales", "by_category"]).length
         ? pickList(snapshot, ["sales_by_category", "category_sales", "by_category"])
         : pickBreakdownRows(["sales by category", "category sales"]).length
@@ -875,8 +871,13 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
                         <TabsTrigger value="expenses" className="rounded-lg">Expenses</TabsTrigger>
                     </TabsList>
                     <div className="mt-4">
-                        <TabsContent value="payments" className="m-0">
-                            <SnapshotListCard title="Payment Distribution (Methods)" rows={paymentDistribution} labelKeys={["method", "name", "payment_method"]} valueKeys={["amount", "total", "value"]} />
+                        <TabsContent value="payments" className="m-0 space-y-4">
+                            <DayClosePaymentSummary
+                                snapshotData={snapshot}
+                                title="Payment totals"
+                                subtitle="Grouped for close review — Cash, Card, Fonepay, Digital/QR, and Credit payments."
+                                showBars
+                            />
                         </TabsContent>
                         <TabsContent value="categories" className="m-0">
                             <SnapshotListCard title="Sales By Category" rows={salesByCategory} labelKeys={["category", "category_name", "name"]} valueKeys={["sales", "amount", "total"]} />
