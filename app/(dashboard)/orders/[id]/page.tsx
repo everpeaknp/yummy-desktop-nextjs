@@ -484,13 +484,11 @@ export default function OrderDetailPage() {
                 </div>
               )}
               
-              {!isFullyPaid && (
-                  <Link href={`/orders/${orderId}/checkout`}>
-                    <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold">
-                      <Receipt className="h-4 w-4" /> Checkout
-                    </Button>
-                  </Link>
-              )}
+              <Link href={`/orders/${orderId}/checkout`}>
+                <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold">
+                  <Receipt className="h-4 w-4" /> {isFullyPaid ? "Payments" : "Checkout"}
+                </Button>
+              </Link>
               
               {isFullyPaid && order.status !== 'completed' && (
                 <Button 
@@ -504,6 +502,14 @@ export default function OrderDetailPage() {
                 </Button>
               )}
             </>
+          )}
+          
+          {!isEditable && order.status === "completed" && (
+            <Link href={`/orders/${orderId}/checkout`}>
+              <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold" variant="outline">
+                <Receipt className="h-4 w-4" /> Payments & Refunds
+              </Button>
+            </Link>
           )}
           
           {/* Destructive Action */}
@@ -638,109 +644,7 @@ export default function OrderDetailPage() {
             entityId={order.id}
           />
 
-          {/* Quick Info */}
-          <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-            <CardContent className="p-5 space-y-4">
-              <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground">Quick Info</h3>
 
-              {tableName && (
-                <div className="flex items-center gap-3 text-sm">
-                  <div className="p-2 rounded-lg bg-orange-500/10">
-                    <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-foreground">{tableName}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{order.table_category_name || "Table"}</p>
-                  </div>
-                </div>
-              )}
-
-              {order.customer_name && (
-                <div className="flex items-center gap-3 text-sm">
-                  <div className="p-2 rounded-lg bg-blue-500/10">
-                    <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-foreground">{order.customer_name}</p>
-                    {order.customer_phone && (
-                      <p className="text-[10px] text-muted-foreground">{order.customer_phone}</p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {order.number_of_guests && (
-                <div className="flex items-center gap-3 text-sm">
-                  <div className="p-2 rounded-lg bg-purple-500/10">
-                    <Users className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-foreground">{order.number_of_guests} Guests</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-muted">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="font-bold text-foreground">{formatTime(order.created_at)}</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                    {new Date(order.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
-
-              {order.notes && (
-                <div className="p-3 rounded-lg bg-muted/50 border border-border/30 text-sm text-muted-foreground italic">
-                  {order.notes}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-
-          {/* Actions - Redundant Sidebar */}
-          <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-            <CardContent className="p-5 space-y-3">
-              <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground mb-2">Actions</h3>
-
-              {isEditable && (
-                <>
-                  {!isFullyPaid && (
-                      <Link href={`/orders/${orderId}/checkout`} className="block">
-                        <Button className="w-full gap-2 h-11 font-bold shadow-lg rounded-xl">
-                          <Receipt className="h-4 w-4" /> Checkout
-                        </Button>
-                      </Link>
-                  )}
-                  
-                  {isFullyPaid && order.status !== 'completed' && (
-                    <Button 
-                      className="w-full gap-2 h-11 font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg"
-                      onClick={handleComplete}
-                      disabled={completing}
-                    >
-                      {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                      Complete Order
-                    </Button>
-                  )}
-                </>
-              )}
-
-              {/* Cancel Order - Available for all non-cancelled orders */}
-              {isCancellable && canVoidOrder && (
-                <Button
-                  variant="outline"
-                  className="w-full gap-2 h-11 font-bold rounded-xl text-destructive hover:text-destructive hover:bg-destructive/5 border-destructive/20 mt-2"
-                  onClick={() => setCancelOpen(true)}
-                >
-                  <Ban className="h-4 w-4" /> Cancel Order
-                </Button>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </div>
 
@@ -1019,28 +923,113 @@ function DetailsTab({
         </CardContent>
       </Card>
 
-      {/* Tables Card */}
-      {tables.length > 0 && (
-        <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground">Tables</span>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {tables.map((t) => (
-                <div key={t.id} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted/50 border border-border/30">
+      {/* Quick Info Card */}
+      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
+        <CardContent className="p-5 space-y-4">
+          <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground">Quick Info</h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Tables */}
+            {tables && tables.length > 0 ? (
+              <div className="flex items-start gap-3 text-sm">
+                <div className="p-2 rounded-lg bg-orange-500/10 mt-0.5">
                   <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-                  <span className="font-bold text-sm">{t.name || `Table ${t.id}`}</span>
-                  {t.capacity && (
-                    <span className="text-[10px] text-muted-foreground">({t.capacity} seats)</span>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="font-bold text-foreground">
+                    {tables.map((t) => t.name || `Table ${t.id}`).join(", ")}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider leading-none">
+                    {tables.map((t) => {
+                      const cap = t.capacity ? ` (${t.capacity} seats)` : '';
+                      return `${order.table_category_name || 'Table'} ${t.name || t.id}${cap}`;
+                    }).join(" | ")}
+                  </p>
+                </div>
+              </div>
+            ) : order.table_name ? (
+              <div className="flex items-center gap-3 text-sm">
+                <div className="p-2 rounded-lg bg-orange-500/10">
+                  <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <p className="font-bold text-foreground">{order.table_name}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{order.table_category_name || "Table"}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Customer */}
+            {order.customer_name ? (
+              <div className="flex items-center gap-3 text-sm">
+                <div className="p-2 rounded-lg bg-blue-500/10">
+                  <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="font-bold text-foreground">{order.customer_name}</p>
+                  {order.customer_phone && (
+                    <p className="text-[10px] text-muted-foreground">{order.customer_phone}</p>
                   )}
                 </div>
-              ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 text-sm">
+                <div className="p-2 rounded-lg bg-blue-500/10">
+                  <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="font-bold text-foreground">Walk-in Customer</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Guest</p>
+                </div>
+              </div>
+            )}
+
+            {/* Guests */}
+            {order.number_of_guests ? (
+              <div className="flex items-center gap-3 text-sm">
+                <div className="p-2 rounded-lg bg-purple-500/10">
+                  <Users className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <p className="font-bold text-foreground">{order.number_of_guests} Guests</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Party Size</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 text-sm">
+                <div className="p-2 rounded-lg bg-purple-500/10">
+                  <Users className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <p className="font-bold text-foreground">1 Guest</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Default Size</p>
+                </div>
+              </div>
+            )}
+
+            {/* Time / Date */}
+            <div className="flex items-center gap-3 text-sm">
+              <div className="p-2 rounded-lg bg-muted">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="font-bold text-foreground">{formatTime(order.created_at)}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                  {new Date(order.created_at).toLocaleDateString()}
+                </p>
+              </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+
+          {/* Notes */}
+          {order.notes && (
+            <div className="p-3 rounded-lg bg-muted/50 border border-border/30 text-sm text-muted-foreground italic">
+              {order.notes}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
 
       {/* Edit Item Dialog */}
       <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>

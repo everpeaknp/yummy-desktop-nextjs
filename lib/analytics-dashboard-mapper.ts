@@ -56,7 +56,22 @@ export function mapBreakdownToPie(
   } else if (type === "source") {
     list = (breakdown.income_by_source as typeof list) || [];
   } else if (type === "payment") {
-    list = (breakdown.income_by_payment_method as typeof list) || [];
+    const byInstrument = (breakdown.income_by_payment_instrument as typeof list) || [];
+    const byMethod = (breakdown.income_by_payment_method as typeof list) || [];
+
+    // Keep the legacy payment-method view, but expand CARD/DIGITAL into
+    // their specific instruments when instrument rows are available.
+    const methodRows = byMethod.filter((item) => {
+      const method = String(item?.label || "").trim().toLowerCase();
+      return method !== "card" && method !== "digital";
+    });
+
+    const hasInstrumentRows = byInstrument.length > 0;
+    if (hasInstrumentRows) {
+      list = [...methodRows, ...byInstrument];
+    } else {
+      list = byMethod;
+    }
   }
 
   return list.map((item) => ({
@@ -73,7 +88,7 @@ export function breakdownPieCopy(type: BreakdownTab): {
     case "payment":
       return {
         title: "Sales by Payment Method",
-        description: "Revenue split by payment method in the selected period.",
+        description: "Revenue split by payment methods, with card/QR expanded by instrument.",
       };
     case "category":
       return {
