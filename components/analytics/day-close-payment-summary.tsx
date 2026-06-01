@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import apiClient from "@/lib/api-client";
+import { RestaurantApis } from "@/lib/api/endpoints";
 import { cn } from "@/lib/utils";
 import {
   buildPaymentSummary,
@@ -11,6 +13,8 @@ import {
 type DayClosePaymentSummaryProps = {
   detail?: unknown;
   snapshotData?: unknown;
+  restaurant?: unknown;
+  restaurantId?: number;
   title?: string;
   subtitle?: string;
   showBars?: boolean;
@@ -21,18 +25,65 @@ function formatRs(amount: number) {
   return `Rs. ${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Load payment_qrs / fonepay / payment_cards without toggling global restaurant loading. */
+function useRestaurantPaymentProfile(restaurant?: unknown, restaurantId?: number) {
+  const [profile, setProfile] = useState<unknown>(restaurant ?? null);
+
+  useEffect(() => {
+    setProfile(restaurant ?? null);
+  }, [restaurant]);
+
+  useEffect(() => {
+    const id =
+      restaurantId ??
+      (restaurant && typeof restaurant === "object"
+        ? Number((restaurant as Record<string, unknown>).id)
+        : undefined);
+
+    if (!id || !Number.isFinite(id)) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await apiClient.get(RestaurantApis.getById(id));
+        if (!cancelled && res.data?.status === "success") {
+          setProfile(res.data.data);
+        }
+      } catch {
+        // Keep cached restaurant profile from the store.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId, restaurant]);
+
+  return profile;
+}
+
 export function DayClosePaymentSummary({
   detail,
   snapshotData,
+  restaurant,
+  restaurantId,
   title = "Payment totals",
   subtitle,
   showBars = true,
   className,
 }: DayClosePaymentSummaryProps) {
-  const lines = useMemo(
-    () => buildPaymentSummary(detail, snapshotData),
-    [detail, snapshotData],
-  );
+  const paymentProfile = useRestaurantPaymentProfile(restaurant, restaurantId);
+
+  const lines = useMemo(() => {
+    try {
+      return buildPaymentSummary(detail, snapshotData, paymentProfile);
+    } catch (error) {
+      console.error("[DayClosePaymentSummary] Failed to build payment summary", error);
+      return buildPaymentSummary(detail, snapshotData);
+    }
+  }, [detail, snapshotData, paymentProfile]);
+
   const grandTotal = useMemo(() => paymentSummaryGrandTotal(lines), [lines]);
   const maxAmount = useMemo(
     () => Math.max(...lines.map((line) => line.amount), grandTotal, 1),

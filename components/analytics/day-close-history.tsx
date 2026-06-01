@@ -50,6 +50,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import {
   DayClosePaymentSummary,
   downloadPaymentSummaryCsv,
@@ -146,6 +147,7 @@ function statusBadge(status: string) {
 }
 
 export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
+  const restaurant = useRestaurant((s) => s.restaurant);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<any[]>([]);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
@@ -478,8 +480,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   }, [detail]);
 
   const paymentSummaryLines = useMemo(
-    () => buildPaymentSummary(detail, snapshot?.snapshot_data ?? snapshot),
-    [detail, snapshot],
+    () => buildPaymentSummary(detail, snapshot?.snapshot_data ?? snapshot, restaurant),
+    [detail, snapshot, restaurant],
   );
 
   const snapshotDisplayRows = useMemo(() => {
@@ -880,8 +882,10 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                 <DayClosePaymentSummary
                   detail={detail}
                   snapshotData={snapshot?.snapshot_data ?? snapshot}
+                  restaurant={restaurant}
+                  restaurantId={restaurantId}
                   title="Payment totals"
-                  subtitle="Cash, card, Fonepay, digital/QR, and credit payments for this business day."
+                  subtitle="Rows follow Manage → Settings → Payments (FonePay, static QRs, and cards when configured)."
                 />
 
                 <Tabs defaultValue="snapshot" className="w-full">
@@ -922,6 +926,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                           <DayClosePaymentSummary
                             detail={detail}
                             snapshotData={snapshot.snapshot_data}
+                            restaurant={restaurant}
+                            restaurantId={restaurantId}
                             title="Grand totals by payment method"
                             showBars
                             className="space-y-3"
@@ -1035,7 +1041,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </Button>
             </div>
             <p className="text-[11px] text-muted-foreground font-semibold text-center sm:text-left">
-              PDF and Excel are generated on the server. Payment CSV uses the grouped Cash / Card / Fonepay / Digital / Credit totals shown above.
+              PDF and Excel are generated on the server. Payment CSV uses the payment method rows from Settings → Payments shown above.
             </p>
           </DialogFooter>
         </DialogContent>

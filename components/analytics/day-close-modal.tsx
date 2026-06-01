@@ -10,6 +10,7 @@ import { CheckCircle2, ChevronRight, Calculator, AlertTriangle, Receipt, Chevron
 import apiClient from "@/lib/api-client";
 import { DayCloseApis, TableApis, ExpenseApis, OrderApis } from "@/lib/api/endpoints";
 import { DayClosePaymentSummary } from "@/components/analytics/day-close-payment-summary";
+import { useRestaurant } from "@/hooks/use-restaurant";
 
 interface DayCloseModalProps {
   isOpen: boolean;
@@ -339,6 +340,7 @@ function CheckItem({ label, status, message }: { label: string, status: 'pass' |
 }
 
 function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext: (data: any, id: number) => void; restaurantId: number; businessDate: string }) {
+    const restaurant = useRestaurant((s) => s.restaurant);
     const [snapshot, setSnapshot] = useState<any>(null);
     const [tableNameMap, setTableNameMap] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
@@ -874,8 +876,10 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
                         <TabsContent value="payments" className="m-0 space-y-4">
                             <DayClosePaymentSummary
                                 snapshotData={snapshot}
+                                restaurant={restaurant}
+                                restaurantId={restaurantId}
                                 title="Payment totals"
-                                subtitle="Grouped for close review — Cash, Card, Fonepay, Digital/QR, and Credit payments."
+                                subtitle="Uses payment methods from Manage → Settings → Payments."
                                 showBars
                             />
                         </TabsContent>
