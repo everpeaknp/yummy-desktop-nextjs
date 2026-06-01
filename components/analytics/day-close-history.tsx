@@ -884,6 +884,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   snapshotData={snapshot?.snapshot_data ?? snapshot}
                   restaurant={restaurant}
                   restaurantId={restaurantId}
+                  netSales={Number(detail.net_sales || 0)}
                   title="Payment totals"
                   subtitle="Rows follow Manage → Settings → Payments (FonePay, static QRs, and cards when configured)."
                 />
@@ -921,17 +922,6 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                           <Badge variant="secondary" className="rounded-full text-[10px] font-bold uppercase">
                             Saved Snapshot
                           </Badge>
-                        </div>
-                        <div className="px-5 py-4 border-b border-border/40 bg-muted/5">
-                          <DayClosePaymentSummary
-                            detail={detail}
-                            snapshotData={snapshot.snapshot_data}
-                            restaurant={restaurant}
-                            restaurantId={restaurantId}
-                            title="Grand totals by payment method"
-                            showBars
-                            className="space-y-3"
-                          />
                         </div>
                         <div className="max-h-[340px] overflow-auto no-scrollbar">
                           {snapshotDisplayRows.map((row, idx) => (

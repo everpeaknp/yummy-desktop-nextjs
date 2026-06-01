@@ -21,8 +21,8 @@ export const PAYMENT_SUMMARY_ORDER: PaymentSummaryKey[] = [
 ];
 
 export const PAYMENT_SUMMARY_LABELS: Record<PaymentSummaryKey, string> = {
-  cash: "Cash",
-  card: "Card",
+  cash: "Cash payment",
+  card: "Card payment",
   fonepay: "Fonepay",
   digital: "Digital/QR",
   credit: "Credit payments",
@@ -58,6 +58,228 @@ function normalizeName(value: string): string {
     .toLowerCase()
     .replace(/_/g, " ")
     .replace(/\s+/g, " ");
+}
+
+const PAYMENT_RECEIVED_EPSILON = 0.005;
+
+/** True when this method received money (hide zero rows in day-close UI). */
+export function hasPaymentReceived(amount: number): boolean {
+  return Number.isFinite(amount) && amount > PAYMENT_RECEIVED_EPSILON;
+}
+
+type PaymentSettingRef = {
+  name: string;
+  payload?: string | null;
+  identifier?: string | null;
+};
+
+function isGenericInstrumentName(name: string): boolean {
+  const normalized = normalizeName(stripChannelSuffix(name));
+  return (
+    normalized === "unspecified" ||
+    normalized === "unspecified qr" ||
+    normalized === "unspecified card" ||
+    normalized.startsWith("unspecified ")
+  );
+}
+
+/** Backend default when checkout did not send instrument.name (day_close_service). */
+function sumGenericInstrumentAmounts(instruments: Record<string, number>): number {
+  let total = 0;
+  for (const [instrumentName, amount] of Object.entries(instruments)) {
+    if (isGenericInstrumentName(instrumentName)) {
+      total += amount;
+    }
+  }
+  return total;
+}
+
+function namedInstrumentsOnly(instruments: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [instrumentName, amount] of Object.entries(instruments)) {
+    if (isGenericInstrumentName(instrumentName)) continue;
+    if (!hasPaymentReceived(amount)) continue;
+    out[instrumentName] = amount;
+  }
+  return out;
+}
+
+function instrumentMatchesSetting(instrumentName: string, setting: PaymentSettingRef): boolean {
+  const inst = normalizeName(stripChannelSuffix(instrumentName));
+  const target = normalizeName(setting.name);
+  if (!inst || !target) return false;
+  if (inst === target || inst.includes(target) || target.includes(inst)) return true;
+
+  const identifier = normalizeName(setting.identifier || "");
+  if (identifier && (inst.includes(identifier) || identifier.includes(inst))) return true;
+
+  const payload = normalizeName(setting.payload || "");
+  if (payload.length >= 6 && (inst.includes(payload) || payload.includes(inst))) return true;
+
+  return false;
+}
+
+function significantNameTokens(name: string): string[] {
+  const stopWords = new Set(["bank", "qr", "card", "pay", "pos", "machine", "digital"]);
+  return normalizeName(name)
+    .split(" ")
+    .filter((token) => token.length > 2 && !stopWords.has(token));
+}
+
+function bankTokenMatch(settingName: string, instrumentName: string): boolean {
+  const displayName = stripChannelSuffix(settingName);
+  if (instrumentMatchesSetting(instrumentName, { name: displayName })) return true;
+  const instrument = normalizeName(instrumentName);
+  return significantNameTokens(displayName).some((token) => instrument.includes(token));
+}
+
+function sumAmountForSetting(
+  setting: PaymentSettingRef,
+  instruments: Record<string, number>,
+  usedKeys: Set<string>,
+): number {
+  let total = 0;
+  for (const [instrumentName, amount] of Object.entries(instruments)) {
+    if (usedKeys.has(instrumentName)) continue;
+    if (instrumentMatchesSetting(instrumentName, setting) || bankTokenMatch(setting.name, instrumentName)) {
+      total += amount;
+      usedKeys.add(instrumentName);
+    }
+  }
+  return total;
+}
+
+function stripChannelSuffix(label: string): string {
+  return String(label || "")
+    .trim()
+    .replace(/\s*\(QR\)\s*$/i, "")
+    .replace(/\s*\(Card\)\s*$/i, "")
+    .trim();
+}
+
+/** Display label for static QR channels in day-close summaries. */
+export function labelForQrChannel(qrName: string): string {
+  const base = stripChannelSuffix(qrName);
+  return base ? `${base} (QR)` : "QR payment";
+}
+
+function labelForCardChannel(cardName: string, staticQrs: Array<{ name: string }>): string {
+  const base = stripChannelSuffix(cardName);
+  const normalized = normalizeName(base);
+  const duplicateQr = staticQrs.some((qr) => normalizeName(stripChannelSuffix(qr.name)) === normalized);
+  return duplicateQr ? `${base} (Card)` : base;
+}
+
+/** Add per-bank QR/card rows; keep row sum aligned with authoritative bucket total. */
+function appendInstrumentChannelRows(
+  lines: PaymentSummaryLine[],
+  settings: PaymentSettingRef[],
+  instruments: Record<string, number>,
+  bucketTotal: number,
+  formatLabel: (name: string) => string,
+  unallocatedKey: string,
+  unallocatedLabel: string,
+): void {
+  if (bucketTotal <= PAYMENT_RECEIVED_EPSILON) {
+    return;
+  }
+
+  const namedInstruments = namedInstrumentsOnly(instruments);
+  const genericPool = sumGenericInstrumentAmounts(instruments);
+  const usedKeys = new Set<string>();
+
+  const channelRows: PaymentSummaryLine[] = settings.map((setting) => ({
+    key: `${unallocatedKey}:${normalizeName(setting.name)}`,
+    label: formatLabel(setting.name),
+    amount: sumAmountForSetting(setting, namedInstruments, usedKeys),
+  }));
+
+  for (const [instrumentName, amount] of Object.entries(namedInstruments)) {
+    if (usedKeys.has(instrumentName) || !hasPaymentReceived(amount)) continue;
+    channelRows.push({
+      key: `${unallocatedKey}:extra:${normalizeName(instrumentName)}`,
+      label: formatLabel(instrumentName),
+      amount,
+    });
+    usedKeys.add(instrumentName);
+  }
+
+  let assigned = channelRows.reduce((sum, row) => sum + row.amount, 0);
+  const hasPerBankAmounts = channelRows.some((row) => hasPaymentReceived(row.amount));
+
+  if (genericPool > PAYMENT_RECEIVED_EPSILON) {
+    if (settings.length === 1) {
+      channelRows[0].amount += genericPool;
+      assigned += genericPool;
+    }
+  }
+
+  const onlyUnrecordedSplit =
+    !hasPerBankAmounts &&
+    settings.length > 1 &&
+    genericPool > PAYMENT_RECEIVED_EPSILON;
+
+  if (onlyUnrecordedSplit) {
+    lines.push({
+      key: `${unallocatedKey}:unassigned`,
+      label: unallocatedLabel,
+      amount: genericPool,
+    });
+    const remainder = bucketTotal - genericPool;
+    if (remainder > PAYMENT_RECEIVED_EPSILON) {
+      lines.push({
+        key: `${unallocatedKey}:remainder`,
+        label: unallocatedLabel,
+        amount: remainder,
+      });
+    }
+    return;
+  }
+
+  if (genericPool > PAYMENT_RECEIVED_EPSILON && settings.length > 1) {
+    channelRows.push({
+      key: `${unallocatedKey}:generic`,
+      label: unallocatedLabel,
+      amount: genericPool,
+    });
+    assigned += genericPool;
+  }
+
+  if (assigned <= PAYMENT_RECEIVED_EPSILON) {
+    if (bucketTotal > PAYMENT_RECEIVED_EPSILON) {
+      lines.push({
+        key: `${unallocatedKey}:unassigned`,
+        label: unallocatedLabel,
+        amount: bucketTotal,
+      });
+    }
+    return;
+  }
+
+  const remainder = bucketTotal - assigned;
+  if (remainder > PAYMENT_RECEIVED_EPSILON) {
+    channelRows.push({
+      key: `${unallocatedKey}:remainder`,
+      label: unallocatedLabel,
+      amount: remainder,
+    });
+  } else if (assigned > bucketTotal + PAYMENT_RECEIVED_EPSILON && assigned > 0) {
+    const scale = bucketTotal / assigned;
+    for (const row of channelRows) {
+      row.amount *= scale;
+    }
+  }
+
+  lines.push(...channelRows.filter((row) => hasPaymentReceived(row.amount)));
+}
+
+export function paymentSummaryHasUnrecordedInstruments(lines: PaymentSummaryLine[]): boolean {
+  return lines.some(
+    (line) =>
+      line.key.includes(":unassigned") ||
+      line.key.includes(":generic") ||
+      /not recorded at checkout/i.test(line.label),
+  );
 }
 
 /** Map raw backend / instrument labels into the five POS payment buckets. */
@@ -186,11 +408,12 @@ function listToInstrumentMap(
   return out;
 }
 
-function extractInstrumentMaps(snapshotData?: unknown) {
+function extractInstrumentMaps(detail?: unknown, snapshotData?: unknown) {
   const card: Record<string, number> = {};
   const digital: Record<string, number> = {};
 
-  for (const root of snapshotRoots(snapshotData)) {
+  const roots = [detail, ...snapshotRoots(snapshotData)].filter(Boolean);
+  for (const root of roots) {
     if (!root || typeof root !== "object") continue;
     const data = root as Record<string, unknown>;
 
@@ -213,97 +436,99 @@ function applyReceivablesCredit(root: unknown, totals: Record<PaymentSummaryKey,
   }
 }
 
+/** Read backend `payment_distribution` once (no stacking with per-instrument rows). */
+function readPaymentDistributionBuckets(
+  root: Record<string, unknown>,
+): Record<PaymentSummaryKey, number> | null {
+  const dist = root.payment_distribution;
+  if (!dist || typeof dist !== "object" || Array.isArray(dist)) return null;
+
+  const totals = emptyTotals();
+  let found = false;
+
+  for (const method of PAYMENT_SUMMARY_ORDER) {
+    const payload = (dist as Record<string, unknown>)[method];
+    if (payload == null) continue;
+    const amount =
+      payload && typeof payload === "object" && !Array.isArray(payload)
+        ? toAmount((payload as Record<string, unknown>).amount)
+        : toAmount(payload);
+    if (amount > PAYMENT_RECEIVED_EPSILON) {
+      totals[method] = amount;
+      found = true;
+    }
+  }
+
+  return found ? totals : null;
+}
+
+function bucketTotalsAreEmpty(totals: Record<PaymentSummaryKey, number>): boolean {
+  return PAYMENT_SUMMARY_ORDER.every((key) => totals[key] <= PAYMENT_RECEIVED_EPSILON);
+}
+
+/**
+ * Authoritative per-method totals for the payment summary.
+ * Uses day-close sales fields only — never sums payment_distribution + instrument maps
+ * + manual income (that inflated Grand Total above Net Sales on Load Snapshot).
+ */
 function getBucketTotals(detail?: unknown, snapshotData?: unknown): Record<PaymentSummaryKey, number> {
   const totals = emptyTotals();
 
   applySalesFields(detail, totals);
   for (const root of snapshotRoots(snapshotData)) {
+    if (!root || typeof root !== "object") continue;
     applySalesFields(root, totals);
     applyReceivablesCredit(root, totals);
   }
 
-  const fromSnapshot = emptyTotals();
-  for (const root of snapshotRoots(snapshotData)) {
-    aggregateInstrumentsFromSnapshot(root, fromSnapshot);
-    applyReceivablesCredit(root, fromSnapshot);
+  if (bucketTotalsAreEmpty(totals)) {
+    for (const root of snapshotRoots(snapshotData)) {
+      if (!root || typeof root !== "object") continue;
+      const fromDistribution = readPaymentDistributionBuckets(root as Record<string, unknown>);
+      if (!fromDistribution) continue;
+      for (const key of PAYMENT_SUMMARY_ORDER) {
+        totals[key] = Math.max(totals[key], fromDistribution[key]);
+      }
+      break;
+    }
   }
-
-  for (const key of PAYMENT_SUMMARY_ORDER) {
-    totals[key] = Math.max(totals[key], fromSnapshot[key]);
-  }
-
-  const { card, digital } = extractInstrumentMaps(snapshotData);
-  totals.card = Math.max(totals.card, sumInstrumentMap(card));
-  totals.digital = Math.max(totals.digital, sumInstrumentMap(digital));
 
   return totals;
 }
 
-function aggregateDistributionList(list: unknown, totals: Record<PaymentSummaryKey, number>) {
-  if (!Array.isArray(list)) return;
-  for (const entry of list) {
-    const label = readDistributionLabel(entry);
-    const amount = readDistributionAmount(entry);
-    if (amount <= 0) continue;
+/** Net sales from day-close detail / snapshot (order revenue after refunds). */
+export function resolveNetSalesAmount(detail?: unknown, snapshotData?: unknown): number {
+  let net = 0;
 
-    const bucket = classifyPaymentLabel(label);
-    if (bucket) {
-      totals[bucket] += amount;
-      continue;
-    }
+  const readNet = (root: unknown) => {
+    if (!root || typeof root !== "object") return;
+    const value = toAmount((root as Record<string, unknown>).net_sales);
+    if (value > net) net = value;
+  };
 
-    const method = String((entry as Record<string, unknown>).method ?? "").toLowerCase();
-    if (method && PAYMENT_SUMMARY_ORDER.includes(method as PaymentSummaryKey)) {
-      totals[method as PaymentSummaryKey] += amount;
-    }
+  readNet(detail);
+  for (const root of snapshotRoots(snapshotData)) {
+    readNet(root);
   }
+
+  return net;
 }
 
-function aggregateObjectMap(map: unknown, totals: Record<PaymentSummaryKey, number>) {
-  if (!map || typeof map !== "object" || Array.isArray(map)) return;
-  for (const [name, value] of Object.entries(map as Record<string, unknown>)) {
-    const amount = toAmount(value);
-    if (amount <= 0) continue;
-    const bucket = classifyPaymentLabel(name);
-    if (bucket) totals[bucket] += amount;
+/** Manual income posted outside orders (included in Total Income, not Net Sales). */
+export function resolveManualIncomeTotal(snapshotData?: unknown): number {
+  let manual = 0;
+
+  const readManual = (root: unknown) => {
+    if (!root || typeof root !== "object") return;
+    const value = toAmount((root as Record<string, unknown>).manual_income_total);
+    if (value > manual) manual = value;
+  };
+
+  for (const root of snapshotRoots(snapshotData)) {
+    readManual(root);
   }
-}
 
-function aggregateInstrumentsFromSnapshot(snapshotData: unknown, totals: Record<PaymentSummaryKey, number>) {
-  if (!snapshotData || typeof snapshotData !== "object") return;
-  const data = snapshotData as Record<string, unknown>;
-
-  aggregateDistributionList(data.payment_distribution, totals);
-  aggregateDistributionList(data.payment_instrument_distribution, totals);
-  aggregateDistributionList(data.payment_methods, totals);
-  aggregateDistributionList(data.by_payment_method, totals);
-
-  aggregateObjectMap(data.card_sales_by_instrument, totals);
-  aggregateObjectMap(data.digital_sales_by_instrument, totals);
-  aggregateObjectMap(data.manual_income_by_method, totals);
-
-  const nested = data.payment_distribution;
-  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-    for (const [method, payload] of Object.entries(nested as Record<string, unknown>)) {
-      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-        const amount = toAmount((payload as Record<string, unknown>).amount);
-        if (amount > 0) {
-          const bucket =
-            classifyPaymentLabel(method) ??
-            (PAYMENT_SUMMARY_ORDER.includes(method as PaymentSummaryKey)
-              ? (method as PaymentSummaryKey)
-              : null);
-          if (bucket) totals[bucket] += amount;
-        }
-      } else {
-        const amount = toAmount(payload);
-        if (amount > 0) {
-          const bucket = classifyPaymentLabel(method);
-          if (bucket) totals[bucket] += amount;
-        }
-      }
-    }
-  }
+  return manual;
 }
 
 function snapshotRoots(snapshotData?: unknown): unknown[] {
@@ -390,48 +615,6 @@ function sumInstrumentMap(map: Record<string, number>): number {
   return Object.values(map).reduce((sum, value) => sum + value, 0);
 }
 
-/** Ensure configured per-instrument rows still sum to the authoritative bucket total. */
-function reconcileBucketLines(
-  bucketTotal: number,
-  lines: PaymentSummaryLine[],
-  fallback: { key: string; label: string },
-  other?: { key: string; label: string },
-): PaymentSummaryLine[] {
-  if (bucketTotal <= 0) {
-    return lines.map((line) => ({ ...line, amount: 0 }));
-  }
-
-  const assigned = lines.reduce((sum, line) => sum + line.amount, 0);
-  const remainder = Math.max(0, bucketTotal - assigned);
-
-  if (lines.length === 0) {
-    return [{ key: fallback.key, label: fallback.label, amount: bucketTotal }];
-  }
-
-  if (assigned <= 0) {
-    return [{ key: fallback.key, label: fallback.label, amount: bucketTotal }];
-  }
-
-  if (remainder <= 0) {
-    return lines;
-  }
-
-  const otherKey = other?.key ?? `${fallback.key}:other`;
-  const otherLabel = other?.label ?? `Other ${fallback.label}`;
-  const otherIndex = lines.findIndex((line) => line.key === otherKey);
-
-  if (otherIndex >= 0) {
-    const next = [...lines];
-    next[otherIndex] = {
-      ...next[otherIndex],
-      amount: next[otherIndex].amount + remainder,
-    };
-    return next;
-  }
-
-  return [...lines, { key: otherKey, label: otherLabel, amount: remainder }];
-}
-
 function buildDefaultPaymentSummary(detail?: unknown, snapshotData?: unknown): PaymentSummaryLine[] {
   const totals = getBucketTotals(detail, snapshotData);
   return PAYMENT_SUMMARY_ORDER.map((key) => ({
@@ -447,49 +630,14 @@ function buildSettingsDrivenPaymentSummary(
   settings: RestaurantPaymentSettings,
 ): PaymentSummaryLine[] {
   const totals = getBucketTotals(detail, snapshotData);
-  const { card: cardInstruments, digital: digitalInstruments } = extractInstrumentMaps(snapshotData);
+  const { card: cardInstruments, digital: digitalInstruments } = extractInstrumentMaps(
+    detail,
+    snapshotData,
+  );
   const lines: PaymentSummaryLine[] = [];
-  const usedCardKeys = new Set<string>();
-  const usedDigitalKeys = new Set<string>();
 
-  lines.push({ key: "cash", label: PAYMENT_SUMMARY_LABELS.cash, amount: totals.cash });
-
-  if (settings.paymentCards.length > 0) {
-    const cardLines: PaymentSummaryLine[] = [];
-    for (const card of settings.paymentCards) {
-      const target = normalizeName(card.name);
-      let amount = 0;
-      for (const [instrumentName, instrumentAmount] of Object.entries(cardInstruments)) {
-        const normalized = normalizeName(instrumentName);
-        if (
-          normalized === target ||
-          normalized.includes(target) ||
-          target.includes(normalized)
-        ) {
-          amount += instrumentAmount;
-          usedCardKeys.add(instrumentName);
-        }
-      }
-      cardLines.push({ key: `card:${target}`, label: card.name, amount });
-    }
-
-    const unmatchedCard = Object.entries(cardInstruments).reduce((sum, [name, amount]) => {
-      if (usedCardKeys.has(name)) return sum;
-      return sum + amount;
-    }, 0);
-    if (unmatchedCard > 0) {
-      cardLines.push({ key: "card:other", label: "Other card", amount: unmatchedCard });
-    }
-
-    lines.push(
-      ...reconcileBucketLines(totals.card, cardLines, {
-        key: "card",
-        label: PAYMENT_SUMMARY_LABELS.card,
-      }),
-    );
-  } else {
-    lines.push({ key: "card", label: PAYMENT_SUMMARY_LABELS.card, amount: totals.card });
-  }
+  lines.push({ key: "cash", label: "Cash payment", amount: totals.cash });
+  lines.push({ key: "credit", label: PAYMENT_SUMMARY_LABELS.credit, amount: totals.credit });
 
   if (settings.fonepayEnabled) {
     lines.push({
@@ -500,39 +648,16 @@ function buildSettingsDrivenPaymentSummary(
   }
 
   if (settings.staticQrs.length > 0) {
-    const qrLines: PaymentSummaryLine[] = [];
-    for (const qr of settings.staticQrs) {
-      const target = normalizeName(qr.name);
-      let amount = 0;
-      for (const [instrumentName, instrumentAmount] of Object.entries(digitalInstruments)) {
-        const normalized = normalizeName(instrumentName);
-        if (
-          normalized === target ||
-          normalized.includes(target) ||
-          target.includes(normalized)
-        ) {
-          amount += instrumentAmount;
-          usedDigitalKeys.add(instrumentName);
-        }
-      }
-      qrLines.push({ key: `qr:${target}`, label: qr.name, amount });
-    }
-
-    const unmatchedDigital = Object.entries(digitalInstruments).reduce((sum, [name, amount]) => {
-      if (usedDigitalKeys.has(name)) return sum;
-      return sum + amount;
-    }, 0);
-    if (unmatchedDigital > 0) {
-      qrLines.push({ key: "digital:other", label: "Other Digital/QR", amount: unmatchedDigital });
-    }
-
-    lines.push(
-      ...reconcileBucketLines(totals.digital, qrLines, {
-        key: "digital",
-        label: PAYMENT_SUMMARY_LABELS.digital,
-      }),
+    appendInstrumentChannelRows(
+      lines,
+      settings.staticQrs,
+      digitalInstruments,
+      totals.digital,
+      labelForQrChannel,
+      "qr",
+      "QR total (bank not recorded at checkout)",
     );
-  } else if (totals.digital > 0) {
+  } else if (hasPaymentReceived(totals.digital)) {
     lines.push({
       key: "digital",
       label: PAYMENT_SUMMARY_LABELS.digital,
@@ -540,13 +665,44 @@ function buildSettingsDrivenPaymentSummary(
     });
   }
 
-  lines.push({
-    key: "credit",
-    label: PAYMENT_SUMMARY_LABELS.credit,
-    amount: totals.credit,
-  });
+  if (settings.paymentCards.length > 0) {
+    appendInstrumentChannelRows(
+      lines,
+      settings.paymentCards,
+      cardInstruments,
+      totals.card,
+      (name) => labelForCardChannel(name, settings.staticQrs),
+      "card",
+      "Card total (terminal not recorded at checkout)",
+    );
+  } else if (hasPaymentReceived(totals.card)) {
+    lines.push({ key: "card", label: PAYMENT_SUMMARY_LABELS.card, amount: totals.card });
+  }
 
   return lines;
+}
+
+export function filterPaymentSummaryLinesWithReceipts(
+  lines: PaymentSummaryLine[],
+): PaymentSummaryLine[] {
+  return lines.filter((line) => hasPaymentReceived(line.amount));
+}
+
+/** Cash / credit / Fonepay — always listed when settings-driven (even at Rs. 0). */
+function isCorePaymentChannelLine(line: PaymentSummaryLine): boolean {
+  return line.key === "cash" || line.key === "credit" || line.key === "fonepay";
+}
+
+/** Static QR / card rows from Manage → Settings → Payments (always show names). */
+function isSettingsPaymentChannelLine(line: PaymentSummaryLine): boolean {
+  const isConfiguredKey = (prefix: string) =>
+    line.key.startsWith(`${prefix}:`) &&
+    !line.key.includes(":generic") &&
+    !line.key.includes(":remainder") &&
+    !line.key.includes(":extra") &&
+    !line.key.includes(":unassigned");
+
+  return isConfiguredKey("qr") || isConfiguredKey("card");
 }
 
 export function buildPaymentSummary(
@@ -555,20 +711,36 @@ export function buildPaymentSummary(
   restaurant?: unknown,
 ): PaymentSummaryLine[] {
   const settings = parseRestaurantPaymentSettings(restaurant);
-  if (!settings) {
-    return buildDefaultPaymentSummary(detail, snapshotData);
+  const useSettingsChannels =
+    settings &&
+    (settings.fonepayEnabled || settings.staticQrs.length > 0 || settings.paymentCards.length > 0);
+
+  const lines = useSettingsChannels
+    ? buildSettingsDrivenPaymentSummary(detail, snapshotData, settings)
+    : buildDefaultPaymentSummary(detail, snapshotData);
+
+  if (useSettingsChannels) {
+    return lines.filter(
+      (line) =>
+        hasPaymentReceived(line.amount) ||
+        isCorePaymentChannelLine(line) ||
+        isSettingsPaymentChannelLine(line),
+    );
   }
 
-  const hasConfiguredMethods =
-    settings.fonepayEnabled || settings.staticQrs.length > 0 || settings.paymentCards.length > 0;
-
-  if (!hasConfiguredMethods) {
-    return buildDefaultPaymentSummary(detail, snapshotData);
-  }
-
-  return buildSettingsDrivenPaymentSummary(detail, snapshotData, settings);
+  return filterPaymentSummaryLinesWithReceipts(lines);
 }
 
+/** Authoritative total from day-close sales fields (matches backend buckets). */
+export function paymentSummaryBucketGrandTotal(
+  detail?: unknown,
+  snapshotData?: unknown,
+): number {
+  const totals = getBucketTotals(detail, snapshotData);
+  return PAYMENT_SUMMARY_ORDER.reduce((sum, key) => sum + totals[key], 0);
+}
+
+/** Sum of displayed channel rows (may differ slightly before reconciliation). */
 export function paymentSummaryGrandTotal(lines: PaymentSummaryLine[]): number {
   return lines.reduce((sum, line) => sum + line.amount, 0);
 }

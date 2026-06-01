@@ -6,7 +6,7 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, CustomerApis, PaymentApis } from "@/lib/api/endpoints";
+import { OrderApis, CustomerApis, PaymentApis, RestaurantApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -164,6 +164,40 @@ function formatCurrency(amount: number, currency = "Rs.") {
   return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function buildStaticQrInstrument(
+  method: string,
+  staticQrs: Array<{ name: string; payload: string }>,
+  selectedQrIndex: number,
+) {
+  if (method !== "digital" || staticQrs.length === 0) return undefined;
+  const qr = staticQrs[selectedQrIndex] ?? staticQrs[0];
+  const name = String(qr?.name || "").trim();
+  if (!name) return undefined;
+  const payload = String(qr?.payload || "").trim();
+  return {
+    type: "digital",
+    name,
+    meta: payload ? { payload } : null,
+  };
+}
+
+function buildCardInstrument(
+  method: string,
+  paymentCards: Array<{ name: string; identifier?: string | null }>,
+  selectedCardIndex: number,
+) {
+  if (method !== "card" || paymentCards.length === 0) return undefined;
+  const card = paymentCards[selectedCardIndex] ?? paymentCards[0];
+  const name = String(card?.name || "").trim();
+  if (!name) return undefined;
+  const identifier = String(card?.identifier || "").trim();
+  return {
+    type: "card",
+    name,
+    meta: identifier ? { identifier } : null,
+  };
+}
+
 function formatCustomerLabel(c: any, currency: string) {
   const name = c?.full_name || c?.name || "Guest";
   const phone = c?.phone || "No phone";
@@ -190,7 +224,33 @@ export default function CheckoutPage() {
   const orderId = Number(rawId || 0);
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
+  const [paymentRestaurant, setPaymentRestaurant] = useState<typeof restaurant>(restaurant);
   const curr = restaurant?.currency || "Rs.";
+
+  useEffect(() => {
+    setPaymentRestaurant(restaurant ?? null);
+  }, [restaurant]);
+
+  useEffect(() => {
+    const id = user?.restaurant_id;
+    if (!id) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get(RestaurantApis.getById(id));
+        if (!cancelled && res.data?.status === "success") {
+          setPaymentRestaurant(res.data.data);
+        }
+      } catch {
+        // Keep cached restaurant from the store.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.restaurant_id]);
   const { canApplyDiscount, canProcessPayment } = usePosBillingPermissions();
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
@@ -215,6 +275,7 @@ export default function CheckoutPage() {
   const [fonepayLoading, setFonepayLoading] = useState(false);
   const [fonepayVerifying, setFonepayVerifying] = useState(false);
   const [selectedStaticQrIndex, setSelectedStaticQrIndex] = useState(0);
+  const [selectedCardIndex, setSelectedCardIndex] = useState(0);
 
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
@@ -240,10 +301,22 @@ export default function CheckoutPage() {
   const [loyaltyPoints, setLoyaltyPoints] = useState("");
   const [loyaltySubmitting, setLoyaltySubmitting] = useState(false);
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
-  const staticPaymentQrs: Array<{ name: string; payload: string }> = Array.isArray((restaurant as any)?.payment_qrs)
-    ? (restaurant as any).payment_qrs
+  const staticPaymentQrs: Array<{ name: string; payload: string }> = Array.isArray(
+    (paymentRestaurant as any)?.payment_qrs,
+  )
+    ? (paymentRestaurant as any).payment_qrs
         .filter((q: any) => q && typeof q.payload === "string" && q.payload.trim())
         .map((q: any) => ({ name: String(q.name || "QR"), payload: String(q.payload) }))
+    : [];
+  const paymentCards: Array<{ name: string; identifier?: string | null }> = Array.isArray(
+    (paymentRestaurant as any)?.payment_cards,
+  )
+    ? (paymentRestaurant as any).payment_cards
+        .filter((c: any) => c && String(c.name || "").trim())
+        .map((c: any) => ({
+          name: String(c.name || "Card").trim(),
+          identifier: c.identifier != null ? String(c.identifier).trim() : null,
+        }))
     : [];
 
   // ── Fetch Bill ────────────────────────────────────
@@ -480,13 +553,32 @@ export default function CheckoutPage() {
         return;
       }
 
+      const paymentPayload: {
+        method: string;
+        amount: number;
+        reference: string | null;
+        status: string;
+        instrument?: {
+          type: string;
+          name: string;
+          meta?: { payload?: string; identifier?: string } | null;
+        };
+      } = {
+        method: payMethod,
+        amount: Math.min(amount, bill?.balance_due || amount),
+        reference: payReference.trim() || null,
+        status: "success",
+      };
+
+      const instrument =
+        buildStaticQrInstrument(payMethod, staticPaymentQrs, selectedStaticQrIndex) ??
+        buildCardInstrument(payMethod, paymentCards, selectedCardIndex);
+      if (instrument) {
+        paymentPayload.instrument = instrument;
+      }
+
       const res = await apiClient.post(OrderApis.addPayment(orderId), {
-        payment: {
-          method: payMethod,
-          amount: Math.min(amount, bill?.balance_due || amount),
-          reference: payReference.trim() || null,
-          status: "success",
-        },
+        payment: paymentPayload,
       });
       setPaymentOpen(false);
       setPayAmount("");
@@ -601,6 +693,17 @@ export default function CheckoutPage() {
       setSelectedStaticQrIndex(0);
     }
   }, [payMethod, selectedStaticQrIndex, staticPaymentQrs.length]);
+
+  useEffect(() => {
+    if (payMethod !== "card") return;
+    if (paymentCards.length === 0) {
+      setSelectedCardIndex(0);
+      return;
+    }
+    if (selectedCardIndex >= paymentCards.length) {
+      setSelectedCardIndex(0);
+    }
+  }, [payMethod, selectedCardIndex, paymentCards.length]);
 
   // ── Apply Discount ────────────────────────────────
   const handleApplyDiscount = async () => {
@@ -1207,6 +1310,45 @@ export default function CheckoutPage() {
                   <User className="h-4 w-4" />
                   Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
                </div>
+            )}
+
+            {payMethod === "card" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Card terminal</Label>
+                  {paymentCards.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {selectedCardIndex + 1}/{paymentCards.length}
+                    </span>
+                  )}
+                </div>
+                {paymentCards.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                    No card terminals configured in settings. Add them in Manage / Settings / Payments & POS.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {paymentCards.map((card, idx) => (
+                      <button
+                        key={`${card.name}-${idx}`}
+                        type="button"
+                        onClick={() => setSelectedCardIndex(idx)}
+                        className={cn(
+                          "rounded-lg border px-3 py-2 text-left text-sm",
+                          selectedCardIndex === idx
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-border/50 text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        <div className="font-medium truncate">{card.name}</div>
+                        {card.identifier ? (
+                          <div className="text-[10px] text-muted-foreground truncate">{card.identifier}</div>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {payMethod === "digital" && (

@@ -72,6 +72,12 @@ export default function RestaurantSettingsPage() {
     const qrInputRef = useRef<HTMLInputElement>(null);
     const [isExtracting, setIsExtracting] = useState(false);
 
+    const [cardDialog, setCardDialog] = useState<{ open: boolean; index: number | null }>({
+        open: false,
+        index: null,
+    });
+    const [cardForm, setCardForm] = useState({ name: "", identifier: "" });
+
     useEffect(() => {
         const fetchData = async () => {
             if (!user?.restaurant_id) return;
@@ -203,6 +209,65 @@ export default function RestaurantSettingsPage() {
             }
         } catch (err) {
             toast.error("Failed to remove QR");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCardSave = async () => {
+        if (!user?.restaurant_id || !cardForm.name.trim()) return;
+
+        const currentCards = restaurant?.payment_cards ? [...restaurant.payment_cards] : [];
+        const entry = {
+            name: cardForm.name.trim(),
+            identifier: cardForm.identifier.trim() || null,
+        };
+
+        if (cardDialog.index !== null) {
+            currentCards[cardDialog.index] = entry;
+        } else {
+            if (currentCards.length >= 6) {
+                toast.error("Maximum 6 card terminals allowed");
+                return;
+            }
+            currentCards.push(entry);
+        }
+
+        try {
+            setSaving(true);
+            const res = await apiClient.put(RestaurantApis.update(user.restaurant_id), {
+                payment_cards: currentCards,
+            });
+            if (res.data.status === "success") {
+                setRestaurant(res.data.data);
+                toast.success("Card terminals updated");
+                setCardDialog({ open: false, index: null });
+                setCardForm({ name: "", identifier: "" });
+            }
+        } catch (err) {
+            toast.error("Failed to update card terminals");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCardDelete = async (index: number) => {
+        if (!user?.restaurant_id || !restaurant?.payment_cards) return;
+
+        const currentCards = [...restaurant.payment_cards];
+        currentCards.splice(index, 1);
+
+        try {
+            setSaving(true);
+            const res = await apiClient.put(RestaurantApis.update(user.restaurant_id), {
+                payment_cards: currentCards,
+            });
+            if (res.data.status === "success") {
+                setRestaurant(res.data.data);
+                toast.success("Card terminal removed");
+            }
+        } catch (err) {
+            toast.error("Failed to remove card terminal");
         } finally {
             setSaving(false);
         }
@@ -394,6 +459,89 @@ export default function RestaurantSettingsPage() {
                             )}
                         </CardContent>
                     </Card>
+
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                            <div className="space-y-1">
+                                <CardTitle className="flex items-center gap-2">
+                                    <CreditCard className="w-5 h-5 text-primary" />
+                                    Card Terminals
+                                </CardTitle>
+                                <CardDescription>
+                                    Name each card POS or bank terminal for day-close reporting. (Max 6)
+                                </CardDescription>
+                            </div>
+                            <Button
+                                size="sm"
+                                className="h-8"
+                                disabled={restaurant?.payment_cards?.length >= 6}
+                                onClick={() => {
+                                    setCardForm({ name: "", identifier: "" });
+                                    setCardDialog({ open: true, index: null });
+                                }}
+                            >
+                                <Plus className="w-4 h-4 mr-1" />
+                                Add card
+                            </Button>
+                        </CardHeader>
+                        <CardContent>
+                            {!restaurant?.payment_cards?.length ? (
+                                <div className="text-center py-8 border-2 border-dashed rounded-lg bg-muted/20">
+                                    <CreditCard className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                                    <p className="text-sm text-muted-foreground">No card terminals configured.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {restaurant.payment_cards.map((card: any, idx: number) => (
+                                        <div
+                                            key={idx}
+                                            className="flex items-center justify-between p-3 border rounded-lg bg-muted/30 group"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded bg-primary/10 flex items-center justify-center text-primary">
+                                                    <CreditCard className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-medium">{card.name}</p>
+                                                    {card.identifier ? (
+                                                        <p className="text-[10px] text-muted-foreground truncate max-w-[150px]">
+                                                            {card.identifier}
+                                                        </p>
+                                                    ) : (
+                                                        <p className="text-[10px] text-muted-foreground italic">No terminal ID</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-primary"
+                                                    onClick={() => {
+                                                        setCardForm({
+                                                            name: card.name || "",
+                                                            identifier: card.identifier || "",
+                                                        });
+                                                        setCardDialog({ open: true, index: idx });
+                                                    }}
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-destructive"
+                                                    onClick={() => handleCardDelete(idx)}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
                 </TabsContent>
 
 
@@ -471,6 +619,46 @@ export default function RestaurantSettingsPage() {
                     </Card>
                 </TabsContent>
             </Tabs>
+
+            <Dialog open={cardDialog.open} onOpenChange={(open) => setCardDialog({ ...cardDialog, open })}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>
+                            {cardDialog.index !== null ? "Edit card terminal" : "Add card terminal"}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Display name appears on day close and checkout (e.g. Himalayan Bank, Nabil Bank).
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>Display name</Label>
+                            <Input
+                                value={cardForm.name}
+                                onChange={(e) => setCardForm({ ...cardForm, name: e.target.value })}
+                                placeholder="e.g. Himalayan Bank, NIMB Bank..."
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Terminal ID (optional)</Label>
+                            <Input
+                                value={cardForm.identifier}
+                                onChange={(e) => setCardForm({ ...cardForm, identifier: e.target.value })}
+                                placeholder="Merchant or terminal reference"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCardDialog({ open: false, index: null })}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleCardSave} disabled={saving || !cardForm.name.trim()}>
+                            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                            {cardDialog.index !== null ? "Update" : "Save"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* QR Dialog */}
             <Dialog open={qrDialog.open} onOpenChange={(open) => setQrDialog({ ...qrDialog, open })}>

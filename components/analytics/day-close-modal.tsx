@@ -878,6 +878,7 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
                                 snapshotData={snapshot}
                                 restaurant={restaurant}
                                 restaurantId={restaurantId}
+                                netSales={derivedNetSales}
                                 title="Payment totals"
                                 subtitle="Uses payment methods from Manage → Settings → Payments."
                                 showBars
