@@ -30,8 +30,9 @@ export default function NewOrderPage() {
     const [tables, setTables] = useState<TableData[]>([]);
     const [rooms, setRooms] = useState<TableData[]>([]);
     const [tableTypes, setTableTypes] = useState<TableType[]>([]);
+    const [roomTableTypes, setRoomTableTypes] = useState<TableType[]>([]);
     const [selectedArea, setSelectedArea] = useState("All Areas");
-    const [selectedWing, setSelectedWing] = useState("All Wings");
+    const [selectedWing, setSelectedWing] = useState("All Floors");
     const [loading, setLoading] = useState(false);
     const [loadingRooms, setLoadingRooms] = useState(false);
 
@@ -76,14 +77,20 @@ export default function NewOrderPage() {
         }
     }, [user?.restaurant_id]);
 
-    // 3. Data Fetching — rooms (space_kind=room)
+    // 3. Data Fetching — rooms (space_kind=room) + room table types (for floor layout_height)
     const fetchRooms = useCallback(async () => {
         if (!user?.restaurant_id) return;
         setLoadingRooms(true);
         try {
-            const res = await apiClient.get(`${TableApis.getTables(user.restaurant_id)}?space_kind=room`);
-            if (res.data.status === "success") {
-                setRooms(res.data.data || []);
+            const [roomsRes, typesRes] = await Promise.all([
+                apiClient.get(`${TableApis.getTables(user.restaurant_id)}?space_kind=room`),
+                apiClient.get(`${TableTypeApis.getTableTypes(user.restaurant_id)}?space_kind=room`),
+            ]);
+            if (roomsRes.data.status === "success") {
+                setRooms(roomsRes.data.data || []);
+            }
+            if (typesRes.data.status === "success") {
+                setRoomTableTypes(typesRes.data.data || []);
             }
         } catch (err) {
             console.error("Failed to fetch rooms:", err);
@@ -147,6 +154,48 @@ export default function NewOrderPage() {
                 : tables.filter((t) => (t.table_type_name || "General") === area);
         const occupied = bucket.filter((t) => String(t.status).toLowerCase() === "occupied").length;
         return { area, total: bucket.length, occupied };
+    });
+
+    // ─── Room Floor options ───
+    const roomAreaOptions = (() => {
+        const set = new Set<string>();
+        roomTableTypes.forEach((tt) => set.add(tt.name));
+        rooms.forEach((r) => {
+            if (r.table_type_name) set.add(r.table_type_name);
+        });
+        const sorted = Array.from(set).sort();
+        return ["All Floors", ...sorted];
+    })();
+
+    const getRoomLayoutHeight = (floorName: string): number => {
+        const tt = roomTableTypes.find((t) => t.name === floorName);
+        return tt?.layout_height ?? 200;
+    };
+
+    // ─── Room Filter / group ───
+    const filteredRooms =
+        selectedWing === "All Floors"
+            ? rooms
+            : rooms.filter((r) => (r.table_type_name || "General") === selectedWing);
+
+    const groupedRooms = filteredRooms.reduce(
+        (acc, room) => {
+            const floor = room.table_type_name || "General";
+            if (!acc[floor]) acc[floor] = [];
+            acc[floor].push(room);
+            return acc;
+        },
+        {} as Record<string, TableData[]>
+    );
+    const sortedRoomFloors = Object.keys(groupedRooms).sort();
+
+    const roomAreaStats = roomAreaOptions.map((floor) => {
+        const bucket =
+            floor === "All Floors"
+                ? rooms
+                : rooms.filter((r) => (r.table_type_name || "General") === floor);
+        const occupied = bucket.filter((r) => String(r.status).toLowerCase() === "occupied").length;
+        return { floor, total: bucket.length, occupied };
     });
 
     const handleTableClick = (table: TableData) => {
@@ -298,6 +347,34 @@ export default function NewOrderPage() {
             <div className="mt-4 flex flex-col">
                 {activeTab === "rooms" ? (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {/* Floor Filter Chips */}
+                        <div className="pb-3 pt-1">
+                            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2 ml-1">
+                                <Filter className="w-3.5 h-3.5" />
+                                <span>Filter Floor</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 mb-3 pr-2">
+                                {roomAreaStats.map(({ floor, total, occupied }) => (
+                                    <button
+                                        key={floor}
+                                        onClick={() => setSelectedWing(floor)}
+                                        className={cn(
+                                            "shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 border",
+                                            selectedWing === floor
+                                                ? "bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm ring-1 ring-blue-200/60"
+                                                : "text-muted-foreground border-transparent bg-muted/30 hover:text-foreground hover:bg-muted"
+                                        )}
+                                    >
+                                        <span>{floor}</span>
+                                        <span className="ml-2 text-xs opacity-80">{total}</span>
+                                        {occupied > 0 && (
+                                            <span className="ml-1 text-[10px] text-red-500">•{occupied}</span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
                         {/* Room Status Legend */}
                         <div className="flex items-center gap-6 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-6 ml-2 shrink-0">
                             <div className="flex items-center gap-2">
@@ -325,13 +402,27 @@ export default function NewOrderPage() {
                                 <p className="font-bold uppercase tracking-widest text-xs">No rooms configured</p>
                                 <p className="text-xs text-muted-foreground">Add rooms with space_kind=room from the Rooms management page</p>
                             </div>
+                        ) : selectedWing !== "All Floors" ? (
+                            <div className="w-full lg:w-[calc(50%-1rem)]">
+                                <RoomContainer
+                                    title={selectedWing}
+                                    tables={filteredRooms}
+                                    layoutHeight={getRoomLayoutHeight(selectedWing)}
+                                    onTableClick={(room) => setSelectedRoom(room.id)}
+                                />
+                            </div>
                         ) : (
-                            <RoomContainer
-                                title="Hotel Rooms"
-                                tables={rooms}
-                                layoutHeight={300}
-                                onTableClick={(room) => setSelectedRoom(room.id)}
-                            />
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                {sortedRoomFloors.map((floorName) => (
+                                    <RoomContainer
+                                        key={floorName}
+                                        title={floorName}
+                                        tables={groupedRooms[floorName]}
+                                        layoutHeight={getRoomLayoutHeight(floorName)}
+                                        onTableClick={(room) => setSelectedRoom(room.id)}
+                                    />
+                                ))}
+                            </div>
                         )}
                     </div>
                 ) : activeTab === "tables" ? (

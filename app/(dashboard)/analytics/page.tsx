@@ -68,7 +68,6 @@ export default function AnalyticsPage() {
                     const day = String(date.getDate()).padStart(2, '0');
                     return `${year}-${month}-${day}`;
                 };
-
                 const now = new Date();
                 let dateFrom = formatDate(now);
                 let dateTo = formatDate(now);
@@ -89,9 +88,16 @@ export default function AnalyticsPage() {
                 } else if (activeRange === 'month') {
                     const m = new Date(now.getFullYear(), now.getMonth(), 1);
                     dateFrom = formatDate(m);
-                } else if (activeRange === 'custom' && date?.from && date?.to) {
+                } else if (activeRange === 'custom' && date?.from) {
                     dateFrom = formatDate(date.from);
-                    dateTo = formatDate(date.to);
+                    dateTo = date.to ? formatDate(date.to) : dateFrom;
+                }
+                let startTime: string | undefined = undefined;
+                let endTime: string | undefined = undefined;
+
+                if (activeRange === 'custom' && date?.from) {
+                    startTime = date.from.toISOString();
+                    endTime = date.to ? date.to.toISOString() : date.from.toISOString();
                 }
 
                 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -100,6 +106,8 @@ export default function AnalyticsPage() {
                     restaurantId: user.restaurant_id,
                     dateFrom,
                     dateTo,
+                    startTime,
+                    endTime,
                     timezone,
                     businessLine,
                     include: "core",
