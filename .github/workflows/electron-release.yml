@@ -1,0 +1,59 @@
+# Build Yummy POS Windows installers and attach them to a GitHub Release.
+#
+# Create a release:
+#   git tag v0.1.0
+#   git push origin v0.1.0
+#
+# Or: Actions → Electron Release → Run workflow (creates/updates the tag's release assets).
+
+name: Electron Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows installers
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run electron:build:win
+
+      - name: List build artifacts
+        run: Get-ChildItem -Path dist -Filter *.exe | Format-Table Name, Length
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: Yummy POS ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/Yummy POS Setup *.exe
+            dist/Yummy POS Portable.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

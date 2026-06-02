@@ -1,6 +1,6 @@
 export type OrderStatus = 'pending' | 'running' | 'scheduled' | 'preparing' | 'ready' | 'out_for_delivery' | 'ready_for_pickup' | 'completed' | 'canceled';
 export type OrderType = 'quick_billing' | 'delivery' | 'pickup' | 'reservation' | 'table' | 'group' | 'online' | 'room_service';
-export type PaymentMethod = 'cash' | 'card' | 'digital' | 'credit';
+export type PaymentMethod = 'cash' | 'card' | 'digital' | 'fonepay' | 'credit';
 export type PaymentStatus = 'success' | 'pending' | 'failed' | 'refunded';
 
 export interface OrderItemModifier {
@@ -35,6 +35,14 @@ export interface OrderPayment {
   method: PaymentMethod;
   amount: number;
   reference: string | null;
+  instrument_type?: string | null;
+  instrument_name?: string | null;
+  instrument_meta?: Record<string, any> | null;
+  instrument?: {
+    type: string;
+    name: string;
+    meta?: Record<string, any> | null;
+  } | null;
   status: PaymentStatus;
   created_at: string | null;
 }

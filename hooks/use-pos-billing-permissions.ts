@@ -36,6 +36,8 @@ export function usePosBillingPermissions() {
     const canVoidItem = can("pos.order.void_item");
     const canTransferOrder = can("pos.order.transfer");
     const canProcessPayment = can("billing.payment.process");
+    const canEditPayment = can("billing.payment.edit");
+    const canDeletePayment = can("billing.payment.delete");
     const canProcessRefund = can("billing.refund.process");
     const canApproveHistoricalRefund = can("billing.refund.approve");
 
@@ -53,6 +55,8 @@ export function usePosBillingPermissions() {
       canVoidItem,
       canTransferOrder,
       canProcessPayment,
+      canEditPayment,
+      canDeletePayment,
       canProcessRefund,
       canApproveHistoricalRefund,
       canRefundOrder,

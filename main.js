@@ -109,6 +109,55 @@ function getStartUrl() {
   return isDev ? DEV_URL : PROD_URL;
 }
 
+/** Firebase Google sign-in opens a popup; must not be sent to the system browser. */
+function isOAuthPopupUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    if (host === 'accounts.google.com') return true;
+    if (host.endsWith('.googleusercontent.com')) return true;
+    if (host.endsWith('.firebaseapp.com')) return true;
+    if (host.endsWith('.web.app')) return true;
+    if (u.pathname.includes('/__/auth/')) return true;
+    const start = getStartUrl();
+    if (start.startsWith('http')) {
+      const appHost = new URL(start).hostname.toLowerCase();
+      if (host === appHost && u.pathname.includes('/__/auth/')) return true;
+    }
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+function attachOAuthPopupHandler(webContents) {
+  if (!webContents || webContents.isDestroyed()) return;
+  webContents.setWindowOpenHandler(({ url }) => {
+    if (isOAuthPopupUrl(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 520,
+          height: 720,
+          autoHideMenuBar: true,
+          parent: mainWindow || undefined,
+          modal: false,
+          webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            partition: PERSIST_PARTITION,
+          },
+        },
+      };
+    }
+    try {
+      shell.openExternal(url);
+    } catch (_) {}
+    return { action: 'deny' };
+  });
+}
+
 function getOfflineHtml(startUrl) {
   const safeUrl = String(startUrl).replace(/"/g, '&quot;');
   return `<!doctype html>
@@ -354,11 +403,8 @@ function createWindow() {
     tryShowMain();
   });
 
-  // Open external links in system browser (avoid popup windows).
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    try { shell.openExternal(url); } catch (_) {}
-    return { action: 'deny' };
-  });
+  // Allow Firebase/Google OAuth popups in-app; other links open in the system browser.
+  attachOAuthPopupHandler(mainWindow.webContents);
 
   attachAuthPersistence(mainWindow, USER_DATA_DIR, log);
 

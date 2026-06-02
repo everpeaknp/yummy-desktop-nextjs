@@ -20,7 +20,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "next-themes";
 import { getHomeRouteForUser } from "@/lib/role-permissions";
-import { signInWithGoogle } from "@/lib/firebase";
+import {
+  completeGoogleRedirectIfNeeded,
+  signInWithGoogle,
+} from "@/lib/firebase";
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -129,6 +132,67 @@ export default function Home() {
     return "Something went wrong. Please try again.";
   };
 
+  const finishGoogleIdToken = useCallback(
+    async (idToken: string) => {
+      const response = await apiClient.post("/auth/firebase/google", { idToken });
+      const wrapper = response?.data ?? {};
+      const payload = wrapper?.data ?? wrapper;
+      if (!payload?.access_token) {
+        throw new Error(
+          wrapper?.message || "Google login failed: invalid response from server"
+        );
+      }
+
+      let flatData;
+      if (payload.user) {
+        flatData = {
+          access_token: payload.access_token,
+          refresh_token: payload.refresh_token || null,
+          user_id: payload.user.id,
+          user_name: payload.user.name,
+          email: payload.user.email,
+          user_role: payload.user.role,
+          user_roles: payload.user.roles,
+          primary_role: payload.user.primary_role,
+          restaurant_id: payload.user.restaurant_id,
+          permissions: payload.user.permissions || [],
+        };
+      } else {
+        flatData = {
+          ...payload,
+          refresh_token: payload.refresh_token || null,
+          permissions: payload.permissions || [],
+        };
+      }
+
+      handleAuthSuccess(flatData);
+    },
+    [handleAuthSuccess]
+  );
+
+  // Electron: complete Google sign-in after signInWithRedirect returns to this page
+  useEffect(() => {
+    if (!mounted) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const idToken = await completeGoogleRedirectIfNeeded();
+        if (cancelled || !idToken) return;
+        setIsGoogleLoading(true);
+        setError(null);
+        await finishGoogleIdToken(idToken);
+      } catch (err: unknown) {
+        if (cancelled) return;
+        console.error("Google redirect sign-in failed", err);
+        setError(extractError(err));
+        setIsGoogleLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, finishGoogleIdToken]);
+
   const normalizeLoginIdentifier = (value: string): string => {
     const trimmed = value.trim();
     if (!trimmed) return "";
@@ -187,41 +251,10 @@ export default function Home() {
     setError(null);
     try {
       const idToken = await signInWithGoogle();
-      const response = await apiClient.post("/auth/firebase/google", { idToken });
-      const wrapper = response?.data ?? {};
-      const payload = wrapper?.data ?? wrapper;
-      if (!payload?.access_token) {
-        throw new Error(wrapper?.message || "Google login failed: invalid response from server");
-      }
-
-      // Backend may return nested "user" object (Firebase) or flat login payload.
-      let flatData;
-      if (payload.user) {
-        flatData = {
-          access_token: payload.access_token,
-          refresh_token: payload.refresh_token || null,
-          user_id: payload.user.id,
-          user_name: payload.user.name,
-          email: payload.user.email,
-          user_role: payload.user.role,
-          user_roles: payload.user.roles,
-          primary_role: payload.user.primary_role,
-          restaurant_id: payload.user.restaurant_id,
-          permissions: payload.user.permissions || [],
-        };
-      } else {
-        flatData = {
-          ...payload,
-          refresh_token: payload.refresh_token || null,
-          permissions: payload.permissions || [],
-        };
-      }
-
-      handleAuthSuccess(flatData);
-      // Keep isGoogleLoading(true) during redirection
-      return;
+      // Electron uses redirect; page reloads and useEffect finishes sign-in.
+      if (!idToken) return;
+      await finishGoogleIdToken(idToken);
     } catch (err: any) {
-      // User closed popup is not an error
       if (err?.code === "auth/popup-closed-by-user") {
         setIsGoogleLoading(false);
         return;

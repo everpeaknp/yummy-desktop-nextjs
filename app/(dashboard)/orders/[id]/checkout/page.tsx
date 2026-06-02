@@ -6,7 +6,7 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, CustomerApis, PaymentApis, RestaurantApis } from "@/lib/api/endpoints";
+import { OrderApis, CustomerApis, PaymentApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +47,7 @@ import {
   User,
   QrCode,
   Award,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
@@ -115,6 +116,14 @@ interface BillPayment {
   method: string;
   amount: number;
   reference: string | null;
+  instrument_type?: string | null;
+  instrument_name?: string | null;
+  instrument_meta?: Record<string, any> | null;
+  instrument?: {
+    type: string;
+    name: string;
+    meta?: Record<string, any> | null;
+  } | null;
   status: string;
   created_at: string | null;
 }
@@ -164,45 +173,31 @@ function formatCurrency(amount: number, currency = "Rs.") {
   return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function buildStaticQrInstrument(
-  method: string,
-  staticQrs: Array<{ name: string; payload: string }>,
-  selectedQrIndex: number,
-) {
-  if (method !== "digital" || staticQrs.length === 0) return undefined;
-  const qr = staticQrs[selectedQrIndex] ?? staticQrs[0];
-  const name = String(qr?.name || "").trim();
-  if (!name) return undefined;
-  const payload = String(qr?.payload || "").trim();
-  return {
-    type: "digital",
-    name,
-    meta: payload ? { payload } : null,
-  };
-}
-
-function buildCardInstrument(
-  method: string,
-  paymentCards: Array<{ name: string; identifier?: string | null }>,
-  selectedCardIndex: number,
-) {
-  if (method !== "card" || paymentCards.length === 0) return undefined;
-  const card = paymentCards[selectedCardIndex] ?? paymentCards[0];
-  const name = String(card?.name || "").trim();
-  if (!name) return undefined;
-  const identifier = String(card?.identifier || "").trim();
-  return {
-    type: "card",
-    name,
-    meta: identifier ? { identifier } : null,
-  };
-}
-
 function formatCustomerLabel(c: any, currency: string) {
   const name = c?.full_name || c?.name || "Guest";
   const phone = c?.phone || "No phone";
   const bal = typeof c?.credit === "number" ? ` - Balance: ${formatCurrency(c.credit || 0, currency)}` : "";
   return `${name} (${phone})${bal}`;
+}
+
+function readPaymentInstrument(payment: BillPayment | null | undefined) {
+  if (!payment) return null;
+  const nested = payment.instrument;
+  if (nested && typeof nested.type === "string" && typeof nested.name === "string") {
+    return {
+      type: nested.type,
+      name: nested.name,
+      meta: nested.meta || null,
+    };
+  }
+  if (payment.instrument_type && payment.instrument_name) {
+    return {
+      type: payment.instrument_type,
+      name: payment.instrument_name,
+      meta: payment.instrument_meta || null,
+    };
+  }
+  return null;
 }
 
 // ── Main Checkout Page ─────────────────────────────
@@ -224,34 +219,8 @@ export default function CheckoutPage() {
   const orderId = Number(rawId || 0);
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
-  const [paymentRestaurant, setPaymentRestaurant] = useState<typeof restaurant>(restaurant);
   const curr = restaurant?.currency || "Rs.";
-
-  useEffect(() => {
-    setPaymentRestaurant(restaurant ?? null);
-  }, [restaurant]);
-
-  useEffect(() => {
-    const id = user?.restaurant_id;
-    if (!id) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiClient.get(RestaurantApis.getById(id));
-        if (!cancelled && res.data?.status === "success") {
-          setPaymentRestaurant(res.data.data);
-        }
-      } catch {
-        // Keep cached restaurant from the store.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.restaurant_id]);
-  const { canApplyDiscount, canProcessPayment } = usePosBillingPermissions();
+  const { canApplyDiscount, canProcessPayment, canEditPayment, canDeletePayment, canProcessRefund } = usePosBillingPermissions();
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
   const [bill, setBill] = useState<OrderBill | null>(null);
@@ -276,6 +245,25 @@ export default function CheckoutPage() {
   const [fonepayVerifying, setFonepayVerifying] = useState(false);
   const [selectedStaticQrIndex, setSelectedStaticQrIndex] = useState(0);
   const [selectedCardIndex, setSelectedCardIndex] = useState(0);
+  const [editPaymentOpen, setEditPaymentOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<BillPayment | null>(null);
+  const [editPayMethod, setEditPayMethod] = useState("cash");
+  const [editPayReference, setEditPayReference] = useState("");
+  const [editPaySubmitting, setEditPaySubmitting] = useState(false);
+  const [editPayError, setEditPayError] = useState<string | null>(null);
+  const [editSelectedStaticQrIndex, setEditSelectedStaticQrIndex] = useState(0);
+  const [editSelectedCardIndex, setEditSelectedCardIndex] = useState(0);
+  const [removingPaymentId, setRemovingPaymentId] = useState<number | null>(null);
+  const [shouldAutoRedirectAfterPayment, setShouldAutoRedirectAfterPayment] = useState(false);
+
+  // Refund dialog
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundMethod, setRefundMethod] = useState("cash");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundReference, setRefundReference] = useState("");
+  const [refundSubmitting, setRefundSubmitting] = useState(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
 
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
@@ -301,22 +289,15 @@ export default function CheckoutPage() {
   const [loyaltyPoints, setLoyaltyPoints] = useState("");
   const [loyaltySubmitting, setLoyaltySubmitting] = useState(false);
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
-  const staticPaymentQrs: Array<{ name: string; payload: string }> = Array.isArray(
-    (paymentRestaurant as any)?.payment_qrs,
-  )
-    ? (paymentRestaurant as any).payment_qrs
+  const staticPaymentQrs: Array<{ name: string; payload: string }> = Array.isArray((restaurant as any)?.payment_qrs)
+    ? (restaurant as any).payment_qrs
         .filter((q: any) => q && typeof q.payload === "string" && q.payload.trim())
         .map((q: any) => ({ name: String(q.name || "QR"), payload: String(q.payload) }))
     : [];
-  const paymentCards: Array<{ name: string; identifier?: string | null }> = Array.isArray(
-    (paymentRestaurant as any)?.payment_cards,
-  )
-    ? (paymentRestaurant as any).payment_cards
-        .filter((c: any) => c && String(c.name || "").trim())
-        .map((c: any) => ({
-          name: String(c.name || "Card").trim(),
-          identifier: c.identifier != null ? String(c.identifier).trim() : null,
-        }))
+  const staticPaymentCards: Array<{ name: string; identifier?: string | null }> = Array.isArray((restaurant as any)?.payment_cards)
+    ? (restaurant as any).payment_cards
+        .filter((c: any) => c && typeof c.name === "string" && c.name.trim())
+        .map((c: any) => ({ name: String(c.name), identifier: c.identifier ? String(c.identifier) : null }))
     : [];
 
   // ── Fetch Bill ────────────────────────────────────
@@ -400,9 +381,9 @@ export default function CheckoutPage() {
 
   // ── Auto-navigate on full payment ─────────────────
   useEffect(() => {
-    if (bill?.is_fully_paid) {
-      // Navigate to receipt page after a short delay so user sees the success state
+    if (bill?.is_fully_paid && shouldAutoRedirectAfterPayment) {
       const timer = setTimeout(() => {
+        setShouldAutoRedirectAfterPayment(false);
         if (returnTo) {
           router.push(`/orders/${orderId}/receipt?returnTo=${encodeURIComponent(returnTo)}`);
         } else {
@@ -411,7 +392,7 @@ export default function CheckoutPage() {
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [bill?.is_fully_paid, orderId, router, returnTo]);
+  }, [bill?.is_fully_paid, orderId, router, returnTo, shouldAutoRedirectAfterPayment]);
 
   // ── Complete Order ──
   const handleComplete = async () => {
@@ -506,6 +487,157 @@ export default function CheckoutPage() {
     toast.success("Fonepay QR generated. Ask customer to complete payment.");
   }, [bill, canProcessPayment, orderId, orderMeta?.customer_id, payAmount, payReference, user?.restaurant_id]);
 
+  const buildPaymentInstrument = useCallback(
+    (
+      method: string,
+      qrIndex: number,
+      cardIndex: number,
+    ): { type: string; name: string; meta?: Record<string, any> } | null => {
+      if (method === "digital") {
+        const selected = staticPaymentQrs[qrIndex];
+        if (!selected) return null;
+        return {
+          type: "static_qr",
+          name: selected.name,
+          meta: {
+            payload: selected.payload,
+            index: qrIndex,
+          },
+        };
+      }
+      if (method === "card") {
+        const selected = staticPaymentCards[cardIndex];
+        if (!selected) return null;
+        return {
+          type: "card",
+          name: selected.name,
+          meta: {
+            identifier: selected.identifier || null,
+            index: cardIndex,
+          },
+        };
+      }
+      return null;
+    },
+    [staticPaymentCards, staticPaymentQrs],
+  );
+
+  const openEditPaymentDialog = useCallback(
+    (payment: BillPayment) => {
+      if (!canEditPayment) {
+        toast.error("You do not have permission to edit payments.");
+        return;
+      }
+      const instrument = readPaymentInstrument(payment);
+      let nextQrIndex = 0;
+      let nextCardIndex = 0;
+      if (instrument?.name) {
+        const qrIndex = staticPaymentQrs.findIndex((q) => q.name === instrument.name);
+        const cardIndex = staticPaymentCards.findIndex((c) => c.name === instrument.name);
+        if (qrIndex >= 0) nextQrIndex = qrIndex;
+        if (cardIndex >= 0) nextCardIndex = cardIndex;
+      }
+      setEditingPayment(payment);
+      setEditPayMethod(payment.method || "cash");
+      setEditPayReference(payment.reference || "");
+      setEditSelectedStaticQrIndex(nextQrIndex);
+      setEditSelectedCardIndex(nextCardIndex);
+      setEditPayError(null);
+      setEditPaymentOpen(true);
+    },
+    [canEditPayment, staticPaymentCards, staticPaymentQrs],
+  );
+
+  const handleUpdatePayment = useCallback(async () => {
+    if (!editingPayment) return;
+    if (!canEditPayment) {
+      setEditPayError("You do not have permission to edit payments.");
+      return;
+    }
+
+    if (editPayMethod === "digital" && staticPaymentQrs.length === 0) {
+      setEditPayError("No static QR configured. Add one in Manage / Settings / Payments & POS.");
+      return;
+    }
+    if (editPayMethod === "card" && staticPaymentCards.length === 0) {
+      setEditPayError("No card account configured. Add one in Manage / Settings / Payments & POS.");
+      return;
+    }
+
+    setEditPaySubmitting(true);
+    setEditPayError(null);
+    try {
+      const instrument = buildPaymentInstrument(editPayMethod, editSelectedStaticQrIndex, editSelectedCardIndex);
+      await apiClient.patch(OrderApis.updatePayment(orderId, editingPayment.id), {
+        payment: {
+          method: editPayMethod,
+          reference: editPayReference.trim() || null,
+          instrument,
+        },
+      });
+      setEditPaymentOpen(false);
+      setEditingPayment(null);
+      await Promise.all([fetchBill(), fetchCustomers()]);
+      toast.success("Payment updated");
+    } catch (err: any) {
+      setEditPayError(err?.response?.data?.detail || "Failed to update payment");
+    } finally {
+      setEditPaySubmitting(false);
+    }
+  }, [
+    buildPaymentInstrument,
+    editPayMethod,
+    editPayReference,
+    editSelectedCardIndex,
+    editSelectedStaticQrIndex,
+    editingPayment,
+    fetchBill,
+    fetchCustomers,
+    orderId,
+    staticPaymentCards.length,
+    staticPaymentQrs.length,
+    canEditPayment,
+  ]);
+
+  const handleRemovePayment = useCallback(async (payment: BillPayment) => {
+    if (!canDeletePayment) {
+      toast.error("You do not have permission to remove payments.");
+      return;
+    }
+    if (removingPaymentId !== null) return;
+
+    const amount = Number(payment.amount || 0);
+    if (amount < 0) {
+      toast.error("Refund payments cannot be removed.");
+      return;
+    }
+
+    const shouldRemove = window.confirm(
+      `Remove this payment?\n\nMethod: ${String(payment.method || "").toUpperCase()}\nAmount: ${formatCurrency(Math.abs(amount), curr)}`
+    );
+    if (!shouldRemove) return;
+
+    setRemovingPaymentId(payment.id);
+    try {
+      await apiClient.delete(OrderApis.removePayment(orderId, payment.id));
+      await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
+      setShouldAutoRedirectAfterPayment(false);
+      toast.success("Payment removed");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to remove payment");
+    } finally {
+      setRemovingPaymentId(null);
+    }
+  }, [
+    canDeletePayment,
+    curr,
+    fetchBill,
+    fetchContext,
+    fetchCustomers,
+    orderId,
+    removingPaymentId,
+  ]);
+
   // ── Add Payment ──────────────────────────────────
   const handleAddPayment = async () => {
     if (!canProcessPayment) {
@@ -524,6 +656,16 @@ export default function CheckoutPage() {
             setPayError("Select a customer for credit payment");
             return;
         }
+    }
+
+    if (payMethod === "digital" && staticPaymentQrs.length === 0) {
+      setPayError("No static QR configured. Add one in Manage / Settings / Payments & POS.");
+      return;
+    }
+
+    if (payMethod === "card" && staticPaymentCards.length === 0) {
+      setPayError("No card account configured. Add one in Manage / Settings / Payments & POS.");
+      return;
     }
 
     setPaySubmitting(true);
@@ -553,32 +695,16 @@ export default function CheckoutPage() {
         return;
       }
 
-      const paymentPayload: {
-        method: string;
-        amount: number;
-        reference: string | null;
-        status: string;
-        instrument?: {
-          type: string;
-          name: string;
-          meta?: { payload?: string; identifier?: string } | null;
-        };
-      } = {
-        method: payMethod,
-        amount: Math.min(amount, bill?.balance_due || amount),
-        reference: payReference.trim() || null,
-        status: "success",
-      };
-
-      const instrument =
-        buildStaticQrInstrument(payMethod, staticPaymentQrs, selectedStaticQrIndex) ??
-        buildCardInstrument(payMethod, paymentCards, selectedCardIndex);
-      if (instrument) {
-        paymentPayload.instrument = instrument;
-      }
+      const instrument = buildPaymentInstrument(payMethod, selectedStaticQrIndex, selectedCardIndex);
 
       const res = await apiClient.post(OrderApis.addPayment(orderId), {
-        payment: paymentPayload,
+        payment: {
+          method: payMethod,
+          amount: Math.min(amount, bill?.balance_due || amount),
+          reference: payReference.trim() || null,
+          instrument,
+          status: "success",
+        },
       });
       setPaymentOpen(false);
       setPayAmount("");
@@ -588,12 +714,49 @@ export default function CheckoutPage() {
       
       // Check if payment completed the order
       if (res.data?.data?.payment_complete) {
-        // Bill will update and auto-navigate effect will trigger
+        setShouldAutoRedirectAfterPayment(true);
       }
     } catch (err: any) {
       setPayError(err?.response?.data?.detail || "Failed to add payment");
     } finally {
       setPaySubmitting(false);
+    }
+  };
+
+  const handleIssueRefund = async () => {
+    const entered = parseFloat(refundAmount) || 0;
+    if (entered <= 0) {
+      setRefundError("Amount must be greater than zero");
+      return;
+    }
+    if (entered > bill!.total_paid) {
+      setRefundError(`Amount cannot exceed total paid: ${formatCurrency(bill!.total_paid, curr)}`);
+      return;
+    }
+    if (!refundReason.trim()) {
+      setRefundError("Reason is required");
+      return;
+    }
+
+    setRefundSubmitting(true);
+    setRefundError(null);
+    try {
+      await apiClient.post(OrderApis.refundOrder(orderId), {
+        amount: entered,
+        reason: refundReason.trim(),
+        method: refundMethod,
+        reference: refundReference.trim() || null,
+      });
+      setRefundOpen(false);
+      setRefundAmount("");
+      setRefundReason("");
+      setRefundReference("");
+      await fetchBill();
+      toast.success("Refund processed successfully");
+    } catch (err: any) {
+      setRefundError(err?.response?.data?.detail || "Failed to process refund");
+    } finally {
+      setRefundSubmitting(false);
     }
   };
 
@@ -662,6 +825,7 @@ export default function CheckoutPage() {
       setPayAmount("");
       setPayReference("");
       setPayMethod("cash");
+      setShouldAutoRedirectAfterPayment(true);
       toast.success("Fonepay payment verified and synced.");
     } catch (err: any) {
       const detail =
@@ -696,14 +860,36 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (payMethod !== "card") return;
-    if (paymentCards.length === 0) {
+    if (staticPaymentCards.length === 0) {
       setSelectedCardIndex(0);
       return;
     }
-    if (selectedCardIndex >= paymentCards.length) {
+    if (selectedCardIndex >= staticPaymentCards.length) {
       setSelectedCardIndex(0);
     }
-  }, [payMethod, selectedCardIndex, paymentCards.length]);
+  }, [payMethod, selectedCardIndex, staticPaymentCards.length]);
+
+  useEffect(() => {
+    if (editPayMethod !== "digital") return;
+    if (staticPaymentQrs.length === 0) {
+      setEditSelectedStaticQrIndex(0);
+      return;
+    }
+    if (editSelectedStaticQrIndex >= staticPaymentQrs.length) {
+      setEditSelectedStaticQrIndex(0);
+    }
+  }, [editPayMethod, editSelectedStaticQrIndex, staticPaymentQrs.length]);
+
+  useEffect(() => {
+    if (editPayMethod !== "card") return;
+    if (staticPaymentCards.length === 0) {
+      setEditSelectedCardIndex(0);
+      return;
+    }
+    if (editSelectedCardIndex >= staticPaymentCards.length) {
+      setEditSelectedCardIndex(0);
+    }
+  }, [editPayMethod, editSelectedCardIndex, staticPaymentCards.length]);
 
   // ── Apply Discount ────────────────────────────────
   const handleApplyDiscount = async () => {
@@ -1035,6 +1221,9 @@ export default function CheckoutPage() {
                 {bill.payments.map((p) => {
                   const method = PAYMENT_METHODS.find((m) => m.value === p.method);
                   const Icon = method?.icon || Banknote;
+                  const instrument = readPaymentInstrument(p);
+                  const isRemoving = removingPaymentId === p.id;
+                  const canRemovePayment = Number(p.amount || 0) >= 0;
                   return (
                     <div key={p.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
                       <div className="flex items-center gap-3">
@@ -1043,6 +1232,11 @@ export default function CheckoutPage() {
                         </div>
                         <div>
                           <p className="text-sm font-medium capitalize">{p.method}</p>
+                          {instrument?.name && (
+                            <p className="text-xs text-muted-foreground">
+                              {instrument.name}
+                            </p>
+                          )}
                           {p.reference && (
                             <p className="text-xs text-muted-foreground">Ref: {p.reference}</p>
                           )}
@@ -1053,7 +1247,38 @@ export default function CheckoutPage() {
                           )}
                         </div>
                       </div>
-                      <span className="font-semibold tabular-nums">{formatCurrency(p.amount, curr)}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold tabular-nums">{formatCurrency(p.amount, curr)}</span>
+                        {canEditPayment && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[11px]"
+                            disabled={isRemoving}
+                            onClick={() => openEditPaymentDialog(p)}
+                          >
+                            Edit
+                          </Button>
+                        )}
+                        {canDeletePayment && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[11px] text-destructive hover:text-destructive"
+                            disabled={isRemoving || !canRemovePayment}
+                            onClick={() => handleRemovePayment(p)}
+                          >
+                            {isRemoving ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                            <span className="ml-1">Remove</span>
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1163,6 +1388,23 @@ export default function CheckoutPage() {
                 </p>
               )}
 
+              {canProcessRefund && bill.total_paid > 0 && (
+                <Button
+                  variant="destructive"
+                  className="w-full h-12 text-base font-semibold shadow-lg gap-2 mt-3"
+                  onClick={() => {
+                    setRefundAmount("");
+                    setRefundReason("");
+                    setRefundReference("");
+                    setRefundError(null);
+                    setRefundOpen(true);
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Issue Refund
+                </Button>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 {canApplyDiscount && (
                   <Button
@@ -1206,6 +1448,24 @@ export default function CheckoutPage() {
                   Complete {orderMeta?.channel === "room_service" ? "Stay & Checkout" : "Order"}
                 </Button>
               )}
+
+              {canProcessRefund && bill.total_paid > 0 && (
+                <Button
+                  variant="destructive"
+                  className="w-full h-12 text-base font-semibold shadow-lg gap-2"
+                  onClick={() => {
+                    setRefundAmount("");
+                    setRefundReason("");
+                    setRefundReference("");
+                    setRefundError(null);
+                    setRefundOpen(true);
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Issue Refund
+                </Button>
+              )}
+
               <Button
                 variant="outline"
                 className="w-full h-12 text-base font-semibold gap-2"
@@ -1312,45 +1572,6 @@ export default function CheckoutPage() {
                </div>
             )}
 
-            {payMethod === "card" && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label>Card terminal</Label>
-                  {paymentCards.length > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      {selectedCardIndex + 1}/{paymentCards.length}
-                    </span>
-                  )}
-                </div>
-                {paymentCards.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                    No card terminals configured in settings. Add them in Manage / Settings / Payments & POS.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {paymentCards.map((card, idx) => (
-                      <button
-                        key={`${card.name}-${idx}`}
-                        type="button"
-                        onClick={() => setSelectedCardIndex(idx)}
-                        className={cn(
-                          "rounded-lg border px-3 py-2 text-left text-sm",
-                          selectedCardIndex === idx
-                            ? "border-primary bg-primary/5 text-primary"
-                            : "border-border/50 text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        <div className="font-medium truncate">{card.name}</div>
-                        {card.identifier ? (
-                          <div className="text-[10px] text-muted-foreground truncate">{card.identifier}</div>
-                        ) : null}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
             {payMethod === "digital" && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -1395,6 +1616,45 @@ export default function CheckoutPage() {
                       {staticPaymentQrs[selectedStaticQrIndex]?.payload}
                     </p>
                   </>
+                )}
+              </div>
+            )}
+
+            {payMethod === "card" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Card Account</Label>
+                  {staticPaymentCards.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {selectedCardIndex + 1}/{staticPaymentCards.length}
+                    </span>
+                  )}
+                </div>
+                {staticPaymentCards.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                    No card account configured in settings. Add one in Manage / Settings / Payments & POS.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {staticPaymentCards.map((card, idx) => (
+                      <button
+                        key={`${card.name}-${idx}`}
+                        type="button"
+                        onClick={() => setSelectedCardIndex(idx)}
+                        className={cn(
+                          "rounded-lg border px-3 py-2 text-left text-sm",
+                          selectedCardIndex === idx
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-border/50 text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <div className="font-medium truncate">{card.name}</div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {card.identifier || "No identifier"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -1447,6 +1707,142 @@ export default function CheckoutPage() {
             <Button onClick={handleAddPayment} disabled={paySubmitting} className="gap-2">
               {paySubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
               {paySubmitting ? "Processing..." : (payMethod === "fonepay" ? "Generate Fonepay QR" : "Add Payment")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editPaymentOpen} onOpenChange={setEditPaymentOpen}>
+        <DialogContent className="w-[96vw] sm:w-[92vw] sm:max-w-2xl max-h-[90vh] overflow-x-hidden overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Payment</DialogTitle>
+            <DialogDescription>
+              Update payment method/reference after settlement. Amount is fixed for this payment record.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 min-w-0">
+            {editPayError && (
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{editPayError}</div>
+            )}
+
+            <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+              Amount: <span className="font-semibold">{formatCurrency(Number(editingPayment?.amount || 0), curr)}</span>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Payment Method</Label>
+              <div className="grid grid-cols-2 gap-2 min-w-0">
+                {PAYMENT_METHODS.map((m) => (
+                  <button
+                    key={`edit-${m.value}`}
+                    type="button"
+                    onClick={() => setEditPayMethod(m.value)}
+                    className={cn(
+                      "flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-sm font-medium min-w-0",
+                      editPayMethod === m.value
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border/50 hover:border-border text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <m.icon className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{m.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {editPayMethod === "digital" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Static QR</Label>
+                  {staticPaymentQrs.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {editSelectedStaticQrIndex + 1}/{staticPaymentQrs.length}
+                    </span>
+                  )}
+                </div>
+                {staticPaymentQrs.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                    No static QR configured in settings. Add one in Manage / Settings / Payments & POS.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {staticPaymentQrs.map((qr, idx) => (
+                      <button
+                        key={`edit-qr-${qr.name}-${idx}`}
+                        type="button"
+                        onClick={() => setEditSelectedStaticQrIndex(idx)}
+                        className={cn(
+                          "rounded-lg border px-3 py-2 text-left text-sm",
+                          editSelectedStaticQrIndex === idx
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-border/50 text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <div className="font-medium truncate">{qr.name}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {editPayMethod === "card" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Card Account</Label>
+                  {staticPaymentCards.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {editSelectedCardIndex + 1}/{staticPaymentCards.length}
+                    </span>
+                  )}
+                </div>
+                {staticPaymentCards.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                    No card account configured in settings. Add one in Manage / Settings / Payments & POS.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {staticPaymentCards.map((card, idx) => (
+                      <button
+                        key={`edit-card-${card.name}-${idx}`}
+                        type="button"
+                        onClick={() => setEditSelectedCardIndex(idx)}
+                        className={cn(
+                          "rounded-lg border px-3 py-2 text-left text-sm",
+                          editSelectedCardIndex === idx
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-border/50 text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <div className="font-medium truncate">{card.name}</div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {card.identifier || "No identifier"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-pay-ref">Reference (optional)</Label>
+              <Input
+                id="edit-pay-ref"
+                placeholder="Transaction ID, receipt number..."
+                value={editPayReference}
+                onChange={(e) => setEditPayReference(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPaymentOpen(false)}>Cancel</Button>
+            <Button onClick={handleUpdatePayment} disabled={editPaySubmitting} className="gap-2">
+              {editPaySubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+              {editPaySubmitting ? "Updating..." : "Update Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1830,6 +2226,109 @@ export default function CheckoutPage() {
             <Button onClick={handleApplyDiscount} disabled={discountSubmitting} className="gap-2">
               {discountSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
               {discountSubmitting ? "Applying..." : "Apply Discount"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Issue Refund Dialog ── */}
+      <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Issue Refund</DialogTitle>
+            <DialogDescription>
+              Process a refund for this order. Maximum refundable amount is{" "}
+              <span className="font-bold text-foreground">
+                {bill ? formatCurrency(bill.total_paid, curr) : ""}
+              </span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {refundError && (
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+                {refundError}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-amount">Refund Amount</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">
+                  {curr}
+                </span>
+                <Input
+                  id="refund-amount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max={bill?.total_paid || 0}
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(e.target.value)}
+                  className="pl-12"
+                  placeholder="0.00"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-method">Refund Method</Label>
+              <Select value={refundMethod} onValueChange={setRefundMethod}>
+                <SelectTrigger id="refund-method">
+                  <SelectValue placeholder="Select refund method" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      <span className="flex items-center gap-2">
+                        <m.icon className={cn("h-4 w-4", m.color)} />
+                        {m.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-reason">Reason for Refund</Label>
+              <Input
+                id="refund-reason"
+                placeholder="Why is this order being refunded?"
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="refund-reference">Reference / Notes (Optional)</Label>
+              <Input
+                id="refund-reference"
+                placeholder="Transaction ID, customer notes, etc."
+                value={refundReference}
+                onChange={(e) => setRefundReference(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefundOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleIssueRefund}
+              disabled={refundSubmitting}
+              className="gap-2"
+            >
+              {refundSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              {refundSubmitting ? "Processing..." : "Confirm Refund"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -9,8 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, ChevronRight, Calculator, AlertTriangle, Receipt, ChevronDown } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { DayCloseApis, TableApis, ExpenseApis, OrderApis } from "@/lib/api/endpoints";
-import { DayClosePaymentSummary } from "@/components/analytics/day-close-payment-summary";
-import { useRestaurant } from "@/hooks/use-restaurant";
 
 interface DayCloseModalProps {
   isOpen: boolean;
@@ -340,7 +338,6 @@ function CheckItem({ label, status, message }: { label: string, status: 'pass' |
 }
 
 function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext: (data: any, id: number) => void; restaurantId: number; businessDate: string }) {
-    const restaurant = useRestaurant((s) => s.restaurant);
     const [snapshot, setSnapshot] = useState<any>(null);
     const [tableNameMap, setTableNameMap] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
@@ -783,6 +780,37 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
     const derivedCreditOrders = snapshot?.manual_credit_orders ?? (creditOrders || pickNumberByLabel(["credit orders"]));
     const derivedCashCollected = cashCollected || pickNumberByLabel(["cash collected", "cash in"]);
 
+    const paymentDistribution = pickList(snapshot, ["payment_distribution", "payment_methods", "by_payment_method"]).length
+        ? pickList(snapshot, ["payment_distribution", "payment_methods", "by_payment_method"])
+        : pickBreakdownRows(["payment distribution", "payment methods"]).length
+            ? pickBreakdownRows(["payment distribution", "payment methods"])
+            : findBreakdownByTokens(["payment"]);
+    const paymentInstrumentDistribution = pickList(snapshot, ["payment_instrument_distribution", "payment_by_instrument"]).length
+        ? pickList(snapshot, ["payment_instrument_distribution", "payment_by_instrument"])
+        : (() => {
+            const cardMap = snapshot?.card_sales_by_instrument;
+            const digitalMap = snapshot?.digital_sales_by_instrument;
+            const rows: Array<{ method: string; instrument: string; amount: number }> = [];
+            if (cardMap && typeof cardMap === "object" && !Array.isArray(cardMap)) {
+                Object.entries(cardMap).forEach(([instrument, value]) => {
+                    rows.push({
+                        method: "card",
+                        instrument,
+                        amount: extractNumericDeep(value) ?? 0,
+                    });
+                });
+            }
+            if (digitalMap && typeof digitalMap === "object" && !Array.isArray(digitalMap)) {
+                Object.entries(digitalMap).forEach(([instrument, value]) => {
+                    rows.push({
+                        method: "digital",
+                        instrument,
+                        amount: extractNumericDeep(value) ?? 0,
+                    });
+                });
+            }
+            return rows.sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0));
+        })();
     const salesByCategory = pickList(snapshot, ["sales_by_category", "category_sales", "by_category"]).length
         ? pickList(snapshot, ["sales_by_category", "category_sales", "by_category"])
         : pickBreakdownRows(["sales by category", "category sales"]).length
@@ -873,16 +901,11 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
                         <TabsTrigger value="expenses" className="rounded-lg">Expenses</TabsTrigger>
                     </TabsList>
                     <div className="mt-4">
-                        <TabsContent value="payments" className="m-0 space-y-4">
-                            <DayClosePaymentSummary
-                                snapshotData={snapshot}
-                                restaurant={restaurant}
-                                restaurantId={restaurantId}
-                                netSales={derivedNetSales}
-                                title="Payment totals"
-                                subtitle="Uses payment methods from Manage → Settings → Payments."
-                                showBars
-                            />
+                        <TabsContent value="payments" className="m-0">
+                            <SnapshotListCard title="Payment Distribution (Methods)" rows={paymentDistribution} labelKeys={["method", "name", "payment_method"]} valueKeys={["amount", "total", "value"]} />
+                            <div className="mt-3">
+                                <SnapshotListCard title="Card/QR Collection by Instrument" rows={paymentInstrumentDistribution} labelKeys={["instrument", "name", "label"]} valueKeys={["amount", "total", "value"]} secondaryLabelKeys={["method", "type"]} />
+                            </div>
                         </TabsContent>
                         <TabsContent value="categories" className="m-0">
                             <SnapshotListCard title="Sales By Category" rows={salesByCategory} labelKeys={["category", "category_name", "name"]} valueKeys={["sales", "amount", "total"]} />
@@ -911,12 +934,14 @@ function SnapshotListCard({
     rows,
     labelKeys,
     valueKeys,
+    secondaryLabelKeys,
     tableNameMap,
 }: {
     title: string;
     rows: any;
     labelKeys: string[];
     valueKeys: string[];
+    secondaryLabelKeys?: string[];
     tableNameMap?: Record<string, string>;
 }) {
     const safeRows = Array.isArray(rows) ? rows : [];
@@ -962,6 +987,7 @@ function SnapshotListCard({
                 <div className="space-y-1.5 max-h-44 overflow-auto pr-1">
                     {safeRows.slice(0, 12).map((row, idx) => {
                         const rawLabel = readValue(row, labelKeys);
+                        const secondaryLabel = secondaryLabelKeys ? readValue(row, secondaryLabelKeys) : null;
                         const rawLabelText = rawLabel != null ? String(rawLabel) : null;
                         const mappedLabel = rawLabelText != null
                             ? (tableNameMap?.[rawLabelText] ?? tableNameMap?.[rawLabelText.toLowerCase()])
@@ -992,7 +1018,14 @@ function SnapshotListCard({
 
                         return (
                             <div key={`${label}-${idx}`} className="flex items-center justify-between rounded-lg border border-black/5 dark:border-white/10 bg-background px-2 py-1.5">
-                                <span className="text-xs font-medium truncate pr-2">{label}</span>
+                                <div className="min-w-0 pr-2">
+                                    <span className="text-xs font-medium truncate block">{label}</span>
+                                    {secondaryLabel != null && String(secondaryLabel).trim() !== "" ? (
+                                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground block">
+                                            {String(secondaryLabel)}
+                                        </span>
+                                    ) : null}
+                                </div>
                                 <span className={cn("text-xs font-bold whitespace-nowrap", valColor)}>Rs. {num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                         );

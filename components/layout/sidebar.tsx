@@ -55,12 +55,17 @@ export const Sidebar = memo(function Sidebar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const resizingRef = useRef(false);
   const coreHrefs = useMemo(
-    () => new Set(["/dashboard", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"]),
-    []
+    () => new Set(selectedModule === "hotel"
+      ? ["/rooms", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"]
+      : ["/dashboard", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"]
+    ),
+    [selectedModule]
   );
   const coreOrder = useMemo(
-    () => ["/dashboard", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"],
-    []
+    () => selectedModule === "hotel"
+      ? ["/rooms", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"]
+      : ["/dashboard", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"],
+    [selectedModule]
   );
   const coreItems = useMemo(() => {
     const fixedCore = items.filter((item) => coreHrefs.has(item.href));
