@@ -10,7 +10,7 @@ module.exports = async function afterPack(context) {
     if (context.electronPlatformName !== 'win32') return;
 
     const appOutDir = context.appOutDir;
-    const exeName = `${context.packager.appInfo.productFilename}.exe`;
+    const exeName = `${context.packager.appInfo.executableName || context.packager.appInfo.productFilename}.exe`;
     const exePath = path.join(appOutDir, exeName);
     const iconPath = path.join(context.packager.projectDir, 'build', 'icon.ico');
 
