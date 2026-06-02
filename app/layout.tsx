@@ -14,6 +14,7 @@ export const metadata: Metadata = {
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { GlobalLoaderOverlay } from "@/components/global-loader-overlay";
+import { AppProviders } from "@/components/providers";
 
 export default function RootLayout({
   children,
@@ -29,8 +30,10 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            <GlobalLoaderOverlay />
-            {children}
+            <AppProviders>
+              <GlobalLoaderOverlay />
+              {children}
+            </AppProviders>
             <Toaster />
             <SonnerToaster position="top-right" richColors closeButton />
           </ThemeProvider>

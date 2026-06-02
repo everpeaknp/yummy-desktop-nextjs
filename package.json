@@ -9,8 +9,9 @@
     "start": "next start",
     "lint": "next lint",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on tcp:3000 && cross-env NODE_ENV=development electron .\"",
-    "electron:build": "npm run build && electron-builder",
-    "electron:build:win": "npm run build && electron-builder --win",
+    "electron:build": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+    "electron:build:win": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
+    "electron:build:win:portable": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win portable",
     "electron:build:mac": "npm run build && electron-builder --mac",
     "electron:build:linux": "npm run build && electron-builder --linux",
     "electron:build:all": "npm run build && electron-builder -mwl"
@@ -19,35 +20,51 @@
     "appId": "com.yummy.pos",
     "productName": "Yummy POS",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
+    "forceCodeSigning": false,
+    "asar": true,
+    "icon": "build/icon.ico",
     "files": [
       "main.js",
+      "electron-auth-persist.js",
       "preload.js",
-      ".next/standalone/**/*",
-      ".next/static/**/*",
-      "public/**/*",
-      ".env.production"
-    ],
-    "extraResources": [
-      {
-        "from": ".env.production",
-        "to": ".env.production",
-        "filter": [
-          "**/*"
-        ]
-      }
+      "build/icon.ico",
+      "build/icon.png",
+      "build/icon-256.png"
     ],
     "win": {
-      "target": ["nsis"]
+      "icon": "build/icon.ico",
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "signAndEditExecutable": false
+    },
+    "afterPack": "scripts/afterPack-set-win-icon.js",
+    "portable": {
+      "artifactName": "Yummy POS Portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false
     },
     "linux": {
-      "target": ["AppImage", "snap"]
+      "target": [
+        "AppImage",
+        "snap"
+      ]
     }
   },
   "dependencies": {
@@ -109,6 +126,7 @@
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.15",
     "postcss": "^8.4.47",
+    "rcedit": "^4.0.1",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
     "wait-on": "^9.0.10"

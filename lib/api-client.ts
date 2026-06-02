@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { syncAuthFromRefreshResponse } from '@/lib/auth-session';
+import { clearStoredTokens, readStoredTokens } from '@/lib/auth-storage';
+import { isAuthRecoveryActive } from '@/lib/auth-recovery';
 
 const API_BASE_URL = (() => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
@@ -24,7 +26,8 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     // TODO: Get token from Zustand store or localStorage
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    const token =
+      typeof window !== 'undefined' ? readStoredTokens().accessToken : null;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -78,7 +81,8 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
+        const refreshToken =
+          typeof window !== 'undefined' ? readStoredTokens().refreshToken : null;
         if (!refreshToken) throw new Error('No refresh token');
 
         const refreshBase = isLocalhost ? PROXY_BASE : API_BASE_URL;
@@ -98,11 +102,12 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         isRefreshing = false;
         refreshSubscribers = [];
-        // Refresh failed — clear auth and redirect to login
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
-          window.location.href = '/';
+        // During cold-start session restore, do not wipe tokens on transient failures.
+        if (typeof window !== 'undefined' && !isAuthRecoveryActive()) {
+          clearStoredTokens();
+          if (window.location.pathname !== '/') {
+            window.location.href = '/';
+          }
         }
         return Promise.reject(refreshError);
       }

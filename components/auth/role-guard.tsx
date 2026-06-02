@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, useAuthHydrated } from "@/hooks/use-auth";
+import { hasStoredSession, readStoredTokens } from "@/lib/auth-storage";
 import {
   normalizeRolesForUser,
   isRouteAllowedMulti,
@@ -25,39 +26,33 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
     "loading"
   );
   const [sessionWaitExpired, setSessionWaitExpired] = useState(false);
+  const hydrated = useAuthHydrated();
 
-  const SESSION_WAIT_MS = 10000;
+  const SESSION_WAIT_MS = 15000;
 
   // Restore session on mount if we have a token but no user
   useEffect(() => {
-    if (token && !user) {
-      me();
+    if (!hydrated) return;
+    if (user) return;
+
+    const { accessToken, refreshToken } = readStoredTokens();
+    if (token || accessToken || refreshToken) {
+      void me();
     }
-    // Also handle hydration: zustand token is null but localStorage has tokens
-    if (!token && !user && typeof window !== "undefined") {
-      const lsToken = localStorage.getItem("accessToken");
-      const lsRefresh = localStorage.getItem("refreshToken");
-      if (lsToken || lsRefresh) {
-        me();
-      }
-    }
-  }, [token, user, me]);
+  }, [hydrated, token, user, me]);
 
   // Abort infinite spinner when session restore never completes
   useEffect(() => {
-    const hasStoredTokens =
-      typeof window !== "undefined" &&
-      (Boolean(localStorage.getItem("accessToken")) ||
-        Boolean(localStorage.getItem("refreshToken")));
+    const hasStoredTokens = hasStoredSession();
 
-    if ((token || hasStoredTokens) && !user && status === "loading") {
+    if (hydrated && (token || hasStoredTokens) && !user && status === "loading") {
       setSessionWaitExpired(false);
       const timer = setTimeout(() => setSessionWaitExpired(true), SESSION_WAIT_MS);
       return () => clearTimeout(timer);
     }
 
     setSessionWaitExpired(false);
-  }, [token, user, status]);
+  }, [hydrated, token, user, status]);
 
   useEffect(() => {
     if (sessionWaitExpired && !user) {
@@ -67,22 +62,22 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
   }, [sessionWaitExpired, user, logout, router]);
 
   useEffect(() => {
+    if (!hydrated) {
+      setStatus("loading");
+      return;
+    }
+
     // Still loading user data
-    if (token && !user) {
+    if ((token || hasStoredSession()) && !user) {
       setStatus("loading");
       return;
     }
 
     // No zustand token yet — check localStorage before redirecting
     if (!token) {
-      if (typeof window !== "undefined") {
-        const lsToken = localStorage.getItem("accessToken");
-        const lsRefresh = localStorage.getItem("refreshToken");
-        if (lsToken || lsRefresh) {
-          // Tokens exist in localStorage but zustand hasn't hydrated yet — wait
-          setStatus("loading");
-          return;
-        }
+      if (hasStoredSession()) {
+        setStatus("loading");
+        return;
       }
       router.replace("/");
       return;
@@ -110,7 +105,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [pathname, user, userPermissionsKey, token, router, setRedirecting]);
+  }, [pathname, user, userPermissionsKey, token, router, setRedirecting, hydrated]);
 
   if (status === "loading") {
     return (

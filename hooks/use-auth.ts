@@ -1,5 +1,17 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { useEffect, useState } from 'react';
+import apiClient from '@/lib/api-client';
+import { AuthApis } from '@/lib/api/endpoints';
+import { syncAuthFromRefreshResponse } from '@/lib/auth-session';
+import {
+  AUTH_ZUSTAND_STORAGE_KEY,
+  clearStoredTokens,
+  readStoredTokens,
+  writeStoredTokens,
+} from '@/lib/auth-storage';
+import { runAuthRecovery } from '@/lib/auth-recovery';
+import { useRestaurant } from './use-restaurant';
 
 interface User {
   id: number;
@@ -24,14 +36,29 @@ interface AuthState {
   logout: () => void;
   me: () => Promise<void>;
   refreshSession: () => Promise<void>;
-  /** Reload permissions (and profile fields) from /users/me/profile without rotating tokens. */
+  /** Cold-start restore: sync LS ↔ zustand, refresh tokens, load user. */
+  bootstrapSession: () => Promise<void>;
   syncUserProfile: () => Promise<void>;
 }
 
-import apiClient from '@/lib/api-client';
-import { AuthApis } from '@/lib/api/endpoints';
-import { syncAuthFromRefreshResponse } from '@/lib/auth-session';
-import { useRestaurant } from './use-restaurant';
+function syncPersistedTokensWithState(
+  set: (partial: Partial<AuthState>) => void,
+  get: () => AuthState
+) {
+  if (typeof window === 'undefined') return;
+
+  const { accessToken, refreshToken } = readStoredTokens();
+  const state = get();
+
+  if (!state.token && accessToken) {
+    set({
+      token: accessToken,
+      refreshToken: refreshToken ?? state.refreshToken,
+    });
+  } else if (state.token || state.refreshToken) {
+    writeStoredTokens(state.token, state.refreshToken);
+  }
+}
 
 export const useAuth = create<AuthState>()(
   persist(
@@ -43,45 +70,45 @@ export const useAuth = create<AuthState>()(
       meLoading: false,
       setAuth: (user, token, refreshToken = null) => {
         set({ user, token, refreshToken, isRedirecting: false });
-        if (token) localStorage.setItem('accessToken', token);
-        if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
+        writeStoredTokens(token, refreshToken);
       },
       setRedirecting: (isRedirecting) => set({ isRedirecting }),
       logout: () => {
         set({ isRedirecting: true });
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
-        }
+        clearStoredTokens();
         set({ user: null, token: null, refreshToken: null });
-        // Clear module selection on logout
         useRestaurant.getState().setSelectedModule(null);
-        // Redirection should be handled by the caller using router.push for performance
+      },
+      bootstrapSession: async () => {
+        return runAuthRecovery(async () => {
+          syncPersistedTokensWithState(set, get);
+          await get().me();
+        });
       },
       refreshSession: async () => {
-        const refreshToken =
-          typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
-        if (!refreshToken) {
-          await get().me();
-          return;
-        }
-
-        try {
-          const res = await apiClient.post(AuthApis.refresh, {
-            refresh_token: refreshToken,
-          });
-          if (res.data.status === 'success') {
-            syncAuthFromRefreshResponse(res.data.data);
+        return runAuthRecovery(async () => {
+          const { refreshToken } = readStoredTokens();
+          if (!refreshToken) {
+            await get().me();
+            return;
           }
-        } catch (error) {
-          console.warn('[useAuth] refreshSession failed', error);
-          await get().me();
-        }
+
+          try {
+            const res = await apiClient.post(AuthApis.refresh, {
+              refresh_token: refreshToken,
+            });
+            if (res.data.status === 'success') {
+              syncAuthFromRefreshResponse(res.data.data);
+            }
+          } catch (error) {
+            console.warn('[useAuth] refreshSession failed', error);
+            await get().me();
+          }
+        });
       },
       syncUserProfile: async () => {
-        const token =
-          typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-        if (!token) return;
+        const { accessToken } = readStoredTokens();
+        if (!accessToken) return;
 
         try {
           const response = await apiClient.get(AuthApis.meProfile);
@@ -120,47 +147,49 @@ export const useAuth = create<AuthState>()(
       },
       me: async () => {
         const state = get();
-        // Skip if already loading
         if (state.meLoading) return;
-        
-        set({ meLoading: true });
-        
-        const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-        const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
 
-        if (!token && !refreshToken) {
+        set({ meLoading: true });
+        syncPersistedTokensWithState(set, get);
+
+        const { accessToken, refreshToken } = readStoredTokens();
+
+        if (!accessToken && !refreshToken) {
           set({ isRedirecting: false, meLoading: false });
           return;
         }
 
-        // If user already exists, we might still want to refresh details, 
-        // but we definitely want to stop "redirecting" loader
         if (state.user) {
           set({ isRedirecting: false });
         }
 
         try {
-          // 1. Try to restore from Refresh Token (Best way to get full user details)
           if (refreshToken) {
             try {
-              const res = await apiClient.post(AuthApis.refresh, { refresh_token: refreshToken });
+              const res = await apiClient.post(AuthApis.refresh, {
+                refresh_token: refreshToken,
+              });
               if (res.data.status === 'success') {
                 syncAuthFromRefreshResponse(res.data.data);
                 return;
               }
             } catch (refreshError) {
-              console.warn("Session restore via refresh token failed", refreshError);
+              console.warn('[useAuth] Session restore via refresh token failed', refreshError);
             }
           }
 
-          // 2. Fallback to manual decode if refresh failed but valid token exists
-          if (token) {
+          const tokenAfterRefresh = readStoredTokens().accessToken;
+          if (tokenAfterRefresh) {
             try {
-              const base64Url = token.split('.')[1];
+              const base64Url = tokenAfterRefresh.split('.')[1];
               const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-              const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-              }).join(''));
+              const jsonPayload = decodeURIComponent(
+                window
+                  .atob(base64)
+                  .split('')
+                  .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                  .join('')
+              );
 
               const decoded = JSON.parse(jsonPayload);
               const userId = decoded.sub || decoded.user_id || decoded.id;
@@ -170,9 +199,11 @@ export const useAuth = create<AuthState>()(
                   const response = await apiClient.get(AuthApis.meProfile);
                   if (response.data.status === 'success') {
                     const p = response.data.data;
-                    // /users/me/profile returns: { id, name, email, role, roles, primary_role, restaurant_id, permissions }
-                    // Map to our User interface which uses `full_name` not `name`
-                    const roles: string[] = Array.isArray(p.roles) ? p.roles : (p.role ? [p.role] : []);
+                    const roles: string[] = Array.isArray(p.roles)
+                      ? p.roles
+                      : p.role
+                        ? [p.role]
+                        : [];
                     const mappedUser: User = {
                       id: p.id,
                       email: p.email,
@@ -184,33 +215,72 @@ export const useAuth = create<AuthState>()(
                       currency: p.currency,
                       permissions: Array.isArray(p.permissions) ? p.permissions : [],
                     };
-                    console.log("[useAuth] Current User (me):", { id: mappedUser.id, email: mappedUser.email, role: mappedUser.role, permissions: mappedUser.permissions?.length });
-                    set({ user: mappedUser });
+                    set({
+                      user: mappedUser,
+                      token: tokenAfterRefresh,
+                      refreshToken: readStoredTokens().refreshToken,
+                    });
+                    writeStoredTokens(
+                      tokenAfterRefresh,
+                      readStoredTokens().refreshToken
+                    );
                   }
                 } catch (error) {
-                  console.warn("[useAuth] Failed to fetch user profile via /users/me/profile", error);
+                  console.warn('[useAuth] Failed to fetch /users/me/profile', error);
                 }
               }
             } catch (e) {
-              console.warn("Manual decode fallback failed", e);
+              console.warn('[useAuth] JWT decode fallback failed', e);
             }
           }
         } catch (error) {
-          console.error("Failed to restore session:", error);
-          // If everything fails, clear state
-          // set({ user: null, token: null, refreshToken: null });
+          console.error('[useAuth] Failed to restore session:', error);
         } finally {
           set({ isRedirecting: false, meLoading: false });
         }
-      }
+      },
     }),
     {
-      name: 'auth-storage',
+      name: AUTH_ZUSTAND_STORAGE_KEY,
+      storage: createJSONStorage(() => {
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => undefined,
+            removeItem: () => undefined,
+          };
+        }
+        return window.localStorage;
+      }),
       partialize: (state) => ({
         user: state.user,
         token: state.token,
         refreshToken: state.refreshToken,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (!state || typeof window === 'undefined') return;
+        writeStoredTokens(state.token, state.refreshToken);
+      },
     }
   )
 );
+
+/** Wait for zustand-persist rehydration before auth redirects (Electron cold start). */
+export function useAuthHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    const persistApi = useAuth.persist;
+    if (!persistApi) {
+      setHydrated(true);
+      return;
+    }
+    if (persistApi.hasHydrated()) {
+      setHydrated(true);
+      return;
+    }
+    return persistApi.onFinishHydration(() => setHydrated(true));
+  }, []);
+
+  return hydrated;
+}
