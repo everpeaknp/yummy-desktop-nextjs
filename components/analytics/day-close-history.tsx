@@ -50,6 +50,15 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import {
+  DayClosePaymentSummary,
+  downloadPaymentSummaryCsv,
+} from "@/components/analytics/day-close-payment-summary";
+import {
+  buildPaymentSummary,
+  isPaymentBreakdownFlattenLabel,
+} from "@/lib/day-close-payment-summary";
 
 function humanizeKey(k: string) {
   return String(k)
@@ -138,6 +147,7 @@ function statusBadge(status: string) {
 }
 
 export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
+  const restaurant = useRestaurant((s) => s.restaurant);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<any[]>([]);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
@@ -468,6 +478,27 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
       .map((k) => ({ label: humanizeKey(k), value: formatMaybeCurrency(k, Number(detail[k] ?? 0)) }))
       .filter(Boolean);
   }, [detail]);
+
+  const paymentSummaryLines = useMemo(
+    () => buildPaymentSummary(detail, snapshot?.snapshot_data ?? snapshot, restaurant),
+    [detail, snapshot, restaurant],
+  );
+
+  const snapshotDisplayRows = useMemo(() => {
+    if (!snapshot?.snapshot_data) return [];
+    return flattenSection(snapshot.snapshot_data).filter(
+      (row) => !isPaymentBreakdownFlattenLabel(row.label),
+    );
+  }, [snapshot]);
+
+  const exportPaymentSummary = () => {
+    if (!detail) return;
+    downloadPaymentSummaryCsv(
+      paymentSummaryLines,
+      String(detail.business_date || "").slice(0, 10),
+    );
+    toast.success("Payment summary CSV downloaded");
+  };
 
   const isConfirmed = String(detail?.status || "").toLowerCase() === "confirmed";
   const isPending = String(detail?.status || "").toLowerCase() === "pending";
@@ -848,6 +879,16 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   ))}
                 </div>
 
+                <DayClosePaymentSummary
+                  detail={detail}
+                  snapshotData={snapshot?.snapshot_data ?? snapshot}
+                  restaurant={restaurant}
+                  restaurantId={restaurantId}
+                  netSales={Number(detail.net_sales || 0)}
+                  title="Payment totals"
+                  subtitle="Rows follow Manage → Settings → Payments (FonePay, static QRs, and cards when configured)."
+                />
+
                 <Tabs defaultValue="snapshot" className="w-full">
                   <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-12">
                     <TabsTrigger value="snapshot" className="rounded-xl px-5 font-bold" onClick={() => snapshot == null && loadSnapshot()}>
@@ -883,7 +924,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                           </Badge>
                         </div>
                         <div className="max-h-[340px] overflow-auto no-scrollbar">
-                          {flattenSection(snapshot.snapshot_data || {}).map((row, idx) => (
+                          {snapshotDisplayRows.map((row, idx) => (
                             <div key={idx} className="px-5 py-3 flex items-start justify-between gap-6 border-b border-border/30 last:border-none">
                               <p className="text-xs font-semibold text-muted-foreground leading-5">{row.label}</p>
                               <p className="text-xs font-black text-foreground text-right whitespace-nowrap">{row.value}</p>
@@ -966,18 +1007,32 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
             )}
           </div>
 
-          <DialogFooter className="p-6 sm:p-8 pt-4 flex flex-col sm:flex-row gap-3 bg-muted/30 border-t border-border/40">
-            <Button variant="outline" className="h-12 rounded-2xl flex-1" onClick={() => setDetailOpen(false)}>
-              Close
-            </Button>
-            <Button variant="secondary" className="h-12 rounded-2xl flex-1 font-bold" onClick={exportExcel} disabled={!detail}>
-              <Download className="w-4 h-4 mr-2" />
-              Export Excel
-            </Button>
-            <Button className="h-12 rounded-2xl flex-1 font-bold bg-orange-600 hover:bg-orange-700 text-white" onClick={exportPdf} disabled={!detail}>
-              <FileText className="w-4 h-4 mr-2" />
-              Export PDF
-            </Button>
+          <DialogFooter className="p-6 sm:p-8 pt-4 flex flex-col gap-3 bg-muted/30 border-t border-border/40">
+            <div className="flex flex-col sm:flex-row gap-3 w-full">
+              <Button variant="outline" className="h-12 rounded-2xl flex-1" onClick={() => setDetailOpen(false)}>
+                Close
+              </Button>
+              <Button
+                variant="outline"
+                className="h-12 rounded-2xl flex-1 font-bold"
+                onClick={exportPaymentSummary}
+                disabled={!detail}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Payment CSV
+              </Button>
+              <Button variant="secondary" className="h-12 rounded-2xl flex-1 font-bold" onClick={exportExcel} disabled={!detail}>
+                <Download className="w-4 h-4 mr-2" />
+                Export Excel
+              </Button>
+              <Button className="h-12 rounded-2xl flex-1 font-bold bg-orange-600 hover:bg-orange-700 text-white" onClick={exportPdf} disabled={!detail}>
+                <FileText className="w-4 h-4 mr-2" />
+                Export PDF
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground font-semibold text-center sm:text-left">
+              PDF and Excel are generated on the server. Payment CSV uses the payment method rows from Settings → Payments shown above.
+            </p>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, TrendingUp, TrendingDown, DollarSign, CreditCard, Activity, Lock, Wallet, ArrowUpRight, ArrowDownRight, ReceiptText, ChevronRight, Bed, Utensils, LayoutGrid, Users, ChefHat, Boxes, ArrowLeftRight } from "lucide-react";
@@ -19,6 +19,14 @@ import {
   AnalyticsAccessLoading,
   AnalyticsFetchError,
 } from "@/components/analytics/analytics-access-states";
+import { HistoryScopeNotice } from "@/components/shared/history-scope-notice";
+import {
+  getAnalyticsPresetRange,
+  resolvePrimaryRole,
+  validateAnalyticsDateRange,
+  validationToScopeError,
+} from "@/lib/date-scope-policy";
+import { isPlanScopeError, parseApiScopeError, type ParsedScopeError } from "@/lib/parse-api-scope-error";
 
 import { RevenueChart } from "@/components/analytics/revenue-chart";
 import { CategoryPieChart } from "@/components/analytics/category-pie";
@@ -41,6 +49,7 @@ export default function AnalyticsPage() {
     const [breakdownType, setBreakdownType] = useState<BreakdownTab>('source');
     const [loading, setLoading] = useState(true);
     const [fetchError, setFetchError] = useState<string | null>(null);
+    const [scopeNotice, setScopeNotice] = useState<ParsedScopeError | null>(null);
     const [fetchTrigger, setFetchTrigger] = useState(0);
     const [date, setDate] = useState<DateRange | undefined>();
     const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
@@ -48,6 +57,14 @@ export default function AnalyticsPage() {
     const user = useAuth(state => state.user);
     const { ready, canViewAnalytics } = useAnalyticsViewAccess();
     const restaurant = useRestaurant((s) => s.restaurant);
+    const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
+
+    const applyAllowedAnalyticsRange = useCallback(() => {
+        setActiveRange("last30");
+        setDate(undefined);
+        setScopeNotice(null);
+        setFetchTrigger((t) => t + 1);
+    }, []);
 
     // Fetch all analytics from unified /analytics/dashboard (same as Flutter)
     useEffect(() => {
@@ -59,6 +76,26 @@ export default function AnalyticsPage() {
                 setLoading(false);
                 return;
             }
+            if (activeRange === 'custom' && (!date?.from || !date?.to)) {
+                return;
+            }
+
+            const presetRange = getAnalyticsPresetRange(activeRange, date);
+            const validation = validateAnalyticsDateRange(presetRange, {
+                role: primaryRole,
+                effectivePlan: restaurant?.effective_plan,
+            });
+            if (!validation.allowed) {
+                setScopeNotice(validationToScopeError(validation));
+                setFetchError(null);
+                setData(null);
+                setTrendsData([]);
+                setCategoryData([]);
+                setLoading(false);
+                return;
+            }
+
+            setScopeNotice(null);
             setLoading(true);
             setFetchError(null);
             try {
@@ -125,10 +162,22 @@ export default function AnalyticsPage() {
                     setFetchError(res.data?.message || "Failed to load analytics dashboard");
                 }
 
-            } catch (err: any) {
+            } catch (err: unknown) {
+                const parsed = parseApiScopeError(err, { role: primaryRole });
+                if (parsed) {
+                    setScopeNotice(parsed);
+                    setFetchError(null);
+                    setData(null);
+                    setTrendsData([]);
+                    setCategoryData([]);
+                    return;
+                }
+                const axiosErr = err as { response?: { data?: { detail?: unknown; message?: string } } };
                 const message =
-                    err?.response?.data?.detail ||
-                    err?.response?.data?.message ||
+                    (typeof axiosErr?.response?.data?.detail === "string"
+                        ? axiosErr.response.data.detail
+                        : null) ||
+                    axiosErr?.response?.data?.message ||
                     "Failed to load analytics dashboard";
                 setFetchError(message);
             } finally {
@@ -138,12 +187,9 @@ export default function AnalyticsPage() {
 
         if (!ready) return;
         if (user?.restaurant_id) {
-            if (activeRange === 'custom' && (!date?.from || !date?.to)) {
-                return; // Wait until range is fully selected
-            }
             fetchAnalytics();
         }
-    }, [ready, canViewAnalytics, user, activeRange, businessLine, date, fetchTrigger]);
+    }, [ready, canViewAnalytics, user, activeRange, businessLine, date, fetchTrigger, primaryRole, restaurant?.effective_plan]);
 
     useEffect(() => {
         if (!data?.breakdown) {
@@ -161,7 +207,29 @@ export default function AnalyticsPage() {
 
     return (
         <div className="flex flex-col gap-8 max-w-[1600px] mx-auto pb-10">
-            {fetchError ? (
+            {scopeNotice ? (
+                <HistoryScopeNotice
+                    error={scopeNotice}
+                    onUseSuggestedRange={
+                        isPlanScopeError(scopeNotice) || scopeNotice.kind === "role_manager_limit"
+                            ? applyAllowedAnalyticsRange
+                            : scopeNotice.kind === "role_cashier_limit"
+                              ? () => {
+                                    setActiveRange("today");
+                                    setDate(undefined);
+                                    setScopeNotice(null);
+                                    setFetchTrigger((t) => t + 1);
+                                }
+                              : undefined
+                    }
+                    suggestedRangeLabel={
+                        scopeNotice.kind === "role_cashier_limit"
+                            ? "View today only"
+                            : "View last 30 days"
+                    }
+                />
+            ) : null}
+            {fetchError && !scopeNotice ? (
                 <AnalyticsFetchError
                     message={fetchError}
                     onRetry={() => setFetchTrigger((t) => t + 1)}
@@ -245,9 +313,9 @@ export default function AnalyticsPage() {
                 </Link>
             </div>
 
-            {loading && !data ? (
+            {loading && !data && !scopeNotice ? (
                 <AnalyticsSkeleton />
-            ) : (
+            ) : scopeNotice ? null : (
                 <>
                     {/* Period Snapshot */}
                     <section className="space-y-4">

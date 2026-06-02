@@ -7,6 +7,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { OrderApis, AnalyticsApis, TableApis } from "@/lib/api/endpoints";
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions";
+import {
+  defaultHistoryDateRange,
+  resolvePrimaryRole,
+  validateHistoryDateRange,
+  validationToScopeError,
+} from "@/lib/date-scope-policy";
+import { parseApiScopeError, type ParsedScopeError } from "@/lib/parse-api-scope-error";
+import { HistoryScopeNotice } from "@/components/shared/history-scope-notice";
 import { 
   Search, 
   RefreshCw, 
@@ -53,10 +61,10 @@ export default function OrdersPage() {
     const [loading, setLoading] = useState(true);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
-    const [dateRange, setDateRange] = useState<DateRange | undefined>({
-        from: subDays(new Date(), 30),
-        to: new Date(),
-    });
+    const [dateRange, setDateRange] = useState<DateRange | undefined>();
+    const [scopeNotice, setScopeNotice] = useState<ParsedScopeError | null>(null);
+    const [suggestedRange, setSuggestedRange] = useState<DateRange | undefined>();
+    const dateRangeInitialized = useRef(false);
     const [stats, setStats] = useState({
         activeCount: 0,
         totalRevenue: 0,
@@ -95,6 +103,13 @@ export default function OrdersPage() {
     const user = useAuth(state => state.user);
     const me = useAuth(state => state.me);
     const restaurant = useRestaurant(state => state.restaurant);
+    const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
+
+    useEffect(() => {
+        if (!user || dateRangeInitialized.current) return;
+        setDateRange(defaultHistoryDateRange(primaryRole));
+        dateRangeInitialized.current = true;
+    }, [user, primaryRole]);
     const router = useRouter();
     const searchParams = useSearchParams();
 
@@ -181,6 +196,20 @@ export default function OrdersPage() {
     const fetchHistoryData = useCallback(async () => {
         if (!user?.restaurant_id || activeTab !== "history") return;
 
+        const validation = validateHistoryDateRange(dateRange, {
+            role: primaryRole,
+            effectivePlan: restaurant?.effective_plan,
+        });
+        if (!validation.allowed) {
+            setScopeNotice(validationToScopeError(validation));
+            setSuggestedRange(validation.suggestedRange);
+            setHistoryOrders([]);
+            setHistoryLoading(false);
+            return;
+        }
+
+        setScopeNotice(null);
+        setSuggestedRange(undefined);
         setHistoryLoading(true);
         try {
             const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -223,23 +252,42 @@ export default function OrdersPage() {
                     .sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
                 setHistoryOrders(list);
             }
-        } catch (err: any) {
-            console.error("Failed to fetch history:", err);
-            if (err.response?.status === 403) {
-                const detail = err.response?.data?.detail;
-                const maxDays = (detail && typeof detail === 'object' && detail.max_days) ? detail.max_days : 7;
-                toast.warning(`Your plan has lookback limits. Auto-adjusting view to the last ${maxDays} days.`);
-                setDateRange({
-                    from: subDays(new Date(), maxDays - 1),
-                    to: new Date()
-                });
-            } else {
-                toast.error("Failed to load history");
+        } catch (err: unknown) {
+            const parsed = parseApiScopeError(err, { role: primaryRole });
+            if (parsed) {
+                setScopeNotice(parsed);
+                setHistoryOrders([]);
+                if (parsed.kind === "role_manager_limit") {
+                    setSuggestedRange({ from: subDays(new Date(), 30), to: new Date() });
+                } else if (parsed.maxDays) {
+                    setSuggestedRange({
+                        from: subDays(new Date(), parsed.maxDays - 1),
+                        to: new Date(),
+                    });
+                }
+                return;
             }
+            toast.error("Failed to load history");
         } finally {
             setHistoryLoading(false);
         }
-    }, [user?.restaurant_id, activeTab, dateRange, searchQuery, historyLimit]);
+    }, [
+        user?.restaurant_id,
+        activeTab,
+        dateRange,
+        searchQuery,
+        historyLimit,
+        primaryRole,
+        restaurant?.effective_plan,
+    ]);
+
+    const applySuggestedHistoryRange = useCallback(() => {
+        if (suggestedRange) {
+            setDateRange(suggestedRange);
+            setScopeNotice(null);
+            setSuggestedRange(undefined);
+        }
+    }, [suggestedRange]);
 
     useEffect(() => {
         if (user?.restaurant_id) {
@@ -417,7 +465,7 @@ export default function OrdersPage() {
                                         </div>
                                         <button
                                             className="text-[9px] font-bold uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
-                                            onClick={() => setDateRange({ from: subDays(new Date(), 30), to: new Date() })}
+                                            onClick={() => setDateRange(defaultHistoryDateRange(primaryRole))}
                                         >
                                             Reset
                                         </button>
@@ -443,6 +491,15 @@ export default function OrdersPage() {
 
                 {/* Content */}
                 <div className="flex flex-col gap-8">
+                    {activeTab === "history" && scopeNotice ? (
+                        <HistoryScopeNotice
+                            error={scopeNotice}
+                            onUseSuggestedRange={
+                                suggestedRange ? applySuggestedHistoryRange : undefined
+                            }
+                            suggestedRangeLabel="Use allowed date range"
+                        />
+                    ) : null}
                     {activeTab === "active" ? (
                         loading ? (
                             <LoadingGrid />
@@ -457,8 +514,7 @@ export default function OrdersPage() {
                                 ))}
                             </div>
                         )
-                    ) : (
-                        historyLoading ? (
+                    ) : scopeNotice ? null : historyLoading ? (
                             <LoadingGrid />
                         ) : historyOrders.length === 0 ? (
                             <EmptyState label="No order history found" icon={<History />} />
@@ -487,7 +543,7 @@ export default function OrdersPage() {
                                 </div>
                             </div>
                         )
-                    )}
+                    }
                 </div>
             </div>
 
