@@ -25,6 +25,8 @@
       "buildResources": "electron-resources"
     },
     "forceCodeSigning": false,
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
     "asar": true,
     "icon": "electron-resources/icon.ico",
     "files": [
@@ -41,7 +43,10 @@
         "portable",
         "nsis"
       ],
-      "signAndEditExecutable": false
+      "sign": null,
+      "signDlls": false,
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false
     },
     "afterPack": "scripts/afterPack-set-win-icon.js",
     "portable": {

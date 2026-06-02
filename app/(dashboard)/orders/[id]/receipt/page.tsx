@@ -334,64 +334,8 @@ export default function ReceiptPage() {
       return;
     }
 
-    // In browser/web mode, prefer native print dialog directly.
-    // Blob/PDF preview tabs can be blocked/closed by browser policies.
-    // @ts-ignore
-    const isElectron = typeof window !== "undefined" && !!window.electronAPI;
-    if (!isElectron) {
-      window.print();
-      setPrinted(true);
-      return;
-    }
-
-    if (!receiptRef.current) return;
-
-    const globalBlock = template?.find((b: any) => b.type === 'global_settings');
-    const paperSizeStr = globalBlock?.config?.paper_size || globalBlock?.paper_size || '80mm';
-    const paperWidthMm = paperSizeStr === '58mm' ? 58 : 80;
-
-    try {
-      // Dynamic import to avoid SSR issues
-      const html2canvas = (await import('html2canvas')).default;
-      const { jsPDF } = await import('jspdf');
-
-      // Capture the receipt element as a canvas image
-      const canvas = await html2canvas(receiptRef.current, {
-        scale: 3, // High resolution for thermal printer quality
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const imgWidthPx = canvas.width;
-      const imgHeightPx = canvas.height;
-
-      // Calculate page height proportionally to match 80mm width
-      const pageHeightMm = (imgHeightPx / imgWidthPx) * paperWidthMm;
-
-      // Create a PDF with exact thermal dimensions
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: [paperWidthMm, pageHeightMm],
-      });
-
-      pdf.addImage(imgData, 'PNG', 0, 0, paperWidthMm, pageHeightMm);
-
-      // Open as blob URL for printing — the PDF viewer respects exact page dims
-      const pdfBlob = pdf.output('blob');
-      const blobUrl = URL.createObjectURL(pdfBlob);
-      const pdfWindow = window.open(blobUrl, '_blank');
-      if (pdfWindow) {
-        pdfWindow.addEventListener('load', () => {
-          pdfWindow.print();
-        });
-      }
-    } catch (err) {
-      console.error('PDF print failed, falling back to window.print()', err);
-      window.print();
-    }
+    // Desktop shell: use native print dialog. blob: URLs cannot be opened in Electron on Windows.
+    window.print();
     setPrinted(true);
   };
 
