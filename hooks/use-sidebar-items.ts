@@ -65,7 +65,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
 };
 
 const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
-  { title: "Overview",        href: "/rooms",           icon: BedDouble,     section: "Hotel" },
+  { title: "Room Overview",   href: "/rooms",           icon: BedDouble,     section: "Hotel" },
   { title: "Orders",          href: "/orders",          icon: ClipboardList, section: "Hotel" },
   { title: "New Order",       href: "/orders/new",      icon: Plus,          section: "Hotel" },
   { title: "Check In/Out",    href: "/rooms/checkin",   icon: KeyRound,      section: "Hotel" },
@@ -104,7 +104,7 @@ function getHotelSidebarItems(
 }
 
 const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
-  { title: "Overview",     href: "/rooms",          icon: BedDouble,     section: "Hotel" },
+  { title: "Room Overview", href: "/rooms",          icon: BedDouble,     section: "Hotel" },
   { title: "Orders",       href: "/orders",  icon: ClipboardList, section: "Hotel" },
   { title: "New Order",    href: "/orders/new",     icon: Plus,          section: "Hotel" },
   { title: "Check In/Out", href: "/rooms/checkin",  icon: KeyRound,      section: "Hotel" },
@@ -127,7 +127,7 @@ export function useSidebarItems(): SidebarItem[] {
       if (isAdminOrManager) return getHotelSidebarItems(user);
       if (isCashier) return filterSidebarLinksByAccess(HOTEL_CASHIER_ITEMS, user);
       // Other staff in hotel mode see basic view
-      return [{ title: "Rooms", href: "/rooms", icon: Bed }];
+      return [{ title: "Room Overview", href: "/rooms", icon: BedDouble }];
     }
 
     // --- RESTAURANT MODE (or single-module restaurant) ---

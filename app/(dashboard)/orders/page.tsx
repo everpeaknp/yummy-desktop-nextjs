@@ -56,6 +56,7 @@ function getOrderTimeMs(order: any): number {
 
 export default function OrdersPage() {
     const [activeTab, setActiveTab] = useState<"active" | "history">("active");
+    const [activeFilter, setActiveFilter] = useState<"today" | "all">("today");
     const [orders, setOrders] = useState<any[]>([]);
     const [historyOrders, setHistoryOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -68,7 +69,8 @@ export default function OrdersPage() {
     const [stats, setStats] = useState({
         activeCount: 0,
         totalRevenue: 0,
-        pendingAction: 0
+        pendingAction: 0,
+        activeOrdersValue: 0
     });
 
     const [detailsOpen, setDetailsOpen] = useState(false);
@@ -169,10 +171,13 @@ export default function OrdersPage() {
                     ['pending', 'confirmed', 'preparing', 'requested'].includes((o.status as string).toLowerCase())
                 ).length;
 
+                const activeValue = fetchedOrders.reduce((sum: number, o: any) => sum + (o.grand_total || 0), 0);
+
                 setStats(prev => ({
                     ...prev,
                     activeCount: fetchedOrders.length,
-                    pendingAction: pending
+                    pendingAction: pending,
+                    activeOrdersValue: activeValue
                 }));
             }
 
@@ -329,7 +334,33 @@ export default function OrdersPage() {
         return groups;
     }, [historyOrders]);
 
+    const activeStats = useMemo(() => {
+        const todayOrders = orders.filter(o => {
+            const raw = o.started_at || o.created_at || o.updated_at;
+            return raw && isToday(new Date(raw));
+        });
+
+        const targetOrders = activeFilter === "today" ? todayOrders : orders;
+
+        const activeCount = targetOrders.length;
+        const pendingAction = targetOrders.filter((o: any) => 
+            ['pending', 'confirmed', 'preparing', 'requested'].includes((o.status as string).toLowerCase())
+        ).length;
+        const activeOrdersValue = targetOrders.reduce((sum: number, o: any) => sum + (o.grand_total || 0), 0);
+
+        return {
+            activeCount,
+            pendingAction,
+            activeOrdersValue
+        };
+    }, [orders, activeFilter]);
+
     const filteredActive = orders.filter(order => {
+        if (activeFilter === "today") {
+            const raw = order.started_at || order.created_at || order.updated_at;
+            if (raw && !isToday(new Date(raw))) return false;
+        }
+
         if (!searchQuery.trim()) return true;
         const q = searchQuery.toLowerCase();
         return (
@@ -373,24 +404,24 @@ export default function OrdersPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <StatCard
                     label="Active"
-                    value={stats.activeCount.toString()}
-                    subSelect="In progress"
+                    value={activeTab === "active" ? activeStats.activeCount.toString() : stats.activeCount.toString()}
+                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's in progress" : "All in progress") : "In progress"}
                     icon={<RefreshCw className="h-6 w-6" />}
                     color="blue"
                     active={activeTab === "active"}
                 />
                 <StatCard
                     label="Value"
-                    value={stats.totalRevenue.toLocaleString()}
+                    value={activeTab === "active" ? activeStats.activeOrdersValue.toLocaleString() : stats.totalRevenue.toLocaleString()}
                     prefix={restaurant?.currency || "Rs."}
-                    subSelect="Total revenue"
+                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's active value" : "Total active value") : "Total revenue"}
                     icon={<TrendingUp className="h-6 w-6" />}
                     color="orange"
                 />
                 <StatCard
                     label="Pending"
-                    value={stats.pendingAction.toString()}
-                    subSelect="Need action"
+                    value={activeTab === "active" ? activeStats.pendingAction.toString() : stats.pendingAction.toString()}
+                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's need action" : "All need action") : "Need action"}
                     icon={<Clock className="h-6 w-6" />}
                     color="yellow"
                 />
@@ -413,6 +444,33 @@ export default function OrdersPage() {
                             icon={<History className="h-4 w-4" />}
                         />
                     </div>
+
+                    {activeTab === "active" && (
+                         <div className="flex items-center bg-muted p-1 rounded-xl border border-border/40 shrink-0">
+                             <button
+                                 onClick={() => setActiveFilter("today")}
+                                 className={cn(
+                                     "px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wider",
+                                     activeFilter === "today"
+                                         ? "bg-background text-foreground shadow-sm ring-1 ring-black/5"
+                                         : "text-muted-foreground hover:text-foreground"
+                                 )}
+                             >
+                                 Today
+                             </button>
+                             <button
+                                 onClick={() => setActiveFilter("all")}
+                                 className={cn(
+                                     "px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wider",
+                                     activeFilter === "all"
+                                         ? "bg-background text-foreground shadow-sm ring-1 ring-black/5"
+                                         : "text-muted-foreground hover:text-foreground"
+                                 )}
+                             >
+                                 All Active
+                             </button>
+                         </div>
+                    )}
 
                     {activeTab === "history" && (
                         <div className="flex items-center gap-2">
@@ -529,9 +587,9 @@ export default function OrdersPage() {
                                         </h2>
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                             {orders.map((order) => (
-                                                <div key={order.id} onClick={() => openReceipt(order.id)}>
+                                                <Link key={order.id} href={`/orders/${order.id}`}>
                                                     <OrderCard order={order} />
-                                                </div>
+                                                </Link>
                                             ))}
                                         </div>
                                     </div>

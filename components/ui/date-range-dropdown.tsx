@@ -30,6 +30,28 @@ export function DateRangeDropdown({
   setDate,
 }: DateRangeDropdownProps) {
   const [open, setOpen] = React.useState(false)
+  const [fromTime, setFromTime] = React.useState("00:00")
+  const [toTime, setToTime] = React.useState("23:59")
+
+  const handleTimeChange = (time: string, isEnd = false) => {
+    if (isEnd) {
+      setToTime(time)
+      if (date?.to) {
+        const [h, m] = time.split(":").map(Number)
+        const newTo = new Date(date.to)
+        newTo.setHours(h, m, 59, 999)
+        setDate({ ...date, to: newTo })
+      }
+    } else {
+      setFromTime(time)
+      if (date?.from) {
+        const [h, m] = time.split(":").map(Number)
+        const newFrom = new Date(date.from)
+        newFrom.setHours(h, m, 0, 0)
+        setDate({ ...date, from: newFrom })
+      }
+    }
+  }
 
   const presets = [
     { label: "Today", value: "today" },
@@ -107,7 +129,7 @@ export function DateRangeDropdown({
             </button>
           </div>
           {activeRange === 'custom' && (
-            <div className="p-2 relative">
+            <div className="p-2 relative flex flex-col gap-2">
               <div className="transition-opacity duration-200 opacity-100">
                 <Calendar
                   initialFocus
@@ -115,17 +137,54 @@ export function DateRangeDropdown({
                   defaultMonth={date?.from}
                   selected={date}
                   onSelect={(selected) => {
-                    setDate(selected)
-                    if (selected?.from && selected?.to) {
-                      setOpen(false)
+                    if (selected?.from) {
+                      const [h, m] = fromTime.split(":").map(Number);
+                      selected.from.setHours(h, m, 0, 0);
                     }
+                    if (selected?.to) {
+                      const [h, m] = toTime.split(":").map(Number);
+                      selected.to.setHours(h, m, 59, 999);
+                    }
+                    setDate(selected);
                   }}
                   numberOfMonths={1}
                 />
               </div>
+
+              {/* Start and End Time selectors */}
+              <div className="flex gap-2 px-2 pb-2">
+                <div className="flex-1 space-y-1">
+                  <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest leading-none">Start Time</label>
+                  <input
+                    type="time"
+                    value={fromTime}
+                    onChange={(e) => handleTimeChange(e.target.value, false)}
+                    className="w-full text-xs font-bold bg-muted px-2.5 py-2 rounded-lg border border-border/30 focus:outline-none focus:ring-1 focus:ring-primary dark:bg-zinc-800"
+                  />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest leading-none">End Time</label>
+                  <input
+                    type="time"
+                    value={toTime}
+                    onChange={(e) => handleTimeChange(e.target.value, true)}
+                    className="w-full text-xs font-bold bg-muted px-2.5 py-2 rounded-lg border border-border/30 focus:outline-none focus:ring-1 focus:ring-primary dark:bg-zinc-800"
+                  />
+                </div>
+              </div>
+
+              <div className="px-2 pb-1">
+                <Button
+                  size="sm"
+                  className="w-full font-bold uppercase tracking-widest text-[10px] h-9 shadow-md"
+                  disabled={!date?.from}
+                  onClick={() => setOpen(false)}
+                >
+                  Apply Range
+                </Button>
+              </div>
             </div>
-          )}
-        </div>
+          )}        </div>
       </PopoverContent>
     </Popover>
   )

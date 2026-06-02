@@ -307,6 +307,7 @@ function SpatialLayout({
               capacity={table.capacity}
               status={table.status}
               currentGuests={table.current_guests}
+              spaceKind={table.space_kind}
             />
           </div>
         );
@@ -415,6 +416,7 @@ function GridLayout({
             capacity={table.capacity}
             status={table.status}
             currentGuests={table.current_guests}
+            spaceKind={table.space_kind}
           />
         </div>
       ))}

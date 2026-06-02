@@ -435,6 +435,33 @@ export default function IncomePage() {
                          <div className="text-center py-4 text-xs text-muted-foreground">No payments split available</div>
                       )}
                    </div>
+
+                   <div className="pt-2 mt-1 border-t border-border/30">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
+                        Card/QR Collections by Instrument
+                      </div>
+                      <div className="space-y-2">
+                        {(incomeData?.by_payment_instrument || []).map((item: any, idx: number) => (
+                          <div key={`instrument-${idx}`} className="flex justify-between items-center text-xs py-1 border-b border-border/10 last:border-0">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-foreground truncate">{item.instrument || "Unspecified"}</div>
+                              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{String(item.method || "").toUpperCase()}</div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <span className="font-bold">Rs. {Number(item.amount || 0).toLocaleString()}</span>
+                              <span className="text-[10px] bg-muted px-2 py-0.5 rounded text-muted-foreground font-bold">
+                                {Math.round((item.percentage ?? 0) * 100)}%
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {(!incomeData?.by_payment_instrument || incomeData.by_payment_instrument.length === 0) && (
+                          <div className="text-center py-3 text-xs text-muted-foreground">
+                            No instrument-level card/QR collection data.
+                          </div>
+                        )}
+                      </div>
+                   </div>
                 </CardContent>
              </Card>
           </div>

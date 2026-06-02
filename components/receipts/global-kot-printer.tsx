@@ -148,8 +148,9 @@ export function GlobalKotPrinter() {
             try {
                 const savedLocalStationsStr = localStorage.getItem("yummy_local_kot_stations");
                 if (savedLocalStationsStr) {
-                    const localStations: string[] = JSON.parse(savedLocalStationsStr);
-                    if (!localStations.includes(stationName || "")) {
+                    const localStations: string[] = JSON.parse(savedLocalStationsStr).map((s: string) => s.trim().toLowerCase());
+                    const targetStation = (stationName || "").trim().toLowerCase();
+                    if (!localStations.includes(targetStation)) {
                         console.log(`[GlobalKotPrinter] Skipping auto-print on this device. Device is configured for [${localStations.join(",")}], but KOT is for "${stationName || "unknown"}".`);
                         return;
                     }
