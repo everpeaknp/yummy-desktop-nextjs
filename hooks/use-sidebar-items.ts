@@ -18,6 +18,7 @@ import {
   Calendar,
   Percent,
   MessageSquare,
+  Download,
   Zap,
   Bed,
   BedDouble,
@@ -35,12 +36,14 @@ import {
   filterSidebarLinksByAccess,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-download";
 
 export interface SidebarItem {
   title: string;
   href: string;
   icon: LucideIcon;
   section?: string; // optional group label
+  externalUrl?: string;
 }
 
 const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
@@ -61,6 +64,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/discounts": Percent,
   "/manage": Settings,
   "/feedback": MessageSquare,
+  "/desktop-download": Download,
   "/premium": Zap,
 };
 
@@ -146,6 +150,9 @@ export function useSidebarItems(): SidebarItem[] {
         title: item.title,
         href: item.href,
         icon: RESTAURANT_ICON_MAP[item.href] ?? LayoutDashboard,
+        externalUrl:
+          item.externalUrl ??
+          (item.href === "/desktop-download" ? DESKTOP_APP_DOWNLOAD_URL : undefined),
       }));
   }, [user?.roles, user?.role, user?.primary_role, user?.permissions, restaurant?.hotel_enabled, restaurant?.restaurant_enabled, selectedModule]);
 }
