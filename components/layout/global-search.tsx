@@ -117,9 +117,13 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
         );
     }, [query, allItems]);
 
-    const handleSelect = (href: string) => {
+    const handleSelect = (item: { href: string; externalUrl?: string }) => {
         onOpenChange(false);
-        router.push(href);
+        if (item.externalUrl) {
+            window.open(item.externalUrl, "_blank", "noopener,noreferrer");
+            return;
+        }
+        router.push(item.href);
     };
 
     return (
@@ -149,7 +153,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
                             {filteredItems.map((item) => (
                                 <button
                                     key={item.href}
-                                    onClick={() => handleSelect(item.href)}
+                                    onClick={() => handleSelect(item)}
                                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-primary/10 hover:text-primary transition-colors group"
                                 >
                                     <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center shrink-0 group-hover:bg-primary/20 group-hover:text-primary transition-colors">

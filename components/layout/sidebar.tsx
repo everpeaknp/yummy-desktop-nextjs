@@ -20,7 +20,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSidebar } from "@/hooks/use-sidebar";
-import { useEffect, memo, useMemo, useRef, useState } from "react";
+import { useEffect, memo, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -32,6 +32,59 @@ import {
   type SidebarItem
 } from "@/hooks/use-sidebar-items";
 import { GlobalSearch } from "./global-search";
+
+function SidebarNavLink({
+  item,
+  collapsed,
+  isActive,
+  className,
+  children,
+}: {
+  item: SidebarItem;
+  collapsed: boolean;
+  isActive: boolean;
+  className?: string;
+  children?: ReactNode;
+}) {
+  const classes = cn(
+    "flex items-center rounded-lg transition-all hover:text-primary",
+    collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2",
+    isActive ? "bg-muted text-primary" : "text-muted-foreground",
+    className
+  );
+
+  const label = (
+    <>
+      <item.icon className="h-5 w-5 shrink-0" />
+      {!collapsed && <span className="text-base font-medium">{item.title}</span>}
+      {children}
+    </>
+  );
+
+  if (item.externalUrl) {
+    return (
+      <a
+        href={item.externalUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={classes}
+        title={item.title}
+      >
+        {label}
+      </a>
+    );
+  }
+
+  return (
+    <Link
+      href={item.href}
+      onClick={() => sessionStorage.removeItem("fromManage")}
+      className={classes}
+    >
+      {label}
+    </Link>
+  );
+}
 
 export const Sidebar = memo(function Sidebar() {
   const MIN_WIDTH = 240;
@@ -86,12 +139,15 @@ export const Sidebar = memo(function Sidebar() {
   }, [items, coreHrefs, coreOrder, pinnedExtras]);
   const extraItems = useMemo(() => {
     const filtered = items.filter((item) => !coreHrefs.has(item.href) && !pinnedExtras.includes(item.href));
+    const menuIndex = new Map(items.map((item, index) => [item.href, index]));
     if (extraOrder.length === 0) return filtered;
     const rank = new Map(extraOrder.map((href, index) => [href, index]));
     return filtered.sort((a, b) => {
       const aRank = rank.has(a.href) ? (rank.get(a.href) as number) : Number.MAX_SAFE_INTEGER;
       const bRank = rank.has(b.href) ? (rank.get(b.href) as number) : Number.MAX_SAFE_INTEGER;
-      if (aRank === bRank) return a.title.localeCompare(b.title);
+      if (aRank === bRank) {
+        return (menuIndex.get(a.href) ?? 0) - (menuIndex.get(b.href) ?? 0);
+      }
       return aRank - bRank;
     });
   }, [items, coreHrefs, extraOrder, pinnedExtras]);
@@ -316,23 +372,13 @@ export const Sidebar = memo(function Sidebar() {
         <div className="flex-1 overflow-y-auto py-4 min-h-0 sidebar-scroll">
           <nav className={cn("grid items-start text-sm font-medium gap-1", collapsed ? "px-2" : "px-4 gap-2")}>
             {coreItems.map((item, index) => {
-              const isActive = pathname === item.href || (pathname && pathname.startsWith(item.href + "/"));
+              const isActive =
+                !item.externalUrl &&
+                (pathname === item.href ||
+                  (!!pathname && pathname.startsWith(item.href + "/")));
               const link = (
-                <Link
-                  key={index}
-                  href={item.href}
-                  onClick={() => sessionStorage.removeItem('fromManage')}
-                  className={cn(
-                    "flex items-center rounded-lg transition-all hover:text-primary",
-                    collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2",
-                    isActive
-                      ? "bg-muted text-primary"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  <item.icon className="h-5 w-5 shrink-0" />
-                  {!collapsed && <span className="text-base font-medium">{item.title}</span>}
-                  {!collapsed && !coreHrefs.has(item.href) && pinnedExtras.includes(item.href) && (
+                <SidebarNavLink key={index} item={item} collapsed={collapsed} isActive={isActive}>
+                  {!collapsed && !item.externalUrl && !coreHrefs.has(item.href) && pinnedExtras.includes(item.href) && (
                     <button
                       type="button"
                       onClick={(event) => {
@@ -347,7 +393,7 @@ export const Sidebar = memo(function Sidebar() {
                       <PinOff className="h-4 w-4" />
                     </button>
                   )}
-                </Link>
+                </SidebarNavLink>
               );
 
               if (collapsed) {
@@ -365,19 +411,17 @@ export const Sidebar = memo(function Sidebar() {
             {extraItems.length > 0 && (
               collapsed ? (
                 extraItems.map((item, index) => {
-                  const isActive = pathname === item.href || (pathname && pathname.startsWith(item.href + "/"));
+                  const isActive =
+                    !item.externalUrl &&
+                    (pathname === item.href ||
+                      (!!pathname && pathname.startsWith(item.href + "/")));
                   const link = (
-                    <Link
+                    <SidebarNavLink
                       key={`extra-collapsed-${index}`}
-                      href={item.href}
-                      onClick={() => sessionStorage.removeItem('fromManage')}
-                      className={cn(
-                        "flex items-center rounded-lg transition-all hover:text-primary justify-center px-0 py-2.5",
-                        isActive ? "bg-muted text-primary" : "text-muted-foreground"
-                      )}
-                    >
-                      <item.icon className="h-5 w-5 shrink-0" />
-                    </Link>
+                      item={item}
+                      collapsed
+                      isActive={isActive}
+                    />
                   );
                   return (
                     <Tooltip key={`extra-collapsed-tip-${index}`}>
@@ -405,7 +449,10 @@ export const Sidebar = memo(function Sidebar() {
                     {showMore ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                   </button>
                   {showMore && extraItems.map((item, index) => {
-                    const isActive = pathname === item.href || (pathname && pathname.startsWith(item.href + "/"));
+                    const isActive =
+                      !item.externalUrl &&
+                      (pathname === item.href ||
+                        (!!pathname && pathname.startsWith(item.href + "/")));
                     return (
                       <div
                         key={`extra-${index}`}
@@ -439,28 +486,43 @@ export const Sidebar = memo(function Sidebar() {
                               : "text-muted-foreground hover:text-primary hover:bg-muted"
                           )}
                         >
-                          <Link
-                            href={item.href}
-                            onClick={() => sessionStorage.removeItem('fromManage')}
-                            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5"
-                            draggable={false}
-                          >
-                            <item.icon className="h-5 w-5 shrink-0" />
-                            <span className="truncate">{item.title}</span>
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              pinExtraToMain(item.href);
-                            }}
-                            className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/80 hover:text-primary hover:bg-muted"
-                            aria-label={`Move ${item.title} to main`}
-                            title="Move to main"
-                          >
-                            <Pin className="h-4 w-4" />
-                          </button>
+                          {item.externalUrl ? (
+                            <a
+                              href={item.externalUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5"
+                              draggable={false}
+                            >
+                              <item.icon className="h-5 w-5 shrink-0" />
+                              <span className="truncate">{item.title}</span>
+                            </a>
+                          ) : (
+                            <Link
+                              href={item.href}
+                              onClick={() => sessionStorage.removeItem("fromManage")}
+                              className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5"
+                              draggable={false}
+                            >
+                              <item.icon className="h-5 w-5 shrink-0" />
+                              <span className="truncate">{item.title}</span>
+                            </Link>
+                          )}
+                          {!item.externalUrl && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                pinExtraToMain(item.href);
+                              }}
+                              className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/80 hover:text-primary hover:bg-muted"
+                              aria-label={`Move ${item.title} to main`}
+                              title="Move to main"
+                            >
+                              <Pin className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
