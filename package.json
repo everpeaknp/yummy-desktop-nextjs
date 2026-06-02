@@ -19,6 +19,7 @@
   "build": {
     "appId": "com.yummy.pos",
     "productName": "Yummy POS",
+    "executableName": "YummyPOS",
     "directories": {
       "output": "dist",
       "buildResources": "build"
