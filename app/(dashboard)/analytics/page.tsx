@@ -9,7 +9,11 @@ import { useAuth } from "@/hooks/use-auth";
 import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { Badge } from "@/components/ui/badge";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { AnalyticsApis } from "@/lib/api/endpoints";
+import { AnalyticsApis, DayCloseApis } from "@/lib/api/endpoints";
+import { buildAnalyticsDashboardQuery, resolveDayCloseSessionsBusinessLine } from "@/lib/analytics-dashboard-query";
+import { DaybookSelector } from "@/components/analytics/daybook-selector";
+import type { DayCloseSession } from "@/types/day-close-session";
+import { parseDayCloseSessions } from "@/types/day-close-session";
 import { cn } from "@/lib/utils";
 import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown";
 import { DateRange } from "react-day-picker";
@@ -56,17 +60,100 @@ export default function AnalyticsPage() {
     const [date, setDate] = useState<DateRange | undefined>();
     const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
     const [businessLine, setBusinessLine] = useState<string | undefined>(undefined);
+    const [station, setStation] = useState<string | undefined>(undefined);
+    const [selectedDayCloseSession, setSelectedDayCloseSession] = useState<DayCloseSession | null>(null);
+    const [dayCloseSessions, setDayCloseSessions] = useState<DayCloseSession[]>([]);
+    const [dayCloseSessionsLoading, setDayCloseSessionsLoading] = useState(false);
+    const [dayCloseSessionsError, setDayCloseSessionsError] = useState<string | null>(null);
+    const timezone = useMemo(
+        () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+        []
+    );
     const user = useAuth(state => state.user);
     const { ready, canViewAnalytics } = useAnalyticsViewAccess();
     const restaurant = useRestaurant((s) => s.restaurant);
     const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
 
     const applyAllowedAnalyticsRange = useCallback(() => {
+        setSelectedDayCloseSession(null);
         setActiveRange("last30");
         setDate(undefined);
         setScopeNotice(null);
         setFetchTrigger((t) => t + 1);
     }, []);
+
+    const handleActiveRangeChange = useCallback((range: DateRangePreset) => {
+        setSelectedDayCloseSession(null);
+        setActiveRange(range);
+    }, []);
+
+    const handleDateChange = useCallback((nextDate: DateRange | undefined) => {
+        setSelectedDayCloseSession(null);
+        setDate(nextDate);
+    }, []);
+
+    const handleBusinessLineChange = useCallback((line: string | undefined) => {
+        setSelectedDayCloseSession(null);
+        setStation(undefined);
+        setBusinessLine(line);
+    }, []);
+
+    const handleStationChange = useCallback((nextStation: string | undefined) => {
+        setSelectedDayCloseSession(null);
+        setStation(nextStation);
+    }, []);
+
+    const handleDayCloseSessionSelect = useCallback((session: DayCloseSession | null) => {
+        if (session) {
+            setStation(undefined);
+            setBusinessLine(session.business_line === "hotel" ? "hotel" : "restaurant");
+        }
+        setSelectedDayCloseSession(session);
+        setFetchTrigger((t) => t + 1);
+    }, []);
+
+    const loadDayCloseSessions = useCallback(async () => {
+        if (!user?.restaurant_id) {
+            setDayCloseSessions([]);
+            return;
+        }
+
+        setDayCloseSessionsLoading(true);
+        setDayCloseSessionsError(null);
+        try {
+            const res = await apiClient.get(
+                DayCloseApis.sessions({
+                    restaurantId: user.restaurant_id,
+                    businessLine: resolveDayCloseSessionsBusinessLine(businessLine),
+                    limit: 50,
+                })
+            );
+
+            if (res.data?.status === "success") {
+                setDayCloseSessions(parseDayCloseSessions(res.data.data));
+            } else if (Array.isArray(res.data)) {
+                setDayCloseSessions(parseDayCloseSessions(res.data));
+            } else {
+                setDayCloseSessions(parseDayCloseSessions(res.data));
+                if (!parseDayCloseSessions(res.data).length && res.data?.message) {
+                    setDayCloseSessionsError(res.data.message);
+                }
+            }
+        } catch {
+            setDayCloseSessions([]);
+            setDayCloseSessionsError("Failed to load daybook sessions");
+        } finally {
+            setDayCloseSessionsLoading(false);
+        }
+    }, [user?.restaurant_id, businessLine]);
+
+    useEffect(() => {
+        if (!ready || !user?.restaurant_id || !canViewAnalytics) {
+            setDayCloseSessions([]);
+            return;
+        }
+        void loadDayCloseSessions();
+    }, [ready, canViewAnalytics, user?.restaurant_id, businessLine, loadDayCloseSessions]);
 
     // Fetch all analytics from unified /analytics/dashboard (same as Flutter)
     useEffect(() => {
@@ -78,79 +165,43 @@ export default function AnalyticsPage() {
                 setLoading(false);
                 return;
             }
-            if (activeRange === 'custom' && (!date?.from || !date?.to)) {
+            if (!selectedDayCloseSession && activeRange === 'custom' && (!date?.from || !date?.to)) {
                 return;
             }
 
             const presetRange = getAnalyticsPresetRange(activeRange, date);
-            const validation = validateAnalyticsDateRange(presetRange, {
-                role: primaryRole,
-                effectivePlan: restaurant?.effective_plan,
-            });
-            if (!validation.allowed) {
-                setScopeNotice(validationToScopeError(validation));
-                setFetchError(null);
-                setViewModel(null);
-                setTrendsData([]);
-                setCategoryData([]);
-                setLoading(false);
-                return;
+            if (!selectedDayCloseSession) {
+                const validation = validateAnalyticsDateRange(presetRange, {
+                    role: primaryRole,
+                    effectivePlan: restaurant?.effective_plan,
+                });
+                if (!validation.allowed) {
+                    setScopeNotice(validationToScopeError(validation));
+                    setFetchError(null);
+                    setViewModel(null);
+                    setTrendsData([]);
+                    setCategoryData([]);
+                    setLoading(false);
+                    return;
+                }
             }
 
             setScopeNotice(null);
             setLoading(true);
             setFetchError(null);
             try {
-                const formatDate = (date: Date) => {
-                    const year = date.getFullYear();
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const day = String(date.getDate()).padStart(2, '0');
-                    return `${year}-${month}-${day}`;
-                };
-                const now = new Date();
-                let dateFrom = formatDate(now);
-                let dateTo = formatDate(now);
-
-                if (activeRange === 'yesterday') {
-                    const y = new Date(now);
-                    y.setDate(y.getDate() - 1);
-                    dateFrom = formatDate(y);
-                    dateTo = formatDate(y);
-                } else if (activeRange === 'last7') {
-                    const l7 = new Date(now);
-                    l7.setDate(l7.getDate() - 6);
-                    dateFrom = formatDate(l7);
-                } else if (activeRange === 'last30') {
-                    const l30 = new Date(now);
-                    l30.setDate(l30.getDate() - 29);
-                    dateFrom = formatDate(l30);
-                } else if (activeRange === 'month') {
-                    const m = new Date(now.getFullYear(), now.getMonth(), 1);
-                    dateFrom = formatDate(m);
-                } else if (activeRange === 'custom' && date?.from) {
-                    dateFrom = formatDate(date.from);
-                    dateTo = date.to ? formatDate(date.to) : dateFrom;
-                }
-                let startTime: string | undefined = undefined;
-                let endTime: string | undefined = undefined;
-
-                if (activeRange === 'custom' && date?.from) {
-                    startTime = date.from.toISOString();
-                    endTime = date.to ? date.to.toISOString() : date.from.toISOString();
-                }
-
-                const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-                const dashboardUrl = AnalyticsApis.dashboard({
+                const query = buildAnalyticsDashboardQuery({
                     restaurantId: user.restaurant_id,
-                    dateFrom,
-                    dateTo,
-                    startTime,
-                    endTime,
                     timezone,
+                    activeRange,
+                    customDate: date,
                     businessLine,
+                    station: selectedDayCloseSession ? undefined : station,
+                    selectedDayCloseSession,
                     include: "core",
                 });
+
+                const dashboardUrl = AnalyticsApis.dashboard(query);
 
                 const res = await apiClient.get(dashboardUrl);
 
@@ -158,7 +209,12 @@ export default function AnalyticsPage() {
                     const vm = mapAnalyticsDashboard(res.data.data);
                     setViewModel(vm);
                     setTrendsData(
-                        mapRevenueTrendPoints(vm, preferHourlyTrends(activeRange))
+                        mapRevenueTrendPoints(
+                            vm,
+                            selectedDayCloseSession
+                                ? false
+                                : preferHourlyTrends(activeRange)
+                        )
                     );
                     setCategoryData(getBreakdownPieSlices(vm, breakdownType));
                 } else {
@@ -192,7 +248,7 @@ export default function AnalyticsPage() {
         if (user?.restaurant_id) {
             fetchAnalytics();
         }
-    }, [ready, canViewAnalytics, user, activeRange, businessLine, date, fetchTrigger, primaryRole, restaurant?.effective_plan]);
+    }, [ready, canViewAnalytics, user, activeRange, businessLine, station, date, fetchTrigger, primaryRole, restaurant?.effective_plan, selectedDayCloseSession, timezone, breakdownType]);
 
     useEffect(() => {
         if (!viewModel) {
@@ -218,7 +274,7 @@ export default function AnalyticsPage() {
                             ? applyAllowedAnalyticsRange
                             : scopeNotice.kind === "role_cashier_limit"
                               ? () => {
-                                    setActiveRange("today");
+                                    handleActiveRangeChange("today");
                                     setDate(undefined);
                                     setScopeNotice(null);
                                     setFetchTrigger((t) => t + 1);
@@ -239,7 +295,7 @@ export default function AnalyticsPage() {
                 />
             ) : null}
             {/* Header & Filters */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
                     <p className="text-muted-foreground text-sm uppercase tracking-wider text-orange-500 font-semibold">
@@ -247,12 +303,23 @@ export default function AnalyticsPage() {
                     </p>
                 </div>
 
-                <DateRangeDropdown 
-                    activeRange={activeRange}
-                    setActiveRange={setActiveRange}
-                    date={date}
-                    setDate={setDate}
-                />
+                <div className="flex flex-col sm:flex-row sm:items-start gap-3 md:items-center">
+                    <DaybookSelector
+                        timezone={timezone}
+                        selectedSession={selectedDayCloseSession}
+                        sessions={dayCloseSessions}
+                        loading={dayCloseSessionsLoading}
+                        error={dayCloseSessionsError}
+                        onSelect={handleDayCloseSessionSelect}
+                        onOpen={loadDayCloseSessions}
+                    />
+                    <DateRangeDropdown 
+                        activeRange={activeRange}
+                        setActiveRange={handleActiveRangeChange}
+                        date={date}
+                        setDate={handleDateChange}
+                    />
+                </div>
             </div>
 
             {/* Module Selector (Only if both enabled) */}
@@ -263,19 +330,19 @@ export default function AnalyticsPage() {
                         <FilterButton 
                             label="All Services" 
                             active={businessLine === undefined} 
-                            onClick={() => setBusinessLine(undefined)} 
+                            onClick={() => handleBusinessLineChange(undefined)} 
                             icon={<LayoutGrid className="w-3 h-3" />} 
                         />
                         <FilterButton 
                             label="Restaurant" 
                             active={businessLine === 'restaurant'} 
-                            onClick={() => setBusinessLine('restaurant')} 
+                            onClick={() => handleBusinessLineChange('restaurant')} 
                             icon={<Utensils className="w-3 h-3" />} 
                         />
                         <FilterButton 
                             label="Hotel / Rooms" 
                             active={businessLine === 'hotel'} 
-                            onClick={() => setBusinessLine('hotel')} 
+                            onClick={() => handleBusinessLineChange('hotel')} 
                             icon={<Bed className="w-3 h-3" />} 
                         />
                     </div>
