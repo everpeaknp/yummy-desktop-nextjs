@@ -10,10 +10,12 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions"
 import {
-  mapAnalyticsTrends,
-  mapBreakdownToPie,
+  getBreakdownPieSlices,
+  mapAnalyticsDashboard,
+  mapRevenueTrendPoints,
   preferHourlyTrends,
   topItemQuantitySold,
+  type AnalyticsDashboardViewModel,
 } from "@/lib/analytics-dashboard-mapper"
 import { cn } from "@/lib/utils"
 import { DashboardApis, AnalyticsApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
@@ -55,7 +57,7 @@ import {
 export default function DashboardPage() {
   const user = useAuth(state => state.user)
   const [data, setData] = useState<any>(null)
-  const [analyticsData, setAnalyticsData] = useState<any>(null)
+  const [analyticsVm, setAnalyticsVm] = useState<AnalyticsDashboardViewModel | null>(null)
   const [occupancy, setOccupancy] = useState<any[]>([])
   const [trendsData, setTrendsData] = useState<any[]>([])
   const [categoryData, setCategoryData] = useState<any[]>([])
@@ -91,7 +93,7 @@ export default function DashboardPage() {
       setError(null)
       setAnalyticsError(null)
       if (!canViewAnalytics) {
-        setAnalyticsData(null)
+        setAnalyticsVm(null)
         setTrendsData([])
         setCategoryData([])
         setAnalyticsUnavailable(true)
@@ -191,16 +193,14 @@ export default function DashboardPage() {
       if (v2Res?.data?.status === "success") setData(v2Res.data.data)
       
       if (analyticsRes?.data?.status === "success") {
-        const analytics = analyticsRes.data.data
-        setAnalyticsData(analytics)
+        const vm = mapAnalyticsDashboard(analyticsRes.data.data)
+        setAnalyticsVm(vm)
 
         setTrendsData(
-          mapAnalyticsTrends(analytics, preferHourlyTrends(activeRange))
+          mapRevenueTrendPoints(vm, preferHourlyTrends(activeRange))
         )
 
-        if (analytics.breakdown) {
-          setCategoryData(mapBreakdownToPie(analytics.breakdown, "source"))
-        }
+        setCategoryData(getBreakdownPieSlices(vm, "source"))
       }
 
       if (historyRes?.data?.status === "success") {
@@ -244,7 +244,7 @@ export default function DashboardPage() {
 
   // Export Reporting
   const handleExport = async () => {
-    if (!analyticsData) return
+    if (!analyticsVm) return
     
     // Dynamic import for optimization
     const XLSX = await import("xlsx")
@@ -268,18 +268,17 @@ export default function DashboardPage() {
   if (loading && !data) return <DashboardSkeleton />
 
   const health = data?.health
-  const overview = analyticsData?.overview
   const v2Kpis = data?.kpis
-  const currency = analyticsData?.meta?.currency || data?.meta?.currency || "NPR"
-  const topItems = analyticsData?.menu_snapshot?.top_items || data?.breakdowns?.top_items || []
+  const currency = analyticsVm?.meta?.currency || data?.meta?.currency || "NPR"
+  const topItems = analyticsVm?.topMenuItems ?? data?.breakdowns?.top_items ?? []
   
   const kpis = {
-    gross_sales: overview?.total_income ?? v2Kpis?.gross_sales ?? 0,
-    net_profit: overview?.net_profit ?? 0,
-    profit_margin: overview?.profit_margin ?? 0,
-    total_orders: overview?.orders_count ?? v2Kpis?.total_orders ?? 0,
-    average_order_value: overview?.avg_order_value ?? v2Kpis?.average_order_value ?? 0,
-    total_expense: overview?.total_expense ?? 0,
+    gross_sales: analyticsVm?.periodSnapshot.grossSales ?? v2Kpis?.gross_sales ?? 0,
+    net_profit: analyticsVm?.periodSnapshot.netProfit ?? 0,
+    profit_margin: analyticsVm?.periodSnapshot.profitMargin ?? 0,
+    total_orders: analyticsVm?.periodSnapshot.totalOrders ?? v2Kpis?.total_orders ?? 0,
+    average_order_value: analyticsVm?.periodSnapshot.avgOrderValue ?? v2Kpis?.average_order_value ?? 0,
+    total_expense: analyticsVm?.periodSnapshot.totalExpense ?? 0,
     cancelled_today: health?.cancelled_today ?? 0,
     refunded_today: health?.refunded_today ?? 0,
   }
@@ -401,8 +400,8 @@ export default function DashboardPage() {
       {/* 3. Operational Pulse & Intelligence */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <OccupancyCard tables={occupancy} />
-          <OperationalPulseCard operations={analyticsData?.operations} />
-          <InsightsCard insights={analyticsData?.insights} loading={loading} />
+          <OperationalPulseCard operations={analyticsVm?.operations} />
+          <InsightsCard insights={analyticsVm?.insights ?? []} loading={loading} />
       </section>
 
       {/* 4. Performers & Staff Activity */}
@@ -523,7 +522,11 @@ function OccupancyCard({ tables }: { tables: any[] }) {
   )
 }
 
-function OperationalPulseCard({ operations }: { operations: any }) {
+function OperationalPulseCard({
+  operations,
+}: {
+  operations?: AnalyticsDashboardViewModel["operations"] | null
+}) {
   return (
     <Card className="bg-card border-border shadow-sm">
       <CardHeader className="pb-2 border-b border-border/30">
@@ -539,7 +542,7 @@ function OperationalPulseCard({ operations }: { operations: any }) {
           </div>
           <div className="min-w-0">
             <p className="text-[10px] text-muted-foreground font-black uppercase">Peak Demand Hour</p>
-            <p className="text-sm font-bold truncate">{operations?.peak_hour || "N/A"}</p>
+            <p className="text-sm font-bold truncate">{operations?.peakHour || "N/A"}</p>
           </div>
         </div>
         
@@ -549,14 +552,14 @@ function OperationalPulseCard({ operations }: { operations: any }) {
           </div>
           <div className="min-w-0">
             <p className="text-[10px] text-muted-foreground font-black uppercase">Avg Prep Time</p>
-            <p className="text-sm font-bold">{Math.round(operations?.avg_service_time_min || 0)} mins</p>
+            <p className="text-sm font-bold">{Math.round(operations?.avgServiceTimeMin || 0)} mins</p>
           </div>
         </div>
 
         <div className="pt-2 border-t border-border/50 flex justify-between items-center">
           <span className="text-[10px] font-bold text-muted-foreground uppercase">Cancellation Rate</span>
-          <Badge variant="outline" className={cn("font-bold", (operations?.order_cancellation_pct || 0) > 10 ? "text-destructive border-destructive/20 bg-destructive/5" : "text-green-600 border-green-200 bg-green-50/50")}>
-            {operations?.order_cancellation_pct || 0}%
+          <Badge variant="outline" className={cn("font-bold", (operations?.orderCancellationPct || 0) > 10 ? "text-destructive border-destructive/20 bg-destructive/5" : "text-green-600 border-green-200 bg-green-50/50")}>
+            {operations?.orderCancellationPct || 0}%
           </Badge>
         </div>
       </CardContent>
