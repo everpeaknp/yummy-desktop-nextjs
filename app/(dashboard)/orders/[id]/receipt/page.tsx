@@ -266,7 +266,7 @@ export default function ReceiptPage() {
     fetchData();
   }, [fetchData]);
 
-  const tryElectronNetworkReceiptPrint = useCallback(async (): Promise<boolean> => {
+  const tryElectronNetworkReceiptPrint = useCallback(async (options?: { timeoutMs?: number }): Promise<boolean> => {
     try {
       // @ts-ignore
       if (typeof window === "undefined" || !window.electronAPI?.printNetworkRaw) {
@@ -294,6 +294,7 @@ export default function ReceiptPage() {
         host,
         port,
         payload,
+        timeoutMs: options?.timeoutMs ?? 2000,
       });
       if (!printRes?.success) {
         console.warn("[ReceiptPage] Network raw print failed:", printRes?.message);
@@ -317,7 +318,7 @@ export default function ReceiptPage() {
 
     const timer = setTimeout(() => {
       (async () => {
-        const ok = await tryElectronNetworkReceiptPrint();
+        const ok = await tryElectronNetworkReceiptPrint({ timeoutMs: 2000 });
         if (!ok) {
           window.print();
         }
@@ -327,14 +328,8 @@ export default function ReceiptPage() {
     return () => clearTimeout(timer);
   }, [receipt, template, orderId, tryElectronNetworkReceiptPrint]);
 
-  const handlePrint = async () => {
-    const sentToNetwork = await tryElectronNetworkReceiptPrint();
-    if (sentToNetwork) {
-      setPrinted(true);
-      return;
-    }
-
-    // Desktop shell: use native print dialog. blob: URLs cannot be opened in Electron on Windows.
+  const handlePrint = () => {
+    // Manual print: open the system dialog immediately (do not wait on API/network printer).
     window.print();
     setPrinted(true);
   };

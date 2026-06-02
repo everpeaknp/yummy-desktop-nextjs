@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, shell, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
@@ -415,9 +416,54 @@ function createWindow() {
   // Handle native window.print() requests (no-op hook kept for parity)
 }
 
+function setupAutoUpdater() {
+  if (isDev || !app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = {
+    info: (m) => log(`[updater] ${m}`),
+    warn: (m) => log(`[updater] ${m}`),
+    error: (m) => log(`[updater] ${m}`),
+    debug: (m) => log(`[updater] ${m}`),
+  };
+
+  autoUpdater.on('error', (err) => {
+    log(`[updater] error ${String(err?.message || err)}`);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    const version = info?.version || 'new';
+    log(`[updater] downloaded ${version}`);
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    dialog
+      .showMessageBox(parent, {
+        type: 'info',
+        title: 'Update ready',
+        message: `Yummy POS ${version} is ready to install.`,
+        detail: 'Restart now to finish updating, or continue working and install on quit.',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall(false, true);
+      })
+      .catch((err) => log(`[updater] dialog failed ${String(err?.message || err)}`));
+  });
+
+  // Let the UI load first; then check GitHub Releases (latest.yml from NSIS publish).
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      log(`[updater] check failed ${String(err?.message || err)}`);
+    });
+  }, 15000);
+}
+
 app.whenReady().then(() => {
   logAuthStorageDiagnostics('startup');
   createWindow();
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -470,7 +516,7 @@ ipcMain.handle('print-network-raw', async (event, options = {}) => {
   const host = String(options.host || '').trim();
   const port = Number(options.port || 9100);
   const payload = String(options.payload || '');
-  const timeoutMs = Math.max(4000, Number(options.timeoutMs || 8000));
+  const timeoutMs = Math.max(800, Math.min(8000, Number(options.timeoutMs || 2000)));
 
   if (!host || !port) {
     return { success: false, message: 'Invalid printer host/port' };

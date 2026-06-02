@@ -21,7 +21,7 @@ import apiClient from "@/lib/api-client";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { ThermalReceipt } from "@/components/receipts/thermal-receipt";
-import { ReceiptApis, RestaurantApis, PrinterApis } from "@/lib/api/endpoints";
+import { ReceiptApis, RestaurantApis } from "@/lib/api/endpoints";
 import { ReceiptData } from "@/types/order";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -105,82 +105,7 @@ export function ReceiptDetailSheet({
     { id: '7', type: 'footer', is_visible: true, show_on_bill: true, show_on_receipt: true },
   ];
 
-  const buildRawPayload = (r: ReceiptData, t: any[]) => {
-    const order = r?.order as any;
-    const restaurant = r?.restaurant as any;
-    const blocks = (t || [])
-      .filter((b: any) => b?.type !== "global_settings")
-      .map((b: any) => ({ ...b, cfg: b?.config ? { ...b, ...b.config } : b }))
-      .filter((b: any) => (b?.is_visible ?? b?.isVisible ?? true) && (b?.show_on_receipt ?? b?.showOnReceipt ?? true));
-
-    const lines: string[] = [];
-    const header = blocks.find((b: any) => b.type === "header")?.cfg || {};
-    lines.push(String(header.title || restaurant?.name || "YUMMY RECEIPT"));
-    if (header.show_address !== false && restaurant?.address) lines.push(String(restaurant.address));
-    if (header.show_phone !== false && restaurant?.phone) lines.push(`${header.phone_label || "Contact"}: ${restaurant.phone}`);
-    lines.push("---------------------------");
-    lines.push(`Order: #${order?.restaurant_order_id || order?.id || orderId}`);
-    lines.push(`Table: ${order?.table_name || "-"}`);
-    lines.push(`Date: ${new Date(order?.created_at || Date.now()).toLocaleString()}`);
-    lines.push("---------------------------");
-    (order?.items || []).forEach((item: any, idx: number) => {
-      lines.push(`${idx + 1}. ${(item?.name_snapshot || item?.item_name || "Item")} x${item?.qty ?? 1} @${Number(item?.unit_price || 0).toFixed(2)} = ${Number(item?.line_total || 0).toFixed(2)}`);
-    });
-    lines.push("---------------------------");
-    const subtotal = Number(order?.subtotal || 0);
-    const tax = Number(order?.tax_total || 0);
-    const total = Number(order?.grand_total || 0);
-    const serviceCharge = Number(order?.service_charge || 0);
-    const discount = Math.max(0, Number((subtotal + tax + serviceCharge - total).toFixed(2)));
-    const discountReason =
-      order?.discount_reason ||
-      order?.manual_discount_reason ||
-      order?.discount_note ||
-      order?.discount_code ||
-      null;
-    lines.push(`Subtotal: Rs.${subtotal.toFixed(2)}`);
-    lines.push(`Tax: Rs.${tax.toFixed(2)}`);
-    if (discount > 0) {
-      lines.push(`Discount: -Rs.${discount.toFixed(2)}`);
-      if (discountReason) lines.push(`Reason: ${String(discountReason)}`);
-    }
-    lines.push(`Grand Total: Rs.${total.toFixed(2)}`);
-    (order?.payments || []).forEach((p: any) => {
-      lines.push(`${String(p?.method || "payment").toUpperCase()}: Rs.${Number(p?.amount || 0).toFixed(2)}`);
-    });
-    lines.push("\n\n\n");
-    return lines.join("\n");
-  };
-
-  const tryElectronNetworkPrint = async (): Promise<boolean> => {
-    try {
-      // @ts-ignore
-      if (typeof window === "undefined" || !window.electronAPI?.printNetworkRaw || !receipt) return false;
-      const restaurantId = receipt?.restaurant?.id;
-      if (!restaurantId) return false;
-
-      const listRes = await apiClient.get(PrinterApis.list(restaurantId));
-      const printers = listRes?.data?.data || [];
-      const printer = printers.find((p: any) => p?.enabled && p?.is_default) || printers.find((p: any) => p?.enabled);
-      if (!printer) return false;
-
-      const host = String(printer?.connection_config?.ip_address || printer?.address || "").trim();
-      const port = Number(printer?.connection_config?.port || 9100);
-      if (!host) return false;
-
-      const payload = buildRawPayload(receipt, template || defaultTemplate);
-      // @ts-ignore
-      const res = await window.electronAPI.printNetworkRaw({ host, port, payload });
-      return !!res?.success;
-    } catch {
-      return false;
-    }
-  };
-
-  const handlePrint = async () => {
-    const sent = await tryElectronNetworkPrint();
-    if (sent) return;
-
+  const handlePrint = () => {
     window.print();
   };
 
