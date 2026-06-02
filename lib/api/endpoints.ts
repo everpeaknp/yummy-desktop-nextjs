@@ -784,8 +784,10 @@ export const DayCloseApis = {
     return `/day-closes/sessions?${params.toString()}`;
   },
   detail: (id: number) => `/day-closes/${id}`,
+  get: (id: number) => `/day-closes/${id}`,
   auditLog: (id: number) => `/day-closes/${id}/audit-log`,
   savedSnapshot: (id: number) => `/day-closes/${id}/snapshot`,
+  snapshot: (id: number) => `/day-closes/${id}/snapshot`,
   reopen: (id: number) => `/day-closes/${id}/reopen`,
   exportPdf: (id: number) => `/day-closes/${id}/export/pdf`,
   exportExcel: (id: number) => `/day-closes/${id}/export/excel`,
