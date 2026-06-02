@@ -1,0 +1,6 @@
+#!/bin/sh
+# Strip Cursor-injected co-author so GitHub shows only the human author.
+msg_file="$1"
+[ -f "$msg_file" ] || exit 0
+tmp="${msg_file}.strip"
+grep -v '^Co-authored-by: Cursor <cursoragent@cursor.com>$' "$msg_file" > "$tmp" && mv "$tmp" "$msg_file"

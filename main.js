@@ -75,9 +75,13 @@ async function logWebAuthSnapshot(label) {
 
 function getIconPath() {
   const candidates = [
+    path.join(__dirname, 'electron-resources', 'icon.ico'),
+    path.join(__dirname, 'electron-resources', 'icon.png'),
+    path.join(__dirname, 'electron-resources', 'icon-256.png'),
     path.join(__dirname, 'build', 'icon.ico'),
     path.join(__dirname, 'build', 'icon.png'),
     path.join(__dirname, 'build', 'icon-256.png'),
+    path.join(process.resourcesPath || '', 'electron-resources', 'icon.ico'),
     path.join(process.resourcesPath || '', 'build', 'icon.ico'),
     path.join(process.resourcesPath || '', 'build', 'icon.png'),
     path.join(process.resourcesPath || '', 'build', 'icon-256.png'),
