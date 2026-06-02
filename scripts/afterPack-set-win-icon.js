@@ -12,7 +12,7 @@ module.exports = async function afterPack(context) {
     const appOutDir = context.appOutDir;
     const exeName = `${context.packager.appInfo.executableName || context.packager.appInfo.productFilename}.exe`;
     const exePath = path.join(appOutDir, exeName);
-    const iconPath = path.join(context.packager.projectDir, 'build', 'icon.ico');
+    const iconPath = path.join(context.packager.projectDir, 'electron-resources', 'icon.ico');
 
     if (!fs.existsSync(exePath)) return;
     if (!fs.existsSync(iconPath)) return;

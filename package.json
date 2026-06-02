@@ -22,21 +22,21 @@
     "executableName": "YummyPOS",
     "directories": {
       "output": "dist",
-      "buildResources": "build"
+      "buildResources": "electron-resources"
     },
     "forceCodeSigning": false,
     "asar": true,
-    "icon": "build/icon.ico",
+    "icon": "electron-resources/icon.ico",
     "files": [
       "main.js",
       "electron-auth-persist.js",
       "preload.js",
-      "build/icon.ico",
-      "build/icon.png",
-      "build/icon-256.png"
+      "electron-resources/icon.ico",
+      "electron-resources/icon.png",
+      "electron-resources/icon-256.png"
     ],
     "win": {
-      "icon": "build/icon.ico",
+      "icon": "electron-resources/icon.ico",
       "target": [
         "portable",
         "nsis"
@@ -50,9 +50,9 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico"
+      "installerIcon": "electron-resources/icon.ico",
+      "uninstallerIcon": "electron-resources/icon.ico",
+      "installerHeaderIcon": "electron-resources/icon.ico"
     },
     "mac": {
       "target": [
