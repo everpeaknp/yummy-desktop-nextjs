@@ -68,7 +68,8 @@ export default function OrdersPage() {
     const [stats, setStats] = useState({
         activeCount: 0,
         totalRevenue: 0,
-        pendingAction: 0
+        pendingAction: 0,
+        activeOrdersValue: 0
     });
 
     const [detailsOpen, setDetailsOpen] = useState(false);
@@ -169,10 +170,13 @@ export default function OrdersPage() {
                     ['pending', 'confirmed', 'preparing', 'requested'].includes((o.status as string).toLowerCase())
                 ).length;
 
+                const activeValue = fetchedOrders.reduce((sum: number, o: any) => sum + (o.grand_total || 0), 0);
+
                 setStats(prev => ({
                     ...prev,
                     activeCount: fetchedOrders.length,
-                    pendingAction: pending
+                    pendingAction: pending,
+                    activeOrdersValue: activeValue
                 }));
             }
 
@@ -381,9 +385,9 @@ export default function OrdersPage() {
                 />
                 <StatCard
                     label="Value"
-                    value={stats.totalRevenue.toLocaleString()}
+                    value={activeTab === "active" ? stats.activeOrdersValue.toLocaleString() : stats.totalRevenue.toLocaleString()}
                     prefix={restaurant?.currency || "Rs."}
-                    subSelect="Total revenue"
+                    subSelect={activeTab === "active" ? "Active orders value" : "Total revenue"}
                     icon={<TrendingUp className="h-6 w-6" />}
                     color="orange"
                 />
