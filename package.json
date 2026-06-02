@@ -43,8 +43,6 @@
         "portable",
         "nsis"
       ],
-      "sign": null,
-      "signDlls": false,
       "signAndEditExecutable": false,
       "verifyUpdateCodeSignature": false
     },
