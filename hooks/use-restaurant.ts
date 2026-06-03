@@ -57,13 +57,10 @@ export const useRestaurant = create<RestaurantState>()(
           const response = await apiClient.get('/restaurants/by-user');
           if (response.data.status === 'success') {
             const nextData = response.data.data;
-            console.log("[useRestaurant] Full Data received:", nextData);
-            console.log("[useRestaurant] Data flags check:", { id: nextData.id, hotel: nextData.hotel_enabled, rest: nextData.restaurant_enabled });
             const current = get().restaurant;
             
             // If we switched to a different restaurant, clear selection
             if (current && current.id !== nextData.id) {
-               console.log("[useRestaurant] Restaurant changed, clearing selectedModule");
                set({ selectedModule: null });
             }
             
