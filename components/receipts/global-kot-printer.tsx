@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ThermalKOT } from "@/components/receipts/thermal-kot";
 import apiClient from "@/lib/api-client";
@@ -50,6 +50,7 @@ export function GlobalKotPrinter() {
     const [printJob, setPrintJob] = useState<{ kotData: any; template: any[] } | null>(null);
     const [mounted, setMounted] = useState(false);
     const [printerRoutingUnauthorized, setPrinterRoutingUnauthorized] = useState(false);
+    const recentPrintsRef = useRef<Map<string, number>>(new Map());
 
     useEffect(() => { setMounted(true); }, []);
 
@@ -105,6 +106,25 @@ export function GlobalKotPrinter() {
             if (!data) return;
 
             console.log("[GlobalKotPrinter] Received print request for KOT:", data);
+
+            const dedupeKey = String(
+                data.kot_id ||
+                data.id ||
+                data.kot?.id ||
+                `${data.order_id || data.order?.id || "order"}:${data.station || data.kot?.station || "station"}:${data.kot_number || data.created_at || "unknown"}`
+            );
+            const now = Date.now();
+            const lastSeen = recentPrintsRef.current.get(dedupeKey) || 0;
+            if (now - lastSeen < 5000) {
+                console.log("[GlobalKotPrinter] Skipping duplicate KOT print event:", dedupeKey);
+                return;
+            }
+            recentPrintsRef.current.set(dedupeKey, now);
+            for (const [key, ts] of recentPrintsRef.current.entries()) {
+                if (now - ts > 30000) {
+                    recentPrintsRef.current.delete(key);
+                }
+            }
             
             // If the payload is missing items (like from kot_created), fetch the full KOT
             if (!data.items || data.items.length === 0) {
