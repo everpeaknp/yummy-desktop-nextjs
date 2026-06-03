@@ -4,7 +4,10 @@ import { useState, useEffect, Suspense, useCallback } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import POSSystem from "@/components/orders/pos-system";
-import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, Bed, BedDouble, Filter } from "lucide-react";
+import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, Bed, BedDouble, Filter, CheckSquare } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { isTableFree } from "@/lib/table-ops";
+import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -26,6 +29,9 @@ interface TableType {
 export default function NewOrderPage() {
     const [activeTab, setActiveTab] = useState("tables");
     const [selectedTable, setSelectedTable] = useState<number | null>(null);
+    const [multiSelectMode, setMultiSelectMode] = useState(false);
+    const [selectedTableIds, setSelectedTableIds] = useState<number[]>([]);
+    const [multiTableConfirmed, setMultiTableConfirmed] = useState(false);
     const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
     const [tables, setTables] = useState<TableData[]>([]);
     const [rooms, setRooms] = useState<TableData[]>([]);
@@ -103,7 +109,12 @@ export default function NewOrderPage() {
         if (activeTab === "tables" && user?.restaurant_id) {
             fetchData();
             const interval = setInterval(fetchData, 15000);
-            return () => clearInterval(interval);
+            const onRefresh = () => void fetchData();
+            window.addEventListener("yummy:tables-refresh", onRefresh);
+            return () => {
+                clearInterval(interval);
+                window.removeEventListener("yummy:tables-refresh", onRefresh);
+            };
         }
     }, [activeTab, user?.restaurant_id, fetchData]);
 
@@ -199,24 +210,58 @@ export default function NewOrderPage() {
     });
 
     const handleTableClick = (table: TableData) => {
+        if (multiSelectMode) {
+            if (!isTableFree(table.status)) {
+                toast.error("Only free tables can be selected for a new multi-table order.");
+                return;
+            }
+            setSelectedTableIds((prev) =>
+                prev.includes(table.id) ? prev.filter((id) => id !== table.id) : [...prev, table.id]
+            );
+            return;
+        }
         setSelectedTable(table.id);
     };
 
-    // If a table is selected, show POS with Back button
-    if (selectedTable) {
-        const tableDetails = tables.find(t => t.id === selectedTable);
-        const existingOrderId = tableDetails?.active_order_ids?.[0] || 'create';
+    const activeTableIds = multiSelectMode
+        ? multiTableConfirmed
+          ? selectedTableIds
+          : []
+        : selectedTable
+          ? [selectedTable]
+          : [];
+
+    // If table(s) selected, show POS with Back button
+    if (activeTableIds.length > 0) {
+        const primaryId = activeTableIds[0];
+        const tableDetails = tables.find((t) => t.id === primaryId);
+        const existingOrderId = tableDetails?.active_order_ids?.[0] || "create";
 
         return (
             <div className="flex flex-col h-full gap-2">
-                <div className="flex items-center gap-2 pb-2">
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedTable(null)}>
+                <div className="flex items-center gap-2 pb-2 flex-wrap">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                            setSelectedTable(null);
+                            setSelectedTableIds([]);
+                            setMultiTableConfirmed(false);
+                        }}
+                    >
                         <ChevronLeft className="h-4 w-4 mr-1" /> Back to Tables
                     </Button>
-                    <h2 className="text-lg font-semibold">Table Order</h2>
+                    <h2 className="text-lg font-semibold">
+                        Table Order
+                        {activeTableIds.length > 1 ? ` (${activeTableIds.length} tables)` : ""}
+                    </h2>
                 </div>
                 <Suspense fallback={<div>Loading...</div>}>
-                    <POSSystem orderId={existingOrderId.toString()} defaultTableId={selectedTable} />
+                    <POSSystem
+                        orderId={existingOrderId.toString()}
+                        defaultTableId={primaryId}
+                        defaultTableIds={activeTableIds.length > 1 ? activeTableIds : undefined}
+                    />
                 </Suspense>
             </div>
         );
@@ -455,6 +500,37 @@ export default function NewOrderPage() {
                             </div>
                         </div>
 
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-2">
+                            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                                <Checkbox
+                                    checked={multiSelectMode}
+                                    onCheckedChange={(v) => {
+                                        setMultiSelectMode(v === true);
+                                        setSelectedTable(null);
+                                        setSelectedTableIds([]);
+                                        setMultiTableConfirmed(false);
+                                    }}
+                                />
+                                <CheckSquare className="h-4 w-4 text-muted-foreground" />
+                                Assign multiple tables (one order)
+                            </label>
+                            {multiSelectMode && (
+                                <span className="text-sm text-muted-foreground">
+                                    <span className="font-bold text-foreground">{selectedTableIds.length}</span>{" "}
+                                    selected
+                                    {selectedTableIds.length > 0 && (
+                                        <span className="ml-2">
+                                            • capacity{" "}
+                                            {selectedTableIds.reduce((sum, id) => {
+                                                const t = tables.find((row) => row.id === id);
+                                                return sum + (t?.capacity ?? 0);
+                                            }, 0)}
+                                        </span>
+                                    )}
+                                </span>
+                            )}
+                        </div>
+
                         {/* Status Legend */}
                         <div className="flex items-center gap-6 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-8 ml-2 shrink-0">
                             <div className="flex items-center gap-2">
@@ -488,6 +564,9 @@ export default function NewOrderPage() {
                                     tables={filteredTables}
                                     layoutHeight={getLayoutHeight(selectedArea)}
                                     onTableClick={handleTableClick}
+                                    selectedTableId={
+                                        multiSelectMode ? undefined : selectedTable ?? undefined
+                                    }
                                 />
                             </div>
                         ) : (
@@ -499,8 +578,24 @@ export default function NewOrderPage() {
                                         tables={groupedTables[roomName]}
                                         layoutHeight={getLayoutHeight(roomName)}
                                         onTableClick={handleTableClick}
+                                        selectedTableId={
+                                            multiSelectMode ? undefined : selectedTable ?? undefined
+                                        }
                                     />
                                 ))}
+                            </div>
+                        )}
+
+                        {multiSelectMode && selectedTableIds.length > 0 && !multiTableConfirmed && (
+                            <div className="sticky bottom-4 z-10 flex justify-center pt-4">
+                                <Button
+                                    size="lg"
+                                    className="rounded-2xl shadow-lg font-bold px-8"
+                                    onClick={() => setMultiTableConfirmed(true)}
+                                >
+                                    Start order — {selectedTableIds.length} table
+                                    {selectedTableIds.length === 1 ? "" : "s"}
+                                </Button>
                             </div>
                         )}
                     </div>

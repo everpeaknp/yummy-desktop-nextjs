@@ -256,10 +256,12 @@ const CartContent = ({
 export default function POSSystem({
   orderId,
   defaultTableId,
+  defaultTableIds,
   defaultChannel
 }: {
   orderId?: string;
   defaultTableId?: number;
+  defaultTableIds?: number[];
   defaultChannel?: string;
 }) {
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
@@ -473,12 +475,29 @@ export default function POSSystem({
         })) : []
       });
 
-      const payload: any = {
+      const resolvedTableIds =
+        defaultTableIds && defaultTableIds.length > 0
+          ? defaultTableIds
+          : orderData?.table_ids && orderData.table_ids.length > 0
+            ? orderData.table_ids
+            : null;
+
+      const primaryTableId =
+        resolvedTableIds?.[0] ??
+        tableData?.id ??
+        orderData?.table_id ??
+        (tableIdFromQuery ? parseInt(tableIdFromQuery, 10) : null);
+
+      const payload: Record<string, unknown> = {
         restaurant_id: user?.restaurant_id,
         channel: orderData?.channel || channelFromQuery,
-        table_id: tableData?.id || orderData?.table_id || (tableIdFromQuery ? parseInt(tableIdFromQuery) : null),
-        items: cart.map(buildItemPayload)
+        table_id: primaryTableId,
+        items: cart.map(buildItemPayload),
       };
+
+      if (resolvedTableIds && resolvedTableIds.length > 0) {
+        payload.table_ids = resolvedTableIds;
+      }
 
       if (!isEditing && (channelFromQuery === 'delivery' || channelFromQuery === 'pickup')) {
         if (!customerName.trim() || !customerPhone.trim()) {

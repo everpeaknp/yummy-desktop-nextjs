@@ -122,6 +122,7 @@ export type PermissionKey =
   | "billing.payment.edit"
   | "billing.payment.delete"
   | "billing.payment.split"
+  | "billing.bill.split"
   | "billing.refund.process"
   | "billing.refund.approve"
   | "billing.receipt.view"

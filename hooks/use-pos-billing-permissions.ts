@@ -35,6 +35,7 @@ export function usePosBillingPermissions() {
     const canVoidOrder = can("pos.order.void");
     const canVoidItem = can("pos.order.void_item");
     const canTransferOrder = can("pos.order.transfer");
+    const canSplitBill = can("billing.bill.split");
     const canProcessPayment = can("billing.payment.process");
     const canEditPayment = can("billing.payment.edit");
     const canDeletePayment = can("billing.payment.delete");
@@ -54,6 +55,7 @@ export function usePosBillingPermissions() {
       canVoidOrder,
       canVoidItem,
       canTransferOrder,
+      canSplitBill,
       canProcessPayment,
       canEditPayment,
       canDeletePayment,

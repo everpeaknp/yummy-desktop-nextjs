@@ -51,9 +51,14 @@ import {
   QrCode,
   Award,
   Trash2,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
+import { GuestBillsPanel } from "@/components/orders/guest-bills-panel";
+import { SplitBillDialog } from "@/components/orders/split-bill-dialog";
+import { dispatchTablesRefresh } from "@/lib/table-ops";
+import type { OrderItem } from "@/types/order";
 
 function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
   if (!input) return null;
@@ -223,7 +228,8 @@ export default function CheckoutPage() {
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const curr = restaurant?.currency || "Rs.";
-  const { canApplyDiscount, canProcessPayment, canEditPayment, canDeletePayment, canProcessRefund } = usePosBillingPermissions();
+  const { canApplyDiscount, canProcessPayment, canEditPayment, canDeletePayment, canProcessRefund, canSplitBill } =
+    usePosBillingPermissions();
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
   const [bill, setBill] = useState<OrderBill | null>(null);
@@ -231,6 +237,8 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [splitBillOpen, setSplitBillOpen] = useState(false);
+  const [guestRefreshKey, setGuestRefreshKey] = useState(0);
 
   // Payment dialog
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -1057,6 +1065,11 @@ export default function CheckoutPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {orderMeta?.channel === "table" && canSplitBill && bill && !bill.is_fully_paid && (
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => setSplitBillOpen(true)}>
+              <Users className="h-3.5 w-3.5" /> Split bill
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={fetchBill} className="gap-2">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
@@ -1117,6 +1130,16 @@ export default function CheckoutPage() {
                 )}
               </CardContent>
             </Card>
+          )}
+
+          {context?.order && (
+            <GuestBillsPanel
+              orderId={orderId}
+              splitGroupId={context.order.split_group_id}
+              isSplitParent={context.order.is_split_parent}
+              isSplitChild={context.order.is_split_child}
+              refreshKey={guestRefreshKey}
+            />
           )}
 
           {/* Items table */}
@@ -2409,6 +2432,37 @@ export default function CheckoutPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {bill && (
+        <SplitBillDialog
+          open={splitBillOpen}
+          onOpenChange={setSplitBillOpen}
+          orderId={orderId}
+          items={
+            (context?.order?.items?.length
+              ? context.order.items
+              : bill.items.map(
+                  (item) =>
+                    ({
+                      id: item.id,
+                      menu_item_id: item.menu_item_id,
+                      name_snapshot: item.name_snapshot,
+                      unit_price: item.unit_price,
+                      qty: item.qty,
+                      line_total: item.line_total,
+                      modifiers: item.modifiers || [],
+                      created_at: item.created_at,
+                    }) as OrderItem
+                )) as OrderItem[]
+          }
+          onCompleted={() => {
+            setGuestRefreshKey((k) => k + 1);
+            dispatchTablesRefresh();
+            void fetchBill();
+            void fetchContext();
+          }}
+        />
+      )}
     </div>
   );
 }

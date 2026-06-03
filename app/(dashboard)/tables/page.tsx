@@ -142,6 +142,12 @@ export default function TablesPage() {
     if (user?.restaurant_id) fetchData(true);
   }, [user?.restaurant_id, fetchData]);
 
+  useEffect(() => {
+    const onTablesRefresh = () => void fetchData(true);
+    window.addEventListener("yummy:tables-refresh", onTablesRefresh);
+    return () => window.removeEventListener("yummy:tables-refresh", onTablesRefresh);
+  }, [fetchData]);
+
   // ─── Area options ───
   const areaOptions = (() => {
     const set = new Set<string>();
