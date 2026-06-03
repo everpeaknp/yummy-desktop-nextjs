@@ -30,13 +30,24 @@ const LiveStats = memo(function LiveStats() {
   const fetchStats = useCallback(async () => {
     if (!user?.restaurant_id) return;
     try {
-      const res = await apiClient.get(DashboardApis.dashboardDataV2({ restaurantId: user.restaurant_id }));
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const res = await apiClient.get(
+        DashboardApis.dashboardDataV2({
+          restaurantId: user.restaurant_id,
+          businessLine: "restaurant",
+          timezone,
+        })
+      );
       if (res.data?.status === "success") {
         const d = res.data.data;
+        const shiftPulse = d?.home?.shift_pulse;
+        const cashWatch = d?.home?.cash_watch;
         setStats({
-          activeOrders: d?.health?.active_orders ?? 0,
-          kotPending: d?.health?.kot_pending ?? 0,
-          todaySales: d?.kpis?.gross_sales ?? 0,
+          activeOrders: shiftPulse?.active_orders ?? d?.health?.active_orders ?? 0,
+          kotPending: shiftPulse?.kot_pending ?? d?.health?.kot_pending ?? 0,
+          todaySales:
+            d?.kpis?.gross_sales ??
+            ((cashWatch?.cash_collected ?? 0) + (cashWatch?.digital_collected ?? 0) + (cashWatch?.credit_sales ?? 0)),
         });
       }
     } catch {

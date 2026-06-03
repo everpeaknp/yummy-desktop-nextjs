@@ -224,6 +224,7 @@ export default function TransactionsPage() {
 
   const [types, setTypes] = useState<Set<TransactionType>>(new Set());
   const [userId, setUserId] = useState<string>("");
+  const [paymentUserId, setPaymentUserId] = useState<string>("");
 
   const [skip, setSkip] = useState(0);
   const [limit, setLimit] = useState(50);
@@ -231,6 +232,13 @@ export default function TransactionsPage() {
   const [active, setActive] = useState<TransactionItem | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const txParam = searchParams?.get("tx") || "";
+
+  // Auto-force type to order when paymentUserId is selected
+  useEffect(() => {
+    if (paymentUserId.trim()) {
+      setTypes(new Set<TransactionType>(["order"]));
+    }
+  }, [paymentUserId]);
 
   const fetchTransactions = async () => {
     if (!canViewAnalytics) return;
@@ -243,11 +251,13 @@ export default function TransactionsPage() {
       const dateFrom = dateRange?.from ? yyyyMmDd(dateRange.from) : undefined;
       const dateTo = dateRange?.to ? yyyyMmDd(dateRange.to) : undefined;
       const parsedUserId = userId.trim() ? Number(userId) : undefined;
+      const parsedPaymentUserId = paymentUserId.trim() ? Number(paymentUserId) : undefined;
       const typeList = Array.from(types);
 
       const url = TransactionsApis.list({
         restaurantId,
         userId: Number.isFinite(parsedUserId as any) ? (parsedUserId as number) : undefined,
+        paymentUserId: Number.isFinite(parsedPaymentUserId as any) ? (parsedPaymentUserId as number) : undefined,
         types: typeList.length ? typeList : undefined,
         dateFrom,
         dateTo,
@@ -282,7 +292,7 @@ export default function TransactionsPage() {
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), limit, userId, Array.from(types).join("|")]);
+  }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), limit, userId, paymentUserId, Array.from(types).join("|")]);
 
   useEffect(() => {
     if (!ready || !canViewAnalytics || !restaurantId) return;
@@ -304,6 +314,10 @@ export default function TransactionsPage() {
   const canNext = skip + limit < total;
 
   const toggleType = (t: TransactionType) => {
+    if (paymentUserId.trim() && t !== "order") {
+      toast.info("Filters forced to order when Payment Added By filter is active");
+      return;
+    }
     setTypes((prev) => {
       const next = new Set(prev);
       if (next.has(t)) next.delete(t);
@@ -429,6 +443,11 @@ export default function TransactionsPage() {
           </div>
 
           <div className="space-y-2 md:col-span-1">
+            <Label>Payment Added By</Label>
+            <Input value={paymentUserId} onChange={(e) => setPaymentUserId(e.target.value)} placeholder="User ID" />
+          </div>
+
+          <div className="space-y-2 md:col-span-1">
             <Label>Page Size</Label>
             <Input
               value={String(limit)}
@@ -447,87 +466,73 @@ export default function TransactionsPage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead>Staff</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                    <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                    Loading…
-                  </TableCell>
-                </TableRow>
+                <div className="col-span-full py-20 text-center text-muted-foreground flex flex-col items-center justify-center gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
+                  <span>Loading transactions...</span>
+                </div>
               ) : (data?.items || []).length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                    No transactions found.
-                  </TableCell>
-                </TableRow>
+                <div className="col-span-full py-20 text-center text-muted-foreground italic">
+                  No transactions found.
+                </div>
               ) : (
                 (data?.items || []).map((it) => (
-                  <TableRow
+                  <div
                     key={it.id}
-                    className="cursor-pointer"
                     onClick={() => {
-                      setActive(it);
-                      setDetailOpen(true);
-                      router.replace(`/transactions?tx=${encodeURIComponent(it.id)}`);
+                      if (it.type === "order") {
+                        const orderId = it.details?.order_id || it.id.replace("order-", "");
+                        router.push(`/orders/${orderId}`);
+                      } else {
+                        setActive(it);
+                        setDetailOpen(true);
+                        router.replace(`/transactions?tx=${encodeURIComponent(it.id)}`);
+                      }
                     }}
+                    className="bg-card hover:bg-muted/10 border border-border/60 hover:border-orange-500/20 p-5 rounded-2xl shadow-sm transition-all duration-300 cursor-pointer flex flex-col justify-between gap-4 group relative overflow-hidden"
                   >
-                    <TableCell className="font-semibold">
-                      {it.created_at ? format(new Date(it.created_at), "MMM dd, yyyy HH:mm") : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={`border-none font-bold uppercase text-[10px] ${TYPE_META[it.type]?.badge || "bg-muted text-muted-foreground"}`}>
-                        {TYPE_META[it.type]?.label || it.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-semibold">{it.title || "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {it.user_name || (it.user_id ? `User #${it.user_id}` : "—")}
-                    </TableCell>
-	                    <TableCell className="text-right font-bold">
-	                      {(() => {
-	                        if (it.type === "inventory") {
-	                          const delta = getInventoryDelta(it);
-	                          return delta ? <span className="text-blue-400">{delta}</span> : "—";
-	                        }
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1 min-w-0">
+                        <Badge className={`border-none font-black uppercase text-[9px] px-2 py-0.5 rounded-md ${TYPE_META[it.type]?.badge || "bg-muted text-muted-foreground"}`}>
+                          {TYPE_META[it.type]?.label || it.type}
+                        </Badge>
+                        <h3 className="font-bold text-sm tracking-tight text-foreground truncate group-hover:text-orange-500 transition-colors mt-1.5">
+                          {it.title || "—"}
+                        </h3>
+                        <p className="text-[11px] text-muted-foreground font-semibold">
+                          {it.created_at ? format(new Date(it.created_at), "MMM dd, yyyy HH:mm") : "—"}
+                        </p>
+                      </div>
+                      
+                      <div className="text-right shrink-0">
+                        <p className="font-black text-sm">
+                          {(() => {
+                            if (it.type === "inventory") {
+                              const delta = getInventoryDelta(it);
+                              return delta ? <span className="text-blue-500 dark:text-blue-400">{delta}</span> : "—";
+                            }
+                            const n = getTransactionAmount(it);
+                            if (n === null) return "—";
+                            const isExpense = it.type === "expense";
+                            return <span className={isExpense ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}>Rs. {n.toLocaleString()}</span>;
+                          })()}
+                        </p>
+                      </div>
+                    </div>
 
-	                        const n = getTransactionAmount(it);
-	                        if (n === null) return "—";
-	                        const isExpense = it.type === "expense";
-	                        return <span className={isExpense ? "text-red-500" : undefined}>Rs. {n.toLocaleString()}</span>;
-	                      })()}
-	                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="rounded-full text-muted-foreground hover:text-foreground"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActive(it);
-                          setDetailOpen(true);
-                          router.replace(`/transactions?tx=${encodeURIComponent(it.id)}`);
-                        }}
-                      >
-                        <FileText className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                    <div className="flex items-center justify-between border-t border-border/40 pt-3">
+                      <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground opacity-75">
+                        By: {it.user_name || (it.user_id ? `User #${it.user_id}` : "System")}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-orange-500/60 group-hover:translate-x-0.5 transition-all" />
+                    </div>
+                  </div>
                 ))
               )}
-            </TableBody>
-          </Table>
+            </div>
+          </div>
 
           <div className="p-4 flex items-center justify-between border-t border-border/40">
             <div className="text-xs text-muted-foreground font-semibold">

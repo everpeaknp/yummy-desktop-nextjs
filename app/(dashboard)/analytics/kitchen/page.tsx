@@ -5,10 +5,11 @@ import Link from "next/link";
 import { ArrowLeft, Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
-import { AnalyticsApis } from "@/lib/api/endpoints";
+import { AnalyticsApis, ItemCategoryApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
 import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { cn } from "@/lib/utils";
 import {
   AnalyticsAccessDenied,
   AnalyticsAccessLoading,
@@ -58,6 +59,9 @@ export default function AnalyticsKitchenPage() {
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [data, setData] = useState<KitchenDetailsResponse | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [category, setCategory] = useState("");
 
   const today = useMemo(() => new Date(), []);
   const [dateFrom, setDateFrom] = useState(() => {
@@ -72,6 +76,27 @@ export default function AnalyticsKitchenPage() {
 
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
+
+  const fetchCategories = async () => {
+    if (!restaurantId) return;
+    setCategoriesLoading(true);
+    try {
+      const res = await apiClient.get(ItemCategoryApis.getItemCategories(restaurantId));
+      const list: any[] = Array.isArray(res.data?.data) ? res.data.data : [];
+      const names: string[] = Array.from(
+        new Set(
+          list
+            .map((item: any) => String(item?.name || "").trim())
+            .filter(Boolean) as string[],
+        ),
+      ).sort((a, b) => a.localeCompare(b));
+      setCategories(names);
+    } catch (e) {
+      console.error("Failed to load kitchen/menu categories:", e);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
 
   const fetchDetails = async () => {
     if (!canViewAnalytics) {
@@ -93,6 +118,7 @@ export default function AnalyticsKitchenPage() {
         page,
         pageSize,
         businessLine: showBusinessLine && businessLine !== "all" ? businessLine : undefined,
+        category: category.trim() || undefined,
       });
 
       const res = await apiClient.get(url);
@@ -116,10 +142,15 @@ export default function AnalyticsKitchenPage() {
   };
 
   useEffect(() => {
+    if (!restaurantId) return;
+    fetchCategories();
+  }, [restaurantId]);
+
+  useEffect(() => {
     if (!ready || !canViewAnalytics || !restaurantId) return;
     fetchDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, canViewAnalytics, restaurantId, dateFrom, dateTo, businessLine, pageSize, page]);
+  }, [ready, canViewAnalytics, restaurantId, dateFrom, dateTo, businessLine, category, pageSize, page]);
 
   if (!ready) return <AnalyticsAccessLoading />;
   if (!canViewAnalytics) return <AnalyticsAccessDenied />;
@@ -228,6 +259,47 @@ export default function AnalyticsKitchenPage() {
                 <SelectItem value="100">100</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Category</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+            <button
+              type="button"
+              onClick={() => { setCategory(""); setPage(1); }}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border shrink-0",
+                !category
+                  ? "bg-amber-600 text-white border-amber-600"
+                  : "bg-muted text-muted-foreground border-border hover:bg-card"
+              )}
+            >
+              All Categories
+            </button>
+            {categoriesLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+            ) : (
+              categories.map((cat) => (
+                <button
+                  type="button"
+                  key={cat}
+                  onClick={() => { setCategory(cat === category ? "" : cat); setPage(1); }}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border shrink-0",
+                    category === cat
+                      ? "bg-amber-600 text-white border-amber-600"
+                      : "bg-muted text-muted-foreground border-border hover:bg-card"
+                  )}
+                >
+                  {cat}
+                </button>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

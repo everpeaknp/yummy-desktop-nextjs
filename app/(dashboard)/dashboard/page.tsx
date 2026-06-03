@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import Link from "next/link"
+import { useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -49,7 +50,12 @@ import {
   CreditCard,
   DollarSign,
   Briefcase,
-  Calendar
+  Calendar,
+  ArrowRight,
+  ChevronRight,
+  Siren,
+  Wallet,
+  ReceiptText
 } from "lucide-react"
 
 export default function DashboardPage() {
@@ -136,9 +142,12 @@ export default function DashboardPage() {
           endTime = date.to ? date.to.toISOString() : date.from.toISOString();
       }
 
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       // Fetch V2 Dashboard (Health, Basic KPIs)
       const v2Res = await apiClient.get(DashboardApis.dashboardDataV2({
-        restaurantId: user.restaurant_id
+        restaurantId: user.restaurant_id,
+        timezone,
+        businessLine: "restaurant",
       })).catch(err => { console.error("V2 failed:", err); return null })
 
       // Fetch Advanced Analytics (Date filtered) — only when explicitly permitted
@@ -153,6 +162,7 @@ export default function DashboardPage() {
               startTime,
               endTime,
               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              businessLine: "restaurant",
               include: "core,insights",
             })
           )
@@ -198,9 +208,7 @@ export default function DashboardPage() {
           mapAnalyticsTrends(analytics, preferHourlyTrends(activeRange))
         )
 
-        if (analytics.breakdown) {
-          setCategoryData(mapBreakdownToPie(analytics.breakdown, "source"))
-        }
+        setCategoryData(mapBreakdownToPie(analytics, "source"))
       }
 
       if (historyRes?.data?.status === "success") {
@@ -267,21 +275,65 @@ export default function DashboardPage() {
 
   if (loading && !data) return <DashboardSkeleton />
 
+  const home = data?.home
+  const shiftPulse = home?.shift_pulse
+  const actionQueue = home?.action_queue
+  const cashWatch = home?.cash_watch
+  const pipeline = home?.pipeline
+  const alerts = home?.alerts?.items || data?.health?.alerts || []
+  const quickInsights = home?.quick_insights?.items || data?.quick_insights || []
+  const quickActions = home?.quick_actions?.items || []
+  const attentionItems = home?.attention_items?.items || []
+  const dayCloseStatus = home?.day_close_status
+  const topItemsLive = home?.top_items_live?.items || []
   const health = data?.health
   const overview = analyticsData?.overview
   const v2Kpis = data?.kpis
   const currency = analyticsData?.meta?.currency || data?.meta?.currency || "NPR"
-  const topItems = analyticsData?.menu_snapshot?.top_items || data?.breakdowns?.top_items || []
+  const topItems =
+    topItemsLive.length > 0
+      ? topItemsLive
+      : analyticsData?.menu_snapshot?.top_items || data?.breakdowns?.top_items || []
+  const paymentSplit =
+    data?.breakdowns?.payment_split?.length
+      ? data.breakdowns.payment_split
+      : cashWatch?.available !== false
+        ? [
+            { method: "Cash", amount: cashWatch?.cash_collected || 0 },
+            { method: "Digital", amount: cashWatch?.digital_collected || 0 },
+            { method: "Credit", amount: cashWatch?.credit_sales || 0 },
+          ].filter((item) => item.amount > 0)
+        : []
+  const orderStatus =
+    data?.breakdowns?.order_status?.length
+      ? data.breakdowns.order_status
+      : pipeline?.status_counts || []
+  const trendCards = [
+    {
+      label: "Sales vs Yesterday",
+      trend: data?.trends?.sales_vs_yesterday,
+    },
+    {
+      label: "Orders vs Yesterday",
+      trend: data?.trends?.orders_vs_yesterday,
+    },
+  ]
   
   const kpis = {
-    gross_sales: overview?.total_income ?? v2Kpis?.gross_sales ?? 0,
+    gross_sales:
+      overview?.total_income ??
+      v2Kpis?.gross_sales ??
+      ((cashWatch?.cash_collected || 0) + (cashWatch?.digital_collected || 0) + (cashWatch?.credit_sales || 0)),
     net_profit: overview?.net_profit ?? 0,
     profit_margin: overview?.profit_margin ?? 0,
-    total_orders: overview?.orders_count ?? v2Kpis?.total_orders ?? 0,
+    total_orders:
+      overview?.orders_count ??
+      v2Kpis?.total_orders ??
+      orderStatus.reduce((sum: number, item: any) => sum + Number(item.count || 0), 0),
     average_order_value: overview?.avg_order_value ?? v2Kpis?.average_order_value ?? 0,
     total_expense: overview?.total_expense ?? 0,
-    cancelled_today: health?.cancelled_today ?? 0,
-    refunded_today: health?.refunded_today ?? 0,
+    cancelled_today: shiftPulse?.cancelled ?? health?.cancelled_today ?? 0,
+    refunded_today: shiftPulse?.refunded ?? health?.refunded_today ?? 0,
   }
 
   return (
@@ -310,22 +362,22 @@ export default function DashboardPage() {
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <HealthCard 
            label="Active Orders" 
-           value={health?.active_orders || 0} 
+           value={shiftPulse?.active_orders ?? health?.active_orders ?? 0} 
            icon={<Activity className="h-5 w-5" />}
            color="text-primary"
         />
         <HealthCard 
            label="KOT Pending" 
-           value={health?.kot_pending || 0} 
+           value={shiftPulse?.kot_pending ?? health?.kot_pending ?? 0} 
            icon={<Clock className="h-5 w-5" />}
            color="text-amber-500"
         />
         <HealthCard 
            label="Delayed KOTs" 
-           value={health?.kot_delayed || 0} 
+           value={shiftPulse?.kot_delayed ?? health?.kot_delayed ?? 0} 
            icon={<AlertCircle className="h-5 w-5" />}
            color="text-destructive"
-           pulse={ (health?.kot_delayed || 0) > 0 }
+           pulse={ (shiftPulse?.kot_delayed ?? health?.kot_delayed ?? 0) > 0 }
         />
       </section>
 
@@ -355,6 +407,18 @@ export default function DashboardPage() {
             </div>
             <TrendingUp className="h-5 w-5 text-muted-foreground opacity-20" />
          </div>
+      </section>
+
+      {/* 1.2 Dashboard V2 Priorities */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <AlertsBanner alerts={alerts} />
+        <QuickActionsCard actions={quickActions} />
+        <DayCloseStatusCard dayCloseStatus={dayCloseStatus} />
+      </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <AttentionItemsCard items={attentionItems} />
+        <QuickInsightsStack insights={quickInsights} />
       </section>
 
       {/* 2. Charts (Side-by-Side) */}
@@ -400,9 +464,15 @@ export default function DashboardPage() {
 
       {/* 3. Operational Pulse & Intelligence */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <OccupancyCard tables={occupancy} />
+          <OccupancyCard tables={occupancy} occupancySnapshot={home?.occupancy} />
           <OperationalPulseCard operations={analyticsData?.operations} />
-          <InsightsCard insights={analyticsData?.insights} loading={loading} />
+          <CashWatchCard cashWatch={cashWatch} currency={currency} />
+      </section>
+
+      {/* 3.1 V2 Comparisons */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <TrendComparisonSection trendCards={trendCards} />
+        <OrderStatusCard statuses={orderStatus} />
       </section>
 
       {/* 4. Performers & Staff Activity */}
@@ -434,7 +504,16 @@ export default function DashboardPage() {
             </Card>
         </div>
         <div className="lg:col-span-7">
-            <ActivityFeed activities={activities} />
+            <PaymentSplitCard payments={paymentSplit} currency={currency} />
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="lg:col-span-7">
+          <ActivityFeed activities={activities} />
+        </div>
+        <div className="lg:col-span-5">
+          <InsightsCard insights={analyticsData?.insights || []} loading={loading} />
         </div>
       </section>
 
@@ -482,10 +561,48 @@ function HealthCard({ label, value, icon, color, borderColor, bgColor, pulse }: 
     )
 }
 
-function OccupancyCard({ tables }: { tables: any[] }) {
-  const occupied = tables.filter(t => t.status === 'occupied').length
-  const total = tables.length || 1
+function TrendCard({ label, trend }: { label: string, trend: any }) {
+  const direction = String(trend?.direction || "SAME").toUpperCase()
+  const isUp = direction === "UP"
+  const isDown = direction === "DOWN"
+  const delta = Math.abs(Number(trend?.delta_percent || 0))
+
+  return (
+    <Card className="bg-card border-border shadow-sm">
+      <CardContent className="p-6">
+        <div className="text-xs text-muted-foreground font-medium mb-1">{label}</div>
+        <div className="flex items-end gap-3">
+          <span className="text-3xl font-bold text-foreground">{delta.toFixed(1)}%</span>
+          <div
+            className={cn(
+              "flex items-center text-sm font-medium mb-1 px-2 py-0.5 rounded-full",
+              isUp
+                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-500"
+                : isDown
+                  ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-500"
+                  : "bg-muted text-muted-foreground"
+            )}
+          >
+            {isUp ? <TrendingUp className="w-3 h-3 mr-1" /> : isDown ? <TrendingDown className="w-3 h-3 mr-1" /> : null}
+            {isUp ? "Inc" : isDown ? "Dec" : "Flat"}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function OccupancyCard({ tables, occupancySnapshot }: { tables: any[], occupancySnapshot?: any }) {
+  const hasSnapshot = occupancySnapshot?.available !== false && occupancySnapshot
+  const occupied = hasSnapshot
+    ? Number(occupancySnapshot?.occupied_tables || 0)
+    : tables.filter(t => t.status === 'occupied').length
+  const free = hasSnapshot
+    ? Number(occupancySnapshot?.free_tables || 0)
+    : Math.max(tables.length - occupied, 0)
+  const total = Math.max(occupied + free, 1)
   const pct = Math.round((occupied / total) * 100)
+  const capacity = Math.round(tables.length ? tables.reduce((acc, t) => acc + (t.capacity || 0), 0) : 0)
 
   return (
     <Card className="bg-card border-border shadow-sm overflow-hidden">
@@ -511,11 +628,11 @@ function OccupancyCard({ tables }: { tables: any[] }) {
         <div className="grid grid-cols-2 gap-3 mt-6">
           <div className="bg-muted/50 p-2 rounded-lg text-center border border-border/50">
             <p className="text-[9px] text-muted-foreground uppercase font-black">Available</p>
-            <p className="text-sm font-black">{total - occupied}</p>
+            <p className="text-sm font-black">{free}</p>
           </div>
           <div className="bg-muted/50 p-2 rounded-lg text-center border border-border/50">
             <p className="text-[9px] text-muted-foreground uppercase font-black">Capacity</p>
-            <p className="text-sm font-black">{Math.round(tables.length ? tables.reduce((acc, t) => acc + (t.capacity || 0), 0) : 0)}</p>
+            <p className="text-sm font-black">{capacity}</p>
           </div>
         </div>
       </CardContent>
@@ -614,6 +731,347 @@ function InsightsCard({ insights = [], loading }: { insights: any[], loading: bo
             <p className="text-[11px] text-muted-foreground max-w-[200px] mt-1">No significant anomalies detected in recent data trends.</p>
           </div>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function AlertsBanner({ alerts }: { alerts: any[] }) {
+  const primary = alerts[0]
+  const severity = String(primary?.severity || "LOW").toUpperCase()
+  const tone =
+    severity === "HIGH" || severity === "CRITICAL"
+      ? "border-destructive/30 bg-destructive/5 text-destructive"
+      : severity === "MEDIUM" || severity === "WARNING"
+        ? "border-amber-500/30 bg-amber-500/5 text-amber-600"
+        : "border-emerald-500/30 bg-emerald-500/5 text-emerald-600"
+
+  return (
+    <Card className={cn("shadow-sm", tone)}>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-bold flex items-center gap-2">
+          <Siren className="h-4 w-4" />
+          Alerts
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <p className="text-sm font-semibold">{primary?.message || "No critical operational alerts right now."}</p>
+        <p className="text-xs text-muted-foreground">
+          {primary?.action_hint || (alerts.length > 1 ? `+${alerts.length - 1} more alerts available.` : "System is stable." )}
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function QuickActionsCard({ actions }: { actions: any[] }) {
+  const enabledActions = actions.filter((action: any) => action.enabled).slice(0, 6)
+  return (
+    <Card className="shadow-sm border-border/70 bg-gradient-to-br from-background to-muted/20">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold">Quick Actions</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {enabledActions.map((action: any) => (
+            <Link
+              key={action.key}
+              href={action.route}
+              className={cn(
+                "rounded-2xl border border-border/60 bg-background/70 px-3 py-4 transition-all hover:bg-background hover:border-primary/30 hover:shadow-sm"
+              )}
+            >
+              <p className="text-sm font-bold leading-tight">{action.title}</p>
+              <p className="text-[11px] text-muted-foreground mt-2">Open module</p>
+            </Link>
+          ))}
+          {enabledActions.length === 0 && <p className="col-span-2 md:col-span-3 text-sm text-muted-foreground">No quick actions available.</p>}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function DayCloseStatusCard({ dayCloseStatus }: { dayCloseStatus: any }) {
+  const status = String(dayCloseStatus?.status || "unavailable").replace(/_/g, " ")
+  return (
+    <Card className="shadow-sm border-primary/20">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-bold flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-primary" />
+          Day Close
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-lg font-black capitalize">{status}</p>
+          <p className="text-xs text-muted-foreground">{dayCloseStatus?.action_label || "Open Day Close"}</p>
+        </div>
+        <Button asChild size="sm" className="gap-2">
+          <Link href={dayCloseStatus?.route || "/day-close"}>
+            {dayCloseStatus?.action_label || "Open Day Close"}
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function AttentionItemsCard({ items }: { items: any[] }) {
+  const visibleItems = items.slice(0, 5)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const cardRefs = useRef<Array<HTMLAnchorElement | null>>([])
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [isPaused, setIsPaused] = useState(false)
+
+  useEffect(() => {
+    setActiveIndex(0)
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ left: 0, behavior: "auto" })
+    }
+  }, [visibleItems.length])
+
+  useEffect(() => {
+    if (visibleItems.length <= 1 || isPaused) return
+
+    const interval = window.setInterval(() => {
+      advanceAttentionItem(1)
+    }, 2000)
+
+    return () => window.clearInterval(interval)
+  }, [visibleItems.length, isPaused])
+
+  const advanceAttentionItem = (direction: 1 | -1) => {
+    if (visibleItems.length <= 1) return
+    setActiveIndex((prev) => {
+      const next = (prev + direction + visibleItems.length) % visibleItems.length
+      const target = cardRefs.current[next]
+      const container = scrollRef.current
+      if (target && container) {
+        const left = target.offsetLeft - container.offsetLeft
+        container.scrollTo({
+          left,
+          behavior: "smooth",
+        })
+      }
+      return next
+    })
+  }
+
+  const resolveAttentionHref = (item: any) => {
+    if (!item?.route) return "#"
+    if (item.route === "/running-orders" && item.entity_id) {
+      return `/orders/${item.entity_id}`
+    }
+    return item.route
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold">Needs Attention</h3>
+        {visibleItems.length > 1 ? <span className="text-[11px] text-muted-foreground">Swipe through issues</span> : null}
+      </div>
+      {visibleItems.length > 0 ? (
+        <div className="relative">
+          <div
+            ref={scrollRef}
+            className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            onMouseEnter={() => setIsPaused(true)}
+            onMouseLeave={() => setIsPaused(false)}
+          >
+            {visibleItems.map((item: any, index: number) => {
+            const severity = String(item.severity || "LOW").toUpperCase()
+            const tone =
+              severity === "HIGH"
+                ? "border-destructive/30 bg-destructive/[0.05]"
+                : severity === "MEDIUM"
+                  ? "border-amber-500/30 bg-amber-500/[0.06]"
+                  : "border-blue-500/25 bg-blue-500/[0.05]"
+            return (
+              <Link
+                key={`${item.type}-${item.entity_id ?? item.title}`}
+                ref={(node) => {
+                  cardRefs.current[index] = node
+                }}
+                href={resolveAttentionHref(item)}
+                className={cn(
+                  "min-w-[85%] lg:min-w-[48%] snap-start rounded-2xl border p-4 transition-all hover:shadow-sm",
+                  activeIndex === index ? "ring-1 ring-border/60" : "",
+                  tone
+                )}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-base font-bold leading-tight">{item.title}</p>
+                    <p className="text-sm text-muted-foreground mt-2 truncate">{item.subtitle}</p>
+                  </div>
+                  <Badge variant="outline" className="shrink-0 capitalize bg-background/70">
+                    {String(item.severity || "low").toLowerCase()}
+                  </Badge>
+                </div>
+              </Link>
+            )
+            })}
+          </div>
+          {visibleItems.length > 1 ? (
+            <div className="mt-3 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-2 rounded-full px-3 text-xs"
+                onClick={() => advanceAttentionItem(1)}
+                onMouseEnter={() => setIsPaused(true)}
+                onMouseLeave={() => setIsPaused(false)}
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <Card className="shadow-sm border-emerald-500/20 bg-emerald-500/[0.05]">
+          <CardContent className="py-5 text-sm font-medium">No urgent operational issues right now.</CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+function QuickInsightsStack({ insights }: { insights: any[] }) {
+  const visibleInsights = insights.slice(0, 4)
+  return (
+    <Card className="shadow-sm border-border/70 bg-card">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold">Quick Insights</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {visibleInsights.length > 0 ? visibleInsights.map((insight: any, index: number) => (
+          <div key={`${insight.type || "info"}-${index}`} className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <span
+                className={cn(
+                  "mt-1 h-2 w-2 shrink-0 rounded-full",
+                  String(insight?.type || "INFO").toUpperCase() === "POSITIVE"
+                    ? "bg-emerald-500"
+                    : String(insight?.type || "INFO").toUpperCase() === "WARNING"
+                      ? "bg-amber-500"
+                      : "bg-sky-500"
+                )}
+              />
+              <p className="text-sm leading-6">{insight?.message}</p>
+            </div>
+          </div>
+        )) : (
+          <p className="text-sm text-muted-foreground">No notable operational changes right now.</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function CashWatchCard({ cashWatch, currency }: { cashWatch: any, currency: string }) {
+  const rows = [
+    { label: "Cash", value: cashWatch?.cash_collected || 0 },
+    { label: "Digital", value: cashWatch?.digital_collected || 0 },
+    { label: "Credit", value: cashWatch?.credit_sales || 0 },
+    { label: "Outstanding", value: cashWatch?.total_outstanding || 0 },
+  ]
+
+  return (
+    <Card className="bg-card border-border shadow-sm">
+      <CardHeader className="pb-2 border-b border-border/30">
+        <CardTitle className="text-sm font-bold flex items-center gap-2">
+          <Wallet className="h-4 w-4 text-emerald-500" />
+          Cash Watch
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-6 space-y-4">
+        {cashWatch?.available === false ? (
+          <p className="text-sm text-muted-foreground">{cashWatch?.reason || "Cash watch is unavailable."}</p>
+        ) : rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">{row.label}</span>
+            <span className="text-sm font-black">{currency} {Number(row.value || 0).toLocaleString()}</span>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
+function TrendComparisonSection({ trendCards }: { trendCards: any[] }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {trendCards.map((item) => (
+        <TrendCard key={item.label} label={item.label} trend={item.trend} />
+      ))}
+    </div>
+  )
+}
+
+function OrderStatusCard({ statuses }: { statuses: any[] }) {
+  const total = statuses.reduce((sum, item) => sum + Number(item.count || 0), 0)
+  return (
+    <Card className="shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-bold">Order Status</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {statuses.length > 0 ? statuses.map((status: any) => {
+          const ratio = total > 0 ? (Number(status.count || 0) / total) * 100 : 0
+          return (
+            <div key={status.status} className="space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm font-semibold">{status.status}</span>
+                <span className="text-xs text-muted-foreground">{status.count}</span>
+              </div>
+              <div className="h-2 rounded-full bg-muted overflow-hidden">
+                <div className="h-full rounded-full bg-primary" style={{ width: `${ratio}%` }} />
+              </div>
+            </div>
+          )
+        }) : <p className="text-sm text-muted-foreground">No order status data for this window.</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PaymentSplitCard({ payments, currency }: { payments: any[], currency: string }) {
+  const total = payments.reduce((sum, item) => sum + Number(item.amount || 0), 0)
+  const colors = ["bg-emerald-500", "bg-blue-500", "bg-violet-500", "bg-amber-500", "bg-rose-500"]
+  return (
+    <Card className="h-full border-border shadow-sm">
+      <CardHeader className="pb-4 border-b border-border/50">
+        <CardTitle className="text-sm font-bold flex items-center gap-2">
+          <ReceiptText className="h-4 w-4 text-primary" />
+          Payment Split
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-6 space-y-5">
+        {payments.length > 0 ? payments.map((payment: any) => {
+          const ratio = total > 0 ? (Number(payment.amount || 0) / total) * 100 : 0
+          return (
+            <div key={payment.method} className="space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <span className={cn("h-2.5 w-2.5 rounded-full", colors[payments.indexOf(payment) % colors.length])} />
+                  <span className="text-sm font-bold">{payment.method}</span>
+                </div>
+                <span className="text-sm font-black">{currency} {Number(payment.amount || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                <span>{Math.round(ratio)}% of captured sales</span>
+              </div>
+              <div className="h-2 rounded-full bg-muted overflow-hidden">
+                <div className={cn("h-full rounded-full", colors[payments.indexOf(payment) % colors.length])} style={{ width: `${ratio}%` }} />
+              </div>
+            </div>
+          )
+        }) : <p className="text-sm text-muted-foreground">No payment data for this window.</p>}
       </CardContent>
     </Card>
   )
@@ -749,4 +1207,3 @@ function DashboardSkeleton() {
     </div>
   )
 }
-

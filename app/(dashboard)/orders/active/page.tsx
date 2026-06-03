@@ -116,6 +116,9 @@ function LegacyActiveOrdersPage() {
     }, [user]);
 
     const filteredOrders = orders.filter(order => {
+        if ((order as any).is_split_parent && (order as any).grand_total === 0) {
+            return false;
+        }
         // Channel / business_line filter
         if (filter === "table" && order.channel !== "table") return false;
         if (filter === "pickup" && order.channel !== "pickup") return false;

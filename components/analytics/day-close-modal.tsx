@@ -15,6 +15,7 @@ interface DayCloseModalProps {
   onClose: () => void;
   restaurantId: number;
   businessDate?: string; // YYYY-MM-DD (optional explicit override)
+  businessLine?: "restaurant" | "hotel";
 }
 
 type Step = 'health-check' | 'financial-snapshot' | 'cash-reconciliation' | 'success';
@@ -29,7 +30,7 @@ function normalizeDateString(value?: string | null) {
   return match ? match[1] : null;
 }
 
-export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: DayCloseModalProps) {
+export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate, businessLine = "restaurant" }: DayCloseModalProps) {
   const [currentStep, setCurrentStep] = useState<Step>('health-check');
   const [snapshotData, setSnapshotData] = useState<any>(null);
   const [dayCloseId, setDayCloseId] = useState<number | null>(null);
@@ -38,6 +39,7 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
     normalizeDateString(businessDate) ?? todayDateStringLocal(),
   );
   const [resolvingBusinessDate, setResolvingBusinessDate] = useState(false);
+  const [timeRange, setTimeRange] = useState<{ start: string; end: string } | null>(null);
   const dateStr = resolvedBusinessDate;
   const dateObj = new Date(dateStr + "T00:00:00");
 
@@ -47,6 +49,7 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
     setSnapshotData(null);
     setDayCloseId(null);
     setConfirmedData(null);
+    setTimeRange(null);
     onClose();
   };
 
@@ -67,12 +70,19 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
     const resolveCurrentBusinessDate = async () => {
       setResolvingBusinessDate(true);
       try {
-        const res = await apiClient.get(DayCloseApis.current, {
+        const res = await apiClient.get(DayCloseApis.current({ restaurantId, businessLine }), {
           params: { restaurant_id: restaurantId },
         });
-        const fromServer = normalizeDateString(res?.data?.data?.business_date);
+        const currentData = res?.data?.data;
+        const fromServer = normalizeDateString(currentData?.business_date);
         if (!cancelled) {
           setResolvedBusinessDate(fromServer ?? fallbackDate);
+          if (currentData?.period_start_at) {
+            setTimeRange({
+              start: currentData.period_start_at,
+              end: currentData.period_end_at || new Date().toISOString()
+            });
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -91,16 +101,6 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
       cancelled = true;
     };
   }, [isOpen, restaurantId, businessDate]);
-
-  const handleDateOverride = (value: string) => {
-    if (!value) return;
-    if (value === resolvedBusinessDate) return;
-    setResolvedBusinessDate(value);
-    setCurrentStep("health-check");
-    setSnapshotData(null);
-    setDayCloseId(null);
-    setConfirmedData(null);
-  };
 
   const steps = [
     { id: 'health-check', label: 'Health Check' },
@@ -128,8 +128,8 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
                     <p className="text-muted-foreground text-sm min-h-[20px]">
                         {resolvingBusinessDate ? "Resolving current business date..." : null}
                     </p>
-                    <p className="text-muted-foreground text-sm">
-                        {format(dateObj, 'MMMM do, yyyy')}
+                    <p className="text-muted-foreground text-sm font-semibold">
+                        Business Date: {format(dateObj, 'MMMM do, yyyy')}
                     </p>
                   </div>
                   <div className="px-3 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-full text-xs font-semibold border border-orange-200 dark:border-orange-900/50">
@@ -137,21 +137,12 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
                   </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <label
-                  htmlFor="day-close-business-date"
-                  className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  Business Date
-                </label>
-                <input
-                  id="day-close-business-date"
-                  type="date"
-                  className="h-9 w-full sm:w-auto rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"
-                  value={resolvedBusinessDate}
-                  onChange={(e) => handleDateOverride(e.target.value)}
-                />
-              </div>
+              {timeRange && (
+                <div className="text-xs text-orange-800 bg-orange-50 border border-orange-200 dark:bg-orange-950/20 dark:text-orange-300 dark:border-orange-900/50 rounded-xl px-3 py-2.5 flex items-center gap-2 font-medium">
+                  <Calculator className="w-4 h-4 text-orange-500 shrink-0" />
+                  <span>Covers period: {format(new Date(timeRange.start), "MMM d, h:mm a")} – {format(new Date(timeRange.end), "MMM d, h:mm a")}</span>
+                </div>
+              )}
 
               {/* Progress Bar */}
               <div className="flex gap-2">
@@ -175,12 +166,13 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
           {/* Content Body */}
           <div className="flex-1 overflow-y-auto p-6 min-h-[400px]">
              {currentStep === 'health-check' && (
-                 <HealthCheckStep onNext={() => setCurrentStep('financial-snapshot')} restaurantId={restaurantId} businessDate={dateStr} />
+                 <HealthCheckStep onNext={() => setCurrentStep('financial-snapshot')} restaurantId={restaurantId} businessDate={dateStr} businessLine={businessLine} />
              )}
              {currentStep === 'financial-snapshot' && (
                  <FinancialSnapshotStep 
                     restaurantId={restaurantId}
                     businessDate={dateStr}
+                    businessLine={businessLine}
                     onNext={(data, id) => {
                         setSnapshotData(data);
                         setDayCloseId(id);
@@ -211,7 +203,7 @@ export function DayCloseModal({ isOpen, onClose, restaurantId, businessDate }: D
 // Step Components
 // --------------------------------------------------------------------------
 
-function HealthCheckStep({ onNext, restaurantId, businessDate }: { onNext: () => void; restaurantId: number; businessDate: string }) {
+function HealthCheckStep({ onNext, restaurantId, businessDate, businessLine = "restaurant" }: { onNext: () => void; restaurantId: number; businessDate: string; businessLine?: string }) {
     const [checks, setChecks] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [canProceed, setCanProceed] = useState(false);
@@ -219,7 +211,7 @@ function HealthCheckStep({ onNext, restaurantId, businessDate }: { onNext: () =>
     useEffect(() => {
         const validate = async () => {
             try {
-                const res = await apiClient.get(DayCloseApis.validateClose, {
+                const res = await apiClient.get(DayCloseApis.validateClose({ restaurantId, businessLine }), {
                     params: { restaurant_id: restaurantId, business_date: businessDate }
                 });
                 
@@ -337,7 +329,7 @@ function CheckItem({ label, status, message }: { label: string, status: 'pass' |
     )
 }
 
-function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext: (data: any, id: number) => void; restaurantId: number; businessDate: string }) {
+function FinancialSnapshotStep({ onNext, restaurantId, businessDate, businessLine = "restaurant" }: { onNext: (data: any, id: number) => void; restaurantId: number; businessDate: string; businessLine?: string }) {
     const [snapshot, setSnapshot] = useState<any>(null);
     const [tableNameMap, setTableNameMap] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
@@ -348,79 +340,18 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
     useEffect(() => {
         const generate = async () => {
             try {
-                const [res, tablesRes, expensesRes, ordersRes] = await Promise.all([
-                    apiClient.get(DayCloseApis.generateSnapshot, {
+                const [res, tablesRes] = await Promise.all([
+                    apiClient.get(DayCloseApis.generateSnapshot({ restaurantId, businessLine }), {
                         params: {
                             restaurant_id: restaurantId,
                             business_date: businessDate
                         }
                     }),
-                    apiClient.get(TableApis.getTables(restaurantId)),
-                    // Fetch recent expenses to catch those paid today (limit 200 max)
-                    apiClient.get(ExpenseApis.list, {
-                        params: { 
-                            restaurant_id: restaurantId, 
-                            limit: 200 
-                        }
-                    }).catch(() => null),
-                    // Fetch proper orders (limit 100 max to avoid 422)
-                    apiClient.get(OrderApis.listOrders, {
-                        params: { restaurant_id: restaurantId, date_from: businessDate, date_to: businessDate, limit: 100 }
-                    }).catch(() => null)
+                    apiClient.get(TableApis.getTables(restaurantId))
                 ]);
 
-                let snapshotData = null;
                 if (res.data.status === 'success') {
-                    snapshotData = { ...res.data.data };
-
-                    // 1. Properly calculate expenses
-                    const rawExpenses = expensesRes?.data?.data?.expenses || expensesRes?.data?.data?.items;
-                    if (rawExpenses) {
-                        const expensesArr = rawExpenses.filter((e: any) => {
-                            const dateStr = (e.paid_on || e.expense_date || "").split('T')[0];
-                            return dateStr === businessDate;
-                        });
-                        
-                        const realExpenses = expensesArr.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
-                        snapshotData.manual_expense_total = realExpenses;
-
-                        // Group by category for the list card
-                        const catMap: Record<string, number> = {};
-                        expensesArr.forEach((e: any) => {
-                            const catName = e.category?.name || "Uncategorized";
-                            catMap[catName] = (catMap[catName] || 0) + (Number(e.amount) || 0);
-                        });
-                        snapshotData.manual_expenses_by_category = Object.entries(catMap).map(([name, amount]) => ({ name, amount }));
-                    }
-
-                    // 2. Properly calculate avg items / order
-                    const ordersArr = ordersRes?.data?.data?.orders || ordersRes?.data?.data?.items;
-                    if (ordersArr) {
-                        const orders = ordersArr.filter((o: any) => 
-                            o.status === 'completed' || o.status === 'ready' || o.status === 'settled' || o.status === 'paid'
-                        );
-                        if (orders.length > 0) {
-                            const totalItems = orders.reduce((acc: number, curr: any) => {
-                                if (curr.items && Array.isArray(curr.items)) {
-                                    return acc + curr.items.reduce((sum: number, item: any) => sum + (Number(item.qty || item.quantity) || 1), 0);
-                                }
-                                return acc + (Number(curr.total_items || curr.total_qty || curr.items_count) || 0);
-                            }, 0);
-                            snapshotData.manual_avg_items = totalItems / orders.length;
-                        } else {
-                            snapshotData.manual_avg_items = 0;
-                        }
-                        
-                        // 3. Properly count credit orders
-                        const creditOrderList = orders.filter((o: any) => {
-                            const method = String(o.payment_method || o.payment_type || "").toLowerCase();
-                            const status = String(o.payment_status || "").toLowerCase();
-                            return method === "credit" || status === "credit" || o.is_credit === true;
-                        });
-                        snapshotData.manual_credit_orders = creditOrderList.length;
-                    }
-
-                    setSnapshot(snapshotData);
+                    setSnapshot(res.data.data);
                 } else {
                     setError(res.data.message || "Failed to generate snapshot");
                 }
@@ -822,6 +753,14 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
             ? pickBreakdownRows(["sales by table", "table sales"])
             : findBreakdownByTokens(["table"]);
 
+    const expensesByCategory = (() => {
+        const breakdownObj = snapshot?.expense_breakdown || snapshot?.snapshot_data?.expense_breakdown;
+        if (breakdownObj && typeof breakdownObj === 'object' && !Array.isArray(breakdownObj)) {
+            return Object.entries(breakdownObj).map(([name, amount]) => ({ name, amount: Number(amount) || 0 }));
+        }
+        return snapshot?.manual_expenses_by_category || [];
+    })();
+
     const allMetrics = [
         { label: "Gross Sales", value: derivedGrossSales, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
         { label: "Net Sales", value: derivedNetSales, isAmount: true, color: "text-emerald-600 dark:text-emerald-400" },
@@ -914,7 +853,7 @@ function FinancialSnapshotStep({ onNext, restaurantId, businessDate }: { onNext:
                             <SnapshotListCard title="Sales By Table" rows={salesByTable} labelKeys={["table", "table_name", "name"]} valueKeys={["sales", "amount", "total"]} tableNameMap={tableNameMap} />
                         </TabsContent>
                         <TabsContent value="expenses" className="m-0">
-                            <SnapshotListCard title="Expenses By Category" rows={snapshot?.manual_expenses_by_category || []} labelKeys={["name"]} valueKeys={["amount"]} />
+                            <SnapshotListCard title="Expenses By Category" rows={expensesByCategory} labelKeys={["name"]} valueKeys={["amount"]} />
                         </TabsContent>
                     </div>
                 </Tabs>

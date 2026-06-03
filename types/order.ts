@@ -77,6 +77,8 @@ export interface Order {
   scheduled_at?: string | null;
   duration_minutes?: number | null;
   created_by_name?: string | null;
+  parent_order_id?: number | null;
+  split_group_id?: string | null;
 }
 
 // ── Order Full Context (from /orders/{id}/full) ─────

@@ -52,24 +52,70 @@ export const DashboardApis = {
     date,
     startTime,
     endTime,
+    timezone,
+    businessLine,
   }: {
     restaurantId: number;
     date?: string;
-    startTime?: Date;
-    endTime?: Date;
+    startTime?: string | Date;
+    endTime?: string | Date;
+    timezone?: string;
+    businessLine?: string;
   }) => {
     const params = new URLSearchParams();
     params.append('restaurant_id', restaurantId.toString());
 
-    if (startTime) params.append('start_time', startTime.toISOString());
-    if (endTime) params.append('end_time', endTime.toISOString());
+    if (startTime) {
+      const startStr = typeof startTime === 'string' ? startTime : startTime.toISOString();
+      params.append('start_time', startStr);
+    }
+    if (endTime) {
+      const endStr = typeof endTime === 'string' ? endTime : endTime.toISOString();
+      params.append('end_time', endStr);
+    }
     if (date && !startTime) params.append('date', date);
+    if (timezone) params.append('timezone', timezone);
+    if (businessLine) params.append('business_line', businessLine);
 
     const query = params.toString();
     return query ? `/admin/dashboard/v2?${query}` : '/admin/dashboard/v2';
   },
-  dashboardDelta: ({ restaurantId, since }: { restaurantId: number; since: Date }) => {
-    return `/admin/dashboard/v2/delta?restaurant_id=${restaurantId}&since=${since.toISOString()}`;
+  dashboardDelta: ({
+    restaurantId,
+    since,
+    businessLine,
+    timezone,
+    date,
+    startTime,
+    endTime,
+  }: {
+    restaurantId: number;
+    since: string | Date;
+    businessLine?: string;
+    timezone?: string;
+    date?: string;
+    startTime?: string | Date;
+    endTime?: string | Date;
+  }) => {
+    const params = new URLSearchParams();
+    params.append('restaurant_id', restaurantId.toString());
+    
+    const sinceStr = typeof since === 'string' ? since : since.toISOString();
+    params.append('since', sinceStr);
+
+    if (businessLine) params.append('business_line', businessLine);
+    if (timezone) params.append('timezone', timezone);
+    if (date) params.append('date', date);
+    if (startTime) {
+      const startStr = typeof startTime === 'string' ? startTime : startTime.toISOString();
+      params.append('start_time', startStr);
+    }
+    if (endTime) {
+      const endStr = typeof endTime === 'string' ? endTime : endTime.toISOString();
+      params.append('end_time', endStr);
+    }
+
+    return `/admin/dashboard/v2/delta?${params.toString()}`;
   }
 };
 
@@ -113,6 +159,15 @@ export const OrderApis = {
   cancelOrder: (id: number) => `/orders/${id}/cancel`,
   refundOrder: (id: number) => `/orders/${id}/refund`,
   checkinRoom: '/orders/room/checkin',
+  
+  // Guest Bill / Split Bill helpers
+  getGuestBills: (orderId: number) => `/orders/${orderId}/guest-bills`,
+  splitBill: (orderId: number) => `/orders/${orderId}/split-bill`,
+  payAllGuestBills: (orderId: number) => `/orders/${orderId}/guest-bills/pay-all`,
+  transferGuestBillItem: (orderId: number) => `/orders/${orderId}/guest-bills/transfer-item`,
+  mergeGuestBills: (orderId: number) => `/orders/${orderId}/guest-bills/merge`,
+  cancelGuestBillSplit: (orderId: number) => `/orders/${orderId}/guest-bills/cancel-split`,
+  transferGuestBillTable: (orderId: number) => `/orders/${orderId}/guest-bills/transfer-table`,
 };
 
 export const PaymentApis = {
@@ -406,6 +461,7 @@ export const AnalyticsApis = {
     page = 1,
     pageSize = 20,
     businessLine,
+    category,
   }: {
     restaurantId: number;
     dateFrom: string;
@@ -414,6 +470,7 @@ export const AnalyticsApis = {
     page?: number;
     pageSize?: number;
     businessLine?: string;
+    category?: string;
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
@@ -424,6 +481,7 @@ export const AnalyticsApis = {
     });
     if (timezone) params.append('timezone', timezone);
     if (businessLine) params.append('business_line', businessLine);
+    if (category) params.append('category', category);
     return `/analytics/kitchen/details?${params.toString()}`;
   },
   inventoryDetails: ({
@@ -434,6 +492,7 @@ export const AnalyticsApis = {
     page = 1,
     pageSize = 20,
     view = 'item',
+    businessLine,
   }: {
     restaurantId: number;
     dateFrom: string;
@@ -442,6 +501,7 @@ export const AnalyticsApis = {
     page?: number;
     pageSize?: number;
     view?: 'item' | 'category' | string;
+    businessLine?: string;
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
@@ -452,6 +512,7 @@ export const AnalyticsApis = {
       view,
     });
     if (timezone) params.append('timezone', timezone);
+    if (businessLine) params.append('business_line', businessLine);
     return `/analytics/inventory/details?${params.toString()}`;
   },
   overview: ({ restaurantId, dateFrom, dateTo, timezone, station }: any) => {
@@ -653,24 +714,74 @@ export const NotificationApis = {
 };
 
 export const DayCloseApis = {
-  current: '/day-closes/current',
-  validateClose: '/day-closes/validate-close',
+  current: ({ restaurantId, businessLine }: { restaurantId: number; businessLine?: string }) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (businessLine) params.append('business_line', businessLine);
+    return `/day-closes/current?${params.toString()}`;
+  },
+  validateClose: ({ restaurantId, businessLine }: { restaurantId: number; businessLine?: string }) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (businessLine) params.append('business_line', businessLine);
+    return `/day-closes/validate-close?${params.toString()}`;
+  },
   initiate: '/day-closes/initiate',
-  generateSnapshot: '/day-closes/generate-snapshot',
+  generateSnapshot: ({ restaurantId, businessLine }: { restaurantId: number; businessLine?: string }) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (businessLine) params.append('business_line', businessLine);
+    return `/day-closes/generate-snapshot?${params.toString()}`;
+  },
   confirm: (id: number) => `/day-closes/${id}/confirm`,
   cancel: (id: number) => `/day-closes/${id}/cancel`,
   adjustCashReconciliation: (id: number) => `/day-closes/${id}/adjust-cash-reconciliation`,
   listAdjustments: (id: number) => `/day-closes/${id}/adjustments`,
   addExpenseAdjustment: (id: number) => `/day-closes/${id}/adjustments/expense`,
   addIncomeAdjustment: (id: number) => `/day-closes/${id}/adjustments/income`,
-  list: ({ restaurantId, start, end, status }: { restaurantId?: number; start?: string; end?: string; status?: string }) => {
+  list: ({
+    restaurantId,
+    start,
+    end,
+    status,
+    businessLine,
+    skip,
+    limit,
+  }: {
+    restaurantId?: number;
+    start?: string;
+    end?: string;
+    status?: string;
+    businessLine?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
     const params = new URLSearchParams();
     if (restaurantId) params.append('restaurant_id', restaurantId.toString());
     if (start) params.append('date_from', start);
     if (end) params.append('date_to', end);
     if (status) params.append('status', status);
+    if (businessLine) params.append('business_line', businessLine);
+    if (skip !== undefined) params.append('skip', skip.toString());
+    if (limit !== undefined) params.append('limit', limit.toString());
     const query = params.toString();
     return query ? `/day-closes?${query}` : '/day-closes';
+  },
+  sessions: ({
+    restaurantId,
+    businessLine,
+    skip = 0,
+    limit = 50,
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+    if (businessLine) params.append('business_line', businessLine);
+    return `/day-closes/sessions?${params.toString()}`;
   },
   detail: (id: number) => `/day-closes/${id}`,
   auditLog: (id: number) => `/day-closes/${id}/audit-log`,
@@ -782,9 +893,26 @@ export const PeriodCloseApis = {
 };
 
 export const GeneralPurchaseApis = {
-  list: ({ restaurantId, status, skip = 0, limit = 100 }: { restaurantId: number; status?: string; skip?: number; limit?: number }) => {
-    const params = new URLSearchParams({ restaurant_id: restaurantId.toString(), skip: skip.toString(), limit: limit.toString() });
+  list: ({
+    restaurantId,
+    status,
+    businessLine,
+    skip = 0,
+    limit = 100,
+  }: {
+    restaurantId: number;
+    status?: string;
+    businessLine?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
     if (status) params.append('status', status);
+    if (businessLine) params.append('business_line', businessLine);
     return `/general-purchases?${params.toString()}`;
   },
   get: (id: number) => `/general-purchases/${id}`,
@@ -813,6 +941,7 @@ export const TransactionsApis = {
   list: ({
     restaurantId,
     userId,
+    paymentUserId,
     types,
     dateFrom,
     dateTo,
@@ -821,6 +950,7 @@ export const TransactionsApis = {
   }: {
     restaurantId: number;
     userId?: number;
+    paymentUserId?: number;
     types?: string[];
     dateFrom?: string; // YYYY-MM-DD
     dateTo?: string; // YYYY-MM-DD
@@ -833,6 +963,7 @@ export const TransactionsApis = {
       limit: limit.toString(),
     });
     if (userId) params.append("user_id", userId.toString());
+    if (paymentUserId) params.append("payment_user_id", paymentUserId.toString());
     if (types?.length) types.forEach((t) => params.append("types", t));
     if (dateFrom) params.append("date_from", dateFrom);
     if (dateTo) params.append("date_to", dateTo);

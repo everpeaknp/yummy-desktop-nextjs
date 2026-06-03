@@ -329,7 +329,7 @@ const categories = [
 export default function AdditionalSettingsPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const searchParams = useSearchParams();
-    const initialSetting = searchParams.get("setting");
+    const initialSetting = searchParams ? searchParams.get("setting") : null;
     const [selectedSetting, setSelectedSetting] = useState<string | null>(initialSetting);
     const [isUpdating, setIsUpdating] = useState(false);
     const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
@@ -434,7 +434,7 @@ export default function AdditionalSettingsPage() {
 
   // Sync state when URL parameter changes
   useEffect(() => {
-      const settingParam = searchParams.get("setting");
+      const settingParam = searchParams ? searchParams.get("setting") : null;
       if (settingParam) {
           if (settingParam === 'receipt_designer') {
               router.push('/manage/receipt-designer');

@@ -47,11 +47,22 @@ interface CartItem {
   revenue_category?: string;
 }
 
+const getItemUnitPrice = (item: any) => {
+  let price = item.price || 0;
+  if (item.modifiers && item.modifiers.length > 0) {
+    item.modifiers.forEach((m: any) => {
+      price += parseFloat(m.price_adjustment_snapshot || m.price_adjustment || 0);
+    });
+  }
+  return price;
+};
+
 const CartContent = ({ 
     cart, 
     orderId, 
     orderData, 
     tableData, 
+    tableNames,
     channelFromQuery, 
     restaurant, 
     processing, 
@@ -72,6 +83,7 @@ const CartContent = ({
   orderId: string | undefined;
   orderData: any;
   tableData: any;
+  tableNames: string;
   channelFromQuery: string;
   restaurant: any;
   processing: boolean;
@@ -88,7 +100,7 @@ const CartContent = ({
   deliveryAddress: string;
   setDeliveryAddress: (a: string) => void;
 }) => {
-  const subtotal = cart.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
+  const subtotal = cart.reduce((acc: number, item: any) => acc + (getItemUnitPrice(item) * item.quantity), 0);
   const taxRate = restaurant?.tax_enabled ? fixedTaxRate : 0;
   const tax = subtotal * taxRate;
   const total = subtotal + tax;
@@ -100,8 +112,8 @@ const CartContent = ({
           <ChefHat className="h-5 w-5 text-primary" />
           {!orderId || orderId === 'create' ? 'New Order' : `Order #${orderData?.restaurant_order_id || orderId}`}
         </h2>
-        <p className="text-xs text-muted-foreground capitalize">
-          {tableData?.table_name || orderData?.table_name || 'No Table'} • {orderData?.channel || channelFromQuery.replace('_', ' ')}
+        <p className="text-xs text-muted-foreground capitalize font-bold">
+          {tableNames || 'No Table'} • {orderData?.channel || channelFromQuery.replace('_', ' ')}
         </p>
       </div>
 
@@ -118,7 +130,7 @@ const CartContent = ({
               <div className="flex gap-2 items-start">
                 <div className="flex-1 min-w-0">
                   <h4 className="text-sm font-medium">{item.name}</h4>
-                  <p className="text-xs text-muted-foreground">{restaurant?.currency || "Rs."}{item.price.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">{restaurant?.currency || "Rs."}{getItemUnitPrice(item).toLocaleString()}</p>
                   {item.modifiers && item.modifiers.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {item.modifiers.map((mod: any, idx: number) => (
@@ -157,7 +169,7 @@ const CartContent = ({
                   </Button>
                 </div>
                 <div className="text-sm font-medium w-16 text-right">
-                  {restaurant?.currency || "Rs."}{(item.price * item.quantity).toLocaleString()}
+                  {restaurant?.currency || "Rs."}{(getItemUnitPrice(item) * item.quantity).toLocaleString()}
                 </div>
               </div>
               {item.revenue_category === 'rent' && (
@@ -256,10 +268,12 @@ const CartContent = ({
 export default function POSSystem({
   orderId,
   defaultTableId,
+  defaultTableIds,
   defaultChannel
 }: {
   orderId?: string;
   defaultTableId?: number;
+  defaultTableIds?: number[];
   defaultChannel?: string;
 }) {
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
@@ -275,6 +289,7 @@ export default function POSSystem({
   const [searchQuery, setSearchQuery] = useState("");
   const [orderData, setOrderData] = useState<any>(null);
   const [tableData, setTableData] = useState<any>(null);
+  const [tablesList, setTablesList] = useState<any[]>([]);
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -303,15 +318,17 @@ export default function POSSystem({
         const tablePromise = tableIdFromQuery
           ? apiClient.get(`/restaurants/tables/single/${tableIdFromQuery}`).catch(err => { console.error("[POS] Table fetch failed:", err); return null; })
           : Promise.resolve(null);
+        const tablesListPromise = apiClient.get(`/restaurants/tables/all/${user.restaurant_id}`).catch(err => { console.error("[POS] Tables list fetch failed:", err); return null; });
         const orderPromise = (orderId && orderId !== 'create')
           ? apiClient.get(`/orders/${orderId}`).catch(err => { console.error("[POS] Order fetch failed:", err); return null; })
           : Promise.resolve(null);
         const modPromise = apiClient.get(`/modifiers/groups?restaurant_id=${user.restaurant_id}`).catch(err => { console.error("[POS] Mod fetch failed", err); return null; });
         const taxPromise = apiClient.get(TaxConfigApis.list(user.restaurant_id)).catch(err => { console.error("[POS] Tax fetch failed", err); return null; });
 
-        const [itemRes, tableRes, orderRes, modRes, taxRes] = await Promise.all([
+        const [itemRes, tableRes, tablesListRes, orderRes, modRes, taxRes] = await Promise.all([
           itemPromise,
           tablePromise,
+          tablesListPromise,
           orderPromise,
           modPromise,
           taxPromise
@@ -339,6 +356,9 @@ export default function POSSystem({
 
         if (tableRes && tableRes.data.status === "success") {
           setTableData(tableRes.data.data);
+        }
+        if (tablesListRes && tablesListRes.data.status === "success") {
+          setTablesList(tablesListRes.data.data || []);
         }
         if (modRes && modRes.data.status === "success") {
           setModifierGroups(modRes.data.data.groups || []);
@@ -480,6 +500,13 @@ export default function POSSystem({
         items: cart.map(buildItemPayload)
       };
 
+      if (!isEditing && defaultTableIds && defaultTableIds.length > 0) {
+        payload.table_ids = defaultTableIds;
+        if (!payload.table_id) {
+          payload.table_id = defaultTableIds[0];
+        }
+      }
+
       if (!isEditing && (channelFromQuery === 'delivery' || channelFromQuery === 'pickup')) {
         if (!customerName.trim() || !customerPhone.trim()) {
           toast.error("Customer Name and Phone are required.");
@@ -565,9 +592,20 @@ export default function POSSystem({
     } finally {
       setProcessing(false);
     }
-  };
+  };  const tableNames = useMemo(() => {
+    if (orderData?.table_name) {
+      return orderData.table_name;
+    }
+    if (defaultTableIds && defaultTableIds.length > 0 && tablesList.length > 0) {
+      return defaultTableIds
+        .map(id => tablesList.find(t => t.id === id)?.table_name)
+        .filter(Boolean)
+        .join(", ");
+    }
+    return tableData?.table_name || 'No Table';
+  }, [orderData, defaultTableIds, tablesList, tableData]);
 
-  const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+  const subtotal = cart.reduce((acc, item) => acc + (getItemUnitPrice(item) * item.quantity), 0);
   const tax = subtotal * 0.13;
   const total = subtotal + tax;
 
@@ -693,7 +731,7 @@ export default function POSSystem({
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 auto-rows-max">
               {filteredItems.map((item: MenuItem, idx: number) => (
                 <Card
-                  key={`${item.id}-${idx}`}
+                   key={`${item.id}-${idx}`}
                   className="group flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-all border-border bg-card active:scale-95"
                   onClick={() => handleItemClick(item)}
                 >
@@ -750,6 +788,7 @@ export default function POSSystem({
             orderId={orderId}
             orderData={orderData}
             tableData={tableData}
+            tableNames={tableNames}
             channelFromQuery={channelFromQuery}
             restaurant={restaurant}
             processing={processing}
@@ -790,6 +829,7 @@ export default function POSSystem({
                 orderId={orderId}
                 orderData={orderData}
                 tableData={tableData}
+                tableNames={tableNames}
                 channelFromQuery={channelFromQuery}
                 restaurant={restaurant}
                 processing={processing}
