@@ -21,7 +21,6 @@ interface DateRangeDropdownProps {
   setActiveRange: (range: DateRangePreset) => void
   date: DateRange | undefined
   setDate: (date: DateRange | undefined) => void
-  disabled?: boolean
 }
 
 export function DateRangeDropdown({
@@ -29,7 +28,6 @@ export function DateRangeDropdown({
   setActiveRange,
   date,
   setDate,
-  disabled = false,
 }: DateRangeDropdownProps) {
   const [open, setOpen] = React.useState(false)
   const [fromTime, setFromTime] = React.useState("00:00")
@@ -79,15 +77,13 @@ export function DateRangeDropdown({
   }
 
   return (
-    <Popover open={disabled ? false : open} onOpenChange={disabled ? undefined : setOpen}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          disabled={disabled}
           className={cn(
             "w-[auto] min-w-[160px] justify-between text-left font-normal bg-background/50 backdrop-blur-sm rounded-xl border-border/50",
-            !date && "text-muted-foreground",
-            disabled && "opacity-60 cursor-not-allowed"
+            !date && "text-muted-foreground"
           )}
         >
           <div className="flex items-center gap-2">

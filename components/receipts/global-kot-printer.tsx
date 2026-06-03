@@ -1,55 +1,39 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ThermalKOT } from "@/components/receipts/thermal-kot";
 import apiClient from "@/lib/api-client";
 import { PrinterApis, RestaurantApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
-function buildKotRawPayload(kotData: any, templateBlocks: any[]) {
-    const blocks = (templateBlocks || [])
-        .filter((b: any) => b?.type !== "global_settings")
-        .map((b: any) => ({ ...b, cfg: b?.config ? { ...b, ...b.config } : b }))
-        .filter((b: any) => (b?.is_visible ?? b?.isVisible ?? true));
-
-    const lines: string[] = [];
-    const header = blocks.find((b: any) => b.type === "header")?.cfg || {};
-    lines.push(String(header.title || kotData?.restaurant?.name || "YUMMY KOT"));
-    if (header.show_address !== false && kotData?.restaurant?.address) lines.push(String(kotData.restaurant.address));
-    if (header.show_phone !== false && kotData?.restaurant?.phone) lines.push(`${header.phone_label || "Phone"}: ${kotData.restaurant.phone}`);
-
-    const billInfo = blocks.find((b: any) => b.type === "bill_info")?.cfg || {};
-    lines.push("---------------------------");
-    lines.push(`${billInfo.kot_label || "KOT"}: ${kotData?.kot_number || kotData?.kot_id || "-"}`);
-    lines.push(`${billInfo.station_label || "Station"}: ${kotData?.station || "-"}`);
-    lines.push(`${billInfo.table_label || "Table"}: ${kotData?.order?.table_name || "-"}`);
-    lines.push(`${billInfo.order_label || "Order"}: #${kotData?.order?.id || kotData?.order_id || "-"}`);
-    lines.push("---------------------------");
-
-    const itemsCfg = blocks.find((b: any) => b.type === "items")?.cfg || {};
-    const showSerial = itemsCfg.show_serial !== false;
-    const showNotes = itemsCfg.show_notes !== false;
-    const items = Array.isArray(kotData?.items) ? kotData.items : [];
-    items.forEach((item: any, idx: number) => {
-        const name = item?.item_name || item?.name_snapshot || "Item";
-        const qty = item?.qty_change ?? item?.qty ?? 1;
-        lines.push(`${showSerial ? `${idx + 1}. ` : ""}${name} x${qty}`);
-        if (showNotes && item?.notes) lines.push(`  Note: ${item.notes}`);
-    });
-
-    const footer = blocks.find((b: any) => b.type === "footer")?.cfg || {};
-    lines.push("---------------------------");
-    lines.push(String(footer.message || "KOT END"));
-    lines.push("\n\n\n");
-    return lines.join("\n");
-}
-
 export function GlobalKotPrinter() {
     const restaurant = useRestaurant((s) => s.restaurant);
     const [printJob, setPrintJob] = useState<{ kotData: any; template: any[] } | null>(null);
     const [mounted, setMounted] = useState(false);
     const [printerRoutingUnauthorized, setPrinterRoutingUnauthorized] = useState(false);
+    const recentPrintsRef = useRef<Map<string, number>>(new Map());
+
+    const buildDedupeKeys = (data: any) => {
+        const orderId = data?.order_id || data?.order?.id;
+        const station = String(data?.station || data?.kot?.station || "").trim().toLowerCase();
+        const kotNumber = String(data?.kot_number || data?.kot?.kot_number || "").trim().toLowerCase();
+        const explicitIds = [
+            data?.kot_id,
+            data?.id,
+            data?.kot?.id,
+        ]
+            .filter(Boolean)
+            .map((value) => `id:${String(value)}`);
+
+        const compositeKeys = [
+            orderId && kotNumber ? `order:${orderId}:kot:${kotNumber}` : null,
+            orderId && station && kotNumber ? `order:${orderId}:station:${station}:kot:${kotNumber}` : null,
+            orderId && station ? `order:${orderId}:station:${station}` : null,
+        ].filter(Boolean) as string[];
+
+        return [...explicitIds, ...compositeKeys];
+    };
 
     useEffect(() => { setMounted(true); }, []);
 
@@ -105,6 +89,17 @@ export function GlobalKotPrinter() {
             if (!data) return;
 
             console.log("[GlobalKotPrinter] Received print request for KOT:", data);
+
+            const now = Date.now();
+            const incomingKeys = buildDedupeKeys(data);
+            const isDuplicate = incomingKeys.some((key) => {
+                const lastSeen = recentPrintsRef.current.get(key) || 0;
+                return now - lastSeen < 5000;
+            });
+            if (isDuplicate) {
+                console.log("[GlobalKotPrinter] Skipping duplicate KOT print event:", incomingKeys);
+                return;
+            }
             
             // If the payload is missing items (like from kot_created), fetch the full KOT
             if (!data.items || data.items.length === 0) {
@@ -118,6 +113,14 @@ export function GlobalKotPrinter() {
                     } catch (err) {
                         console.error("[GlobalKotPrinter] Failed to fetch full KOT details", err);
                     }
+                }
+            }
+
+            const resolvedKeys = buildDedupeKeys(data);
+            resolvedKeys.forEach((key) => recentPrintsRef.current.set(key, now));
+            for (const [key, ts] of recentPrintsRef.current.entries()) {
+                if (now - ts > 30000) {
+                    recentPrintsRef.current.delete(key);
                 }
             }
 
@@ -191,53 +194,24 @@ export function GlobalKotPrinter() {
                 const winAny = window as any;
                 if (winAny.electronAPI) {
                     const cfg = printJob.kotData?.printer_config || {};
-                    const printerType = String(cfg.printer_type || "").toLowerCase();
-                    const host = String(cfg.address || "").trim();
-                    const port = Number(cfg.port || 9100);
-                    const isNetwork =
-                        printerType.includes("network") ||
-                        /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
-
-                    if (isNetwork && host) {
-                        const payload = buildKotRawPayload(printJob.kotData, template || []);
-
-                        if (typeof winAny.electronAPI?.printNetworkRaw === "function") {
-                            winAny.electronAPI.printNetworkRaw({
-                                host,
-                                port,
-                                payload,
-                            }).then((res: any) => {
-                                if (!res?.success) {
-                                    console.error("[GlobalKotPrinter] Network raw print failed:", res?.message);
-                                }
-                            }).catch((err: any) => {
-                                console.error("[GlobalKotPrinter] Network raw print error:", err);
-                            });
-                        } else {
-                            console.warn("[GlobalKotPrinter] printNetworkRaw not available in preload. Falling back to silent print.");
-                            winAny.electronAPI.printSilent({
-                                printerName: printJob.kotData.printer_config?.printer_name
-                            });
-                        }
-                    } else {
-                        console.log("🚀 [GlobalKotPrinter] Routing silently via Electron IPC!");
-                        const targetPrinter = printJob.kotData.printer_config?.printer_name;
-                        
-                        // Verify the printer exists locally before printing to avoid fallback-to-default bug!
-                        if (targetPrinter && winAny.electronAPI.getPrinters) {
-                            winAny.electronAPI.getPrinters().then((printers: any[]) => {
-                                const exists = printers.find((p: any) => p.name === targetPrinter);
-                                if (!exists) {
-                                    console.warn(`[GlobalKotPrinter] Printer "${targetPrinter}" not found on this machine. Ignoring print job to prevent fallback to default printer.`);
-                                    return;
-                                }
-                                winAny.electronAPI.printSilent({ printerName: targetPrinter });
-                            }).catch(() => {
-                                winAny.electronAPI.printSilent({ printerName: targetPrinter });
-                            });
-                        } else {
+                    console.log("🚀 [GlobalKotPrinter] Printing rendered KOT template via Electron IPC.");
+                    const targetPrinter = cfg?.printer_name;
+                    
+                    // Always prefer the rendered backend-template design.
+                    // Do not use the old raw-text network KOT path, because it bypasses the template.
+                    if (targetPrinter && winAny.electronAPI.getPrinters) {
+                        winAny.electronAPI.getPrinters().then((printers: any[]) => {
+                            const exists = printers.find((p: any) => p.name === targetPrinter);
+                            if (!exists) {
+                                console.warn(`[GlobalKotPrinter] Printer "${targetPrinter}" not found on this machine. Ignoring print job to prevent fallback to default printer.`);
+                                return;
+                            }
                             winAny.electronAPI.printSilent({ printerName: targetPrinter });
-                        }
+                        }).catch(() => {
+                            winAny.electronAPI.printSilent({ printerName: targetPrinter });
+                        });
+                    } else {
+                        winAny.electronAPI.printSilent({ printerName: targetPrinter });
                     }
                 } else {
                     const clear = () => setPrintJob(null);

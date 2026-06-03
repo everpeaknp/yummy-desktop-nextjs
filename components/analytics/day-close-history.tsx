@@ -253,20 +253,15 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     try {
       const [detailRes, snapshotRes] = await Promise.all([
         apiClient.get(DayCloseApis.get(id)),
-        apiClient.get(DayCloseApis.snapshot(id)).catch((err: { response?: { status?: number } }) => {
-          if (err?.response?.status === 404) return null;
-          throw err;
-        }),
+        apiClient.get(DayCloseApis.snapshot(id)),
       ]);
       if (detailRes.data?.status === "success") {
         setDetail(parseDayCloseDetail(detailRes.data.data));
       } else {
         toast.error(detailRes.data?.message || "Failed to load day close");
       }
-      if (snapshotRes?.data?.status === "success") {
+      if (snapshotRes.data?.status === "success") {
         setSnapshot(parseDayCloseSnapshotResponse(snapshotRes.data.data));
-      } else {
-        setSnapshot(null);
       }
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Failed to load day close");
@@ -414,13 +409,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
       const res = await apiClient.get(DayCloseApis.snapshot(activeId));
       if (res.data?.status === "success") {
         setSnapshot(parseDayCloseSnapshotResponse(res.data.data));
-      } else {
-        setSnapshot(null);
-        toast.error(res.data?.message || "Snapshot not available");
-      }
+      } else toast.error(res.data?.message || "Snapshot not available");
     } catch (err: any) {
-      setSnapshot(null);
-      if (err?.response?.status === 404) return;
       toast.error(err?.response?.data?.detail || "Snapshot not available");
     }
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
@@ -9,25 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, TrendingDown, Receipt, Download, ArrowLeft, Plus, Calendar, TrendingUp, DollarSign, Utensils, Hotel } from "lucide-react";
-import { PaymentMethodBreakdown } from "@/components/analytics/payment-method-breakdown";
-import {
-  fetchAllExpensesForFilters,
-  fetchExpenseListPage,
-  fetchExpenseSummaryTotal,
-  type ExpenseSummaryTotal,
-} from "@/lib/finance-expense-api";
-import { mapExpenseRowsToPaymentMix } from "@/lib/finance-payment-mix";
-import { getApiErrorMessage } from "@/lib/api-response";
-import { dispatchFinanceMutationSync } from "@/lib/sync-invalidation";
-import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
-import {
-  getFinanceDateRange,
-  resolveBusinessLineParam,
-  type FinanceBusinessLine,
-  type FinanceDateFilter,
-} from "@/lib/finance-query";
-import type { PaymentMixView } from "@/types/analytics";
+import { Loader2, TrendingDown, Receipt, Download, ArrowLeft, Plus, Calendar, TrendingUp, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -42,6 +24,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
+import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
 // import * as XLSX from "xlsx"; // Removed for optimization
 import Link from "next/link";
 
@@ -49,7 +32,7 @@ export default function ExpensesPage() {
   const [loading, setLoading] = useState(false);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
-  const [dateFilter, setDateFilter] = useState<FinanceDateFilter>("this_month");
+  const [dateFilter, setDateFilter] = useState("this_month");
   const [selectedStation, setSelectedStation] = useState("all");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -66,9 +49,6 @@ export default function ExpensesPage() {
   const [customStartTime, setCustomStartTime] = useState("00:00");
   const [customEndTime, setCustomEndTime] = useState("23:59");
   const [recentLimit, setRecentLimit] = useState(25);
-  const [businessLine, setBusinessLine] = useState<FinanceBusinessLine>("restaurant");
-  const [expenseSummary, setExpenseSummary] = useState<ExpenseSummaryTotal | null>(null);
-  const [expensePaymentMix, setExpensePaymentMix] = useState<PaymentMixView | null>(null);
 
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
@@ -83,12 +63,8 @@ export default function ExpensesPage() {
 
       if (user?.restaurant_id) {
         try {
-          const bl = resolveBusinessLineParam(businessLine);
           const res = await apiClient.get(ExpenseApis.expenseCategories, {
-            params: {
-              restaurant_id: user.restaurant_id,
-              ...(bl ? { business_line: bl } : {}),
-            },
+            params: { restaurant_id: user.restaurant_id }
           });
           if (res.data.status === 'success') {
             setCategories(res.data.data);
@@ -97,54 +73,56 @@ export default function ExpensesPage() {
       }
     };
     checkAuth();
-  }, [user, me, router, businessLine]);
+  }, [user, me, router]);
+
+  const getDateRange = () => {
+    const now = new Date();
+    let start = "";
+    let end = endOfDay(now).toISOString().split('T')[0];
+
+    if (dateFilter === 'today') {
+      start = now.toISOString().split('T')[0];
+    } else if (dateFilter === 'yesterday') {
+      const yesterday = subDays(now, 1);
+      start = yesterday.toISOString().split('T')[0];
+      end = endOfDay(yesterday).toISOString().split('T')[0];
+    } else if (dateFilter === 'this_week') {
+      start = startOfWeek(now, { weekStartsOn: 1 }).toISOString().split('T')[0];
+    } else if (dateFilter === 'this_month') {
+      start = startOfMonth(now).toISOString().split('T')[0];
+    } else if (dateFilter === 'custom') {
+      start = customStartDate || now.toISOString().split('T')[0];
+      end = customEndDate || now.toISOString().split('T')[0];
+    } else {
+      start = subDays(now, 365).toISOString().split('T')[0];
+    }
+    return { start, end };
+  };
 
   const fetchData = async () => {
     if (!user?.restaurant_id) return;
     setLoading(true);
-    const { start, end } = getFinanceDateRange(dateFilter, {
-      startDate: customStartDate,
-      endDate: customEndDate,
-    });
-
-    const filters = {
-      restaurantId: user.restaurant_id,
-      dateFrom: start,
-      dateTo: end,
-      station: selectedStation,
-      categoryId:
-        selectedCategory === 'all' ? undefined : Number(selectedCategory),
-      businessLine,
-    };
+    const { start, end } = getDateRange();
+    const stationParam = selectedStation === 'all' ? undefined : selectedStation;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     try {
-      const summary = await fetchExpenseSummaryTotal(apiClient, filters);
-      setExpenseSummary(summary);
-
-      const { expenses: listRows } = await fetchExpenseListPage(
-        apiClient,
-        filters,
-        0,
-        recentLimit
-      );
-      setExpenses(listRows as any[]);
-
-      if (summary && summary.total_count > 0) {
-        const allRows = await fetchAllExpensesForFilters(
-          apiClient,
-          filters,
-          summary.total_count
-        );
-        setExpensePaymentMix(
-          mapExpenseRowsToPaymentMix(allRows as Array<{ payment_method?: string; amount?: number }>)
-        );
-      } else {
-        setExpensePaymentMix({ available: false, methods: [], expandedPieSlices: [] });
+      const res = await apiClient.get(ExpenseApis.list, {
+        params: {
+          restaurant_id: user.restaurant_id,
+          date_from: start,
+          date_to: end,
+          station: stationParam,
+          category_id: selectedCategory === 'all' ? undefined : selectedCategory,
+          limit: recentLimit,
+          timezone: tz
+        }
+      });
+      if (res.data.status === 'success') {
+        setExpenses(res.data.data.expenses || []);
       }
     } catch (err) {
       console.error("Failed to fetch expenses:", err);
-      setExpenseSummary(null);
-      setExpensePaymentMix(null);
     } finally {
       setLoading(false);
     }
@@ -158,7 +136,6 @@ export default function ExpensesPage() {
 
     setSaving(true);
     try {
-        const bl = resolveBusinessLineParam(businessLine) ?? "restaurant";
         const payload = {
             restaurant_id: user.restaurant_id,
             amount: parseFloat(newExpense.amount),
@@ -166,7 +143,6 @@ export default function ExpensesPage() {
             category_id: parseInt(newExpense.category_id),
             payment_method: newExpense.payment_method,
             station: newExpense.station,
-            business_line: bl,
         };
 
         const res = await apiClient.post(ExpenseApis.list, payload);
@@ -180,13 +156,10 @@ export default function ExpensesPage() {
                 category_id: "",
                 payment_method: "cash"
             });
-            dispatchFinanceMutationSync({ reason: "expense-added" });
             fetchData();
-        } else {
-            toast.error(res.data?.message || "Failed to record expense");
         }
     } catch (err) {
-        toast.error(getApiErrorMessage(err, "Failed to record expense"));
+        toast.error("Failed to record expense");
     } finally {
         setSaving(false);
     }
@@ -196,18 +169,7 @@ export default function ExpensesPage() {
     if (user?.restaurant_id) {
       fetchData();
     }
-  }, [user, selectedStation, dateFilter, selectedCategory, recentLimit, customStartDate, customEndDate, customStartTime, customEndTime, businessLine]);
-
-  const fetchDataRef = useRef(fetchData);
-  fetchDataRef.current = fetchData;
-
-  useSyncInvalidation(
-    ["finance", "day-close"],
-    () => {
-      void fetchDataRef.current();
-    },
-    [user?.restaurant_id]
-  );
+  }, [user, selectedStation, dateFilter, selectedCategory, recentLimit, customStartDate, customEndDate, customStartTime, customEndTime]);
 
   const filteredExpenses = expenses.filter((expense: any) => {
     if (dateFilter !== 'custom') return true;
@@ -260,28 +222,6 @@ export default function ExpensesPage() {
             </Link>
           </div>
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end">
-            {restaurant?.hotel_enabled && (
-              <div className="flex items-center bg-muted/50 p-1 rounded-lg border border-border">
-                <Button
-                  variant={businessLine === 'restaurant' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className={cn("h-8 px-3 text-xs gap-2", businessLine === 'restaurant' && "bg-background shadow-sm")}
-                  onClick={() => setBusinessLine('restaurant')}
-                >
-                  <Utensils className="h-3.5 w-3.5 text-orange-500" />
-                  Restaurant
-                </Button>
-                <Button
-                  variant={businessLine === 'hotel' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className={cn("h-8 px-3 text-xs gap-2", businessLine === 'hotel' && "bg-background shadow-sm")}
-                  onClick={() => setBusinessLine('hotel')}
-                >
-                  <Hotel className="h-3.5 w-3.5 text-blue-500" />
-                  Hotel
-                </Button>
-              </div>
-            )}
             <Select value={selectedStation} onValueChange={setSelectedStation}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Station" />
@@ -298,7 +238,7 @@ export default function ExpensesPage() {
               </SelectContent>
             </Select>
 
-            <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as FinanceDateFilter)}>
+            <Select value={dateFilter} onValueChange={setDateFilter}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Date Range" />
               </SelectTrigger>
@@ -349,18 +289,17 @@ export default function ExpensesPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <MetricCard
           label="Total Expenses"
-          value={expenseSummary?.total_amount ?? 0}
+          value={filteredExpenses.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0)}
           icon={<TrendingDown className="w-5 h-5" />}
           color="text-red-500"
           bg="bg-red-50 dark:bg-red-950/20"
         />
         <MetricCard
           label="Expense Entries"
-          value={expenseSummary?.total_count ?? 0}
+          value={filteredExpenses.length}
           icon={<Receipt className="w-5 h-5" />}
           color="text-amber-500"
           bg="bg-amber-50 dark:bg-amber-950/20"
-          isCount
         />
         <MetricCard
           label="Go to Income"
@@ -372,14 +311,6 @@ export default function ExpensesPage() {
           isStringValue
         />
       </div>
-
-      {!loading && (
-        <PaymentMethodBreakdown
-          title="Expenses by Payment Method"
-          description="Grouped from the full filtered expense set for this period (backend rows)."
-          mix={expensePaymentMix}
-        />
-      )}
 
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2">
@@ -481,9 +412,7 @@ export default function ExpensesPage() {
                         <SelectContent>
                             <SelectItem value="cash">Cash</SelectItem>
                             <SelectItem value="card">Card</SelectItem>
-                            <SelectItem value="digital">Digital</SelectItem>
-                            <SelectItem value="fonepay">Fonepay</SelectItem>
-                            <SelectItem value="credit">Credit</SelectItem>
+                            <SelectItem value="digital">Digital (FonePay/Esewa)</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
@@ -576,7 +505,7 @@ export default function ExpensesPage() {
   );
 }
 
-function MetricCard({ label, value, icon, color, bg, href, isStringValue, isCount }: any) {
+function MetricCard({ label, value, icon, color, bg, href, isStringValue }: any) {
   const content = (
     <Card className={cn(
       "overflow-hidden border-border bg-card transition-colors",
@@ -587,11 +516,7 @@ function MetricCard({ label, value, icon, color, bg, href, isStringValue, isCoun
           <div>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{label}</p>
             <h3 className="text-2xl font-bold">
-              {isStringValue
-                ? value
-                : isCount
-                  ? Number(value || 0).toLocaleString()
-                  : `Rs. ${Number(value || 0).toLocaleString()}`}
+              {isStringValue ? value : `Rs. ${Number(value || 0).toLocaleString()}`}
             </h3>
           </div>
           <div className={`p-3 rounded-xl ${bg} ${color}`}>

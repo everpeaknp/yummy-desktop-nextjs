@@ -10,12 +10,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSidebarItems } from "@/hooks/use-sidebar-items";
 import { cn, getImageUrl } from "@/lib/utils";
 import { useNotifications, useNotificationStore } from "@/hooks/use-notifications";
 import { NotificationPanel } from "@/components/notifications/notification-panel";
-import { useDashboardHomeStore } from "@/stores/dashboard-home-store";
+import apiClient from "@/lib/api-client";
+import { DashboardApis } from "@/lib/api/endpoints";
 import { ModuleSwitcher } from "./module-switcher";
 import { hasPermission } from "@/lib/role-permissions";
 
@@ -23,43 +24,46 @@ import { memo } from "react";
 
 const LiveStats = memo(function LiveStats() {
   const user = useAuth(state => state.user);
-  const restaurant = useRestaurant(state => state.restaurant);
-  const selectedModule = useRestaurant(state => state.selectedModule);
-  const dashboardHome = useDashboardHomeStore(state => state.dashboardHome);
-  const fetchDashboard = useDashboardHomeStore(state => state.fetchDashboard);
-  const pollDelta = useDashboardHomeStore(state => state.pollDelta);
-
-  useEffect(() => {
-    if (!user?.restaurant_id || dashboardHome) return;
-    const timezone =
-      restaurant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    fetchDashboard({
-      restaurantId: user.restaurant_id,
-      timezone,
-      businessLine: selectedModule ?? undefined,
-      activeRange: "today",
-    });
-  }, [user?.restaurant_id, restaurant?.timezone, selectedModule, dashboardHome, fetchDashboard]);
-
-  useEffect(() => {
-    if (!user?.restaurant_id || !dashboardHome) return;
-    const interval = setInterval(() => pollDelta(), 30000);
-    return () => clearInterval(interval);
-  }, [user?.restaurant_id, dashboardHome, pollDelta]);
-
-  const shiftPulse = dashboardHome?.shift_pulse;
-  const cashWatch = dashboardHome?.cash_watch;
-
-  if (!shiftPulse?.available && !cashWatch?.available) return null;
-
-  const activeOrders = shiftPulse?.available ? shiftPulse.active_orders : 0;
-  const kotPending = shiftPulse?.available ? shiftPulse.kot_pending : 0;
-  const todaySales =
-    cashWatch?.available
-      ? cashWatch.cash_collected + cashWatch.digital_collected + cashWatch.credit_sales
-      : 0;
+  const [stats, setStats] = useState<{ activeOrders: number; kotPending: number; todaySales: number } | null>(null);
 
   const canViewAnalytics = hasPermission(user, "reports.analytics.view");
+
+  const fetchStats = useCallback(async () => {
+    if (!user?.restaurant_id) return;
+    try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const res = await apiClient.get(
+        DashboardApis.dashboardDataV2({
+          restaurantId: user.restaurant_id,
+          businessLine: "restaurant",
+          timezone,
+        })
+      );
+      if (res.data?.status === "success") {
+        const d = res.data.data;
+        const shiftPulse = d?.home?.shift_pulse;
+        const cashWatch = d?.home?.cash_watch;
+        setStats({
+          activeOrders: shiftPulse?.active_orders ?? d?.health?.active_orders ?? 0,
+          kotPending: shiftPulse?.kot_pending ?? d?.health?.kot_pending ?? 0,
+          todaySales:
+            d?.kpis?.gross_sales ??
+            ((cashWatch?.cash_collected ?? 0) + (cashWatch?.digital_collected ?? 0) + (cashWatch?.credit_sales ?? 0)),
+        });
+      }
+    } catch {
+      // silently fail — stats are non-critical
+    }
+  }, [user?.restaurant_id]);
+
+  useEffect(() => {
+    fetchStats();
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
+  if (!stats) return null;
+
   const currency = "Rs.";
   const formatSales = (n: number) => {
     if (n >= 100000) return `${(n / 1000).toFixed(0)}k`;
@@ -74,7 +78,7 @@ const LiveStats = memo(function LiveStats() {
         className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
       >
         <ClipboardList className="h-3.5 w-3.5 text-blue-500" />
-        <span className="text-xs font-bold text-foreground">{activeOrders}</span>
+        <span className="text-xs font-bold text-foreground">{stats.activeOrders}</span>
         <span className="text-[10px] text-muted-foreground uppercase font-black">orders</span>
       </Link>
       <Link
@@ -82,7 +86,7 @@ const LiveStats = memo(function LiveStats() {
         className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
       >
         <ChefHat className="h-3.5 w-3.5 text-orange-500" />
-        <span className="text-xs font-bold text-foreground">{kotPending}</span>
+        <span className="text-xs font-bold text-foreground">{stats.kotPending}</span>
         <span className="text-[10px] text-muted-foreground uppercase font-black">KOT</span>
       </Link>
       {canViewAnalytics && (
@@ -91,7 +95,7 @@ const LiveStats = memo(function LiveStats() {
           className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
         >
           <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
-          <span className="text-xs font-bold text-foreground">{currency} {formatSales(todaySales)}</span>
+          <span className="text-xs font-bold text-foreground">{currency} {formatSales(stats.todaySales)}</span>
           <span className="text-[10px] text-muted-foreground uppercase font-black">today</span>
         </Link>
       )}

@@ -1,12 +1,3 @@
-/** @deprecated Use `@/types/dashboard-v2` — legacy flat dashboard shape. */
-export type {
-  DashboardV2Meta,
-  DashboardV2Home,
-  DashboardV2Response,
-  DashboardV2DeltaResponse,
-} from "@/types/dashboard-v2";
-
-/** Legacy flat contract retained for older references only. */
 export interface DashboardMeta {
   date: string;
   currency: string;
@@ -18,7 +9,7 @@ export interface DashboardMeta {
 
 export interface DashboardAlert {
   type: string;
-  severity: "HIGH" | "MEDIUM" | "LOW";
+  severity: 'HIGH' | 'MEDIUM' | 'LOW';
   message: string;
 }
 
@@ -45,7 +36,7 @@ export interface DashboardKPIs {
 export interface TrendComparison {
   value: number;
   delta_percent: number;
-  direction: "UP" | "DOWN" | "SAME";
+  direction: 'UP' | 'DOWN' | 'SAME';
 }
 
 export interface DashboardTrends {
@@ -77,11 +68,10 @@ export interface DashboardBreakdowns {
 }
 
 export interface QuickInsight {
-  type: "POSITIVE" | "WARNING" | "INFO";
+  type: 'POSITIVE' | 'WARNING' | 'INFO';
   message: string;
 }
 
-/** @deprecated Prefer `DashboardV2Response` with `home` sections. */
 export interface AdminDashboardV2Data {
   meta: DashboardMeta;
   health: DashboardHealth;
