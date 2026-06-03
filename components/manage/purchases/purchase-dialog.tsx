@@ -22,7 +22,10 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
+import { dispatchFinanceMutationSync } from "@/lib/sync-invalidation";
+import { getApiErrorMessage } from "@/lib/api-response";
 import { GeneralPurchaseApis, SupplierApis } from "@/lib/api/endpoints";
+import type { BusinessLine } from "@/lib/api/endpoint-types";
 import { Loader2 } from "lucide-react";
 
 interface PurchaseDialogProps {
@@ -30,6 +33,7 @@ interface PurchaseDialogProps {
     onOpenChange: (open: boolean) => void;
     purchase?: any;
     onSuccess: () => void;
+    businessLine?: BusinessLine;
 }
 
 const STATUS_OPTIONS = [
@@ -38,11 +42,11 @@ const STATUS_OPTIONS = [
 ];
 
 const PAYMENT_STATUS_OPTIONS = [
-    { label: "Unpaid", value: "unpaid" },
+    { label: "Pending", value: "pending" },
     { label: "Paid", value: "paid" },
 ];
 
-export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: PurchaseDialogProps) {
+export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess, businessLine = "restaurant" }: PurchaseDialogProps) {
     const user = useAuth(state => state.user);
     const [loading, setLoading] = useState(false);
     const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -51,7 +55,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
         unit: "",
         total_cost: "",
         supplier_id: "",
-        payment_status: "unpaid",
+        payment_status: "pending",
         status: "draft",
         notes: "",
         purchased_date: new Date().toISOString().split('T')[0],
@@ -78,7 +82,10 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
                     unit: purchase.unit || "",
                     total_cost: purchase.total_cost?.toString() || "",
                     supplier_id: purchase.supplier_id?.toString() || "",
-                    payment_status: purchase.payment_status || "unpaid",
+                    payment_status:
+                      purchase.payment_status === "unpaid"
+                        ? "pending"
+                        : purchase.payment_status || "pending",
                     status: purchase.status || "draft",
                     notes: purchase.notes || "",
                     purchased_date: purchase.purchased_date ? new Date(purchase.purchased_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -89,7 +96,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
                     unit: "",
                     total_cost: "",
                     supplier_id: "",
-                    payment_status: "unpaid",
+                    payment_status: "pending",
                     status: "draft",
                     notes: "",
                     purchased_date: new Date().toISOString().split('T')[0],
@@ -107,6 +114,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
             const payload = {
                 ...formData,
                 restaurant_id: user.restaurant_id,
+                business_line: purchase?.business_line ?? businessLine,
                 total_cost: parseFloat(formData.total_cost),
                 supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
                 purchased_date: formData.purchased_date + "T00:00:00Z"
@@ -119,20 +127,26 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
                 );
                 if (res.data.status === "success") {
                     toast.success("Purchase updated successfully");
+                    dispatchFinanceMutationSync({ reason: "purchase-updated" });
                     onSuccess();
                     onOpenChange(false);
+                } else {
+                    toast.error(res.data?.message || "Failed to update purchase");
                 }
             } else {
                 const res = await apiClient.post(GeneralPurchaseApis.create, payload);
                 if (res.data.status === "success") {
                     toast.success("Purchase recorded successfully");
+                    dispatchFinanceMutationSync({ reason: "purchase-created" });
                     onSuccess();
                     onOpenChange(false);
+                } else {
+                    toast.error(res.data?.message || "Failed to record purchase");
                 }
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Failed to save purchase:", error);
-            toast.error(error.response?.data?.detail || "Failed to save purchase");
+            toast.error(getApiErrorMessage(error, "Failed to save purchase"));
         } finally {
             setLoading(false);
         }

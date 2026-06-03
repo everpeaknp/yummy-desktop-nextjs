@@ -47,6 +47,7 @@ import { OrderCard } from "@/components/orders/order-card";
 import Link from "next/link";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { DateRange } from "react-day-picker";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 
 function getOrderTimeMs(order: any): number {
     const raw = order?.started_at || order?.created_at || order?.updated_at;
@@ -311,6 +312,17 @@ export default function OrdersPage() {
             return () => clearTimeout(timer);
         }
     }, [fetchHistoryData, activeTab]);
+
+    useSyncInvalidation(
+        ["orders", "tables", "transactions"],
+        () => {
+            void fetchActiveData();
+            if (activeTab === "history") {
+                void fetchHistoryData();
+            }
+        },
+        [activeTab, fetchActiveData, fetchHistoryData]
+    );
 
     const openReceipt = (orderId: number) => {
         setSelectedOrderId(orderId);

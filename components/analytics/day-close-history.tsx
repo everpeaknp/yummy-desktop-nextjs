@@ -32,7 +32,6 @@ import {
   subDays,
   startOfDay,
   endOfDay,
-  isWithinInterval,
   startOfWeek,
   endOfWeek,
   startOfMonth,
@@ -50,15 +49,24 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
-import { useRestaurant } from "@/hooks/use-restaurant";
+import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
 import {
-  DayClosePaymentSummary,
-  downloadPaymentSummaryCsv,
-} from "@/components/analytics/day-close-payment-summary";
+  formatDayCloseCurrency,
+  formatDayCloseCoveredRange,
+  formatDayCloseListHeading,
+  pickBackendAmount,
+} from "@/lib/day-close-format";
+import { snapshotMetricRows } from "@/lib/day-close-snapshot-view";
+import type { BusinessLine } from "@/lib/api/endpoint-types";
 import {
-  buildPaymentSummary,
-  isPaymentBreakdownFlattenLabel,
-} from "@/lib/day-close-payment-summary";
+  parseDayCloseDetail,
+  parseDayCloseList,
+  parseDayCloseSnapshotData,
+  parseDayCloseSnapshotResponse,
+  type DayCloseDetail,
+  type DayCloseListItem,
+  type DayCloseSnapshotResponse,
+} from "@/types/day-close";
 
 function humanizeKey(k: string) {
   return String(k)
@@ -68,9 +76,8 @@ function humanizeKey(k: string) {
     .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-function formatMaybeCurrency(key: string, value: unknown) {
-  if (typeof value !== "number") return String(value ?? "");
-  const asNum = Number.isFinite(value) ? value : 0;
+function formatDetailMetric(key: string, value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   const lower = key.toLowerCase();
   const looksLikeMoney =
     lower.includes("amount") ||
@@ -87,29 +94,15 @@ function formatMaybeCurrency(key: string, value: unknown) {
     lower.includes("charge") ||
     lower.includes("cash") ||
     lower.includes("receivable") ||
-    lower.includes("collection");
-  const n = asNum.toLocaleString();
-  return looksLikeMoney ? `Rs. ${n}` : n;
+    lower.includes("collection") ||
+    lower.includes("discrepancy") ||
+    lower.includes("position");
+  return looksLikeMoney ? formatDayCloseCurrency(value) : value.toLocaleString();
 }
 
-function flattenSection(obj: any, prefix = ""): Array<{ label: string; value: string }> {
-  if (!obj || typeof obj !== "object") return [];
-  const out: Array<{ label: string; value: string }> = [];
-  for (const [k, v] of Object.entries(obj)) {
-    const label = prefix ? `${prefix} • ${humanizeKey(k)}` : humanizeKey(k);
-    if (v && typeof v === "object" && !Array.isArray(v)) {
-      out.push(...flattenSection(v, label));
-      continue;
-    }
-    if (Array.isArray(v)) {
-      out.push({ label, value: `${v.length} items` });
-      continue;
-    }
-    const numeric = typeof v === "number" ? v : Number(v);
-    const asValue = Number.isFinite(numeric) ? formatMaybeCurrency(k, numeric) : String(v ?? "");
-    out.push({ label, value: asValue });
-  }
-  return out;
+function listBusinessLineLabel(line?: string): string {
+  const normalized = String(line ?? "restaurant").toLowerCase();
+  return normalized === "hotel" ? "Hotel" : "Restaurant";
 }
 
 function getFilenameFromContentDisposition(v: string | undefined | null) {
@@ -147,9 +140,9 @@ function statusBadge(status: string) {
 }
 
 export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
-  const restaurant = useRestaurant((s) => s.restaurant);
   const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<DayCloseListItem[]>([]);
+  const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
     from: startOfDay(subDays(new Date(), 30)),
     to: endOfDay(new Date()),
@@ -160,13 +153,13 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<any>(null);
-  const [snapshot, setSnapshot] = useState<any>(null);
+  const [detail, setDetail] = useState<DayCloseDetail | null>(null);
+  const [snapshot, setSnapshot] = useState<DayCloseSnapshotResponse | null>(null);
   const [audit, setAudit] = useState<any[] | null>(null);
   const [adjustments, setAdjustments] = useState<any[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizardDate, setWizardDate] = useState<string | undefined>(undefined);
+  const [wizardBusinessLine, setWizardBusinessLine] = useState<BusinessLine>("restaurant");
 
   const [actionOpen, setActionOpen] = useState<null | "reopen" | "adjustCash" | "addAdjustment" | "cancel">(null);
   const [actionSaving, setActionSaving] = useState(false);
@@ -204,13 +197,15 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
       const res = await apiClient.get(
         DayCloseApis.list({
           restaurantId,
+          businessLine,
           start,
           end,
           status: status || undefined,
         }),
       );
-      if (res.data?.status === "success") setItems(res.data.data || []);
-      else toast.error(res.data?.message || "Failed to load day closes");
+      if (res.data?.status === "success") {
+        setItems(parseDayCloseList(res.data.data));
+      } else toast.error(res.data?.message || "Failed to load day closes");
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Failed to load day closes");
     } finally {
@@ -231,7 +226,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, dateRange?.from?.getTime(), dateRange?.to?.getTime(), canLoad]);
+  }, [status, dateRange?.from?.getTime(), dateRange?.to?.getTime(), businessLine, canLoad]);
 
   const openDetail = async (id: number) => {
     setActiveId(id);
@@ -254,11 +249,25 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     setAdjNotes("");
     setAdjCategoryId("");
     setWizardOpen(false);
-    setWizardDate(undefined);
+    setWizardBusinessLine("restaurant");
     try {
-      const res = await apiClient.get(DayCloseApis.detail(id));
-      if (res.data?.status === "success") setDetail(res.data.data);
-      else toast.error(res.data?.message || "Failed to load day close");
+      const [detailRes, snapshotRes] = await Promise.all([
+        apiClient.get(DayCloseApis.get(id)),
+        apiClient.get(DayCloseApis.snapshot(id)).catch((err: { response?: { status?: number } }) => {
+          if (err?.response?.status === 404) return null;
+          throw err;
+        }),
+      ]);
+      if (detailRes.data?.status === "success") {
+        setDetail(parseDayCloseDetail(detailRes.data.data));
+      } else {
+        toast.error(detailRes.data?.message || "Failed to load day close");
+      }
+      if (snapshotRes?.data?.status === "success") {
+        setSnapshot(parseDayCloseSnapshotResponse(snapshotRes.data.data));
+      } else {
+        setSnapshot(null);
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Failed to load day close");
     } finally {
@@ -269,8 +278,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const refreshAfterMutation = async () => {
     if (!activeId) return;
     try {
-      const res = await apiClient.get(DayCloseApis.detail(activeId));
-      if (res.data?.status === "success") setDetail(res.data.data);
+      const res = await apiClient.get(DayCloseApis.get(activeId));
+      if (res.data?.status === "success") setDetail(parseDayCloseDetail(res.data.data));
     } catch {
       // ignore
     }
@@ -402,10 +411,16 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const loadSnapshot = async () => {
     if (!activeId) return;
     try {
-      const res = await apiClient.get(DayCloseApis.savedSnapshot(activeId));
-      if (res.data?.status === "success") setSnapshot(res.data.data);
-      else toast.error(res.data?.message || "Snapshot not available");
+      const res = await apiClient.get(DayCloseApis.snapshot(activeId));
+      if (res.data?.status === "success") {
+        setSnapshot(parseDayCloseSnapshotResponse(res.data.data));
+      } else {
+        setSnapshot(null);
+        toast.error(res.data?.message || "Snapshot not available");
+      }
     } catch (err: any) {
+      setSnapshot(null);
+      if (err?.response?.status === 404) return;
       toast.error(err?.response?.data?.detail || "Snapshot not available");
     }
   };
@@ -460,7 +475,22 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     }
   };
 
+  const parsedSnapshotData = useMemo(
+    () => parseDayCloseSnapshotData(snapshot?.snapshot_data ?? snapshot),
+    [snapshot],
+  );
+
+  const isConfirmed = String(detail?.status || "").toLowerCase() === "confirmed";
+
   const summaryRows = useMemo(() => {
+    if (parsedSnapshotData && isConfirmed) {
+      return snapshotMetricRows(parsedSnapshotData)
+        .map((row) => ({
+          label: row.label,
+          value: formatDayCloseCurrency(row.value),
+        }))
+        .filter((row) => row.value !== "—");
+    }
     if (!detail) return [];
     const keys = [
       "gross_sales",
@@ -473,49 +503,28 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
       "expected_cash",
       "actual_cash",
       "cash_discrepancy",
-    ];
+    ] as const;
     return keys
-      .map((k) => ({ label: humanizeKey(k), value: formatMaybeCurrency(k, Number(detail[k] ?? 0)) }))
-      .filter(Boolean);
-  }, [detail]);
+      .map((k) => ({
+        label: humanizeKey(k),
+        value: formatDetailMetric(k, detail[k]),
+      }))
+      .filter((row) => row.value !== "—");
+  }, [detail, parsedSnapshotData, isConfirmed]);
 
-  const paymentSummaryLines = useMemo(
-    () => buildPaymentSummary(detail, snapshot?.snapshot_data ?? snapshot, restaurant),
-    [detail, snapshot, restaurant],
+  const displayNetSales = useMemo(
+    () => pickBackendAmount(detail?.net_sales, parsedSnapshotData?.net_sales),
+    [detail?.net_sales, parsedSnapshotData?.net_sales],
   );
 
-  const snapshotDisplayRows = useMemo(() => {
-    if (!snapshot?.snapshot_data) return [];
-    return flattenSection(snapshot.snapshot_data).filter(
-      (row) => !isPaymentBreakdownFlattenLabel(row.label),
-    );
-  }, [snapshot]);
+  const displayExpenseTotal = useMemo(
+    () => pickBackendAmount(detail?.expense_total, parsedSnapshotData?.expense_total),
+    [detail?.expense_total, parsedSnapshotData?.expense_total],
+  );
 
-  const exportPaymentSummary = () => {
-    if (!detail) return;
-    downloadPaymentSummaryCsv(
-      paymentSummaryLines,
-      String(detail.business_date || "").slice(0, 10),
-    );
-    toast.success("Payment summary CSV downloaded");
-  };
-
-  const isConfirmed = String(detail?.status || "").toLowerCase() === "confirmed";
   const isPending = String(detail?.status || "").toLowerCase() === "pending";
   const isReopened = String(detail?.status || "").toLowerCase() === "reopened";
   const isOpen = String(detail?.status || "").toLowerCase() === "open";
-
-  const filteredItems = useMemo(() => {
-    const from = dateRange?.from ? startOfDay(dateRange.from) : null;
-    const to = dateRange?.to ? endOfDay(dateRange.to) : null;
-    if (!from || !to) return items;
-    return (items || []).filter((it) => {
-      const dRaw = it?.business_date;
-      if (!dRaw) return true;
-      const d = new Date(String(dRaw).slice(0, 10) + "T00:00:00");
-      return isWithinInterval(d, { start: from, end: to });
-    });
-  }, [items, dateRange?.from, dateRange?.to]);
 
   const setRangeAndClose = (next: DateRange) => {
     setDateRange(next);
@@ -526,14 +535,14 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     <div className="space-y-4">
       <Card className="bg-card border-border/60 rounded-3xl overflow-hidden">
         <CardContent className="p-6 sm:p-7">
-            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
-            <div className="space-y-1">
+          <div className="space-y-4">
+            <div>
               <h2 className="text-lg font-black tracking-tight">Day Close History</h2>
-              <p className="text-sm text-muted-foreground">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Export reports, inspect snapshots, and review what changed.
               </p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
 	              <div className="space-y-1">
 	                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Date Range</p>
 	                <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
@@ -644,6 +653,18 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
 	                  </PopoverContent>
 	                </Popover>
 	              </div>
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Business Line</p>
+                <Select value={businessLine} onValueChange={(v) => setBusinessLine(v as BusinessLine)}>
+                  <SelectTrigger className="h-11 rounded-2xl w-full sm:w-[180px] font-bold">
+                    <SelectValue placeholder="Business line" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="restaurant">Restaurant</SelectItem>
+                    <SelectItem value="hotel">Hotel</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex gap-2 items-center">
                 <Button
                   type="button"
@@ -706,7 +727,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
             Select a restaurant to view day close history.
           </CardContent>
         </Card>
-      ) : filteredItems.length === 0 ? (
+      ) : items.length === 0 ? (
         <Card className="bg-card border-border/60 rounded-3xl overflow-hidden">
           <CardContent className="p-10 text-center text-muted-foreground">
             <ClipboardList className="w-10 h-10 mx-auto mb-4 opacity-20" />
@@ -716,7 +737,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         </Card>
       ) : (
         <div className="grid gap-3">
-          {filteredItems.map((it) => (
+          {items.map((it) => (
             <Card
               key={it.id}
               className="bg-card border-border/60 rounded-2xl overflow-hidden hover:bg-muted/10 hover:border-orange-500/20 transition-colors cursor-pointer"
@@ -729,10 +750,15 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   </div>
                   <div className="min-w-0">
                     <p className="font-black text-foreground truncate">
-                      {it.business_date ? format(new Date(it.business_date), "MMM dd, yyyy") : `Day #${it.id}`}
+                      {formatDayCloseListHeading(it)}
                     </p>
                     <p className="text-[11px] text-muted-foreground/70 font-bold uppercase tracking-wider">
-                      {it.total_orders ?? 0} orders • Net {Number(it.net_sales || 0).toLocaleString()}
+                      {listBusinessLineLabel(it.business_line)} • {String(it.status || "—")}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Net {formatDayCloseCurrency(it.net_sales)} • Expected cash{" "}
+                      {formatDayCloseCurrency(it.expected_cash)} • Actual cash{" "}
+                      {formatDayCloseCurrency(it.actual_cash)}
                     </p>
                   </div>
                 </div>
@@ -743,8 +769,11 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       className="h-9 px-4 rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white"
                       onClick={(e) => {
                         e.stopPropagation();
-                        const d = it?.business_date ? String(it.business_date).slice(0, 10) : undefined;
-                        setWizardDate(d);
+                        setWizardBusinessLine(
+                          String(it.business_line ?? "restaurant").toLowerCase() === "hotel"
+                            ? "hotel"
+                            : "restaurant",
+                        );
                         setWizardOpen(true);
                       }}
                     >
@@ -774,10 +803,13 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
           <DialogHeader className="p-6 sm:p-8 pb-4 sm:pb-5 flex flex-row flex-wrap items-start justify-between gap-3 bg-muted/20 border-b border-border/40">
             <div className="space-y-1.5">
               <DialogTitle className="text-2xl font-bold tracking-tight">
-                {detail?.business_date ? format(new Date(detail.business_date), "MMMM do") : "Day Close"}
+                {detail ? formatDayCloseListHeading(detail) : "Day Close"}
               </DialogTitle>
               <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-normal opacity-80">
-                Daily financial summary, snapshot, and exports
+                {detail
+                  ? formatDayCloseCoveredRange(detail.period_start_at, detail.period_end_at) ??
+                    "Frozen snapshot from server — no browser calculations"
+                  : "Day close details"}
               </p>
               <DialogDescription className="sr-only">Day close details dialog.</DialogDescription>
             </div>
@@ -808,8 +840,11 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       <Button
                         className="rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white"
                         onClick={() => {
-                          const d = detail?.business_date ? String(detail.business_date).slice(0, 10) : undefined;
-                          setWizardDate(d);
+                          setWizardBusinessLine(
+                            String(detail.business_line ?? "restaurant").toLowerCase() === "hotel"
+                              ? "hotel"
+                              : "restaurant",
+                          );
                           setWizardOpen(true);
                         }}
                       >
@@ -859,35 +894,27 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   <div className="bg-emerald-50/50 dark:bg-emerald-500/5 border border-emerald-200/50 dark:border-emerald-500/20 p-6 rounded-2xl space-y-1.5">
                     <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-500 uppercase tracking-normal opacity-80">Net Sales</p>
                     <p className="text-3xl font-black text-emerald-700 dark:text-emerald-400 tracking-tight">
-                      Rs. {Number(detail.net_sales || 0).toLocaleString()}
+                      {formatDayCloseCurrency(displayNetSales)}
                     </p>
                   </div>
                   <div className="bg-red-50/50 dark:bg-red-500/5 border border-red-200/50 dark:border-red-500/20 p-6 rounded-2xl space-y-1.5">
                     <p className="text-[11px] font-bold text-red-700 dark:text-red-500 uppercase tracking-normal opacity-80">Total Expenses</p>
                     <p className="text-3xl font-black text-red-700 dark:text-red-400 tracking-tight">
-                      Rs. {Number(detail.expense_total || 0).toLocaleString()}
+                      {formatDayCloseCurrency(displayExpenseTotal)}
                     </p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/20 p-2 rounded-2xl border border-border/40">
-                  {summaryRows.map((r) => (
-                    <div key={r.label} className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-muted/30 transition-colors">
-                      <p className="text-sm font-semibold text-muted-foreground">{r.label}</p>
-                      <p className="text-sm font-black text-foreground">{r.value}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <DayClosePaymentSummary
-                  detail={detail}
-                  snapshotData={snapshot?.snapshot_data ?? snapshot}
-                  restaurant={restaurant}
-                  restaurantId={restaurantId}
-                  netSales={Number(detail.net_sales || 0)}
-                  title="Payment totals"
-                  subtitle="Rows follow Manage → Settings → Payments (FonePay, static QRs, and cards when configured)."
-                />
+                {summaryRows.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/20 p-2 rounded-2xl border border-border/40">
+                    {summaryRows.map((r) => (
+                      <div key={r.label} className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-muted/30 transition-colors">
+                        <p className="text-sm font-semibold text-muted-foreground">{r.label}</p>
+                        <p className="text-sm font-black text-foreground">{r.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
 
                 <Tabs defaultValue="snapshot" className="w-full">
                   <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-12">
@@ -903,34 +930,30 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   </TabsList>
 
                   <TabsContent value="snapshot" className="mt-4">
-                    {!snapshot ? (
+                    {!parsedSnapshotData ? (
                       <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <AlertCircle className="w-5 h-5 opacity-60" />
-                          <p className="text-sm font-semibold">Snapshot not loaded yet.</p>
+                          <p className="text-sm font-semibold">Snapshot not available for this day close.</p>
                         </div>
                         <Button variant="secondary" className="rounded-2xl font-bold" onClick={loadSnapshot}>
-                          Load Snapshot
+                          Retry Snapshot
                         </Button>
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
-                        <div className="px-5 py-4 border-b border-border/40 flex items-center justify-between">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between px-1">
                           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
-                            Generated {snapshot.generated_at ? format(new Date(snapshot.generated_at), "MMM dd, yyyy HH:mm") : "—"}
+                            Generated{" "}
+                            {snapshot?.generated_at
+                              ? format(new Date(snapshot.generated_at), "MMM dd, yyyy HH:mm")
+                              : "—"}
                           </p>
                           <Badge variant="secondary" className="rounded-full text-[10px] font-bold uppercase">
                             Saved Snapshot
                           </Badge>
                         </div>
-                        <div className="max-h-[340px] overflow-auto no-scrollbar">
-                          {snapshotDisplayRows.map((row, idx) => (
-                            <div key={idx} className="px-5 py-3 flex items-start justify-between gap-6 border-b border-border/30 last:border-none">
-                              <p className="text-xs font-semibold text-muted-foreground leading-5">{row.label}</p>
-                              <p className="text-xs font-black text-foreground text-right whitespace-nowrap">{row.value}</p>
-                            </div>
-                          ))}
-                        </div>
+                        <DayCloseSnapshotPanel snapshot={parsedSnapshotData} />
                       </div>
                     )}
                   </TabsContent>
@@ -1012,15 +1035,6 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               <Button variant="outline" className="h-12 rounded-2xl flex-1" onClick={() => setDetailOpen(false)}>
                 Close
               </Button>
-              <Button
-                variant="outline"
-                className="h-12 rounded-2xl flex-1 font-bold"
-                onClick={exportPaymentSummary}
-                disabled={!detail}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Payment CSV
-              </Button>
               <Button variant="secondary" className="h-12 rounded-2xl flex-1 font-bold" onClick={exportExcel} disabled={!detail}>
                 <Download className="w-4 h-4 mr-2" />
                 Export Excel
@@ -1031,7 +1045,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </Button>
             </div>
             <p className="text-[11px] text-muted-foreground font-semibold text-center sm:text-left">
-              PDF and Excel are generated on the server. Payment CSV uses the payment method rows from Settings → Payments shown above.
+              PDF and Excel are generated on the server from the saved day-close snapshot.
             </p>
           </DialogFooter>
         </DialogContent>
@@ -1196,25 +1210,25 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         </DialogContent>
       </Dialog>
 
-      {restaurantId && wizardDate ? (
+      {restaurantId && wizardOpen ? (
         <DayCloseModal
           isOpen={wizardOpen}
           onClose={async () => {
             setWizardOpen(false);
-            setWizardDate(undefined);
             await fetchList();
             if (activeId) {
-              // Refresh detail if user is still on the same record.
               try {
-                const res = await apiClient.get(DayCloseApis.detail(activeId));
-                if (res.data?.status === "success") setDetail(res.data.data);
+                const res = await apiClient.get(DayCloseApis.get(activeId));
+                if (res.data?.status === "success") {
+                  setDetail(parseDayCloseDetail(res.data.data));
+                }
               } catch {
                 // ignore
               }
             }
           }}
           restaurantId={restaurantId}
-          businessDate={wizardDate}
+          businessLine={wizardBusinessLine}
         />
       ) : null}
     </div>

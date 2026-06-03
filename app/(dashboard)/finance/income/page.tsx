@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
@@ -10,20 +10,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, DollarSign, TrendingUp, Receipt, Download, ArrowLeft, TrendingDown, Utensils, Hotel, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
 // import * as XLSX from "xlsx"; // Removed for optimization
 import Link from "next/link";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { CategoryPieChart } from "@/components/analytics/category-pie";
 import { RevenueChart } from "@/components/analytics/revenue-chart";
+import { PaymentMethodBreakdown } from "@/components/analytics/payment-method-breakdown";
+import { mapIncomeDashboardPaymentMix } from "@/lib/finance-payment-mix";
+import { getFinanceDateRange, type FinanceDateFilter } from "@/lib/finance-query";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 
 
 export default function IncomePage() {
   const [loading, setLoading] = useState(false);
   const [incomeData, setIncomeData] = useState<any>(null);
   const [expenseSummary, setExpenseSummary] = useState<any>(null);
-  const [dateFilter, setDateFilter] = useState("this_month");
+  const [dateFilter, setDateFilter] = useState<FinanceDateFilter>("this_month");
   const [selectedStation, setSelectedStation] = useState("all");
   const [businessLine, setBusinessLine] = useState("all");
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
@@ -51,35 +54,14 @@ export default function IncomePage() {
     checkAuth();
   }, [user, me, router]);
 
-  const getDateRange = () => {
-    const now = new Date();
-    let start = "";
-    let end = endOfDay(now).toISOString().split('T')[0];
-
-    if (dateFilter === 'today') {
-      start = now.toISOString().split('T')[0];
-    } else if (dateFilter === 'yesterday') {
-      const yesterday = subDays(now, 1);
-      start = yesterday.toISOString().split('T')[0];
-      end = endOfDay(yesterday).toISOString().split('T')[0];
-    } else if (dateFilter === 'this_week') {
-      start = startOfWeek(now, { weekStartsOn: 1 }).toISOString().split('T')[0];
-    } else if (dateFilter === 'this_month') {
-      start = startOfMonth(now).toISOString().split('T')[0];
-    } else if (dateFilter === 'custom') {
-      start = customStartDate || now.toISOString().split('T')[0];
-      end = customEndDate || now.toISOString().split('T')[0];
-    } else {
-      start = subDays(now, 365).toISOString().split('T')[0];
-    }
-    return { start, end };
-  };
-
   const fetchData = async () => {
     if (!user?.restaurant_id) return;
     setLoading(true);
     setTrendsLoading(true);
-    const { start, end } = getDateRange();
+    const { start, end } = getFinanceDateRange(dateFilter, {
+      startDate: customStartDate,
+      endDate: customEndDate,
+    });
     const stationParam = selectedStation === 'all' ? undefined : selectedStation;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -112,6 +94,7 @@ export default function IncomePage() {
             date_from: start,
             date_to: end,
             station: stationParam,
+            business_line: businessLine === 'all' ? undefined : businessLine,
             timezone: tz
           }
         })
@@ -182,6 +165,17 @@ export default function IncomePage() {
       fetchData();
     }
   }, [user, selectedStation, dateFilter, businessLine, recentLimit, customStartDate, customEndDate, customStartTime, customEndTime]);
+
+  const fetchDataRef = useRef(fetchData);
+  fetchDataRef.current = fetchData;
+
+  useSyncInvalidation(
+    ["finance", "analytics", "day-close", "transactions"],
+    () => {
+      void fetchDataRef.current();
+    },
+    [user?.restaurant_id]
+  );
 
   const handleExport = async () => {
     if (!incomeData?.recent_entries?.length) return;
@@ -298,7 +292,7 @@ export default function IncomePage() {
               </SelectContent>
             </Select>
 
-            <Select value={dateFilter} onValueChange={setDateFilter}>
+            <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as FinanceDateFilter)}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Date Range" />
               </SelectTrigger>
@@ -352,7 +346,7 @@ export default function IncomePage() {
         </div>
       ) : (
         <div className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <MetricCard
               label="Total Revenue"
               value={incomeData?.summary?.total_net_income || 0}
@@ -366,13 +360,6 @@ export default function IncomePage() {
               icon={<Receipt className="w-5 h-5" />}
               color="text-indigo-500"
               bg="bg-indigo-50 dark:bg-indigo-950/20"
-            />
-            <MetricCard
-              label="Net Profit"
-              value={(incomeData?.summary?.total_net_income || 0) - (expenseSummary?.total_amount || 0)}
-              icon={<TrendingUp className="w-5 h-5" />}
-              color={(incomeData?.summary?.total_net_income || 0) - (expenseSummary?.total_amount || 0) >= 0 ? "text-blue-500" : "text-red-500"}
-              bg={(incomeData?.summary?.total_net_income || 0) - (expenseSummary?.total_amount || 0) >= 0 ? "bg-blue-50 dark:bg-blue-950/20" : "bg-red-50 dark:bg-red-950/20"}
             />
             <MetricCard
               label="Total Expenses"
@@ -411,59 +398,14 @@ export default function IncomePage() {
                 </CardContent>
              </Card>
 
-             {/* Payment split analysis */}
-             <Card className="bg-card border-border shadow-sm">
-                <CardContent className="p-6 space-y-4">
-                   <div className="flex justify-between items-center pb-2 border-b border-border/40">
-                      <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-                         <TrendingUp className="w-4 h-4 text-emerald-500" />
-                         Income Split by Payment Method
-                      </h3>
-                      <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Collections split</span>
-                   </div>
-                   <div className="space-y-2">
-                      {(incomeData?.by_payment_method || []).map((pm: any, idx: number) => (
-                         <div key={idx} className="flex justify-between items-center text-xs py-1 border-b border-border/10 last:border-0">
-                            <span className="capitalize text-muted-foreground font-medium">{pm.method}</span>
-                            <div className="flex items-center gap-4">
-                               <span className="font-bold">Rs. {Number(pm.amount).toLocaleString()}</span>
-                               <span className="text-[10px] bg-muted px-2 py-0.5 rounded text-muted-foreground font-bold">{Math.round((pm.percentage ?? 0) * 100)}%</span>
-                            </div>
-                         </div>
-                      ))}
-                      {(!incomeData?.by_payment_method || incomeData.by_payment_method.length === 0) && (
-                         <div className="text-center py-4 text-xs text-muted-foreground">No payments split available</div>
-                      )}
-                   </div>
-
-                   <div className="pt-2 mt-1 border-t border-border/30">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
-                        Card/QR Collections by Instrument
-                      </div>
-                      <div className="space-y-2">
-                        {(incomeData?.by_payment_instrument || []).map((item: any, idx: number) => (
-                          <div key={`instrument-${idx}`} className="flex justify-between items-center text-xs py-1 border-b border-border/10 last:border-0">
-                            <div className="min-w-0">
-                              <div className="font-semibold text-foreground truncate">{item.instrument || "Unspecified"}</div>
-                              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{String(item.method || "").toUpperCase()}</div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <span className="font-bold">Rs. {Number(item.amount || 0).toLocaleString()}</span>
-                              <span className="text-[10px] bg-muted px-2 py-0.5 rounded text-muted-foreground font-bold">
-                                {Math.round((item.percentage ?? 0) * 100)}%
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                        {(!incomeData?.by_payment_instrument || incomeData.by_payment_instrument.length === 0) && (
-                          <div className="text-center py-3 text-xs text-muted-foreground">
-                            No instrument-level card/QR collection data.
-                          </div>
-                        )}
-                      </div>
-                   </div>
-                </CardContent>
-             </Card>
+             <PaymentMethodBreakdown
+               title="Income by Payment Method"
+               description="From income dashboard aggregates (card/digital include instruments)."
+               mix={mapIncomeDashboardPaymentMix(
+                 incomeData?.by_payment_method,
+                 incomeData?.by_payment_instrument
+               )}
+             />
           </div>
 
           {/* Charts section */}

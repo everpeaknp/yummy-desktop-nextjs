@@ -28,6 +28,7 @@ import { RoomContainer, type TableData } from "@/components/tables/room-containe
 import { ReservationDetailsSheet } from "@/components/reservations/reservation-details-sheet";
 import { ReservationApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -141,6 +142,16 @@ export default function TablesPage() {
   useEffect(() => {
     if (user?.restaurant_id) fetchData(true);
   }, [user?.restaurant_id, fetchData]);
+
+  useEffect(() => {
+    const onTablesRefresh = () => void fetchData(true);
+    window.addEventListener("yummy:tables-refresh", onTablesRefresh);
+    return () => window.removeEventListener("yummy:tables-refresh", onTablesRefresh);
+  }, [fetchData]);
+
+  useSyncInvalidation(["tables", "orders"], () => {
+    void fetchData(true);
+  }, [fetchData]);
 
   // ─── Area options ───
   const areaOptions = (() => {
