@@ -3,7 +3,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign, ArrowLeft, Settings, Zap } from "lucide-react";
+import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign, ArrowLeft, Settings, Zap, Download } from "lucide-react";
+import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-download";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -265,6 +266,23 @@ export const Header = memo(function Header() {
         </div>
 
         <div className="flex items-center gap-1 sm:gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            asChild
+            className="h-8 w-8 text-muted-foreground hover:text-primary"
+          >
+            <a
+              href={DESKTOP_APP_DOWNLOAD_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Download Yummy POS for Windows"
+            >
+              <Download className="h-4 w-4" />
+              <span className="sr-only">Download desktop app</span>
+            </a>
+          </Button>
+
           {/* Go Premium Navbar Button */}
           {((user?.role?.toLowerCase() === "admin" || user?.role?.toLowerCase() === "manager" || 
             user?.roles?.some(r => ["admin", "manager"].includes(r.toLowerCase()))) || true) && (
