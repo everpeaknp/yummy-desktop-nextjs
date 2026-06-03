@@ -167,6 +167,33 @@ function resolveReceiptAssignedPrinter(printers: any[], restaurantLike: any): an
   return (printers || []).find((p: any) => p?.enabled && p?.is_default) || (printers || []).find((p: any) => p?.enabled) || null;
 }
 
+function getReceiptNetworkTarget(
+  receipt: ReceiptData,
+  printers?: any[],
+  restaurantLike?: any
+): { host: string; port: number } | null {
+  const cfg = receipt.printer_config;
+  if (cfg) {
+    const host = String(cfg.address || "").trim();
+    const port = Number(cfg.port || 9100);
+    const type = String(cfg.type || "").toLowerCase();
+    const isNetwork = type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+    if (isNetwork && host) return { host, port };
+  }
+
+  const assigned = printers?.length
+    ? resolveReceiptAssignedPrinter(printers, restaurantLike ?? receipt.restaurant)
+    : null;
+  if (!assigned) return null;
+
+  const host = String(assigned?.connection_config?.ip_address || assigned?.address || "").trim();
+  const port = Number(assigned?.connection_config?.port || 9100);
+  const type = String(assigned?.printer_type || "").toLowerCase();
+  const isNetwork = type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  if (isNetwork && host) return { host, port };
+  return null;
+}
+
 export default function ReceiptPage() {
   const params = useParams() as { id?: string | string[] } | null;
   const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
@@ -205,14 +232,14 @@ export default function ReceiptPage() {
   const [refundError, setRefundError] = useState<string | null>(null);
   
   useOrderFull(orderId);
-  const autoPrintDone = useRef(false);
   const autoPrintedOrderRef = useRef<number | null>(null);
+  const suppressAutoPrintFallbackRef = useRef(false);
   const receiptRef = useRef<HTMLDivElement>(null);
 
   // Reset print guard when navigating to a different receipt id.
   useEffect(() => {
-    autoPrintDone.current = false;
     autoPrintedOrderRef.current = null;
+    suppressAutoPrintFallbackRef.current = false;
     setPrinted(false);
   }, [orderId]);
 
@@ -305,32 +332,70 @@ export default function ReceiptPage() {
       console.warn("[ReceiptPage] Network raw print error:", err);
       return false;
     }
-  }, [receipt, user?.restaurant_id, orderId]);
+  }, [receipt, user?.restaurant_id, orderId, template]);
 
-  // Auto-print once on open (default behavior for POS receipt page).
-  // If backend sends should_auto_print explicitly false, we still auto-print
-  // to preserve expected cashier workflow on web.
+  const openPrintDialog = useCallback(() => {
+    const printWhenReady = () => window.print();
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => requestAnimationFrame(printWhenReady));
+    } else {
+      printWhenReady();
+    }
+  }, []);
+
+  const runAutoPrint = useCallback(async () => {
+    if (suppressAutoPrintFallbackRef.current || !receipt || !template) return;
+
+    const winAny = typeof window !== "undefined" ? (window as any) : null;
+    const payload = buildReceiptRawPayload(receipt, template, orderId);
+    const networkTarget = getReceiptNetworkTarget(receipt);
+
+    // Instant path: receipt API already includes printer_config (no extra printer list fetch).
+    if (networkTarget && winAny?.electronAPI?.printNetworkRaw) {
+      void winAny.electronAPI
+        .printNetworkRaw({ ...networkTarget, payload, timeoutMs: 800 })
+        .catch((err: unknown) => console.warn("[ReceiptPage] Network auto-print:", err));
+      setPrinted(true);
+      return;
+    }
+
+    const silentName = receipt.printer_config?.name?.trim();
+    if (silentName && winAny?.electronAPI?.printSilent) {
+      void winAny.electronAPI
+        .printSilent({ printerName: silentName })
+        .catch((err: unknown) => console.warn("[ReceiptPage] Silent auto-print:", err));
+      setPrinted(true);
+      return;
+    }
+
+    // Fallback: resolve printer via API (only when printer_config is missing).
+    if (winAny?.electronAPI?.printNetworkRaw) {
+      const ok = await tryElectronNetworkReceiptPrint({ timeoutMs: 800 });
+      if (suppressAutoPrintFallbackRef.current) return;
+      if (ok) {
+        setPrinted(true);
+        return;
+      }
+    }
+
+    if (suppressAutoPrintFallbackRef.current) return;
+    openPrintDialog();
+    setPrinted(true);
+  }, [receipt, template, orderId, tryElectronNetworkReceiptPrint, openPrintDialog]);
+
+  // Auto-print once on open — no artificial delay; network uses receipt.printer_config when available.
   useEffect(() => {
     if (!receipt || !template) return;
     if (autoPrintedOrderRef.current === orderId) return;
+    if (receipt.should_auto_print === false) return;
     autoPrintedOrderRef.current = orderId;
-    autoPrintDone.current = true;
 
-    const timer = setTimeout(() => {
-      (async () => {
-        const ok = await tryElectronNetworkReceiptPrint({ timeoutMs: 2000 });
-        if (!ok) {
-          window.print();
-        }
-        setPrinted(true);
-      })();
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [receipt, template, orderId, tryElectronNetworkReceiptPrint]);
+    void runAutoPrint();
+  }, [receipt, template, orderId, runAutoPrint]);
 
   const handlePrint = () => {
-    // Manual print: open the system dialog immediately (do not wait on API/network printer).
-    window.print();
+    suppressAutoPrintFallbackRef.current = true;
+    openPrintDialog();
     setPrinted(true);
   };
 
