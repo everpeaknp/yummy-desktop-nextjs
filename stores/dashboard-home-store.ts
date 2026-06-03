@@ -29,6 +29,8 @@ type DashboardHomeState = {
     activeRange: DateRangePreset;
     date?: DateRange;
   }) => Promise<void>;
+  /** Full reload using the last query context (after finance/POS invalidation). */
+  refetchCurrent: () => Promise<void>;
   pollDelta: () => Promise<void>;
   reset: () => void;
 };
@@ -100,6 +102,48 @@ export const useDashboardHomeStore = create<DashboardHomeState>((set, get) => ({
         },
         dashboardHome: emptyDashboardV2Home(message),
       });
+    }
+  },
+
+  refetchCurrent: async () => {
+    const { queryContext } = get();
+    if (!queryContext) return;
+
+    set({ loading: true, error: null });
+
+    try {
+      const res = await apiClient.get(
+        DashboardApis.dashboardDataV2({
+          restaurantId: queryContext.restaurantId,
+          date: queryContext.date,
+          startTime: queryContext.startTime,
+          endTime: queryContext.endTime,
+          timezone: queryContext.timezone,
+          businessLine: queryContext.businessLine,
+        }),
+      );
+
+      if (res.data?.status !== "success") {
+        throw new Error(res.data?.message || "Failed to load dashboard.");
+      }
+
+      const parsed = parseDashboardV2Response(res.data.data);
+      if (!parsed) {
+        throw new Error("Dashboard response did not include meta/home.");
+      }
+
+      const lastUpdated = parsed.meta.generated_at ?? new Date().toISOString();
+      set({
+        meta: parsed.meta,
+        dashboardHome: parsed.home,
+        lastUpdated,
+        deltaTimestamp: lastUpdated,
+        loading: false,
+        error: null,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load dashboard.";
+      set({ loading: false, error: message });
     }
   },
 

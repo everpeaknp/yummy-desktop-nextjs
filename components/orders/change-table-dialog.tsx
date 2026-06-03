@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 import { RoomContainer, type TableData } from "@/components/tables/room-container";
 import {
   canSelectTableForTransfer,
-  dispatchTablesRefresh,
   extractApiDetail,
   getTableTransferAction,
   tableTransferActionLabel,
@@ -26,6 +25,9 @@ import {
   tableTransferConfirmTitle,
   type TableTransferAction,
 } from "@/lib/table-ops";
+import { runLockedAction } from "@/lib/request-lock";
+import { dispatchPosMutationSync } from "@/lib/sync-invalidation";
+import { refetchOrderBeforeMutation } from "@/lib/pos-order-refresh";
 
 type TransferTableResult = {
   source_order_id?: number;
@@ -119,41 +121,53 @@ export function ChangeTableDialog({
   };
 
   const submitTransfer = async () => {
-    if (!selectedTableId || !pendingAction) return;
-    setSubmitting(true);
-    try {
-      const res = await apiClient.post(
-        OrderApis.transferGuestBillTable(guestOrderId),
-        { destination_table_id: Number(selectedTableId) }
-      );
-      if (res.data?.status !== "success") {
-        toast.error(res.data?.message || "Failed to transfer table");
-        return;
+    if (!selectedTableId || !pendingAction || submitting) return;
+
+    const result = await runLockedAction(
+      `transfer-table:${guestOrderId}`,
+      async ({ idempotencyKey }) => {
+        setSubmitting(true);
+        try {
+          await refetchOrderBeforeMutation(guestOrderId);
+
+          const res = await apiClient.post(
+            OrderApis.transferGuestBillTable(guestOrderId),
+            { destination_table_id: Number(selectedTableId) },
+            { idempotencyKey }
+          );
+          if (res.data?.status !== "success") {
+            toast.error(res.data?.message || "Failed to transfer table");
+            return null;
+          }
+          const data = (res.data?.data ?? {}) as TransferTableResult;
+          const action = String(data.action ?? pendingAction).toLowerCase() as "moved" | "merged";
+          const tableLabel = selectedTable?.table_name || `Table ${selectedTableId}`;
+          toast.success(
+            action === "merged"
+              ? `Bill merged into ${tableLabel}.`
+              : `Bill moved to ${tableLabel}.`
+          );
+          dispatchPosMutationSync({ orderId: guestOrderId, reason: "transfer-table" });
+          onCompleted?.({
+            action: action === "merged" ? "merged" : "moved",
+            destinationOrderId:
+              data.destination_order_id != null ? Number(data.destination_order_id) : null,
+            destinationTableId: Number(selectedTableId),
+          });
+          setConfirmOpen(false);
+          onOpenChange(false);
+          return true;
+        } catch (err: unknown) {
+          toast.error(extractApiDetail(err));
+          return null;
+        } finally {
+          setSubmitting(false);
+        }
       }
-      const data = (res.data?.data ?? {}) as TransferTableResult;
-      const action = String(data.action ?? pendingAction).toLowerCase() as "moved" | "merged";
-      const tableLabel = selectedTable?.table_name || `Table ${selectedTableId}`;
-      toast.success(
-        action === "merged"
-          ? `Bill merged into ${tableLabel}.`
-          : `Bill moved to ${tableLabel}.`
-      );
-      dispatchTablesRefresh();
-      onCompleted?.({
-        action: action === "merged" ? "merged" : "moved",
-        destinationOrderId:
-          data.destination_order_id != null ? Number(data.destination_order_id) : null,
-        destinationTableId: Number(selectedTableId),
-      });
-      setConfirmOpen(false);
-      onOpenChange(false);
-      if (action === "merged" && data.destination_order_id) {
-        // Caller may navigate to merged order
-      }
-    } catch (err: unknown) {
-      toast.error(extractApiDetail(err));
-    } finally {
-      setSubmitting(false);
+    );
+
+    if (result === undefined) {
+      toast.message("Table transfer already in progress.");
     }
   };
 

@@ -39,6 +39,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
+import { dispatchFinanceMutationSync } from "@/lib/sync-invalidation";
+import { getApiErrorMessage } from "@/lib/api-response";
 import { GeneralPurchaseApis } from "@/lib/api/endpoints";
 import { PurchaseDialog } from "@/components/manage/purchases/purchase-dialog";
 import { useRouter } from "next/navigation";
@@ -100,10 +102,13 @@ export default function PurchasesPage() {
             
             if (res.data.status === "success") {
                 toast.success(`Purchase ${action}d successfully`);
+                dispatchFinanceMutationSync({ reason: `purchase-${action}` });
                 fetchPurchases();
+            } else {
+                toast.error(res.data?.message || `Failed to ${action} purchase`);
             }
-        } catch (error: any) {
-            toast.error(error.response?.data?.detail || `Failed to ${action} purchase`);
+        } catch (error: unknown) {
+            toast.error(getApiErrorMessage(error, `Failed to ${action} purchase`));
         }
     };
 
@@ -115,10 +120,13 @@ export default function PurchasesPage() {
             const res = await apiClient.post(GeneralPurchaseApis.return(id), { reason });
             if (res.data.status === "success") {
                 toast.success("Purchase marked as returned");
+                dispatchFinanceMutationSync({ reason: "purchase-return" });
                 fetchPurchases();
+            } else {
+                toast.error(res.data?.message || "Failed to return purchase");
             }
-        } catch (error: any) {
-            toast.error(error.response?.data?.detail || "Failed to return purchase");
+        } catch (error: unknown) {
+            toast.error(getApiErrorMessage(error, "Failed to return purchase"));
         }
     };
 

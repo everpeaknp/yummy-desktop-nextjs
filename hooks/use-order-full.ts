@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { OrderFullContext, Order, OrderTableSummary, KOTUpdate, OrderEvent } from "@/types/order";
 import apiClient from "@/lib/api-client";
 import { OrderApis, KotApis } from "@/lib/api/endpoints";
 import { splitTableNames } from "@/lib/table-ops";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 
 function buildTableSummaries(
   order: Order,
@@ -122,6 +123,20 @@ export function useOrderFull(orderId: string | number) {
       fetchContext();
     }
   }, [orderId, fetchContext]);
+
+  const fetchRef = useRef(fetchContext);
+  fetchRef.current = fetchContext;
+
+  useSyncInvalidation(
+    ["orders", "tables", "transactions"],
+    (detail) => {
+      const targetId = detail.orderId != null ? Number(detail.orderId) : null;
+      const currentId = Number(orderId);
+      if (targetId != null && targetId !== currentId) return;
+      void fetchRef.current();
+    },
+    [orderId]
+  );
 
   const isFullyPaid = context
     ? context.payments

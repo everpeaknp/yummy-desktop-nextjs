@@ -11,6 +11,7 @@ import { Loader2, Receipt, RefreshCw, Users } from "lucide-react";
 import { toast } from "sonner";
 import type { GuestBillSession, GuestBillSessionOrder } from "@/types/guest-bill";
 import { parseGuestBillSession } from "@/types/guest-bill";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 import { extractApiDetail } from "@/lib/table-ops";
 
 function formatMoney(amount: number) {
@@ -63,6 +64,17 @@ export function GuestBillsPanel({
     }
     void load();
   }, [shouldLoad, load, refreshKey]);
+
+  useSyncInvalidation(
+    ["orders", "tables"],
+    (detail) => {
+      const targetId = detail.orderId != null ? Number(detail.orderId) : null;
+      if (targetId != null && targetId !== orderId) return;
+      if (!shouldLoad) return;
+      void load();
+    },
+    [orderId, shouldLoad, load]
+  );
 
   if (!shouldLoad && !session?.orders?.length) return null;
 

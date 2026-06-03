@@ -20,6 +20,7 @@ import {
   formatDayCloseCurrency,
   formatDayCloseCoveredRange,
 } from "@/lib/day-close-format";
+import { dispatchDayCloseConfirmSync } from "@/lib/sync-invalidation";
 import {
   parseDayCloseCurrent,
   parseDayCloseDetail,
@@ -183,6 +184,7 @@ export function DayCloseModal({
               onNext={(data, finalizedSnapshot) => {
                 setConfirmedData(data);
                 setConfirmedSnapshot(finalizedSnapshot);
+                dispatchDayCloseConfirmSync({ reason: "day-close-confirmed" });
                 setCurrentStep("success");
               }}
             />

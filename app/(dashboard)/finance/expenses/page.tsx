@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
@@ -18,6 +18,9 @@ import {
   type ExpenseSummaryTotal,
 } from "@/lib/finance-expense-api";
 import { mapExpenseRowsToPaymentMix } from "@/lib/finance-payment-mix";
+import { getApiErrorMessage } from "@/lib/api-response";
+import { dispatchFinanceMutationSync } from "@/lib/sync-invalidation";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 import {
   getFinanceDateRange,
   resolveBusinessLineParam,
@@ -177,10 +180,13 @@ export default function ExpensesPage() {
                 category_id: "",
                 payment_method: "cash"
             });
+            dispatchFinanceMutationSync({ reason: "expense-added" });
             fetchData();
+        } else {
+            toast.error(res.data?.message || "Failed to record expense");
         }
     } catch (err) {
-        toast.error("Failed to record expense");
+        toast.error(getApiErrorMessage(err, "Failed to record expense"));
     } finally {
         setSaving(false);
     }
@@ -191,6 +197,17 @@ export default function ExpensesPage() {
       fetchData();
     }
   }, [user, selectedStation, dateFilter, selectedCategory, recentLimit, customStartDate, customEndDate, customStartTime, customEndTime, businessLine]);
+
+  const fetchDataRef = useRef(fetchData);
+  fetchDataRef.current = fetchData;
+
+  useSyncInvalidation(
+    ["finance", "day-close"],
+    () => {
+      void fetchDataRef.current();
+    },
+    [user?.restaurant_id]
+  );
 
   const filteredExpenses = expenses.filter((expense: any) => {
     if (dateFilter !== 'custom') return true;

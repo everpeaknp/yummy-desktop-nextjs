@@ -8,6 +8,7 @@ import { DashboardHomeSkeleton, DashboardHomeView } from "@/components/dashboard
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useDashboardHomeStore } from "@/stores/dashboard-home-store";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 import { hasVisibleDashboardSections } from "@/types/dashboard-v2";
 import { DateRange } from "react-day-picker";
 
@@ -26,6 +27,15 @@ export default function DashboardPage() {
   const error = useDashboardHomeStore((state) => state.error);
   const pollDelta = useDashboardHomeStore((state) => state.pollDelta);
   const fetchDashboard = useDashboardHomeStore((state) => state.fetchDashboard);
+  const refetchCurrent = useDashboardHomeStore((state) => state.refetchCurrent);
+
+  useSyncInvalidation(
+    ["dashboard", "finance", "analytics", "transactions", "day-close", "orders"],
+    () => {
+      void refetchCurrent();
+    },
+    [refetchCurrent]
+  );
 
   const [activeRange, setActiveRange] = useState<DateRangePreset>("today");
   const [date, setDate] = useState<DateRange | undefined>();

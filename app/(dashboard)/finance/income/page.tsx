@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
@@ -19,6 +19,7 @@ import { RevenueChart } from "@/components/analytics/revenue-chart";
 import { PaymentMethodBreakdown } from "@/components/analytics/payment-method-breakdown";
 import { mapIncomeDashboardPaymentMix } from "@/lib/finance-payment-mix";
 import { getFinanceDateRange, type FinanceDateFilter } from "@/lib/finance-query";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 
 
 export default function IncomePage() {
@@ -164,6 +165,17 @@ export default function IncomePage() {
       fetchData();
     }
   }, [user, selectedStation, dateFilter, businessLine, recentLimit, customStartDate, customEndDate, customStartTime, customEndTime]);
+
+  const fetchDataRef = useRef(fetchData);
+  fetchDataRef.current = fetchData;
+
+  useSyncInvalidation(
+    ["finance", "analytics", "day-close", "transactions"],
+    () => {
+      void fetchDataRef.current();
+    },
+    [user?.restaurant_id]
+  );
 
   const handleExport = async () => {
     if (!incomeData?.recent_entries?.length) return;

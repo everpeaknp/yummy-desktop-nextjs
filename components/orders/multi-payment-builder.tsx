@@ -34,6 +34,10 @@ import {
   type CheckoutPaymentMethod,
   type CheckoutPaymentRow,
 } from "@/lib/checkout-multi-payment";
+import { getApiErrorMessage } from "@/lib/api-response";
+import { runLockedAction } from "@/lib/request-lock";
+import { dispatchPosMutationSync } from "@/lib/sync-invalidation";
+import { refetchOrderBeforeMutation } from "@/lib/pos-order-refresh";
 
 const METHOD_OPTIONS: Array<{
   value: CheckoutPaymentMethod;
@@ -190,65 +194,81 @@ export function MultiPaymentBuilder({
       return;
     }
 
-    setSubmitting(true);
-    setGlobalError(null);
-    let runningBalance = balanceDue;
-    let paymentComplete = false;
-    let succeeded = startIndex;
+    if (submitting) return;
 
-    try {
-      for (let i = startIndex; i < rows.length; i++) {
-        const row = rows[i];
-        if (row.method === "fonepay") {
-          throw new Error("Fonepay row must be submitted alone via QR flow");
-        }
+    const lockResult = await runLockedAction(
+      `checkout-multi-pay:${orderId}`,
+      async ({ idempotencyKey }) => {
+        setSubmitting(true);
+        setGlobalError(null);
+        let runningBalance = balanceDue;
+        let paymentComplete = false;
+        let succeeded = startIndex;
 
-        if (row.method === "credit" && persistCustomerId) {
-          const cid =
-            orderCustomerId || (row.customerId ? parseInt(row.customerId, 10) : undefined);
-          if (cid) await persistCustomerId(cid);
-        }
+        try {
+          await refetchOrderBeforeMutation(orderId);
 
-        const payload = buildPaymentPayload(
-          row,
-          runningBalance,
-          orderCustomerId ?? undefined,
-          staticPaymentQrs,
-          staticPaymentCards
-        );
+          for (let i = startIndex; i < rows.length; i++) {
+            const row = rows[i];
+            if (row.method === "fonepay") {
+              throw new Error("Fonepay row must be submitted alone via QR flow");
+            }
 
-        const res = await apiClient.post(OrderApis.addPayment(orderId), payload);
-        succeeded = i + 1;
-        runningBalance = Math.max(
-          0,
-          Number((runningBalance - payload.payment.amount).toFixed(2))
-        );
-        if (res.data?.data?.payment_complete) {
-          paymentComplete = true;
+            if (row.method === "credit" && persistCustomerId) {
+              const cid =
+                orderCustomerId || (row.customerId ? parseInt(row.customerId, 10) : undefined);
+              if (cid) await persistCustomerId(cid);
+            }
+
+            const payload = buildPaymentPayload(
+              row,
+              runningBalance,
+              orderCustomerId ?? undefined,
+              staticPaymentQrs,
+              staticPaymentCards
+            );
+
+            const res = await apiClient.post(OrderApis.addPayment(orderId), payload, {
+              idempotencyKey: i === startIndex ? idempotencyKey : undefined,
+            });
+            succeeded = i + 1;
+            runningBalance = Math.max(
+              0,
+              Number((runningBalance - payload.payment.amount).toFixed(2))
+            );
+            if (res.data?.data?.payment_complete) {
+              paymentComplete = true;
+            }
+          }
+
+          dispatchPosMutationSync({ orderId, reason: "multi-payment" });
+          await onRefresh();
+          setPartialResult(null);
+          if (paymentComplete) onPaymentComplete?.();
+          return true;
+        } catch (err: unknown) {
+          const message = getApiErrorMessage(err, "Payment failed");
+          setPartialResult({
+            ok: false,
+            succeededCount: succeeded,
+            failedIndex: succeeded,
+            error: message,
+          });
+          setGlobalError(
+            succeeded > 0
+              ? `Payment ${succeeded + 1} failed: ${message}. Earlier payments were saved.`
+              : message
+          );
+          await onRefresh();
+          return false;
+        } finally {
+          setSubmitting(false);
         }
       }
+    );
 
-      await onRefresh();
-      setPartialResult(null);
-      if (paymentComplete) onPaymentComplete?.();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } }; message?: string };
-      const message =
-        e?.response?.data?.detail || e?.message || "Payment failed";
-      setPartialResult({
-        ok: false,
-        succeededCount: succeeded,
-        failedIndex: succeeded,
-        error: message,
-      });
-      setGlobalError(
-        succeeded > 0
-          ? `Payment ${succeeded + 1} failed: ${message}. Earlier payments were saved.`
-          : message
-      );
-      await onRefresh();
-    } finally {
-      setSubmitting(false);
+    if (lockResult === undefined) {
+      setGlobalError("Payment request already in progress.");
     }
   };
 

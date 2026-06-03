@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
+import { dispatchFinanceMutationSync } from "@/lib/sync-invalidation";
+import { getApiErrorMessage } from "@/lib/api-response";
 import { GeneralPurchaseApis, SupplierApis } from "@/lib/api/endpoints";
 import type { BusinessLine } from "@/lib/api/endpoint-types";
 import { Loader2 } from "lucide-react";
@@ -125,20 +127,26 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess, busine
                 );
                 if (res.data.status === "success") {
                     toast.success("Purchase updated successfully");
+                    dispatchFinanceMutationSync({ reason: "purchase-updated" });
                     onSuccess();
                     onOpenChange(false);
+                } else {
+                    toast.error(res.data?.message || "Failed to update purchase");
                 }
             } else {
                 const res = await apiClient.post(GeneralPurchaseApis.create, payload);
                 if (res.data.status === "success") {
                     toast.success("Purchase recorded successfully");
+                    dispatchFinanceMutationSync({ reason: "purchase-created" });
                     onSuccess();
                     onOpenChange(false);
+                } else {
+                    toast.error(res.data?.message || "Failed to record purchase");
                 }
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Failed to save purchase:", error);
-            toast.error(error.response?.data?.detail || "Failed to save purchase");
+            toast.error(getApiErrorMessage(error, "Failed to save purchase"));
         } finally {
             setLoading(false);
         }

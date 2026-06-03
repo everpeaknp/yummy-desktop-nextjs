@@ -1,5 +1,11 @@
 /** Table status helpers for POS move/merge — mirrors backend table states. */
 
+import { getApiErrorMessage } from "@/lib/api-response";
+import {
+  dispatchPosMutationSync,
+  type SyncInvalidationDetail,
+} from "@/lib/sync-invalidation";
+
 export type TableTransferAction = "move" | "merge";
 
 export function normalizeTableStatus(status: string | null | undefined): string {
@@ -84,30 +90,10 @@ export function splitTableNames(tableName?: string | null): string[] {
     .filter(Boolean);
 }
 
-export function dispatchTablesRefresh(): void {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent("yummy:tables-refresh"));
+export function dispatchTablesRefresh(detail?: SyncInvalidationDetail): void {
+  dispatchPosMutationSync(detail);
 }
 
 export function extractApiDetail(err: unknown): string {
-  const data = (err as { response?: { data?: unknown } })?.response?.data;
-  if (typeof data === "string" && data.trim()) return data;
-  if (data && typeof data === "object") {
-    const row = data as Record<string, unknown>;
-    if (typeof row.detail === "string" && row.detail.trim()) return row.detail;
-    if (typeof row.message === "string" && row.message.trim()) return row.message;
-    if (Array.isArray(row.detail)) {
-      return row.detail
-        .map((item) => {
-          if (typeof item === "string") return item;
-          if (item && typeof item === "object" && "msg" in item) {
-            return String((item as { msg?: string }).msg ?? "");
-          }
-          return "";
-        })
-        .filter(Boolean)
-        .join(". ");
-    }
-  }
-  return "Request failed. Please try again.";
+  return getApiErrorMessage(err);
 }

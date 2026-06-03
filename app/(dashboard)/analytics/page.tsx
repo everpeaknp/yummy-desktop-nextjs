@@ -49,6 +49,7 @@ import {
     type AnalyticsMainTab,
     type BreakdownTab,
 } from "@/lib/analytics-dashboard-mapper";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 
 export default function AnalyticsPage() {
     const [activeRange, setActiveRange] = useState<DateRangePreset>("today");
@@ -60,6 +61,12 @@ export default function AnalyticsPage() {
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [scopeNotice, setScopeNotice] = useState<ParsedScopeError | null>(null);
     const [fetchTrigger, setFetchTrigger] = useState(0);
+
+    useSyncInvalidation(
+        ["analytics", "day-close", "finance", "transactions", "dashboard"],
+        () => setFetchTrigger((t) => t + 1),
+        []
+    );
     const [date, setDate] = useState<DateRange | undefined>();
     const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
     const [businessLine, setBusinessLine] = useState<"restaurant" | "hotel">("restaurant");

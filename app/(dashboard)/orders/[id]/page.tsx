@@ -88,6 +88,7 @@ import type {
 import { EntityNotificationsCard } from "@/components/notifications/entity-notifications-card";
 import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
+import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
@@ -163,6 +164,16 @@ export default function OrderDetailPage() {
     setGuestRefreshKey((k) => k + 1);
     void fetchContext();
   }, [fetchContext]);
+
+  useSyncInvalidation(
+    ["orders", "tables"],
+    (detail) => {
+      const targetId = detail.orderId != null ? Number(detail.orderId) : null;
+      if (targetId != null && targetId !== orderId) return;
+      bumpRefresh();
+    },
+    [orderId, bumpRefresh]
+  );
 
   const { canVoidOrder, canVoidItem, canTransferOrder, canSplitBill } = usePosBillingPermissions();
 

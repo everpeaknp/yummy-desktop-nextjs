@@ -20,7 +20,10 @@ import { toast } from "sonner";
 import type { OrderItem } from "@/types/order";
 import type { SplitBillPartInput } from "@/types/guest-bill";
 import { parseSplitBillResult } from "@/types/guest-bill";
-import { dispatchTablesRefresh, extractApiDetail } from "@/lib/table-ops";
+import { extractApiDetail } from "@/lib/table-ops";
+import { runLockedAction } from "@/lib/request-lock";
+import { dispatchPosMutationSync } from "@/lib/sync-invalidation";
+import { refetchOrderBeforeMutation } from "@/lib/pos-order-refresh";
 
 type PartDraft = {
   id: string;
@@ -121,27 +124,43 @@ export function SplitBillDialog({
       }
     }
 
-    setSubmitting(true);
-    try {
-      const res = await apiClient.post(OrderApis.splitBill(orderId), {
-        source_order_id: orderId,
-        parts: payloadParts,
-        keep_unassigned_in_parent: keepUnassigned,
-      });
-      if (res.data?.status !== "success") {
-        toast.error(res.data?.message || "Failed to split bill");
-        return;
+    if (submitting) return;
+
+    const done = await runLockedAction(`split-bill:${orderId}`, async ({ idempotencyKey }) => {
+      setSubmitting(true);
+      try {
+        await refetchOrderBeforeMutation(orderId);
+
+        const res = await apiClient.post(
+          OrderApis.splitBill(orderId),
+          {
+            source_order_id: orderId,
+            parts: payloadParts,
+            keep_unassigned_in_parent: keepUnassigned,
+          },
+          { idempotencyKey }
+        );
+        if (res.data?.status !== "success") {
+          toast.error(res.data?.message || "Failed to split bill");
+          return false;
+        }
+        const result = parseSplitBillResult(res.data?.data);
+        const count = result?.children?.length ?? payloadParts.length;
+        toast.success(`Bill split into ${count} guest bill${count === 1 ? "" : "s"}.`);
+        dispatchPosMutationSync({ orderId, reason: "split-bill" });
+        onCompleted?.();
+        onOpenChange(false);
+        return true;
+      } catch (err: unknown) {
+        toast.error(extractApiDetail(err));
+        return false;
+      } finally {
+        setSubmitting(false);
       }
-      const result = parseSplitBillResult(res.data?.data);
-      const count = result?.children?.length ?? payloadParts.length;
-      toast.success(`Bill split into ${count} guest bill${count === 1 ? "" : "s"}.`);
-      dispatchTablesRefresh();
-      onCompleted?.();
-      onOpenChange(false);
-    } catch (err: unknown) {
-      toast.error(extractApiDetail(err));
-    } finally {
-      setSubmitting(false);
+    });
+
+    if (done === undefined) {
+      toast.message("Split bill request already in progress.");
     }
   };
 

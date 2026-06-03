@@ -6,6 +6,10 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
+import { getApiErrorMessage } from "@/lib/api-response";
+import { runLockedAction } from "@/lib/request-lock";
+import { dispatchPosMutationSync } from "@/lib/sync-invalidation";
+import { refetchOrderBeforeMutation } from "@/lib/pos-order-refresh";
 import { OrderApis, CustomerApis, PaymentApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -616,9 +620,10 @@ export default function CheckoutPage() {
       setEditPaymentOpen(false);
       setEditingPayment(null);
       await Promise.all([fetchBill(), fetchCustomers()]);
+      dispatchPosMutationSync({ orderId, reason: "update-payment" });
       toast.success("Payment updated");
-    } catch (err: any) {
-      setEditPayError(err?.response?.data?.detail || "Failed to update payment");
+    } catch (err: unknown) {
+      setEditPayError(getApiErrorMessage(err, "Failed to update payment"));
     } finally {
       setEditPaySubmitting(false);
     }
@@ -658,11 +663,12 @@ export default function CheckoutPage() {
     setRemovingPaymentId(payment.id);
     try {
       await apiClient.delete(OrderApis.removePayment(orderId, payment.id));
+      dispatchPosMutationSync({ orderId, reason: "remove-payment" });
       await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
       setShouldAutoRedirectAfterPayment(false);
       toast.success("Payment removed");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Failed to remove payment");
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Failed to remove payment"));
     } finally {
       setRemovingPaymentId(null);
     }
@@ -706,58 +712,88 @@ export default function CheckoutPage() {
       return;
     }
 
-    setPaySubmitting(true);
-    setPayError(null);
-    try {
-      // Persist selected checkout customer to order for all payment methods,
-      // so backend loyalty earning can attribute points correctly.
-      if (selectedCustomerId && String(orderMeta?.customer_id || "") !== selectedCustomerId) {
-        await apiClient.patch(OrderApis.updateOrder(orderId), {
-          customer_id: parseInt(selectedCustomerId, 10),
-        });
-        setOrderMeta((prev) => (
-          prev
-            ? { ...prev, customer_id: parseInt(selectedCustomerId, 10) }
-            : prev
-        ));
-      }
+    if (paySubmitting) return;
 
-      if (payMethod === "fonepay") {
+    if (payMethod === "fonepay") {
+      setPaySubmitting(true);
+      setPayError(null);
+      try {
         await handleStartFonepay();
-        return;
+      } finally {
+        setPaySubmitting(false);
       }
+      return;
+    }
 
-      // If paying with credit and assigning a new customer to this order
-      if (payMethod === "credit" && !orderMeta?.customer_id && !selectedCustomerId) {
-        setPayError("Select a customer for credit payment");
-        return;
+    const lockResult = await runLockedAction(
+      `checkout-pay:${orderId}`,
+      async ({ idempotencyKey }) => {
+        setPaySubmitting(true);
+        setPayError(null);
+        try {
+          await refetchOrderBeforeMutation(orderId);
+
+          if (selectedCustomerId && String(orderMeta?.customer_id || "") !== selectedCustomerId) {
+            await apiClient.patch(OrderApis.updateOrder(orderId), {
+              customer_id: parseInt(selectedCustomerId, 10),
+            });
+            setOrderMeta((prev) =>
+              prev ? { ...prev, customer_id: parseInt(selectedCustomerId, 10) } : prev
+            );
+          }
+
+          if (payMethod === "credit" && !orderMeta?.customer_id && !selectedCustomerId) {
+            setPayError("Select a customer for credit payment");
+            return false;
+          }
+
+          const instrument = buildPaymentInstrument(
+            payMethod,
+            selectedStaticQrIndex,
+            selectedCardIndex
+          );
+
+          const res = await apiClient.post(
+            OrderApis.addPayment(orderId),
+            {
+              payment: {
+                method: payMethod,
+                amount: Math.min(amount, bill?.balance_due || amount),
+                reference: payReference.trim() || null,
+                instrument,
+                status: "success",
+              },
+            },
+            { idempotencyKey }
+          );
+
+          if (res.data?.status !== "success") {
+            setPayError(res.data?.message || "Failed to add payment");
+            return false;
+          }
+
+          setPaymentOpen(false);
+          setPayAmount("");
+          setPayReference("");
+          setPayMethod("cash");
+          dispatchPosMutationSync({ orderId, reason: "add-payment" });
+          await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
+
+          if (res.data?.data?.payment_complete) {
+            setShouldAutoRedirectAfterPayment(true);
+          }
+          return true;
+        } catch (err: unknown) {
+          setPayError(getApiErrorMessage(err, "Failed to add payment"));
+          return false;
+        } finally {
+          setPaySubmitting(false);
+        }
       }
+    );
 
-      const instrument = buildPaymentInstrument(payMethod, selectedStaticQrIndex, selectedCardIndex);
-
-      const res = await apiClient.post(OrderApis.addPayment(orderId), {
-        payment: {
-          method: payMethod,
-          amount: Math.min(amount, bill?.balance_due || amount),
-          reference: payReference.trim() || null,
-          instrument,
-          status: "success",
-        },
-      });
-      setPaymentOpen(false);
-      setPayAmount("");
-      setPayReference("");
-      setPayMethod("cash");
-      await Promise.all([fetchBill(), fetchCustomers()]);
-      
-      // Check if payment completed the order
-      if (res.data?.data?.payment_complete) {
-        setShouldAutoRedirectAfterPayment(true);
-      }
-    } catch (err: any) {
-      setPayError(err?.response?.data?.detail || "Failed to add payment");
-    } finally {
-      setPaySubmitting(false);
+    if (lockResult === undefined) {
+      setPayError("Payment already in progress.");
     }
   };
 

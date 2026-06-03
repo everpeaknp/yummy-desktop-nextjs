@@ -17,11 +17,10 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { TableData } from "@/components/tables/room-container";
-import {
-  dispatchTablesRefresh,
-  extractApiDetail,
-  isTableFree,
-} from "@/lib/table-ops";
+import { extractApiDetail, isTableFree } from "@/lib/table-ops";
+import { runLockedAction } from "@/lib/request-lock";
+import { dispatchPosMutationSync } from "@/lib/sync-invalidation";
+import { refetchOrderBeforeMutation } from "@/lib/pos-order-refresh";
 
 export type MultiTableAssignDialogProps = {
   open: boolean;
@@ -89,31 +88,43 @@ export function MultiTableAssignDialog({
       toast.error("Select at least one table.");
       return;
     }
-    setSubmitting(true);
-    try {
-      const payload: { table_ids: number[]; number_of_guests?: number } = {
-        table_ids: selectedIds,
-      };
-      if (numberOfGuests != null && numberOfGuests > 0) {
-        payload.number_of_guests = numberOfGuests;
-      }
-      const res = await apiClient.patch(OrderApis.updateOrder(orderId), payload);
-      if (res.data?.status === "success") {
-        toast.success(
-          selectedIds.length === 1
-            ? "Table assignment updated."
-            : `${selectedIds.length} tables assigned to this order.`
-        );
-        dispatchTablesRefresh();
-        onCompleted?.();
-        onOpenChange(false);
-      } else {
+    if (submitting) return;
+
+    const done = await runLockedAction(`multi-table:${orderId}`, async () => {
+      setSubmitting(true);
+      try {
+        await refetchOrderBeforeMutation(orderId);
+
+        const payload: { table_ids: number[]; number_of_guests?: number } = {
+          table_ids: selectedIds,
+        };
+        if (numberOfGuests != null && numberOfGuests > 0) {
+          payload.number_of_guests = numberOfGuests;
+        }
+        const res = await apiClient.patch(OrderApis.updateOrder(orderId), payload);
+        if (res.data?.status === "success") {
+          toast.success(
+            selectedIds.length === 1
+              ? "Table assignment updated."
+              : `${selectedIds.length} tables assigned to this order.`
+          );
+          dispatchPosMutationSync({ orderId, reason: "multi-table-assign" });
+          onCompleted?.();
+          onOpenChange(false);
+          return true;
+        }
         toast.error(res.data?.message || "Failed to update tables");
+        return false;
+      } catch (err: unknown) {
+        toast.error(extractApiDetail(err));
+        return false;
+      } finally {
+        setSubmitting(false);
       }
-    } catch (err: unknown) {
-      toast.error(extractApiDetail(err));
-    } finally {
-      setSubmitting(false);
+    });
+
+    if (done === undefined) {
+      toast.message("Table update already in progress.");
     }
   };
 
