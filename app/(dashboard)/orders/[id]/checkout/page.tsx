@@ -48,6 +48,7 @@ import {
   QrCode,
   Award,
   Trash2,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
@@ -256,6 +257,34 @@ export default function CheckoutPage() {
   const [removingPaymentId, setRemovingPaymentId] = useState<number | null>(null);
   const [shouldAutoRedirectAfterPayment, setShouldAutoRedirectAfterPayment] = useState(false);
 
+  // Multi-Payment state
+  const [isMultiPayment, setIsMultiPayment] = useState(false);
+  const [multiPayments, setMultiPayments] = useState<Array<{
+    method: string;
+    amount: string;
+    reference: string;
+    selectedStaticQrIndex: number;
+    selectedCardIndex: number;
+  }>>([
+    { method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
+  ]);
+
+  // Guest Split Bill state
+  const [guestBills, setGuestBills] = useState<any>(null);
+  const [splitBillOpen, setSplitBillOpen] = useState(false);
+  const [splitParts, setSplitParts] = useState<Array<{
+    label: string;
+    items: Record<number, number>; // order_item_id -> qty
+  }>>([
+    { label: "Guest 1", items: {} }
+  ]);
+  const [splitSubmitting, setSplitSubmitting] = useState(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
+  const [payAllOpen, setPayAllOpen] = useState(false);
+  const [payAllMethod, setPayAllMethod] = useState("cash");
+  const [payAllReference, setPayAllReference] = useState("");
+  const [payAllSubmitting, setPayAllSubmitting] = useState(false);
+
   // Refund dialog
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundAmount, setRefundAmount] = useState("");
@@ -300,13 +329,29 @@ export default function CheckoutPage() {
         .map((c: any) => ({ name: String(c.name), identifier: c.identifier ? String(c.identifier) : null }))
     : [];
 
+  // ── Fetch Guest Bills ──────────────────────────────
+  const fetchGuestBills = useCallback(async () => {
+    if (!orderId) return;
+    try {
+      const res = await apiClient.get(OrderApis.getGuestBills(orderId), { params: { _t: Date.now() } });
+      if (res.data.status === "success") {
+        setGuestBills(res.data.data);
+      } else {
+        setGuestBills(null);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch guest bills, probably not split:", err);
+      setGuestBills(null);
+    }
+  }, [orderId]);
+
   // ── Fetch Bill ────────────────────────────────────
   const fetchBill = useCallback(async () => {
     if (!orderId) return;
     try {
       const [billRes, orderRes] = await Promise.all([
-        apiClient.get(OrderApis.getOrderBill(orderId)),
-        apiClient.get(OrderApis.getOrder(orderId)),
+        apiClient.get(OrderApis.getOrderBill(orderId), { params: { _t: Date.now() } }),
+        apiClient.get(OrderApis.getOrder(orderId), { params: { _t: Date.now() } }),
       ]);
       if (billRes.data.status === "success") {
         setBill(billRes.data.data);
@@ -315,12 +360,13 @@ export default function CheckoutPage() {
         setOrderMeta(orderRes.data.data);
       }
       setError(null);
+      await fetchGuestBills();
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || "Failed to load bill");
     } finally {
       setLoading(false);
     }
-  }, [orderId]);
+  }, [orderId, fetchGuestBills]);
 
   useEffect(() => {
     fetchBill();
@@ -393,6 +439,22 @@ export default function CheckoutPage() {
       return () => clearTimeout(timer);
     }
   }, [bill?.is_fully_paid, orderId, router, returnTo, shouldAutoRedirectAfterPayment]);
+
+  // Auto-complete parent order if all child guest bills are completed
+  useEffect(() => {
+    const isParentOrder = guestBills && String(guestBills.anchor_order_id) === String(orderId);
+    if (
+      isParentOrder &&
+      guestBills.split_group_id &&
+      guestBills.orders.length > 0 &&
+      guestBills.orders.every((g: any) => g.status === 'completed') &&
+      orderMeta &&
+      orderMeta.status !== 'completed' &&
+      !completing
+    ) {
+      handleComplete();
+    }
+  }, [guestBills, orderId, orderMeta, completing]);
 
   // ── Complete Order ──
   const handleComplete = async () => {
@@ -645,6 +707,80 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (isMultiPayment) {
+      const parsedRows = multiPayments.map(p => ({
+        ...p,
+        amountNum: parseFloat(p.amount) || 0
+      }));
+
+      const totalAllocated = parsedRows.reduce((sum, r) => sum + r.amountNum, 0);
+      if (parsedRows.some(r => r.amountNum <= 0)) {
+        setPayError("All payment amounts must be greater than zero");
+        return;
+      }
+
+      const tolerance = 0.01;
+      if (Math.abs(totalAllocated - (bill?.balance_due || 0)) > tolerance) {
+        setPayError(`Total payment amount (${totalAllocated.toFixed(2)}) must equal the balance due (${(bill?.balance_due || 0).toFixed(2)})`);
+        return;
+      }
+
+      for (const row of parsedRows) {
+        if (row.method === "credit" && !orderMeta?.customer_id && !selectedCustomerId) {
+          setPayError("Select a customer for credit payment");
+          return;
+        }
+        if (row.method === "digital" && staticPaymentQrs.length === 0) {
+          setPayError("No static QR configured for digital payment");
+          return;
+        }
+        if (row.method === "card" && staticPaymentCards.length === 0) {
+          setPayError("No card account configured for card payment");
+          return;
+        }
+      }
+
+      setPaySubmitting(true);
+      setPayError(null);
+      try {
+        if (selectedCustomerId && String(orderMeta?.customer_id || "") !== selectedCustomerId) {
+          await apiClient.patch(OrderApis.updateOrder(orderId), {
+            customer_id: parseInt(selectedCustomerId, 10),
+          });
+          setOrderMeta((prev) => (
+            prev ? { ...prev, customer_id: parseInt(selectedCustomerId, 10) } : prev
+          ));
+        }
+
+        for (let i = 0; i < parsedRows.length; i++) {
+          const row = parsedRows[i];
+          const instrument = buildPaymentInstrument(row.method, row.selectedStaticQrIndex, row.selectedCardIndex);
+          
+          await apiClient.post(OrderApis.addPayment(orderId), {
+            payment: {
+              method: row.method,
+              amount: row.amountNum,
+              reference: row.reference.trim() || null,
+              instrument,
+              status: "success",
+            },
+          });
+        }
+
+        setPaymentOpen(false);
+        setMultiPayments([{ method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }]);
+        setIsMultiPayment(false);
+        await Promise.all([fetchBill(), fetchCustomers()]);
+        toast.success("Multiple payments processed successfully");
+        setShouldAutoRedirectAfterPayment(true);
+      } catch (err: any) {
+        setPayError(err?.response?.data?.detail || "Failed to process multiple payments");
+      } finally {
+        setPaySubmitting(false);
+      }
+      return;
+    }
+
     const amount = parseFloat(payAmount);
     if (!amount || amount <= 0) {
       setPayError("Enter a valid amount");
@@ -671,8 +807,6 @@ export default function CheckoutPage() {
     setPaySubmitting(true);
     setPayError(null);
     try {
-      // Persist selected checkout customer to order for all payment methods,
-      // so backend loyalty earning can attribute points correctly.
       if (selectedCustomerId && String(orderMeta?.customer_id || "") !== selectedCustomerId) {
         await apiClient.patch(OrderApis.updateOrder(orderId), {
           customer_id: parseInt(selectedCustomerId, 10),
@@ -686,12 +820,6 @@ export default function CheckoutPage() {
 
       if (payMethod === "fonepay") {
         await handleStartFonepay();
-        return;
-      }
-
-      // If paying with credit and assigning a new customer to this order
-      if (payMethod === "credit" && !orderMeta?.customer_id && !selectedCustomerId) {
-        setPayError("Select a customer for credit payment");
         return;
       }
 
@@ -712,7 +840,6 @@ export default function CheckoutPage() {
       setPayMethod("cash");
       await Promise.all([fetchBill(), fetchCustomers()]);
       
-      // Check if payment completed the order
       if (res.data?.data?.payment_complete) {
         setShouldAutoRedirectAfterPayment(true);
       }
@@ -720,6 +847,77 @@ export default function CheckoutPage() {
       setPayError(err?.response?.data?.detail || "Failed to add payment");
     } finally {
       setPaySubmitting(false);
+    }
+  };
+
+  // Guest split bill handlers
+  const handleSplitBill = async () => {
+    if (splitParts.length < 2) {
+      setSplitError("You must split the bill into at least two parts");
+      return;
+    }
+
+    const partsPayload = splitParts.map(part => ({
+      label: part.label.trim() || "Guest",
+      lines: (Object.entries(part.items) as Array<[string, number]>)
+        .filter(([_, qty]) => qty > 0)
+        .map(([itemId, qty]) => ({
+          order_item_id: Number(itemId),
+          qty: qty
+        }))
+    })).filter(part => part.lines.length > 0);
+
+    if (partsPayload.length < 2) {
+      setSplitError("At least two guests must have items assigned to them");
+      return;
+    }
+
+    setSplitSubmitting(true);
+    setSplitError(null);
+    try {
+      await apiClient.post(OrderApis.splitBill(orderId), {
+        source_order_id: orderId,
+        parts: partsPayload,
+        keep_unassigned_in_parent: true
+      });
+      toast.success("Bill split successfully");
+      setSplitBillOpen(false);
+      await fetchBill();
+    } catch (err: any) {
+      setSplitError(err?.response?.data?.detail || "Failed to split bill");
+    } finally {
+      setSplitSubmitting(false);
+    }
+  };
+
+  const handleCancelSplit = async () => {
+    const confirmCancel = window.confirm("Are you sure you want to revert the split? This will merge all guest bills back into the main order.");
+    if (!confirmCancel) return;
+
+    try {
+      await apiClient.post(OrderApis.cancelGuestBillSplit(orderId));
+      toast.success("Split reverted successfully");
+      await fetchBill();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to revert split");
+    }
+  };
+
+  const handlePayAllGuestBills = async () => {
+    setPayAllSubmitting(true);
+    try {
+      await apiClient.post(OrderApis.payAllGuestBills(orderId), {
+        method: payAllMethod,
+        reference: payAllReference.trim() || null
+      });
+      toast.success("All guest bills paid successfully");
+      setPayAllOpen(false);
+      setPayAllReference("");
+      await fetchBill();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to pay all guest bills");
+    } finally {
+      setPayAllSubmitting(false);
     }
   };
 
@@ -958,7 +1156,8 @@ export default function CheckoutPage() {
 
   // ── Print Receipt ─────────────────────────────────
   const handlePrintReceipt = () => {
-    window.print();
+    const receiptUrl = `/orders/${orderId}/receipt${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""}`;
+    router.push(receiptUrl);
   };
 
   // ── Loading / Error States ────────────────────────
@@ -1039,7 +1238,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* ── Fully Paid Banner ── */}
-      {bill.is_fully_paid && (
+      {bill.is_fully_paid && (!guestBills?.split_group_id || guestBills.orders.every((g: any) => g.is_fully_paid)) && (
         <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl">
           <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
           <div>
@@ -1287,7 +1486,7 @@ export default function CheckoutPage() {
           )}
 
           {/* Action Buttons */}
-          {!bill.is_fully_paid && (
+          {(!bill.is_fully_paid || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)) && (
             <div className="space-y-3">
               <Card className="border-border/40">
                 <CardContent className="p-4 space-y-3">
@@ -1371,13 +1570,83 @@ export default function CheckoutPage() {
                 </CardContent>
               </Card>
 
-              {canProcessPayment ? (
+              {/* Guest Bills Section */}
+              {guestBills?.orders?.length > 0 && guestBills?.split_group_id && String(guestBills.anchor_order_id) === String(orderId) && (
+                <div className="space-y-3 mb-4">
+                  <Card className="border-orange-200 bg-orange-50/20 dark:bg-orange-950/10">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-center justify-between border-b border-orange-100 dark:border-orange-900/50 pb-2">
+                        <h3 className="font-bold text-sm text-orange-600 dark:text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Users className="h-4 w-4" /> Guest Bills ({guestBills.orders.length})
+                        </h3>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCancelSplit}
+                          className="h-8 text-xs text-muted-foreground hover:text-destructive gap-1 px-2"
+                        >
+                          <X className="h-3 w-3" /> Revert Split
+                        </Button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {guestBills.orders.map((gOrder: any) => (
+                          <div key={gOrder.order_id} className="flex items-center justify-between p-2 rounded-lg border bg-background/50 text-sm">
+                            <div>
+                              <p className="font-semibold text-xs sm:text-sm">{gOrder.split_label || `Guest ${gOrder.split_sequence}`}</p>
+                              <p className="text-[10px] text-muted-foreground">Order #{gOrder.order_id}</p>
+                            </div>
+                            <div className="text-right flex items-center gap-2 sm:gap-3">
+                              <div>
+                                <p className="font-bold tabular-nums text-xs sm:text-sm">{formatCurrency(gOrder.grand_total, curr)}</p>
+                                {gOrder.is_fully_paid ? (
+                                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[10px] px-1.5 py-0">Paid</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-orange-600 border-orange-200 text-[10px] px-1.5 py-0">Pending</Badge>
+                                )}
+                              </div>
+                              {!gOrder.is_fully_paid && (
+                                <Button
+                                  size="sm"
+                                  className="h-8 px-2.5 font-semibold text-xs"
+                                  onClick={() => {
+                                    router.push(`/orders/${gOrder.order_id}/checkout?returnTo=${encodeURIComponent(window.location.pathname)}`);
+                                  }}
+                                >
+                                  Pay
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {!guestBills.orders.every((g: any) => g.is_fully_paid) && (
+                        <Button
+                          type="button"
+                          className="w-full h-10 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs sm:text-sm gap-2"
+                          onClick={() => {
+                            setPayAllMethod("cash");
+                            setPayAllReference("");
+                            setPayAllOpen(true);
+                          }}
+                        >
+                          <CreditCard className="h-4 w-4" /> Pay All Guest Bills
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {canProcessPayment && bill.balance_due > 0 ? (
                 <Button
                   className="w-full h-12 text-base font-semibold shadow-lg gap-2"
                   onClick={() => {
                     setPayAmount(bill.balance_due.toFixed(2));
                     setPaymentOpen(true);
                   }}
+                  disabled={guestBills?.orders?.length > 0 && guestBills?.split_group_id && String(guestBills.anchor_order_id) === String(orderId) && !guestBills.orders.every((g: any) => g.is_fully_paid)}
                 >
                   <CreditCard className="h-4 w-4" />
                   Take Payment ({formatCurrency(bill.balance_due, curr)})
@@ -1385,6 +1654,12 @@ export default function CheckoutPage() {
               ) : (
                 <p className="text-xs text-muted-foreground text-center px-2">
                   Payment processing requires the billing.payment.process permission.
+                </p>
+              )}
+
+              {guestBills?.orders?.length > 0 && guestBills?.split_group_id && String(guestBills.anchor_order_id) === String(orderId) && !guestBills.orders.every((g: any) => g.is_fully_paid) && (
+                <p className="text-[11px] text-orange-600 dark:text-orange-400 text-center mt-1">
+                  Please settle individual Guest Bills above.
                 </p>
               )}
 
@@ -1405,34 +1680,58 @@ export default function CheckoutPage() {
                 </Button>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 mt-3">
                 {canApplyDiscount && (
                   <Button
                     variant="outline"
-                    className="gap-2"
+                    className="gap-2 text-xs sm:text-sm"
                     onClick={() => setDiscountOpen(true)}
                   >
                     <Tag className="h-4 w-4" />
-                    {hasDiscount ? "Change Discount" : "Add Discount"}
+                    {hasDiscount ? "Discount" : "Add Discount"}
                   </Button>
                 )}
+                {/* Split Bill Button */}
                 <Button
                   variant="outline"
-                  className="gap-2"
+                  className="gap-2 text-xs sm:text-sm text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/20 border-orange-200"
+                  onClick={() => {
+                    const initialItems: Record<number, number> = {};
+                    bill.items.forEach((item: any) => {
+                      initialItems[item.id] = 0;
+                    });
+                    setSplitParts([
+                      { label: "Guest 1", items: { ...initialItems } },
+                      { label: "Guest 2", items: { ...initialItems } }
+                    ]);
+                    setSplitError(null);
+                    setSplitBillOpen(true);
+                  }}
+                  disabled={bill.is_fully_paid || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Split Bill
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <Button
+                  variant="outline"
+                  className="gap-2 text-xs sm:text-sm"
                   onClick={() => router.push(`/orders/${orderId}/edit`)}
                 >
                   <Receipt className="h-4 w-4" />
                   Edit Order
                 </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2 text-xs sm:text-sm"
+                  onClick={() => router.push(`/orders/${orderId}/receipt${returnTo ? '?returnTo=' + encodeURIComponent(returnTo) : ''}`)}
+                >
+                  <Printer className="h-4 w-4" />
+                  Pre-Bill
+                </Button>
               </div>
-              <Button
-                variant="outline"
-                className="w-full gap-2 mt-3"
-                onClick={() => router.push(`/orders/${orderId}/receipt${returnTo ? '?returnTo=' + encodeURIComponent(returnTo) : ''}`)}
-              >
-                <Printer className="h-4 w-4" />
-                Print Pre-Bill
-              </Button>
             </div>
           )}
 
@@ -1492,7 +1791,13 @@ export default function CheckoutPage() {
       </div>
 
       {/* ── Payment Dialog ── */}
-      <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
+      <Dialog open={paymentOpen} onOpenChange={(open) => {
+        setPaymentOpen(open);
+        if (!open) {
+          setIsMultiPayment(false);
+          setMultiPayments([{ method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }]);
+        }
+      }}>
         <DialogContent className="w-[96vw] sm:w-[92vw] sm:max-w-2xl max-h-[90vh] overflow-x-hidden overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Payment</DialogTitle>
@@ -1501,212 +1806,428 @@ export default function CheckoutPage() {
             </DialogDescription>
           </DialogHeader>
 
+          {/* Toggle for Single vs Multiple */}
+          <div className="flex gap-2 border-b pb-3">
+            <button
+              type="button"
+              onClick={() => setIsMultiPayment(false)}
+              className={cn(
+                "flex-1 py-2 text-sm font-semibold border-b-2 transition-all",
+                !isMultiPayment ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+              )}
+            >
+              Single Payment
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsMultiPayment(true);
+                setMultiPayments([
+                  { method: "cash", amount: (bill.balance_due / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 },
+                  { method: "digital", amount: (bill.balance_due / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
+                ]);
+              }}
+              className={cn(
+                "flex-1 py-2 text-sm font-semibold border-b-2 transition-all",
+                isMultiPayment ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+              )}
+            >
+              Multiple Payments
+            </button>
+          </div>
+
           <div className="space-y-4 py-2 min-w-0">
             {payError && (
               <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{payError}</div>
             )}
 
-            {/* Payment Method */}
-            <div className="space-y-2">
-              <Label>Payment Method</Label>
-              <div className="grid grid-cols-2 gap-2 min-w-0">
-                {PAYMENT_METHODS.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    onClick={() => setPayMethod(m.value)}
-                    className={cn(
-                      "flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-sm font-medium min-w-0",
-                      payMethod === m.value
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border/50 hover:border-border text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <m.icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{m.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Customer Selection for Credit Method */}
-            {payMethod === "credit" && !orderMeta?.customer_id && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Label>Select Customer</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 px-2 text-[11px] font-bold"
-                    onClick={() => setQuickAddOpen(true)}
-                  >
-                    + Quick Add
-                  </Button>
-                </div>
-                <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                  <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
-                    <SelectValue placeholder="Select a customer to assign credit tracking">
-                      {selectedCustomerId
-                        ? formatCustomerLabel(customers.find((c: any) => String(c.id) === selectedCustomerId), curr)
-                        : undefined}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
-                    {customers.map((c: any) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
-                          {formatCustomerLabel(c, curr)}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            
-            {payMethod === "credit" && orderMeta?.customer_id && (
-               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
-                  <User className="h-4 w-4" />
-                  Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
-               </div>
-            )}
-
-            {payMethod === "digital" && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label>Static QR</Label>
-                  {staticPaymentQrs.length > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      {selectedStaticQrIndex + 1}/{staticPaymentQrs.length}
-                    </span>
-                  )}
-                </div>
-                {staticPaymentQrs.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                    No static QR configured in settings. Add one in Manage / Settings / Payments & POS.
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      {staticPaymentQrs.map((qr, idx) => (
-                        <button
-                          key={`${qr.name}-${idx}`}
-                          type="button"
-                          onClick={() => setSelectedStaticQrIndex(idx)}
-                          className={cn(
-                            "rounded-lg border px-3 py-2 text-left text-sm",
-                            selectedStaticQrIndex === idx
-                              ? "border-primary bg-primary/5 text-primary"
-                              : "border-border/50 text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          <div className="font-medium truncate">{qr.name}</div>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="mx-auto h-[210px] w-[210px] rounded-xl border bg-white p-2">
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(staticPaymentQrs[selectedStaticQrIndex]?.payload || "")}`}
-                        alt={staticPaymentQrs[selectedStaticQrIndex]?.name || "Static payment QR"}
-                        className="h-full w-full object-contain"
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground break-all">
-                      {staticPaymentQrs[selectedStaticQrIndex]?.payload}
-                    </p>
-                  </>
-                )}
-              </div>
-            )}
-
-            {payMethod === "card" && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label>Card Account</Label>
-                  {staticPaymentCards.length > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      {selectedCardIndex + 1}/{staticPaymentCards.length}
-                    </span>
-                  )}
-                </div>
-                {staticPaymentCards.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                    No card account configured in settings. Add one in Manage / Settings / Payments & POS.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {staticPaymentCards.map((card, idx) => (
+            {!isMultiPayment ? (
+              <>
+                {/* Payment Method */}
+                <div className="space-y-2">
+                  <Label>Payment Method</Label>
+                  <div className="grid grid-cols-2 gap-2 min-w-0">
+                    {PAYMENT_METHODS.map((m) => (
                       <button
-                        key={`${card.name}-${idx}`}
+                        key={m.value}
                         type="button"
-                        onClick={() => setSelectedCardIndex(idx)}
+                        onClick={() => setPayMethod(m.value)}
                         className={cn(
-                          "rounded-lg border px-3 py-2 text-left text-sm",
-                          selectedCardIndex === idx
+                          "flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-sm font-medium min-w-0",
+                          payMethod === m.value
                             ? "border-primary bg-primary/5 text-primary"
-                            : "border-border/50 text-muted-foreground hover:text-foreground"
+                            : "border-border/50 hover:border-border text-muted-foreground hover:text-foreground"
                         )}
                       >
-                        <div className="font-medium truncate">{card.name}</div>
-                        <div className="text-[11px] text-muted-foreground truncate">
-                          {card.identifier || "No identifier"}
-                        </div>
+                        <m.icon className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{m.label}</span>
                       </button>
                     ))}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
 
-            {/* Amount */}
-            <div className="space-y-2">
-              <Label htmlFor="pay-amount">Amount</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">{curr}</span>
-                <Input
-                  id="pay-amount"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                  className="pl-12 text-lg font-semibold tabular-nums"
-                  autoFocus
-                />
-              </div>
-              {(() => {
-                const entered = parseFloat(payAmount) || 0;
-                const change = entered > bill.balance_due ? entered - bill.balance_due : 0;
-                if (change > 0) {
+                {/* Customer Selection for Credit Method */}
+                {payMethod === "credit" && !orderMeta?.customer_id && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label>Select Customer</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-[11px] font-bold"
+                        onClick={() => setQuickAddOpen(true)}
+                      >
+                        + Quick Add
+                      </Button>
+                    </div>
+                    <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                      <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
+                        <SelectValue placeholder="Select a customer to assign credit tracking">
+                          {selectedCustomerId
+                            ? formatCustomerLabel(customers.find((c: any) => String(c.id) === selectedCustomerId), curr)
+                            : undefined}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
+                        {customers.map((c: any) => (
+                          <SelectItem key={c.id} value={String(c.id)}>
+                            <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
+                              {formatCustomerLabel(c, curr)}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                
+                {payMethod === "credit" && orderMeta?.customer_id && (
+                   <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
+                      <User className="h-4 w-4" />
+                      Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
+                   </div>
+                )}
+
+                {payMethod === "digital" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Static QR</Label>
+                      {staticPaymentQrs.length > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {selectedStaticQrIndex + 1}/{staticPaymentQrs.length}
+                        </span>
+                      )}
+                    </div>
+                    {staticPaymentQrs.length === 0 ? (
+                      <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                        No static QR configured in settings. Add one in Manage / Settings / Payments & POS.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          {staticPaymentQrs.map((qr, idx) => (
+                            <button
+                              key={`${qr.name}-${idx}`}
+                              type="button"
+                              onClick={() => setSelectedStaticQrIndex(idx)}
+                              className={cn(
+                                "rounded-lg border px-3 py-2 text-left text-sm",
+                                selectedStaticQrIndex === idx
+                                  ? "border-primary bg-primary/5 text-primary"
+                                  : "border-border/50 text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              <div className="font-medium truncate">{qr.name}</div>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mx-auto h-[210px] w-[210px] rounded-xl border bg-white p-2">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(staticPaymentQrs[selectedStaticQrIndex]?.payload || "")}`}
+                            alt={staticPaymentQrs[selectedStaticQrIndex]?.name || "Static payment QR"}
+                            className="h-full w-full object-contain"
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground break-all">
+                          {staticPaymentQrs[selectedStaticQrIndex]?.payload}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {payMethod === "card" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Card Account</Label>
+                      {staticPaymentCards.length > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {selectedCardIndex + 1}/{staticPaymentCards.length}
+                        </span>
+                      )}
+                    </div>
+                    {staticPaymentCards.length === 0 ? (
+                      <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                        No card account configured in settings. Add one in Manage / Settings / Payments & POS.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {staticPaymentCards.map((card, idx) => (
+                          <button
+                            key={`${card.name}-${idx}`}
+                            type="button"
+                            onClick={() => setSelectedCardIndex(idx)}
+                            className={cn(
+                              "rounded-lg border px-3 py-2 text-left text-sm",
+                              selectedCardIndex === idx
+                                ? "border-primary bg-primary/5 text-primary"
+                                : "border-border/50 text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            <div className="font-medium truncate">{card.name}</div>
+                            <div className="text-[11px] text-muted-foreground truncate">
+                              {card.identifier || "No identifier"}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Amount */}
+                <div className="space-y-2">
+                  <Label htmlFor="pay-amount">Amount</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">{curr}</span>
+                    <Input
+                      id="pay-amount"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      className="pl-12 text-lg font-semibold tabular-nums"
+                      autoFocus
+                    />
+                  </div>
+                  {(() => {
+                    const entered = parseFloat(payAmount) || 0;
+                    const change = entered > bill.balance_due ? entered - bill.balance_due : 0;
+                    if (change > 0) {
+                      return (
+                        <div className="flex justify-between text-sm px-1">
+                          <span className="text-muted-foreground">Change to return</span>
+                          <span className="font-bold text-orange-600">{formatCurrency(change, curr)}</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+
+                {/* Reference */}
+                <div className="space-y-2">
+                  <Label htmlFor="pay-ref">Reference (optional)</Label>
+                  <Input
+                    id="pay-ref"
+                    placeholder="Transaction ID, receipt number..."
+                    value={payReference}
+                    onChange={(e) => setPayReference(e.target.value)}
+                  />
+                </div>
+              </>
+            ) : (
+              /* Multi Payment Rows */
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  {multiPayments.map((row, idx) => (
+                    <div key={idx} className="flex flex-col sm:flex-row gap-3 p-3 border rounded-xl bg-muted/20 relative">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newRows = [...multiPayments];
+                          newRows.splice(idx, 1);
+                          setMultiPayments(newRows);
+                        }}
+                        className="absolute right-2 top-2 p-1 hover:bg-destructive/10 hover:text-destructive rounded-lg text-muted-foreground"
+                        disabled={multiPayments.length <= 1}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+
+                      <div className="flex-1 space-y-2">
+                        <Label>Method</Label>
+                        <Select
+                          value={row.method}
+                          onValueChange={(val) => {
+                            const newRows = [...multiPayments];
+                            newRows[idx].method = val;
+                            setMultiPayments(newRows);
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="cash">Cash</SelectItem>
+                            <SelectItem value="card">Card</SelectItem>
+                            <SelectItem value="digital">Digital (Static QR)</SelectItem>
+                            <SelectItem value="credit">Credit / Charge Customer</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="flex-1 space-y-2">
+                        <Label>Amount</Label>
+                        <div className="relative">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{curr}</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={row.amount}
+                            onChange={(e) => {
+                              const newRows = [...multiPayments];
+                              const newValStr = e.target.value;
+                              newRows[idx].amount = newValStr;
+
+                              if (newRows.length >= 2) {
+                                const targetAdjustIdx = idx === newRows.length - 1 ? 0 : newRows.length - 1;
+                                const newValNum = parseFloat(newValStr) || 0;
+                                
+                                const otherSum = newRows.reduce((sum, r, rIdx) => {
+                                  if (rIdx === idx || rIdx === targetAdjustIdx) return sum;
+                                  return sum + (parseFloat(r.amount) || 0);
+                                }, 0);
+
+                                const remaining = Math.max(0, bill.balance_due - otherSum - newValNum);
+                                newRows[targetAdjustIdx].amount = remaining.toFixed(2);
+                              }
+
+                              setMultiPayments(newRows);
+                            }}
+                            className="pl-8 h-10 font-medium tabular-nums"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex-1 space-y-2">
+                        <Label>Ref / Notes</Label>
+                        <Input
+                          placeholder="Ref..."
+                          value={row.reference}
+                          onChange={(e) => {
+                            const newRows = [...multiPayments];
+                            newRows[idx].reference = e.target.value;
+                            setMultiPayments(newRows);
+                          }}
+                          className="h-10"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const totalAllocated = multiPayments.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+                    const remaining = Math.max(0, bill.balance_due - totalAllocated);
+                    setMultiPayments([
+                      ...multiPayments,
+                      { method: "cash", amount: remaining > 0 ? remaining.toFixed(2) : "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
+                    ]);
+                  }}
+                  className="w-full gap-2 border-dashed"
+                >
+                  + Add Payment Row
+                </Button>
+
+                {/* Customer Selection for Credit in Multi Payment */}
+                {(() => {
+                  const hasCreditInMulti = multiPayments.some(r => r.method === "credit");
+                  if (!hasCreditInMulti) return null;
+
                   return (
-                    <div className="flex justify-between text-sm px-1">
-                      <span className="text-muted-foreground">Change to return</span>
-                      <span className="font-bold text-orange-600">{formatCurrency(change, curr)}</span>
+                    <div className="space-y-2 border-t pt-3 mt-2">
+                      {!orderMeta?.customer_id ? (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <Label>Select Customer for Credit</Label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2 text-[11px] font-bold"
+                              onClick={() => setQuickAddOpen(true)}
+                            >
+                              + Quick Add
+                            </Button>
+                          </div>
+                          <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                            <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
+                              <SelectValue placeholder="Select a customer to assign credit tracking">
+                                {selectedCustomerId
+                                  ? formatCustomerLabel(customers.find((c: any) => String(c.id) === selectedCustomerId), curr)
+                                  : undefined}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
+                              {customers.map((c: any) => (
+                                <SelectItem key={c.id} value={String(c.id)}>
+                                  <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
+                                    {formatCustomerLabel(c, curr)}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </>
+                      ) : (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
+                          <User className="h-4 w-4" />
+                          Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
+                        </div>
+                      )}
                     </div>
                   );
-                }
-                return null;
-              })()}
-            </div>
+                })()}
 
-            {/* Reference */}
-            <div className="space-y-2">
-              <Label htmlFor="pay-ref">Reference (optional)</Label>
-              <Input
-                id="pay-ref"
-                placeholder="Transaction ID, receipt number..."
-                value={payReference}
-                onChange={(e) => setPayReference(e.target.value)}
-              />
-            </div>
+                {/* Summary */}
+                <div className="p-3 bg-muted/40 rounded-xl space-y-1.5 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Balance Due:</span>
+                    <span className="font-bold">{formatCurrency(bill.balance_due, curr)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Allocated:</span>
+                    {(() => {
+                      const totalAllocated = multiPayments.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+                      const difference = totalAllocated - bill.balance_due;
+                      return (
+                        <span className={cn(
+                          "font-bold",
+                          Math.abs(difference) < 0.01 ? "text-emerald-600" : "text-orange-600"
+                        )}>
+                          {formatCurrency(totalAllocated, curr)}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setPaymentOpen(false)}>Cancel</Button>
             <Button onClick={handleAddPayment} disabled={paySubmitting} className="gap-2">
               {paySubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-              {paySubmitting ? "Processing..." : (payMethod === "fonepay" ? "Generate Fonepay QR" : "Add Payment")}
+              {paySubmitting ? "Processing..." : (isMultiPayment ? "Process Multiple Payments" : (payMethod === "fonepay" ? "Generate Fonepay QR" : "Add Payment"))}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1843,6 +2364,203 @@ export default function CheckoutPage() {
             <Button onClick={handleUpdatePayment} disabled={editPaySubmitting} className="gap-2">
               {editPaySubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
               {editPaySubmitting ? "Updating..." : "Update Payment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Split Bill Dialog ── */}
+      <Dialog open={splitBillOpen} onOpenChange={setSplitBillOpen}>
+        <DialogContent className="w-[96vw] sm:w-[92vw] sm:max-w-4xl max-h-[90vh] overflow-x-hidden overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Split Bill</DialogTitle>
+            <DialogDescription>
+              Assign item quantities to different guests to generate separate child bills.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-2 min-w-0">
+            {splitError && (
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{splitError}</div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-muted-foreground">Guests: {splitParts.length}</span>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (splitParts.length <= 2) return;
+                    const newParts = [...splitParts];
+                    newParts.pop();
+                    setSplitParts(newParts);
+                  }}
+                  disabled={splitParts.length <= 2}
+                >
+                  - Remove Guest
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const initialItems: Record<number, number> = {};
+                    bill.items.forEach((item: any) => {
+                      initialItems[item.id] = 0;
+                    });
+                    setSplitParts([
+                      ...splitParts,
+                      { label: `Guest ${splitParts.length + 1}`, items: { ...initialItems } }
+                    ]);
+                  }}
+                >
+                  + Add Guest
+                </Button>
+              </div>
+            </div>
+
+            {/* Items Assignment Grid */}
+            <div className="border rounded-xl overflow-hidden bg-muted/10">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/40 text-left">
+                      <th className="p-3 font-semibold">Item & Qty</th>
+                      {splitParts.map((part, idx) => (
+                        <th key={idx} className="p-3 font-semibold min-w-[140px]">
+                          <Input
+                            className="h-8 py-1 px-2 font-bold"
+                            value={part.label}
+                            onChange={(e) => {
+                              const newParts = [...splitParts];
+                              newParts[idx].label = e.target.value;
+                              setSplitParts(newParts);
+                            }}
+                          />
+                        </th>
+                      ))}
+                      <th className="p-3 font-semibold text-right text-muted-foreground">Unassigned</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bill.items.map((item: any) => {
+                      const totalAllocated = splitParts.reduce((sum, part) => sum + (part.items[item.id] || 0), 0);
+                      const unassigned = item.qty - totalAllocated;
+
+                      return (
+                        <tr key={item.id} className="border-b last:border-0 bg-background/30 hover:bg-muted/5">
+                          <td className="p-3 font-medium">
+                            <div>{item.name}</div>
+                            <div className="text-xs text-muted-foreground">Total: {item.qty} • {formatCurrency(item.unit_price, curr)} each</div>
+                          </td>
+                          {splitParts.map((part, partIdx) => (
+                            <td key={partIdx} className="p-3">
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7 rounded-lg"
+                                  onClick={() => {
+                                    const currentQty = part.items[item.id] || 0;
+                                    if (currentQty <= 0) return;
+                                    const newParts = [...splitParts];
+                                    newParts[partIdx].items[item.id] = currentQty - 1;
+                                    setSplitParts(newParts);
+                                  }}
+                                  disabled={(part.items[item.id] || 0) <= 0}
+                                >
+                                  -
+                                </Button>
+                                <span className="w-8 text-center font-bold">{part.items[item.id] || 0}</span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7 rounded-lg"
+                                  onClick={() => {
+                                    const currentQty = part.items[item.id] || 0;
+                                    if (unassigned <= 0) return;
+                                    const newParts = [...splitParts];
+                                    newParts[partIdx].items[item.id] = currentQty + 1;
+                                    setSplitParts(newParts);
+                                  }}
+                                  disabled={unassigned <= 0}
+                                >
+                                  +
+                                </Button>
+                              </div>
+                            </td>
+                          ))}
+                          <td className={cn(
+                            "p-3 text-right font-bold tabular-nums",
+                            unassigned > 0 ? "text-orange-600" : "text-muted-foreground"
+                          )}>
+                            {unassigned}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSplitBillOpen(false)}>Cancel</Button>
+            <Button onClick={handleSplitBill} disabled={splitSubmitting} className="gap-2">
+              {splitSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {splitSubmitting ? "Splitting..." : "Perform Split"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Pay All Guest Bills Dialog ── */}
+      <Dialog open={payAllOpen} onOpenChange={setPayAllOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pay All Guest Bills</DialogTitle>
+            <DialogDescription>
+              Record a single bulk payment to settle all outstanding guest bills.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Payment Method</Label>
+              <Select value={payAllMethod} onValueChange={setPayAllMethod}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="digital">Digital (Fonepay/QR)</SelectItem>
+                  <SelectItem value="credit">Credit (Charge Customer)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pay-all-ref">Reference / Notes (optional)</Label>
+              <Input
+                id="pay-all-ref"
+                placeholder="Bulk payment reference..."
+                value={payAllReference}
+                onChange={(e) => setPayAllReference(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayAllOpen(false)}>Cancel</Button>
+            <Button onClick={handlePayAllGuestBills} disabled={payAllSubmitting} className="gap-2 bg-orange-600 hover:bg-orange-700 text-white">
+              {payAllSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+              {payAllSubmitting ? "Paying..." : "Pay All Guest Bills"}
             </Button>
           </DialogFooter>
         </DialogContent>

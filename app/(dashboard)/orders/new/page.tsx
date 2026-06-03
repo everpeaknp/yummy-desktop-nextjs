@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense, useCallback } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import POSSystem from "@/components/orders/pos-system";
-import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, Bed, BedDouble, Filter } from "lucide-react";
+import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, Bed, BedDouble, Filter, Table2 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -25,8 +25,15 @@ interface TableType {
 
 export default function NewOrderPage() {
     const [activeTab, setActiveTab] = useState("tables");
-    const [selectedTable, setSelectedTable] = useState<number | null>(null);
+    const [multiTableMode, setMultiTableMode] = useState(false);
+    const [selectedTables, setSelectedTables] = useState<number[]>([]);
     const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
+    const [activePOS, setActivePOS] = useState<{
+        orderId: string;
+        tableId?: number;
+        tableIds?: number[];
+        channel?: string;
+    } | null>(null);
     const [tables, setTables] = useState<TableData[]>([]);
     const [rooms, setRooms] = useState<TableData[]>([]);
     const [tableTypes, setTableTypes] = useState<TableType[]>([]);
@@ -199,52 +206,56 @@ export default function NewOrderPage() {
     });
 
     const handleTableClick = (table: TableData) => {
-        setSelectedTable(table.id);
+        if (!multiTableMode) {
+            const existingOrderId = table.active_order_ids?.[0] || 'create';
+            setActivePOS({
+                orderId: existingOrderId.toString(),
+                tableId: table.id,
+            });
+            return;
+        }
+        setSelectedTables(prev => {
+            if (prev.includes(table.id)) {
+                return prev.filter(id => id !== table.id);
+            } else {
+                return [...prev, table.id];
+            }
+        });
     };
 
-    // If a table is selected, show POS with Back button
-    if (selectedTable) {
-        const tableDetails = tables.find(t => t.id === selectedTable);
-        const existingOrderId = tableDetails?.active_order_ids?.[0] || 'create';
+    if (activePOS) {
+        let label = "Table Order";
+        if (activePOS.channel === "room_service") {
+            const roomDetails = rooms.find(r => r.id === activePOS.tableId);
+            label = `Room Service — ${roomDetails?.table_name || `Room ${activePOS.tableId}`}`;
+        } else if (activePOS.tableIds && activePOS.tableIds.length > 0) {
+            const selectedNames = activePOS.tableIds
+                .map(id => tables.find(t => t.id === id)?.table_name)
+                .filter(Boolean)
+                .join(", ");
+            label = `Multi-Table Order: ${selectedNames}`;
+        } else if (activePOS.tableId) {
+            const tableDetails = tables.find(t => t.id === activePOS.tableId);
+            label = `Table Order — ${tableDetails?.table_name || `Table ${activePOS.tableId}`}`;
+        }
 
         return (
             <div className="flex flex-col h-full gap-2">
                 <div className="flex items-center gap-2 pb-2">
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedTable(null)}>
-                        <ChevronLeft className="h-4 w-4 mr-1" /> Back to Tables
+                    <Button variant="ghost" size="sm" onClick={() => {
+                        setActivePOS(null);
+                        setSelectedTables([]);
+                    }}>
+                        <ChevronLeft className="h-4 w-4 mr-1" /> Back to Tables/Rooms
                     </Button>
-                    <h2 className="text-lg font-semibold">Table Order</h2>
-                </div>
-                <Suspense fallback={<div>Loading...</div>}>
-                    <POSSystem orderId={existingOrderId.toString()} defaultTableId={selectedTable} />
-                </Suspense>
-            </div>
-        );
-    }
-
-    // If a room is selected, show POS for room service
-    if (selectedRoom) {
-        const roomDetails = rooms.find(r => r.id === selectedRoom);
-        const existingOrderId = roomDetails?.active_order_ids?.[0] || 'create';
-
-        return (
-            <div className="flex flex-col h-full gap-2">
-                <div className="flex items-center gap-2 pb-2">
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedRoom(null)}>
-                        <ChevronLeft className="h-4 w-4 mr-1" /> Back to Rooms
-                    </Button>
-                    <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                            <Bed className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                        </div>
-                        <h2 className="text-lg font-semibold">Room Service — {roomDetails?.table_name || `Room ${selectedRoom}`}</h2>
-                    </div>
+                    <h2 className="text-lg font-semibold">{label}</h2>
                 </div>
                 <Suspense fallback={<div>Loading...</div>}>
                     <POSSystem 
-                        orderId={existingOrderId.toString()} 
-                        defaultTableId={selectedRoom}
-                        defaultChannel="room_service"
+                        orderId={activePOS.orderId} 
+                        defaultTableId={activePOS.tableId} 
+                        defaultTableIds={activePOS.tableIds}
+                        defaultChannel={activePOS.channel} 
                     />
                 </Suspense>
             </div>
@@ -434,6 +445,23 @@ export default function NewOrderPage() {
                                 <span>Filter Area</span>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 mb-3 pr-2">
+                                <button
+                                    onClick={() => {
+                                        setMultiTableMode(!multiTableMode);
+                                        setSelectedTables([]);
+                                    }}
+                                    className={cn(
+                                        "shrink-0 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 border flex items-center gap-2 mr-2",
+                                        multiTableMode
+                                            ? "bg-orange-600 hover:bg-orange-700 text-white border-transparent shadow-sm"
+                                            : "text-muted-foreground border-border/50 bg-muted/20 hover:text-foreground hover:bg-muted"
+                                    )}
+                                >
+                                    <Table2 className="h-3.5 w-3.5" />
+                                    <span>Multi-Table Select</span>
+                                    {multiTableMode && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                                </button>
+
                                 {areaStats.map(({ area, total, occupied }) => (
                                     <button
                                         key={area}
@@ -488,6 +516,7 @@ export default function NewOrderPage() {
                                     tables={filteredTables}
                                     layoutHeight={getLayoutHeight(selectedArea)}
                                     onTableClick={handleTableClick}
+                                    selectedTableIds={selectedTables}
                                 />
                             </div>
                         ) : (
@@ -499,6 +528,7 @@ export default function NewOrderPage() {
                                         tables={groupedTables[roomName]}
                                         layoutHeight={getLayoutHeight(roomName)}
                                         onTableClick={handleTableClick}
+                                        selectedTableIds={selectedTables}
                                     />
                                 ))}
                             </div>
@@ -522,6 +552,25 @@ export default function NewOrderPage() {
                     </div>
                 )}
             </div>
+
+            {selectedTables.length > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-card border border-border rounded-2xl shadow-2xl p-4 flex items-center gap-4 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <span className="text-sm font-semibold">
+                        Selected {selectedTables.length} table{selectedTables.length > 1 ? 's' : ''}:{" "}
+                        <span className="text-primary font-bold">
+                            {selectedTables.map(id => tables.find(t => t.id === id)?.table_name).filter(Boolean).join(", ")}
+                        </span>
+                    </span>
+                    <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setSelectedTables([])}>
+                            Clear
+                        </Button>
+                        <Button size="sm" onClick={() => setActivePOS({ orderId: 'create', tableIds: selectedTables })}>
+                            Open Order
+                        </Button>
+                    </div>
+                </div>
+            )}
 
         </div>
     );

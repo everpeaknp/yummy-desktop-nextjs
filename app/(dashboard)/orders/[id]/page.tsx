@@ -287,15 +287,44 @@ export default function OrderDetailPage() {
     if (!selectedTableId) return;
     setChangingTable(true);
     try {
-      // Update order with new table
-      await apiClient.patch(OrderApis.updateOrder(orderId), {
-        table_id: Number(selectedTableId),
-      });
-      setChangeTableOpen(false);
-      setSelectedTableId("");
-      await fetchContext();
+      const selectedTable = allTables.find((t) => String(t.id) === selectedTableId);
+      const isOccupiedTarget = selectedTable && !["FREE", "AVAILABLE"].includes(selectedTable.status?.toUpperCase() || "");
+
+      if (isOccupiedTarget) {
+        const confirmMerge = window.confirm(
+          `Table "${selectedTable?.table_name}" is occupied. Do you want to MERGE this bill into its active order?`
+        );
+        if (!confirmMerge) {
+          setChangingTable(false);
+          return;
+        }
+
+        const res = await apiClient.post(OrderApis.transferGuestBillTable(orderId), {
+          destination_table_id: Number(selectedTableId),
+        });
+
+        const action = res.data?.data?.action || res.data?.action || "merged";
+        if (action === "merged") {
+          toast.success(`Bill merged into ${selectedTable?.table_name}.`);
+        } else {
+          toast.success(`Bill moved to ${selectedTable?.table_name}.`);
+        }
+        
+        setChangeTableOpen(false);
+        setSelectedTableId("");
+        router.push("/orders/active");
+      } else {
+        await apiClient.patch(OrderApis.updateOrder(orderId), {
+          table_id: Number(selectedTableId),
+        });
+        toast.success(`Bill moved to ${selectedTable?.table_name}.`);
+        setChangeTableOpen(false);
+        setSelectedTableId("");
+        await fetchContext();
+      }
     } catch (err: any) {
       console.error("Failed to change table:", err);
+      toast.error(err?.response?.data?.detail || "Failed to transfer/change table");
     } finally {
       setChangingTable(false);
     }
@@ -430,24 +459,18 @@ export default function OrderDetailPage() {
                   </TooltipContent>
                 </Tooltip>
                 
-                {isTableOrder && isEditable && canTransferOrder && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" onClick={handleOpenChangeTable} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
-                        <Table2 className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Change Table</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
               </div>
             </TooltipProvider>
 
             {/* Primary Actions */}
           {isEditable && (
             <>
+              {isTableOrder && canTransferOrder && (
+                <Button variant="outline" size="sm" onClick={handleOpenChangeTable} className="gap-2 rounded-xl h-9 font-semibold hover:bg-muted">
+                  <Table2 className="h-4 w-4" /> <span>Change / Merge Table</span>
+                </Button>
+              )}
+
                <Link href={`/orders/${orderId}/edit`}>
                 <Button variant="outline" size="sm" className="gap-2 rounded-xl h-9 font-semibold">
                   <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Add Items</span>
@@ -684,9 +707,9 @@ export default function OrderDetailPage() {
       <Dialog open={changeTableOpen} onOpenChange={setChangeTableOpen}>
         <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader className="shrink-0">
-            <DialogTitle>Change Table</DialogTitle>
+            <DialogTitle>Change or Merge Table</DialogTitle>
             <DialogDescription>
-              Select a new table for this order. Only available tables can be selected.
+              Select a target table to move this order to or merge it with another active order.
             </DialogDescription>
           </DialogHeader>
 
@@ -718,9 +741,9 @@ export default function OrderDetailPage() {
 
             {/* Status Legend */}
             <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span>Available</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /><span>Occupied</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-orange-500" /><span>Reserved</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span>Available (Move)</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /><span>Occupied (Merge)</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-orange-500" /><span>Reserved (Merge)</span></div>
             </div>
 
             {/* Grid */}
@@ -747,7 +770,7 @@ export default function OrderDetailPage() {
                     tables={grouped[roomName]}
                     layoutHeight={getLayoutHeight(roomName)}
                     onTableClick={(t) => {
-                      if (t.status?.toUpperCase() === "FREE" || t.status?.toUpperCase() === "AVAILABLE") {
+                      if (t.id !== order.table_id) {
                         setSelectedTableId(String(t.id));
                       }
                     }}
@@ -760,15 +783,20 @@ export default function OrderDetailPage() {
 
           <DialogFooter className="shrink-0 pt-4 border-t">
             <Button variant="outline" onClick={() => setChangeTableOpen(false)}>Cancel</Button>
-            <Button
-
-              onClick={handleChangeTable}
-              disabled={changingTable || !selectedTableId}
-              className="gap-2"
-            >
-              {changingTable ? <Loader2 className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
-              {changingTable ? "Changing..." : "Change Table"}
-            </Button>
+            {(() => {
+              const selectedTable = allTables.find((t) => String(t.id) === selectedTableId);
+              const isOccupiedTarget = selectedTable && !["FREE", "AVAILABLE"].includes(selectedTable.status?.toUpperCase() || "");
+              return (
+                <Button
+                  onClick={handleChangeTable}
+                  disabled={changingTable || !selectedTableId}
+                  className="gap-2"
+                >
+                  {changingTable ? <Loader2 className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
+                  {changingTable ? "Transferring..." : isOccupiedTarget ? "Merge Bill" : "Move Bill"}
+                </Button>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -142,7 +142,8 @@ export default function OrdersPage() {
             const ordersPromise = apiClient.get(`${OrderApis.activeOrders}`, {
                 params: { 
                     restaurant_id: user.restaurant_id,
-                    timezone: timezone
+                    timezone: timezone,
+                    _t: Date.now()
                 }
             });
 
@@ -335,12 +336,20 @@ export default function OrdersPage() {
     }, [historyOrders]);
 
     const activeStats = useMemo(() => {
-        const todayOrders = orders.filter(o => {
+        // Exclude parent split orders if they are fully split (total is 0) to align with backend
+        const activeList = orders.filter(o => {
+            if (o.is_split_parent && o.grand_total === 0) {
+                return false;
+            }
+            return true;
+        });
+
+        const todayOrders = activeList.filter(o => {
             const raw = o.started_at || o.created_at || o.updated_at;
             return raw && isToday(new Date(raw));
         });
 
-        const targetOrders = activeFilter === "today" ? todayOrders : orders;
+        const targetOrders = activeFilter === "today" ? todayOrders : activeList;
 
         const activeCount = targetOrders.length;
         const pendingAction = targetOrders.filter((o: any) => 
@@ -356,6 +365,10 @@ export default function OrdersPage() {
     }, [orders, activeFilter]);
 
     const filteredActive = orders.filter(order => {
+        if (order.is_split_parent && order.grand_total === 0) {
+            return false;
+        }
+
         if (activeFilter === "today") {
             const raw = order.started_at || order.created_at || order.updated_at;
             if (raw && !isToday(new Date(raw))) return false;

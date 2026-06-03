@@ -11,28 +11,36 @@ export function preferHourlyTrends(activeRange: string): boolean {
 }
 
 export function mapAnalyticsTrends(
-  payload: {
-    trends?: Array<{ date: string; income?: number }>;
-    trends_chart?: { hourly?: { labels?: string[]; revenue?: number[] } };
-  } | null | undefined,
+  payload: any,
   useHourly: boolean
 ): TrendPoint[] {
   if (!payload) return [];
 
+  // Check V2 Tabbed Structure First
+  const overviewTab = payload?.tabs?.overview;
+  const revenueTrends = overviewTab?.revenue_trends || overviewTab?.health_trends;
+  if (revenueTrends?.labels?.length && revenueTrends?.revenue?.length) {
+    return revenueTrends.labels.map((label: string, i: number) => ({
+      date: label,
+      value: revenueTrends.revenue[i] ?? 0,
+    }));
+  }
+
+  // Legacy Fallback
   const hourly = payload.trends_chart?.hourly;
   if (
     useHourly &&
     hourly?.labels?.length &&
     hourly?.revenue?.length
   ) {
-    return hourly.labels.map((label, i) => ({
-      date: label,
+    return hourly.labels.map((label: any, i: number) => ({
+      date: String(label),
       value: hourly.revenue?.[i] ?? 0,
     }));
   }
 
   if (Array.isArray(payload.trends) && payload.trends.length > 0) {
-    return payload.trends.map((item) => ({
+    return payload.trends.map((item: any) => ({
       date: String(item.date),
       value: item.income ?? 0,
     }));
@@ -42,9 +50,48 @@ export function mapAnalyticsTrends(
 }
 
 export function mapBreakdownToPie(
-  breakdown: Record<string, unknown> | undefined,
+  payload: any,
   type: BreakdownTab
 ): PieSlice[] {
+  if (!payload) return [];
+
+  // Check V2 Tabbed Structure First
+  const tabs = payload?.tabs;
+  if (tabs) {
+    if (type === "category") {
+      const catPerformance = tabs.menu?.category_performance?.items || [];
+      return catPerformance.map((item: any) => ({
+        name: item.category || item.label || item.category_name || "Unknown",
+        value: item.revenue || item.amount || item.sales || 0,
+      }));
+    } else if (type === "source") {
+      const sourceMix = tabs.orders?.source_mix?.items || [];
+      return sourceMix.map((item: any) => ({
+        name: item.channel || item.source || item.label || "Unknown",
+        value: item.amount || 0,
+      }));
+    } else if (type === "payment") {
+      const paymentMix = tabs.overview?.payment_mix || tabs.finance?.payment_settlement_mix;
+      const byInstrument = paymentMix?.income_by_payment_instrument || [];
+      const byMethod = paymentMix?.items || [];
+
+      const methodRows = byMethod.filter((item: any) => {
+        const method = String(item?.label || item?.method || "").trim().toLowerCase();
+        return method !== "card" && method !== "digital";
+      });
+
+      const hasInstrumentRows = byInstrument.length > 0;
+      const list = hasInstrumentRows ? [...methodRows, ...byInstrument] : byMethod;
+
+      return list.map((item: any) => ({
+        name: item.label || item.method || item.instrument || "Unknown",
+        value: item.amount || 0,
+      }));
+    }
+  }
+
+  // Legacy Fallback
+  const breakdown = payload?.breakdown || payload;
   if (!breakdown) return [];
 
   let list: Array<{ label?: string; amount?: number }> = [];
@@ -59,8 +106,6 @@ export function mapBreakdownToPie(
     const byInstrument = (breakdown.income_by_payment_instrument as typeof list) || [];
     const byMethod = (breakdown.income_by_payment_method as typeof list) || [];
 
-    // Keep the legacy payment-method view, but expand CARD/DIGITAL into
-    // their specific instruments when instrument rows are available.
     const methodRows = byMethod.filter((item) => {
       const method = String(item?.label || "").trim().toLowerCase();
       return method !== "card" && method !== "digital";

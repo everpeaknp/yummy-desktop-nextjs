@@ -232,7 +232,7 @@ export default function ReceiptPage() {
   const fetchData = useCallback(async () => {
     if (!orderId) return;
     try {
-      const receiptRes = await apiClient.get(ReceiptApis.getReceiptData(orderId));
+      const receiptRes = await apiClient.get(ReceiptApis.getReceiptData(orderId), { params: { _t: Date.now() } });
       if (receiptRes.data.status === "success") {
         const receiptData: ReceiptData = receiptRes.data.data;
         setReceipt(receiptData);
@@ -359,6 +359,29 @@ export default function ReceiptPage() {
     setCompleting(true);
     try {
       await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
+      
+      // Auto-complete parent order if this is a split bill and all siblings are completed
+      try {
+        const guestBillsRes = await apiClient.get(OrderApis.getGuestBills(orderId), { params: { _t: Date.now() } });
+        if (guestBillsRes.data.status === "success" && guestBillsRes.data.data) {
+          const gb = guestBillsRes.data.data;
+          const allCompleted = gb.orders.every((g: any) => {
+            if (Number(g.order_id) === Number(orderId)) return true;
+            return g.status === "completed";
+          });
+          
+          if (allCompleted && gb.anchor_order_id) {
+            const parentOrderRes = await apiClient.get(OrderApis.getOrder(gb.anchor_order_id));
+            if (parentOrderRes.data.status === "success" && parentOrderRes.data.data.status !== "completed") {
+              console.log("Auto-completing parent order:", gb.anchor_order_id);
+              await apiClient.patch(OrderApis.updateOrderStatus(gb.anchor_order_id), { status: "completed" });
+            }
+          }
+        }
+      } catch (gbErr) {
+        console.warn("Guest bills parent auto-complete check skipped or failed:", gbErr);
+      }
+
       toast.success("Order completed successfully!");
       if (returnTo) {
         router.push(returnTo);
