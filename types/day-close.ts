@@ -151,6 +151,16 @@ export interface DayCloseListItem {
   total_orders?: number;
 }
 
+/** Confirmed close window from GET /day-closes/sessions (analytics/history filters). */
+export interface DayCloseSession {
+  id: number;
+  business_date?: string;
+  business_line?: BusinessLine | string;
+  confirmed_at?: string;
+  period_start_at?: string;
+  period_end_at?: string;
+}
+
 export interface DayCloseCurrent {
   id?: number;
   business_date?: string;
@@ -432,6 +442,38 @@ export function parseDayCloseListItem(payload: unknown): DayCloseListItem | null
   }
 
   return item;
+}
+
+export function parseDayCloseSession(payload: unknown): DayCloseSession | null {
+  const row = asRecord(payload);
+  if (!row) return null;
+  const id = Number(row.id);
+  if (!Number.isFinite(id)) return null;
+  return {
+    id,
+    business_date: row.business_date != null ? String(row.business_date) : undefined,
+    business_line: row.business_line != null ? String(row.business_line) : undefined,
+    confirmed_at: row.confirmed_at != null ? String(row.confirmed_at) : undefined,
+    period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
+    period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+  };
+}
+
+export function parseDayCloseSessions(payload: unknown): DayCloseSession[] {
+  if (Array.isArray(payload)) {
+    return payload
+      .map(parseDayCloseSession)
+      .filter((item): item is DayCloseSession => item !== null);
+  }
+  const root = asRecord(payload);
+  if (!root) return [];
+  const data = root.data;
+  if (Array.isArray(data)) {
+    return data
+      .map(parseDayCloseSession)
+      .filter((item): item is DayCloseSession => item !== null);
+  }
+  return [];
 }
 
 export function parseDayCloseList(payload: unknown): DayCloseListItem[] {

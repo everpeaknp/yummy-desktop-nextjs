@@ -1,5 +1,7 @@
 /** Display formatting for day close — no financial calculations. */
 
+import type { DayCloseDetail, DayCloseListItem, DayCloseSession } from "@/types/day-close";
+
 export function formatDayCloseCurrency(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return `Rs. ${value.toLocaleString(undefined, {
@@ -76,4 +78,56 @@ export function pickBackendAmount(
     if (value != null && Number.isFinite(value)) return value;
   }
   return undefined;
+}
+
+/** Confirmed close session label for analytics/history selectors (period-first). */
+export function formatDayCloseSessionLabel(session: DayCloseSession): string {
+  const heading = formatDayCloseListHeading({
+    id: session.id,
+    business_line: session.business_line,
+    period_start_at: session.period_start_at,
+    period_end_at: session.period_end_at,
+  });
+  const confirmed = session.confirmed_at
+    ? new Date(session.confirmed_at).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
+  return confirmed ? `${heading} • Closed ${confirmed}` : heading;
+}
+
+/** Export filenames use close id or covered window — never business_date alone. */
+export function formatDayCloseExportFilename(
+  detail: Pick<
+    DayCloseDetail,
+    "id" | "business_line" | "period_start_at" | "period_end_at"
+  >,
+  extension: "pdf" | "xlsx",
+): string {
+  const line = String(detail.business_line ?? "restaurant").toLowerCase();
+  const prefix = line === "hotel" ? "hotel_close" : "day_close";
+  const period = formatDayClosePeriod(detail.period_start_at, detail.period_end_at);
+  if (period !== "—") {
+    const safe = period
+      .replace(/[^\w\d-]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "")
+      .slice(0, 72);
+    return `${prefix}_${safe}.${extension}`;
+  }
+  return `${prefix}_${detail.id}.${extension}`;
+}
+
+export function dayCloseSessionToListItem(session: DayCloseSession): DayCloseListItem {
+  return {
+    id: session.id,
+    business_date: session.business_date,
+    business_line: session.business_line,
+    status: "confirmed",
+    period_start_at: session.period_start_at,
+    period_end_at: session.period_end_at,
+  };
 }
