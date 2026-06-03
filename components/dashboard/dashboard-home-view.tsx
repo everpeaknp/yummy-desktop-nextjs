@@ -13,8 +13,13 @@ import {
   CreditCard,
   Lightbulb,
   Users,
-  Zap,
 } from "lucide-react";
+import {
+  resolveDashboardRoute,
+  resolveQuickActionIcon,
+  resolveQuickActionRoute,
+} from "@/lib/dashboard-quick-actions";
+import type { AttentionItem } from "@/types/dashboard-v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -127,7 +132,15 @@ export function DashboardHomeView({ meta, home, loading }: DashboardHomeViewProp
           <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Quick Actions</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
             {home.quick_actions.items.map((action) => (
-              <QuickActionButton key={action.key} route={action.route} title={action.title} enabled={action.enabled} reason={action.reason} />
+              <QuickActionButton
+                key={action.key}
+                actionKey={action.key}
+                route={action.route}
+                title={action.title}
+                icon={action.icon}
+                enabled={action.enabled}
+                reason={action.reason}
+              />
             ))}
           </div>
         </section>
@@ -360,20 +373,27 @@ function MoneyRow({ label, value }: { label: string; value: string }) {
 }
 
 function QuickActionButton({
+  actionKey,
   route,
   title,
+  icon,
   enabled,
   reason,
 }: {
+  actionKey: string;
   route: string;
   title: string;
+  icon?: string | null;
   enabled: boolean;
   reason?: string | null;
 }) {
+  const href = resolveQuickActionRoute(actionKey, route);
+  const Icon = resolveQuickActionIcon(actionKey, icon, title);
+
   if (!enabled) {
     return (
       <div className="rounded-xl border border-dashed px-3 py-4 text-center opacity-60" title={reason ?? undefined}>
-        <Zap className="h-4 w-4 mx-auto mb-2 text-muted-foreground" />
+        <Icon className="h-5 w-5 mx-auto mb-2 text-muted-foreground" />
         <p className="text-xs font-semibold">{title}</p>
       </div>
     );
@@ -381,30 +401,25 @@ function QuickActionButton({
 
   return (
     <Button asChild variant="outline" className="h-auto py-4 flex-col gap-2">
-      <Link href={route}>
-        <Zap className="h-4 w-4" />
+      <Link href={href}>
+        <Icon className="h-5 w-5" />
         <span className="text-xs font-semibold text-center">{title}</span>
       </Link>
     </Button>
   );
 }
 
-function AttentionRow({
-  item,
-}: {
-  item: {
-    title: string;
-    subtitle: string;
-    severity: string;
-    route: string;
-    age_minutes?: number | null;
-  };
-}) {
+function AttentionRow({ item }: { item: AttentionItem }) {
   const router = useRouter();
+  const href = resolveDashboardRoute(item.route, {
+    key: item.type,
+    entityId: item.entity_id,
+  });
+
   return (
     <button
       type="button"
-      onClick={() => router.push(item.route)}
+      onClick={() => router.push(href)}
       className="w-full text-left rounded-xl border px-4 py-3 hover:bg-muted/40 transition-colors flex items-center justify-between gap-3"
     >
       <div className="min-w-0">
