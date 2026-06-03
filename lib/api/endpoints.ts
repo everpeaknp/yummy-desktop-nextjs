@@ -1,90 +1,4 @@
-import type {
-  DashboardDeltaQueryParams,
-  DashboardV2QueryParams,
-  DayCloseListQueryParams,
-  DayCloseScopeQueryParams,
-  DayCloseSessionsQueryParams,
-  GeneralPurchaseListQueryParams,
-  IsoDateTime,
-  TransactionsListQueryParams,
-} from './endpoint-types';
-
-export type {
-  BusinessLine,
-  DashboardDeltaQueryParams,
-  DashboardV2QueryParams,
-  DayCloseListQueryParams,
-  DayCloseScopeQueryParams,
-  DayCloseSessionsQueryParams,
-  GeneralPurchaseListQueryParams,
-  IsoDateTime,
-  TransactionsListQueryParams,
-} from './endpoint-types';
-
-function appendQueryParam(
-  params: URLSearchParams,
-  key: string,
-  value: string | number | undefined | null,
-) {
-  if (value === undefined || value === null || value === '') return;
-  params.append(key, String(value));
-}
-
-function toIsoDateTime(value: IsoDateTime | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  return value instanceof Date ? value.toISOString() : value;
-}
-
-function buildQueryPath(basePath: string, params: URLSearchParams): string {
-  const query = params.toString();
-  return query ? `${basePath}?${query}` : basePath;
-}
-
-function appendBusinessLine(params: URLSearchParams, businessLine?: string) {
-  appendQueryParam(params, 'business_line', businessLine);
-}
-
-function appendDashboardWindowParams(
-  params: URLSearchParams,
-  {
-    date,
-    startTime,
-    endTime,
-    timezone,
-    businessLine,
-  }: Pick<
-    DashboardV2QueryParams,
-    'date' | 'startTime' | 'endTime' | 'timezone' | 'businessLine'
-  >,
-) {
-  const startIso = toIsoDateTime(startTime);
-  const endIso = toIsoDateTime(endTime);
-
-  if (startIso) appendQueryParam(params, 'start_time', startIso);
-  if (endIso) appendQueryParam(params, 'end_time', endIso);
-  if (date && !startIso) appendQueryParam(params, 'date', date);
-  appendQueryParam(params, 'timezone', timezone);
-  appendBusinessLine(params, businessLine);
-}
-
-function buildDayCloseScopeQuery({
-  restaurantId,
-  businessLine,
-  businessDate,
-}: DayCloseScopeQueryParams): string {
-  const params = new URLSearchParams();
-  appendQueryParam(params, 'restaurant_id', restaurantId);
-  appendBusinessLine(params, businessLine);
-  appendQueryParam(params, 'business_date', businessDate);
-  return params.toString();
-}
-
-/** @deprecated Day-close screens should call `DayCloseApis.current({ ... })` instead of raw paths. */
-export const DayCloseApiPaths = {
-  current: '/day-closes/current',
-  validateClose: '/day-closes/validate-close',
-  generateSnapshot: '/day-closes/generate-snapshot',
-} as const;
+import { formatISO } from 'date-fns';
 
 export const AuthApis = {
   register: '/users/',
@@ -138,41 +52,25 @@ export const DashboardApis = {
     date,
     startTime,
     endTime,
-    timezone,
-    businessLine,
-  }: DashboardV2QueryParams) => {
+  }: {
+    restaurantId: number;
+    date?: string;
+    startTime?: Date;
+    endTime?: Date;
+  }) => {
     const params = new URLSearchParams();
-    appendQueryParam(params, 'restaurant_id', restaurantId);
-    appendDashboardWindowParams(params, {
-      date,
-      startTime,
-      endTime,
-      timezone,
-      businessLine,
-    });
-    return buildQueryPath('/admin/dashboard/v2', params);
+    params.append('restaurant_id', restaurantId.toString());
+
+    if (startTime) params.append('start_time', startTime.toISOString());
+    if (endTime) params.append('end_time', endTime.toISOString());
+    if (date && !startTime) params.append('date', date);
+
+    const query = params.toString();
+    return query ? `/admin/dashboard/v2?${query}` : '/admin/dashboard/v2';
   },
-  dashboardDelta: ({
-    restaurantId,
-    since,
-    date,
-    startTime,
-    endTime,
-    timezone,
-    businessLine,
-  }: DashboardDeltaQueryParams) => {
-    const params = new URLSearchParams();
-    appendQueryParam(params, 'restaurant_id', restaurantId);
-    appendQueryParam(params, 'since', toIsoDateTime(since));
-    appendDashboardWindowParams(params, {
-      date,
-      startTime,
-      endTime,
-      timezone,
-      businessLine,
-    });
-    return buildQueryPath('/admin/dashboard/v2/delta', params);
-  },
+  dashboardDelta: ({ restaurantId, since }: { restaurantId: number; since: Date }) => {
+    return `/admin/dashboard/v2/delta?restaurant_id=${restaurantId}&since=${since.toISOString()}`;
+  }
 };
 
 export const OrderApis = {
@@ -209,20 +107,8 @@ export const OrderApis = {
   removePayment: (orderId: number, paymentId: number) => `/orders/${orderId}/payments/${paymentId}`,
   getOrderEvents: (id: number) => `/orders/${id}/events`,
   getOrderBill: (id: number) => `/orders/${id}/bill`,
-  getGuestBills: (orderId: number) => `/orders/${orderId}/guest-bills`,
-  splitBill: (orderId: number) => `/orders/${orderId}/split-bill`,
-  payAllGuestBills: (parentOrderId: number) =>
-    `/orders/${parentOrderId}/guest-bills/pay-all`,
-  transferGuestBillItem: (parentOrderId: number) =>
-    `/orders/${parentOrderId}/guest-bills/transfer-item`,
-  mergeGuestBills: (parentOrderId: number) =>
-    `/orders/${parentOrderId}/guest-bills/merge`,
-  cancelGuestBillSplit: (parentOrderId: number) =>
-    `/orders/${parentOrderId}/guest-bills/cancel-split`,
-  transferGuestBillTable: (guestOrderId: number) =>
-    `/orders/${guestOrderId}/guest-bills/transfer-table`,
   updateOrderStatus: (id: number) => `/orders/${id}/status`,
-  updateOrder: (orderId: number) => `/orders/${orderId}`,
+  updateOrder: (id: number) => `/orders/${id}`,
   activateReservation: (id: number) => `/orders/${id}/activate`,
   cancelOrder: (id: number) => `/orders/${id}/cancel`,
   refundOrder: (id: number) => `/orders/${id}/refund`,
@@ -548,7 +434,6 @@ export const AnalyticsApis = {
     page = 1,
     pageSize = 20,
     view = 'item',
-    businessLine,
   }: {
     restaurantId: number;
     dateFrom: string;
@@ -557,7 +442,6 @@ export const AnalyticsApis = {
     page?: number;
     pageSize?: number;
     view?: 'item' | 'category' | string;
-    businessLine?: string;
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
@@ -568,7 +452,6 @@ export const AnalyticsApis = {
       view,
     });
     if (timezone) params.append('timezone', timezone);
-    appendBusinessLine(params, businessLine);
     return `/analytics/inventory/details?${params.toString()}`;
   },
   overview: ({ restaurantId, dateFrom, dateTo, timezone, station }: any) => {
@@ -770,64 +653,28 @@ export const NotificationApis = {
 };
 
 export const DayCloseApis = {
-  current: (params: DayCloseScopeQueryParams) => {
-    const query = buildDayCloseScopeQuery(params);
-    return query ? `${DayCloseApiPaths.current}?${query}` : DayCloseApiPaths.current;
-  },
-  validateClose: (params: DayCloseScopeQueryParams) => {
-    const query = buildDayCloseScopeQuery(params);
-    return query ? `${DayCloseApiPaths.validateClose}?${query}` : DayCloseApiPaths.validateClose;
-  },
-  generateSnapshot: (params: DayCloseScopeQueryParams) => {
-    const query = buildDayCloseScopeQuery(params);
-    return query
-      ? `${DayCloseApiPaths.generateSnapshot}?${query}`
-      : DayCloseApiPaths.generateSnapshot;
-  },
-  sessions: ({
-    restaurantId,
-    businessLine,
-    skip,
-    limit,
-  }: DayCloseSessionsQueryParams) => {
-    const params = new URLSearchParams();
-    appendQueryParam(params, 'restaurant_id', restaurantId);
-    appendBusinessLine(params, businessLine);
-    appendQueryParam(params, 'skip', skip);
-    appendQueryParam(params, 'limit', limit);
-    return buildQueryPath('/day-closes/sessions', params);
-  },
+  current: '/day-closes/current',
+  validateClose: '/day-closes/validate-close',
   initiate: '/day-closes/initiate',
+  generateSnapshot: '/day-closes/generate-snapshot',
   confirm: (id: number) => `/day-closes/${id}/confirm`,
   cancel: (id: number) => `/day-closes/${id}/cancel`,
   adjustCashReconciliation: (id: number) => `/day-closes/${id}/adjust-cash-reconciliation`,
   listAdjustments: (id: number) => `/day-closes/${id}/adjustments`,
   addExpenseAdjustment: (id: number) => `/day-closes/${id}/adjustments/expense`,
   addIncomeAdjustment: (id: number) => `/day-closes/${id}/adjustments/income`,
-  list: ({
-    restaurantId,
-    businessLine,
-    start,
-    end,
-    status,
-    skip,
-    limit,
-  }: DayCloseListQueryParams) => {
+  list: ({ restaurantId, start, end, status }: { restaurantId?: number; start?: string; end?: string; status?: string }) => {
     const params = new URLSearchParams();
-    appendQueryParam(params, 'restaurant_id', restaurantId);
-    appendBusinessLine(params, businessLine);
-    appendQueryParam(params, 'date_from', start);
-    appendQueryParam(params, 'date_to', end);
-    appendQueryParam(params, 'status', status);
-    appendQueryParam(params, 'skip', skip);
-    appendQueryParam(params, 'limit', limit);
-    return buildQueryPath('/day-closes', params);
+    if (restaurantId) params.append('restaurant_id', restaurantId.toString());
+    if (start) params.append('date_from', start);
+    if (end) params.append('date_to', end);
+    if (status) params.append('status', status);
+    const query = params.toString();
+    return query ? `/day-closes?${query}` : '/day-closes';
   },
   detail: (id: number) => `/day-closes/${id}`,
-  get: (id: number) => `/day-closes/${id}`,
   auditLog: (id: number) => `/day-closes/${id}/audit-log`,
   savedSnapshot: (id: number) => `/day-closes/${id}/snapshot`,
-  snapshot: (id: number) => `/day-closes/${id}/snapshot`,
   reopen: (id: number) => `/day-closes/${id}/reopen`,
   exportPdf: (id: number) => `/day-closes/${id}/export/pdf`,
   exportExcel: (id: number) => `/day-closes/${id}/export/excel`,
@@ -935,21 +782,10 @@ export const PeriodCloseApis = {
 };
 
 export const GeneralPurchaseApis = {
-  list: ({
-    restaurantId,
-    businessLine,
-    status,
-    skip = 0,
-    limit = 100,
-  }: GeneralPurchaseListQueryParams) => {
-    const params = new URLSearchParams({
-      restaurant_id: restaurantId.toString(),
-      skip: skip.toString(),
-      limit: limit.toString(),
-    });
-    appendBusinessLine(params, businessLine);
-    appendQueryParam(params, 'status', status);
-    return buildQueryPath('/general-purchases', params);
+  list: ({ restaurantId, status, skip = 0, limit = 100 }: { restaurantId: number; status?: string; skip?: number; limit?: number }) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString(), skip: skip.toString(), limit: limit.toString() });
+    if (status) params.append('status', status);
+    return `/general-purchases?${params.toString()}`;
   },
   get: (id: number) => `/general-purchases/${id}`,
   create: '/general-purchases',
@@ -977,23 +813,29 @@ export const TransactionsApis = {
   list: ({
     restaurantId,
     userId,
-    paymentUserId,
     types,
     dateFrom,
     dateTo,
     skip = 0,
     limit = 100,
-  }: TransactionsListQueryParams) => {
+  }: {
+    restaurantId: number;
+    userId?: number;
+    types?: string[];
+    dateFrom?: string; // YYYY-MM-DD
+    dateTo?: string; // YYYY-MM-DD
+    skip?: number;
+    limit?: number;
+  }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
       skip: skip.toString(),
       limit: limit.toString(),
     });
-    appendQueryParam(params, 'user_id', userId);
-    appendQueryParam(params, 'payment_user_id', paymentUserId);
-    if (types?.length) types.forEach((t) => params.append('types', t));
-    appendQueryParam(params, 'date_from', dateFrom);
-    appendQueryParam(params, 'date_to', dateTo);
-    return buildQueryPath('/transactions', params);
+    if (userId) params.append("user_id", userId.toString());
+    if (types?.length) types.forEach((t) => params.append("types", t));
+    if (dateFrom) params.append("date_from", dateFrom);
+    if (dateTo) params.append("date_to", dateTo);
+    return `/transactions?${params.toString()}`;
   },
 };
