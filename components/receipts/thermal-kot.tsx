@@ -144,21 +144,21 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
             return (
                 <div style={style}>
                     <div className="font-black truncate">
-                        {(config.title || restaurant?.name || "YUMMY RESTAURANT").toUpperCase()}
+                        {resolvePlaceholders(config.title || restaurant?.name || "YUMMY RESTAURANT", kot, order, restaurant).toUpperCase()}
                     </div>
                     {config.show_address !== false && (
                         <div className="text-[0.8em] truncate">
-                            {(config.address || restaurant?.address || "KATHMANDU, NEPAL").toUpperCase()}
+                            {resolvePlaceholders(config.address || restaurant?.address || "KATHMANDU, NEPAL", kot, order, restaurant).toUpperCase()}
                         </div>
                     )}
                     {config.show_phone !== false && (
                         <div className="text-[0.8em]">
-                            {config.phone_label || 'Phone'}: {config.phone || restaurant?.phone || "9800000000"}
+                            {config.phone_label || 'Phone'}: {resolvePlaceholders(config.phone || restaurant?.phone || "9800000000", kot, order, restaurant)}
                         </div>
                     )}
                     {config.show_pan === true && (
                         <div className="text-[0.8em]">
-                            {config.pan_label || 'PAN No'}: {config.pan || restaurant?.pan_number || "N/A"}
+                            {config.pan_label || 'PAN No'}: {resolvePlaceholders(config.pan || restaurant?.pan_number || "N/A", kot, order, restaurant)}
                         </div>
                     )}
                     <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
@@ -296,7 +296,7 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
         case 'custom_text':
             return (
                 <div style={style}>
-                    {config.text || config.content || ""}
+                    {resolvePlaceholders(config.text || config.content || "", kot, order, restaurant)}
                 </div>
             );
 
@@ -305,7 +305,7 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
                 <div style={style} className="py-1">
                     <div className="w-full overflow-hidden border-t border-dashed border-black mb-2" />
                     <div className="text-center text-[0.9em]">
-                        {config.message || 'End of Ticket'}
+                        {resolvePlaceholders(config.message || 'End of Ticket', kot, order, restaurant)}
                     </div>
                 </div>
             );
@@ -313,4 +313,26 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
         default:
             return null;
     }
+}
+
+function resolvePlaceholders(text: string, kot: any, order: any, restaurant: any) {
+    if (!text || typeof text !== 'string') return text;
+    
+    const date = kot?.created_at ? new Date(kot.created_at) : new Date();
+    const dateStr = date.toLocaleDateString('en-GB');
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+    return text
+        .replace(/\{\{station_ticket_title\}\}/g, kot?.station || kot?.station_name || "KITCHEN")
+        .replace(/\{\{station\}\}/g, kot?.station || "KITCHEN")
+        .replace(/\{\{kot_number\}\}/g, String(kot?.kot_number || kot?.id || ""))
+        .replace(/\{\{table\}\}/g, order?.table_name || "N/A")
+        .replace(/\{\{date\}\}/g, dateStr)
+        .replace(/\{\{time\}\}/g, timeStr)
+        .replace(/\{\{order_id\}\}/g, String(order?.id || ""))
+        .replace(/\{\{type\}\}/g, kot?.type || 'INITIAL')
+        .replace(/\{\{restaurant_name\}\}/g, restaurant?.name || "YUMMY RESTAURANT")
+        .replace(/\{\{restaurant_address\}\}/g, restaurant?.address || "")
+        .replace(/\{\{restaurant_phone\}\}/g, restaurant?.phone || "")
+        .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "");
 }

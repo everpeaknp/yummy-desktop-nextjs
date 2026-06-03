@@ -501,29 +501,29 @@ function renderBlockPreview(block: ReceiptBlock, global: GlobalConfig, context?:
             return (
                 <div style={style}>
                     <div className="font-black truncate">
-                        {(config.title || context?.restaurant_name || "YUMMY RESTAURANT").toUpperCase()}
+                        {resolvePreviewPlaceholders(config.title || context?.restaurant_name || "YUMMY RESTAURANT", context).toUpperCase()}
                     </div>
                     {config.show_address !== false && (
                         <div className="text-[0.8em] truncate">
-                            {(config.address || context?.address || "KATHMANDU, NEPAL").toUpperCase()}
+                            {resolvePreviewPlaceholders(config.address || context?.address || "KATHMANDU, NEPAL", context).toUpperCase()}
                         </div>
                     )}
                     {config.show_phone !== false && (
                         <div className="text-[0.8em]">
-                            {config.phone_label || 'Phone'}: {config.phone || context?.phone || "9800000000"}
+                            {config.phone_label || 'Phone'}: {resolvePreviewPlaceholders(config.phone || context?.phone || "9800000000", context)}
                         </div>
                     )}
                     {config.show_email === true && (
                         <div className="text-[0.8em]">
-                            Email: {context?.email || 'contact@yummy.com'}
+                            Email: {resolvePreviewPlaceholders(context?.email || 'contact@yummy.com', context)}
                         </div>
                     )}
                     {config.show_pan === true && (
                         <div className="text-[0.8em]">
-                            {config.pan_label || 'PAN No'}: {config.pan || context?.pan || "PAN-987654321"}
+                            {config.pan_label || 'PAN No'}: {resolvePreviewPlaceholders(config.pan || context?.pan || "PAN-987654321", context)}
                         </div>
                     )}
-                    {config.tagline && <div className="text-[0.7em] italic mt-1">{config.tagline}</div>}
+                    {config.tagline && <div className="text-[0.7em] italic mt-1">{resolvePreviewPlaceholders(config.tagline, context)}</div>}
                     <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
                 </div>
             );
@@ -728,14 +728,14 @@ function renderBlockPreview(block: ReceiptBlock, global: GlobalConfig, context?:
                 <div style={style} className="py-1">
                     <div className="w-full overflow-hidden border-t border-dashed border-black mb-2" />
                     <div className="text-center text-[0.9em]">
-                        {config.message || "THANK YOU"}
+                        {resolvePreviewPlaceholders(config.message || "THANK YOU", context)}
                     </div>
                 </div>
             );
         case 'text':
             return (
                 <div style={style}>
-                    {config.text || "Your custom text here"}
+                    {resolvePreviewPlaceholders(config.text || "Your custom text here", context)}
                 </div>
             );
         case 'divider':
@@ -751,6 +751,23 @@ function renderBlockPreview(block: ReceiptBlock, global: GlobalConfig, context?:
         default:
             return <div className="text-[10px] italic opacity-40">[{type}]</div>;
     }
+}
+
+function resolvePreviewPlaceholders(text: string, context?: PreviewContext) {
+    if (!text || typeof text !== 'string') return text;
+    return text
+        .replace(/\{\{station_ticket_title\}\}/g, context?.station || "KITCHEN")
+        .replace(/\{\{station\}\}/g, context?.station || "KITCHEN")
+        .replace(/\{\{kot_number\}\}/g, context?.kot_no || "17-1")
+        .replace(/\{\{table\}\}/g, context?.table_name || "N/A")
+        .replace(/\{\{date\}\}/g, context?.date || "03/06/2026")
+        .replace(/\{\{time\}\}/g, context?.time || "17:35")
+        .replace(/\{\{order_id\}\}/g, context?.order_id || "15219")
+        .replace(/\{\{type\}\}/g, context?.type || 'INITIAL')
+        .replace(/\{\{restaurant_name\}\}/g, context?.restaurant_name || "YUMMY RESTAURANT")
+        .replace(/\{\{restaurant_address\}\}/g, context?.address || "KATHMANDU, NEPAL")
+        .replace(/\{\{restaurant_phone\}\}/g, context?.phone || "9800000000")
+        .replace(/\{\{restaurant_pan\}\}/g, context?.pan || "PAN-987654321");
 }
 
 function renderConfigFields(block: ReceiptBlock, update: (k: string, v: any) => void) {

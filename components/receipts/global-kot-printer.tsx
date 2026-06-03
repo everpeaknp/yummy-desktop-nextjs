@@ -15,13 +15,15 @@ export function GlobalKotPrinter() {
     const recentPrintsRef = useRef<Map<string, number>>(new Map());
 
     const buildDedupeKeys = (data: any) => {
-        const orderId = data?.order_id || data?.order?.id;
-        const station = String(data?.station || data?.kot?.station || "").trim().toLowerCase();
-        const kotNumber = String(data?.kot_number || data?.kot?.kot_number || "").trim().toLowerCase();
+        const orderId = data?.order_id || data?.order?.id || data?.data?.order_id;
+        const station = String(data?.station || data?.kot?.station || data?.data?.station || "").trim().toLowerCase();
+        const kotNumber = String(data?.kot_number || data?.kot?.kot_number || data?.data?.kot_number || "").trim().toLowerCase();
         const explicitIds = [
             data?.kot_id,
             data?.id,
             data?.kot?.id,
+            data?.data?.id,
+            data?.data?.kot_id
         ]
             .filter(Boolean)
             .map((value) => `id:${String(value)}`);
@@ -44,6 +46,21 @@ export function GlobalKotPrinter() {
 
             // If no station is present, do not fallback to "any/default" printer.
             if (!targetStation) return null;
+
+            // PREVENT MULTIPLE PCS PRINTING THE SAME KOT:
+            // Check if THIS device is configured to auto-print for this station.
+            try {
+                const localStationsRaw = localStorage.getItem("yummy_local_kot_stations");
+                if (localStationsRaw !== null) {
+                    const localStations: string[] = JSON.parse(localStationsRaw).map((s: string) => normalizeStation(s));
+                    if (!localStations.includes(targetStation)) {
+                        console.log(`[GlobalKotPrinter] Skipping auto-print for station "${stationName}": not enabled for THIS device.`);
+                        return null;
+                    }
+                }
+            } catch (err) {
+                console.error("[GlobalKotPrinter] Error reading local device stations config", err);
+            }
 
             try {
                 const restaurantState = useRestaurant.getState().restaurant as any;
@@ -100,6 +117,10 @@ export function GlobalKotPrinter() {
                 console.log("[GlobalKotPrinter] Skipping duplicate KOT print event:", incomingKeys);
                 return;
             }
+            
+            // Mark incoming keys as seen immediately to prevent async race conditions
+            // during the subsequent API fetch call.
+            incomingKeys.forEach((key) => recentPrintsRef.current.set(key, now));
             
             // If the payload is missing items (like from kot_created), fetch the full KOT
             if (!data.items || data.items.length === 0) {

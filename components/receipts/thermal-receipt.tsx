@@ -109,29 +109,29 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
             return (
                 <div style={style}>
                     <div className="font-black truncate">
-                        {(config.title || restaurant.name || "YUMMY").toUpperCase()}
+                        {resolveReceiptPlaceholders(config.title || restaurant.name || "YUMMY", data).toUpperCase()}
                     </div>
                     {config.show_address !== false && restaurant.address && (
                         <div className="text-[0.8em] truncate">
-                            {restaurant.address.toUpperCase()}
+                            {resolveReceiptPlaceholders(restaurant.address, data).toUpperCase()}
                         </div>
                     )}
                     {config.show_phone !== false && restaurant.phone && (
                         <div className="text-[0.8em]">
-                            {config.phone_label || 'Phone'}: {restaurant.phone}
+                            {config.phone_label || 'Phone'}: {resolveReceiptPlaceholders(restaurant.phone, data)}
                         </div>
                     )}
                     {config.show_email === true && (restaurant as any).email && (
                         <div className="text-[0.8em]">
-                            Email: {(restaurant as any).email}
+                            Email: {resolveReceiptPlaceholders((restaurant as any).email, data)}
                         </div>
                     )}
                     {config.show_pan === true && restaurant.pan_number && (
                         <div className="text-[0.8em]">
-                            {config.pan_label || 'PAN No'}: {restaurant.pan_number}
+                            {config.pan_label || 'PAN No'}: {resolveReceiptPlaceholders(restaurant.pan_number, data)}
                         </div>
                     )}
-                    {config.tagline && <div className="text-[0.7em] italic mt-1">{config.tagline}</div>}
+                    {config.tagline && <div className="text-[0.7em] italic mt-1">{resolveReceiptPlaceholders(config.tagline, data)}</div>}
                     <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
                 </div>
             );
@@ -322,7 +322,7 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
                 <div style={style} className="py-1">
                     <div className="w-full overflow-hidden border-t border-dashed border-black mb-2" />
                     <div className="text-center text-[0.9em]">
-                        {config.message || "THANK YOU"}
+                        {resolveReceiptPlaceholders(config.message || "THANK YOU", data)}
                     </div>
                 </div>
             );
@@ -330,11 +330,37 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
         case 'text':
             return (
                 <div style={style}>
-                    {config.text || ""}
+                    {resolveReceiptPlaceholders(config.text || "", data)}
                 </div>
             );
             
         default:
             return null;
     }
+}
+
+function resolveReceiptPlaceholders(text: string, data: ReceiptData) {
+    if (!text || typeof text !== 'string') return text;
+    const { order, restaurant } = data;
+    const dateObj = order?.created_at ? new Date(order.created_at) : new Date();
+    const dateStr = dateObj.toLocaleDateString('en-GB');
+    const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const totalPaid = Number(data.total_paid || 0);
+    const balanceDue = Number(data.balance_due || 0);
+    
+    return text
+        .replace(/\{\{restaurant_name\}\}/g, restaurant?.name || "YUMMY RESTAURANT")
+        .replace(/\{\{restaurant_address\}\}/g, restaurant?.address || "")
+        .replace(/\{\{restaurant_phone\}\}/g, restaurant?.phone || "")
+        .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "")
+        .replace(/\{\{bill_no\}\}/g, String(order?.restaurant_order_id || order?.id || ""))
+        .replace(/\{\{order_id\}\}/g, String(order?.id || ""))
+        .replace(/\{\{table\}\}/g, order?.table_name || "-")
+        .replace(/\{\{customer_name\}\}/g, order?.customer_name || "")
+        .replace(/\{\{customer_phone\}\}/g, order?.customer_phone || "")
+        .replace(/\{\{date\}\}/g, dateStr)
+        .replace(/\{\{time\}\}/g, timeStr)
+        .replace(/\{\{grand_total\}\}/g, String(order?.grand_total || 0))
+        .replace(/\{\{total_paid\}\}/g, totalPaid.toFixed(2))
+        .replace(/\{\{balance_due\}\}/g, balanceDue.toFixed(2));
 }
