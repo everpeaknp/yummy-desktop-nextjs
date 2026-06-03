@@ -5,12 +5,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DayCloseSnapshotData } from "@/types/day-close";
 import { formatDayCloseCurrency } from "@/lib/day-close-format";
 import {
+  formatDayCloseCoveredRange,
+  formatDayCloseCloseName,
+} from "@/lib/day-close-format";
+import {
   isHotelDayClose,
   snapshotExpenseRows,
   snapshotHotelSplitRows,
   snapshotInstrumentRows,
   snapshotMetricRows,
   snapshotPaymentMethodRows,
+  snapshotPurchaseRows,
+  snapshotReceivableRows,
+  snapshotRefundRows,
 } from "@/lib/day-close-snapshot-view";
 import { cn } from "@/lib/utils";
 
@@ -27,9 +34,25 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
   const expenses = snapshotExpenseRows(snapshot);
   const hotelSplit = isHotelDayClose(snapshot) ? snapshotHotelSplitRows(snapshot) : [];
   const credit = snapshot.credit_settlement;
+  const refunds = snapshotRefundRows(snapshot);
+  const receivables = snapshotReceivableRows(snapshot);
+  const purchases = snapshotPurchaseRows(snapshot);
+  const coveredRange = formatDayCloseCoveredRange(
+    snapshot.period_start_at,
+    snapshot.period_end_at,
+  );
 
   return (
     <div className={cn("space-y-6", className)}>
+      {coveredRange ? (
+        <div className="rounded-xl border border-orange-200/60 dark:border-orange-900/40 bg-orange-50/50 dark:bg-orange-950/20 px-4 py-3">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700/80 dark:text-orange-400/80">
+            {formatDayCloseCloseName(snapshot.business_line)}
+          </p>
+          <p className="text-sm font-semibold text-foreground mt-0.5">{coveredRange}</p>
+        </div>
+      ) : null}
+
       <Tabs defaultValue="payments" className="w-full">
         <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
           <TabsTrigger value="payments" className="rounded-lg">
@@ -41,6 +64,21 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
           <TabsTrigger value="expenses" className="rounded-lg">
             Expenses
           </TabsTrigger>
+          {refunds.length > 0 ? (
+            <TabsTrigger value="refunds" className="rounded-lg">
+              Refunds
+            </TabsTrigger>
+          ) : null}
+          {receivables.length > 0 ? (
+            <TabsTrigger value="receivables" className="rounded-lg">
+              Receivables
+            </TabsTrigger>
+          ) : null}
+          {purchases.length > 0 ? (
+            <TabsTrigger value="purchases" className="rounded-lg">
+              Purchases
+            </TabsTrigger>
+          ) : null}
         </TabsList>
         <div className="mt-4 space-y-3">
           <TabsContent value="payments" className="m-0 space-y-3">
@@ -106,6 +144,21 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
               <EmptySnapshotNotice message="Expense breakdown is not available in this snapshot." />
             )}
           </TabsContent>
+          {refunds.length > 0 ? (
+            <TabsContent value="refunds" className="m-0">
+              <ListCard title="Refunds" rows={refunds} expenseTone />
+            </TabsContent>
+          ) : null}
+          {receivables.length > 0 ? (
+            <TabsContent value="receivables" className="m-0">
+              <ListCard title="Receivables" rows={receivables} />
+            </TabsContent>
+          ) : null}
+          {purchases.length > 0 ? (
+            <TabsContent value="purchases" className="m-0">
+              <ListCard title="Purchases" rows={purchases} />
+            </TabsContent>
+          ) : null}
         </div>
       </Tabs>
 
