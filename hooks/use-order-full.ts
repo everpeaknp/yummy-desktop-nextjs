@@ -64,14 +64,22 @@ export function useOrderFull(orderId: string | number) {
         payments: orderData.payments || [],
       };
       
-      // Derive tables from order data if separate endpoint didn't exist
-      if (orderData.table_id || (orderData.table_name)) {
+      const fallbackTableIds =
+        orderData.table_ids?.length
+          ? orderData.table_ids
+          : orderData.table_id
+            ? [orderData.table_id]
+            : [];
+      for (const tableId of fallbackTableIds) {
         fullContext.tables.push({
-          id: orderData.table_id || 0,
-          name: orderData.table_name || "Unknown Table",
-          status: "occupied", // inferred
+          id: tableId,
+          name:
+            tableId === orderData.table_id
+              ? orderData.table_name || `Table ${tableId}`
+              : `Table ${tableId}`,
+          status: "occupied",
           capacity: null,
-          table_type_id: null
+          table_type_id: null,
         });
       }
 
@@ -91,38 +99,39 @@ export function useOrderFull(orderId: string | number) {
     }
   }, [orderId, fetchContext]);
 
-  // FIX: Stale target table from Azure Backend
+  // Drop stale table rows not in the order's assigned table_ids (keep multi-table intact).
   useEffect(() => {
-    if (!context || !context.order.table_id) return;
+    if (!context) return;
 
-    // Filter tables array to only include the active table_id
-    const validTables = context.tables.filter(t => t.id === context.order.table_id);
-    
-    // If the active table exists and there are stale tables, clean them up
-    if (validTables.length > 0 && context.tables.length > 1) {
-      setContext(prev => {
-        if (!prev) return prev;
-        
-        const singleTable = validTables[0];
-        
-        // Correct the Order object's table_name to match the active table
-        const patchedOrder = { ...prev.order };
-        patchedOrder.table_name = singleTable.name || `Table ${prev.order.table_id}`;
-        
-        // Fix category name: the backend concatenates categories (e.g. "Main, Main") so take the last one
-        if (prev.order.table_category_name && prev.order.table_category_name.includes(',')) {
-          const cats = prev.order.table_category_name.split(',');
-          patchedOrder.table_category_name = cats[cats.length - 1].trim();
-        }
+    const expectedIds =
+      context.order.table_ids?.length
+        ? context.order.table_ids
+        : context.order.table_id
+          ? [context.order.table_id]
+          : [];
+    if (expectedIds.length === 0) return;
 
-        return {
-          ...prev,
-          tables: [singleTable],
-          order: patchedOrder
-        };
-      });
-    }
-  }, [context?.tables?.length, context?.order?.table_id]);
+    const expectedSet = new Set(expectedIds);
+    const pruned = context.tables.filter((t) => expectedSet.has(t.id));
+    if (pruned.length === context.tables.length) return;
+
+    setContext((prev) => {
+      if (!prev) return prev;
+
+      const patchedOrder = { ...prev.order };
+      const primary =
+        pruned.find((t) => t.id === patchedOrder.table_id) ?? pruned[0];
+      if (primary) {
+        patchedOrder.table_name = primary.name || patchedOrder.table_name;
+      }
+      if (patchedOrder.table_category_name?.includes(",")) {
+        const cats = patchedOrder.table_category_name.split(",");
+        patchedOrder.table_category_name = cats[cats.length - 1].trim();
+      }
+
+      return { ...prev, tables: pruned, order: patchedOrder };
+    });
+  }, [context?.tables, context?.order?.table_id, context?.order?.table_ids]);
 
   const isFullyPaid = context ? context.payments.filter(p => !p.status || p.status.toLowerCase() === 'success').reduce((sum, p) => sum + Number(p.amount), 0) >= (Number(context.order.grand_total) - 0.01) : false;
   const allKotsServed = context ? (context.kots.length === 0 || context.kots.every(kot => ['served', 'completed', 'ready', 'rejected', 'cancelled'].includes(kot.status?.toLowerCase()))) : false;

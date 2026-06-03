@@ -54,6 +54,7 @@ export interface Order {
   channel: OrderType;
   status: OrderStatus;
   table_id?: number | null;
+  table_ids?: number[];
   table_name?: string | null;
   table_category_name?: string | null;
   number_of_guests?: number | null;

@@ -104,6 +104,29 @@ function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function isTableAvailable(status: string | undefined) {
+  return ["FREE", "AVAILABLE"].includes((status || "").toUpperCase());
+}
+
+function getAssignedTableIds(order: Order, tables: OrderTableSummary[]): number[] {
+  if (order.table_ids?.length) return order.table_ids;
+  if (tables.length > 0) return tables.map((t) => t.id);
+  if (order.table_id) return [order.table_id];
+  return [];
+}
+
+function buildTableIdsPayload(
+  selectedIds: number[],
+  primaryTableId?: number | null,
+): number[] {
+  const unique = Array.from(new Set(selectedIds.filter((id) => id > 0)));
+  if (unique.length === 0) return [];
+  if (primaryTableId && unique.includes(primaryTableId)) {
+    return [primaryTableId, ...unique.filter((id) => id !== primaryTableId)];
+  }
+  return unique;
+}
+
 function getStatusConfig(s: string) {
   switch (s.toLowerCase()) {
     case "pending": return { label: "Pending", color: "#f59e0b", bg: "bg-amber-500/10", icon: Clock };
@@ -151,7 +174,9 @@ export default function OrderDetailPage() {
   const [completing, setCompleting] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [changeTableOpen, setChangeTableOpen] = useState(false);
+  const [multiAssignMode, setMultiAssignMode] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string>("");
+  const [selectedTableIds, setSelectedTableIds] = useState<number[]>([]);
   const [changingTable, setChangingTable] = useState(false);
   const [allTables, setAllTables] = useState<TableData[]>([]);
   const [tableTypes, setTableTypes] = useState<any[]>([]);
@@ -275,20 +300,75 @@ export default function OrderDetailPage() {
   // Open change table dialog
   const handleOpenChangeTable = () => {
     fetchAvailableTables();
+    const assigned = getAssignedTableIds(context?.order ?? ({} as Order), context?.tables ?? []);
+    setSelectedTableIds(assigned);
+    setSelectedTableId("");
+    setMultiAssignMode(false);
     setChangeTableOpen(true);
   };
 
-  // Change table
+  const handleChangeTableClick = (table: TableData) => {
+    if (multiAssignMode) {
+      if (!isTableAvailable(table.status)) {
+        toast.error(
+          "Multi-table assign only supports available tables. Use single-table mode to merge into an occupied table.",
+        );
+        return;
+      }
+      setSelectedTableIds((prev) =>
+        prev.includes(table.id) ? prev.filter((id) => id !== table.id) : [...prev, table.id],
+      );
+      return;
+    }
+
+    if (table.id === context?.order.table_id) return;
+    setSelectedTableId(String(table.id));
+  };
+
+  // Change table (single move/merge) or multi-table assign via table_ids
   const handleChangeTable = async () => {
     if (!canTransferOrder) {
       toast.error("You do not have permission to transfer orders.");
       return;
     }
+
+    if (multiAssignMode) {
+      if (selectedTableIds.length === 0) return;
+      setChangingTable(true);
+      try {
+        const tableIds = buildTableIdsPayload(selectedTableIds, context?.order.table_id);
+        const blocked = tableIds.filter((id) => {
+          const t = allTables.find((table) => table.id === id);
+          return t && !isTableAvailable(t.status);
+        });
+        if (blocked.length > 0) {
+          toast.error("All selected tables must be available for multi-table assignment.");
+          setChangingTable(false);
+          return;
+        }
+
+        await apiClient.patch(OrderApis.updateOrder(orderId), { table_ids: tableIds });
+        const names = tableIds
+          .map((id) => allTables.find((t) => t.id === id)?.table_name || `Table ${id}`)
+          .join(", ");
+        toast.success(`Assigned tables: ${names}`);
+        setChangeTableOpen(false);
+        setSelectedTableIds([]);
+        await fetchContext();
+      } catch (err: any) {
+        console.error("Failed to assign tables:", err);
+        toast.error(err?.response?.data?.detail || "Failed to assign tables");
+      } finally {
+        setChangingTable(false);
+      }
+      return;
+    }
+
     if (!selectedTableId) return;
     setChangingTable(true);
     try {
       const selectedTable = allTables.find((t) => String(t.id) === selectedTableId);
-      const isOccupiedTarget = selectedTable && !["FREE", "AVAILABLE"].includes(selectedTable.status?.toUpperCase() || "");
+      const isOccupiedTarget = selectedTable && !isTableAvailable(selectedTable.status);
 
       if (isOccupiedTarget) {
         const confirmMerge = window.confirm(
@@ -315,7 +395,7 @@ export default function OrderDetailPage() {
         router.push("/orders/active");
       } else {
         await apiClient.patch(OrderApis.updateOrder(orderId), {
-          table_id: Number(selectedTableId),
+          table_ids: [Number(selectedTableId)],
         });
         toast.success(`Bill moved to ${selectedTable?.table_name}.`);
         setChangeTableOpen(false);
@@ -374,14 +454,31 @@ export default function OrderDetailPage() {
   const isEditable = !["completed", "canceled"].includes(order.status);
   const isCancellable = !["completed", "canceled"].includes(order.status);
   const isTableOrder = order.channel === "table";
-  const tableName = order.table_name;
+  const assignedTables = context.tables.length > 0
+    ? context.tables
+    : getAssignedTableIds(order, context.tables).map((id) => ({
+        id,
+        name: id === order.table_id ? order.table_name : null,
+        status: null,
+        capacity: null,
+        table_type_id: null,
+      }));
   
   // Format Title
   let title = `Order #${order.restaurant_order_id || order.id}`;
-  if (order.table_name) {
-    title = order.table_category_name 
-      ? `${order.table_category_name} - ${order.table_name}`
-      : order.table_name;
+  if (assignedTables.length > 1) {
+    const primary =
+      assignedTables.find((t) => t.id === order.table_id) ?? assignedTables[0];
+    const primaryLabel =
+      primary?.name ||
+      order.table_name ||
+      `Table ${primary?.id ?? order.table_id}`;
+    title = `${primaryLabel} + ${assignedTables.length - 1}`;
+  } else if (order.table_name || assignedTables[0]?.name) {
+    const name = order.table_name || assignedTables[0]?.name;
+    title = order.table_category_name
+      ? `${order.table_category_name} - ${name}`
+      : (name as string);
   }
 
   // Format Subtitle
@@ -709,11 +806,47 @@ export default function OrderDetailPage() {
           <DialogHeader className="shrink-0">
             <DialogTitle>Change or Merge Table</DialogTitle>
             <DialogDescription>
-              Select a target table to move this order to or merge it with another active order.
+              {multiAssignMode
+                ? "Select multiple available tables for this order. Occupied tables require merge mode (single-table)."
+                : "Select a target table to move this order to or merge it with another active order."}
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto min-h-0 py-4 px-1 space-y-4 no-scrollbar">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant={multiAssignMode ? "secondary" : "outline"}
+                size="sm"
+                className={cn(
+                  "h-8 text-xs font-bold gap-2",
+                  multiAssignMode && "bg-orange-600 hover:bg-orange-700 text-white",
+                )}
+                onClick={() => {
+                  setMultiAssignMode((prev) => !prev);
+                  setSelectedTableId("");
+                  if (!multiAssignMode) {
+                    setSelectedTableIds(getAssignedTableIds(order, context.tables));
+                  }
+                }}
+              >
+                <Table2 className="h-3.5 w-3.5" />
+                Multi-Table Assign
+              </Button>
+              {multiAssignMode && selectedTableIds.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {selectedTableIds.length} table{selectedTableIds.length === 1 ? "" : "s"} selected
+                  {selectedTableIds.length > 1 && (
+                    <span className="ml-1 font-medium text-foreground">
+                      ({selectedTableIds
+                        .map((id) => allTables.find((t) => t.id === id)?.table_name || id)
+                        .join(", ")})
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+
             {/* Area Filter */}
             <div className="flex flex-wrap items-center gap-2 p-1 bg-muted/30 rounded-2xl w-fit">
               {(() => {
@@ -769,12 +902,9 @@ export default function OrderDetailPage() {
                     title={roomName}
                     tables={grouped[roomName]}
                     layoutHeight={getLayoutHeight(roomName)}
-                    onTableClick={(t) => {
-                      if (t.id !== order.table_id) {
-                        setSelectedTableId(String(t.id));
-                      }
-                    }}
-                    selectedTableId={Number(selectedTableId)}
+                    onTableClick={handleChangeTableClick}
+                    selectedTableId={multiAssignMode ? undefined : Number(selectedTableId) || undefined}
+                    selectedTableIds={multiAssignMode ? selectedTableIds : undefined}
                   />
                 ));
               })()}
@@ -784,8 +914,22 @@ export default function OrderDetailPage() {
           <DialogFooter className="shrink-0 pt-4 border-t">
             <Button variant="outline" onClick={() => setChangeTableOpen(false)}>Cancel</Button>
             {(() => {
+              if (multiAssignMode) {
+                return (
+                  <Button
+                    onClick={handleChangeTable}
+                    disabled={changingTable || selectedTableIds.length === 0}
+                    className="gap-2"
+                  >
+                    {changingTable ? <Loader2 className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
+                    {changingTable
+                      ? "Assigning..."
+                      : `Assign ${selectedTableIds.length || ""} Table${selectedTableIds.length === 1 ? "" : "s"}`.trim()}
+                  </Button>
+                );
+              }
               const selectedTable = allTables.find((t) => String(t.id) === selectedTableId);
-              const isOccupiedTarget = selectedTable && !["FREE", "AVAILABLE"].includes(selectedTable.status?.toUpperCase() || "");
+              const isOccupiedTarget = selectedTable && !isTableAvailable(selectedTable.status);
               return (
                 <Button
                   onClick={handleChangeTable}
@@ -965,13 +1109,31 @@ function DetailsTab({
                 </div>
                 <div className="space-y-0.5">
                   <p className="font-bold text-foreground">
-                    {tables.map((t) => t.name || `Table ${t.id}`).join(", ")}
+                    {tables.length > 1
+                      ? `${tables.find((t) => t.id === order.table_id)?.name || tables[0]?.name || `Table ${order.table_id}`} + ${tables.length - 1}`
+                      : tables.map((t) => t.name || `Table ${t.id}`).join(", ")}
                   </p>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider leading-none">
-                    {tables.map((t) => {
-                      const cap = t.capacity ? ` (${t.capacity} seats)` : '';
-                      return `${order.table_category_name || 'Table'} ${t.name || t.id}${cap}`;
-                    }).join(" | ")}
+                    {tables.map((t) => t.name || `Table ${t.id}`).join(", ")}
+                    {tables.some((t) => t.capacity) && (
+                      <span className="block mt-0.5 normal-case">
+                        {tables.reduce((sum, t) => sum + (t.capacity || 0), 0)} seats total
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            ) : order.table_ids && order.table_ids.length > 1 ? (
+              <div className="flex items-start gap-3 text-sm">
+                <div className="p-2 rounded-lg bg-orange-500/10 mt-0.5">
+                  <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="font-bold text-foreground">
+                    {(order.table_name || `Table ${order.table_id}`) + ` + ${order.table_ids.length - 1}`}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider leading-none">
+                    {order.table_ids.map((id) => `Table ${id}`).join(", ")}
                   </p>
                 </div>
               </div>
