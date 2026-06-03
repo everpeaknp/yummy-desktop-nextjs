@@ -10,7 +10,10 @@ import { OrderApis, CustomerApis, PaymentApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
+import { MultiPaymentBuilder } from "@/components/orders/multi-payment-builder";
+import type { CheckoutPaymentRow } from "@/lib/checkout-multi-payment";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
@@ -255,6 +258,7 @@ export default function CheckoutPage() {
   const [editSelectedCardIndex, setEditSelectedCardIndex] = useState(0);
   const [removingPaymentId, setRemovingPaymentId] = useState<number | null>(null);
   const [shouldAutoRedirectAfterPayment, setShouldAutoRedirectAfterPayment] = useState(false);
+  const [multiPaymentMode, setMultiPaymentMode] = useState(false);
 
   // Refund dialog
   const [refundOpen, setRefundOpen] = useState(false);
@@ -486,6 +490,32 @@ export default function CheckoutPage() {
     setFonepayDialogOpen(true);
     toast.success("Fonepay QR generated. Ask customer to complete payment.");
   }, [bill, canProcessPayment, orderId, orderMeta?.customer_id, payAmount, payReference, user?.restaurant_id]);
+
+  const persistCustomerToOrder = useCallback(
+    async (customerId: number) => {
+      if (String(orderMeta?.customer_id || "") === String(customerId)) return;
+      await apiClient.patch(OrderApis.updateOrder(orderId), { customer_id: customerId });
+      setOrderMeta((prev) => (prev ? { ...prev, customer_id: customerId } : prev));
+    },
+    [orderId, orderMeta?.customer_id]
+  );
+
+  const refreshAfterPayment = useCallback(async () => {
+    await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
+  }, [fetchBill, fetchContext, fetchCustomers]);
+
+  const handleMultiPaymentFonepayRow = useCallback(
+    (row: CheckoutPaymentRow) => {
+      const amount = parseFloat(row.amount || "0");
+      if (!amount || amount <= 0) return;
+      setPayAmount(String(Math.min(amount, bill?.balance_due || amount)));
+      setPayReference(row.reference || "");
+      setPayMethod("fonepay");
+      setPaymentOpen(false);
+      void handleStartFonepay();
+    },
+    [bill?.balance_due, handleStartFonepay]
+  );
 
   const buildPaymentInstrument = useCallback(
     (
@@ -1372,16 +1402,33 @@ export default function CheckoutPage() {
               </Card>
 
               {canProcessPayment ? (
-                <Button
-                  className="w-full h-12 text-base font-semibold shadow-lg gap-2"
-                  onClick={() => {
-                    setPayAmount(bill.balance_due.toFixed(2));
-                    setPaymentOpen(true);
-                  }}
-                >
-                  <CreditCard className="h-4 w-4" />
-                  Take Payment ({formatCurrency(bill.balance_due, curr)})
-                </Button>
+                <>
+                  <div className="flex items-center justify-between rounded-xl border border-border/50 px-4 py-3 bg-muted/10">
+                    <div>
+                      <p className="text-sm font-semibold">Multiple Payment</p>
+                      <p className="text-xs text-muted-foreground">
+                        Split balance across cash, card, digital, credit, or Fonepay
+                      </p>
+                    </div>
+                    <Switch
+                      checked={multiPaymentMode}
+                      onCheckedChange={setMultiPaymentMode}
+                    />
+                  </div>
+                  <Button
+                    className="w-full h-12 text-base font-semibold shadow-lg gap-2"
+                    onClick={() => {
+                      if (!multiPaymentMode) {
+                        setPayAmount(bill.balance_due.toFixed(2));
+                      }
+                      setPayError(null);
+                      setPaymentOpen(true);
+                    }}
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    Take Payment ({formatCurrency(bill.balance_due, curr)})
+                  </Button>
+                </>
               ) : (
                 <p className="text-xs text-muted-foreground text-center px-2">
                   Payment processing requires the billing.payment.process permission.
@@ -1495,12 +1542,39 @@ export default function CheckoutPage() {
       <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
         <DialogContent className="w-[96vw] sm:w-[92vw] sm:max-w-2xl max-h-[90vh] overflow-x-hidden overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add Payment</DialogTitle>
+            <DialogTitle>{multiPaymentMode ? "Multiple Payments" : "Add Payment"}</DialogTitle>
             <DialogDescription>
               Balance due: <span className="font-bold text-foreground">{formatCurrency(bill.balance_due, curr)}</span>
             </DialogDescription>
           </DialogHeader>
 
+          {multiPaymentMode ? (
+            <>
+            <MultiPaymentBuilder
+              orderId={orderId}
+              balanceDue={bill.balance_due}
+              currency={curr}
+              orderCustomerId={orderMeta?.customer_id}
+              orderCustomerName={orderMeta?.customer_name}
+              customers={customers}
+              staticPaymentQrs={staticPaymentQrs}
+              staticPaymentCards={staticPaymentCards}
+              onRefresh={refreshAfterPayment}
+              onPaymentComplete={() => {
+                setPaymentOpen(false);
+                setShouldAutoRedirectAfterPayment(true);
+              }}
+              onFonepayRow={handleMultiPaymentFonepayRow}
+              persistCustomerId={persistCustomerToOrder}
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPaymentOpen(false)}>
+                Cancel
+              </Button>
+            </DialogFooter>
+            </>
+          ) : (
+          <>
           <div className="space-y-4 py-2 min-w-0">
             {payError && (
               <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{payError}</div>
@@ -1709,6 +1783,8 @@ export default function CheckoutPage() {
               {paySubmitting ? "Processing..." : (payMethod === "fonepay" ? "Generate Fonepay QR" : "Add Payment")}
             </Button>
           </DialogFooter>
+          </>
+          )}
         </DialogContent>
       </Dialog>
 
