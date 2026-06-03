@@ -6,12 +6,8 @@ import Link from "next/link";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, KotApis } from "@/lib/api/endpoints";
-import { ChangeTableDialog } from "@/components/orders/change-table-dialog";
-import { MultiTableAssignDialog } from "@/components/orders/multi-table-assign-dialog";
-import { SplitBillDialog } from "@/components/orders/split-bill-dialog";
-import { GuestBillsPanel } from "@/components/orders/guest-bills-panel";
-import { formatAssignedTablesLabel } from "@/lib/table-ops";
+import { OrderApis, KotApis, TableApis, TableTypeApis } from "@/lib/api/endpoints";
+import { RoomContainer, type TableData } from "@/components/tables/room-container";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -88,7 +84,6 @@ import type {
 import { EntityNotificationsCard } from "@/components/notifications/entity-notifications-card";
 import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
-import { useSyncInvalidation } from "@/hooks/use-sync-invalidation";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
@@ -156,26 +151,13 @@ export default function OrderDetailPage() {
   const [completing, setCompleting] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [changeTableOpen, setChangeTableOpen] = useState(false);
-  const [multiTableOpen, setMultiTableOpen] = useState(false);
-  const [splitBillOpen, setSplitBillOpen] = useState(false);
-  const [guestRefreshKey, setGuestRefreshKey] = useState(0);
+  const [selectedTableId, setSelectedTableId] = useState<string>("");
+  const [changingTable, setChangingTable] = useState(false);
+  const [allTables, setAllTables] = useState<TableData[]>([]);
+  const [tableTypes, setTableTypes] = useState<any[]>([]);
+  const [selectedArea, setSelectedArea] = useState("All Areas");
 
-  const bumpRefresh = useCallback(() => {
-    setGuestRefreshKey((k) => k + 1);
-    void fetchContext();
-  }, [fetchContext]);
-
-  useSyncInvalidation(
-    ["orders", "tables"],
-    (detail) => {
-      const targetId = detail.orderId != null ? Number(detail.orderId) : null;
-      if (targetId != null && targetId !== orderId) return;
-      bumpRefresh();
-    },
-    [orderId, bumpRefresh]
-  );
-
-  const { canVoidOrder, canVoidItem, canTransferOrder, canSplitBill } = usePosBillingPermissions();
+  const { canVoidOrder, canVoidItem, canTransferOrder } = usePosBillingPermissions();
 
   // Auth guard
   useEffect(() => {
@@ -271,6 +253,83 @@ export default function OrderDetailPage() {
     }
   };
 
+  // Fetch all tables
+  const fetchAvailableTables = useCallback(async () => {
+    if (!context?.order?.restaurant_id) return;
+    try {
+      const [tablesRes, typesRes] = await Promise.all([
+        apiClient.get(TableApis.getTables(context.order.restaurant_id)),
+        apiClient.get(TableTypeApis.getTableTypes(context.order.restaurant_id))
+      ]);
+      if (tablesRes.data.status === "success") {
+        setAllTables(tablesRes.data.data || []);
+      }
+      if (typesRes.data.status === "success") {
+        setTableTypes(typesRes.data.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch tables:", err);
+    }
+  }, [context?.order?.restaurant_id]);
+
+  // Open change table dialog
+  const handleOpenChangeTable = () => {
+    fetchAvailableTables();
+    setChangeTableOpen(true);
+  };
+
+  // Change table
+  const handleChangeTable = async () => {
+    if (!canTransferOrder) {
+      toast.error("You do not have permission to transfer orders.");
+      return;
+    }
+    if (!selectedTableId) return;
+    setChangingTable(true);
+    try {
+      const selectedTable = allTables.find((t) => String(t.id) === selectedTableId);
+      const isOccupiedTarget = selectedTable && !["FREE", "AVAILABLE"].includes(selectedTable.status?.toUpperCase() || "");
+
+      if (isOccupiedTarget) {
+        const confirmMerge = window.confirm(
+          `Table "${selectedTable?.table_name}" is occupied. Do you want to MERGE this bill into its active order?`
+        );
+        if (!confirmMerge) {
+          setChangingTable(false);
+          return;
+        }
+
+        const res = await apiClient.post(OrderApis.transferGuestBillTable(orderId), {
+          destination_table_id: Number(selectedTableId),
+        });
+
+        const action = res.data?.data?.action || res.data?.action || "merged";
+        if (action === "merged") {
+          toast.success(`Bill merged into ${selectedTable?.table_name}.`);
+        } else {
+          toast.success(`Bill moved to ${selectedTable?.table_name}.`);
+        }
+        
+        setChangeTableOpen(false);
+        setSelectedTableId("");
+        router.push("/orders/active");
+      } else {
+        await apiClient.patch(OrderApis.updateOrder(orderId), {
+          table_id: Number(selectedTableId),
+        });
+        toast.success(`Bill moved to ${selectedTable?.table_name}.`);
+        setChangeTableOpen(false);
+        setSelectedTableId("");
+        await fetchContext();
+      }
+    } catch (err: any) {
+      console.error("Failed to change table:", err);
+      toast.error(err?.response?.data?.detail || "Failed to transfer/change table");
+    } finally {
+      setChangingTable(false);
+    }
+  };
+
   // ── Loading State ──
   if (loading) {
     return (
@@ -315,20 +374,14 @@ export default function OrderDetailPage() {
   const isEditable = !["completed", "canceled"].includes(order.status);
   const isCancellable = !["completed", "canceled"].includes(order.status);
   const isTableOrder = order.channel === "table";
-  const tableIds =
-    order.table_ids && order.table_ids.length > 0
-      ? order.table_ids
-      : order.table_id
-        ? [order.table_id]
-        : [];
-
+  const tableName = order.table_name;
+  
   // Format Title
   let title = `Order #${order.restaurant_order_id || order.id}`;
-  if (tableIds.length > 0 || order.table_name) {
-    const tablesLabel = formatAssignedTablesLabel(tableIds, order.table_name);
-    title = order.table_category_name
-      ? `${order.table_category_name} - ${tablesLabel}`
-      : tablesLabel;
+  if (order.table_name) {
+    title = order.table_category_name 
+      ? `${order.table_category_name} - ${order.table_name}`
+      : order.table_name;
   }
 
   // Format Subtitle
@@ -406,81 +459,18 @@ export default function OrderDetailPage() {
                   </TooltipContent>
                 </Tooltip>
                 
-                {isTableOrder && isEditable && canTransferOrder && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          if (!canTransferOrder) {
-                            toast.error("You do not have permission to transfer orders.");
-                            return;
-                          }
-                          setChangeTableOpen(true);
-                        }}
-                        className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground"
-                      >
-                        <Table2 className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Change Table (move / merge)</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                {isTableOrder && isEditable && canTransferOrder && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          if (!canTransferOrder) {
-                            toast.error("You do not have permission to transfer orders.");
-                            return;
-                          }
-                          setMultiTableOpen(true);
-                        }}
-                        className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground"
-                      >
-                        <Armchair className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Assign multiple tables</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                {isTableOrder && isEditable && canSplitBill && order.items.length > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          if (!canSplitBill) {
-                            toast.error("You do not have permission to split bills.");
-                            return;
-                          }
-                          setSplitBillOpen(true);
-                        }}
-                        className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground"
-                      >
-                        <Users className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Split bill</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
               </div>
             </TooltipProvider>
 
             {/* Primary Actions */}
           {isEditable && (
             <>
+              {isTableOrder && canTransferOrder && (
+                <Button variant="outline" size="sm" onClick={handleOpenChangeTable} className="gap-2 rounded-xl h-9 font-semibold hover:bg-muted">
+                  <Table2 className="h-4 w-4" /> <span>Change / Merge Table</span>
+                </Button>
+              )}
+
                <Link href={`/orders/${orderId}/edit`}>
                 <Button variant="outline" size="sm" className="gap-2 rounded-xl h-9 font-semibold">
                   <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Add Items</span>
@@ -594,13 +584,7 @@ export default function OrderDetailPage() {
         {/* Left: Main Content */}
         <div className="lg:col-span-2 space-y-4">
           {activeTab === "details" && (
-            <DetailsTab
-              order={order}
-              tables={context.tables}
-              onRefresh={bumpRefresh}
-              canVoidItem={canVoidItem}
-              guestRefreshKey={guestRefreshKey}
-            />
+            <DetailsTab order={order} tables={context.tables} onRefresh={fetchContext} canVoidItem={canVoidItem} />
           )}
           {activeTab === "kots" && <KOTsTab kots={context.kots} />}
           {activeTab === "events" && <EventsTab events={events} loading={eventsLoading} />}
@@ -719,39 +703,103 @@ export default function OrderDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <ChangeTableDialog
-        open={changeTableOpen}
-        onOpenChange={setChangeTableOpen}
-        guestOrderId={orderId}
-        restaurantId={order.restaurant_id}
-        currentTableId={order.table_id}
-        currentTableIds={tableIds}
-        onCompleted={(result) => {
-          if (result.action === "merged" && result.destinationOrderId) {
-            router.push(`/orders/${result.destinationOrderId}`);
-            return;
-          }
-          bumpRefresh();
-        }}
-      />
+      {/* ── Change Table Dialog ── */}
+      <Dialog open={changeTableOpen} onOpenChange={setChangeTableOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Change or Merge Table</DialogTitle>
+            <DialogDescription>
+              Select a target table to move this order to or merge it with another active order.
+            </DialogDescription>
+          </DialogHeader>
 
-      <MultiTableAssignDialog
-        open={multiTableOpen}
-        onOpenChange={setMultiTableOpen}
-        orderId={orderId}
-        restaurantId={order.restaurant_id}
-        initialTableIds={tableIds}
-        numberOfGuests={order.number_of_guests}
-        onCompleted={bumpRefresh}
-      />
+          <div className="flex-1 overflow-y-auto min-h-0 py-4 px-1 space-y-4 no-scrollbar">
+            {/* Area Filter */}
+            <div className="flex flex-wrap items-center gap-2 p-1 bg-muted/30 rounded-2xl w-fit">
+              {(() => {
+                const set = new Set<string>();
+                tableTypes.forEach((tt) => set.add(tt.name));
+                allTables.forEach((t) => { if (t.table_type_name) set.add(t.table_type_name); });
+                const areas = ["All Areas", ...Array.from(set).sort()];
+                
+                return areas.map((area) => (
+                  <button
+                    key={area}
+                    onClick={() => setSelectedArea(area)}
+                    className={cn(
+                      "px-4 py-1.5 rounded-xl text-xs font-bold transition-all duration-300",
+                      selectedArea === area
+                        ? "bg-white dark:bg-zinc-800 text-foreground shadow-sm ring-1 ring-border/50"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    )}
+                  >
+                    {area}
+                  </button>
+                ));
+              })()}
+            </div>
 
-      <SplitBillDialog
-        open={splitBillOpen}
-        onOpenChange={setSplitBillOpen}
-        orderId={orderId}
-        items={order.items}
-        onCompleted={bumpRefresh}
-      />
+            {/* Status Legend */}
+            <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span>Available (Move)</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /><span>Occupied (Merge)</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-orange-500" /><span>Reserved (Merge)</span></div>
+            </div>
+
+            {/* Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {(() => {
+                const filtered = selectedArea === "All Areas" ? allTables : allTables.filter((t) => (t.table_type_name || "General") === selectedArea);
+                const grouped = filtered.reduce((acc, table) => {
+                  const area = table.table_type_name || "General";
+                  if (!acc[area]) acc[area] = [];
+                  acc[area].push(table);
+                  return acc;
+                }, {} as Record<string, TableData[]>);
+                const sortedRooms = Object.keys(grouped).sort();
+                
+                const getLayoutHeight = (areaName: string) => {
+                  const tt = tableTypes.find((t) => t.name === areaName);
+                  return tt?.layout_height ?? 200;
+                };
+
+                return sortedRooms.map((roomName) => (
+                  <RoomContainer
+                    key={roomName}
+                    title={roomName}
+                    tables={grouped[roomName]}
+                    layoutHeight={getLayoutHeight(roomName)}
+                    onTableClick={(t) => {
+                      if (t.id !== order.table_id) {
+                        setSelectedTableId(String(t.id));
+                      }
+                    }}
+                    selectedTableId={Number(selectedTableId)}
+                  />
+                ));
+              })()}
+            </div>
+          </div>
+
+          <DialogFooter className="shrink-0 pt-4 border-t">
+            <Button variant="outline" onClick={() => setChangeTableOpen(false)}>Cancel</Button>
+            {(() => {
+              const selectedTable = allTables.find((t) => String(t.id) === selectedTableId);
+              const isOccupiedTarget = selectedTable && !["FREE", "AVAILABLE"].includes(selectedTable.status?.toUpperCase() || "");
+              return (
+                <Button
+                  onClick={handleChangeTable}
+                  disabled={changingTable || !selectedTableId}
+                  className="gap-2"
+                >
+                  {changingTable ? <Loader2 className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
+                  {changingTable ? "Transferring..." : isOccupiedTarget ? "Merge Bill" : "Move Bill"}
+                </Button>
+              );
+            })()}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -762,13 +810,11 @@ function DetailsTab({
   tables,
   onRefresh,
   canVoidItem,
-  guestRefreshKey,
 }: {
   order: Order;
   tables: OrderTableSummary[];
   onRefresh: () => void;
   canVoidItem: boolean;
-  guestRefreshKey: number;
 }) {
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
   const [editQty, setEditQty] = useState(1);
@@ -835,14 +881,6 @@ function DetailsTab({
 
   return (
     <div className="space-y-4">
-      <GuestBillsPanel
-        orderId={order.id}
-        splitGroupId={order.split_group_id}
-        isSplitParent={order.is_split_parent}
-        isSplitChild={order.is_split_child}
-        refreshKey={guestRefreshKey}
-      />
-
       {/* Items Card */}
       <Card className="border-border/40 bg-white dark:bg-[#1a1a1a] overflow-hidden">
         <CardContent className="p-0">

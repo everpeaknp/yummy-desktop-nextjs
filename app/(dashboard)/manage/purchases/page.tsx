@@ -39,53 +39,36 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
-import { dispatchFinanceMutationSync } from "@/lib/sync-invalidation";
-import { getApiErrorMessage } from "@/lib/api-response";
 import { GeneralPurchaseApis } from "@/lib/api/endpoints";
 import { PurchaseDialog } from "@/components/manage/purchases/purchase-dialog";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { useRestaurant } from "@/hooks/use-restaurant";
-import {
-    fetchAllGeneralPurchases,
-    summarizePurchasesForScope,
-    type PurchaseScopeTotals,
-} from "@/lib/finance-purchase-api";
-import type { BusinessLine } from "@/lib/api/endpoint-types";
-import { Utensils, Hotel } from "lucide-react";
 
 export default function PurchasesPage() {
     const user = useAuth(state => state.user);
     const router = useRouter();
-    const restaurant = useRestaurant((s) => s.restaurant);
     const [purchases, setPurchases] = useState<any[]>([]);
-    const [scopeTotals, setScopeTotals] = useState<PurchaseScopeTotals | null>(null);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [selectedPurchase, setSelectedPurchase] = useState<any>(null);
-    const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
 
     const fetchPurchases = useCallback(async () => {
         if (!user?.restaurant_id) return;
         setLoading(true);
         try {
-            const rows = await fetchAllGeneralPurchases(
-                apiClient,
-                user.restaurant_id,
-                businessLine
-            );
-            setPurchases(rows);
-            setScopeTotals(summarizePurchasesForScope(rows));
+            const res = await apiClient.get(GeneralPurchaseApis.list({ restaurantId: user.restaurant_id }));
+            if (res.data.status === "success") {
+                setPurchases(res.data.data.purchases);
+            }
         } catch (error) {
             console.error("Failed to fetch purchases:", error);
             toast.error("Failed to load purchases");
-            setScopeTotals(null);
         } finally {
             setLoading(false);
         }
-    }, [user?.restaurant_id, businessLine]);
+    }, [user?.restaurant_id]);
 
     useEffect(() => {
         fetchPurchases();
@@ -102,13 +85,10 @@ export default function PurchasesPage() {
             
             if (res.data.status === "success") {
                 toast.success(`Purchase ${action}d successfully`);
-                dispatchFinanceMutationSync({ reason: `purchase-${action}` });
                 fetchPurchases();
-            } else {
-                toast.error(res.data?.message || `Failed to ${action} purchase`);
             }
-        } catch (error: unknown) {
-            toast.error(getApiErrorMessage(error, `Failed to ${action} purchase`));
+        } catch (error: any) {
+            toast.error(error.response?.data?.detail || `Failed to ${action} purchase`);
         }
     };
 
@@ -120,13 +100,10 @@ export default function PurchasesPage() {
             const res = await apiClient.post(GeneralPurchaseApis.return(id), { reason });
             if (res.data.status === "success") {
                 toast.success("Purchase marked as returned");
-                dispatchFinanceMutationSync({ reason: "purchase-return" });
                 fetchPurchases();
-            } else {
-                toast.error(res.data?.message || "Failed to return purchase");
             }
-        } catch (error: unknown) {
-            toast.error(getApiErrorMessage(error, "Failed to return purchase"));
+        } catch (error: any) {
+            toast.error(error.response?.data?.detail || "Failed to return purchase");
         }
     };
 
@@ -141,16 +118,23 @@ export default function PurchasesPage() {
     };
 
     const getPaymentBadge = (status: string) => {
-        const normalized = String(status).toLowerCase();
-        return normalized === 'paid'
+        return status === 'paid' 
             ? <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50">Paid</Badge>
-            : <Badge variant="outline" className="text-rose-600 border-rose-200 bg-rose-50">Pending</Badge>;
+            : <Badge variant="outline" className="text-rose-600 border-rose-200 bg-rose-50">Unpaid</Badge>;
     };
 
     const filteredPurchases = purchases.filter(p => 
         p.purchase_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.supplier?.name?.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    const totalSpent = purchases
+        .filter(p => p.status === 'received' && p.payment_status === 'paid')
+        .reduce((acc, curr) => acc + (curr.total_cost || 0), 0);
+
+    const pendingPayables = purchases
+        .filter(p => p.status === 'received' && p.payment_status === 'unpaid')
+        .reduce((acc, curr) => acc + (curr.total_cost || 0), 0);
 
     return (
         <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
@@ -169,29 +153,7 @@ export default function PurchasesPage() {
                         Track non-inventory expenses like equipment, repairs, and utilities.
                     </p>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                    {restaurant?.hotel_enabled && (
-                        <div className="flex items-center bg-muted/50 p-1 rounded-lg border border-border">
-                            <Button
-                                variant={businessLine === 'restaurant' ? 'secondary' : 'ghost'}
-                                size="sm"
-                                className={cn("h-8 px-3 text-xs gap-2", businessLine === 'restaurant' && "bg-background shadow-sm")}
-                                onClick={() => setBusinessLine('restaurant')}
-                            >
-                                <Utensils className="h-3.5 w-3.5 text-orange-500" />
-                                Restaurant
-                            </Button>
-                            <Button
-                                variant={businessLine === 'hotel' ? 'secondary' : 'ghost'}
-                                size="sm"
-                                className={cn("h-8 px-3 text-xs gap-2", businessLine === 'hotel' && "bg-background shadow-sm")}
-                                onClick={() => setBusinessLine('hotel')}
-                            >
-                                <Hotel className="h-3.5 w-3.5 text-blue-500" />
-                                Hotel
-                            </Button>
-                        </div>
-                    )}
+                <div className="flex items-center gap-2">
                     <Button variant="outline" size="icon" onClick={fetchPurchases} disabled={loading}>
                         <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
                     </Button>
@@ -208,7 +170,7 @@ export default function PurchasesPage() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div>
                             <p className="text-xs font-medium text-muted-foreground uppercase">Total Orders</p>
-                            <h3 className="text-2xl font-bold">{scopeTotals?.orderCount ?? purchases.length}</h3>
+                            <h3 className="text-2xl font-bold">{purchases.length}</h3>
                         </div>
                         <div className="p-2 bg-slate-100 rounded-lg">
                             <ShoppingCart className="w-5 h-5 text-slate-600" />
@@ -219,7 +181,7 @@ export default function PurchasesPage() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div>
                             <p className="text-xs font-medium text-muted-foreground uppercase">Paid (Received)</p>
-                            <h3 className="text-2xl font-bold text-green-600">{formatCurrency(scopeTotals?.paidReceivedTotal ?? 0)}</h3>
+                            <h3 className="text-2xl font-bold text-green-600">{formatCurrency(totalSpent)}</h3>
                         </div>
                         <div className="p-2 bg-green-50 rounded-lg">
                             <CheckCircle2 className="w-5 h-5 text-green-600" />
@@ -230,7 +192,7 @@ export default function PurchasesPage() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div>
                             <p className="text-xs font-medium text-muted-foreground uppercase">Unpaid (Received)</p>
-                            <h3 className="text-2xl font-bold text-rose-600">{formatCurrency(scopeTotals?.pendingReceivedTotal ?? 0)}</h3>
+                            <h3 className="text-2xl font-bold text-rose-600">{formatCurrency(pendingPayables)}</h3>
                         </div>
                         <div className="p-2 bg-rose-50 rounded-lg">
                             <Calculator className="w-5 h-5 text-rose-600" />
@@ -242,7 +204,7 @@ export default function PurchasesPage() {
                         <div>
                             <p className="text-xs font-medium text-muted-foreground uppercase">Returns</p>
                             <h3 className="text-2xl font-bold text-orange-600">
-                                {scopeTotals?.returnedCount ?? 0}
+                                {purchases.filter(p => p.status === 'returned').length}
                             </h3>
                         </div>
                         <div className="p-2 bg-orange-50 rounded-lg">
@@ -393,7 +355,6 @@ export default function PurchasesPage() {
                 onOpenChange={setIsDialogOpen} 
                 purchase={selectedPurchase}
                 onSuccess={fetchPurchases}
-                businessLine={businessLine}
             />
         </div>
     );

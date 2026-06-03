@@ -74,7 +74,7 @@
     },
     "afterPack": "scripts/afterPack-set-win-icon.js",
     "portable": {
-      "artifactName": "Yummy.POS.Portable.exe"
+      "artifactName": "Yummy POS Portable.exe"
     },
     "nsis": {
       "oneClick": false,
@@ -82,7 +82,7 @@
       "installerIcon": "electron-resources/icon.ico",
       "uninstallerIcon": "electron-resources/icon.ico",
       "installerHeaderIcon": "electron-resources/icon.ico",
-      "artifactName": "Yummy.POS.Setup.${version}.${ext}"
+      "artifactName": "Yummy-POS-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [

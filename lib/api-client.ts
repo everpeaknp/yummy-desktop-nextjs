@@ -1,15 +1,7 @@
-import axios, { type InternalAxiosRequestConfig } from 'axios';
+import axios from 'axios';
 import { syncAuthFromRefreshResponse } from '@/lib/auth-session';
 import { clearStoredTokens, readStoredTokens } from '@/lib/auth-storage';
 import { isAuthRecoveryActive } from '@/lib/auth-recovery';
-import { pathNeedsIdempotency } from '@/lib/request-lock';
-
-declare module 'axios' {
-  export interface AxiosRequestConfig {
-    /** Sent as X-Request-ID for idempotent payment / table / split actions. */
-    idempotencyKey?: string;
-  }
-}
 
 const API_BASE_URL = (() => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
@@ -32,16 +24,12 @@ const apiClient = axios.create({
 
 // Request Interceptor: Attach Token
 apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
+  (config) => {
+    // TODO: Get token from Zustand store or localStorage
     const token =
       typeof window !== 'undefined' ? readStoredTokens().accessToken : null;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-    }
-    const idempotencyKey = config.idempotencyKey;
-    const url = config.url ?? '';
-    if (idempotencyKey && pathNeedsIdempotency(url)) {
-      config.headers.set('X-Request-ID', idempotencyKey);
     }
     return config;
   },
