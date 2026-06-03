@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import { 
     Plus, 
     Search, 
@@ -16,7 +17,9 @@ import {
     Undo2,
     Calendar,
     User,
-    Calculator
+    Calculator,
+    Utensils,
+    Hotel,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,20 +48,66 @@ import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
+type BusinessLineFilter = "all" | "restaurant" | "hotel";
+
 export default function PurchasesPage() {
     const user = useAuth(state => state.user);
     const router = useRouter();
+    const restaurant = useRestaurant((s) => s.restaurant);
+    const selectedModule = useRestaurant((s) => s.selectedModule);
     const [purchases, setPurchases] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
+    const [businessLine, setBusinessLine] = useState<BusinessLineFilter>("all");
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [selectedPurchase, setSelectedPurchase] = useState<any>(null);
+
+    const dualBusinessLines =
+        !!restaurant?.hotel_enabled && !!restaurant?.restaurant_enabled;
+
+    const listBusinessLineParam =
+        businessLine === "all" ? undefined : businessLine;
+
+    const createBusinessLine = useMemo((): "restaurant" | "hotel" => {
+        if (businessLine === "restaurant" || businessLine === "hotel") {
+            return businessLine;
+        }
+        if (selectedModule === "hotel" || selectedModule === "restaurant") {
+            return selectedModule;
+        }
+        if (restaurant?.hotel_enabled && !restaurant?.restaurant_enabled) {
+            return "hotel";
+        }
+        return "restaurant";
+    }, [businessLine, selectedModule, restaurant?.hotel_enabled, restaurant?.restaurant_enabled]);
+
+    useEffect(() => {
+        if (!dualBusinessLines) {
+            if (restaurant?.hotel_enabled && !restaurant?.restaurant_enabled) {
+                setBusinessLine("hotel");
+            } else {
+                setBusinessLine("restaurant");
+            }
+        } else if (selectedModule === "hotel" || selectedModule === "restaurant") {
+            setBusinessLine(selectedModule);
+        }
+    }, [
+        dualBusinessLines,
+        selectedModule,
+        restaurant?.hotel_enabled,
+        restaurant?.restaurant_enabled,
+    ]);
 
     const fetchPurchases = useCallback(async () => {
         if (!user?.restaurant_id) return;
         setLoading(true);
         try {
-            const res = await apiClient.get(GeneralPurchaseApis.list({ restaurantId: user.restaurant_id }));
+            const res = await apiClient.get(
+                GeneralPurchaseApis.list({
+                    restaurantId: user.restaurant_id,
+                    businessLine: listBusinessLineParam,
+                }),
+            );
             if (res.data.status === "success") {
                 setPurchases(res.data.data.purchases);
             }
@@ -68,7 +117,7 @@ export default function PurchasesPage() {
         } finally {
             setLoading(false);
         }
-    }, [user?.restaurant_id]);
+    }, [user?.restaurant_id, listBusinessLineParam]);
 
     useEffect(() => {
         fetchPurchases();
@@ -216,8 +265,8 @@ export default function PurchasesPage() {
 
             {/* Main Table */}
             <Card>
-                <div className="p-4 border-b flex items-center gap-4">
-                    <div className="relative flex-1 max-w-sm">
+                <div className="p-4 border-b flex flex-wrap items-center gap-4">
+                    <div className="relative flex-1 min-w-[200px] max-w-sm">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                         <Input 
                             placeholder="Search items or suppliers..." 
@@ -226,6 +275,45 @@ export default function PurchasesPage() {
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
+                    {dualBusinessLines ? (
+                        <div className="flex items-center bg-muted/50 p-1 rounded-lg border border-border">
+                            <Button
+                                variant={businessLine === "all" ? "secondary" : "ghost"}
+                                size="sm"
+                                className={cn(
+                                    "h-8 px-3 text-xs",
+                                    businessLine === "all" && "bg-background shadow-sm",
+                                )}
+                                onClick={() => setBusinessLine("all")}
+                            >
+                                All
+                            </Button>
+                            <Button
+                                variant={businessLine === "restaurant" ? "secondary" : "ghost"}
+                                size="sm"
+                                className={cn(
+                                    "h-8 px-3 text-xs gap-2",
+                                    businessLine === "restaurant" && "bg-background shadow-sm",
+                                )}
+                                onClick={() => setBusinessLine("restaurant")}
+                            >
+                                <Utensils className="h-3.5 w-3.5 text-orange-500" />
+                                Restaurant
+                            </Button>
+                            <Button
+                                variant={businessLine === "hotel" ? "secondary" : "ghost"}
+                                size="sm"
+                                className={cn(
+                                    "h-8 px-3 text-xs gap-2",
+                                    businessLine === "hotel" && "bg-background shadow-sm",
+                                )}
+                                onClick={() => setBusinessLine("hotel")}
+                            >
+                                <Hotel className="h-3.5 w-3.5 text-blue-500" />
+                                Hotel
+                            </Button>
+                        </div>
+                    ) : null}
                 </div>
                 <Table>
                     <TableHeader>
@@ -354,6 +442,7 @@ export default function PurchasesPage() {
                 open={isDialogOpen} 
                 onOpenChange={setIsDialogOpen} 
                 purchase={selectedPurchase}
+                businessLine={createBusinessLine}
                 onSuccess={fetchPurchases}
             />
         </div>
