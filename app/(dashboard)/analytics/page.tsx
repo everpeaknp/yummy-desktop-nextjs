@@ -10,7 +10,11 @@ import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { Badge } from "@/components/ui/badge";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { AnalyticsApis, DayCloseApis } from "@/lib/api/endpoints";
-import { buildAnalyticsDashboardQuery, resolveDayCloseSessionsBusinessLine } from "@/lib/analytics-dashboard-query";
+import {
+    buildAnalyticsDashboardQuery,
+    resolveAnalyticsBusinessLine,
+    resolveDayCloseSessionsBusinessLine,
+} from "@/lib/analytics-dashboard-query";
 import { DaybookSelector } from "@/components/analytics/daybook-selector";
 import type { DayCloseSession } from "@/types/day-close-session";
 import { parseDayCloseSessions } from "@/types/day-close-session";
@@ -32,9 +36,8 @@ import {
 } from "@/lib/date-scope-policy";
 import { isPlanScopeError, parseApiScopeError, type ParsedScopeError } from "@/lib/parse-api-scope-error";
 
-import { RevenueChart } from "@/components/analytics/revenue-chart";
-import { CategoryPieChart } from "@/components/analytics/category-pie";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
+import { AnalyticsTabContent } from "@/components/analytics/analytics-tab-content";
 import {
     breakdownPieCopy,
     formatCancellationRate,
@@ -42,8 +45,8 @@ import {
     mapAnalyticsDashboard,
     mapRevenueTrendPoints,
     preferHourlyTrends,
-    topItemQuantitySold,
     type AnalyticsDashboardViewModel,
+    type AnalyticsMainTab,
     type BreakdownTab,
 } from "@/lib/analytics-dashboard-mapper";
 
@@ -59,7 +62,8 @@ export default function AnalyticsPage() {
     const [fetchTrigger, setFetchTrigger] = useState(0);
     const [date, setDate] = useState<DateRange | undefined>();
     const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
-    const [businessLine, setBusinessLine] = useState<string | undefined>(undefined);
+    const [businessLine, setBusinessLine] = useState<"restaurant" | "hotel">("restaurant");
+    const [mainTab, setMainTab] = useState<AnalyticsMainTab>("overview");
     const [station, setStation] = useState<string | undefined>(undefined);
     const [selectedDayCloseSession, setSelectedDayCloseSession] = useState<DayCloseSession | null>(null);
     const [dayCloseSessions, setDayCloseSessions] = useState<DayCloseSession[]>([]);
@@ -73,6 +77,18 @@ export default function AnalyticsPage() {
     const { ready, canViewAnalytics } = useAnalyticsViewAccess();
     const restaurant = useRestaurant((s) => s.restaurant);
     const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
+
+    const showBusinessLineToggle = Boolean(
+        restaurant?.hotel_enabled && restaurant?.restaurant_enabled
+    );
+
+    useEffect(() => {
+        if (restaurant?.hotel_enabled && !restaurant?.restaurant_enabled) {
+            setBusinessLine("hotel");
+        } else {
+            setBusinessLine("restaurant");
+        }
+    }, [restaurant?.hotel_enabled, restaurant?.restaurant_enabled]);
 
     const applyAllowedAnalyticsRange = useCallback(() => {
         setSelectedDayCloseSession(null);
@@ -92,10 +108,11 @@ export default function AnalyticsPage() {
         setDate(nextDate);
     }, []);
 
-    const handleBusinessLineChange = useCallback((line: string | undefined) => {
+    const handleBusinessLineChange = useCallback((line: "restaurant" | "hotel") => {
         setSelectedDayCloseSession(null);
         setStation(undefined);
         setBusinessLine(line);
+        setFetchTrigger((t) => t + 1);
     }, []);
 
     const handleStationChange = useCallback((nextStation: string | undefined) => {
@@ -124,7 +141,10 @@ export default function AnalyticsPage() {
             const res = await apiClient.get(
                 DayCloseApis.sessions({
                     restaurantId: user.restaurant_id,
-                    businessLine: resolveDayCloseSessionsBusinessLine(businessLine),
+                    businessLine: resolveDayCloseSessionsBusinessLine(businessLine, {
+                        restaurantEnabled: restaurant?.restaurant_enabled,
+                        hotelEnabled: restaurant?.hotel_enabled,
+                    }),
                     limit: 50,
                 })
             );
@@ -145,7 +165,7 @@ export default function AnalyticsPage() {
         } finally {
             setDayCloseSessionsLoading(false);
         }
-    }, [user?.restaurant_id, businessLine]);
+    }, [user?.restaurant_id, businessLine, restaurant?.restaurant_enabled, restaurant?.hotel_enabled]);
 
     useEffect(() => {
         if (!ready || !user?.restaurant_id || !canViewAnalytics) {
@@ -193,12 +213,14 @@ export default function AnalyticsPage() {
                 const query = buildAnalyticsDashboardQuery({
                     restaurantId: user.restaurant_id,
                     timezone,
-                    activeRange,
-                    customDate: date,
+                    activeRange: selectedDayCloseSession ? "custom" : activeRange,
+                    customDate: selectedDayCloseSession ? undefined : date,
                     businessLine,
                     station: selectedDayCloseSession ? undefined : station,
                     selectedDayCloseSession,
                     include: "core",
+                    restaurantEnabled: restaurant?.restaurant_enabled,
+                    hotelEnabled: restaurant?.hotel_enabled,
                 });
 
                 const dashboardUrl = AnalyticsApis.dashboard(query);
@@ -259,7 +281,17 @@ export default function AnalyticsPage() {
     }, [viewModel, breakdownType]);
 
     const pieCopy = breakdownPieCopy(breakdownType);
-    const topMenuItems = viewModel?.topMenuItems ?? [];
+    const useHourlyChart =
+        !selectedDayCloseSession && preferHourlyTrends(activeRange);
+    const chartTitle = useHourlyChart ? "Hourly Revenue" : "Revenue Trends";
+
+    const mainTabs: { id: AnalyticsMainTab; label: string }[] = [
+        { id: "overview", label: "Overview" },
+        { id: "finance", label: "Finance" },
+        { id: "orders", label: "Orders" },
+        { id: "menu", label: "Menu" },
+        { id: "staff", label: "Staff" },
+    ];
 
     if (!ready) return <AnalyticsAccessLoading />;
     if (!canViewAnalytics) return <AnalyticsAccessDenied />;
@@ -313,41 +345,45 @@ export default function AnalyticsPage() {
                         onSelect={handleDayCloseSessionSelect}
                         onOpen={loadDayCloseSessions}
                     />
-                    <DateRangeDropdown 
+                    <DateRangeDropdown
                         activeRange={activeRange}
                         setActiveRange={handleActiveRangeChange}
                         date={date}
                         setDate={handleDateChange}
+                        disabled={Boolean(selectedDayCloseSession)}
                     />
                 </div>
             </div>
 
             {/* Module Selector (Only if both enabled) */}
-            {restaurant?.hotel_enabled && restaurant?.restaurant_enabled && (
+            {showBusinessLineToggle ? (
                 <div className="flex items-center gap-4">
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">View Metrics For:</p>
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">
+                        Business line
+                    </p>
                     <div className="flex bg-muted p-1 rounded-lg border border-border">
-                        <FilterButton 
-                            label="All Services" 
-                            active={businessLine === undefined} 
-                            onClick={() => handleBusinessLineChange(undefined)} 
-                            icon={<LayoutGrid className="w-3 h-3" />} 
+                        <FilterButton
+                            label="Restaurant"
+                            active={businessLine === "restaurant"}
+                            onClick={() => handleBusinessLineChange("restaurant")}
+                            icon={<Utensils className="w-3 h-3" />}
+                            disabled={Boolean(selectedDayCloseSession)}
                         />
-                        <FilterButton 
-                            label="Restaurant" 
-                            active={businessLine === 'restaurant'} 
-                            onClick={() => handleBusinessLineChange('restaurant')} 
-                            icon={<Utensils className="w-3 h-3" />} 
-                        />
-                        <FilterButton 
-                            label="Hotel / Rooms" 
-                            active={businessLine === 'hotel'} 
-                            onClick={() => handleBusinessLineChange('hotel')} 
-                            icon={<Bed className="w-3 h-3" />} 
+                        <FilterButton
+                            label="Hotel / Rooms"
+                            active={businessLine === "hotel"}
+                            onClick={() => handleBusinessLineChange("hotel")}
+                            icon={<Bed className="w-3 h-3" />}
+                            disabled={Boolean(selectedDayCloseSession)}
                         />
                     </div>
+                    {selectedDayCloseSession ? (
+                        <p className="text-xs text-muted-foreground">
+                            Locked to {resolveAnalyticsBusinessLine(selectedDayCloseSession.business_line)} daybook
+                        </p>
+                    ) : null}
                 </div>
-            )}
+            ) : null}
 
             {/* Drilldowns */}
             <div className="flex flex-wrap items-center gap-2">
@@ -512,117 +548,90 @@ export default function AnalyticsPage() {
                         </Card>
                     </div>
 
-                    {/* Charts Section */}
-                    <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
-                        <div className="lg:col-span-4 min-w-0">
-                            <RevenueChart
-                                data={trendsData}
-                                loading={loading}
-                                hourlyData={viewModel?.hourlyChart}
-                                title={
-                                    preferHourlyTrends(activeRange)
-                                        ? "Hourly Revenue"
-                                        : "Revenue Trends"
-                                }
+                    <div className="flex flex-wrap gap-2 border-b border-border pb-2">
+                        {mainTabs.map((tab) => (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setMainTab(tab.id)}
+                                className={cn(
+                                    "px-4 py-2 rounded-lg text-sm font-semibold transition-colors",
+                                    mainTab === tab.id
+                                        ? "bg-primary text-primary-foreground"
+                                        : "text-muted-foreground hover:bg-muted"
+                                )}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {(mainTab === "overview" || mainTab === "orders") && (
+                        <div className="flex bg-muted p-1 rounded-lg text-xs w-fit">
+                            {(["source", "payment", "category"] as const).map((type) => (
+                                <button
+                                    key={type}
+                                    type="button"
+                                    onClick={() => setBreakdownType(type)}
+                                    className={cn(
+                                        "px-3 py-1.5 rounded-md capitalize transition-all",
+                                        breakdownType === type
+                                            ? "bg-background text-foreground shadow-sm font-medium"
+                                            : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
+                                    {type === "source" ? "channel" : type === "category" ? "menu" : type}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {viewModel ? (
+                        <AnalyticsTabContent
+                            activeTab={mainTab}
+                            viewModel={viewModel}
+                            trendsData={trendsData}
+                            pieData={categoryData}
+                            pieTitle={pieCopy.title}
+                            pieDescription={pieCopy.description}
+                            chartTitle={chartTitle}
+                            loading={loading}
+                            useHourlyChart={useHourlyChart}
+                        />
+                    ) : null}
+
+                    {mainTab === "overview" ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <BigMetricCard
+                                label="TOTAL ORDERS"
+                                value={viewModel?.periodSnapshot.totalOrders ?? 0}
+                                noCurrency
+                                icon={<CreditCard className="w-4 h-4" />}
+                                color="text-blue-500"
+                                tagColor="bg-blue-500/10 text-blue-500"
+                            />
+                            <BigMetricCard
+                                label="AVG ORDER VALUE"
+                                value={viewModel?.periodSnapshot.avgOrderValue ?? 0}
+                                icon={<Activity className="w-4 h-4" />}
+                                color="text-purple-500"
+                                tagColor="bg-purple-500/10 text-purple-500"
+                            />
+                            <BigMetricCard
+                                label="PEAK HOUR"
+                                value={viewModel?.operations.peakHour || "—"}
+                                noCurrency
+                                icon={<TrendingUp className="w-4 h-4" />}
+                                color="text-pink-500"
+                            />
+                            <BigMetricCard
+                                label="CANCELLATION RATE"
+                                value={formatCancellationRate(viewModel?.operations)}
+                                noCurrency
+                                icon={<ArrowDownRight className="w-4 h-4" />}
+                                color="text-rose-500"
                             />
                         </div>
-                        <div className="lg:col-span-3 min-w-0">
-                            {/* Breakdown Tabs */}
-                            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
-                                <div className="p-4 border-b border-border flex flex-col sm:flex-row justify-between items-center gap-4">
-                                    <div>
-                                        <h3 className="font-semibold text-lg">{pieCopy.title}</h3>
-                                        <p className="text-sm text-muted-foreground mt-0.5">{pieCopy.description}</p>
-                                    </div>
-                                    <div className="flex bg-muted p-1 rounded-lg text-xs">
-                                        {/* Tabs: Source, Payment, Category (matching Flutter) */}
-                                        {(['source', 'payment', 'category'] as const).map((type) => (
-                                            <button
-                                                key={type}
-                                                onClick={() => setBreakdownType(type)}
-                                                className={`px-3 py-1.5 rounded-md capitalize transition-all ${breakdownType === type
-                                                    ? 'bg-background text-foreground shadow-sm font-medium'
-                                                    : 'text-muted-foreground hover:text-foreground'
-                                                    }`}
-                                            >
-                                                {type === 'source' ? 'channel' : type === 'category' ? 'menu' : type}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="p-4 min-w-0">
-                                    <CategoryPieChart
-                                        embedded
-                                        data={categoryData}
-                                        loading={loading}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Detailed Metrics */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* ... existing BigMetricCards ... */}
-                        <BigMetricCard
-                            label="TOTAL ORDERS"
-                            value={viewModel?.periodSnapshot.totalOrders ?? 0}
-                            noCurrency
-                            icon={<CreditCard className="w-4 h-4" />}
-                            color="text-blue-500"
-                            tagColor="bg-blue-500/10 text-blue-500"
-                        />
-                        <BigMetricCard
-                            label="AVG ORDER VALUE"
-                            value={viewModel?.periodSnapshot.avgOrderValue ?? 0}
-                            icon={<Activity className="w-4 h-4" />}
-                            color="text-purple-500"
-                            tagColor="bg-purple-500/10 text-purple-500"
-                        />
-                        <BigMetricCard
-                            label="PEAK HOUR"
-                            value={viewModel?.operations.peakHour || "—"}
-                            noCurrency
-                            icon={<TrendingUp className="w-4 h-4" />}
-                            color="text-pink-500"
-                        />
-                        <BigMetricCard
-                            label="CANCELLATION RATE"
-                            value={formatCancellationRate(viewModel?.operations)}
-                            noCurrency
-                            icon={<ArrowDownRight className="w-4 h-4" />}
-                            color="text-rose-500"
-                        />
-                    </div>
-
-                    {topMenuItems.length > 0 ? (
-                        <section className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <h3 className="font-semibold text-lg">Top Menu Items</h3>
-                                <Link href="/analytics/menu">
-                                    <Button variant="ghost" size="sm" className="gap-1">
-                                        View all <ChevronRight className="w-4 h-4" />
-                                    </Button>
-                                </Link>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {topMenuItems.slice(0, 5).map((item: any) => (
-                                    <Card key={item.id ?? item.name} className="border-border shadow-sm">
-                                        <CardContent className="p-4 flex items-center justify-between gap-3">
-                                            <div className="min-w-0">
-                                                <p className="font-semibold truncate">{item.name}</p>
-                                                <p className="text-xs text-muted-foreground">
-                                                    {topItemQuantitySold(item)} sold
-                                                </p>
-                                            </div>
-                                            <p className="text-sm font-bold shrink-0">
-                                                Rs. {Number(item.revenue || 0).toLocaleString()}
-                                            </p>
-                                        </CardContent>
-                                    </Card>
-                                ))}
-                            </div>
-                        </section>
                     ) : null}
 
                     {/* Day Close Action */}
@@ -723,19 +732,34 @@ function AnalyticsSkeleton() {
     )
 }
 
-function FilterButton({ label, active, onClick, icon }: any) {
+function FilterButton({
+    label,
+    active,
+    onClick,
+    icon,
+    disabled,
+}: {
+    label: string;
+    active: boolean;
+    onClick: () => void;
+    icon: React.ReactNode;
+    disabled?: boolean;
+}) {
     return (
         <button
+            type="button"
             onClick={onClick}
+            disabled={disabled}
             className={cn(
                 "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
                 active
                     ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-card"
+                    : "text-muted-foreground hover:text-foreground hover:bg-card",
+                disabled && "opacity-50 cursor-not-allowed pointer-events-none"
             )}
         >
             {icon}
             {label}
         </button>
-    )
+    );
 }

@@ -23,6 +23,8 @@ export type BuildAnalyticsDashboardQueryInput = {
   station?: string;
   selectedDayCloseSession?: DayCloseSession | null;
   include?: string;
+  restaurantEnabled?: boolean;
+  hotelEnabled?: boolean;
 };
 
 function formatDate(date: Date): string {
@@ -84,7 +86,15 @@ export function buildAnalyticsDashboardQuery(
     station,
     selectedDayCloseSession,
     include = "core",
+    restaurantEnabled,
+    hotelEnabled,
   } = input;
+
+  const lineOpts = { restaurantEnabled, hotelEnabled };
+  const resolvedBusinessLine = resolveAnalyticsBusinessLine(
+    selectedDayCloseSession?.business_line ?? businessLine,
+    lineOpts
+  );
 
   if (selectedDayCloseSession) {
     return {
@@ -92,13 +102,14 @@ export function buildAnalyticsDashboardQuery(
       timezone,
       startTime: selectedDayCloseSession.period_start_at,
       endTime: selectedDayCloseSession.period_end_at,
-      businessLine: selectedDayCloseSession.business_line,
+      businessLine: resolvedBusinessLine,
       include,
     };
   }
 
   const range = resolvePresetDateRange(activeRange, customDate);
-  const useExactWindow = Boolean(range.startTime && range.endTime);
+  const useExactWindow =
+    activeRange === "custom" && Boolean(range.startTime && range.endTime);
 
   return {
     restaurantId,
@@ -112,18 +123,39 @@ export function buildAnalyticsDashboardQuery(
           dateFrom: range.dateFrom,
           dateTo: range.dateTo,
         }),
-    businessLine,
-    station,
+    businessLine: resolvedBusinessLine,
+    station: resolveAnalyticsStation(station),
     include,
   };
 }
 
-/** Matches Flutter: all-services session list defaults to restaurant scope. */
+/** Matches Flutter: session list defaults to restaurant unless hotel-only outlet. */
 export function resolveDayCloseSessionsBusinessLine(
-  businessLine?: string
-): string | undefined {
-  if (businessLine === "hotel" || businessLine === "restaurant") {
-    return businessLine;
-  }
+  businessLine?: string,
+  opts?: { restaurantEnabled?: boolean; hotelEnabled?: boolean }
+): "restaurant" | "hotel" {
+  return resolveAnalyticsBusinessLine(businessLine, opts);
+}
+
+/**
+ * Always sends an explicit business_line — never mixes restaurant + hotel in one query.
+ * Restaurant is the default when both modules are enabled.
+ */
+export function resolveAnalyticsBusinessLine(
+  selected: string | undefined,
+  opts?: { restaurantEnabled?: boolean; hotelEnabled?: boolean }
+): "restaurant" | "hotel" {
+  const restaurantOn = opts?.restaurantEnabled !== false;
+  const hotelOn = Boolean(opts?.hotelEnabled);
+
+  if (selected === "hotel" && hotelOn) return "hotel";
+  if (selected === "restaurant" && restaurantOn) return "restaurant";
+  if (hotelOn && !restaurantOn) return "hotel";
   return "restaurant";
+}
+
+/** Omit station param when unset or "all". */
+export function resolveAnalyticsStation(station?: string): string | undefined {
+  if (!station || station === "all") return undefined;
+  return station;
 }

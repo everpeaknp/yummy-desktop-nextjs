@@ -103,7 +103,7 @@ export function DaybookSelector({
             />
 
             <DaybookOption
-              title="All daybooks"
+              title="Daybook: All"
               subtitle="Use the selected date range"
               selected={selectedSession === null}
               onSelect={() => {

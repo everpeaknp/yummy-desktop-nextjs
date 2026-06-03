@@ -19,6 +19,34 @@ import type {
 
 export type BreakdownTab = "source" | "payment" | "category";
 
+export type AnalyticsMainTab =
+  | "overview"
+  | "finance"
+  | "orders"
+  | "menu"
+  | "staff";
+
+export type AnalyticsMetricRow = {
+  key: string;
+  label: string;
+  value: number;
+  unit?: string;
+  deltaPct?: number;
+};
+
+export function listMetricsFromSection(
+  section: { metrics?: unknown } | null | undefined
+): AnalyticsMetricRow[] {
+  const metrics = metricMap(section ?? {});
+  return Object.entries(metrics).map(([key, row]) => ({
+    key,
+    label: String(row.label ?? key),
+    value: num(row.value),
+    unit: typeof row.unit === "string" ? row.unit : undefined,
+    deltaPct: metricDeltaPct({ [key]: row }, [key]),
+  }));
+}
+
 export type TrendPoint = { date: string; value: number };
 
 export type PieSlice = { name: string; value: number };
@@ -65,15 +93,23 @@ export function mapAnalyticsDashboard(raw: unknown): AnalyticsDashboardViewModel
   const staff = parsed.tabs?.staff ?? {};
 
   const executiveSummary = overview.executive_summary ?? {};
+  const pnlSummary = finance.pnl_summary ?? {};
   const outcomeSummary = orders.outcome_summary ?? {};
   const overviewMetrics = metricMap(executiveSummary);
+  const pnlMetrics = metricMap(pnlSummary);
   const outcomeMetrics = metricMap(outcomeSummary);
 
-  const overviewSales = metricValue(overviewMetrics, ["sales", "income"]);
-  const overviewIncome = metricValue(overviewMetrics, ["income", "sales"]);
-  const overviewExpense = metricValue(overviewMetrics, ["expense"]);
-  const overviewProfit = metricValue(overviewMetrics, ["net_profit", "profit"]);
-  const overviewOrders = Math.round(metricValue(overviewMetrics, ["orders"]));
+  const periodMetrics =
+    Object.keys(pnlMetrics).length > 0 ? pnlMetrics : overviewMetrics;
+
+  const overviewSales = metricValue(periodMetrics, ["sales", "income"]);
+  const overviewIncome = metricValue(periodMetrics, ["income", "sales"]);
+  const overviewExpense = metricValue(periodMetrics, ["expense"]);
+  const overviewProfit = metricValue(periodMetrics, ["net_profit", "profit"]);
+  const overviewOrders = Math.round(
+    metricValue(periodMetrics, ["orders"]) ||
+      metricValue(outcomeMetrics, ["orders"])
+  );
   const overviewAvgOrder =
     overviewOrders > 0 ? overviewSales / overviewOrders : 0;
   const overviewProfitMargin =
@@ -96,11 +132,13 @@ export function mapAnalyticsDashboard(raw: unknown): AnalyticsDashboardViewModel
       profit: overviewProfit,
     },
     deltas: {
-      incomePct: metricDeltaPct(overviewMetrics, ["income", "sales"]),
-      expensePct: metricDeltaPct(overviewMetrics, ["expense"]),
-      profitPct: metricDeltaPct(overviewMetrics, ["net_profit", "profit"]),
-      salesPct: metricDeltaPct(overviewMetrics, ["sales", "income"]),
-      ordersPct: metricDeltaPct(overviewMetrics, ["orders"]),
+      incomePct: metricDeltaPct(periodMetrics, ["income", "sales"]),
+      expensePct: metricDeltaPct(periodMetrics, ["expense"]),
+      profitPct: metricDeltaPct(periodMetrics, ["net_profit", "profit"]),
+      salesPct: metricDeltaPct(periodMetrics, ["sales", "income"]),
+      ordersPct:
+        metricDeltaPct(periodMetrics, ["orders"]) ||
+        metricDeltaPct(outcomeMetrics, ["orders"]),
     },
   };
 
