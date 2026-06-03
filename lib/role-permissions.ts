@@ -1,8 +1,6 @@
 // ─── Role-Based Access Control for Web Frontend ────────────────────────────
 // Mirrors backend (permissions.py) and Flutter (role_permissions.dart + role_guard.dart)
 
-import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-download";
-
 export type UserRole =
   | "admin"
   | "manager"
@@ -429,12 +427,6 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     title: "Feedback",
     href: "/feedback",
     allowedRoles: ALL_DASHBOARD_ROLES,
-  },
-  {
-    title: "Download",
-    href: "/desktop-download",
-    allowedRoles: ALL_DASHBOARD_ROLES,
-    externalUrl: DESKTOP_APP_DOWNLOAD_URL,
   },
 ];
 
