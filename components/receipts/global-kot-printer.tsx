@@ -251,13 +251,20 @@ export function GlobalKotPrinter() {
                             });
                             
                             lines.push(`--------------------------------`);
-                            lines.push(`\n\n\n\n\x1B\x69`); // Cut paper
+                            lines.push(`\r\n\r\n\r\n\x1B\x69`); // Cut paper
                             
-                            const payload = lines.join('\n');
+                            // Add padding to prevent cheap printers from dropping the buffer on TCP FIN
+                            for (let i = 0; i < 50; i++) lines.push(`\x00`);
+                            
+                            const payload = lines.join('\r\n');
                             winAny.electronAPI.printNetworkRaw({
                                 host: cfg.address.trim(),
                                 port: Number(cfg.port || 9100),
                                 payload: payload
+                            }).then((res: any) => {
+                                console.log("[GlobalKotPrinter] Raw network print response:", res);
+                            }).catch((err: any) => {
+                                console.error("[GlobalKotPrinter] Raw network print error:", err);
                             });
                         } else {
                             winAny.electronAPI.getPrinters().then((printers: any[]) => {
