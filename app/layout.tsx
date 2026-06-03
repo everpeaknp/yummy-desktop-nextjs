@@ -15,6 +15,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { GlobalLoaderOverlay } from "@/components/global-loader-overlay";
 import { AppProviders } from "@/components/providers";
+import { AppUpdaterNotifier } from "@/components/app-updater-notifier";
 
 export default function RootLayout({
   children,
@@ -30,6 +31,7 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
+            <AppUpdaterNotifier />
             <AppProviders>
               <GlobalLoaderOverlay />
               {children}
