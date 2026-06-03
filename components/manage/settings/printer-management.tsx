@@ -109,9 +109,11 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
 
             // First prefer station config already present in restaurant payload.
             // If this field exists, trust it even when the list is empty.
-            const hasEmbeddedConfig = !!restaurant && Object.prototype.hasOwnProperty.call(restaurant as any, "kot_station_config");
+            // We use getState() to avoid adding 'restaurant' to the dependency array, which would cause an infinite refetch loop when the store updates.
+            const currentRestaurant = useRestaurant.getState().restaurant;
+            const hasEmbeddedConfig = !!currentRestaurant && Object.prototype.hasOwnProperty.call(currentRestaurant as any, "kot_station_config");
             if (hasEmbeddedConfig) {
-                const embeddedStations = (restaurant as any)?.kot_station_config?.stations;
+                const embeddedStations = (currentRestaurant as any)?.kot_station_config?.stations;
                 setStations(Array.isArray(embeddedStations) ? embeddedStations : []);
                 return;
             }
@@ -135,7 +137,7 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
         } finally {
             setLoading(false);
         }
-    }, [restaurantId, restaurant]);
+    }, [restaurantId]);
 
     useEffect(() => {
         fetchData();
@@ -299,7 +301,7 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
     const handleUpdateStationConfig = async (stationId: string, printerId: string) => {
         try {
             const updatedStations = stations.map(s => 
-                s.id === stationId ? { ...s, printer_id: printerId === 'none' ? null : parseInt(printerId) } : s
+                String(s.id) === String(stationId) ? { ...s, printer_id: printerId === 'none' ? null : parseInt(printerId) } : s
             );
 
             const payload = { stations: updatedStations };
@@ -311,6 +313,9 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
             });
             setStations(updatedStations);
             toast.success("Station configuration updated");
+            
+            // Refetch the restaurant to update the Zustand store so the cached kot_station_config isn't stale
+            useRestaurant.getState().fetchRestaurant();
         } catch (err) {
             toast.error("Failed to update station config");
         }

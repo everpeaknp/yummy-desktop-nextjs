@@ -38,3 +38,4 @@ ts-debug.log*
 next-env.d.ts
 
 .env
+app/secrets/firebase-credentials.json
