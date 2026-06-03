@@ -1610,7 +1610,12 @@ export default function CheckoutPage() {
                                   size="sm"
                                   className="h-8 px-2.5 font-semibold text-xs"
                                   onClick={() => {
-                                    router.push(`/orders/${gOrder.order_id}/checkout?returnTo=${encodeURIComponent(window.location.pathname)}`);
+                                    if (String(gOrder.order_id) === String(orderId)) {
+                                      setPayAmount(bill.balance_due.toFixed(2));
+                                      setPaymentOpen(true);
+                                    } else {
+                                      router.push(`/orders/${gOrder.order_id}/checkout?returnTo=${encodeURIComponent(window.location.pathname)}`);
+                                    }
                                   }}
                                 >
                                   Pay
