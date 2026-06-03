@@ -111,41 +111,53 @@ export function GlobalKotPrinter() {
             const incomingKeys = buildDedupeKeys(data);
             const isDuplicate = incomingKeys.some((key) => {
                 const lastSeen = recentPrintsRef.current.get(key) || 0;
-                return now - lastSeen < 5000;
+                // Extended debounce to 8s to match Flutter
+                return now - lastSeen < 8000;
             });
             if (isDuplicate) {
                 console.log("[GlobalKotPrinter] Skipping duplicate KOT print event:", incomingKeys);
                 return;
             }
             
-            // Mark incoming keys as seen immediately to prevent async race conditions
-            // during the subsequent API fetch call.
+            // State check (matching Flutter)
+            if (data.auto_printed_at || data.kot?.auto_printed_at) {
+                console.log("[GlobalKotPrinter] Skipping KOT as it was already marked auto-printed in DB.");
+                return;
+            }
+            
+            // Mark incoming keys as seen immediately (In-flight Lock)
             incomingKeys.forEach((key) => recentPrintsRef.current.set(key, now));
             
+            let kotId = data.kot_id || data.id || data.kot?.id;
+            
+            // Atomic Backend Claiming: Only one terminal should win this race!
+            if (kotId) {
+                try {
+                    const claimRes = await apiClient.post(KotApis.markKotAutoPrinted(kotId));
+                    if (claimRes.data?.status === "error" || claimRes.status !== 200) {
+                        console.log(`[GlobalKotPrinter] Failed to claim KOT ${kotId} for printing. (Another terminal may have printed it)`);
+                        return;
+                    }
+                    console.log(`[GlobalKotPrinter] Successfully claimed KOT ${kotId} for printing.`);
+                } catch (err) {
+                    console.log(`[GlobalKotPrinter] KOT ${kotId} claim rejected by backend (likely already claimed by another terminal).`);
+                    return;
+                }
+            }
+
             // If the payload is missing items (like from kot_created), fetch the full KOT
             if (!data.items || data.items.length === 0) {
-                const kotId = data.kot_id || data.id;
                 if (kotId) {
                     try {
                         const res = await apiClient.get(`/kots/${kotId}`);
-                        if (res.data?.data) {
-                            data = { ...data, ...res.data.data };
-                        }
+                        data = res.data?.data || res.data;
                     } catch (err) {
                         console.error("[GlobalKotPrinter] Failed to fetch full KOT details", err);
+                        return;
                     }
                 }
             }
 
-            const resolvedKeys = buildDedupeKeys(data);
-            resolvedKeys.forEach((key) => recentPrintsRef.current.set(key, now));
-            for (const [key, ts] of recentPrintsRef.current.entries()) {
-                if (now - ts > 30000) {
-                    recentPrintsRef.current.delete(key);
-                }
-            }
-
-            // Fetch template
             let activeTemplate: any[] = [];
             const currentRestaurantId = useRestaurant.getState().restaurant?.id;
             const restId = data.restaurant_id || data.restaurantId || data.order?.restaurant_id || currentRestaurantId;
