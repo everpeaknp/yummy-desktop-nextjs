@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { OrderApis, AnalyticsApis, TableApis } from "@/lib/api/endpoints";
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions";
@@ -113,13 +113,30 @@ export default function OrdersPage() {
         dateRangeInitialized.current = true;
     }, [user, primaryRole]);
     const router = useRouter();
+    const pathname = usePathname();
     const searchParams = useSearchParams();
+    const isHistoryRoute =
+        pathname === "/orders/history" || pathname === "/order-history";
 
-    // Set initial tab from URL if present
+    const setOrdersTab = useCallback(
+        (tab: "active" | "history") => {
+            setActiveTab(tab);
+            router.replace(tab === "history" ? "/orders/history" : "/orders", { scroll: false });
+        },
+        [router],
+    );
+
+    // Route + legacy ?tab=history query
     useEffect(() => {
-        const tab = searchParams?.get("tab");
-        if (tab === "history") setActiveTab("history");
-    }, [searchParams]);
+        if (isHistoryRoute || searchParams?.get("tab") === "history") {
+            setActiveTab("history");
+            if (searchParams?.get("tab") === "history" && pathname === "/orders") {
+                router.replace("/orders/history", { scroll: false });
+            }
+        } else {
+            setActiveTab("active");
+        }
+    }, [isHistoryRoute, searchParams, pathname, router]);
 
     // 1. Session Restoration
     useEffect(() => {
@@ -447,13 +464,13 @@ export default function OrdersPage() {
                         <TabButton 
                             label="Active" 
                             active={activeTab === "active"} 
-                            onClick={() => setActiveTab("active")} 
+                            onClick={() => setOrdersTab("active")} 
                             icon={<ClipboardList className="h-4 w-4" />}
                         />
                         <TabButton 
                             label="History" 
                             active={activeTab === "history"} 
-                            onClick={() => setActiveTab("history")} 
+                            onClick={() => setOrdersTab("history")} 
                             icon={<History className="h-4 w-4" />}
                         />
                     </div>

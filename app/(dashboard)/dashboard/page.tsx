@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -818,19 +818,218 @@ function DayCloseStatusCard({ dayCloseStatus }: { dayCloseStatus: any }) {
   )
 }
 
+const ATTENTION_DRAG_THRESHOLD_PX = 10
+
 function AttentionItemsCard({ items }: { items: any[] }) {
   const visibleItems = items.slice(0, 5)
+  const itemCount = visibleItems.length
+  const infiniteLoop = itemCount > 1
+  const carouselItems = useMemo(
+    () => (infiniteLoop ? [...visibleItems, ...visibleItems, ...visibleItems] : visibleItems),
+    [visibleItems, infiniteLoop],
+  )
+  const middleStartIndex = infiniteLoop ? itemCount : 0
+
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const cardRefs = useRef<Array<HTMLAnchorElement | null>>([])
+  const dragRef = useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    scrollLeft: 0,
+    didDrag: false,
+    lastX: 0,
+    lastTime: 0,
+    velocity: 0,
+  })
+  const suppressClickRef = useRef(false)
+  const momentumFrameRef = useRef<number | null>(null)
+  const loopMetricsRef = useRef({ middleScrollLeft: 0, setWidth: 0 })
+  const isLoopAdjustingRef = useRef(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isPointerDown, setIsPointerDown] = useState(false)
+
+  const attentionCursor = isDragging || isPointerDown ? "grabbing" : "grab"
+
+  const cancelAttentionMomentum = () => {
+    if (momentumFrameRef.current != null) {
+      cancelAnimationFrame(momentumFrameRef.current)
+      momentumFrameRef.current = null
+    }
+  }
+
+  const getAttentionCardScrollLeft = (card: HTMLElement) => {
+    const container = scrollRef.current
+    if (!container) return 0
+    const containerRect = container.getBoundingClientRect()
+    const cardRect = card.getBoundingClientRect()
+    return container.scrollLeft + (cardRect.left - containerRect.left)
+  }
+
+  const updateAttentionLoopMetrics = useCallback(() => {
+    if (!infiniteLoop) return
+    const middle = cardRefs.current[middleStartIndex]
+    const thirdStart = cardRefs.current[itemCount * 2]
+    if (!middle || !thirdStart) return
+
+    const middleScrollLeft = getAttentionCardScrollLeft(middle)
+    const setWidth = getAttentionCardScrollLeft(thirdStart) - middleScrollLeft
+    loopMetricsRef.current = { middleScrollLeft, setWidth }
+  }, [infiniteLoop, itemCount, middleStartIndex])
+
+  const normalizeAttentionInfiniteScroll = useCallback(() => {
+    if (!infiniteLoop || isLoopAdjustingRef.current) return
+    const container = scrollRef.current
+    if (!container) return
+
+    updateAttentionLoopMetrics()
+    const { middleScrollLeft, setWidth } = loopMetricsRef.current
+    if (setWidth <= 0) return
+
+    const x = container.scrollLeft
+    const leftBound = middleScrollLeft - setWidth * 0.15
+    const rightBound = middleScrollLeft + setWidth - 1
+
+    if (x < leftBound) {
+      isLoopAdjustingRef.current = true
+      container.scrollLeft = x + setWidth
+      requestAnimationFrame(() => {
+        isLoopAdjustingRef.current = false
+      })
+    } else if (x >= rightBound) {
+      isLoopAdjustingRef.current = true
+      container.scrollLeft = x - setWidth
+      requestAnimationFrame(() => {
+        isLoopAdjustingRef.current = false
+      })
+    }
+  }, [infiniteLoop, updateAttentionLoopMetrics])
+
+  const syncAttentionActiveIndex = useCallback(() => {
+    const container = scrollRef.current
+    if (!container || itemCount === 0) return
+
+    let nearestRef = 0
+    let nearestDistance = Number.POSITIVE_INFINITY
+    cardRefs.current.forEach((card, index) => {
+      if (!card) return
+      const left = getAttentionCardScrollLeft(card)
+      const distance = Math.abs(container.scrollLeft - left)
+      if (distance < nearestDistance) {
+        nearestDistance = distance
+        nearestRef = index
+      }
+    })
+
+    setActiveIndex(infiniteLoop ? nearestRef % itemCount : nearestRef)
+  }, [itemCount, infiniteLoop])
+
+  const scrollAttentionToRef = (refIndex: number, behavior: ScrollBehavior = "smooth") => {
+    const container = scrollRef.current
+    const target = cardRefs.current[refIndex]
+    if (!container || !target) return
+    container.scrollTo({
+      left: getAttentionCardScrollLeft(target),
+      behavior,
+    })
+  }
+
+  const snapAttentionToNearest = (behavior: ScrollBehavior = "smooth") => {
+    const container = scrollRef.current
+    if (!container || itemCount === 0) return
+
+    let nearestRef = 0
+    let nearestDistance = Number.POSITIVE_INFINITY
+    cardRefs.current.forEach((card, index) => {
+      if (!card) return
+      const left = getAttentionCardScrollLeft(card)
+      const distance = Math.abs(container.scrollLeft - left)
+      if (distance < nearestDistance) {
+        nearestDistance = distance
+        nearestRef = index
+      }
+    })
+
+    const target = cardRefs.current[nearestRef]
+    if (!target) return
+
+    setActiveIndex(infiniteLoop ? nearestRef % itemCount : nearestRef)
+    container.scrollTo({
+      left: getAttentionCardScrollLeft(target),
+      behavior,
+    })
+    if (behavior === "auto") {
+      normalizeAttentionInfiniteScroll()
+    }
+  }
+
+  const runAttentionMomentum = (initialVelocity: number) => {
+    const container = scrollRef.current
+    if (!container) return
+
+    cancelAttentionMomentum()
+    let velocity = initialVelocity
+    let lastFrame = performance.now()
+    const minVelocity = 0.015
+
+    const step = (now: number) => {
+      const dt = Math.min(32, now - lastFrame)
+      lastFrame = now
+
+      if (Math.abs(velocity) < minVelocity) {
+        momentumFrameRef.current = null
+        snapAttentionToNearest("smooth")
+        return
+      }
+
+      container.scrollLeft -= velocity * dt
+      normalizeAttentionInfiniteScroll()
+      syncAttentionActiveIndex()
+      velocity *= Math.pow(0.9, dt / 16)
+      momentumFrameRef.current = requestAnimationFrame(step)
+    }
+
+    momentumFrameRef.current = requestAnimationFrame(step)
+  }
+
+  useEffect(() => {
+    return () => cancelAttentionMomentum()
+  }, [])
+
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+
+    const onScroll = () => {
+      normalizeAttentionInfiniteScroll()
+      syncAttentionActiveIndex()
+    }
+
+    container.addEventListener("scroll", onScroll, { passive: true })
+    return () => container.removeEventListener("scroll", onScroll)
+  }, [normalizeAttentionInfiniteScroll, syncAttentionActiveIndex, carouselItems.length])
 
   useEffect(() => {
     setActiveIndex(0)
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({ left: 0, behavior: "auto" })
-    }
-  }, [visibleItems.length])
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!scrollRef.current) return
+        if (infiniteLoop) {
+          const middle = cardRefs.current[middleStartIndex]
+          if (middle) {
+            scrollRef.current.scrollLeft = getAttentionCardScrollLeft(middle)
+            updateAttentionLoopMetrics()
+            normalizeAttentionInfiniteScroll()
+          }
+        } else {
+          scrollRef.current.scrollTo({ left: 0, behavior: "auto" })
+        }
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [visibleItems.length, infiniteLoop, middleStartIndex, updateAttentionLoopMetrics, normalizeAttentionInfiniteScroll])
 
   useEffect(() => {
     if (visibleItems.length <= 1 || isPaused) return
@@ -843,20 +1042,20 @@ function AttentionItemsCard({ items }: { items: any[] }) {
   }, [visibleItems.length, isPaused])
 
   const advanceAttentionItem = (direction: 1 | -1) => {
-    if (visibleItems.length <= 1) return
-    setActiveIndex((prev) => {
-      const next = (prev + direction + visibleItems.length) % visibleItems.length
-      const target = cardRefs.current[next]
-      const container = scrollRef.current
-      if (target && container) {
-        const left = target.offsetLeft - container.offsetLeft
-        container.scrollTo({
-          left,
-          behavior: "smooth",
-        })
-      }
-      return next
-    })
+    if (itemCount <= 1) return
+    cancelAttentionMomentum()
+
+    const nextLogical = (activeIndex + direction + itemCount) % itemCount
+    let targetRef = middleStartIndex + nextLogical
+
+    if (infiniteLoop && direction === 1 && activeIndex === itemCount - 1) {
+      targetRef = itemCount * 2
+    } else if (infiniteLoop && direction === -1 && activeIndex === 0) {
+      targetRef = itemCount - 1
+    }
+
+    setActiveIndex(nextLogical)
+    scrollAttentionToRef(targetRef, "smooth")
   }
 
   const resolveAttentionHref = (item: any) => {
@@ -865,6 +1064,103 @@ function AttentionItemsCard({ items }: { items: any[] }) {
       return `/orders/${item.entity_id}`
     }
     return item.route
+  }
+
+  const endAttentionPointerSession = () => {
+    if (!dragRef.current.active) return
+
+    const didDrag = dragRef.current.didDrag
+    const velocity = dragRef.current.velocity
+    dragRef.current.active = false
+    setIsDragging(false)
+    setIsPointerDown(false)
+
+    if (scrollRef.current) {
+      const focused = document.activeElement
+      if (focused instanceof HTMLElement && scrollRef.current.contains(focused)) {
+        focused.blur()
+      }
+    }
+
+    if (didDrag) {
+      suppressClickRef.current = true
+      if (Math.abs(velocity) > 0.03) {
+        runAttentionMomentum(velocity)
+      } else {
+        snapAttentionToNearest("smooth")
+        requestAnimationFrame(() => normalizeAttentionInfiniteScroll())
+      }
+    }
+  }
+
+  const handleAttentionPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = scrollRef.current
+    if (!el || e.button !== 0) return
+
+    cancelAttentionMomentum()
+    suppressClickRef.current = false
+
+    const now = performance.now()
+    dragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: el.scrollLeft,
+      didDrag: false,
+      lastX: e.clientX,
+      lastTime: now,
+      velocity: 0,
+    }
+
+    const onPointerMove = (ev: PointerEvent) => {
+      if (!dragRef.current.active || !scrollRef.current) return
+
+      const dx = ev.clientX - dragRef.current.startX
+      const dy = ev.clientY - dragRef.current.startY
+
+      if (
+        !dragRef.current.didDrag &&
+        (Math.abs(dx) > ATTENTION_DRAG_THRESHOLD_PX || Math.abs(dy) > ATTENTION_DRAG_THRESHOLD_PX)
+      ) {
+        dragRef.current.didDrag = true
+        setIsDragging(true)
+        setIsPaused(true)
+      }
+
+      if (dragRef.current.didDrag) {
+        const moveNow = performance.now()
+        const dt = moveNow - dragRef.current.lastTime
+        if (dt > 0) {
+          dragRef.current.velocity = (ev.clientX - dragRef.current.lastX) / dt
+        }
+        dragRef.current.lastX = ev.clientX
+        dragRef.current.lastTime = moveNow
+        scrollRef.current.scrollLeft = dragRef.current.scrollLeft - dx
+        normalizeAttentionInfiniteScroll()
+        syncAttentionActiveIndex()
+      }
+    }
+
+    const onPointerUp = () => {
+      window.removeEventListener("pointermove", onPointerMove)
+      window.removeEventListener("pointerup", onPointerUp)
+      window.removeEventListener("pointercancel", onPointerUp)
+      setIsPointerDown(false)
+      endAttentionPointerSession()
+    }
+
+    setIsPointerDown(true)
+
+    window.addEventListener("pointermove", onPointerMove)
+    window.addEventListener("pointerup", onPointerUp)
+    window.addEventListener("pointercancel", onPointerUp)
+  }
+
+  const handleAttentionLinkClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (suppressClickRef.current) {
+      e.preventDefault()
+      suppressClickRef.current = false
+    }
   }
 
   return (
@@ -877,11 +1173,24 @@ function AttentionItemsCard({ items }: { items: any[] }) {
         <div className="relative">
           <div
             ref={scrollRef}
-            className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            className={cn(
+              "flex gap-3 overflow-x-auto pb-2 touch-pan-x",
+              "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
+              "[-webkit-overflow-scrolling:touch]",
+              infiniteLoop ? "snap-none" : "snap-x snap-mandatory",
+              isDragging ? "select-none" : "",
+              "[&_a]:![cursor:inherit] [&_*]:![cursor:inherit]",
+            )}
+            style={{ scrollBehavior: "auto", cursor: attentionCursor }}
             onMouseEnter={() => setIsPaused(true)}
-            onMouseLeave={() => setIsPaused(false)}
+            onMouseLeave={() => {
+              setIsPaused(false)
+              setIsPointerDown(false)
+            }}
+            onPointerDown={handleAttentionPointerDown}
           >
-            {visibleItems.map((item: any, index: number) => {
+            {carouselItems.map((item: any, index: number) => {
+            const logicalIndex = infiniteLoop ? index % itemCount : index
             const severity = String(item.severity || "LOW").toUpperCase()
             const tone =
               severity === "HIGH"
@@ -891,14 +1200,17 @@ function AttentionItemsCard({ items }: { items: any[] }) {
                   : "border-blue-500/25 bg-blue-500/[0.05]"
             return (
               <Link
-                key={`${item.type}-${item.entity_id ?? item.title}`}
+                key={`attention-${index}-${item.type}-${item.entity_id ?? item.title}`}
                 ref={(node) => {
                   cardRefs.current[index] = node
                 }}
                 href={resolveAttentionHref(item)}
+                draggable={false}
+                onClick={handleAttentionLinkClick}
+                style={{ cursor: attentionCursor }}
                 className={cn(
                   "min-w-[85%] lg:min-w-[48%] snap-start rounded-2xl border p-4 transition-all hover:shadow-sm",
-                  activeIndex === index ? "ring-1 ring-border/60" : "",
+                  activeIndex === logicalIndex ? "ring-1 ring-border/60" : "",
                   tone
                 )}
               >
