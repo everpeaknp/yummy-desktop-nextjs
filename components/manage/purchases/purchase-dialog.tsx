@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { GeneralPurchaseApis, SupplierApis } from "@/lib/api/endpoints";
+import type { BusinessLine } from "@/lib/api/endpoint-types";
 import { Loader2 } from "lucide-react";
 
 interface PurchaseDialogProps {
@@ -30,6 +31,7 @@ interface PurchaseDialogProps {
     onOpenChange: (open: boolean) => void;
     purchase?: any;
     onSuccess: () => void;
+    businessLine?: BusinessLine;
 }
 
 const STATUS_OPTIONS = [
@@ -38,11 +40,11 @@ const STATUS_OPTIONS = [
 ];
 
 const PAYMENT_STATUS_OPTIONS = [
-    { label: "Unpaid", value: "unpaid" },
+    { label: "Pending", value: "pending" },
     { label: "Paid", value: "paid" },
 ];
 
-export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: PurchaseDialogProps) {
+export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess, businessLine = "restaurant" }: PurchaseDialogProps) {
     const user = useAuth(state => state.user);
     const [loading, setLoading] = useState(false);
     const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -51,7 +53,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
         unit: "",
         total_cost: "",
         supplier_id: "",
-        payment_status: "unpaid",
+        payment_status: "pending",
         status: "draft",
         notes: "",
         purchased_date: new Date().toISOString().split('T')[0],
@@ -78,7 +80,10 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
                     unit: purchase.unit || "",
                     total_cost: purchase.total_cost?.toString() || "",
                     supplier_id: purchase.supplier_id?.toString() || "",
-                    payment_status: purchase.payment_status || "unpaid",
+                    payment_status:
+                      purchase.payment_status === "unpaid"
+                        ? "pending"
+                        : purchase.payment_status || "pending",
                     status: purchase.status || "draft",
                     notes: purchase.notes || "",
                     purchased_date: purchase.purchased_date ? new Date(purchase.purchased_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -89,7 +94,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
                     unit: "",
                     total_cost: "",
                     supplier_id: "",
-                    payment_status: "unpaid",
+                    payment_status: "pending",
                     status: "draft",
                     notes: "",
                     purchased_date: new Date().toISOString().split('T')[0],
@@ -107,6 +112,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
             const payload = {
                 ...formData,
                 restaurant_id: user.restaurant_id,
+                business_line: purchase?.business_line ?? businessLine,
                 total_cost: parseFloat(formData.total_cost),
                 supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
                 purchased_date: formData.purchased_date + "T00:00:00Z"
