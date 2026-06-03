@@ -2,7 +2,6 @@
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useCallback, useEffect, useState } from "react";
-import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,11 +15,16 @@ import apiClient from "@/lib/api-client";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import type { BusinessLine } from "@/lib/api/endpoint-types";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
-import { formatDayCloseCurrency, formatDayClosePeriod } from "@/lib/day-close-format";
+import {
+  formatDayCloseCloseName,
+  formatDayCloseCurrency,
+  formatDayCloseCoveredRange,
+} from "@/lib/day-close-format";
 import {
   parseDayCloseCurrent,
   parseDayCloseDetail,
   parseDayCloseSnapshotData,
+  parseDayCloseSnapshotResponse,
   parseDayCloseValidateResult,
   unwrapApiData,
   type DayCloseDetail,
@@ -46,6 +50,7 @@ export function DayCloseModal({
   const [snapshotData, setSnapshotData] = useState<DayCloseSnapshotData | null>(null);
   const [dayCloseId, setDayCloseId] = useState<number | null>(null);
   const [confirmedData, setConfirmedData] = useState<DayCloseDetail | null>(null);
+  const [confirmedSnapshot, setConfirmedSnapshot] = useState<DayCloseSnapshotData | null>(null);
   const [currentClose, setCurrentClose] = useState<ReturnType<typeof parseDayCloseCurrent>>(null);
   const [loadingCurrent, setLoadingCurrent] = useState(false);
 
@@ -54,6 +59,7 @@ export function DayCloseModal({
     setSnapshotData(null);
     setDayCloseId(null);
     setConfirmedData(null);
+    setConfirmedSnapshot(null);
     onClose();
   };
 
@@ -77,18 +83,14 @@ export function DayCloseModal({
     setSnapshotData(null);
     setDayCloseId(null);
     setConfirmedData(null);
+    setConfirmedSnapshot(null);
     void loadCurrent();
   }, [isOpen, loadCurrent]);
 
-  const businessDateLabel = currentClose?.business_date
-    ? format(new Date(`${currentClose.business_date}T00:00:00`), "MMMM do, yyyy")
-    : loadingCurrent
-      ? "Loading…"
-      : "—";
-
-  const periodLabel = formatDayClosePeriod(
+  const closeName = formatDayCloseCloseName(businessLine);
+  const coveredRange = formatDayCloseCoveredRange(
     currentClose?.period_start_at,
-    currentClose?.period_end_at
+    currentClose?.period_end_at,
   );
 
   const steps = [
@@ -114,12 +116,14 @@ export function DayCloseModal({
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold">End of Day Close</h2>
-              <p className="text-muted-foreground text-sm capitalize">
-                {businessLine} • {businessDateLabel}
-              </p>
-              {periodLabel !== "—" ? (
-                <p className="text-xs text-muted-foreground mt-1">Covers {periodLabel}</p>
-              ) : null}
+              <p className="text-muted-foreground text-sm font-semibold">{closeName}</p>
+              {loadingCurrent ? (
+                <p className="text-xs text-muted-foreground mt-1">Loading close window…</p>
+              ) : coveredRange ? (
+                <p className="text-xs font-medium text-foreground mt-1">{coveredRange}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">Close window not loaded</p>
+              )}
               {currentClose?.action_label ? (
                 <p className="text-xs font-semibold text-orange-600 mt-1">
                   {currentClose.action_label}
@@ -164,6 +168,7 @@ export function DayCloseModal({
             <FinancialSnapshotStep
               restaurantId={restaurantId}
               businessLine={businessLine}
+              snapshotPreview={currentClose?.snapshot_preview ?? null}
               onNext={(data, id) => {
                 setSnapshotData(data);
                 setDayCloseId(id);
@@ -175,14 +180,19 @@ export function DayCloseModal({
             <CashReconciliationStep
               snapshot={snapshotData}
               dayCloseId={dayCloseId}
-              onNext={(data) => {
+              onNext={(data, finalizedSnapshot) => {
                 setConfirmedData(data);
+                setConfirmedSnapshot(finalizedSnapshot);
                 setCurrentStep("success");
               }}
             />
           ) : null}
           {currentStep === "success" ? (
-            <SuccessStep data={confirmedData} onClose={handleClose} />
+            <SuccessStep
+              data={confirmedData}
+              snapshot={confirmedSnapshot}
+              onClose={handleClose}
+            />
           ) : null}
         </div>
       </DialogContent>
@@ -298,17 +308,26 @@ function FinancialSnapshotStep({
   onNext,
   restaurantId,
   businessLine,
+  snapshotPreview,
 }: {
   onNext: (data: DayCloseSnapshotData, id: number) => void;
   restaurantId: number;
   businessLine: BusinessLine;
+  snapshotPreview: DayCloseSnapshotData | null;
 }) {
-  const [snapshot, setSnapshot] = useState<DayCloseSnapshotData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState<DayCloseSnapshotData | null>(snapshotPreview);
+  const [loading, setLoading] = useState(!snapshotPreview);
   const [initiating, setInitiating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (snapshotPreview) {
+      setSnapshot(snapshotPreview);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     const generate = async () => {
       setLoading(true);
       setError(null);
@@ -334,7 +353,7 @@ function FinancialSnapshotStep({
       }
     };
     void generate();
-  }, [restaurantId, businessLine]);
+  }, [restaurantId, businessLine, snapshotPreview]);
 
   const handleContinue = async () => {
     if (!snapshot) return;
@@ -421,7 +440,7 @@ function CashReconciliationStep({
   snapshot,
   dayCloseId,
 }: {
-  onNext: (data: DayCloseDetail) => void;
+  onNext: (data: DayCloseDetail, finalizedSnapshot: DayCloseSnapshotData | null) => void;
   snapshot: DayCloseSnapshotData | null;
   dayCloseId: number | null;
 }) {
@@ -446,7 +465,18 @@ function CashReconciliationStep({
       });
       const detail = unwrapApiData(res.data, parseDayCloseDetail);
       if (detail) {
-        onNext(detail);
+        let finalizedSnapshot: DayCloseSnapshotData | null = snapshot;
+        try {
+          const snapRes = await apiClient.get(DayCloseApis.snapshot(detail.id));
+          const snapPayload = unwrapApiData(snapRes.data, parseDayCloseSnapshotResponse);
+          const parsed = parseDayCloseSnapshotData(
+            snapPayload?.snapshot_data ?? snapPayload,
+          );
+          if (parsed) finalizedSnapshot = parsed;
+        } catch {
+          // Keep preview snapshot if saved snapshot is not yet available.
+        }
+        onNext(detail, finalizedSnapshot);
       } else {
         setError(
           (res.data as { message?: string })?.message ?? "Failed to submit day close."
@@ -522,11 +552,24 @@ function CashReconciliationStep({
   );
 }
 
-function SuccessStep({ onClose, data }: { onClose: () => void; data: DayCloseDetail | null }) {
+function SuccessStep({
+  onClose,
+  data,
+  snapshot,
+}: {
+  onClose: () => void;
+  data: DayCloseDetail | null;
+  snapshot: DayCloseSnapshotData | null;
+}) {
+  const [showSnapshot, setShowSnapshot] = useState(false);
   const discrepancy = data?.cash_discrepancy;
   const isMatched =
     discrepancy == null ? true : Math.abs(discrepancy) < 0.01;
   const isOverage = discrepancy != null && discrepancy > 0;
+  const coveredRange = formatDayCloseCoveredRange(
+    data?.period_start_at ?? snapshot?.period_start_at,
+    data?.period_end_at ?? snapshot?.period_end_at,
+  );
 
   return (
     <div className="flex flex-col items-center justify-center h-full text-center space-y-6 py-6">
@@ -551,8 +594,11 @@ function SuccessStep({ onClose, data }: { onClose: () => void; data: DayCloseDet
           {isMatched ? "Day Closed Successfully!" : "Day Closed with Discrepancy"}
         </h2>
         <p className="text-muted-foreground max-w-xs mx-auto text-sm">
-          All reports have been generated and the sales register has been reset for the next period.
+          The frozen financial snapshot is saved on the server. Totals below are display-only.
         </p>
+        {coveredRange ? (
+          <p className="text-xs font-medium text-foreground">{coveredRange}</p>
+        ) : null}
       </div>
       {!isMatched && data ? (
         <div
@@ -587,6 +633,23 @@ function SuccessStep({ onClose, data }: { onClose: () => void; data: DayCloseDet
           </div>
         </div>
       ) : null}
+      {snapshot ? (
+        <div className="w-full max-w-2xl mx-auto text-left space-y-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full rounded-xl font-semibold"
+            onClick={() => setShowSnapshot((v) => !v)}
+          >
+            {showSnapshot ? "Hide Snapshot" : "View Snapshot"}
+          </Button>
+          {showSnapshot ? <DayCloseSnapshotPanel snapshot={snapshot} /> : null}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground max-w-sm">
+          Saved snapshot could not be loaded. Open Day Close History to retry.
+        </p>
+      )}
       <Button onClick={onClose} size="lg" className="min-w-[200px]">
         Done
       </Button>

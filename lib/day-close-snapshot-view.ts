@@ -152,3 +152,77 @@ export function snapshotHotelSplitRows(snapshot: DayCloseSnapshotData): Snapshot
 export function isHotelDayClose(snapshot: DayCloseSnapshotData): boolean {
   return String(snapshot.business_line ?? "").toLowerCase() === "hotel";
 }
+
+export function snapshotRefundRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
+  const refunds = snapshot.refunds;
+  if (!refunds) return [];
+  const rows: SnapshotListRow[] = [];
+  if (refunds.total != null) {
+    rows.push({
+      label: "Total Refunds",
+      amount: refunds.total,
+      secondary: refunds.count != null ? `${refunds.count} refunds` : undefined,
+    });
+  }
+  const parts: Array<[string, number | undefined]> = [
+    ["Cash", refunds.cash_refunds],
+    ["Card", refunds.card_refunds],
+    ["Digital/QR", refunds.digital_refunds],
+    ["Fonepay", refunds.fonepay_refunds],
+  ];
+  for (const [label, amount] of parts) {
+    if (amount != null) rows.push({ label, amount });
+  }
+  return rows;
+}
+
+export function snapshotReceivableRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
+  const rec = snapshot.receivables;
+  if (!rec) return [];
+  const rows: SnapshotListRow[] = [];
+  if (rec.credit_sales != null) {
+    rows.push({
+      label: "Credit Sales",
+      amount: rec.credit_sales,
+      secondary:
+        rec.credit_orders_count != null
+          ? `${rec.credit_orders_count} orders`
+          : undefined,
+    });
+  }
+  if (rec.credit_collections != null) {
+    rows.push({ label: "Credit Collections", amount: rec.credit_collections });
+  }
+  if (rec.cash_credit_collections != null) {
+    rows.push({ label: "Cash Credit Collections", amount: rec.cash_credit_collections });
+  }
+  if (rec.outstanding_receivables != null) {
+    rows.push({ label: "Outstanding Receivables", amount: rec.outstanding_receivables });
+  }
+  return rows;
+}
+
+export function snapshotPurchaseRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
+  const rows: SnapshotListRow[] = [];
+  if (snapshot.paid_purchase_total != null) {
+    rows.push({
+      label: "Paid Purchases (in close)",
+      amount: snapshot.paid_purchase_total,
+      secondary:
+        snapshot.paid_purchase_count != null
+          ? `${snapshot.paid_purchase_count} purchases`
+          : undefined,
+    });
+  }
+  if (snapshot.pending_purchase_total != null) {
+    rows.push({
+      label: "Pending Purchases (informational)",
+      amount: snapshot.pending_purchase_total,
+      secondary:
+        snapshot.pending_purchase_count != null
+          ? `${snapshot.pending_purchase_count} pending`
+          : "Does not affect close totals",
+    });
+  }
+  return rows;
+}

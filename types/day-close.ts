@@ -42,6 +42,25 @@ export interface HotelRevenueSplit {
   food_revenue?: number;
 }
 
+export interface DayCloseRefundsSnapshot {
+  count?: number;
+  total?: number;
+  cash_refunds?: number;
+  card_refunds?: number;
+  digital_refunds?: number;
+  fonepay_refunds?: number;
+  entries?: unknown[];
+}
+
+export interface DayCloseReceivablesSnapshot {
+  credit_sales?: number;
+  credit_orders_count?: number;
+  credit_collections?: number;
+  cash_credit_collections?: number;
+  outstanding_receivables?: number;
+  credit_collections_by_method?: Record<string, unknown>;
+}
+
 export interface DayCloseSnapshotData {
   period_start_at?: string;
   period_end_at?: string;
@@ -66,7 +85,12 @@ export interface DayCloseSnapshotData {
   expected_cash?: number;
   cash_collected?: number;
   operational_snapshot?: Record<string, unknown>;
-  receivables?: Record<string, unknown>;
+  receivables?: DayCloseReceivablesSnapshot;
+  refunds?: DayCloseRefundsSnapshot;
+  paid_purchase_total?: number;
+  paid_purchase_count?: number;
+  pending_purchase_total?: number;
+  pending_purchase_count?: number;
   orders?: unknown[];
   sales_by_category?: unknown;
   sales_by_table?: unknown;
@@ -248,6 +272,38 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
       }
     : undefined;
 
+  const receivablesRaw = asRecord(data.receivables);
+  const receivables: DayCloseReceivablesSnapshot | undefined = receivablesRaw
+    ? {
+        credit_sales: readAmount(receivablesRaw.credit_sales),
+        credit_orders_count:
+          typeof receivablesRaw.credit_orders_count === "number"
+            ? receivablesRaw.credit_orders_count
+            : undefined,
+        credit_collections: readAmount(receivablesRaw.credit_collections),
+        cash_credit_collections: readAmount(receivablesRaw.cash_credit_collections),
+        outstanding_receivables: readAmount(receivablesRaw.outstanding_receivables),
+        credit_collections_by_method:
+          receivablesRaw.credit_collections_by_method &&
+          typeof receivablesRaw.credit_collections_by_method === "object"
+            ? (receivablesRaw.credit_collections_by_method as Record<string, unknown>)
+            : undefined,
+      }
+    : undefined;
+
+  const refundsRaw = asRecord(data.refunds);
+  const refunds: DayCloseRefundsSnapshot | undefined = refundsRaw
+    ? {
+        count: typeof refundsRaw.count === "number" ? refundsRaw.count : undefined,
+        total: readAmount(refundsRaw.total),
+        cash_refunds: readAmount(refundsRaw.cash_refunds),
+        card_refunds: readAmount(refundsRaw.card_refunds),
+        digital_refunds: readAmount(refundsRaw.digital_refunds),
+        fonepay_refunds: readAmount(refundsRaw.fonepay_refunds),
+        entries: Array.isArray(refundsRaw.entries) ? refundsRaw.entries : undefined,
+      }
+    : undefined;
+
   return {
     ...data,
     period_start_at: data.period_start_at != null ? String(data.period_start_at) : undefined,
@@ -258,6 +314,16 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
     payment_instrument_distribution,
     credit_settlement,
     hotel_revenue_split,
+    receivables,
+    refunds,
+    paid_purchase_total: readAmount(data.paid_purchase_total),
+    paid_purchase_count:
+      typeof data.paid_purchase_count === "number" ? data.paid_purchase_count : undefined,
+    pending_purchase_total: readAmount(data.pending_purchase_total),
+    pending_purchase_count:
+      typeof data.pending_purchase_count === "number"
+        ? data.pending_purchase_count
+        : undefined,
     expenses: Array.isArray(data.expenses) ? data.expenses : undefined,
     expense_breakdown:
       data.expense_breakdown && typeof data.expense_breakdown === "object"

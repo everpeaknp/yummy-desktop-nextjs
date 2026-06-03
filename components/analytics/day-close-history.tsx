@@ -52,9 +52,11 @@ import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
 import {
   formatDayCloseCurrency,
+  formatDayCloseCoveredRange,
   formatDayCloseListHeading,
   pickBackendAmount,
 } from "@/lib/day-close-format";
+import { snapshotMetricRows } from "@/lib/day-close-snapshot-view";
 import type { BusinessLine } from "@/lib/api/endpoint-types";
 import {
   parseDayCloseDetail,
@@ -463,7 +465,22 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     }
   };
 
+  const parsedSnapshotData = useMemo(
+    () => parseDayCloseSnapshotData(snapshot?.snapshot_data ?? snapshot),
+    [snapshot],
+  );
+
+  const isConfirmed = String(detail?.status || "").toLowerCase() === "confirmed";
+
   const summaryRows = useMemo(() => {
+    if (parsedSnapshotData && isConfirmed) {
+      return snapshotMetricRows(parsedSnapshotData)
+        .map((row) => ({
+          label: row.label,
+          value: formatDayCloseCurrency(row.value),
+        }))
+        .filter((row) => row.value !== "—");
+    }
     if (!detail) return [];
     const keys = [
       "gross_sales",
@@ -483,12 +500,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         value: formatDetailMetric(k, detail[k]),
       }))
       .filter((row) => row.value !== "—");
-  }, [detail]);
-
-  const parsedSnapshotData = useMemo(
-    () => parseDayCloseSnapshotData(snapshot?.snapshot_data ?? snapshot),
-    [snapshot],
-  );
+  }, [detail, parsedSnapshotData, isConfirmed]);
 
   const displayNetSales = useMemo(
     () => pickBackendAmount(detail?.net_sales, parsedSnapshotData?.net_sales),
@@ -500,7 +512,6 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     [detail?.expense_total, parsedSnapshotData?.expense_total],
   );
 
-  const isConfirmed = String(detail?.status || "").toLowerCase() === "confirmed";
   const isPending = String(detail?.status || "").toLowerCase() === "pending";
   const isReopened = String(detail?.status || "").toLowerCase() === "reopened";
   const isOpen = String(detail?.status || "").toLowerCase() === "open";
@@ -732,8 +743,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       {formatDayCloseListHeading(it)}
                     </p>
                     <p className="text-[11px] text-muted-foreground/70 font-bold uppercase tracking-wider">
-                      {listBusinessLineLabel(it.business_line)}
-                      {it.business_date ? ` • ${format(new Date(it.business_date), "MMM dd, yyyy")}` : ""}
+                      {listBusinessLineLabel(it.business_line)} • {String(it.status || "—")}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       Net {formatDayCloseCurrency(it.net_sales)} • Expected cash{" "}
@@ -783,10 +793,13 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
           <DialogHeader className="p-6 sm:p-8 pb-4 sm:pb-5 flex flex-row flex-wrap items-start justify-between gap-3 bg-muted/20 border-b border-border/40">
             <div className="space-y-1.5">
               <DialogTitle className="text-2xl font-bold tracking-tight">
-                {detail?.business_date ? format(new Date(detail.business_date), "MMMM do") : "Day Close"}
+                {detail ? formatDayCloseListHeading(detail) : "Day Close"}
               </DialogTitle>
               <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-normal opacity-80">
-                Daily financial summary, snapshot, and exports
+                {detail
+                  ? formatDayCloseCoveredRange(detail.period_start_at, detail.period_end_at) ??
+                    "Frozen snapshot from server — no browser calculations"
+                  : "Day close details"}
               </p>
               <DialogDescription className="sr-only">Day close details dialog.</DialogDescription>
             </div>
