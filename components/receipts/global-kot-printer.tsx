@@ -221,67 +221,64 @@ export function GlobalKotPrinter() {
                     // Always prefer the rendered backend-template design.
                     // Do not use the old raw-text network KOT path, because it bypasses the template.
                     if (targetPrinter && winAny.electronAPI.getPrinters) {
-                        const isNetworkPrinter = cfg?.printer_type === 'network' || /^\d{1,3}(\.\d{1,3}){3}$/.test(String(cfg?.address || '').trim());
-                        
-                        if (isNetworkPrinter && cfg?.address && winAny.electronAPI.printNetworkRaw) {
-                            console.log(`[GlobalKotPrinter] 🌐 Network Printer detected. Sending raw TCP KOT to: ${cfg.address}:${cfg.port || 9100}`);
+                        winAny.electronAPI.getPrinters().then((printers: any[]) => {
+                            console.log(`[GlobalKotPrinter] OS Printers found:`, printers.map(p => p.name));
+                            console.log(`[GlobalKotPrinter] Looking for target printer: "${targetPrinter}"`);
                             
-                            // Build raw text KOT payload
-                            const order = printJob.kotData?.order || printJob.kotData;
-                            const items = printJob.kotData?.items || order?.items || [];
-                            const lines: string[] = [];
+                            const exists = printers.find((p: any) => p.name === targetPrinter);
+                            const isNetworkPrinter = cfg?.printer_type === 'network' || /^\d{1,3}(\.\d{1,3}){3}$/.test(String(cfg?.address || '').trim());
                             
-                            lines.push(`\x1B\x40`); // Initialize printer
-                            lines.push(`\x1B\x61\x01`); // Center align
-                            lines.push(`*** KITCHEN ORDER ***\n`);
-                            lines.push(`\x1B\x61\x00`); // Left align
-                            lines.push(`--------------------------------`);
-                            lines.push(`KOT: #${printJob.kotData.id || order?.id || '-'}`);
-                            if (printJob.kotData.station) lines.push(`STATION: ${printJob.kotData.station}`);
-                            if (order?.table_name || order?.table) lines.push(`TABLE: ${order?.table_name || order?.table}`);
-                            lines.push(`DATE: ${new Date().toLocaleString()}`);
-                            lines.push(`--------------------------------`);
-                            lines.push(`ITEM                         QTY`);
-                            lines.push(`--------------------------------`);
-                            
-                            items.forEach((item: any) => {
-                                const name = String(item.name_snapshot || item.item_name || item.name || "Item").substring(0, 24).padEnd(24, ' ');
-                                const qty = String(item.qty || 1).padStart(8, ' ');
-                                lines.push(`${name}${qty}`);
-                            });
-                            
-                            lines.push(`--------------------------------`);
-                            lines.push(`\r\n\r\n\r\n\x1B\x69`); // Cut paper
-                            
-                            // Add padding to prevent cheap printers from dropping the buffer on TCP FIN
-                            for (let i = 0; i < 50; i++) lines.push(`\x00`);
-                            
-                            const payload = lines.join('\r\n');
-                            winAny.electronAPI.printNetworkRaw({
-                                host: cfg.address.trim(),
-                                port: Number(cfg.port || 9100),
-                                payload: payload
-                            }).then((res: any) => {
-                                console.log("[GlobalKotPrinter] Raw network print response:", res);
-                            }).catch((err: any) => {
-                                console.error("[GlobalKotPrinter] Raw network print error:", err);
-                            });
-                        } else {
-                            winAny.electronAPI.getPrinters().then((printers: any[]) => {
-                                console.log(`[GlobalKotPrinter] OS Printers found:`, printers.map(p => p.name));
-                                console.log(`[GlobalKotPrinter] Looking for target printer: "${targetPrinter}"`);
-                                const exists = printers.find((p: any) => p.name === targetPrinter);
-                                if (!exists) {
-                                    console.warn(`[GlobalKotPrinter] ❌ Printer "${targetPrinter}" not found on this machine. Ignoring print job to prevent fallback to default printer.`);
-                                    return;
-                                }
-                                console.log(`[GlobalKotPrinter] ✅ Printer found. Sending silent print job to: ${targetPrinter}`);
+                            if (exists) {
+                                // Prefer the beautiful HTML template via Windows Spooler if installed
+                                console.log(`[GlobalKotPrinter] ✅ Printer found in Windows. Sending silent print job to: ${targetPrinter}`);
                                 winAny.electronAPI.printSilent({ printerName: targetPrinter });
-                            }).catch((err: any) => {
-                                console.error(`[GlobalKotPrinter] ❌ Error getting OS printers:`, err);
-                                winAny.electronAPI.printSilent({ printerName: targetPrinter });
-                            });
-                        }
+                            } else if (isNetworkPrinter && cfg?.address && winAny.electronAPI.printNetworkRaw) {
+                                // Fallback to raw TCP ESC/POS if not installed in Windows but IP is provided
+                                console.log(`[GlobalKotPrinter] 🌐 Network Printer not in Windows. Falling back to raw TCP KOT at: ${cfg.address}:${cfg.port || 9100}`);
+                                
+                                const order = printJob.kotData?.order || printJob.kotData;
+                                const items = printJob.kotData?.items || order?.items || [];
+                                const lines: string[] = [];
+                                
+                                lines.push(`\x1B\x40`); // Initialize printer
+                                lines.push(`\x1B\x61\x01`); // Center align
+                                lines.push(`*** KITCHEN ORDER ***\n`);
+                                lines.push(`\x1B\x61\x00`); // Left align
+                                lines.push(`--------------------------------`);
+                                lines.push(`KOT: #${printJob.kotData.id || order?.id || '-'}`);
+                                if (printJob.kotData.station) lines.push(`STATION: ${printJob.kotData.station}`);
+                                if (order?.table_name || order?.table) lines.push(`TABLE: ${order?.table_name || order?.table}`);
+                                lines.push(`DATE: ${new Date().toLocaleString()}`);
+                                lines.push(`--------------------------------`);
+                                lines.push(`ITEM                         QTY`);
+                                lines.push(`--------------------------------`);
+                                
+                                items.forEach((item: any) => {
+                                    const name = String(item.name_snapshot || item.item_name || item.name || "Item").substring(0, 24).padEnd(24, ' ');
+                                    const qty = String(item.qty || 1).padStart(8, ' ');
+                                    lines.push(`${name}${qty}`);
+                                });
+                                
+                                lines.push(`--------------------------------`);
+                                lines.push(`\r\n\r\n\r\n\x1B\x69`); // Cut paper
+                                
+                                // Padding for cheap TCP FIN drops
+                                for (let i = 0; i < 50; i++) lines.push(`\x00`);
+                                
+                                const payload = lines.join('\r\n');
+                                winAny.electronAPI.printNetworkRaw({
+                                    host: cfg.address.trim(),
+                                    port: Number(cfg.port || 9100),
+                                    payload: payload
+                                }).then((res: any) => console.log("[GlobalKotPrinter] Raw response:", res))
+                                  .catch((err: any) => console.error("[GlobalKotPrinter] Raw error:", err));
+                            } else {
+                                console.warn(`[GlobalKotPrinter] ❌ Printer "${targetPrinter}" not found on this machine, and not a network printer. Ignoring job.`);
+                            }
+                        }).catch((err: any) => {
+                            console.error(`[GlobalKotPrinter] ❌ Error getting OS printers:`, err);
+                            winAny.electronAPI.printSilent({ printerName: targetPrinter });
+                        });
                     } else {
                         winAny.electronAPI.printSilent({ printerName: targetPrinter });
                     }
