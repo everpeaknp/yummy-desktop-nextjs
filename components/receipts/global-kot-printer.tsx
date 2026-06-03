@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ThermalKOT } from "@/components/receipts/thermal-kot";
 import apiClient from "@/lib/api-client";
-import { PrinterApis, RestaurantApis } from "@/lib/api/endpoints";
+import { PrinterApis, RestaurantApis, KotApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
 export function GlobalKotPrinter() {
@@ -134,13 +134,13 @@ export function GlobalKotPrinter() {
             if (kotId) {
                 try {
                     const claimRes = await apiClient.post(KotApis.markKotAutoPrinted(kotId));
-                    if (claimRes.data?.status === "error" || claimRes.status !== 200) {
+                    if (claimRes.data?.status === "error" || claimRes.status !== 200 || claimRes.data?.data === false) {
                         console.log(`[GlobalKotPrinter] Failed to claim KOT ${kotId} for printing. (Another terminal may have printed it)`);
                         return;
                     }
                     console.log(`[GlobalKotPrinter] Successfully claimed KOT ${kotId} for printing.`);
                 } catch (err) {
-                    console.log(`[GlobalKotPrinter] KOT ${kotId} claim rejected by backend (likely already claimed by another terminal).`);
+                    console.error(`[GlobalKotPrinter] KOT ${kotId} claim request threw an error:`, err);
                     return;
                 }
             }
