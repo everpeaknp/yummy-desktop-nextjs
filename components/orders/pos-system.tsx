@@ -534,10 +534,23 @@ export default function POSSystem({
 
       console.log("[POS] Order update response:", response?.status, response?.data);
       if (response && response.data) {
-        // Direct Print Integration: Fetch KOTs and print immediately instead of waiting for WebSocket
-        const triggerDirectPrint = async (savedOrderId: any) => {
-          if (!savedOrderId) return;
+        // Direct Print Integration
+        const triggerDirectPrint = async (orderDataResponse: any) => {
+          if (!orderDataResponse) return;
           try {
+            // Fast path: if the API already returned the KOTs in the response, use them instantly
+            if (Array.isArray(orderDataResponse.kots) && orderDataResponse.kots.length > 0) {
+              console.log(`[POS] Found ${orderDataResponse.kots.length} KOTs in API response. Printing instantly.`);
+              orderDataResponse.kots.forEach((kot: any) => {
+                 window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: kot }));
+              });
+              return;
+            }
+
+            // Fallback path: fetch them if they weren't in the response
+            const savedOrderId = orderDataResponse.order?.id || orderDataResponse.id || orderDataResponse.order_id;
+            if (!savedOrderId) return;
+
             console.log(`[POS] Fetching KOTs for direct print for order ${savedOrderId}...`);
             const kotsRes = await apiClient.get(`/kots/orders/${savedOrderId}`);
             const kots = kotsRes.data?.data || kotsRes.data || [];
@@ -548,7 +561,7 @@ export default function POSSystem({
               });
             }
           } catch (printErr) {
-            console.error("[POS] Failed to fetch KOTs for direct print:", printErr);
+            console.error("[POS] Failed to handle direct print:", printErr);
           }
         };
 
@@ -574,13 +587,13 @@ export default function POSSystem({
             })));
           }
           
-          if (updatedOrder?.id) triggerDirectPrint(updatedOrder.id);
+          if (updatedOrder) triggerDirectPrint(updatedOrder);
         } else {
           console.log("[POS] Success: Order placed");
           toast.success("Order placed successfully");
           
           const newOrder = response.data.data || response.data;
-          if (newOrder?.id) triggerDirectPrint(newOrder.id);
+          if (newOrder) triggerDirectPrint(newOrder);
 
           router.push('/orders/active');
         }
