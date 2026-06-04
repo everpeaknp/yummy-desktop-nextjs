@@ -39,7 +39,7 @@ function resolvePlaceholders(text: string, kot: any, order: any, restaurant: any
     const dateStr = date.toLocaleDateString("en-GB");
     const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     return text
-        .replace(/\{\{station_ticket_title\}\}/g, (kot?.station || "KITCHEN").toUpperCase())
+        .replace(/\{\{station_ticket_title\}\}/g, `${(kot?.station || "KITCHEN").toUpperCase()} ORDER TICKET`)
         .replace(/\{\{station\}\}/g, kot?.station || "KITCHEN")
         .replace(/\{\{kot_number\}\}/g, String(kot?.kot_number || kot?.id || ""))
         .replace(/\{\{table\}\}/g, order?.table_name || "N/A")
