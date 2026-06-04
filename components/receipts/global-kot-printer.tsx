@@ -274,10 +274,11 @@ export function GlobalKotPrinter() {
                                 lines.push(`--------------------------------`);
                                 lines.push(`\r\n\r\n\r\n\x1B\x69`); // Cut paper
                                 
-                                // Padding for cheap TCP FIN drops
-                                for (let i = 0; i < 50; i++) lines.push(`\x00`);
+                                let payload = lines.join('\r\n');
                                 
-                                const payload = lines.join('\r\n');
+                                // Padding for cheap TCP FIN drops (without newlines!)
+                                for (let i = 0; i < 50; i++) payload += `\x00`;
+
                                 winAny.electronAPI.printNetworkRaw({
                                     host: cfg.address.trim(),
                                     port: Number(cfg.port || 9100),
