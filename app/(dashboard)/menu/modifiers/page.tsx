@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Edit, Trash2, Loader2, GripVertical, AlertCircle, Settings2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { ModifierApis } from "@/lib/api/endpoints";
@@ -29,8 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export default function ModifiersPage() {
-  const user = useAuth((s) => s.user);
-  const me = useAuth((s) => s.me);
+  const restaurantId = useAuth((s) => s.user?.restaurant_id);
   const [groups, setGroups] = useState<ModifierGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,18 +45,13 @@ export default function ModifiersPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<ModifierGroup | null>(null);
 
-  useEffect(() => {
-    const init = async () => {
-      await me();
-    };
-    init();
-  }, [me]);
-
-  const fetchGroups = async () => {
-    if (!user?.restaurant_id) return;
-    setLoading(true);
+  const fetchGroups = useCallback(async () => {
+    if (!restaurantId) {
+      setLoading(false);
+      return;
+    }
     try {
-      const response = await apiClient.get(ModifierApis.listGroups(user.restaurant_id));
+      const response = await apiClient.get(ModifierApis.listGroups(restaurantId));
       if (response.data.status === 'success') {
         setGroups(response.data.data.groups || []);
       }
@@ -67,21 +61,19 @@ export default function ModifiersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [restaurantId]);
 
   useEffect(() => {
-    if (user) {
-      fetchGroups();
-    }
-  }, [user]);
+    fetchGroups();
+  }, [fetchGroups]);
 
   // Create Group
   const handleCreateGroup = async (data: any) => {
-    if (!user?.restaurant_id) return;
+    if (!restaurantId) return;
     try {
       await apiClient.post(ModifierApis.createGroup, { 
           ...data,
-          restaurant_id: user.restaurant_id 
+          restaurant_id: restaurantId 
       });
       toast({ title: "Success", description: "Modifier group created." });
       fetchGroups();
