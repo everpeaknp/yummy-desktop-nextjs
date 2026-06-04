@@ -1,11 +1,11 @@
 # Build Yummy POS Windows installers, publish to GitHub Releases, and generate
 # latest.yml for electron-updater auto-updates (NSIS installs only).
 #
-# Release:
-#   git tag v0.1.5
-#   git push origin v0.1.5
+# Release (recommended):
+#   1. Bump "version" in package.json
+#   2. git tag v0.1.5 && git push origin v0.1.5
 #
-# Bump "version" in package.json before tagging so updates are detected.
+# Manual run: set "ref" to an existing branch (e.g. main) or tag (e.g. v0.1.5).
 
 name: Electron Release
 
@@ -15,10 +15,10 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag (e.g. v0.1.5)"
+      ref:
+        description: "Branch or tag to build (must exist on remote, e.g. main or v0.1.5)"
         required: true
-        default: "v0.1.5"
+        default: "main"
 
 permissions:
   contents: write
@@ -32,7 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
