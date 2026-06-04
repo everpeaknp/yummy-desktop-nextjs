@@ -592,7 +592,94 @@ export default function POSSystem({
             })));
           }
           
-          if (updatedOrder) triggerDirectPrint(updatedOrder);
+          if (updatedOrder) {
+            // Delta KOT Engine (Frontend-driven since backend only updates the existing KOT)
+            const additions: any[] = [];
+            const cancellations: any[] = [];
+            
+            const originalItems = orderData?.items || [];
+            const originalMap = new Map();
+            originalItems.forEach((item: any) => {
+              originalMap.set(item.id, item);
+            });
+
+            cart.forEach((cartItem: any) => {
+              if (!cartItem.id) {
+                // New item added to cart
+                additions.push({
+                  name_snapshot: cartItem.name,
+                  quantity: cartItem.quantity,
+                  modifiers: cartItem.modifiers || [],
+                  notes: cartItem.notes
+                });
+              } else {
+                const original = originalMap.get(cartItem.id);
+                if (original) {
+                  const origQty = original.qty_change ?? original.qty ?? original.quantity ?? 1;
+                  const newQty = cartItem.quantity;
+                  if (newQty > origQty) {
+                    additions.push({
+                      name_snapshot: cartItem.name,
+                      quantity: newQty - origQty,
+                      modifiers: cartItem.modifiers || [],
+                      notes: cartItem.notes
+                    });
+                  } else if (newQty < origQty) {
+                    cancellations.push({
+                      name_snapshot: cartItem.name,
+                      quantity: origQty - newQty,
+                      modifiers: cartItem.modifiers || [],
+                      notes: cartItem.notes
+                    });
+                  }
+                  originalMap.delete(cartItem.id);
+                }
+              }
+            });
+
+            // Anything left in originalMap was completely deleted
+            originalMap.forEach((original: any) => {
+              const origQty = original.qty_change ?? original.qty ?? original.quantity ?? 1;
+              cancellations.push({
+                name_snapshot: original.name_snapshot || original.name || original.item_name,
+                quantity: origQty,
+                modifiers: original.modifiers || [],
+                notes: original.notes
+              });
+            });
+
+            const station = orderData?.kots?.[0]?.station || "KITCHEN";
+            const kotNumber = orderData?.kots?.[0]?.kot_number || updatedOrder.id;
+
+            if (additions.length > 0) {
+              console.log("[POS] Dispatching synthetic ADDITION KOT", additions);
+              window.dispatchEvent(new CustomEvent("yummy:kot-print", {
+                detail: {
+                  id: `delta-add-${Date.now()}`,
+                  kot_number: kotNumber,
+                  station: station,
+                  type: "ADDITION",
+                  items: additions
+                }
+              }));
+            }
+
+            if (cancellations.length > 0) {
+              console.log("[POS] Dispatching synthetic CANCELLED KOT", cancellations);
+              window.dispatchEvent(new CustomEvent("yummy:kot-print", {
+                detail: {
+                  id: `delta-cancel-${Date.now()}`,
+                  kot_number: kotNumber,
+                  station: station,
+                  type: "CANCELLED",
+                  items: cancellations.map(i => ({
+                    ...i,
+                    name_snapshot: `[X] ${i.name_snapshot}`
+                  }))
+                }
+              }));
+            }
+          }
         } else {
           console.log("[POS] Success: Order placed");
           toast.success("Order placed successfully");
