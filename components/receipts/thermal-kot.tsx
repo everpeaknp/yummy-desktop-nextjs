@@ -259,49 +259,53 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
         case 'items':
             return (
                 <div style={style}>
-                    <div className="flex justify-between border-b border-dashed border-black pb-0.5 mb-1 font-bold">
-                        {config.show_serial !== false && <span className="w-8">{config.sn_label || 'S.N'}</span>}
-                        <span className="flex-1 text-left px-2">{config.item_label || 'ITEM'}</span>
-                        {config.show_rate !== false && <span className="w-12 text-right">{config.rate_label || 'RATE'}</span>}
-                        <span className="w-8 text-right">{config.qty_label || 'QTY'}</span>
-                        {config.show_amount !== false && <span className="w-12 text-right">{config.amount_label || 'AMT'}</span>}
-                    </div>
-                    
-                    {activeItems.map((item: any, idx: number) => (
-                        <div key={item.id || idx} className="flex justify-between items-start mb-1">
-                            {config.show_serial !== false && <span className="w-8 pt-0.5">{idx + 1}</span>}
-                            
-                            <span className="flex-1 text-left px-2 flex flex-col">
-                                <span className="font-bold">{item.item_name || item.name_snapshot}</span>
-                                {item.modifiers && item.modifiers.length > 0 && (
-                                    <span className="text-[0.8em] italic mt-0.5">
-                                        + {item.modifiers.map((m: any) => m.modifier_name_snapshot).join(', ')}
+                    {activeItems.length > 0 && (
+                        <>
+                            <div className="flex justify-between border-b border-dashed border-black pb-0.5 mb-1 font-bold">
+                                {config.show_serial !== false && <span className="w-8">{config.sn_label || 'S.N'}</span>}
+                                <span className="flex-1 text-left px-2">{config.item_label || 'ITEM'}</span>
+                                {config.show_rate !== false && <span className="w-12 text-right">{config.rate_label || 'RATE'}</span>}
+                                <span className="w-8 text-right">{config.qty_label || 'QTY'}</span>
+                                {config.show_amount !== false && <span className="w-12 text-right">{config.amount_label || 'AMT'}</span>}
+                            </div>
+
+                            {activeItems.map((item: any, idx: number) => (
+                                <div key={item.id || idx} className="flex justify-between items-start mb-1">
+                                    {config.show_serial !== false && <span className="w-8 pt-0.5">{idx + 1}</span>}
+
+                                    <span className="flex-1 text-left px-2 flex flex-col">
+                                        <span className="font-bold">{item.item_name || item.name_snapshot}</span>
+                                        {item.modifiers && item.modifiers.length > 0 && (
+                                            <span className="text-[0.8em] italic mt-0.5">
+                                                + {item.modifiers.map((m: any) => m.modifier_name_snapshot).join(', ')}
+                                            </span>
+                                        )}
+                                        {item.notes && (
+                                            <span className="text-[0.8em] font-bold mt-0.5 px-1 border border-dashed border-black self-start">
+                                                Note: {item.notes}
+                                            </span>
+                                        )}
                                     </span>
-                                )}
-                                {item.notes && (
-                                    <span className="text-[0.8em] font-bold mt-0.5 px-1 border border-dashed border-black self-start">
-                                        Note: {item.notes}
+
+                                    {config.show_rate !== false && (
+                                        <span className="w-12 text-right pt-0.5">
+                                            {item.rate !== undefined ? item.rate : (item.price || 0)}
+                                        </span>
+                                    )}
+
+                                    <span className="w-8 text-right font-bold pt-0.5">
+                                        {item.qty_change !== undefined ? item.qty_change : item.qty}
                                     </span>
-                                )}
-                            </span>
-                            
-                            {config.show_rate !== false && (
-                                <span className="w-12 text-right pt-0.5">
-                                    {item.rate !== undefined ? item.rate : (item.price || 0)}
-                                </span>
-                            )}
-                            
-                            <span className="w-8 text-right font-bold pt-0.5">
-                                {item.qty_change !== undefined ? item.qty_change : item.qty}
-                            </span>
-                            
-                            {config.show_amount !== false && (
-                                <span className="w-12 text-right pt-0.5">
-                                    {item.amount !== undefined ? item.amount : ((item.qty_change !== undefined ? item.qty_change : item.qty) * (item.price || 0))}
-                                </span>
-                            )}
-                        </div>
-                    ))}
+
+                                    {config.show_amount !== false && (
+                                        <span className="w-12 text-right pt-0.5">
+                                            {item.amount !== undefined ? item.amount : ((item.qty_change !== undefined ? item.qty_change : item.qty) * (item.price || 0))}
+                                        </span>
+                                    )}
+                                </div>
+                            ))}
+                        </>
+                    )}
                     {config.show_cancelled_items !== false && cancelledItems.length > 0 && (
                         <>
                             <div className="w-full overflow-hidden border-t border-dashed border-black mt-1 mb-1" />
@@ -330,8 +334,9 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
                             ))}
                         </>
                     )}
-                    
-                    <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
+                    {(activeItems.length > 0 || cancelledItems.length > 0) && (
+                        <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
+                    )}
                 </div>
             );
 
