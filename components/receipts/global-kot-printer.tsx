@@ -2,81 +2,258 @@
 
 import React, { useEffect, useRef } from "react";
 import apiClient from "@/lib/api-client";
-import { PrinterApis, RestaurantApis, KotApis } from "@/lib/api/endpoints";
+import { PrinterApis, RestaurantApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Raw ESC/POS builder — builds payload as a direct string for exact byte control
+// ESC/POS helpers
 // ─────────────────────────────────────────────────────────────────────────────
-function buildEscPosKot(kotData: any): string {
-    const ESC = "\x1B";
-    const GS  = "\x1D";
-    const LF  = "\n";
+const ESC = "\x1B";
+const GS  = "\x1D";
+const LF  = "\n";
 
-    // 80mm thermal paper = 48 chars at default font size
-    // 58mm thermal paper = 32 chars at default font size
-    // Change this to 32 if your printers are 58mm
-    const WIDTH = 48;
-    const SEP = "-".repeat(WIDTH);
+const CMD = {
+    init:        `${ESC}@`,
+    center:      `${ESC}a\x01`,
+    left:        `${ESC}a\x00`,
+    right:       `${ESC}a\x02`,
+    boldOn:      `${ESC}E\x01`,
+    boldOff:     `${ESC}E\x00`,
+    dblWidthOn:  `${ESC}!\x20`,   // Double width
+    dblHeightOn: `${ESC}!\x10`,   // Double height
+    dblBothOn:   `${ESC}!\x30`,   // Double width + height
+    normalSize:  `${ESC}!\x00`,   // Reset size
+    cut:         `${GS}V\x00`,    // Full cut
+    feed: (n: number) => `${ESC}d${String.fromCharCode(n)}`,
+};
 
-    const id        = kotData.id || kotData.kot_id || "-";
-    const kotNumber = kotData.kot_number || String(id);
-    const station   = kotData.station || "";
-    const table     = kotData.order?.table_name || kotData.order?.table || kotData.table_name || kotData.table || "";
-    const items: any[] = kotData.items || kotData.kot?.items || [];
-    const date      = new Date().toLocaleString();
+function align(cmd: string) {
+    if (cmd === "center") return CMD.center;
+    if (cmd === "right")  return CMD.right;
+    return CMD.left;
+}
+
+function resolvePlaceholders(text: string, kot: any, order: any, restaurant: any): string {
+    if (!text || typeof text !== "string") return text || "";
+    const date    = kot?.created_at ? new Date(kot.created_at) : new Date();
+    const dateStr = date.toLocaleDateString("en-GB");
+    const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    return text
+        .replace(/\{\{station_ticket_title\}\}/g, (kot?.station || "KITCHEN").toUpperCase())
+        .replace(/\{\{station\}\}/g, kot?.station || "KITCHEN")
+        .replace(/\{\{kot_number\}\}/g, String(kot?.kot_number || kot?.id || ""))
+        .replace(/\{\{table\}\}/g, order?.table_name || "N/A")
+        .replace(/\{\{date\}\}/g, dateStr)
+        .replace(/\{\{time\}\}/g, timeStr)
+        .replace(/\{\{order_id\}\}/g, String(order?.id || ""))
+        .replace(/\{\{type\}\}/g, kot?.type || "INITIAL")
+        .replace(/\{\{restaurant_name\}\}/g, restaurant?.name || "YUMMY RESTAURANT")
+        .replace(/\{\{restaurant_address\}\}/g, restaurant?.address || "")
+        .replace(/\{\{restaurant_phone\}\}/g, restaurant?.phone || "")
+        .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Template-aware ESC/POS builder
+// Reads the KOT designer template blocks and converts to raw ESC/POS bytes.
+// Falls back to a hardcoded default if no template is provided.
+// ─────────────────────────────────────────────────────────────────────────────
+function buildEscPosKot(kotData: any, template: any[] = []): string {
+    const kot        = kotData?.kot || kotData;
+    const order      = kotData?.order || {};
+    const restaurant = kotData?.restaurant || {};
+
+    // ── Parse template global settings ───────────────────────────────────────
+    const globalBlock   = template.find((b: any) => b.type === "global_settings");
+    const paperSize     = globalBlock?.paper_size || globalBlock?.config?.paper_size || "80mm";
+    // 80mm = 48 chars,  58mm = 32 chars  (at default font A)
+    const WIDTH         = paperSize === "58mm" ? 32 : 48;
+    const SEP           = "-".repeat(WIDTH);
+
+    const visibleBlocks = template
+        .filter((b: any) => b.type !== "global_settings")
+        .filter((b: any) => b.is_visible ?? b.isVisible ?? true);
 
     let p = "";
 
-    // DO NOT send ESC@ (init) — on many printers it causes an unwanted blank line feed
-    // Just set the font and alignment directly
+    // ── No template — use clean default layout ────────────────────────────────
+    if (visibleBlocks.length === 0) {
+        const id        = kot.id || kotData.kot_id || "-";
+        const kotNumber = kot.kot_number || String(id);
+        const station   = kot.station || "";
+        const table     = order.table_name || order.table || "";
+        const date      = new Date().toLocaleString();
+        const items: any[] = kot.items || [];
+        const nameW     = WIDTH - 6;
 
-    // Center align + bold header
-    p += `${ESC}a\x01`;          // Center align
-    p += `${ESC}E\x01`;          // Bold on
-    p += `*** KITCHEN ORDER ***${LF}`;
-    p += `${ESC}E\x00`;          // Bold off
-
-    // Left align for the body
-    p += `${ESC}a\x00`;          // Left align
-    p += `${LF}`;                 // 1 blank line separator
-    p += `${SEP}${LF}`;
-    p += `KOT: #${kotNumber}${LF}`;
-    if (station) p += `STATION: ${station.toUpperCase()}${LF}`;
-    if (table)   p += `TABLE: ${table}${LF}`;
-    p += `DATE: ${date}${LF}`;
-    p += `${SEP}${LF}`;
-
-    // Column header — item name takes WIDTH-6 chars, QTY takes 6
-    const nameW = WIDTH - 6;
-    p += `${"ITEM".padEnd(nameW, " ")}${"QTY".padStart(6, " ")}${LF}`;
-    p += `${SEP}${LF}`;
-
-    items.forEach((item: any) => {
-        const rawName = String(item.item_name || item.name_snapshot || item.name || "Item");
-        const qty     = String(item.qty_change || item.qty || item.quantity || 1);
-        const name    = rawName.substring(0, nameW).padEnd(nameW, " ");
-        const qtyStr  = qty.padStart(6, " ");
-        p += `${name}${qtyStr}${LF}`;
-        if (item.notes) p += `  > ${item.notes}${LF}`;
-        const mods: any[] = item.modifiers || [];
-        mods.forEach((mod: any) => {
-            const modName = mod.modifier_name_snapshot || mod.name || "";
-            if (modName) p += `  + ${modName}${LF}`;
+        p += CMD.center + CMD.boldOn;
+        p += `*** KITCHEN ORDER ***${LF}`;
+        p += CMD.boldOff + CMD.left + LF;
+        p += `${SEP}${LF}`;
+        p += `KOT: #${kotNumber}${LF}`;
+        if (station) p += `STATION: ${station.toUpperCase()}${LF}`;
+        if (table)   p += `TABLE: ${table}${LF}`;
+        p += `DATE: ${date}${LF}`;
+        p += `${SEP}${LF}`;
+        p += `${"ITEM".padEnd(nameW, " ")}${"QTY".padStart(6, " ")}${LF}`;
+        p += `${SEP}${LF}`;
+        items.forEach((item: any) => {
+            const rawName = String(item.item_name || item.name_snapshot || item.name || "Item");
+            const qty     = String(item.qty_change ?? item.qty ?? item.quantity ?? 1);
+            p += `${rawName.substring(0, nameW).padEnd(nameW, " ")}${qty.padStart(6, " ")}${LF}`;
+            if (item.notes) p += `  > ${item.notes}${LF}`;
+            (item.modifiers || []).forEach((m: any) => {
+                const mn = m.modifier_name_snapshot || m.name || "";
+                if (mn) p += `  + ${mn}${LF}`;
+            });
         });
-    });
+        p += `${SEP}${LF}`;
+    } else {
+        // ── Template-driven layout ────────────────────────────────────────────
+        visibleBlocks.forEach((block: any) => {
+            const cfg  = block.config ? { ...block, ...block.config } : block;
+            const type = block.type;
+            const a    = align(cfg.align || "left");
+            const bold = (cfg.bold || cfg.is_bold) ? CMD.boldOn : CMD.boldOff;
 
-    p += `${SEP}${LF}`;
-    // Feed 6 lines so the bottom separator fully clears the cutter blade
-    p += `${ESC}d\x06`;
-    // Full paper cut
-    p += `${GS}V\x00`;
-    // Null padding to prevent TCP FIN before printer reads the cut command
+            p += a + bold;
+
+            switch (type) {
+                case "header": {
+                    const name    = resolvePlaceholders(cfg.title || restaurant?.name || "YUMMY RESTAURANT", kot, order, restaurant);
+                    const address = resolvePlaceholders(cfg.address || restaurant?.address || "", kot, order, restaurant);
+                    const phone   = resolvePlaceholders(cfg.phone || restaurant?.phone || "", kot, order, restaurant);
+                    p += `${name.toUpperCase()}${LF}`;
+                    if (cfg.show_address !== false && address) p += `${address.toUpperCase()}${LF}`;
+                    if (cfg.show_phone !== false && phone)     p += `${cfg.phone_label || "CONTACT"}: ${phone}${LF}`;
+                    if (cfg.show_pan === true) {
+                        const pan = resolvePlaceholders(cfg.pan || restaurant?.pan_number || "", kot, order, restaurant);
+                        if (pan) p += `${cfg.pan_label || "PAN"}: ${pan}${LF}`;
+                    }
+                    p += `${SEP}${LF}`;
+                    break;
+                }
+
+                case "divider":
+                    p += `${SEP}${LF}`;
+                    break;
+
+                case "bill_info": {
+                    const date   = kot.created_at ? new Date(kot.created_at) : new Date();
+                    const dateStr = date.toLocaleDateString("en-GB");
+                    const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
+                    if (cfg.show_kot_number !== false) {
+                        const kotNum  = kot.kot_number || kot.id;
+                        const stLabel = cfg.station_label || "STATION";
+                        const kotLabel = cfg.kot_label || "KOT";
+                        const stVal   = kot.station || "";
+
+                        if (cfg.show_station === true && stVal) {
+                            // KOT# on left, STATION on right
+                            const left  = `${kotLabel}: #${kotNum}`;
+                            const right = `${stLabel}: ${stVal.toUpperCase()}`;
+                            const space = WIDTH - left.length - right.length;
+                            p += `${left}${" ".repeat(Math.max(1, space))}${right}${LF}`;
+                        } else {
+                            p += `${kotLabel}: #${kotNum}${LF}`;
+                        }
+                    }
+
+                    if (cfg.show_table !== false) {
+                        const tbl = order.table_name || "N/A";
+                        p += `${cfg.table_label || "TABLE"}: ${tbl}${LF}`;
+                    }
+
+                    if (cfg.show_order_id !== false) {
+                        p += `${cfg.order_label || "ORDER"}: #${order.id || ""}${LF}`;
+                    }
+
+                    if (cfg.show_date === true) {
+                        p += `${cfg.date_label || "DATE"}: ${dateStr}${LF}`;
+                    }
+
+                    if (cfg.show_time === true) {
+                        p += `${cfg.time_label || "TIME"}: ${timeStr}${LF}`;
+                    }
+
+                    if (cfg.show_user === true) {
+                        const user = order.waiter_name || kot.created_by_staff_name || "N/A";
+                        p += `${cfg.user_label || "USER"}: ${user}${LF}`;
+                    }
+
+                    p += `${SEP}${LF}`;
+                    break;
+                }
+
+                case "items": {
+                    const nameW     = WIDTH - 6;
+                    const showSerial = cfg.show_serial !== false;
+                    const serialW   = showSerial ? 4 : 0;
+                    const itemNameW = nameW - serialW;
+
+                    // Header row
+                    const itemLabel = (cfg.item_label || "ITEM").padEnd(itemNameW - (showSerial ? serialW : 0), " ");
+                    const qtyLabel  = (cfg.qty_label  || "QTY").padStart(6, " ");
+                    if (showSerial) {
+                        p += `${"#".padEnd(serialW)}${itemLabel}${qtyLabel}${LF}`;
+                    } else {
+                        p += `${itemLabel}${qtyLabel}${LF}`;
+                    }
+                    p += `${SEP}${LF}`;
+
+                    (kot.items || []).forEach((item: any, idx: number) => {
+                        const rawName = String(item.item_name || item.name_snapshot || item.name || "Item");
+                        const qty     = String(item.qty_change ?? item.qty ?? item.quantity ?? 1);
+                        const sn      = showSerial ? `${String(idx + 1).padEnd(serialW)}` : "";
+                        const nameStr = rawName.substring(0, itemNameW).padEnd(itemNameW, " ");
+                        p += `${sn}${nameStr}${qty.padStart(6, " ")}${LF}`;
+                        if (item.notes) p += `  > ${item.notes}${LF}`;
+                        (item.modifiers || []).forEach((m: any) => {
+                            const mn = m.modifier_name_snapshot || m.name || "";
+                            if (mn) p += `  + ${mn}${LF}`;
+                        });
+                    });
+                    p += `${SEP}${LF}`;
+                    break;
+                }
+
+                case "text":
+                case "custom_text": {
+                    const txt = resolvePlaceholders(cfg.text || cfg.content || "", kot, order, restaurant);
+                    if (txt) p += `${txt}${LF}`;
+                    break;
+                }
+
+                case "footer": {
+                    const msg = resolvePlaceholders(cfg.message || "End of Ticket", kot, order, restaurant);
+                    p += `${SEP}${LF}`;
+                    p += `${msg}${LF}`;
+                    break;
+                }
+
+                default:
+                    break;
+            }
+
+            // Reset bold and alignment after each block
+            p += CMD.boldOff + CMD.left;
+
+            // Block padding
+            const paddingBottom = Number(cfg.padding_bottom || 0);
+            for (let i = 0; i < Math.ceil(paddingBottom / 8); i++) p += LF;
+        });
+    }
+
+    // Feed paper and cut
+    p += CMD.feed(6);  // Feed 6 lines to clear cutter gap
+    p += CMD.cut;
+
+    // Null padding to prevent TCP FIN before printer reads cut
     for (let i = 0; i < 50; i++) p += "\x00";
 
     return p;
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GlobalKotPrinter Component
@@ -92,7 +269,7 @@ export function GlobalKotPrinter() {
             const targetStation = normalizeStation(stationName);
             if (!targetStation) return null;
 
-            // Check if this device is even assigned to print for this station
+            // Check if this device is assigned to print for this station
             try {
                 const localStationsRaw = localStorage.getItem("yummy_local_kot_stations");
                 if (localStationsRaw !== null) {
@@ -153,56 +330,72 @@ export function GlobalKotPrinter() {
 
             console.log("[GlobalKotPrinter] Received KOT event:", data);
 
-            // ── Deduplication (8s window) ────────────────────────────────
+            // ── Deduplication (8s window) ────────────────────────────────────
             const kotId = data.kot_id || data.id || data.kot?.id;
-            const key = `id:${String(kotId)}`;
-            const now = Date.now();
+            const key   = `id:${String(kotId)}`;
+            const now   = Date.now();
             const lastSeen = recentPrintsRef.current.get(key) || 0;
             if (now - lastSeen < 8000) {
-                console.log(`[GlobalKotPrinter] Skipping duplicate KOT ${kotId} (seen ${now - lastSeen}ms ago)`);
+                console.log(`[GlobalKotPrinter] Skipping duplicate KOT ${kotId} (${now - lastSeen}ms ago)`);
                 return;
             }
             recentPrintsRef.current.set(key, now);
 
-            // ── Skip if already auto-printed ────────────────────────────
+            // ── Skip if already auto-printed ─────────────────────────────────
             if (data.auto_printed_at || data.kot?.auto_printed_at) {
-                console.log(`[GlobalKotPrinter] KOT ${kotId} already marked auto-printed. Skipping.`);
+                console.log(`[GlobalKotPrinter] KOT ${kotId} already auto-printed. Skipping.`);
                 return;
             }
 
-            // ── Fetch full KOT data if items are missing ─────────────────
+            // ── Fetch full KOT if items missing ──────────────────────────────
             if ((!data.items || data.items.length === 0) && kotId) {
                 try {
-                    console.log(`[GlobalKotPrinter] Fetching full KOT data for #${kotId}...`);
+                    console.log(`[GlobalKotPrinter] Fetching full KOT #${kotId}...`);
                     const res = await apiClient.get(`/kots/${kotId}`);
                     data = res.data?.data || res.data;
-                    console.log(`[GlobalKotPrinter] Fetched KOT data:`, data);
                 } catch (err) {
-                    console.error("[GlobalKotPrinter] Failed to fetch KOT details:", err);
+                    console.error("[GlobalKotPrinter] Failed to fetch KOT:", err);
                     return;
                 }
             }
 
-            // ── Resolve station printer ───────────────────────────────────
-            const stationName = data.station || data.kot?.station;
+            // ── Fetch KOT template from designer ─────────────────────────────
+            let template: any[] = [];
             const currentRestaurantId = useRestaurant.getState().restaurant?.id;
             const restId = data.restaurant_id || data.order?.restaurant_id || currentRestaurantId;
 
-            console.log(`[GlobalKotPrinter] Resolving printer for station="${stationName}", restaurantId=${restId}`);
+            if (restId) {
+                try {
+                    const res = await apiClient.get(RestaurantApis.getTemplates(restId));
+                    const templatesData = res.data?.data || res.data;
+                    const kotTmpl = Array.isArray(templatesData)
+                        ? templatesData.find((t: any) => t.type === "kot" || t.name?.toLowerCase().includes("kot"))
+                        : (templatesData?.kot_template || templatesData?.template);
+                    if (kotTmpl) {
+                        template = Array.isArray(kotTmpl) ? kotTmpl : (kotTmpl.blocks || []);
+                        console.log(`[GlobalKotPrinter] Loaded KOT template with ${template.length} blocks`);
+                    }
+                } catch (err) {
+                    console.warn("[GlobalKotPrinter] Failed to fetch KOT template, using default layout:", err);
+                }
+            }
+
+            // ── Resolve station printer ──────────────────────────────────────
+            const stationName = data.station || data.kot?.station;
+            console.log(`[GlobalKotPrinter] Resolving printer for station="${stationName}", restaurant=${restId}`);
 
             const assignedPrinter = restId ? await resolveAssignedPrinter(restId, stationName) : null;
-
             if (!assignedPrinter) {
-                console.warn(`[GlobalKotPrinter] No printer assigned for station "${stationName}". Cannot auto-print.`);
+                console.warn(`[GlobalKotPrinter] No printer assigned for station "${stationName}". Skipping auto-print.`);
                 return;
             }
 
             console.log(`[GlobalKotPrinter] Assigned printer:`, assignedPrinter.name, assignedPrinter.address, assignedPrinter.printer_type);
 
-            // ── Print ─────────────────────────────────────────────────────
+            // ── Print ────────────────────────────────────────────────────────
             const winAny = window as any;
             if (!winAny.electronAPI) {
-                console.warn("[GlobalKotPrinter] Not running in Electron. Cannot print.");
+                console.warn("[GlobalKotPrinter] Not in Electron. Cannot print.");
                 return;
             }
 
@@ -211,13 +404,12 @@ export function GlobalKotPrinter() {
                 /^\d{1,3}(\.\d{1,3}){3}$/.test(String(assignedPrinter.address || "").trim());
 
             if (isNetworkPrinter && winAny.electronAPI.printNetworkRaw) {
-                // ── RAW ESC/POS over TCP (network printer / simulator) ────
-                const host = String(assignedPrinter.address || "").trim();
-                const port = Number(assignedPrinter.connection_config?.port || 9100);
+                const host    = String(assignedPrinter.address || "").trim();
+                const port    = Number(assignedPrinter.connection_config?.port || 9100);
+                const payload = buildEscPosKot(data, template);
 
-                const payload = buildEscPosKot(data);
-
-                console.log(`[GlobalKotPrinter] 🖨️ Sending raw ESC/POS to ${host}:${port} (${payload.length} bytes)`);
+                console.log(`[GlobalKotPrinter] 🖨️ Sending raw ESC/POS (${payload.length} bytes) → ${host}:${port}`);
+                console.log(`[GlobalKotPrinter] Template blocks used: ${template.length > 0 ? template.length : "0 (default layout)"}`);
 
                 try {
                     const result = await winAny.electronAPI.printNetworkRaw({ host, port, payload });
@@ -226,9 +418,8 @@ export function GlobalKotPrinter() {
                     console.error(`[GlobalKotPrinter] ❌ Print error:`, err);
                 }
             } else if (winAny.electronAPI.printSilent) {
-                // ── Silent Windows spooler print (USB / directly connected) ─
                 const printerName = assignedPrinter.name;
-                console.log(`[GlobalKotPrinter] 🖨️ Sending silent Windows print to: ${printerName}`);
+                console.log(`[GlobalKotPrinter] 🖨️ Silent Windows print → ${printerName}`);
                 try {
                     await winAny.electronAPI.printSilent({ printerName });
                     console.log(`[GlobalKotPrinter] ✅ Silent print sent.`);
@@ -244,6 +435,5 @@ export function GlobalKotPrinter() {
         return () => window.removeEventListener("yummy:kot-print", handlePrintEvent);
     }, []);
 
-    // This component renders nothing — it just listens and prints
     return null;
 }
