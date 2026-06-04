@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -288,6 +288,7 @@ export default function POSSystem({
   const [processing, setProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [orderData, setOrderData] = useState<any>(null);
+  const printedKotsRef = useRef<Set<number>>(new Set());
   const [tableData, setTableData] = useState<any>(null);
   const [tablesList, setTablesList] = useState<any[]>([]);
 
@@ -536,14 +537,21 @@ export default function POSSystem({
       if (response && response.data) {
         // Direct Print Integration
         const triggerDirectPrint = async (orderDataResponse: any) => {
-          if (!orderDataResponse) return;
           try {
+            // Helper to print a single KOT if we haven't printed it yet
+            const printIfNew = (kot: any) => {
+              const kotId = kot.id || kot.kot_id;
+              if (kotId && !printedKotsRef.current.has(kotId)) {
+                console.log(`[POS] Dispatching direct print for new KOT ${kotId}`);
+                printedKotsRef.current.add(kotId);
+                window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: kot }));
+              }
+            };
+
             // Fast path: if the API already returned the KOTs in the response, use them instantly
             if (Array.isArray(orderDataResponse.kots) && orderDataResponse.kots.length > 0) {
-              console.log(`[POS] Found ${orderDataResponse.kots.length} KOTs in API response. Printing instantly.`);
-              orderDataResponse.kots.forEach((kot: any) => {
-                 window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: kot }));
-              });
+              console.log(`[POS] Found ${orderDataResponse.kots.length} KOTs in API response. Filtering for new ones...`);
+              orderDataResponse.kots.forEach(printIfNew);
               return;
             }
 
@@ -555,10 +563,7 @@ export default function POSSystem({
             const kotsRes = await apiClient.get(`/kots/orders/${savedOrderId}`);
             const kots = kotsRes.data?.data || kotsRes.data || [];
             if (Array.isArray(kots)) {
-              kots.forEach((kot: any) => {
-                 console.log(`[POS] Dispatching direct print for KOT ${kot.id || kot.kot_id}`);
-                 window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: kot }));
-              });
+              kots.forEach(printIfNew);
             }
           } catch (printErr) {
             console.error("[POS] Failed to handle direct print:", printErr);
