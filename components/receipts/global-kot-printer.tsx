@@ -1,84 +1,124 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { ThermalKOT } from "@/components/receipts/thermal-kot";
+import React, { useEffect, useRef } from "react";
 import apiClient from "@/lib/api-client";
 import { PrinterApis, RestaurantApis, KotApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Raw ESC/POS builder — matches Flutter KOT format exactly
+// ─────────────────────────────────────────────────────────────────────────────
+function buildEscPosKot(kotData: any): string {
+    const ESC = "\x1B";
+    const GS = "\x1D";
+    const NL = "\r\n";
+
+    const id = kotData.id || kotData.kot_id || "-";
+    const kotNumber = kotData.kot_number || String(id);
+    const station = kotData.station || "";
+    const table = kotData.order?.table_name || kotData.order?.table || kotData.table_name || kotData.table || "";
+    const items: any[] = kotData.items || kotData.kot?.items || [];
+    const date = new Date().toLocaleString();
+
+    const lines: string[] = [];
+
+    // Initialize printer
+    lines.push(`${ESC}@`);
+
+    // Center + Bold header
+    lines.push(`${ESC}a\x01`); // Center
+    lines.push(`${ESC}E\x01`); // Bold on
+    lines.push(`*** KITCHEN ORDER ***`);
+    lines.push(`${ESC}E\x00`); // Bold off
+    lines.push(``);
+
+    // Left-align info block
+    lines.push(`${ESC}a\x00`);
+    lines.push(`--------------------------------`);
+    lines.push(`KOT: #${kotNumber}`);
+    if (station) lines.push(`STATION: ${station.toUpperCase()}`);
+    if (table) lines.push(`TABLE: ${table}`);
+    lines.push(`DATE: ${date}`);
+    lines.push(`--------------------------------`);
+    lines.push(`ITEM                         QTY`);
+    lines.push(`--------------------------------`);
+
+    items.forEach((item: any) => {
+        const rawName = String(item.item_name || item.name_snapshot || item.name || "Item");
+        const qty = String(item.qty_change || item.qty || item.quantity || 1);
+        const name = rawName.substring(0, 28).padEnd(28, " ");
+        const qtyStr = qty.padStart(4, " ");
+        lines.push(`${name}${qtyStr}`);
+
+        // Print notes if present
+        if (item.notes) {
+            lines.push(`  > ${item.notes}`);
+        }
+
+        // Print modifiers if present
+        const mods: any[] = item.modifiers || [];
+        mods.forEach((mod: any) => {
+            const modName = mod.modifier_name_snapshot || mod.name || "";
+            if (modName) lines.push(`  + ${modName}`);
+        });
+    });
+
+    lines.push(`--------------------------------`);
+    lines.push(``);
+    lines.push(``);
+    lines.push(``);
+
+    // Cut paper
+    lines.push(`${ESC}i`);
+
+    let payload = lines.join(NL);
+
+    // Null-byte padding to prevent TCP FIN from cutting data before printer reads it
+    for (let i = 0; i < 50; i++) payload += "\x00";
+
+    return payload;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GlobalKotPrinter Component
+// ─────────────────────────────────────────────────────────────────────────────
 export function GlobalKotPrinter() {
-    const restaurant = useRestaurant((s) => s.restaurant);
-    const [printJob, setPrintJob] = useState<{ kotData: any; template: any[] } | null>(null);
-    const [mounted, setMounted] = useState(false);
-    const [printerRoutingUnauthorized, setPrinterRoutingUnauthorized] = useState(false);
     const recentPrintsRef = useRef<Map<string, number>>(new Map());
-
-    const buildDedupeKeys = (data: any) => {
-        const orderId = data?.order_id || data?.order?.id || data?.data?.order_id;
-        const station = String(data?.station || data?.kot?.station || data?.data?.station || "").trim().toLowerCase();
-        const kotNumber = String(data?.kot_number || data?.kot?.kot_number || data?.data?.kot_number || "").trim().toLowerCase();
-        const explicitIds = [
-            data?.kot_id,
-            data?.id,
-            data?.kot?.id,
-            data?.data?.id,
-            data?.data?.kot_id
-        ]
-            .filter(Boolean)
-            .map((value) => `id:${String(value)}`);
-
-        const compositeKeys = [
-            orderId && kotNumber ? `order:${orderId}:kot:${kotNumber}` : null,
-            orderId && station && kotNumber ? `order:${orderId}:station:${station}:kot:${kotNumber}` : null,
-        ].filter(Boolean) as string[];
-
-        return [...explicitIds, ...compositeKeys];
-    };
-
-    useEffect(() => { setMounted(true); }, []);
+    const [printerRoutingUnauthorized, setPrinterRoutingUnauthorized] = React.useState(false);
 
     useEffect(() => {
-        const normalizeStation = (value?: string) => (value || "").trim().toLowerCase();
+        const normalizeStation = (v?: string) => (v || "").trim().toLowerCase();
+
         const resolveAssignedPrinter = async (restaurantId: number, stationName?: string): Promise<any | null> => {
             const targetStation = normalizeStation(stationName);
-
-            // If no station is present, do not fallback to "any/default" printer.
             if (!targetStation) return null;
 
-            // PREVENT MULTIPLE PCS PRINTING THE SAME KOT:
-            // Check if THIS device is configured to auto-print for this station.
+            // Check if this device is even assigned to print for this station
             try {
                 const localStationsRaw = localStorage.getItem("yummy_local_kot_stations");
                 if (localStationsRaw !== null) {
                     const localStations: string[] = JSON.parse(localStationsRaw).map((s: string) => normalizeStation(s));
                     if (!localStations.includes(targetStation)) {
-                        console.log(`[GlobalKotPrinter] Skipping auto-print for station "${stationName}": not enabled for THIS device.`);
+                        console.log(`[GlobalKotPrinter] Station "${stationName}" not assigned to this device. Skipping.`);
                         return null;
                     }
                 }
-            } catch (err) {
-                console.error("[GlobalKotPrinter] Error reading local device stations config", err);
-            }
+            } catch (e) { /* ignore */ }
 
             try {
                 const restaurantState = useRestaurant.getState().restaurant as any;
-                const embeddedStations = restaurantState?.kot_station_config?.stations;
-                let stations = Array.isArray(embeddedStations) ? embeddedStations : [];
+                let stations: any[] = restaurantState?.kot_station_config?.stations || [];
 
                 if (!stations.length && !printerRoutingUnauthorized) {
                     try {
-                        const stationRes = await apiClient.get(PrinterApis.stationConfig(restaurantId), {
-                            headers: {
-                                "x-restaurant-id": String(restaurantId),
-                            },
+                        const res = await apiClient.get(PrinterApis.stationConfig(restaurantId), {
+                            headers: { "x-restaurant-id": String(restaurantId) }
                         });
-                        stations = stationRes.data?.data?.stations || [];
-                    } catch (err) {
-                        const status = (err as any)?.response?.status;
+                        stations = res.data?.data?.stations || [];
+                    } catch (err: any) {
+                        const status = err?.response?.status;
                         if (status === 401 || status === 403) {
                             setPrinterRoutingUnauthorized(true);
-                            console.warn("[GlobalKotPrinter] Printer routing endpoints unauthorized for this role; using embedded restaurant station mapping.");
                         } else {
                             throw err;
                         }
@@ -86,16 +126,24 @@ export function GlobalKotPrinter() {
                 }
 
                 const printersRes = await apiClient.get(PrinterApis.list(restaurantId));
-                const printers = printersRes.data?.data || [];
+                const printers: any[] = printersRes.data?.data || [];
 
                 const stationConfig = stations.find((s: any) => normalizeStation(s?.name) === targetStation);
                 const assignedPrinterId = stationConfig?.printer_id;
-                if (!assignedPrinterId) return null;
+                if (!assignedPrinterId) {
+                    console.warn(`[GlobalKotPrinter] No printer mapped to station "${targetStation}".`);
+                    return null;
+                }
 
-                const assignedPrinter = printers.find((p: any) => p?.id === assignedPrinterId && p?.enabled);
-                return assignedPrinter || null;
+                const printer = printers.find((p: any) => p?.id === assignedPrinterId && p?.enabled);
+                if (!printer) {
+                    console.warn(`[GlobalKotPrinter] Assigned printer ID ${assignedPrinterId} not found or disabled.`);
+                    return null;
+                }
+
+                return printer;
             } catch (err) {
-                console.error("[GlobalKotPrinter] Failed to resolve station printer", err);
+                console.error("[GlobalKotPrinter] Failed to resolve station printer:", err);
                 return null;
             }
         };
@@ -104,264 +152,99 @@ export function GlobalKotPrinter() {
             let data = e.detail;
             if (!data) return;
 
-            console.log("[GlobalKotPrinter] Received print request for KOT:", data);
+            console.log("[GlobalKotPrinter] Received KOT event:", data);
 
+            // ── Deduplication (8s window) ────────────────────────────────
+            const kotId = data.kot_id || data.id || data.kot?.id;
+            const key = `id:${String(kotId)}`;
             const now = Date.now();
-            const incomingKeys = buildDedupeKeys(data);
-            const isDuplicate = incomingKeys.some((key) => {
-                const lastSeen = recentPrintsRef.current.get(key) || 0;
-                // Extended debounce to 8s to match Flutter
-                return now - lastSeen < 8000;
-            });
-            if (isDuplicate) {
-                console.log("[GlobalKotPrinter] Skipping duplicate KOT print event:", incomingKeys);
+            const lastSeen = recentPrintsRef.current.get(key) || 0;
+            if (now - lastSeen < 8000) {
+                console.log(`[GlobalKotPrinter] Skipping duplicate KOT ${kotId} (seen ${now - lastSeen}ms ago)`);
                 return;
             }
-            
-            // State check (matching Flutter)
+            recentPrintsRef.current.set(key, now);
+
+            // ── Skip if already auto-printed ────────────────────────────
             if (data.auto_printed_at || data.kot?.auto_printed_at) {
-                console.log("[GlobalKotPrinter] Skipping KOT as it was already marked auto-printed in DB.");
+                console.log(`[GlobalKotPrinter] KOT ${kotId} already marked auto-printed. Skipping.`);
                 return;
             }
-            
-            // Mark incoming keys as seen immediately (In-flight Lock)
-            incomingKeys.forEach((key) => recentPrintsRef.current.set(key, now));
-            
-            let kotId = data.kot_id || data.id || data.kot?.id;
-            
-            // --- TEMPORARILY BYPASSED BACKEND CLAIM FOR TESTING ---
-            // If the Flutter app is claiming the KOT instantly, the Electron app gets rejected.
-            // By bypassing this, the Electron app will ALWAYS print to the simulator!
-            /*
-            if (kotId) {
+
+            // ── Fetch full KOT data if items are missing ─────────────────
+            if ((!data.items || data.items.length === 0) && kotId) {
                 try {
-                    const claimRes = await apiClient.post(KotApis.markKotAutoPrinted(kotId));
-                    if (claimRes.data?.status === "error" || claimRes.status !== 200 || claimRes.data?.data === false) {
-                        console.log(`[GlobalKotPrinter] Failed to claim KOT ${kotId} for printing. (Another terminal may have printed it)`);
-                        return;
-                    }
-                    console.log(`[GlobalKotPrinter] Successfully claimed KOT ${kotId} for printing.`);
+                    console.log(`[GlobalKotPrinter] Fetching full KOT data for #${kotId}...`);
+                    const res = await apiClient.get(`/kots/${kotId}`);
+                    data = res.data?.data || res.data;
+                    console.log(`[GlobalKotPrinter] Fetched KOT data:`, data);
                 } catch (err) {
-                    console.error(`[GlobalKotPrinter] KOT ${kotId} claim request threw an error:`, err);
+                    console.error("[GlobalKotPrinter] Failed to fetch KOT details:", err);
                     return;
                 }
             }
-            */
-            // --------------------------------------------------------
 
-            // If the payload is missing items (like from kot_created), fetch the full KOT
-            if (!data.items || data.items.length === 0) {
-                if (kotId) {
-                    try {
-                        const res = await apiClient.get(`/kots/${kotId}`);
-                        data = res.data?.data || res.data;
-                    } catch (err) {
-                        console.error("[GlobalKotPrinter] Failed to fetch full KOT details", err);
-                        return;
-                    }
-                }
-            }
-
-            let activeTemplate: any[] = [];
-            const currentRestaurantId = useRestaurant.getState().restaurant?.id;
-            const restId = data.restaurant_id || data.restaurantId || data.order?.restaurant_id || currentRestaurantId;
-            if (restId) {
-                try {
-                    const res = await apiClient.get(RestaurantApis.getTemplates(restId));
-                    const templatesData = res.data?.data || res.data;
-                    const kotTmpl = Array.isArray(templatesData) 
-                        ? templatesData.find((t: any) => t.type === 'kot' || t.name?.toLowerCase().includes('kot')) 
-                        : (templatesData?.kot_template || templatesData?.template);
-                        
-                    if (kotTmpl) {
-                        activeTemplate = Array.isArray(kotTmpl) ? kotTmpl : (kotTmpl.blocks || []);
-                    }
-                } catch (err) {
-                    console.error("[GlobalKotPrinter] Failed to fetch KOT template", err);
-                }
-            }
-
-            // Resolve strict station-level printer routing.
+            // ── Resolve station printer ───────────────────────────────────
             const stationName = data.station || data.kot?.station;
-            
-            const explicitPrinterName = data.printer_config?.printer_name;
-            let assignedPrinter: any | null = null;
-            if (restId) {
-                assignedPrinter = await resolveAssignedPrinter(restId, stationName);
-            }
-            const assignedPrinterName: string | null =
-                explicitPrinterName ||
-                assignedPrinter?.name ||
-                null;
+            const currentRestaurantId = useRestaurant.getState().restaurant?.id;
+            const restId = data.restaurant_id || data.order?.restaurant_id || currentRestaurantId;
 
-            // No assigned printer => do not print to random/default system printer.
-            if (!assignedPrinterName) {
-                console.warn(
-                    `[GlobalKotPrinter] No assigned enabled printer found for station "${stationName || "unknown"}". Skipping auto-print.`
-                );
+            console.log(`[GlobalKotPrinter] Resolving printer for station="${stationName}", restaurantId=${restId}`);
+
+            const assignedPrinter = restId ? await resolveAssignedPrinter(restId, stationName) : null;
+
+            if (!assignedPrinter) {
+                console.warn(`[GlobalKotPrinter] No printer assigned for station "${stationName}". Cannot auto-print.`);
                 return;
             }
 
-            // Set data to trigger render
-            setPrintJob({
-                kotData: {
-                    ...data,
-                    printer_config: {
-                        ...(data.printer_config || {}),
-                        printer_name: assignedPrinterName,
-                        address: assignedPrinter?.address || data.printer_config?.address,
-                        port: assignedPrinter?.connection_config?.port || data.printer_config?.port || 9100,
-                        printer_type: assignedPrinter?.printer_type || data.printer_config?.printer_type
-                    }
-                },
-                template: activeTemplate
-            });
+            console.log(`[GlobalKotPrinter] Assigned printer:`, assignedPrinter.name, assignedPrinter.address, assignedPrinter.printer_type);
+
+            // ── Print ─────────────────────────────────────────────────────
+            const winAny = window as any;
+            if (!winAny.electronAPI) {
+                console.warn("[GlobalKotPrinter] Not running in Electron. Cannot print.");
+                return;
+            }
+
+            const isNetworkPrinter =
+                assignedPrinter.printer_type === "network" ||
+                /^\d{1,3}(\.\d{1,3}){3}$/.test(String(assignedPrinter.address || "").trim());
+
+            if (isNetworkPrinter && winAny.electronAPI.printNetworkRaw) {
+                // ── RAW ESC/POS over TCP (network printer / simulator) ────
+                const host = String(assignedPrinter.address || "").trim();
+                const port = Number(assignedPrinter.connection_config?.port || 9100);
+
+                const payload = buildEscPosKot(data);
+
+                console.log(`[GlobalKotPrinter] 🖨️ Sending raw ESC/POS to ${host}:${port} (${payload.length} bytes)`);
+
+                try {
+                    const result = await winAny.electronAPI.printNetworkRaw({ host, port, payload });
+                    console.log(`[GlobalKotPrinter] ✅ Print result:`, result);
+                } catch (err) {
+                    console.error(`[GlobalKotPrinter] ❌ Print error:`, err);
+                }
+            } else if (winAny.electronAPI.printSilent) {
+                // ── Silent Windows spooler print (USB / directly connected) ─
+                const printerName = assignedPrinter.name;
+                console.log(`[GlobalKotPrinter] 🖨️ Sending silent Windows print to: ${printerName}`);
+                try {
+                    await winAny.electronAPI.printSilent({ printerName });
+                    console.log(`[GlobalKotPrinter] ✅ Silent print sent.`);
+                } catch (err) {
+                    console.error(`[GlobalKotPrinter] ❌ Silent print error:`, err);
+                }
+            } else {
+                console.warn(`[GlobalKotPrinter] No valid print path available.`);
+            }
         };
 
         window.addEventListener("yummy:kot-print", handlePrintEvent);
         return () => window.removeEventListener("yummy:kot-print", handlePrintEvent);
     }, []);
 
-    useEffect(() => {
-        if (printJob) {
-            // Wait for DOM to update then print
-            const timer1 = setTimeout(() => {
-                console.log("🖨️ [GlobalKotPrinter] Triggering physical/PDF print for KOT:", printJob.kotData.id || printJob.kotData.kot_id);
-                
-                const winAny = window as any;
-                if (winAny.electronAPI) {
-                    const cfg = printJob.kotData?.printer_config || {};
-                    console.log("🚀 [GlobalKotPrinter] Printing rendered KOT template via Electron IPC.");
-                    const targetPrinter = cfg?.printer_name;
-                    
-                    // Always prefer the rendered backend-template design.
-                    // Do not use the old raw-text network KOT path, because it bypasses the template.
-                    if (targetPrinter && winAny.electronAPI.getPrinters) {
-                        winAny.electronAPI.getPrinters().then((printers: any[]) => {
-                            console.log(`[GlobalKotPrinter] OS Printers found:`, printers.map(p => p.name));
-                            console.log(`[GlobalKotPrinter] Looking for target printer: "${targetPrinter}"`);
-                            
-                            const exists = printers.find((p: any) => p.name === targetPrinter);
-                            const isNetworkPrinter = cfg?.printer_type === 'network' || /^\d{1,3}(\.\d{1,3}){3}$/.test(String(cfg?.address || '').trim());
-                            
-                            if (exists) {
-                                // Prefer the beautiful HTML template via Windows Spooler if installed
-                                console.log(`[GlobalKotPrinter] ✅ Printer found in Windows. Sending silent print job to: ${targetPrinter}`);
-                                winAny.electronAPI.printSilent({ printerName: targetPrinter });
-                            } else if (isNetworkPrinter && cfg?.address && winAny.electronAPI.printNetworkRaw) {
-                                // Fallback to raw TCP ESC/POS if not installed in Windows but IP is provided
-                                console.log(`[GlobalKotPrinter] 🌐 Network Printer not in Windows. Falling back to raw TCP KOT at: ${cfg.address}:${cfg.port || 9100}`);
-                                
-                                const order = printJob.kotData?.order || printJob.kotData;
-                                const items = printJob.kotData?.items || order?.items || [];
-                                const lines: string[] = [];
-                                
-                                lines.push(`\x1B\x40`); // Initialize printer
-                                lines.push(`\x1B\x61\x01`); // Center align
-                                lines.push(`*** KITCHEN ORDER ***\n`);
-                                lines.push(`\x1B\x61\x00`); // Left align
-                                lines.push(`--------------------------------`);
-                                lines.push(`KOT: #${printJob.kotData.id || order?.id || '-'}`);
-                                if (printJob.kotData.station) lines.push(`STATION: ${printJob.kotData.station}`);
-                                if (order?.table_name || order?.table) lines.push(`TABLE: ${order?.table_name || order?.table}`);
-                                lines.push(`DATE: ${new Date().toLocaleString()}`);
-                                lines.push(`--------------------------------`);
-                                lines.push(`ITEM                         QTY`);
-                                lines.push(`--------------------------------`);
-                                
-                                items.forEach((item: any) => {
-                                    const name = String(item.name_snapshot || item.item_name || item.name || "Item").substring(0, 24).padEnd(24, ' ');
-                                    const qty = String(item.qty || 1).padStart(8, ' ');
-                                    lines.push(`${name}${qty}`);
-                                });
-                                
-                                lines.push(`--------------------------------`);
-                                lines.push(`\r\n\r\n\r\n\x1B\x69`); // Cut paper
-                                
-                                let payload = lines.join('\r\n');
-                                
-                                // Padding for cheap TCP FIN drops (without newlines!)
-                                for (let i = 0; i < 50; i++) payload += `\x00`;
-
-                                winAny.electronAPI.printNetworkRaw({
-                                    host: cfg.address.trim(),
-                                    port: Number(cfg.port || 9100),
-                                    payload: payload
-                                }).then((res: any) => console.log("[GlobalKotPrinter] Raw response:", res))
-                                  .catch((err: any) => console.error("[GlobalKotPrinter] Raw error:", err));
-                            } else {
-                                console.warn(`[GlobalKotPrinter] ❌ Printer "${targetPrinter}" not found on this machine, and not a network printer. Ignoring job.`);
-                            }
-                        }).catch((err: any) => {
-                            console.error(`[GlobalKotPrinter] ❌ Error getting OS printers:`, err);
-                            winAny.electronAPI.printSilent({ printerName: targetPrinter });
-                        });
-                    } else {
-                        winAny.electronAPI.printSilent({ printerName: targetPrinter });
-                    }
-                } else {
-                    const clear = () => setPrintJob(null);
-                    const onAfterPrint = () => {
-                        window.removeEventListener("afterprint", onAfterPrint);
-                        clear();
-                    };
-                    window.addEventListener("afterprint", onAfterPrint);
-                    window.print();
-
-                    // Fallback in case afterprint doesn't fire in some browsers.
-                    setTimeout(() => {
-                        window.removeEventListener("afterprint", onAfterPrint);
-                        clear();
-                    }, 4000);
-                    return;
-                }
-                
-                // Wait a bit before clearing so print dialog has the DOM
-                const timer2 = setTimeout(() => {
-                    setPrintJob(null);
-                }, 800);
-            }, 150);
-            return () => clearTimeout(timer1);
-        }
-    }, [printJob]);
-
-    if (!printJob || !mounted || typeof document === "undefined") return null;
-
-    const { kotData, template } = printJob;
-
-    // We render the KOT component in a portal attached directly to the body.
-    // This allows us to hide ALL other body elements (like the Next.js root div)
-    // during printing, ensuring only the KOT is printed without any layout interference.
-    const content = (
-        <div className="fixed inset-0 z-[99999] bg-white print:flex print:items-start print:justify-center print-kot-container">
-            <div className="print-content" style={{ backgroundColor: 'white', padding: '10mm' }}>
-                <ThermalKOT data={kotData} template={template} />
-            </div>
-            
-            <style dangerouslySetInnerHTML={{ __html: `
-                @media print {
-                    @page { margin: 0; size: auto; }
-                    body { margin: 0 !important; padding: 0 !important; background: white; }
-                    /* Hide everything in the body EXCEPT our portal container */
-                    body > *:not(.print-kot-container) {
-                        display: none !important;
-                    }
-                    /* Ensure the container and its content are visible */
-                    .print-kot-container {
-                        display: flex !important;
-                        position: relative !important;
-                        background: white !important;
-                    }
-                }
-                /* Hide it on screen */
-                @media screen {
-                    .print-kot-container {
-                        display: none !important;
-                    }
-                }
-            `}} />
-        </div>
-    );
-
-    return createPortal(content, document.body);
+    // This component renders nothing — it just listens and prints
+    return null;
 }
