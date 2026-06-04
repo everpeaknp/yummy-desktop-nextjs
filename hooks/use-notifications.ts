@@ -470,7 +470,7 @@ export function useNotifications() {
             if (kotId && orderId && typeof window !== "undefined") {
               const fetchKotForCancellation = async () => {
                 try {
-                  const res = await fetch(proxyPath(`/orders/${orderId}/full-context`), {
+                  const res = await fetch(proxyPath(`/proxy/orders/${orderId}/full-context`), {
                     headers: headersWithAuth({ accept: "application/json" })
                   });
                   const json = await res.json();
