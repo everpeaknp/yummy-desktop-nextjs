@@ -5,7 +5,8 @@
 #   1. Bump "version" in package.json
 #   2. git tag v0.1.5 && git push origin v0.1.5
 #
-# Manual run: set "ref" to an existing branch (e.g. main) or tag (e.g. v0.1.5).
+# Manual run: set "ref" to an existing tag (e.g. v0.1.5) to build + publish.
+# Use "main" only to verify the Windows build (no GitHub Release upload).
 
 name: Electron Release
 
@@ -16,9 +17,9 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Branch or tag to build (must exist on remote, e.g. main or v0.1.5)"
+        description: "Git ref to build (tag e.g. v0.1.5 publishes; main = build only)"
         required: true
-        default: "main"
+        default: "v0.1.5"
 
 permissions:
   contents: write
@@ -48,21 +49,38 @@ jobs:
         run: |
           if (Test-Path dist) { Remove-Item -Recurse -Force dist }
 
-      - name: Build and publish to GitHub Releases
+      - name: Build Windows installers
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           Remove-Item Env:CSC_LINK -ErrorAction SilentlyContinue
           Remove-Item Env:CSC_KEY_PASSWORD -ErrorAction SilentlyContinue
           Remove-Item Env:WIN_CSC_LINK -ErrorAction SilentlyContinue
           Remove-Item Env:WIN_CSC_KEY_PASSWORD -ErrorAction SilentlyContinue
 
-          npm run electron:build:win -- --publish always 2>&1 | Tee-Object -FilePath electron-build.log
+          npm run electron:build:win -- --publish never 2>&1 | Tee-Object -FilePath electron-build.log
           if ($LASTEXITCODE -ne 0) {
             Get-Content electron-build.log -Tail 200
             exit $LASTEXITCODE
           }
+          $setup = Get-ChildItem -Path dist -Filter "Yummy.POS.Setup.*.exe" -ErrorAction SilentlyContinue
+          if (-not $setup) {
+            Write-Error "NSIS installer missing from dist/"
+            exit 1
+          }
+
+      - name: Publish to GitHub Release
+        if: github.event_name == 'push' || startsWith(github.event.inputs.ref, 'v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Yummy POS ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/Yummy.POS.Setup.*.exe
+            dist/Yummy.POS.Portable.exe
+            dist/latest.yml
+            dist/*.blockmap
 
       - name: Upload build log on failure
         if: failure()
