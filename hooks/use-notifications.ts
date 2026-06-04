@@ -462,14 +462,23 @@ export function useNotifications() {
             window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: payload }));
           }
 
-          if (event === "kot_updated" && payload.modifications && payload.modifications.length > 0) {
-            // Let GlobalKotPrinter fetch the full modified KOT from backend and
+          const isModifiedKotEvent =
+            event === "kot_modified" ||
+            (event === "kot_updated" && (
+              (Array.isArray(payload.modifications) && payload.modifications.length > 0) ||
+              payload.modification_type === "item_removed"
+            ));
+
+          if (isModifiedKotEvent && payload.kot_id) {
+            // Order-edit removals currently come through backend as `kot_modified`,
+            // while other flows may emit `kot_updated`. In both cases we let
+            // GlobalKotPrinter fetch the full modified KOT from backend and
             // print it with the real template + deleted-item metadata.
             window.dispatchEvent(
               new CustomEvent("yummy:kot-print", {
                 detail: {
                   ...payload,
-                  __printEvent: "kot_updated",
+                  __printEvent: event,
                 },
               }),
             );

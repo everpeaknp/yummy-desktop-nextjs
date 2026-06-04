@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from "react";
 import apiClient from "@/lib/api-client";
 import { PrinterApis, RestaurantApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { getKotItems, getKotPrintContext } from "@/components/receipts/kot-print-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ESC/POS helpers
@@ -53,43 +54,13 @@ function resolvePlaceholders(text: string, kot: any, order: any, restaurant: any
         .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "");
 }
 
-function getKotItems(kot: any): any[] {
-    return Array.isArray(kot?.items) ? kot.items : [];
-}
-
-function getActiveKotItems(kot: any): any[] {
-    return getKotItems(kot).filter((item: any) => {
-        const qty = Number(item?.qty_change ?? item?.qty ?? item?.quantity ?? 0);
-        return qty > 0 && Number(item?.is_deleted || 0) !== 1;
-    });
-}
-
-function getCancelledKotItems(kot: any): any[] {
-    return getKotItems(kot)
-        .filter((item: any) => {
-            const qtyChange = Number(item?.qty_change ?? 0);
-            const deletedQty = Number(item?.deleted_qty ?? 0);
-            return deletedQty > 0 || Number(item?.is_deleted || 0) === 1 || qtyChange < 0;
-        })
-        .map((item: any) => ({
-            ...item,
-            qty_for_print: Number(item?.deleted_qty ?? 0) > 0
-                ? Number(item.deleted_qty)
-                : Math.abs(Number(item?.qty_change ?? item?.qty ?? item?.quantity ?? 0)),
-        }));
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Template-aware ESC/POS builder
 // Reads the KOT designer template blocks and converts to raw ESC/POS bytes.
 // Falls back to a hardcoded default if no template is provided.
 // ─────────────────────────────────────────────────────────────────────────────
 function buildEscPosKot(kotData: any, template: any[] = []): string {
-    const kot        = kotData?.kot || kotData;
-    const order      = kotData?.order || {};
-    const restaurant = kotData?.restaurant || {};
-    const activeItems = getActiveKotItems(kot);
-    const cancelledItems = getCancelledKotItems(kot);
+    const { kot, order, restaurant, activeItems, cancelledItems } = getKotPrintContext(kotData);
 
     // ── Parse template global settings ───────────────────────────────────────
     const globalBlock   = template.find((b: any) => b.type === "global_settings");

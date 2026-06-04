@@ -102,8 +102,10 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         isRefreshing = false;
         refreshSubscribers = [];
+        const isAuth401 = (refreshError as any)?.response?.status === 401;
         // During cold-start session restore, do not wipe tokens on transient failures.
-        if (typeof window !== 'undefined' && !isAuthRecoveryActive()) {
+        // However, if the server explicitly rejects the refresh token (401), we must wipe them.
+        if (typeof window !== 'undefined' && (!isAuthRecoveryActive() || isAuth401)) {
           clearStoredTokens();
           const api = (window as Window & {
             electronAPI?: { clearAuthBackup?: () => Promise<void> };

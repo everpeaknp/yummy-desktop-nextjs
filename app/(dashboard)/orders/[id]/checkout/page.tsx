@@ -2048,7 +2048,7 @@ export default function CheckoutPage() {
               <div className="space-y-4">
                 <div className="space-y-3">
                   {multiPayments.map((row, idx) => (
-                    <div key={idx} className="flex flex-col sm:flex-row gap-3 p-3 border rounded-xl bg-muted/20 relative">
+                    <div key={idx} className="flex flex-col gap-3 p-3 border rounded-xl bg-muted/20 relative">
                       <button
                         type="button"
                         onClick={() => {
@@ -2062,75 +2062,147 @@ export default function CheckoutPage() {
                         <Trash2 className="h-4 w-4" />
                       </button>
 
-                      <div className="flex-1 space-y-2">
-                        <Label>Method</Label>
-                        <Select
-                          value={row.method}
-                          onValueChange={(val) => {
-                            const newRows = [...multiPayments];
-                            newRows[idx].method = val;
-                            setMultiPayments(newRows);
-                          }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="cash">Cash</SelectItem>
-                            <SelectItem value="card">Card</SelectItem>
-                            <SelectItem value="digital">Digital (Static QR)</SelectItem>
-                            <SelectItem value="credit">Credit / Charge Customer</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="flex-1 space-y-2">
-                        <Label>Amount</Label>
-                        <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{curr}</span>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={row.amount}
-                            onChange={(e) => {
+                      <div className="flex flex-col sm:flex-row gap-3 pt-4 sm:pt-0">
+                        <div className="flex-1 space-y-2">
+                          <Label>Method</Label>
+                          <Select
+                            value={row.method}
+                            onValueChange={(val) => {
                               const newRows = [...multiPayments];
-                              const newValStr = e.target.value;
-                              newRows[idx].amount = newValStr;
-
-                              if (newRows.length >= 2) {
-                                const targetAdjustIdx = idx === newRows.length - 1 ? 0 : newRows.length - 1;
-                                const newValNum = parseFloat(newValStr) || 0;
-                                
-                                const otherSum = newRows.reduce((sum, r, rIdx) => {
-                                  if (rIdx === idx || rIdx === targetAdjustIdx) return sum;
-                                  return sum + (parseFloat(r.amount) || 0);
-                                }, 0);
-
-                                const remaining = Math.max(0, bill.balance_due - otherSum - newValNum);
-                                newRows[targetAdjustIdx].amount = remaining.toFixed(2);
-                              }
-
+                              newRows[idx].method = val;
                               setMultiPayments(newRows);
                             }}
-                            className="pl-8 h-10 font-medium tabular-nums"
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cash">Cash</SelectItem>
+                              <SelectItem value="card">Card</SelectItem>
+                              <SelectItem value="digital">Digital (Static QR)</SelectItem>
+                              <SelectItem value="credit">Credit / Charge Customer</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="flex-1 space-y-2">
+                          <Label>Amount</Label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{curr}</span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={row.amount}
+                              onChange={(e) => {
+                                const newRows = [...multiPayments];
+                                const newValStr = e.target.value;
+                                newRows[idx].amount = newValStr;
+
+                                if (newRows.length >= 2) {
+                                  const targetAdjustIdx = idx === newRows.length - 1 ? 0 : newRows.length - 1;
+                                  const newValNum = parseFloat(newValStr) || 0;
+                                  
+                                  const otherSum = newRows.reduce((sum, r, rIdx) => {
+                                    if (rIdx === idx || rIdx === targetAdjustIdx) return sum;
+                                    return sum + (parseFloat(r.amount) || 0);
+                                  }, 0);
+
+                                  const remaining = Math.max(0, bill.balance_due - otherSum - newValNum);
+                                  newRows[targetAdjustIdx].amount = remaining.toFixed(2);
+                                }
+
+                                setMultiPayments(newRows);
+                              }}
+                              className="pl-8 h-10 font-medium tabular-nums"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex-1 space-y-2">
+                          <Label>Ref / Notes</Label>
+                          <Input
+                            placeholder="Ref..."
+                            value={row.reference}
+                            onChange={(e) => {
+                              const newRows = [...multiPayments];
+                              newRows[idx].reference = e.target.value;
+                              setMultiPayments(newRows);
+                            }}
+                            className="h-10"
                           />
                         </div>
                       </div>
 
-                      <div className="flex-1 space-y-2">
-                        <Label>Ref / Notes</Label>
-                        <Input
-                          placeholder="Ref..."
-                          value={row.reference}
-                          onChange={(e) => {
-                            const newRows = [...multiPayments];
-                            newRows[idx].reference = e.target.value;
-                            setMultiPayments(newRows);
-                          }}
-                          className="h-10"
-                        />
-                      </div>
+                      {row.method === "card" && (
+                        <div className="space-y-3 mt-1 pt-1">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs">Select Card Terminal</Label>
+                          </div>
+                          {staticPaymentCards.length === 0 ? (
+                            <div className="rounded-lg border border-dashed p-2 text-xs text-muted-foreground">
+                              No card account configured.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {staticPaymentCards.map((card, cIdx) => (
+                                <button
+                                  key={`${card.name}-${cIdx}`}
+                                  type="button"
+                                  onClick={() => {
+                                    const newRows = [...multiPayments];
+                                    newRows[idx].selectedCardIndex = cIdx;
+                                    setMultiPayments(newRows);
+                                  }}
+                                  className={cn(
+                                    "rounded-lg border px-2 py-1.5 text-left text-xs",
+                                    row.selectedCardIndex === cIdx
+                                      ? "border-primary bg-primary/5 text-primary"
+                                      : "border-border/50 text-muted-foreground hover:text-foreground"
+                                  )}
+                                >
+                                  <div className="font-medium truncate">{card.name}</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {row.method === "digital" && (
+                        <div className="space-y-3 mt-1 pt-1">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs">Select QR Code</Label>
+                          </div>
+                          {staticPaymentQrs.length === 0 ? (
+                            <div className="rounded-lg border border-dashed p-2 text-xs text-muted-foreground">
+                              No static QR configured.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {staticPaymentQrs.map((qr, qIdx) => (
+                                <button
+                                  key={`${qr.name}-${qIdx}`}
+                                  type="button"
+                                  onClick={() => {
+                                    const newRows = [...multiPayments];
+                                    newRows[idx].selectedStaticQrIndex = qIdx;
+                                    setMultiPayments(newRows);
+                                  }}
+                                  className={cn(
+                                    "rounded-lg border px-2 py-1.5 text-left text-xs",
+                                    row.selectedStaticQrIndex === qIdx
+                                      ? "border-primary bg-primary/5 text-primary"
+                                      : "border-border/50 text-muted-foreground hover:text-foreground"
+                                  )}
+                                >
+                                  <div className="font-medium truncate">{qr.name}</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -198,8 +198,12 @@ export const useAuth = create<AuthState>()(
                   return;
                 }
               }
-            } catch (refreshError) {
+            } catch (refreshError: any) {
               console.warn('[useAuth] Session restore via refresh token failed', refreshError);
+              if (refreshError?.response?.status === 401) {
+                get().logout({ silent: true });
+                return;
+              }
             }
           }
 

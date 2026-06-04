@@ -37,6 +37,7 @@ export function clearStoredTokens(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(AUTH_ACCESS_TOKEN_KEY);
   localStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_ZUSTAND_STORAGE_KEY);
 }
 
 export function hasStoredSession(): boolean {

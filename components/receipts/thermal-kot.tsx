@@ -2,6 +2,7 @@
 
 import React from "react";
 import { KOTUpdate } from "@/types/order";
+import { getKotPrintContext } from "@/components/receipts/kot-print-context";
 
 interface ThermalKOTProps {
     data: any; // Using any to accommodate the KOT data structure which might include order info
@@ -9,16 +10,7 @@ interface ThermalKOTProps {
 }
 
 export function ThermalKOT({ data, template }: ThermalKOTProps) {
-    // Determine what object contains the KOT data
-    const kot = data.kot || data;
-    const order = data.order || {};
-    const restaurant = data.restaurant || {};
-    const activeItems = getActiveKotItems(kot);
-    const cancelledItems = getCancelledKotItems(kot);
-    const hasCancelledItems = cancelledItems.length > 0;
-    const kotType = String(kot.type || "").toUpperCase();
-    const isRemoval = kotType === "REMOVE" || kotType === "CANCEL" || kotType === "CANCELLED" || hasCancelledItems;
-    const title = isRemoval ? 'CANCEL ORDER' : (kotType === 'INITIAL' ? 'NEW ORDER' : 'ADD ORDER');
+    const { kot, order, restaurant, activeItems, cancelledItems, title } = getKotPrintContext(data);
 
     const row = (a: React.ReactNode, b: React.ReactNode, style?: React.CSSProperties): React.ReactNode => (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', ...style }}>{a}{b}</div>
@@ -140,8 +132,7 @@ export function ThermalKOT({ data, template }: ThermalKOTProps) {
 
 function renderKotBlock(block: any, global: any, kot: any, order: any, restaurant: any, ff: string, baseFs: number) {
     const { config, type } = block;
-    const activeItems = getActiveKotItems(kot);
-    const cancelledItems = getCancelledKotItems(kot);
+    const { activeItems, cancelledItems } = getKotPrintContext({ kot, order, restaurant });
     
     // Exact mapping from designer-components.tsx style block
     const effectiveFontType = config.font_type || global.global_font_type || 'A';
@@ -387,30 +378,4 @@ function resolvePlaceholders(text: string, kot: any, order: any, restaurant: any
         .replace(/\{\{restaurant_address\}\}/g, restaurant?.address || "")
         .replace(/\{\{restaurant_phone\}\}/g, restaurant?.phone || "")
         .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "");
-}
-
-function getKotItems(kot: any): any[] {
-    return Array.isArray(kot?.items) ? kot.items : [];
-}
-
-function getActiveKotItems(kot: any): any[] {
-    return getKotItems(kot).filter((item: any) => {
-        const qty = Number(item?.qty_change ?? item?.qty ?? item?.quantity ?? 0);
-        return qty > 0 && Number(item?.is_deleted || 0) !== 1;
-    });
-}
-
-function getCancelledKotItems(kot: any): any[] {
-    return getKotItems(kot)
-        .filter((item: any) => {
-            const qtyChange = Number(item?.qty_change ?? 0);
-            const deletedQty = Number(item?.deleted_qty ?? 0);
-            return deletedQty > 0 || Number(item?.is_deleted || 0) === 1 || qtyChange < 0;
-        })
-        .map((item: any) => ({
-            ...item,
-            qty_for_print: Number(item?.deleted_qty ?? 0) > 0
-                ? Number(item.deleted_qty)
-                : Math.abs(Number(item?.qty_change ?? item?.qty ?? item?.quantity ?? 0)),
-        }));
 }
