@@ -461,6 +461,43 @@ export function useNotifications() {
             // Fallback/released KOTs are meant for whoever can print — print regardless of actor
             window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: payload }));
           }
+
+          if (event === "kot_updated" && payload.modifications && payload.modifications.length > 0) {
+            // The backend emits 'kot_updated' when items are cancelled/removed.
+            // We fetch the KOT to get its station & printer config, then synthesize a CANCELLED KOT.
+            const kotId = payload.kot_id;
+            if (kotId && typeof window !== "undefined") {
+              const fetchKotForCancellation = async () => {
+                try {
+                  const res = await fetch(proxyPath(`/kots/${kotId}`), {
+                    headers: headersWithAuth({ accept: "application/json" })
+                  });
+                  const json = await res.json();
+                  if (res.ok && json?.status === "success" && json.data) {
+                    const kotData = json.data;
+                    
+                    // Synthesize the cancellation KOT
+                    const syntheticKot = {
+                      ...kotData,
+                      id: `delta-cancel-${kotId}-${Date.now()}`,
+                      type: "CANCELLED",
+                      items: payload.modifications.map((m: any) => ({
+                        name_snapshot: `[X] ${m.item_name}`,
+                        quantity: m.deleted_qty || m.cancelled_qty || 1,
+                        modifiers: []
+                      }))
+                    };
+                    
+                    console.log("[KOT WS] Dispatching cancellation KOT:", syntheticKot);
+                    window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: syntheticKot }));
+                  }
+                } catch (err) {
+                  console.error("[KOT WS] Failed to fetch KOT for cancellation print:", err);
+                }
+              };
+              fetchKotForCancellation();
+            }
+          }
         } catch (e) { 
             console.error("[KOT WS] Error parsing message:", e);
         }
