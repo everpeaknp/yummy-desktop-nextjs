@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Edit, Trash2, GripVertical, AlertCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,8 +35,7 @@ export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const user = useAuth((s) => s.user);
-  const me = useAuth((s) => s.me);
+  const restaurantId = useAuth((s) => s.user?.restaurant_id);
   const { toast } = useToast();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -45,21 +44,13 @@ export default function CategoriesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
 
-  useEffect(() => {
-    const init = async () => {
-      await me();
-    };
-    init();
-  }, [me]);
-
-  const fetchCategories = async () => {
-    if (!user?.restaurant_id) {
-      if (user) setLoading(false);
+  const fetchCategories = useCallback(async () => {
+    if (!restaurantId) {
+      setLoading(false);
       return;
     }
-    setLoading(true);
     try {
-      const response = await apiClient.get(ItemCategoryApis.getItemCategories(user.restaurant_id));
+      const response = await apiClient.get(ItemCategoryApis.getItemCategories(restaurantId));
       if (response.data.status === "success") {
         setCategories(response.data.data);
       }
@@ -73,16 +64,16 @@ export default function CategoriesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [restaurantId]);
 
   useEffect(() => {
     fetchCategories();
-  }, [user]);
+  }, [fetchCategories]);
 
   const handleCreate = async (data: { name: string; type: string }) => {
-    if (!user?.restaurant_id) return;
+    if (!restaurantId) return;
     try {
-      await apiClient.post(ItemCategoryApis.createItemCategory(user.restaurant_id), data);
+      await apiClient.post(ItemCategoryApis.createItemCategory(restaurantId), data);
       toast({ title: "Success", description: "Category created successfully." });
       fetchCategories();
     } catch (error) {
