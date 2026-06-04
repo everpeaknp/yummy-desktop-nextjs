@@ -74,7 +74,8 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
         .filter((b: any) => b.type !== "global_settings")
         .filter((b: any) => b.is_visible ?? b.isVisible ?? true);
 
-    let p = "";
+    // Initialize printer state (ESC @) to clear previous fonts/alignments
+    let p = CMD.init;
 
     // ── No template — use clean default layout ────────────────────────────────
     if (visibleBlocks.length === 0) {
