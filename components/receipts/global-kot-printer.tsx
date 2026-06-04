@@ -13,6 +13,12 @@ function buildEscPosKot(kotData: any): string {
     const GS  = "\x1D";
     const LF  = "\n";
 
+    // 80mm thermal paper = 48 chars at default font size
+    // 58mm thermal paper = 32 chars at default font size
+    // Change this to 32 if your printers are 58mm
+    const WIDTH = 48;
+    const SEP = "-".repeat(WIDTH);
+
     const id        = kotData.id || kotData.kot_id || "-";
     const kotNumber = kotData.kot_number || String(id);
     const station   = kotData.station || "";
@@ -22,29 +28,35 @@ function buildEscPosKot(kotData: any): string {
 
     let p = "";
 
-    // Init printer
-    p += `${ESC}@`;
+    // DO NOT send ESC@ (init) — on many printers it causes an unwanted blank line feed
+    // Just set the font and alignment directly
+
     // Center align + bold header
-    p += `${ESC}a\x01`;
-    p += `${ESC}E\x01`;
+    p += `${ESC}a\x01`;          // Center align
+    p += `${ESC}E\x01`;          // Bold on
     p += `*** KITCHEN ORDER ***${LF}`;
-    p += `${ESC}E\x00`;
-    // Left align + 1 blank line
-    p += `${ESC}a\x00${LF}`;
-    p += `--------------------------------${LF}`;
+    p += `${ESC}E\x00`;          // Bold off
+
+    // Left align for the body
+    p += `${ESC}a\x00`;          // Left align
+    p += `${LF}`;                 // 1 blank line separator
+    p += `${SEP}${LF}`;
     p += `KOT: #${kotNumber}${LF}`;
     if (station) p += `STATION: ${station.toUpperCase()}${LF}`;
     if (table)   p += `TABLE: ${table}${LF}`;
     p += `DATE: ${date}${LF}`;
-    p += `--------------------------------${LF}`;
-    p += `ITEM                         QTY${LF}`;
-    p += `--------------------------------${LF}`;
+    p += `${SEP}${LF}`;
+
+    // Column header — item name takes WIDTH-6 chars, QTY takes 6
+    const nameW = WIDTH - 6;
+    p += `${"ITEM".padEnd(nameW, " ")}${"QTY".padStart(6, " ")}${LF}`;
+    p += `${SEP}${LF}`;
 
     items.forEach((item: any) => {
         const rawName = String(item.item_name || item.name_snapshot || item.name || "Item");
         const qty     = String(item.qty_change || item.qty || item.quantity || 1);
-        const name    = rawName.substring(0, 28).padEnd(28, " ");
-        const qtyStr  = qty.padStart(4, " ");
+        const name    = rawName.substring(0, nameW).padEnd(nameW, " ");
+        const qtyStr  = qty.padStart(6, " ");
         p += `${name}${qtyStr}${LF}`;
         if (item.notes) p += `  > ${item.notes}${LF}`;
         const mods: any[] = item.modifiers || [];
@@ -54,9 +66,9 @@ function buildEscPosKot(kotData: any): string {
         });
     });
 
-    p += `--------------------------------${LF}`;
-    // Feed 4 lines to clear the print head gap before the cutter blade
-    p += `${ESC}d\x04`;
+    p += `${SEP}${LF}`;
+    // Feed 6 lines so the bottom separator fully clears the cutter blade
+    p += `${ESC}d\x06`;
     // Full paper cut
     p += `${GS}V\x00`;
     // Null padding to prevent TCP FIN before printer reads the cut command
@@ -64,7 +76,6 @@ function buildEscPosKot(kotData: any): string {
 
     return p;
 }
-
 
 
 // ─────────────────────────────────────────────────────────────────────────────
