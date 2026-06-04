@@ -13,9 +13,12 @@ export function ThermalKOT({ data, template }: ThermalKOTProps) {
     const kot = data.kot || data;
     const order = data.order || {};
     const restaurant = data.restaurant || {};
-
-    const isNew = kot.type !== 'CANCEL';
-    const title = isNew ? (kot.type === 'INITIAL' ? 'NEW ORDER' : 'ADD ORDER') : 'CANCEL ORDER';
+    const activeItems = getActiveKotItems(kot);
+    const cancelledItems = getCancelledKotItems(kot);
+    const hasCancelledItems = cancelledItems.length > 0;
+    const kotType = String(kot.type || "").toUpperCase();
+    const isRemoval = kotType === "REMOVE" || kotType === "CANCEL" || kotType === "CANCELLED" || hasCancelledItems;
+    const title = isRemoval ? 'CANCEL ORDER' : (kotType === 'INITIAL' ? 'NEW ORDER' : 'ADD ORDER');
 
     const row = (a: React.ReactNode, b: React.ReactNode, style?: React.CSSProperties): React.ReactNode => (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', ...style }}>{a}{b}</div>
@@ -79,7 +82,7 @@ export function ThermalKOT({ data, template }: ThermalKOTProps) {
                         <span style={{ flex: 1, fontWeight: 700 }}>Item</span>
                         <span style={{ width: '40px', textAlign: 'center', fontWeight: 700 }}>Qty</span>
                     </div>
-                    {kot.items?.map((item: any, idx: number) => (
+                    {activeItems.map((item: any, idx: number) => (
                         <div key={item.id || idx} style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '8px' }}>
                             <span style={{ width: '25px', fontWeight: 600, paddingTop: '2px' }}>{idx + 1}</span>
                             <span style={{ flex: 1, paddingRight: '8px' }}>
@@ -92,6 +95,25 @@ export function ThermalKOT({ data, template }: ThermalKOTProps) {
                             <span style={{ width: '40px', textAlign: 'center', fontWeight: 900, fontSize: `${baseFontSize + 4}px` }}>{item.qty_change !== undefined ? item.qty_change : item.qty}</span>
                         </div>
                     ))}
+                    {cancelledItems.length > 0 && (
+                        <>
+                            <div style={{ borderTop: '1px dashed #000', marginTop: '8px', paddingTop: '6px', marginBottom: '6px', fontWeight: 800 }}>
+                                CANCELLED ITEMS
+                            </div>
+                            {cancelledItems.map((item: any, idx: number) => (
+                                <div key={`cancelled-${item.id || idx}`} style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                    <span style={{ width: '25px', fontWeight: 600, paddingTop: '2px' }}>-</span>
+                                    <span style={{ flex: 1, paddingRight: '8px' }}>
+                                        <div style={{ fontWeight: 800, fontSize: `${baseFontSize + 2}px` }}>{item.item_name || item.name_snapshot} (CXL)</div>
+                                        {item.modifiers && item.modifiers.length > 0 && (
+                                            <div style={{ fontSize: `${baseFontSize - 2}px`, fontStyle: 'italic' }}>+ {item.modifiers.map((m: any) => m.modifier_name_snapshot).join(', ')}</div>
+                                        )}
+                                    </span>
+                                    <span style={{ width: '40px', textAlign: 'center', fontWeight: 900, fontSize: `${baseFontSize + 4}px` }}>-{item.qty_for_print}</span>
+                                </div>
+                            ))}
+                        </>
+                    )}
                 </div>
             </div>
         );
@@ -109,15 +131,17 @@ export function ThermalKOT({ data, template }: ThermalKOTProps) {
                         textAlign: block.config.align as any || 'center'
                     }}
                 >
-                    {renderKotBlock(block, globalConfig, kot, order, restaurant, ff, baseFontSize, isNew, title)}
+                    {renderKotBlock(block, globalConfig, kot, order, restaurant, ff, baseFontSize)}
                 </div>
             ))}
         </div>
     );
 }
 
-function renderKotBlock(block: any, global: any, kot: any, order: any, restaurant: any, ff: string, baseFs: number, isNew: boolean, title: string) {
+function renderKotBlock(block: any, global: any, kot: any, order: any, restaurant: any, ff: string, baseFs: number) {
     const { config, type } = block;
+    const activeItems = getActiveKotItems(kot);
+    const cancelledItems = getCancelledKotItems(kot);
     
     // Exact mapping from designer-components.tsx style block
     const effectiveFontType = config.font_type || global.global_font_type || 'A';
@@ -252,7 +276,7 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
                         {config.show_amount !== false && <span className="w-12 text-right">{config.amount_label || 'AMT'}</span>}
                     </div>
                     
-                    {kot.items?.map((item: any, idx: number) => (
+                    {activeItems.map((item: any, idx: number) => (
                         <div key={item.id || idx} className="flex justify-between items-start mb-1">
                             {config.show_serial !== false && <span className="w-8 pt-0.5">{idx + 1}</span>}
                             
@@ -287,6 +311,34 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
                             )}
                         </div>
                     ))}
+                    {config.show_cancelled_items !== false && cancelledItems.length > 0 && (
+                        <>
+                            <div className="w-full overflow-hidden border-t border-dashed border-black mt-1 mb-1" />
+                            <div className="font-bold mb-1">{config.cancelled_section_title || "CANCELLED ITEMS"}</div>
+                            {cancelledItems.map((item: any, idx: number) => (
+                                <div key={`cancelled-${item.id || idx}`} className="flex justify-between items-start mb-1">
+                                    {config.show_serial !== false && <span className="w-8 pt-0.5">-</span>}
+
+                                    <span className="flex-1 text-left px-2 flex flex-col">
+                                        <span className="font-bold">{item.item_name || item.name_snapshot} (CXL)</span>
+                                        {item.modifiers && item.modifiers.length > 0 && (
+                                            <span className="text-[0.8em] italic mt-0.5">
+                                                + {item.modifiers.map((m: any) => m.modifier_name_snapshot).join(', ')}
+                                            </span>
+                                        )}
+                                    </span>
+
+                                    {config.show_rate !== false && <span className="w-12 text-right pt-0.5" />}
+
+                                    <span className="w-8 text-right font-bold pt-0.5">
+                                        -{item.qty_for_print}
+                                    </span>
+
+                                    {config.show_amount !== false && <span className="w-12 text-right pt-0.5" />}
+                                </div>
+                            ))}
+                        </>
+                    )}
                     
                     <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
                 </div>
@@ -335,4 +387,30 @@ function resolvePlaceholders(text: string, kot: any, order: any, restaurant: any
         .replace(/\{\{restaurant_address\}\}/g, restaurant?.address || "")
         .replace(/\{\{restaurant_phone\}\}/g, restaurant?.phone || "")
         .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "");
+}
+
+function getKotItems(kot: any): any[] {
+    return Array.isArray(kot?.items) ? kot.items : [];
+}
+
+function getActiveKotItems(kot: any): any[] {
+    return getKotItems(kot).filter((item: any) => {
+        const qty = Number(item?.qty_change ?? item?.qty ?? item?.quantity ?? 0);
+        return qty > 0 && Number(item?.is_deleted || 0) !== 1;
+    });
+}
+
+function getCancelledKotItems(kot: any): any[] {
+    return getKotItems(kot)
+        .filter((item: any) => {
+            const qtyChange = Number(item?.qty_change ?? 0);
+            const deletedQty = Number(item?.deleted_qty ?? 0);
+            return deletedQty > 0 || Number(item?.is_deleted || 0) === 1 || qtyChange < 0;
+        })
+        .map((item: any) => ({
+            ...item,
+            qty_for_print: Number(item?.deleted_qty ?? 0) > 0
+                ? Number(item.deleted_qty)
+                : Math.abs(Number(item?.qty_change ?? item?.qty ?? item?.quantity ?? 0)),
+        }));
 }

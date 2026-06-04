@@ -53,6 +53,32 @@ function resolvePlaceholders(text: string, kot: any, order: any, restaurant: any
         .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "");
 }
 
+function getKotItems(kot: any): any[] {
+    return Array.isArray(kot?.items) ? kot.items : [];
+}
+
+function getActiveKotItems(kot: any): any[] {
+    return getKotItems(kot).filter((item: any) => {
+        const qty = Number(item?.qty_change ?? item?.qty ?? item?.quantity ?? 0);
+        return qty > 0 && Number(item?.is_deleted || 0) !== 1;
+    });
+}
+
+function getCancelledKotItems(kot: any): any[] {
+    return getKotItems(kot)
+        .filter((item: any) => {
+            const qtyChange = Number(item?.qty_change ?? 0);
+            const deletedQty = Number(item?.deleted_qty ?? 0);
+            return deletedQty > 0 || Number(item?.is_deleted || 0) === 1 || qtyChange < 0;
+        })
+        .map((item: any) => ({
+            ...item,
+            qty_for_print: Number(item?.deleted_qty ?? 0) > 0
+                ? Number(item.deleted_qty)
+                : Math.abs(Number(item?.qty_change ?? item?.qty ?? item?.quantity ?? 0)),
+        }));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Template-aware ESC/POS builder
 // Reads the KOT designer template blocks and converts to raw ESC/POS bytes.
@@ -62,6 +88,8 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
     const kot        = kotData?.kot || kotData;
     const order      = kotData?.order || {};
     const restaurant = kotData?.restaurant || {};
+    const activeItems = getActiveKotItems(kot);
+    const cancelledItems = getCancelledKotItems(kot);
 
     // ── Parse template global settings ───────────────────────────────────────
     const globalBlock   = template.find((b: any) => b.type === "global_settings");
@@ -84,7 +112,7 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
         const station   = kot.station || "";
         const table     = order.table_name || order.table || "";
         const date      = new Date().toLocaleString();
-        const items: any[] = kot.items || [];
+        const items: any[] = activeItems;
         const nameW     = WIDTH - 6;
 
         p += CMD.center + CMD.boldOn;
@@ -108,6 +136,20 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
                 if (mn) p += `  - ${mn}${LF}`;
             });
         });
+        if (cancelledItems.length > 0) {
+            p += `${SEP}${LF}`;
+            p += `${CMD.center}${CMD.boldOn}CANCELLED ITEMS${LF}${CMD.boldOff}${CMD.left}`;
+            p += `${SEP}${LF}`;
+            cancelledItems.forEach((item: any) => {
+                const rawName = String(item.item_name || item.name_snapshot || item.name || "Item");
+                const qty     = String(item.qty_for_print ?? item.deleted_qty ?? item.qty_change ?? item.qty ?? item.quantity ?? 1);
+                p += `${rawName.substring(0, nameW).padEnd(nameW, " ")}-${qty.padStart(5, " ")}${LF}`;
+                (item.modifiers || []).forEach((m: any) => {
+                    const mn = m.modifier_name_snapshot || m.name || "";
+                    if (mn) p += `  - ${mn}${LF}`;
+                });
+            });
+        }
         p += `${SEP}${LF}`;
     } else {
         // ── Template-driven layout ────────────────────────────────────────────
@@ -203,7 +245,7 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
                     }
                     p += `${SEP}${LF}`;
 
-                    (kot.items || []).forEach((item: any, idx: number) => {
+                    activeItems.forEach((item: any, idx: number) => {
                         const rawName = String(item.item_name || item.name_snapshot || item.name || "Item");
                         const qty     = String(item.qty_change ?? item.qty ?? item.quantity ?? 1);
                         const sn      = showSerial ? `${String(idx + 1).padEnd(serialW)}` : "";
@@ -215,6 +257,23 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
                             if (mn) p += `  - ${mn}${LF}`;
                         });
                     });
+                    if (cfg.show_cancelled_items !== false && cancelledItems.length > 0) {
+                        p += `${SEP}${LF}`;
+                        p += `${CMD.center}${CMD.boldOn}${String(cfg.cancelled_section_title || "CANCELLED ITEMS").toUpperCase()}${LF}${CMD.boldOff}${CMD.left}`;
+                        p += `${SEP}${LF}`;
+                        cancelledItems.forEach((item: any, idx: number) => {
+                            const rawName = String(item.item_name || item.name_snapshot || item.name || "Item");
+                            const qty     = String(item.qty_for_print ?? item.deleted_qty ?? item.qty_change ?? item.qty ?? item.quantity ?? 1);
+                            const sn      = showSerial ? `${String(idx + 1).padEnd(serialW)}` : "";
+                            const nameStr = `${rawName} (CXL)`.substring(0, itemNameW).padEnd(itemNameW, " ");
+                            const qtyStr  = `-${qty}`.padStart(6, " ");
+                            p += `${sn}${nameStr}${qtyStr}${LF}`;
+                            (item.modifiers || []).forEach((m: any) => {
+                                const mn = m.modifier_name_snapshot || m.name || "";
+                                if (mn) p += `  - ${mn}${LF}`;
+                            });
+                        });
+                    }
                     p += `${SEP}${LF}`;
                     break;
                 }
@@ -331,18 +390,8 @@ export function GlobalKotPrinter() {
 
             console.log("[GlobalKotPrinter] Received KOT event:", data);
 
-            // ── Deduplication (8s window) ────────────────────────────────────
-            const kotId = data.kot_id || data.id || data.kot?.id;
-            const key   = `id:${String(kotId)}`;
-            const now   = Date.now();
-            const lastSeen = recentPrintsRef.current.get(key) || 0;
-            if (now - lastSeen < 8000) {
-                console.log(`[GlobalKotPrinter] Skipping duplicate KOT ${kotId} (${now - lastSeen}ms ago)`);
-                return;
-            }
-            recentPrintsRef.current.set(key, now);
-
             // ── Skip if already auto-printed ─────────────────────────────────
+            const kotId = data.kot_id || data.id || data.kot?.id;
             if (data.auto_printed_at || data.kot?.auto_printed_at) {
                 console.log(`[GlobalKotPrinter] KOT ${kotId} already auto-printed. Skipping.`);
                 return;
@@ -357,6 +406,38 @@ export function GlobalKotPrinter() {
                 } catch (err) {
                     console.error("[GlobalKotPrinter] Failed to fetch KOT:", err);
                     return;
+                }
+            }
+
+            // ── Deduplication (8s window, version-aware for modified KOTs) ──
+            const dataKot = data.kot || data;
+            const itemSignature = getKotItems(dataKot)
+                .map((item: any) => [
+                    item?.id ?? item?.item_id ?? item?.item_name ?? "item",
+                    item?.qty_change ?? item?.qty ?? item?.quantity ?? 0,
+                    item?.deleted_qty ?? 0,
+                    item?.is_deleted ?? 0,
+                ].join(":"))
+                .join("|");
+            const version = String(
+                dataKot?.print_event_id ||
+                dataKot?.print_event_created_at ||
+                dataKot?.last_modified_at ||
+                dataKot?.created_at ||
+                data?.__printEvent ||
+                itemSignature
+            );
+            const key = `id:${String(kotId)}:v:${version}`;
+            const now = Date.now();
+            const lastSeen = recentPrintsRef.current.get(key) || 0;
+            if (now - lastSeen < 8000) {
+                console.log(`[GlobalKotPrinter] Skipping duplicate KOT ${kotId} (${now - lastSeen}ms ago)`);
+                return;
+            }
+            recentPrintsRef.current.set(key, now);
+            for (const [existingKey, ts] of recentPrintsRef.current.entries()) {
+                if (now - ts > 30000) {
+                    recentPrintsRef.current.delete(existingKey);
                 }
             }
 
