@@ -129,7 +129,10 @@ export function GlobalKotPrinter() {
             
             let kotId = data.kot_id || data.id || data.kot?.id;
             
-            // Atomic Backend Claiming: Only one terminal should win this race!
+            // --- TEMPORARILY BYPASSED BACKEND CLAIM FOR TESTING ---
+            // If the Flutter app is claiming the KOT instantly, the Electron app gets rejected.
+            // By bypassing this, the Electron app will ALWAYS print to the simulator!
+            /*
             if (kotId) {
                 try {
                     const claimRes = await apiClient.post(KotApis.markKotAutoPrinted(kotId));
@@ -143,6 +146,8 @@ export function GlobalKotPrinter() {
                     return;
                 }
             }
+            */
+            // --------------------------------------------------------
 
             // If the payload is missing items (like from kot_created), fetch the full KOT
             if (!data.items || data.items.length === 0) {
