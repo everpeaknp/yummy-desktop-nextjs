@@ -6,6 +6,7 @@ const net = require('net');
 const {
   attachAuthPersistence,
   readWebAuthSnapshot,
+  clearAuthBackup,
 } = require('./electron-auth-persist');
 
 const isDev = !app.isPackaged;
@@ -21,6 +22,38 @@ try {
 let mainWindow;
 let splashWindow;
 const DEV_URL = 'http://localhost:3000';
+
+/** Returns mainWindow only when it is safe to touch; clears stale refs. */
+function getLiveMainWindow() {
+  if (!mainWindow) return null;
+  try {
+    if (mainWindow.isDestroyed()) {
+      mainWindow = null;
+      return null;
+    }
+    return mainWindow;
+  } catch (_) {
+    mainWindow = null;
+    return null;
+  }
+}
+
+function getLiveWebContents(preferred) {
+  const wc = preferred;
+  if (wc) {
+    try {
+      if (!wc.isDestroyed()) return wc;
+    } catch (_) {}
+  }
+  const win = getLiveMainWindow();
+  if (!win) return null;
+  try {
+    const contents = win.webContents;
+    return contents && !contents.isDestroyed() ? contents : null;
+  } catch (_) {
+    return null;
+  }
+}
 const PROD_URL = 'https://app.yummyever.com';
 const PERSIST_PARTITION = 'persist:yummy-pos';
 
@@ -62,10 +95,11 @@ async function logAuthStorageDiagnostics(label) {
 
 /** Read web localStorage snapshot (tokens live here for this SaaS app). */
 async function logWebAuthSnapshot(label) {
-  if (!mainWindow?.webContents || mainWindow.webContents.isDestroyed()) return;
+  const contents = getLiveWebContents();
+  if (!contents) return;
   try {
-    const snap = await readWebAuthSnapshot(mainWindow.webContents);
-    const url = mainWindow.webContents.getURL();
+    const snap = await readWebAuthSnapshot(contents);
+    const url = contents.getURL();
     log(
       `[auth-web:${label}] url=${url} hasAccess=${!!snap?.accessToken} hasRefresh=${!!snap?.refreshToken}`
     );
@@ -108,10 +142,10 @@ function getLogoDataUri() {
 }
 
 function getStartUrl() {
-  // Allow overriding for staging builds, but keep strict defaults.
+  // Default: production app. Set ELECTRON_START_URL=http://localhost:3000 for local Next.js (see npm run electron:dev).
   const override = String(process.env.ELECTRON_START_URL || '').trim();
   if (override) return override;
-  return isDev ? DEV_URL : PROD_URL;
+  return PROD_URL;
 }
 
 /** Firebase Google sign-in opens a popup; must not be sent to the system browser. */
@@ -145,7 +179,7 @@ function attachOAuthPopupHandler(webContents) {
           width: 520,
           height: 720,
           autoHideMenuBar: true,
-          parent: mainWindow || undefined,
+          parent: getLiveMainWindow() || undefined,
           modal: false,
           webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -313,13 +347,21 @@ function createSplashWindow(iconPath) {
   }
 }
 
+function destroySplashWindow() {
+  if (!splashWindow) return;
+  try {
+    if (!splashWindow.isDestroyed()) splashWindow.destroy();
+  } catch (_) {}
+  splashWindow = null;
+}
+
 function createWindow() {
   const iconPath = getIconPath();
   const startUrl = getStartUrl();
 
   // Show a real native splash ASAP so the app doesn't feel "stuck" on cold start.
   // (Windows can take a while to unpack Electron / load Chromium before the main window appears.)
-  if (!mainWindow) {
+  if (!getLiveMainWindow()) {
     createSplashWindow(iconPath);
   }
 
@@ -343,19 +385,21 @@ function createWindow() {
   let mainFinishedLoad = false;
 
   const tryShowMain = () => {
-    if (!mainWindow) return;
+    const win = getLiveMainWindow();
+    if (!win) return;
     // Prefer showing only when the remote app actually finished loading
     // to avoid jarring white flashes.
     if (!mainFinishedLoad && !isDev) return;
     try {
-      if (!mainWindow.isVisible()) mainWindow.show();
-      if (!mainWindow.isFocused()) mainWindow.focus();
+      if (!win.isVisible()) win.show();
+      if (!win.isFocused()) win.focus();
     } catch (_) {}
-    if (splashWindow) {
-      try { splashWindow.destroy(); } catch (_) {}
-      splashWindow = null;
-    }
+    destroySplashWindow();
   };
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 
   mainWindow.once('ready-to-show', () => {
     mainReadyToShow = true;
@@ -376,14 +420,12 @@ function createWindow() {
 
   // Backup: never block the user forever.
   setTimeout(() => {
-    if (!mainWindow) return;
-    if (!mainWindow.isVisible()) {
-      try { mainWindow.show(); } catch (_) {}
-    }
-    if (splashWindow) {
-      try { splashWindow.destroy(); } catch (_) {}
-      splashWindow = null;
-    }
+    const win = getLiveMainWindow();
+    if (!win) return;
+    try {
+      if (!win.isVisible()) win.show();
+    } catch (_) {}
+    destroySplashWindow();
   }, 15000);
 
   if (isDev) {
@@ -393,7 +435,9 @@ function createWindow() {
   } else {
     mainWindow.loadURL(startUrl).catch((err) => {
       log(`[loadURL] ${String(err?.message || err)}`);
-      mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getOfflineHtml(startUrl))}`);
+      const win = getLiveMainWindow();
+      if (!win) return;
+      win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getOfflineHtml(startUrl))}`);
     });
   }
 
@@ -401,8 +445,10 @@ function createWindow() {
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame) return;
     if (isDev) return;
+    const win = getLiveMainWindow();
+    if (!win) return;
     log(`[did-fail-load] code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
-    mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getOfflineHtml(startUrl))}`);
+    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getOfflineHtml(startUrl))}`);
     // Offline HTML counts as "loaded" for our splash dismissal.
     mainFinishedLoad = true;
     tryShowMain();
@@ -435,9 +481,9 @@ function setupAutoUpdater() {
   autoUpdater.on('update-downloaded', (info) => {
     const version = info?.version || 'new';
     log(`[updater] downloaded ${version}`);
-    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const parent = getLiveMainWindow();
     dialog
-      .showMessageBox(parent, {
+      .showMessageBox(parent ?? undefined, {
         type: 'info',
         title: 'Update ready',
         message: `Yummy POS ${version} is ready to install.`,
@@ -473,9 +519,10 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
-  if (!mainWindow?.webContents || mainWindow.webContents.isDestroyed()) return;
+  const contents = getLiveWebContents();
+  if (!contents) return;
   const { writeAuthBackup } = require('./electron-auth-persist');
-  void readWebAuthSnapshot(mainWindow.webContents).then((snap) => {
+  void readWebAuthSnapshot(contents).then((snap) => {
     if (snap) writeAuthBackup(USER_DATA_DIR, snap);
   });
 });
@@ -488,15 +535,25 @@ app.on('window-all-closed', () => {
 
 // --- IPC Handlers for Printing ---
 
+ipcMain.handle('clear-auth-backup', async () => {
+  clearAuthBackup(USER_DATA_DIR);
+  return { ok: true };
+});
+
 ipcMain.handle('get-printers', async (event) => {
-  const printers = await mainWindow.webContents.getPrintersAsync();
-  return printers;
+  const contents = getLiveWebContents(event.sender);
+  if (!contents) return [];
+  return contents.getPrintersAsync();
 });
 
 // Print the CURRENT window silently (relies on CSS @media print just like browser)
 ipcMain.handle('print-silent', async (event, options = {}) => {
+  const contents = getLiveWebContents(event.sender);
+  if (!contents) {
+    return Promise.reject({ success: false, error: 'window_destroyed' });
+  }
   return new Promise((resolve, reject) => {
-    mainWindow.webContents.print({
+    contents.print({
       silent: true,
       deviceName: options.printerName || undefined,
       margins: { marginType: 'none' },

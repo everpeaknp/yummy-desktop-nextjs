@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import apiClient from "@/lib/api-client"
-import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions"
 import {
@@ -73,19 +72,7 @@ export default function DashboardPage() {
   const [activeRange, setActiveRange] = useState<DateRangePreset>("today")
   const [date, setDate] = useState<DateRange | undefined>()
 
-  const me = useAuth(state => state.me)
-  const router = useRouter()
-
-  // 1. Session Restoration & Auth Guard
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
-      if (!user && token) await me()
-      if (!user && !token) router.push('/')
-    }
-    const timer = setTimeout(checkAuth, 300)
-    return () => clearTimeout(timer)
-  }, [user, me, router])
+  // Auth/session: RoleGuard + SessionBootstrap (avoid duplicate redirects in Electron).
 
   // 2. Data Fetching
   const fetchDashboard = async () => {

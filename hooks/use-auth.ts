@@ -11,6 +11,9 @@ import {
   writeStoredTokens,
 } from '@/lib/auth-storage';
 import { runAuthRecovery } from '@/lib/auth-recovery';
+import { beginSessionRestore, endSessionRestore } from '@/lib/session-restore';
+
+let bootstrapSessionPromise: Promise<void> | null = null;
 import { useRestaurant } from './use-restaurant';
 
 interface User {
@@ -33,7 +36,7 @@ interface AuthState {
   meLoading: boolean;
   setAuth: (user: User | null, token: string | null, refreshToken?: string | null) => void;
   setRedirecting: (isRedirecting: boolean) => void;
-  logout: () => void;
+  logout: (options?: { silent?: boolean }) => void;
   me: () => Promise<void>;
   refreshSession: () => Promise<void>;
   /** Cold-start restore: sync LS ↔ zustand, refresh tokens, load user. */
@@ -73,17 +76,31 @@ export const useAuth = create<AuthState>()(
         writeStoredTokens(token, refreshToken);
       },
       setRedirecting: (isRedirecting) => set({ isRedirecting }),
-      logout: () => {
-        set({ isRedirecting: true });
+      logout: (options?: { silent?: boolean }) => {
+        if (!options?.silent) set({ isRedirecting: true });
         clearStoredTokens();
         set({ user: null, token: null, refreshToken: null });
         useRestaurant.getState().setSelectedModule(null);
+        if (typeof window !== 'undefined') {
+          const api = (window as Window & {
+            electronAPI?: { clearAuthBackup?: () => Promise<void> };
+          }).electronAPI;
+          void api?.clearAuthBackup?.();
+        }
       },
       bootstrapSession: async () => {
-        return runAuthRecovery(async () => {
+        if (bootstrapSessionPromise) {
+          return bootstrapSessionPromise;
+        }
+        beginSessionRestore();
+        bootstrapSessionPromise = runAuthRecovery(async () => {
           syncPersistedTokensWithState(set, get);
           await get().me();
+        }).finally(() => {
+          endSessionRestore();
+          bootstrapSessionPromise = null;
         });
+        return bootstrapSessionPromise;
       },
       refreshSession: async () => {
         return runAuthRecovery(async () => {
@@ -171,7 +188,15 @@ export const useAuth = create<AuthState>()(
               });
               if (res.data.status === 'success') {
                 syncAuthFromRefreshResponse(res.data.data);
-                return;
+                const restored = get().user;
+                if (
+                  restored?.id &&
+                  (restored.restaurant_id != null ||
+                    (restored.roles?.length ?? 0) > 0 ||
+                    (restored.permissions?.length ?? 0) > 0)
+                ) {
+                  return;
+                }
               }
             } catch (refreshError) {
               console.warn('[useAuth] Session restore via refresh token failed', refreshError);

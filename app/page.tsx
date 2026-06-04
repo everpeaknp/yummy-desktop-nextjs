@@ -19,7 +19,8 @@ import apiClient from "@/lib/api-client";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "next-themes";
-import { getHomeRouteForUser } from "@/lib/role-permissions";
+import { resolvePostLoginRoute } from "@/lib/post-login-route";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import {
   completeGoogleRedirectIfNeeded,
   signInWithGoogle,
@@ -65,6 +66,7 @@ export default function Home() {
   const router = useRouter();
   const setAuth = useAuth(state => state.setAuth);
   const setRedirecting = useAuth(state => state.setRedirecting);
+  const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
   const { setTheme, theme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -115,14 +117,13 @@ export default function Home() {
     console.log("[Auth] Constructed User Object:", user);
     
     setAuth(user, access_token, refresh_token);
-    
-    const targetRoute = getHomeRouteForUser(user);
-    console.log(`[Auth] Redirecting to: ${targetRoute}`);
-    
-    // Use router.push for faster client-side navigation.
-    // The GlobalLoaderOverlay will still provide instant visual feedback.
-    router.push(targetRoute);
-  }, [setAuth, router]);
+
+    void fetchRestaurant(true).finally(() => {
+      const targetRoute = resolvePostLoginRoute(user);
+      console.log(`[Auth] Redirecting to: ${targetRoute}`);
+      router.replace(targetRoute);
+    });
+  }, [setAuth, router, fetchRestaurant]);
 
   // Helper: extract error message
   const extractError = (err: any): string => {

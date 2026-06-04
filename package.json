@@ -2,6 +2,7 @@
   "name": "yummy-web",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://www.yummyever.com",
   "repository": {
     "type": "git",
     "url": "https://github.com/everpeaknp/yummy-desktop-nextjs.git"
@@ -12,7 +13,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "electron:dev": "concurrently -k \"npm run dev\" \"wait-on tcp:3000 && cross-env NODE_ENV=development electron .\"",
+    "electron:dev": "concurrently -k \"npm run dev\" \"wait-on tcp:3000 && cross-env NODE_ENV=development ELECTRON_START_URL=http://localhost:3000 electron .\"",
     "electron:build": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
     "electron:build:win": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
     "electron:build:win:portable": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win portable",
@@ -82,7 +83,10 @@
       "installerIcon": "electron-resources/icon.ico",
       "uninstallerIcon": "electron-resources/icon.ico",
       "installerHeaderIcon": "electron-resources/icon.ico",
-      "artifactName": "Yummy.POS.Setup.${version}.${ext}"
+      "artifactName": "Yummy.POS.Setup.${version}.${ext}",
+      "uninstallUrlHelp": "https://www.yummyever.com/faq",
+      "uninstallUrlInfoAbout": "https://www.yummyever.com/help",
+      "uninstallUrlUpdateInfo": "https://www.yummyever.com/features"
     },
     "mac": {
       "target": [

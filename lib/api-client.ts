@@ -105,7 +105,16 @@ apiClient.interceptors.response.use(
         // During cold-start session restore, do not wipe tokens on transient failures.
         if (typeof window !== 'undefined' && !isAuthRecoveryActive()) {
           clearStoredTokens();
-          if (window.location.pathname !== '/') {
+          const api = (window as Window & {
+            electronAPI?: { clearAuthBackup?: () => Promise<void> };
+          }).electronAPI;
+          void api?.clearAuthBackup?.();
+          const isDesktopShell =
+            !!(window as Window & { electronAPI?: { isDesktopShell?: boolean } })
+              .electronAPI?.isDesktopShell;
+          if (isDesktopShell) {
+            window.dispatchEvent(new CustomEvent('yummy-session-expired'));
+          } else if (window.location.pathname !== '/') {
             window.location.href = '/';
           }
         }

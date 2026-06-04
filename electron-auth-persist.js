@@ -115,13 +115,47 @@ async function injectWebAuth(webContents, backup) {
  * @param {string} userDataDir
  * @param {(line: string) => void} log
  */
+async function notifyWebAppAuthRestored(webContents) {
+  if (!webContents || webContents.isDestroyed()) return;
+  try {
+    await webContents.executeJavaScript(
+      `(() => {
+        window.dispatchEvent(new CustomEvent('yummy-electron-auth-restored'));
+        return true;
+      })()`,
+      true
+    );
+  } catch {
+    // ignore — page may still be loading
+  }
+}
+
+function isLiveWindow(win) {
+  if (!win) return false;
+  try {
+    return !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed();
+  } catch {
+    return false;
+  }
+}
+
+function clearAuthBackup(userDataDir) {
+  try {
+    const filePath = getBackupPath(userDataDir);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {
+    // ignore
+  }
+}
+
 function attachAuthPersistence(win, userDataDir, log) {
   migrateLegacyBackup(userDataDir);
-  let authRestoreAttempted = false;
   let captureTimer = null;
+  /** Only inject disk backup once per app launch (never again after logout on login). */
+  let coldStartBackupInjected = false;
 
   const capture = async (reason) => {
-    if (!win?.webContents || win.webContents.isDestroyed()) return;
+    if (!isLiveWindow(win)) return;
     const url = win.webContents.getURL();
     if (!isAppOrigin(url)) return;
 
@@ -133,8 +167,7 @@ function attachAuthPersistence(win, userDataDir, log) {
   };
 
   const tryRestore = async (reason) => {
-    if (authRestoreAttempted) return;
-    if (!win?.webContents || win.webContents.isDestroyed()) return;
+    if (!isLiveWindow(win)) return;
 
     const url = win.webContents.getURL();
     if (!isAppOrigin(url)) return;
@@ -151,7 +184,12 @@ function attachAuthPersistence(win, userDataDir, log) {
       return;
     }
 
-    authRestoreAttempted = true;
+    if (coldStartBackupInjected) {
+      log(`[auth-restore] skip inject — already attempted this session (${reason})`);
+      return;
+    }
+
+    coldStartBackupInjected = true;
     log(`[auth-restore] injecting backup (${reason})`);
     await injectWebAuth(win.webContents, backup);
 
@@ -162,11 +200,7 @@ function attachAuthPersistence(win, userDataDir, log) {
 
     if (!after?.accessToken && !after?.refreshToken) return;
 
-    // Dashboard route runs RoleGuard + /auth/refresh on production web app.
-    const dashboardUrl = `${PROD_ORIGIN}/dashboard`;
-    if (url === `${PROD_ORIGIN}/` || url === `${PROD_ORIGIN}/index.html`) {
-      win.webContents.loadURL(dashboardUrl);
-    }
+    await notifyWebAppAuthRestored(win.webContents);
   };
 
   win.webContents.on('did-finish-load', () => {
@@ -183,7 +217,10 @@ function attachAuthPersistence(win, userDataDir, log) {
   }, 15000);
 
   win.on('closed', () => {
-    if (captureTimer) clearInterval(captureTimer);
+    if (captureTimer) {
+      clearInterval(captureTimer);
+      captureTimer = null;
+    }
   });
 }
 
@@ -192,6 +229,7 @@ module.exports = {
   migrateLegacyBackup,
   readAuthBackup,
   writeAuthBackup,
+  clearAuthBackup,
   readWebAuthSnapshot,
   attachAuthPersistence,
 };

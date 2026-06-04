@@ -38,9 +38,9 @@ export default function GatewayPage() {
   const handleSelect = (module: "restaurant" | "hotel") => {
     setSelectedModule(module);
     if (module === "restaurant") {
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } else {
-      router.push("/rooms");
+      router.replace("/rooms");
     }
   };
 

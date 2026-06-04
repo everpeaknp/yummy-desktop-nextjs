@@ -22,7 +22,15 @@ export function GlobalLoaderOverlay() {
     }
   }, [isRedirecting, setRedirecting]);
 
+  const isDesktopShell =
+    typeof window !== "undefined" &&
+    !!(window as Window & { electronAPI?: { isDesktopShell?: boolean } })
+      .electronAPI?.isDesktopShell;
+
   if (!isRedirecting) return null;
+
+  // Desktop: avoid full-screen black flash during client-side route changes.
+  if (isDesktopShell) return null;
 
   return (
     <div className="fixed inset-0 z-[100] bg-background animate-in fade-in duration-300">
