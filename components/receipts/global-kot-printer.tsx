@@ -392,7 +392,30 @@ export function GlobalKotPrinter() {
 
             console.log(`[GlobalKotPrinter] Assigned printer:`, assignedPrinter.name, assignedPrinter.address, assignedPrinter.printer_type);
 
-            // ── Print ────────────────────────────────────────────────────────
+            // ── Atomic Backend Claim (prevents Flutter + Electron double printing) ──
+            // FAIL-OPEN: only skip if backend EXPLICITLY returns false (another device claimed it).
+            // On network errors or timeouts → still print (don't block on backend unavailability).
+            if (kotId) {
+                try {
+                    const claimRes = await apiClient.post(`/kots/${kotId}/mark-auto-printed`);
+                    const claimed = claimRes.data?.data;
+                    if (claimed === false) {
+                        console.log(`[GlobalKotPrinter] KOT ${kotId} already claimed by another terminal. Skipping.`);
+                        return;
+                    }
+                    console.log(`[GlobalKotPrinter] ✅ Claimed KOT ${kotId} for printing.`);
+                } catch (err: any) {
+                    const status = err?.response?.status;
+                    if (status === 409) {
+                        // 409 Conflict = another device claimed it first
+                        console.log(`[GlobalKotPrinter] KOT ${kotId} claimed by another terminal (409). Skipping.`);
+                        return;
+                    }
+                    // Network error / 404 / 500 → fail-open, print anyway
+                    console.warn(`[GlobalKotPrinter] Claim request failed (status=${status}), printing anyway:`, err?.message);
+                }
+            }
+
             const winAny = window as any;
             if (!winAny.electronAPI) {
                 console.warn("[GlobalKotPrinter] Not in Electron. Cannot print.");
