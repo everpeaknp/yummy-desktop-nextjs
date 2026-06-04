@@ -31,7 +31,6 @@ export function GlobalKotPrinter() {
         const compositeKeys = [
             orderId && kotNumber ? `order:${orderId}:kot:${kotNumber}` : null,
             orderId && station && kotNumber ? `order:${orderId}:station:${station}:kot:${kotNumber}` : null,
-            orderId && station ? `order:${orderId}:station:${station}` : null,
         ].filter(Boolean) as string[];
 
         return [...explicitIds, ...compositeKeys];
