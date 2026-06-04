@@ -64,12 +64,12 @@ function buildEscPosKot(kotData: any): string {
     });
 
     lines.push(`--------------------------------`);
-    lines.push(``);
-    lines.push(``);
-    lines.push(``);
+    // Feed enough lines so the last content clears the cutter blade
+    // (thermal printers have ~3-4cm gap between print head and cutter)
+    lines.push(`\n\n\n\n\n\n`);
 
-    // Cut paper
-    lines.push(`${ESC}i`);
+    // ESC d 6 = Feed 6 more lines, then GS V B 0 = full cut
+    lines.push(`${ESC}d\x06${GS}V\x42\x00`);
 
     let payload = lines.join(NL);
 
