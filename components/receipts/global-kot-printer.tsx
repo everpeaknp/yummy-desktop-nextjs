@@ -105,7 +105,7 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
             if (item.notes) p += `  > ${item.notes}${LF}`;
             (item.modifiers || []).forEach((m: any) => {
                 const mn = m.modifier_name_snapshot || m.name || "";
-                if (mn) p += `  + ${mn}${LF}`;
+                if (mn) p += `  - ${mn}${LF}`;
             });
         });
         p += `${SEP}${LF}`;
@@ -212,7 +212,7 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
                         if (item.notes) p += `  > ${item.notes}${LF}`;
                         (item.modifiers || []).forEach((m: any) => {
                             const mn = m.modifier_name_snapshot || m.name || "";
-                            if (mn) p += `  + ${mn}${LF}`;
+                            if (mn) p += `  - ${mn}${LF}`;
                         });
                     });
                     p += `${SEP}${LF}`;
