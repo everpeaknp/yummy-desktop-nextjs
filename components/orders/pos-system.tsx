@@ -534,11 +534,28 @@ export default function POSSystem({
 
       console.log("[POS] Order update response:", response?.status, response?.data);
       if (response && response.data) {
+        // Direct Print Integration: Fetch KOTs and print immediately instead of waiting for WebSocket
+        const triggerDirectPrint = async (savedOrderId: any) => {
+          if (!savedOrderId) return;
+          try {
+            console.log(`[POS] Fetching KOTs for direct print for order ${savedOrderId}...`);
+            const kotsRes = await apiClient.get(`/kots/orders/${savedOrderId}`);
+            const kots = kotsRes.data?.data || kotsRes.data || [];
+            if (Array.isArray(kots)) {
+              kots.forEach((kot: any) => {
+                 console.log(`[POS] Dispatching direct print for KOT ${kot.id || kot.kot_id}`);
+                 window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: kot }));
+              });
+            }
+          } catch (printErr) {
+            console.error("[POS] Failed to fetch KOTs for direct print:", printErr);
+          }
+        };
+
         if (isEditing) {
           console.log("[POS] Success: Order updated");
           toast.success("Order updated successfully");
           
-          // The backend might return the order directly or wrapped in data: { data: order }
           const updatedOrder = response.data.data || response.data;
           setOrderData(updatedOrder);
           
@@ -556,9 +573,15 @@ export default function POSSystem({
               revenue_category: item.revenue_category
             })));
           }
+          
+          if (updatedOrder?.id) triggerDirectPrint(updatedOrder.id);
         } else {
           console.log("[POS] Success: Order placed");
           toast.success("Order placed successfully");
+          
+          const newOrder = response.data.data || response.data;
+          if (newOrder?.id) triggerDirectPrint(newOrder.id);
+
           router.push('/orders/active');
         }
       } else {

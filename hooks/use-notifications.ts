@@ -452,30 +452,14 @@ export function useNotifications() {
           }
 
           // Auto-print logic for KOTs
-          // IMPORTANT: Only print if THIS device placed the order.
-          // The actor_id in the KOT event is the user who punched the order.
-          // If actor_id matches the current logged-in user on this Electron device,
-          // this device placed the order → print here.
-          // If actor_id is a different user (e.g. a Flutter waiter on mobile),
-          // their device will handle printing → skip here.
+          // NOTE: Normal `kot_created` printing is now handled directly via API response
+          // in pos-system.tsx to prevent double printing between Flutter and Electron.
+          // We only listen to fallback/released events here.
           const payload = data.payload || data.data || data;
-          const kotActorId = payload?.actor_id ?? data?.actor_id ?? null;
-          const currentUserId = user?.id ?? null;
-
-          const isMyOrder = kotActorId !== null && currentUserId !== null
-            ? Number(kotActorId) === Number(currentUserId)
-            : true; // if actor_id missing, fall through (backwards compat)
 
           if (event === "kot_print_fallback" || event === "kot_print_released") {
             // Fallback/released KOTs are meant for whoever can print — print regardless of actor
             window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: payload }));
-          } else if (event === "kot_created") {
-            if (isMyOrder) {
-              console.log(`[KOT WS] kot_created by me (actor=${kotActorId}) — dispatching print.`);
-              window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: payload }));
-            } else {
-              console.log(`[KOT WS] kot_created by another user (actor=${kotActorId}, me=${currentUserId}) — skipping print (their device handles it).`);
-            }
           }
         } catch (e) { 
             console.error("[KOT WS] Error parsing message:", e);
