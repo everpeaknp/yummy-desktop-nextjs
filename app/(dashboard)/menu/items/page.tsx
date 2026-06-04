@@ -88,8 +88,7 @@ export default function MenuItemsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
-  const user = useAuth((s) => s.user);
-  const me = useAuth((s) => s.me);
+  const restaurantId = useAuth((s) => s.user?.restaurant_id);
   const restaurant = useRestaurant((s) => s.restaurant);
 
   // Dialog state
@@ -116,17 +115,15 @@ export default function MenuItemsPage() {
   // Feedback message
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  useEffect(() => {
-    const init = async () => { await me(); };
-    init();
-  }, [me]);
-
   const fetchItems = useCallback(async () => {
-    if (!user?.restaurant_id) return;
+    if (!restaurantId) {
+      setLoading(false);
+      return;
+    }
     try {
       const [response, catRes] = await Promise.all([
-        apiClient.get(MenuApis.getMenusGroupedByRestaurant(user.restaurant_id)),
-        apiClient.get(ItemCategoryApis.getItemCategories(user.restaurant_id))
+        apiClient.get(MenuApis.getMenusGroupedByRestaurant(restaurantId)),
+        apiClient.get(ItemCategoryApis.getItemCategories(restaurantId))
       ]);
       
       if (catRes.data.status === "success") {
@@ -145,7 +142,7 @@ export default function MenuItemsPage() {
       }
       
       try {
-        const modRes = await apiClient.get(ModifierApis.listGroups(user.restaurant_id));
+        const modRes = await apiClient.get(ModifierApis.listGroups(restaurantId));
         if (modRes.data?.status === "success") {
            setModifierGroups(modRes.data.data.groups || []);
         }
@@ -158,7 +155,7 @@ export default function MenuItemsPage() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [restaurantId]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
@@ -248,7 +245,7 @@ export default function MenuItemsPage() {
   };
 
   const handleSubmit = async () => {
-    if (!user?.restaurant_id) return;
+    if (!restaurantId) return;
     if (!form.name.trim()) { setFormError("Name is required"); return; }
     if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) { setFormError("Valid price is required"); return; }
     if (!form.item_category_id) { setFormError("Category is required"); return; }
@@ -261,8 +258,6 @@ export default function MenuItemsPage() {
       if (selectedFile) {
         setIsUploading(true);
         try {
-          // Use user.restaurant_id if available, otherwise 0 (should handle error or default)
-          const restaurantId = user?.restaurant_id || 0; 
           imageUrl = await ImageService.uploadMenuImage(selectedFile, restaurantId);
         } catch (error: any) {
           console.error("Upload failed", error);
@@ -291,7 +286,7 @@ export default function MenuItemsPage() {
         await apiClient.put(MenuApis.updateMenu(editingItem.id), payload);
         setMessage({ text: `"${form.name}" updated successfully`, type: "success" });
       } else {
-        await apiClient.post(MenuApis.createMenu(user.restaurant_id), payload);
+        await apiClient.post(MenuApis.createMenu(restaurantId), payload);
         setMessage({ text: `"${form.name}" created successfully`, type: "success" });
       }
       setFormOpen(false);
