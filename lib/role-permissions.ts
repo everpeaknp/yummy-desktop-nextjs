@@ -332,7 +332,13 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
   },
   {
     title: "Orders",
-    href: "/orders/active",
+    href: "/orders",
+    allowedRoles: ORDER_ROLES,
+    requiredPermission: "pos.view",
+  },
+  {
+    title: "Order History",
+    href: "/orders/history",
     allowedRoles: ORDER_ROLES,
     requiredPermission: "pos.view",
   },

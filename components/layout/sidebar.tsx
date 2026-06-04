@@ -109,15 +109,15 @@ export const Sidebar = memo(function Sidebar() {
   const resizingRef = useRef(false);
   const coreHrefs = useMemo(
     () => new Set(selectedModule === "hotel"
-      ? ["/rooms", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"]
-      : ["/dashboard", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"]
+      ? ["/rooms", "/orders", "/orders/new", "/orders/history", "/analytics", "/day-close", "/manage"]
+      : ["/dashboard", "/orders", "/orders/new", "/orders/history", "/analytics", "/day-close", "/manage"]
     ),
     [selectedModule]
   );
   const coreOrder = useMemo(
     () => selectedModule === "hotel"
-      ? ["/rooms", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"]
-      : ["/dashboard", "/orders", "/orders/new", "/orders/active", "/analytics", "/day-close", "/manage"],
+      ? ["/rooms", "/orders", "/orders/new", "/orders/history", "/analytics", "/day-close", "/manage"]
+      : ["/dashboard", "/orders", "/orders/new", "/orders/history", "/analytics", "/day-close", "/manage"],
     [selectedModule]
   );
   const coreItems = useMemo(() => {
@@ -374,8 +374,10 @@ export const Sidebar = memo(function Sidebar() {
             {coreItems.map((item, index) => {
               const isActive =
                 !item.externalUrl &&
-                (pathname === item.href ||
-                  (!!pathname && pathname.startsWith(item.href + "/")));
+                (item.href === "/orders"
+                  ? pathname === "/orders"
+                  : pathname === item.href ||
+                    (!!pathname && pathname.startsWith(item.href + "/")));
               const link = (
                 <SidebarNavLink key={index} item={item} collapsed={collapsed} isActive={isActive}>
                   {!collapsed && !item.externalUrl && !coreHrefs.has(item.href) && pinnedExtras.includes(item.href) && (
@@ -413,8 +415,10 @@ export const Sidebar = memo(function Sidebar() {
                 extraItems.map((item, index) => {
                   const isActive =
                     !item.externalUrl &&
-                    (pathname === item.href ||
-                      (!!pathname && pathname.startsWith(item.href + "/")));
+                    (item.href === "/orders"
+                      ? pathname === "/orders"
+                      : pathname === item.href ||
+                        (!!pathname && pathname.startsWith(item.href + "/")));
                   const link = (
                     <SidebarNavLink
                       key={`extra-collapsed-${index}`}
@@ -451,8 +455,10 @@ export const Sidebar = memo(function Sidebar() {
                   {showMore && extraItems.map((item, index) => {
                     const isActive =
                       !item.externalUrl &&
-                      (pathname === item.href ||
-                        (!!pathname && pathname.startsWith(item.href + "/")));
+                      (item.href === "/orders"
+                        ? pathname === "/orders"
+                        : pathname === item.href ||
+                          (!!pathname && pathname.startsWith(item.href + "/")));
                     return (
                       <div
                         key={`extra-${index}`}

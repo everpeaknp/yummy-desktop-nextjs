@@ -29,6 +29,7 @@ interface PurchaseDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     purchase?: any;
+    businessLine: "restaurant" | "hotel";
     onSuccess: () => void;
 }
 
@@ -42,7 +43,7 @@ const PAYMENT_STATUS_OPTIONS = [
     { label: "Paid", value: "paid" },
 ];
 
-export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: PurchaseDialogProps) {
+export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onSuccess }: PurchaseDialogProps) {
     const user = useAuth(state => state.user);
     const [loading, setLoading] = useState(false);
     const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -104,9 +105,15 @@ export function PurchaseDialog({ open, onOpenChange, purchase, onSuccess }: Purc
 
         setLoading(true);
         try {
+            const resolvedBusinessLine =
+                purchase?.business_line === "hotel" || purchase?.business_line === "restaurant"
+                    ? purchase.business_line
+                    : businessLine;
+
             const payload = {
                 ...formData,
                 restaurant_id: user.restaurant_id,
+                business_line: resolvedBusinessLine,
                 total_cost: parseFloat(formData.total_cost),
                 supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
                 purchased_date: formData.purchased_date + "T00:00:00Z"

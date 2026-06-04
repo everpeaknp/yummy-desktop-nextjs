@@ -4,7 +4,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { RoleGuard } from "@/components/auth/role-guard";
 import { GlobalKotPrinter } from "@/components/receipts/global-kot-printer";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { usePermissionsSync } from "@/hooks/use-permissions-sync";
@@ -24,8 +24,23 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname() || "";
   const [mounted, setMounted] = useState(false);
+  const [storeHydrated, setStoreHydrated] = useState(false);
+  const gatewayRedirectedRef = useRef(false);
 
   usePermissionsSync();
+
+  useEffect(() => {
+    const persist = useRestaurant.persist;
+    if (!persist) {
+      setStoreHydrated(true);
+      return;
+    }
+    if (persist.hasHydrated()) {
+      setStoreHydrated(true);
+      return;
+    }
+    return persist.onFinishHydration(() => setStoreHydrated(true));
+  }, []);
 
   // Keep the server render and the first client render identical to prevent hydration mismatches.
   useEffect(() => {
@@ -38,8 +53,9 @@ export default function DashboardLayout({
   }, [fetchRestaurant, mounted]);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !storeHydrated) return;
     if (loading || !restaurant) return;
+    if (gatewayRedirectedRef.current) return;
 
     const hotelEnabled = restaurant.hotel_enabled;
     const restEnabled = restaurant.restaurant_enabled;
@@ -47,12 +63,12 @@ export default function DashboardLayout({
 
     // --- Dual Mode ---
     if (bothEnabled) {
-      // No module chosen → go to standalone gateway for selection
       if (!selectedModule) {
+        gatewayRedirectedRef.current = true;
         router.replace("/gateway");
         return;
       }
-      return; // Module is chosen, render normally
+      return;
     }
 
     // --- Hotel Only ---
@@ -71,12 +87,48 @@ export default function DashboardLayout({
     if (["/rooms", "/gateway"].includes(pathname)) {
       router.replace("/dashboard");
     }
-  }, [restaurant, selectedModule, pathname, router, setSelectedModule, loading, mounted]);
+  }, [
+    restaurant,
+    selectedModule,
+    pathname,
+    router,
+    setSelectedModule,
+    loading,
+    mounted,
+    storeHydrated,
+  ]);
 
-  if (!mounted || loading || !restaurant) {
+  const showShell = mounted && (restaurant || !loading);
+
+  if (!mounted) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!showShell) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!restaurant) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          Could not load your restaurant profile. Check your connection and try again.
+        </p>
+        <button
+          type="button"
+          className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+          onClick={() => void fetchRestaurant(true)}
+        >
+          Retry
+        </button>
       </div>
     );
   }

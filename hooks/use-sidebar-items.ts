@@ -47,6 +47,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboard,
   "/orders": ClipboardList,
   "/orders/active": ClipboardList,
+  "/orders/history": ClipboardList,
   "/orders/new": Plus,
   "/analytics": Activity,
   "/day-close": Receipt,
@@ -67,6 +68,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
 const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
   { title: "Room Overview",   href: "/rooms",           icon: BedDouble,     section: "Hotel" },
   { title: "Orders",          href: "/orders",          icon: ClipboardList, section: "Hotel" },
+  { title: "Order History",   href: "/orders/history",  icon: ClipboardList, section: "Hotel" },
   { title: "New Order",       href: "/orders/new",      icon: Plus,          section: "Hotel" },
   { title: "Check In/Out",    href: "/rooms/checkin",   icon: KeyRound,      section: "Hotel" },
   { title: "Reservations",    href: "/reservations",    icon: Calendar,      section: "Hotel" },
@@ -105,8 +107,9 @@ function getHotelSidebarItems(
 
 const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
   { title: "Room Overview", href: "/rooms",          icon: BedDouble,     section: "Hotel" },
-  { title: "Orders",       href: "/orders",  icon: ClipboardList, section: "Hotel" },
-  { title: "New Order",    href: "/orders/new",     icon: Plus,          section: "Hotel" },
+  { title: "Orders",        href: "/orders",         icon: ClipboardList, section: "Hotel" },
+  { title: "Order History", href: "/orders/history", icon: ClipboardList, section: "Hotel" },
+  { title: "New Order",     href: "/orders/new",     icon: Plus,          section: "Hotel" },
   { title: "Check In/Out", href: "/rooms/checkin",  icon: KeyRound,      section: "Hotel" },
   { title: "Finance",      href: "/finance/income", icon: CreditCard,    section: "Hotel" },
   { title: "Customers",    href: "/customers",      icon: Users,         section: "Hotel" },

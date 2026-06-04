@@ -7,7 +7,7 @@ import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import type { DateRange } from "react-day-picker";
 
 import apiClient from "@/lib/api-client";
-import { TransactionsApis } from "@/lib/api/endpoints";
+import { StaffApis, TransactionsApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
 import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -21,6 +21,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import {
@@ -59,6 +66,11 @@ type TransactionItem = {
 type TransactionsResponse = {
   items: TransactionItem[];
   total: number;
+};
+
+type StaffOption = {
+  id: number;
+  label: string;
 };
 
 function parseParenSuffix(title: string): string | null {
@@ -225,6 +237,8 @@ export default function TransactionsPage() {
   const [types, setTypes] = useState<Set<TransactionType>>(new Set());
   const [userId, setUserId] = useState<string>("");
   const [paymentUserId, setPaymentUserId] = useState<string>("");
+  const [staffUsers, setStaffUsers] = useState<StaffOption[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
 
   const [skip, setSkip] = useState(0);
   const [limit, setLimit] = useState(50);
@@ -239,6 +253,47 @@ export default function TransactionsPage() {
       setTypes(new Set<TransactionType>(["order"]));
     }
   }, [paymentUserId]);
+
+  useEffect(() => {
+    if (!restaurantId || !canViewAnalytics) return;
+
+    let cancelled = false;
+    const loadStaff = async () => {
+      setStaffLoading(true);
+      try {
+        const res = await apiClient.get(StaffApis.list());
+        if (cancelled) return;
+        if (res.data?.status === "success") {
+          const users = (res.data.data || [])
+            .map((u: { id: number; full_name?: string; name?: string; email?: string }) => ({
+              id: u.id,
+              label: u.full_name || u.name || u.email || `User #${u.id}`,
+            }))
+            .sort((a: StaffOption, b: StaffOption) => a.label.localeCompare(b.label));
+          setStaffUsers(users);
+        } else {
+          setStaffUsers([]);
+        }
+      } catch {
+        if (!cancelled) setStaffUsers([]);
+      } finally {
+        if (!cancelled) setStaffLoading(false);
+      }
+    };
+
+    void loadStaff();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId, canViewAnalytics]);
+
+  useEffect(() => {
+    if (!staffUsers.length) return;
+    if (userId && !staffUsers.some((u) => String(u.id) === userId)) setUserId("");
+    if (paymentUserId && !staffUsers.some((u) => String(u.id) === paymentUserId)) {
+      setPaymentUserId("");
+    }
+  }, [staffUsers, userId, paymentUserId]);
 
   const fetchTransactions = async () => {
     if (!canViewAnalytics) return;
@@ -313,8 +368,10 @@ export default function TransactionsPage() {
   const canPrev = skip > 0;
   const canNext = skip + limit < total;
 
+  const paymentFilterActive = !!paymentUserId.trim();
+
   const toggleType = (t: TransactionType) => {
-    if (paymentUserId.trim() && t !== "order") {
+    if (paymentFilterActive && t !== "order") {
       toast.info("Filters forced to order when Payment Added By filter is active");
       return;
     }
@@ -419,32 +476,78 @@ export default function TransactionsPage() {
           <div className="space-y-2 md:col-span-2">
             <Label>Types</Label>
             <div className="flex flex-wrap gap-2">
-              {(Object.keys(TYPE_META) as TransactionType[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => toggleType(t)}
-                  className={[
-                    "px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wide border transition-colors",
-                    types.has(t)
-                      ? "bg-orange-600 text-white border-orange-600 shadow-sm"
-                      : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/20",
-                  ].join(" ")}
-                >
-                  {TYPE_META[t].label}
-                </button>
-              ))}
+              {(Object.keys(TYPE_META) as TransactionType[]).map((t) => {
+                const locked = paymentFilterActive && t !== "order";
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => toggleType(t)}
+                    disabled={locked}
+                    className={[
+                      "px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wide border transition-colors",
+                      types.has(t)
+                        ? "bg-orange-600 text-white border-orange-600 shadow-sm"
+                        : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/20",
+                      locked ? "opacity-40 cursor-not-allowed" : "",
+                    ].join(" ")}
+                  >
+                    {TYPE_META[t].label}
+                  </button>
+                );
+              })}
+              {paymentFilterActive ? (
+                <span className="text-[10px] text-muted-foreground self-center">
+                  Locked to Order while Payment Added By is set
+                </span>
+              ) : null}
             </div>
           </div>
 
           <div className="space-y-2 md:col-span-1">
-            <Label>Staff/User ID</Label>
-            <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="Optional" />
+            <Label>Staff Member</Label>
+            <Select
+              value={userId || "all"}
+              onValueChange={(v) => setUserId(v === "all" ? "" : v)}
+              disabled={staffLoading}
+            >
+              <SelectTrigger className="h-10 rounded-xl">
+                <SelectValue placeholder={staffLoading ? "Loading staff..." : "All staff"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All staff</SelectItem>
+                {staffUsers.map((u) => (
+                  <SelectItem key={u.id} value={String(u.id)}>
+                    {u.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2 md:col-span-1">
             <Label>Payment Added By</Label>
-            <Input value={paymentUserId} onChange={(e) => setPaymentUserId(e.target.value)} placeholder="User ID" />
+            <Select
+              value={paymentUserId || "all"}
+              onValueChange={(v) => {
+                const next = v === "all" ? "" : v;
+                setPaymentUserId(next);
+                if (next) setTypes(new Set<TransactionType>(["order"]));
+              }}
+              disabled={staffLoading}
+            >
+              <SelectTrigger className="h-10 rounded-xl">
+                <SelectValue placeholder={staffLoading ? "Loading staff..." : "All payment staff"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All payment staff</SelectItem>
+                {staffUsers.map((u) => (
+                  <SelectItem key={`pay-${u.id}`} value={String(u.id)}>
+                    {u.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2 md:col-span-1">

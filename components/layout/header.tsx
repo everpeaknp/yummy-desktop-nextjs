@@ -74,7 +74,7 @@ const LiveStats = memo(function LiveStats() {
   return (
     <div className="hidden md:flex items-center gap-2">
       <Link
-        href="/orders/active"
+        href="/orders"
         className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
       >
         <ClipboardList className="h-3.5 w-3.5 text-blue-500" />

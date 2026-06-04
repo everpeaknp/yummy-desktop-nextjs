@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import apiClient from "@/lib/api-client";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
@@ -53,7 +53,10 @@ import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot
 import {
   formatDayCloseCurrency,
   formatDayCloseCoveredRange,
+  formatDayCloseExportFilename,
   formatDayCloseListHeading,
+  formatDayCloseSessionLabel,
+  dayCloseSessionToListItem,
   pickBackendAmount,
 } from "@/lib/day-close-format";
 import { snapshotMetricRows } from "@/lib/day-close-snapshot-view";
@@ -61,10 +64,12 @@ import type { BusinessLine } from "@/lib/api/endpoint-types";
 import {
   parseDayCloseDetail,
   parseDayCloseList,
+  parseDayCloseSessions,
   parseDayCloseSnapshotData,
   parseDayCloseSnapshotResponse,
   type DayCloseDetail,
   type DayCloseListItem,
+  type DayCloseSession,
   type DayCloseSnapshotResponse,
 } from "@/types/day-close";
 
@@ -150,6 +155,9 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [calendarMonths, setCalendarMonths] = useState(1);
   const [status, setStatus] = useState<string>(""); // open|pending|confirmed|reopened
+  const [sessions, setSessions] = useState<DayCloseSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -188,7 +196,26 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     return () => mq.removeEventListener?.("change", apply);
   }, []);
 
-  const fetchList = async () => {
+  const fetchSessions = useCallback(async () => {
+    if (!restaurantId) return;
+    setSessionsLoading(true);
+    try {
+      const res = await apiClient.get(
+        DayCloseApis.sessions({ restaurantId, businessLine, limit: 50 }),
+      );
+      if (res.data?.status === "success") {
+        setSessions(parseDayCloseSessions(res.data.data));
+      } else {
+        setSessions([]);
+      }
+    } catch {
+      setSessions([]);
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, [restaurantId, businessLine]);
+
+  const fetchList = useCallback(async () => {
     if (!restaurantId) return;
     setLoading(true);
     try {
@@ -201,6 +228,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
           start,
           end,
           status: status || undefined,
+          limit: 100,
         }),
       );
       if (res.data?.status === "success") {
@@ -211,22 +239,39 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    restaurantId,
+    businessLine,
+    dateRange?.from,
+    dateRange?.to,
+    status,
+  ]);
 
   useEffect(() => {
-    if (canLoad) fetchList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canLoad]);
+    setSelectedSessionId(null);
+  }, [businessLine]);
 
-  // Auto-apply filter changes so users don't have to guess when it takes effect.
+  useEffect(() => {
+    if (!canLoad) return;
+    void fetchSessions();
+  }, [canLoad, fetchSessions]);
+
   useEffect(() => {
     if (!canLoad) return;
     const t = setTimeout(() => {
-      fetchList();
+      void fetchList();
     }, 250);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, dateRange?.from?.getTime(), dateRange?.to?.getTime(), businessLine, canLoad]);
+  }, [canLoad, fetchList]);
+
+  const displayItems = useMemo(() => {
+    if (!selectedSessionId) return items;
+    const fromList = items.filter((it) => it.id === selectedSessionId);
+    if (fromList.length) return fromList;
+    const session = sessions.find((s) => s.id === selectedSessionId);
+    if (session) return [dayCloseSessionToListItem(session)];
+    return [];
+  }, [items, selectedSessionId, sessions]);
 
   const openDetail = async (id: number) => {
     setActiveId(id);
@@ -442,7 +487,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     try {
       await downloadBlobFromApi(
         DayCloseApis.exportPdf(activeId),
-        `day_close_${String(detail.business_date || "").slice(0, 10)}.pdf`,
+        formatDayCloseExportFilename(detail, "pdf"),
         "application/pdf",
       );
       toast.success("PDF downloaded");
@@ -456,7 +501,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     try {
       await downloadBlobFromApi(
         DayCloseApis.exportExcel(activeId),
-        `day_close_${String(detail.business_date || "").slice(0, 10)}.xlsx`,
+        formatDayCloseExportFilename(detail, "xlsx"),
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       );
       toast.success("Excel downloaded");
@@ -655,6 +700,34 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                  Confirmed Close
+                </p>
+                <Select
+                  value={selectedSessionId ? String(selectedSessionId) : "all"}
+                  onValueChange={(v) =>
+                    setSelectedSessionId(v === "all" ? null : Number(v))
+                  }
+                  disabled={sessionsLoading && sessions.length === 0}
+                >
+                  <SelectTrigger className="h-11 rounded-2xl w-full sm:min-w-[220px] sm:max-w-[360px] font-bold text-xs">
+                    <SelectValue
+                      placeholder={
+                        sessionsLoading ? "Loading sessions…" : "All closes in range"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All closes in range</SelectItem>
+                    {sessions.map((session) => (
+                      <SelectItem key={session.id} value={String(session.id)}>
+                        {formatDayCloseSessionLabel(session)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex gap-2 items-center">
                 <Button
                   type="button"
@@ -698,12 +771,19 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                 </Button>
               </div>
               <Button
-                onClick={fetchList}
+                onClick={() => {
+                  void fetchSessions();
+                  void fetchList();
+                }}
                 variant="secondary"
                 className="h-11 rounded-2xl px-5 font-bold"
                 disabled={!canLoad || loading}
               >
-                <RefreshCw className={loading ? "w-4 h-4 mr-2 animate-spin" : "w-4 h-4 mr-2"} />
+                <RefreshCw
+                  className={
+                    loading || sessionsLoading ? "w-4 h-4 mr-2 animate-spin" : "w-4 h-4 mr-2"
+                  }
+                />
                 Refresh
               </Button>
             </div>
@@ -717,17 +797,26 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
             Select a restaurant to view day close history.
           </CardContent>
         </Card>
-      ) : items.length === 0 ? (
+      ) : displayItems.length === 0 ? (
         <Card className="bg-card border-border/60 rounded-3xl overflow-hidden">
           <CardContent className="p-10 text-center text-muted-foreground">
             <ClipboardList className="w-10 h-10 mx-auto mb-4 opacity-20" />
             <p className="font-semibold">No day closes found.</p>
-            <p className="text-sm opacity-70">Try a different date range.</p>
+            <p className="text-sm opacity-70">
+              {selectedSessionId
+                ? "This confirmed close is outside the current date range. Clear the session filter or widen the range."
+                : "Try a different date range or status filter."}
+            </p>
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-3">
-          {items.map((it) => (
+          {displayItems.map((it) => {
+            const coveredRange = formatDayCloseCoveredRange(
+              it.period_start_at,
+              it.period_end_at,
+            );
+            return (
             <Card
               key={it.id}
               className="bg-card border-border/60 rounded-2xl overflow-hidden hover:bg-muted/10 hover:border-orange-500/20 transition-colors cursor-pointer"
@@ -745,6 +834,9 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                     <p className="text-[11px] text-muted-foreground/70 font-bold uppercase tracking-wider">
                       {listBusinessLineLabel(it.business_line)} • {String(it.status || "—")}
                     </p>
+                    {coveredRange ? (
+                      <p className="text-xs font-medium text-foreground/80 mt-1">{coveredRange}</p>
+                    ) : null}
                     <p className="text-xs text-muted-foreground mt-1">
                       Net {formatDayCloseCurrency(it.net_sales)} • Expected cash{" "}
                       {formatDayCloseCurrency(it.expected_cash)} • Actual cash{" "}
@@ -784,7 +876,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 
