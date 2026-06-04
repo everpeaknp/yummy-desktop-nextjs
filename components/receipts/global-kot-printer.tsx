@@ -6,78 +6,66 @@ import { PrinterApis, RestaurantApis, KotApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Raw ESC/POS builder — matches Flutter KOT format exactly
+// Raw ESC/POS builder — builds payload as a direct string for exact byte control
 // ─────────────────────────────────────────────────────────────────────────────
 function buildEscPosKot(kotData: any): string {
     const ESC = "\x1B";
-    const GS = "\x1D";
-    const NL = "\r\n";
+    const GS  = "\x1D";
+    const LF  = "\n";
 
-    const id = kotData.id || kotData.kot_id || "-";
+    const id        = kotData.id || kotData.kot_id || "-";
     const kotNumber = kotData.kot_number || String(id);
-    const station = kotData.station || "";
-    const table = kotData.order?.table_name || kotData.order?.table || kotData.table_name || kotData.table || "";
+    const station   = kotData.station || "";
+    const table     = kotData.order?.table_name || kotData.order?.table || kotData.table_name || kotData.table || "";
     const items: any[] = kotData.items || kotData.kot?.items || [];
-    const date = new Date().toLocaleString();
+    const date      = new Date().toLocaleString();
 
-    const lines: string[] = [];
+    let p = "";
 
-    // Initialize printer
-    lines.push(`${ESC}@`);
-
-    // Center + Bold header
-    lines.push(`${ESC}a\x01`); // Center
-    lines.push(`${ESC}E\x01`); // Bold on
-    lines.push(`*** KITCHEN ORDER ***`);
-    lines.push(`${ESC}E\x00`); // Bold off
-    lines.push(``);
-
-    // Left-align info block
-    lines.push(`${ESC}a\x00`);
-    lines.push(`--------------------------------`);
-    lines.push(`KOT: #${kotNumber}`);
-    if (station) lines.push(`STATION: ${station.toUpperCase()}`);
-    if (table) lines.push(`TABLE: ${table}`);
-    lines.push(`DATE: ${date}`);
-    lines.push(`--------------------------------`);
-    lines.push(`ITEM                         QTY`);
-    lines.push(`--------------------------------`);
+    // Init printer
+    p += `${ESC}@`;
+    // Center align + bold header
+    p += `${ESC}a\x01`;
+    p += `${ESC}E\x01`;
+    p += `*** KITCHEN ORDER ***${LF}`;
+    p += `${ESC}E\x00`;
+    // Left align + 1 blank line
+    p += `${ESC}a\x00${LF}`;
+    p += `--------------------------------${LF}`;
+    p += `KOT: #${kotNumber}${LF}`;
+    if (station) p += `STATION: ${station.toUpperCase()}${LF}`;
+    if (table)   p += `TABLE: ${table}${LF}`;
+    p += `DATE: ${date}${LF}`;
+    p += `--------------------------------${LF}`;
+    p += `ITEM                         QTY${LF}`;
+    p += `--------------------------------${LF}`;
 
     items.forEach((item: any) => {
         const rawName = String(item.item_name || item.name_snapshot || item.name || "Item");
-        const qty = String(item.qty_change || item.qty || item.quantity || 1);
-        const name = rawName.substring(0, 28).padEnd(28, " ");
-        const qtyStr = qty.padStart(4, " ");
-        lines.push(`${name}${qtyStr}`);
-
-        // Print notes if present
-        if (item.notes) {
-            lines.push(`  > ${item.notes}`);
-        }
-
-        // Print modifiers if present
+        const qty     = String(item.qty_change || item.qty || item.quantity || 1);
+        const name    = rawName.substring(0, 28).padEnd(28, " ");
+        const qtyStr  = qty.padStart(4, " ");
+        p += `${name}${qtyStr}${LF}`;
+        if (item.notes) p += `  > ${item.notes}${LF}`;
         const mods: any[] = item.modifiers || [];
         mods.forEach((mod: any) => {
             const modName = mod.modifier_name_snapshot || mod.name || "";
-            if (modName) lines.push(`  + ${modName}`);
+            if (modName) p += `  + ${modName}${LF}`;
         });
     });
 
-    lines.push(`--------------------------------`);
-    // Feed enough lines so the last content clears the cutter blade
-    // (thermal printers have ~3-4cm gap between print head and cutter)
-    lines.push(`\n\n\n\n\n\n`);
+    p += `--------------------------------${LF}`;
+    // Feed 4 lines to clear the print head gap before the cutter blade
+    p += `${ESC}d\x04`;
+    // Full paper cut
+    p += `${GS}V\x00`;
+    // Null padding to prevent TCP FIN before printer reads the cut command
+    for (let i = 0; i < 50; i++) p += "\x00";
 
-    // ESC d 6 = Feed 6 more lines, then GS V B 0 = full cut
-    lines.push(`${ESC}d\x06${GS}V\x42\x00`);
-
-    let payload = lines.join(NL);
-
-    // Null-byte padding to prevent TCP FIN from cutting data before printer reads it
-    for (let i = 0; i < 50; i++) payload += "\x00";
-
-    return payload;
+    return p;
 }
+
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GlobalKotPrinter Component
