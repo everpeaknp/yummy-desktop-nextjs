@@ -542,6 +542,12 @@ export default function POSSystem({
             const printIfNew = (kot: any) => {
               const kotId = kot.id || kot.kot_id;
               if (kotId && !printedKotsRef.current.has(kotId)) {
+                // Do not reprint INITIAL KOTs if we are updating an existing order
+                if (isEditing && kot.type === "INITIAL") {
+                  console.log(`[POS] Ignoring INITIAL KOT ${kotId} during order edit.`);
+                  printedKotsRef.current.add(kotId);
+                  return;
+                }
                 console.log(`[POS] Dispatching direct print for new KOT ${kotId}`);
                 printedKotsRef.current.add(kotId);
                 window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: kot }));
