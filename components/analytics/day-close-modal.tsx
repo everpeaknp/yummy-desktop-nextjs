@@ -10,7 +10,13 @@ import {
   Calculator,
   AlertTriangle,
   Receipt,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
+import {
+  resizableDialogContentClass,
+  useResizableDialogStyle,
+} from "@/lib/resizable-dialog";
 import apiClient from "@/lib/api-client";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
@@ -53,6 +59,8 @@ export function DayCloseModal({
   const [confirmedSnapshot, setConfirmedSnapshot] = useState<DayCloseSnapshotData | null>(null);
   const [currentClose, setCurrentClose] = useState<ReturnType<typeof parseDayCloseCurrent>>(null);
   const [loadingCurrent, setLoadingCurrent] = useState(false);
+  const [modalMaximized, setModalMaximized] = useState(false);
+  const modalDialogStyle = useResizableDialogStyle(modalMaximized, "wizard");
 
   const handleClose = () => {
     setCurrentStep("health-check");
@@ -60,6 +68,7 @@ export function DayCloseModal({
     setDayCloseId(null);
     setConfirmedData(null);
     setConfirmedSnapshot(null);
+    setModalMaximized(false);
     onClose();
   };
 
@@ -104,7 +113,13 @@ export function DayCloseModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="max-w-3xl p-0 gap-0 overflow-hidden sm:rounded-2xl max-h-[90vh] flex flex-col">
+      <DialogContent
+        className={resizableDialogContentClass(
+          modalMaximized,
+          "p-0 gap-0 overflow-hidden flex flex-col",
+        )}
+        style={modalDialogStyle}
+      >
         <DialogHeader className="sr-only">
           <DialogTitle>End of Day Close</DialogTitle>
           <DialogDescription>
@@ -112,15 +127,15 @@ export function DayCloseModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="bg-slate-50 dark:bg-slate-900 border-b p-6 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div>
+        <div className="bg-slate-50 dark:bg-slate-900 border-b p-6 pr-14 sm:pr-16 flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <h2 className="text-xl font-bold">End of Day Close</h2>
               <p className="text-muted-foreground text-sm font-semibold">{closeName}</p>
               {loadingCurrent ? (
                 <p className="text-xs text-muted-foreground mt-1">Loading close window…</p>
               ) : coveredRange ? (
-                <p className="text-xs font-medium text-foreground mt-1">{coveredRange}</p>
+                <p className="text-xs font-medium text-foreground mt-1 break-words">{coveredRange}</p>
               ) : (
                 <p className="text-xs text-muted-foreground mt-1">Close window not loaded</p>
               )}
@@ -130,8 +145,25 @@ export function DayCloseModal({
                 </p>
               ) : null}
             </div>
-            <div className="px-3 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-full text-xs font-semibold border border-orange-200 dark:border-orange-900/50">
-              Step {currentStepIndex + 1} of 4
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="px-3 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-full text-xs font-semibold border border-orange-200 dark:border-orange-900/50 whitespace-nowrap">
+                Step {currentStepIndex + 1} of 4
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full"
+                onClick={() => setModalMaximized((v) => !v)}
+                aria-label={modalMaximized ? "Minimize window" : "Maximize window"}
+                title={modalMaximized ? "Minimize" : "Maximize"}
+              >
+                {modalMaximized ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </Button>
             </div>
           </div>
 
@@ -156,7 +188,7 @@ export function DayCloseModal({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 min-h-[400px]">
+        <div className={cn("flex-1 overflow-y-auto p-6", modalMaximized ? "min-h-0" : "min-h-[400px]")}>
           {currentStep === "health-check" ? (
             <HealthCheckStep
               restaurantId={restaurantId}
