@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { formatDayCloseCurrency } from "@/lib/day-close-format";
 import {
@@ -34,6 +34,13 @@ export function DayClosePaymentSummary({
     return Math.max(...lines.map((line) => line.amount), 1);
   }, [lines]);
 
+  const [animateBars, setAnimateBars] = useState(false);
+  useEffect(() => {
+    setAnimateBars(false);
+    const frame = requestAnimationFrame(() => setAnimateBars(true));
+    return () => cancelAnimationFrame(frame);
+  }, [lines, title]);
+
   return (
     <div className={cn("space-y-4", className)}>
       <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
@@ -50,12 +57,14 @@ export function DayClosePaymentSummary({
             Payment breakdown is not available in this snapshot.
           </div>
         ) : (
-          lines.map((line) => (
+          lines.map((line, index) => (
             <PaymentSummaryRow
               key={line.key}
               line={line}
               maxAmount={maxAmount}
               showBar={showBars}
+              animateBars={animateBars}
+              delayMs={index * 90}
             />
           ))
         )}
@@ -68,10 +77,14 @@ function PaymentSummaryRow({
   line,
   maxAmount,
   showBar,
+  animateBars,
+  delayMs,
 }: {
   line: PaymentSummaryLine;
   maxAmount: number;
   showBar: boolean;
+  animateBars: boolean;
+  delayMs: number;
 }) {
   const widthPct = maxAmount > 0 ? Math.max(4, (line.amount / maxAmount) * 100) : 0;
 
@@ -86,8 +99,14 @@ function PaymentSummaryRow({
       {showBar && line.amount > 0 ? (
         <div className="mt-2 h-2 rounded-full bg-muted/50 overflow-hidden">
           <div
-            className="h-full rounded-full bg-blue-500/80 dark:bg-blue-400/80 transition-all"
-            style={{ width: `${widthPct}%` }}
+            className={cn(
+              "h-full rounded-full bg-blue-500/80 dark:bg-blue-400/80 transition-[width] duration-1000 ease-out",
+              animateBars && "payment-bar-shimmer",
+            )}
+            style={{
+              width: animateBars ? `${widthPct}%` : "0%",
+              transitionDelay: `${delayMs}ms`,
+            }}
           />
         </div>
       ) : null}

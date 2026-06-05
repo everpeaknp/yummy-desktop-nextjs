@@ -150,4 +150,18 @@
   .resizable-dialog-panel {
     transition-duration: 0.01ms !important;
   }
+
+  .payment-bar-shimmer {
+    animation: none !important;
+  }
+}
+
+@keyframes payment-bar-shimmer {
+  0% { filter: brightness(1); opacity: 0.85; }
+  50% { filter: brightness(1.15); opacity: 1; }
+  100% { filter: brightness(1); opacity: 0.92; }
+}
+
+.payment-bar-shimmer {
+  animation: payment-bar-shimmer 2.4s ease-in-out infinite;
 }

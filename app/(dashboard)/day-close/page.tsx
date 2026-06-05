@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import { DayCloseHistory } from "@/components/analytics/day-close-history";
+import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
 import { cn } from "@/lib/utils";
 import {
   Calendar,
@@ -259,39 +260,5 @@ export default function DayClosePage() {
         />
       ) : null}
     </div>
-  );
-}
-
-function DayCloseMetricCard({
-  label,
-  value,
-  icon,
-  accent = "from-primary/40 to-primary",
-}: {
-  label: string;
-  value: string;
-  icon: ReactNode;
-  accent?: string;
-}) {
-  return (
-    <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative h-full">
-      <div
-        className={cn(
-          "absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b group-hover:w-full group-hover:opacity-5 transition-all duration-500",
-          accent,
-        )}
-      />
-      <CardContent className="p-5 flex flex-col justify-center h-full relative z-10 min-h-[120px]">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="p-1.5 rounded-md bg-muted text-muted-foreground group-hover:text-primary transition-colors">
-            {icon}
-          </div>
-          <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
-            {label}
-          </p>
-        </div>
-        <p className="text-xl font-black text-foreground tabular-nums tracking-tight">{value}</p>
-      </CardContent>
-    </Card>
   );
 }
