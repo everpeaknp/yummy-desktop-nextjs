@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -15,7 +16,14 @@ import {
 } from "@/components/ui/select";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import { DayCloseHistory } from "@/components/analytics/day-close-history";
-import { Calendar, CheckCircle2, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Calendar,
+  CheckCircle2,
+  DollarSign,
+  RefreshCw,
+  Wallet,
+} from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import {
@@ -96,100 +104,112 @@ export default function DayClosePage() {
     currentClose?.snapshot_preview?.expense_total,
   );
 
+  const businessLineLabel = businessLine === "hotel" ? "Hotel Close" : "Restaurant Close";
+  const statusLabel = String(currentClose?.status ?? "—").replace(/_/g, " ");
+  const statusTone = (() => {
+    const normalized = statusLabel.toLowerCase();
+    if (normalized === "open") return "bg-emerald-500/10 text-emerald-600 border-emerald-200";
+    if (normalized === "confirmed") return "bg-primary/10 text-primary border-primary/20";
+    if (normalized === "pending") return "bg-amber-500/10 text-amber-600 border-amber-200";
+    if (normalized === "reopened") return "bg-blue-500/10 text-blue-600 border-blue-200";
+    return "bg-muted text-muted-foreground border-border";
+  })();
+
   return (
-    <div className="flex flex-col gap-4 sm:gap-6 max-w-7xl mx-auto px-4 py-5 sm:p-6">
-      <Card className="bg-card border-border/60 rounded-3xl overflow-hidden">
-        <CardContent className="p-5 sm:p-8 lg:p-10">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 sm:gap-8">
-            <div className="space-y-3 flex-1">
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Day Close</h1>
-              <div className="flex items-center gap-2 text-muted-foreground/80">
-                <Calendar className="w-4 h-4" />
-                <p className="text-sm font-semibold">
-                  Period and totals come from the backend day-close service
-                </p>
-              </div>
+    <div className="flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-black tracking-tight">Day Close</h1>
+          <p className="text-muted-foreground text-sm font-medium">
+            Period and totals come from the backend day-close service
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+          {showBusinessLinePicker ? (
+            <Select
+              value={businessLine}
+              onValueChange={(value) => setBusinessLine(value as BusinessLine)}
+            >
+              <SelectTrigger className="h-11 rounded-2xl font-bold min-w-[200px] bg-card/80 border-border/50">
+                <SelectValue placeholder="Business line" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="restaurant">Restaurant Close</SelectItem>
+                <SelectItem value="hotel">Hotel Close</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
+          <Button
+            onClick={() => setCloseOpen(true)}
+            className="bg-primary hover:bg-primary/90 text-white font-bold h-11 px-6 rounded-2xl shadow-md gap-2"
+            disabled={!restaurantId}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            {actionLabel}
+          </Button>
+        </div>
+      </div>
 
-              {showBusinessLinePicker ? (
-                <div className="max-w-xs">
-                  <Select
-                    value={businessLine}
-                    onValueChange={(value) => setBusinessLine(value as BusinessLine)}
-                  >
-                    <SelectTrigger className="h-11 rounded-2xl font-bold">
-                      <SelectValue placeholder="Business line" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="restaurant">Restaurant Close</SelectItem>
-                      <SelectItem value="hotel">Hotel Close</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : null}
-
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">
-                    Current day
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 rounded-full"
-                    onClick={loadCurrent}
-                    disabled={!restaurantId || currentLoading}
-                  >
-                    <RefreshCw className={currentLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-                  </Button>
-                </div>
-                <p className="text-sm font-bold">
-                  {currentClose?.id
-                    ? formatDayCloseListHeading({
-                        id: currentClose.id,
-                        business_line: currentClose.business_line,
-                        period_start_at: currentClose.period_start_at,
-                        period_end_at: currentClose.period_end_at,
-                      })
-                    : "—"}
-                </p>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
-                  Status: {currentClose?.status ?? "—"}
-                </p>
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div className="rounded-xl border bg-emerald-50/50 dark:bg-emerald-500/5 border-emerald-200/50 dark:border-emerald-500/20 p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-500">
-                      Net Sales
-                    </p>
-                    <p className="text-lg font-black text-emerald-700 dark:text-emerald-400 mt-1">
-                      {formatDayCloseCurrency(displayNetSales)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border bg-red-50/50 dark:bg-red-500/5 border-red-200/50 dark:border-red-500/20 p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-red-700 dark:text-red-500">
-                      Total Expenses
-                    </p>
-                    <p className="text-lg font-black text-red-700 dark:text-red-400 mt-1">
-                      {formatDayCloseCurrency(displayExpenseTotal)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 shrink-0 w-full md:w-auto">
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-1 shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm relative overflow-hidden group hover:shadow-md transition-all duration-300">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+          <CardHeader className="pb-3 relative z-10">
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" />
+                {businessLineLabel}
+              </CardTitle>
               <Button
-                onClick={() => setCloseOpen(true)}
-                className="bg-orange-600 hover:bg-orange-700 text-white font-bold h-11 sm:h-12 px-6 sm:px-8 rounded-2xl shadow-lg shadow-orange-500/10 w-full md:w-auto"
-                disabled={!restaurantId}
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full shrink-0"
+                onClick={loadCurrent}
+                disabled={!restaurantId || currentLoading}
+                aria-label="Refresh current day close"
               >
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-                {actionLabel}
+                <RefreshCw className={currentLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
               </Button>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent className="relative z-10 space-y-3">
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest opacity-80">
+              Current day
+            </p>
+            <p className="text-lg font-black tracking-tight break-words">
+              {currentClose?.id
+                ? formatDayCloseListHeading({
+                    id: currentClose.id,
+                    business_line: currentClose.business_line,
+                    period_start_at: currentClose.period_start_at,
+                    period_end_at: currentClose.period_end_at,
+                  })
+                : "—"}
+            </p>
+            <Badge
+              variant="outline"
+              className={cn("capitalize font-semibold border", statusTone)}
+            >
+              {statusLabel}
+            </Badge>
+          </CardContent>
+        </Card>
+
+        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <DayCloseMetricCard
+            label="Net Sales"
+            value={formatDayCloseCurrency(displayNetSales)}
+            icon={<DollarSign className="h-4 w-4" />}
+            accent="from-emerald-500/50 to-emerald-500/10"
+          />
+          <DayCloseMetricCard
+            label="Total Expenses"
+            value={formatDayCloseCurrency(displayExpenseTotal)}
+            icon={<Wallet className="h-4 w-4" />}
+            accent="from-destructive/50 to-destructive/10"
+          />
+        </div>
+      </section>
 
       <Tabs defaultValue="history" className="w-full">
         <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-11 sm:h-12 w-full grid grid-cols-2">
@@ -206,7 +226,7 @@ export default function DayClosePage() {
         </TabsContent>
 
         <TabsContent value="about" className="mt-5">
-          <Card className="bg-card border-border/60 rounded-3xl overflow-hidden">
+          <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
             <CardContent className="p-8 space-y-4">
               <p className="text-sm text-muted-foreground">
                 A Day Close locks in your daily totals (sales, payments, expenses, refunds) and records a cash
@@ -239,5 +259,39 @@ export default function DayClosePage() {
         />
       ) : null}
     </div>
+  );
+}
+
+function DayCloseMetricCard({
+  label,
+  value,
+  icon,
+  accent = "from-primary/40 to-primary",
+}: {
+  label: string;
+  value: string;
+  icon: ReactNode;
+  accent?: string;
+}) {
+  return (
+    <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative h-full">
+      <div
+        className={cn(
+          "absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b group-hover:w-full group-hover:opacity-5 transition-all duration-500",
+          accent,
+        )}
+      />
+      <CardContent className="p-5 flex flex-col justify-center h-full relative z-10 min-h-[120px]">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="p-1.5 rounded-md bg-muted text-muted-foreground group-hover:text-primary transition-colors">
+            {icon}
+          </div>
+          <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
+            {label}
+          </p>
+        </div>
+        <p className="text-xl font-black text-foreground tabular-nums tracking-tight">{value}</p>
+      </CardContent>
+    </Card>
   );
 }
