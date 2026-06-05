@@ -64,6 +64,12 @@ import {
     topItemQuantitySold,
     type BreakdownTab,
 } from "@/lib/analytics-dashboard-mapper";
+import {
+    parseDayCloseCurrent,
+    parseDayCloseSnapshotData,
+    unwrapApiData,
+    type BusinessLine,
+} from "@/types/day-close";
 
 export default function AnalyticsPage() {
     const [activeRange, setActiveRange] = useState<DateRangePreset>("today");
@@ -81,6 +87,10 @@ export default function AnalyticsPage() {
     const [selectedDayCloseSession, setSelectedDayCloseSession] = useState<any | null>(null);
     const [sessions, setSessions] = useState<any[]>([]);
     const [loadingSessions, setLoadingSessions] = useState(false);
+    const [dayCloseAlignedToday, setDayCloseAlignedToday] = useState(false);
+    const [dayCloseNetSalesOverride, setDayCloseNetSalesOverride] = useState<
+        number | undefined
+    >(undefined);
     const user = useAuth(state => state.user);
     const { ready, canViewAnalytics } = useAnalyticsViewAccess();
     const restaurant = useRestaurant((s) => s.restaurant);
@@ -385,17 +395,66 @@ export default function AnalyticsPage() {
                 let startTime: string | undefined = undefined;
                 let endTime: string | undefined = undefined;
                 let queryBusinessLine = businessLine;
+                let dayCloseAlignedTodayLocal = false;
+                let dayCloseNetSalesOverrideLocal: number | undefined = undefined;
 
                 if (selectedDayCloseSession) {
                     startTime = selectedDayCloseSession.period_start_at;
                     endTime = selectedDayCloseSession.period_end_at;
                     queryBusinessLine = selectedDayCloseSession.business_line;
+                    dayCloseAlignedTodayLocal = false;
+                    dayCloseNetSalesOverrideLocal = undefined;
                 } else if (activeRange === 'custom' && date?.from) {
                     startTime = date.from.toISOString();
                     endTime = date.to ? date.to.toISOString() : date.from.toISOString();
+                    dayCloseAlignedTodayLocal = false;
+                    dayCloseNetSalesOverrideLocal = undefined;
+                } else if (
+                    activeRange === "today" &&
+                    !selectedDayCloseSession &&
+                    (businessLine === "restaurant" || businessLine === "hotel")
+                ) {
+                    dayCloseAlignedTodayLocal = false;
+                    dayCloseNetSalesOverrideLocal = undefined;
+                    try {
+                        const [currentRes, snapshotRes] = await Promise.all([
+                            apiClient.get(
+                                DayCloseApis.current({
+                                    restaurantId: user.restaurant_id,
+                                    businessLine: businessLine as BusinessLine,
+                                }),
+                            ),
+                            apiClient.get(
+                                DayCloseApis.generateSnapshot({
+                                    restaurantId: user.restaurant_id,
+                                    businessLine: businessLine as BusinessLine,
+                                }),
+                            ),
+                        ]);
+
+                        const currentClose = unwrapApiData(currentRes.data, parseDayCloseCurrent);
+                        const snapshotData = unwrapApiData(
+                            snapshotRes.data,
+                            parseDayCloseSnapshotData,
+                        );
+                        if (currentClose?.period_start_at && currentClose?.period_end_at) {
+                            startTime = currentClose.period_start_at;
+                            endTime = currentClose.period_end_at;
+                            queryBusinessLine =
+                                currentClose.business_line ?? businessLine;
+                            dayCloseAlignedTodayLocal = true;
+                            dayCloseNetSalesOverrideLocal =
+                                snapshotData?.net_sales ?? undefined;
+                        }
+                    } catch {
+                        dayCloseAlignedTodayLocal = false;
+                        dayCloseNetSalesOverrideLocal = undefined;
+                    }
                 }
 
                 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                setDayCloseAlignedToday(dayCloseAlignedTodayLocal);
+                setDayCloseNetSalesOverride(dayCloseNetSalesOverrideLocal);
 
                 const dashboardUrl = AnalyticsApis.dashboard({
                     restaurantId: user.restaurant_id,
@@ -405,7 +464,10 @@ export default function AnalyticsPage() {
                     endTime,
                     timezone,
                     businessLine: queryBusinessLine,
-                    station: selectedDayCloseSession ? undefined : station,
+                    station:
+                        selectedDayCloseSession || dayCloseAlignedTodayLocal
+                            ? undefined
+                            : station,
                     include: "core",
                 });
 
@@ -478,6 +540,10 @@ export default function AnalyticsPage() {
             const m = getMetric(list, keys);
             return m && typeof m.value === 'number' ? m.value : fallback;
         };
+        const getValOptional = (list: any[], keys: string[]) => {
+            const m = getMetric(list, keys);
+            return m && typeof m.value === 'number' ? m.value : undefined;
+        };
         const getDelta = (list: any[], keys: string[]) => {
             const m = getMetric(list, keys);
             return m?.delta?.vs_previous_period_pct ?? 0;
@@ -511,6 +577,9 @@ export default function AnalyticsPage() {
         const netProfit = getVal(financeMetrics, ["net_profit", "profit"]) || profit;
         const totalExpense = getVal(financeMetrics, ["expenses", "expense"]) || expense;
         const discount = getVal(financeMetrics, ["discount", "discounts", "total_discount"]) || discounts;
+        const netSales =
+            getValOptional(financeMetrics, ["net_sales"]) ??
+            getValOptional(overviewMetrics, ["net_sales"]);
 
         const grossIncomeDelta = getDelta(financeMetrics, ["gross_income", "income", "sales"]);
         const netProfitDelta = getDelta(financeMetrics, ["net_profit", "profit"]);
@@ -523,6 +592,7 @@ export default function AnalyticsPage() {
             peakHour, discounts, refunds,
             grossIncome, grossIncomeDelta, netProfit, netProfitDelta,
             totalExpense, totalExpenseDelta, discount, discountDelta,
+            netSales,
         };
     }, [data]);
 
@@ -958,7 +1028,19 @@ export default function AnalyticsPage() {
                         <section className="space-y-3">
                             <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">Today Snapshot</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <SnapshotCard label="CURRENT INCOME" value={todayIncome || currentIncome} icon={<Wallet className="w-4 h-4" />} color="text-orange-500" bgColor="bg-orange-500/10" borderColor="border-orange-500/20" />
+                                <SnapshotCard
+                                    label="CURRENT INCOME"
+                                    value={
+                                        dayCloseAlignedToday &&
+                                        dayCloseNetSalesOverride != null
+                                            ? dayCloseNetSalesOverride
+                                            : todayIncome || currentIncome
+                                    }
+                                    icon={<Wallet className="w-4 h-4" />}
+                                    color="text-orange-500"
+                                    bgColor="bg-orange-500/10"
+                                    borderColor="border-orange-500/20"
+                                />
                                 <SnapshotCard label="CURRENT EXPENSE" value={todayExpense || currentExpense} icon={<TrendingDown className="w-4 h-4" />} color="text-red-500" bgColor="bg-red-500/10" borderColor="border-red-500/20" />
                             </div>
                         </section>
@@ -967,7 +1049,23 @@ export default function AnalyticsPage() {
                         <section className="space-y-3">
                             <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">Summary</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <BigMetricCard label="Sales" value={grossSalesVal} icon={<DollarSign className="w-4.5 h-4.5" />} color="text-orange-500" trend={compIncomeDelta} tagColor={Number(compIncomeDelta) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />
+                                <BigMetricCard
+                                    label="Sales"
+                                    value={
+                                        dayCloseAlignedToday &&
+                                        dayCloseNetSalesOverride != null
+                                            ? dayCloseNetSalesOverride
+                                            : grossSalesVal
+                                    }
+                                    icon={<DollarSign className="w-4.5 h-4.5" />}
+                                    color="text-orange-500"
+                                    trend={compIncomeDelta}
+                                    tagColor={
+                                        Number(compIncomeDelta) >= 0
+                                            ? "bg-emerald-500/10 text-emerald-500"
+                                            : "bg-red-500/10 text-red-500"
+                                    }
+                                />
                                 <BigMetricCard label="Order" value={totalOrdersVal} noCurrency icon={<ReceiptText className="w-4.5 h-4.5" />} color="text-blue-500" trend={v2?.ordersDelta} tagColor={Number(v2?.ordersDelta) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />
                                 <BigMetricCard label="Income" value={currentIncome} icon={<Wallet className="w-4.5 h-4.5" />} color="text-emerald-500" trend={v2?.incomeDelta ?? compIncomeDelta} tagColor={Number(v2?.incomeDelta ?? compIncomeDelta) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />
                                 <BigMetricCard label="Expense" value={currentExpense} icon={<TrendingDown className="w-4.5 h-4.5" />} color="text-red-500" trend={compExpenseDelta} tagColor={Number(compExpenseDelta) <= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />

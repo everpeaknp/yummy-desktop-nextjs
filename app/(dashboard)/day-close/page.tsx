@@ -18,13 +18,19 @@ import { DayCloseHistory } from "@/components/analytics/day-close-history";
 import { Calendar, CheckCircle2, RefreshCw } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { DayCloseApis } from "@/lib/api/endpoints";
-import type { BusinessLine } from "@/lib/api/endpoint-types";
 import {
   formatDayCloseCurrency,
   formatDayCloseListHeading,
   pickBackendAmount,
 } from "@/lib/day-close-format";
-import { parseDayCloseCurrent, unwrapApiData, type DayCloseCurrent } from "@/types/day-close";
+import {
+  parseDayCloseCurrent,
+  parseDayCloseSnapshotData,
+  unwrapApiData,
+  type DayCloseCurrent,
+  type DayCloseSnapshotData,
+  type BusinessLine,
+} from "@/types/day-close";
 
 export default function DayClosePage() {
   const user = useAuth((s) => s.user);
@@ -34,6 +40,7 @@ export default function DayClosePage() {
   const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
   const [currentLoading, setCurrentLoading] = useState(false);
   const [currentClose, setCurrentClose] = useState<DayCloseCurrent | null>(null);
+  const [snapshotPreview, setSnapshotPreview] = useState<DayCloseSnapshotData | null>(null);
 
   const showBusinessLinePicker = Boolean(
     restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
@@ -43,12 +50,25 @@ export default function DayClosePage() {
     if (!restaurantId) return;
     setCurrentLoading(true);
     try {
-      const res = await apiClient.get(
-        DayCloseApis.current({ restaurantId, businessLine }),
-      );
-      setCurrentClose(unwrapApiData(res.data, parseDayCloseCurrent));
+      const [sessionRes, snapshotRes] = await Promise.all([
+        apiClient.get(DayCloseApis.current({ restaurantId, businessLine })),
+        apiClient.get(DayCloseApis.generateSnapshot({ restaurantId, businessLine })),
+      ]);
+
+      if (sessionRes.data?.status === "success") {
+        setCurrentClose(unwrapApiData(sessionRes.data, parseDayCloseCurrent));
+      } else {
+        setCurrentClose(null);
+      }
+
+      if (snapshotRes.data?.status === "success") {
+        setSnapshotPreview(unwrapApiData(snapshotRes.data, parseDayCloseSnapshotData));
+      } else {
+        setSnapshotPreview(null);
+      }
     } catch {
       setCurrentClose(null);
+      setSnapshotPreview(null);
     } finally {
       setCurrentLoading(false);
     }
@@ -68,9 +88,11 @@ export default function DayClosePage() {
   }, [currentClose?.action_label, currentClose?.status]);
 
   const displayNetSales = pickBackendAmount(
+    snapshotPreview?.net_sales,
     currentClose?.snapshot_preview?.net_sales,
   );
   const displayExpenseTotal = pickBackendAmount(
+    snapshotPreview?.expense_total,
     currentClose?.snapshot_preview?.expense_total,
   );
 
