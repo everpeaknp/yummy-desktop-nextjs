@@ -90,6 +90,17 @@ function resolveQrDisplay(rawQr: string | null, payloadText: string | null, prn:
   return `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(text)}`;
 }
 
+function extractApiErrorMessage(err: any, fallback: string): string {
+  const data = err?.response?.data;
+  return (
+    data?.detail ||
+    data?.message ||
+    data?.error ||
+    err?.message ||
+    fallback
+  );
+}
+
 // ── Types matching backend schema ──────────────────
 interface BillItemModifier {
   id: number;
@@ -284,6 +295,19 @@ export default function CheckoutPage() {
   const [payAllMethod, setPayAllMethod] = useState("cash");
   const [payAllReference, setPayAllReference] = useState("");
   const [payAllSubmitting, setPayAllSubmitting] = useState(false);
+
+  const splitSourceItems = context?.order?.items?.length
+    ? context.order.items
+    : (bill?.items || []);
+  const hasSuccessfulPayments = Number(bill?.total_paid || 0) > 0;
+
+  const buildSplitInitialItems = () => {
+    const initialItems: Record<number, number> = {};
+    splitSourceItems.forEach((item: any) => {
+      initialItems[item.id] = 0;
+    });
+    return initialItems;
+  };
 
   // Refund dialog
   const [refundOpen, setRefundOpen] = useState(false);
@@ -883,6 +907,11 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (hasSuccessfulPayments) {
+      setSplitError("Cannot split a bill that already has successful payments.");
+      return;
+    }
+
     const partsPayload = splitParts.map(part => ({
       label: part.label.trim() || "Guest",
       lines: (Object.entries(part.items) as Array<[string, number]>)
@@ -910,7 +939,7 @@ export default function CheckoutPage() {
       setSplitBillOpen(false);
       await fetchBill();
     } catch (err: any) {
-      setSplitError(err?.response?.data?.detail || "Failed to split bill");
+      setSplitError(extractApiErrorMessage(err, "Failed to split bill"));
     } finally {
       setSplitSubmitting(false);
     }
@@ -1727,10 +1756,7 @@ export default function CheckoutPage() {
                   variant="outline"
                   className="gap-2 text-xs sm:text-sm text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/20 border-orange-200"
                   onClick={() => {
-                    const initialItems: Record<number, number> = {};
-                    bill.items.forEach((item: any) => {
-                      initialItems[item.id] = 0;
-                    });
+                    const initialItems = buildSplitInitialItems();
                     setSplitParts([
                       { label: "Guest 1", items: { ...initialItems } },
                       { label: "Guest 2", items: { ...initialItems } }
@@ -1738,7 +1764,7 @@ export default function CheckoutPage() {
                     setSplitError(null);
                     setSplitBillOpen(true);
                   }}
-                  disabled={bill.is_fully_paid || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)}
+                  disabled={bill.is_fully_paid || hasSuccessfulPayments || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)}
                 >
                   <RefreshCw className="h-4 w-4" />
                   Split Bill
@@ -2509,13 +2535,9 @@ export default function CheckoutPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    const initialItems: Record<number, number> = {};
-                    bill.items.forEach((item: any) => {
-                      initialItems[item.id] = 0;
-                    });
                     setSplitParts([
                       ...splitParts,
-                      { label: `Guest ${splitParts.length + 1}`, items: { ...initialItems } }
+                      { label: `Guest ${splitParts.length + 1}`, items: buildSplitInitialItems() }
                     ]);
                   }}
                 >
@@ -2548,15 +2570,22 @@ export default function CheckoutPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {bill.items.map((item: any) => {
+                    {splitSourceItems.map((item: any) => {
                       const totalAllocated = splitParts.reduce((sum, part) => sum + (part.items[item.id] || 0), 0);
                       const unassigned = item.qty - totalAllocated;
+                      const itemName = item.name_snapshot || item.name || "Item";
+                      const modifierText = item.modifiers?.length
+                        ? ` • ${item.modifiers.map((mod: any) => mod.modifier_name_snapshot).join(", ")}`
+                        : "";
+                      const noteText = item.notes ? ` • Note: ${item.notes}` : "";
 
                       return (
                         <tr key={item.id} className="border-b last:border-0 bg-background/30 hover:bg-muted/5">
                           <td className="p-3 font-medium">
-                            <div>{item.name}</div>
-                            <div className="text-xs text-muted-foreground">Total: {item.qty} • {formatCurrency(item.unit_price, curr)} each</div>
+                            <div>{itemName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Total: {item.qty} • {formatCurrency(item.unit_price, curr)} each{modifierText}{noteText}
+                            </div>
                           </td>
                           {splitParts.map((part, partIdx) => (
                             <td key={partIdx} className="p-3">
