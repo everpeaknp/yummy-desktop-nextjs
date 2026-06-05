@@ -75,7 +75,7 @@ function SidebarNavLink({
       ? "bg-primary/10 text-primary font-semibold"
       : isActive && item.isNestedChild
       ? "text-primary font-semibold"
-      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+      : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
   );
 
   const content = (
@@ -83,7 +83,7 @@ function SidebarNavLink({
       {isActive && !collapsed && !item.isNestedChild && (
         <div className="absolute left-0 top-1/2 -translate-y-1/2 h-2/3 w-1 bg-primary rounded-r-md" />
       )}
-      <item.icon className={cn("shrink-0", item.isNestedChild ? "h-4 w-4" : "h-5 w-5", isActive ? "text-primary" : "")} />
+      <item.icon className={cn("shrink-0 transition-colors", item.isNestedChild ? "h-4 w-4" : "h-5 w-5")} />
       {!collapsed && <span className={cn("flex-1 truncate", item.isNestedChild ? "text-[13px]" : "text-sm")}>{item.title}</span>}
       {!collapsed && hasSubItems && (
         <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", isOpen && "rotate-90")} />
@@ -423,7 +423,7 @@ export function Sidebar() {
                             href={sub.href}
                             className={cn(
                               "text-[13px] py-1.5 px-3 rounded-md transition-all font-medium",
-                              subActive ? "text-primary bg-primary/5" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                              subActive ? "text-primary bg-primary/5" : "text-muted-foreground hover:text-primary hover:bg-primary/5"
                             )}
                           >
                             {sub.title}
