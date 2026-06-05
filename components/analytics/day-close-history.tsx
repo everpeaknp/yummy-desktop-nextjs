@@ -49,7 +49,10 @@ import {
   AlertCircle,
   Maximize2,
   Minimize2,
+  DollarSign,
+  Wallet,
 } from "lucide-react";
+import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
 import {
   resizableDialogContentClass,
   useResizableDialogStyle,
@@ -993,14 +996,15 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </div>
             ) : (
               <>
-                <div className="p-5 rounded-2xl border border-border/60 bg-muted/10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Actions</p>
+                <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm shadow-sm p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-bl-[70px] -mr-3 -mt-3" />
+                  <div className="space-y-1 relative z-10">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground opacity-80">Actions</p>
                     <p className="text-sm text-muted-foreground">
                       Open days can be closed, pending closes can be canceled, and confirmed closes can be corrected with an audit trail.
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 relative z-10">
                     {isOpen ? (
                       <Button
                         className="rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white"
@@ -1055,29 +1059,35 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                  <div className="bg-emerald-50/50 dark:bg-emerald-500/5 border border-emerald-200/50 dark:border-emerald-500/20 p-4 sm:p-6 rounded-2xl space-y-1.5">
-                    <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-500 uppercase tracking-normal opacity-80">Net Sales</p>
-                    <p className="text-2xl sm:text-3xl font-black text-emerald-700 dark:text-emerald-400 tracking-tight">
-                      {formatDayCloseCurrency(displayNetSales)}
-                    </p>
-                  </div>
-                  <div className="bg-red-50/50 dark:bg-red-500/5 border border-red-200/50 dark:border-red-500/20 p-4 sm:p-6 rounded-2xl space-y-1.5">
-                    <p className="text-[11px] font-bold text-red-700 dark:text-red-500 uppercase tracking-normal opacity-80">Total Expenses</p>
-                    <p className="text-2xl sm:text-3xl font-black text-red-700 dark:text-red-400 tracking-tight">
-                      {formatDayCloseCurrency(displayExpenseTotal)}
-                    </p>
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <DayCloseMetricCard
+                    label="Net Sales"
+                    value={formatDayCloseCurrency(displayNetSales)}
+                    icon={<DollarSign className="h-4 w-4" />}
+                    accent="from-emerald-500/50 to-emerald-500/10"
+                  />
+                  <DayCloseMetricCard
+                    label="Total Expenses"
+                    value={formatDayCloseCurrency(displayExpenseTotal)}
+                    icon={<Wallet className="h-4 w-4" />}
+                    accent="from-destructive/50 to-destructive/10"
+                  />
                 </div>
 
-                {summaryRows.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/20 p-2 rounded-2xl border border-border/40">
-                    {summaryRows.map((r) => (
-                      <div key={r.label} className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-muted/30 transition-colors">
-                        <p className="text-sm font-semibold text-muted-foreground">{r.label}</p>
-                        <p className="text-sm font-black text-foreground">{r.value}</p>
-                      </div>
-                    ))}
+                {summaryRows.filter(
+                  (r) => r.label !== "Net Sales" && r.label !== "Total Expenses",
+                ).length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {summaryRows
+                      .filter((r) => r.label !== "Net Sales" && r.label !== "Total Expenses")
+                      .map((r) => (
+                        <DayCloseMetricCard
+                          key={r.label}
+                          compact
+                          label={r.label}
+                          value={r.value}
+                        />
+                      ))}
                   </div>
                 ) : null}
 
