@@ -53,6 +53,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
+import { DayCloseHistoryListCard } from "@/components/analytics/day-close-history-list-card";
 import {
   resizableDialogContentClass,
   useResizableDialogStyle,
@@ -112,11 +113,6 @@ function formatDetailMetric(key: string, value: unknown): string {
     lower.includes("discrepancy") ||
     lower.includes("position");
   return looksLikeMoney ? formatDayCloseCurrency(value) : value.toLocaleString();
-}
-
-function listBusinessLineLabel(line?: string): string {
-  const normalized = String(line ?? "restaurant").toLowerCase();
-  return normalized === "hotel" ? "Hotel" : "Restaurant";
 }
 
 function getFilenameFromContentDisposition(v: string | undefined | null) {
@@ -581,7 +577,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
 
   return (
     <div className="space-y-4">
-      <Card className="bg-card border-border/60 rounded-2xl sm:rounded-3xl overflow-hidden">
+      <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl overflow-hidden">
         <CardContent className="p-4 sm:p-6 lg:p-7">
           <div className="space-y-4 sm:space-y-5">
             <div>
@@ -834,13 +830,13 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
       </Card>
 
       {!canLoad ? (
-        <Card className="bg-card border-border/60 rounded-3xl overflow-hidden">
+        <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl overflow-hidden">
           <CardContent className="p-8 text-muted-foreground">
             Select a restaurant to view day close history.
           </CardContent>
         </Card>
       ) : displayItems.length === 0 ? (
-        <Card className="bg-card border-border/60 rounded-3xl overflow-hidden">
+        <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl overflow-hidden">
           <CardContent className="p-10 text-center text-muted-foreground">
             <ClipboardList className="w-10 h-10 mx-auto mb-4 opacity-20" />
             <p className="font-semibold">No day closes found.</p>
@@ -853,87 +849,25 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         </Card>
       ) : (
         <div className="grid gap-3">
-          {displayItems.map((it) => {
-            const coveredRange = formatDayCloseCoveredRange(
-              it.period_start_at,
-              it.period_end_at,
-            );
-            return (
-            <Card
+          {displayItems.map((it) => (
+            <DayCloseHistoryListCard
               key={it.id}
-              className="bg-card border-border/60 rounded-2xl overflow-hidden hover:bg-muted/10 hover:border-orange-500/20 transition-colors cursor-pointer"
-              onClick={() => openDetail(it.id)}
-            >
-              <CardContent className="p-4 sm:p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                <div className="flex items-start sm:items-center gap-3 sm:gap-5 min-w-0 flex-1">
-                  <div className="p-2 sm:p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/20 shrink-0">
-                    <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                      <p className="font-black text-sm sm:text-base text-foreground truncate min-w-0 flex-1">
-                        {formatDayCloseListHeading(it)}
-                      </p>
-                      <span className="sm:hidden">{statusBadge(it.status)}</span>
-                    </div>
-                    <p className="text-[10px] sm:text-[11px] text-muted-foreground/70 font-bold uppercase tracking-wider mt-0.5">
-                      {listBusinessLineLabel(it.business_line)} • {String(it.status || "—")}
-                    </p>
-                    {coveredRange ? (
-                      <p className="text-xs font-medium text-foreground/80 mt-1 break-words">{coveredRange}</p>
-                    ) : null}
-                    <div className="mt-2 grid grid-cols-1 min-[400px]:grid-cols-3 gap-1 sm:gap-2 text-xs text-muted-foreground">
-                      <span>
-                        <span className="font-semibold text-foreground/70">Net</span>{" "}
-                        {formatDayCloseCurrency(it.net_sales)}
-                      </span>
-                      <span>
-                        <span className="font-semibold text-foreground/70">Expected</span>{" "}
-                        {formatDayCloseCurrency(it.expected_cash)}
-                      </span>
-                      <span>
-                        <span className="font-semibold text-foreground/70">Actual</span>{" "}
-                        {formatDayCloseCurrency(it.actual_cash)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 shrink-0 border-t border-border/40 pt-3 sm:border-t-0 sm:pt-0">
-                  <span className="hidden sm:inline-flex">{statusBadge(it.status)}</span>
-                  <div className="flex items-center gap-2 sm:gap-3 ml-auto sm:ml-0">
-                    {String(it.status || "").toLowerCase() === "open" ? (
-                      <Button
-                        className="h-9 px-4 rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setWizardBusinessLine(
-                            String(it.business_line ?? "restaurant").toLowerCase() === "hotel"
-                              ? "hotel"
-                              : "restaurant",
-                          );
-                          setWizardOpen(true);
-                        }}
-                      >
-                        Close
-                      </Button>
-                    ) : null}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="rounded-full text-muted-foreground hover:text-foreground h-9 w-9"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openDetail(it.id);
-                      }}
-                    >
-                      <FileText className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            );
-          })}
+              item={it}
+              onOpen={() => openDetail(it.id)}
+              onClose={
+                String(it.status || "").toLowerCase() === "open"
+                  ? () => {
+                      setWizardBusinessLine(
+                        String(it.business_line ?? "restaurant").toLowerCase() === "hotel"
+                          ? "hotel"
+                          : "restaurant",
+                      );
+                      setWizardOpen(true);
+                    }
+                  : undefined
+              }
+            />
+          ))}
         </div>
       )}
 
