@@ -47,7 +47,13 @@ import {
   Calendar,
   ClipboardList,
   AlertCircle,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
+import {
+  resizableDialogContentClass,
+  useResizableDialogStyle,
+} from "@/lib/resizable-dialog";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
 import {
@@ -166,6 +172,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const [audit, setAudit] = useState<any[] | null>(null);
   const [adjustments, setAdjustments] = useState<any[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailMaximized, setDetailMaximized] = useState(false);
+  const detailDialogStyle = useResizableDialogStyle(detailMaximized, "detail");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardBusinessLine, setWizardBusinessLine] = useState<BusinessLine>("restaurant");
 
@@ -926,14 +934,26 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         </div>
       )}
 
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[860px] bg-card border-border p-0 overflow-hidden rounded-2xl sm:rounded-3xl shadow-2xl max-h-[90vh] flex flex-col">
-          <DialogHeader className="p-6 sm:p-8 pb-4 sm:pb-5 flex flex-row flex-wrap items-start justify-between gap-3 bg-muted/20 border-b border-border/40">
-            <div className="space-y-1.5">
-              <DialogTitle className="text-2xl font-bold tracking-tight">
+      <Dialog
+        open={detailOpen}
+        onOpenChange={(open) => {
+          setDetailOpen(open);
+          if (!open) setDetailMaximized(false);
+        }}
+      >
+        <DialogContent
+          className={resizableDialogContentClass(
+            detailMaximized,
+            "bg-card border-border p-0 overflow-hidden shadow-2xl flex flex-col",
+          )}
+          style={detailDialogStyle}
+        >
+          <DialogHeader className="p-6 sm:p-8 pb-4 sm:pb-5 pr-14 sm:pr-16 flex flex-row flex-wrap items-start justify-between gap-3 bg-muted/20 border-b border-border/40">
+            <div className="space-y-1.5 min-w-0 flex-1">
+              <DialogTitle className="text-xl sm:text-2xl font-bold tracking-tight break-words">
                 {detail ? formatDayCloseListHeading(detail) : "Day Close"}
               </DialogTitle>
-              <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-normal opacity-80">
+              <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-normal opacity-80 break-words">
                 {detail
                   ? formatDayCloseCoveredRange(detail.period_start_at, detail.period_end_at) ??
                     "Frozen snapshot from server — no browser calculations"
@@ -941,7 +961,24 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </p>
               <DialogDescription className="sr-only">Day close details dialog.</DialogDescription>
             </div>
-            {detail?.status ? statusBadge(detail.status) : null}
+            <div className="flex items-center gap-2 shrink-0">
+              {detail?.status ? statusBadge(detail.status) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full"
+                onClick={() => setDetailMaximized((v) => !v)}
+                aria-label={detailMaximized ? "Minimize window" : "Maximize window"}
+                title={detailMaximized ? "Minimize" : "Maximize"}
+              >
+                {detailMaximized ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
           </DialogHeader>
 
           <div className="p-6 sm:p-8 pt-6 space-y-6 overflow-auto no-scrollbar flex-1 min-h-0">
