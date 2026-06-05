@@ -97,12 +97,12 @@ export default function DayClosePage() {
   );
 
   return (
-    <div className="flex flex-col gap-6 max-w-7xl mx-auto p-6">
+    <div className="flex flex-col gap-4 sm:gap-6 max-w-7xl mx-auto px-4 py-5 sm:p-6">
       <Card className="bg-card border-border/60 rounded-3xl overflow-hidden">
-        <CardContent className="p-8 sm:p-10">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+        <CardContent className="p-5 sm:p-8 lg:p-10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 sm:gap-8">
             <div className="space-y-3 flex-1">
-              <h1 className="text-3xl font-black tracking-tight">Day Close</h1>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Day Close</h1>
               <div className="flex items-center gap-2 text-muted-foreground/80">
                 <Calendar className="w-4 h-4" />
                 <p className="text-sm font-semibold">
@@ -177,10 +177,10 @@ export default function DayClosePage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-3 shrink-0 w-full md:w-auto">
               <Button
                 onClick={() => setCloseOpen(true)}
-                className="bg-orange-600 hover:bg-orange-700 text-white font-bold h-12 px-8 rounded-2xl shadow-lg shadow-orange-500/10"
+                className="bg-orange-600 hover:bg-orange-700 text-white font-bold h-11 sm:h-12 px-6 sm:px-8 rounded-2xl shadow-lg shadow-orange-500/10 w-full md:w-auto"
                 disabled={!restaurantId}
               >
                 <CheckCircle2 className="w-4 h-4 mr-2" />
@@ -192,11 +192,11 @@ export default function DayClosePage() {
       </Card>
 
       <Tabs defaultValue="history" className="w-full">
-        <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-12">
-          <TabsTrigger value="history" className="rounded-xl px-5 font-bold">
+        <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-11 sm:h-12 w-full grid grid-cols-2">
+          <TabsTrigger value="history" className="rounded-xl px-3 sm:px-5 font-bold text-xs sm:text-sm">
             History
           </TabsTrigger>
-          <TabsTrigger value="about" className="rounded-xl px-5 font-bold">
+          <TabsTrigger value="about" className="rounded-xl px-3 sm:px-5 font-bold text-xs sm:text-sm">
             What This Does
           </TabsTrigger>
         </TabsList>

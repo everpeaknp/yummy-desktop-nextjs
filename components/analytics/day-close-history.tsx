@@ -570,130 +570,176 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
 
   return (
     <div className="space-y-4">
-      <Card className="bg-card border-border/60 rounded-3xl overflow-hidden">
-        <CardContent className="p-6 sm:p-7">
-          <div className="space-y-4">
+      <Card className="bg-card border-border/60 rounded-2xl sm:rounded-3xl overflow-hidden">
+        <CardContent className="p-4 sm:p-6 lg:p-7">
+          <div className="space-y-4 sm:space-y-5">
             <div>
-              <h2 className="text-lg font-black tracking-tight">Day Close History</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h2 className="text-base sm:text-lg font-black tracking-tight">Day Close History</h2>
+              <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
                 Export reports, inspect snapshots, and review what changed.
               </p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-	              <div className="space-y-1">
-	                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Date Range</p>
-	                <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-	                  <PopoverTrigger asChild>
-	                    <Button
-	                      variant="outline"
-	                      className="h-11 rounded-2xl gap-2 font-bold text-xs uppercase tracking-widest px-4 w-full sm:w-auto sm:min-w-[260px]"
-	                    >
-                      <Calendar className="h-4 w-4" />
-                      {dateRange?.from ? (
-                        dateRange.to ? (
-                          <>
-                            {format(dateRange.from, "LLL dd")} - {format(dateRange.to, "LLL dd, y")}
-                          </>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+              <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Date Range</p>
+                <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="h-11 rounded-2xl gap-2 font-bold text-xs uppercase tracking-wide sm:tracking-widest px-4 w-full justify-start sm:justify-center"
+                    >
+                      <Calendar className="h-4 w-4 shrink-0" />
+                      <span className="truncate">
+                        {dateRange?.from ? (
+                          dateRange.to ? (
+                            <>
+                              {format(dateRange.from, "LLL dd")} - {format(dateRange.to, "LLL dd, y")}
+                            </>
+                          ) : (
+                            format(dateRange.from, "LLL dd, y")
+                          )
                         ) : (
-                          format(dateRange.from, "LLL dd, y")
-                        )
-                      ) : (
-                        "Select Date Range"
-                      )}
+                          "Select Date Range"
+                        )}
+                      </span>
                     </Button>
                   </PopoverTrigger>
-	                  <PopoverContent
-	                    className="w-auto p-0 flex shadow-2xl border border-border/40 rounded-[24px] overflow-hidden bg-background"
-	                    align="center"
-	                    style={{ fontFamily: "inherit" }}
-	                  >
-	                    <div className="flex flex-col p-5 border-r border-border/40 bg-muted/20 w-[140px] shrink-0">
-	                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-orange-500 mb-4">Quick Select</p>
-	                      <div className="flex flex-col gap-1 flex-1">
-	                        <button
-	                          className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
-	                          onClick={() => setRangeAndClose({ from: startOfDay(new Date()), to: endOfDay(new Date()) })}
-	                        >
-	                          Today
-	                        </button>
-	                        <button
-	                          className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
-	                          onClick={() => {
-	                            const d = subDays(new Date(), 1);
-	                            setRangeAndClose({ from: startOfDay(d), to: endOfDay(d) });
-	                          }}
-	                        >
-	                          Yesterday
-	                        </button>
-	                        <button
-	                          className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
-	                          onClick={() => setRangeAndClose({ from: startOfWeek(new Date(), { weekStartsOn: 1 }), to: endOfWeek(new Date(), { weekStartsOn: 1 }) })}
-	                        >
-	                          This Week
-	                        </button>
-	                        <button
-	                          className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
-	                          onClick={() => setRangeAndClose({ from: startOfDay(subDays(new Date(), 7)), to: endOfDay(new Date()) })}
-	                        >
-	                          Last 7 Days
-	                        </button>
-	                        <button
-	                          className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
-	                          onClick={() => setRangeAndClose({ from: startOfDay(subDays(new Date(), 30)), to: endOfDay(new Date()) })}
-	                        >
-	                          Last 30 Days
-	                        </button>
-	                        <button
-	                          className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
-	                          onClick={() => setRangeAndClose({ from: startOfMonth(new Date()), to: endOfMonth(new Date()) })}
-	                        >
-	                          This Month
-	                        </button>
-	                        <button
-	                          className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
-	                          onClick={() => {
-	                            const d = subMonths(new Date(), 1);
-	                            setRangeAndClose({ from: startOfMonth(d), to: endOfMonth(d) });
-	                          }}
-	                        >
-	                          Last Month
-	                        </button>
-	                        <button
-	                          className="text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors"
-	                          onClick={() => setRangeAndClose({ from: startOfYear(new Date()), to: endOfDay(new Date()) })}
-	                        >
-	                          Year To Date
-	                        </button>
-	                      </div>
-	                      <button
-	                        className="text-[9px] font-bold uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
-	                        onClick={() => setRangeAndClose({ from: startOfDay(subDays(new Date(), 30)), to: endOfDay(new Date()) })}
-	                      >
-	                        Reset
-	                      </button>
-	                    </div>
-	                    <div className="p-4">
-	                      <CalendarComponent
-	                        initialFocus
-	                        mode="range"
-	                        defaultMonth={dateRange?.from || new Date()}
-	                        selected={dateRange}
-	                        onSelect={(next) => {
-	                          setDateRange(next);
-	                          if (next?.from && next?.to) setDatePickerOpen(false);
-	                        }}
-	                        numberOfMonths={calendarMonths}
-	                        className="p-0"
-	                        weekStartsOn={1}
-	                      />
-	                    </div>
-	                  </PopoverContent>
-	                </Popover>
-	              </div>
-              <div className="space-y-1">
+                  <PopoverContent
+                    className="w-[calc(100vw-2rem)] sm:w-auto max-w-[calc(100vw-2rem)] sm:max-w-none p-0 flex flex-col sm:flex-row shadow-2xl border border-border/40 rounded-2xl sm:rounded-[24px] overflow-hidden bg-background"
+                    align="start"
+                    sideOffset={8}
+                    style={{ fontFamily: "inherit" }}
+                  >
+                    <div className="flex sm:flex-col gap-1 p-3 sm:p-5 border-b sm:border-b-0 sm:border-r border-border/40 bg-muted/20 sm:w-[140px] shrink-0 overflow-x-auto sm:overflow-x-visible no-scrollbar">
+                      <p className="hidden sm:block text-[9px] font-black uppercase tracking-[0.3em] text-orange-500 mb-2 sm:mb-4 shrink-0">
+                        Quick Select
+                      </p>
+                      <div className="flex sm:flex-col gap-1 flex-1 min-w-0">
+                        <button
+                          type="button"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          onClick={() => setRangeAndClose({ from: startOfDay(new Date()), to: endOfDay(new Date()) })}
+                        >
+                          Today
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          onClick={() => {
+                            const d = subDays(new Date(), 1);
+                            setRangeAndClose({ from: startOfDay(d), to: endOfDay(d) });
+                          }}
+                        >
+                          Yesterday
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          onClick={() =>
+                            setRangeAndClose({
+                              from: startOfWeek(new Date(), { weekStartsOn: 1 }),
+                              to: endOfWeek(new Date(), { weekStartsOn: 1 }),
+                            })
+                          }
+                        >
+                          This Week
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          onClick={() =>
+                            setRangeAndClose({
+                              from: startOfDay(subDays(new Date(), 7)),
+                              to: endOfDay(new Date()),
+                            })
+                          }
+                        >
+                          Last 7 Days
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          onClick={() =>
+                            setRangeAndClose({
+                              from: startOfDay(subDays(new Date(), 30)),
+                              to: endOfDay(new Date()),
+                            })
+                          }
+                        >
+                          Last 30 Days
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          onClick={() =>
+                            setRangeAndClose({
+                              from: startOfMonth(new Date()),
+                              to: endOfMonth(new Date()),
+                            })
+                          }
+                        >
+                          This Month
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          onClick={() => {
+                            const d = subMonths(new Date(), 1);
+                            setRangeAndClose({ from: startOfMonth(d), to: endOfMonth(d) });
+                          }}
+                        >
+                          Last Month
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          onClick={() =>
+                            setRangeAndClose({
+                              from: startOfYear(new Date()),
+                              to: endOfDay(new Date()),
+                            })
+                          }
+                        >
+                          Year To Date
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="hidden sm:block text-[9px] font-bold uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
+                        onClick={() =>
+                          setRangeAndClose({
+                            from: startOfDay(subDays(new Date(), 30)),
+                            to: endOfDay(new Date()),
+                          })
+                        }
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <div className="p-2 sm:p-4 flex justify-center overflow-x-auto">
+                      <CalendarComponent
+                        initialFocus
+                        mode="range"
+                        defaultMonth={dateRange?.from || new Date()}
+                        selected={dateRange}
+                        onSelect={(next) => {
+                          setDateRange(next);
+                          if (next?.from && next?.to) setDatePickerOpen(false);
+                        }}
+                        numberOfMonths={calendarMonths}
+                        className="p-0"
+                        weekStartsOn={1}
+                      />
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-1.5">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Business Line</p>
                 <Select value={businessLine} onValueChange={(v) => setBusinessLine(v as BusinessLine)}>
-                  <SelectTrigger className="h-11 rounded-2xl w-full sm:w-[180px] font-bold">
+                  <SelectTrigger className="h-11 rounded-2xl w-full font-bold">
                     <SelectValue placeholder="Business line" />
                   </SelectTrigger>
                   <SelectContent>
@@ -702,22 +748,19 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
+
+              <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">
                   Confirmed Close
                 </p>
                 <Select
                   value={selectedSessionId ? String(selectedSessionId) : "all"}
-                  onValueChange={(v) =>
-                    setSelectedSessionId(v === "all" ? null : Number(v))
-                  }
+                  onValueChange={(v) => setSelectedSessionId(v === "all" ? null : Number(v))}
                   disabled={sessionsLoading && sessions.length === 0}
                 >
-                  <SelectTrigger className="h-11 rounded-2xl w-full sm:min-w-[220px] sm:max-w-[360px] font-bold text-xs">
+                  <SelectTrigger className="h-11 rounded-2xl w-full font-bold text-xs">
                     <SelectValue
-                      placeholder={
-                        sessionsLoading ? "Loading sessions…" : "All closes in range"
-                      }
+                      placeholder={sessionsLoading ? "Loading sessions…" : "All closes in range"}
                     />
                   </SelectTrigger>
                   <SelectContent>
@@ -730,47 +773,33 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex gap-2 items-center">
-                <Button
-                  type="button"
-                  variant={status === "" ? "secondary" : "ghost"}
-                  className="rounded-full"
-                  onClick={() => setStatus("")}
-                >
-                  All
-                </Button>
-                <Button
-                  type="button"
-                  variant={status === "open" ? "secondary" : "ghost"}
-                  className="rounded-full"
-                  onClick={() => setStatus("open")}
-                >
-                  Open
-                </Button>
-                <Button
-                  type="button"
-                  variant={status === "confirmed" ? "secondary" : "ghost"}
-                  className="rounded-full"
-                  onClick={() => setStatus("confirmed")}
-                >
-                  Confirmed
-                </Button>
-                <Button
-                  type="button"
-                  variant={status === "pending" ? "secondary" : "ghost"}
-                  className="rounded-full"
-                  onClick={() => setStatus("pending")}
-                >
-                  Pending
-                </Button>
-                <Button
-                  type="button"
-                  variant={status === "reopened" ? "secondary" : "ghost"}
-                  className="rounded-full"
-                  onClick={() => setStatus("reopened")}
-                >
-                  Reopened
-                </Button>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="space-y-1.5 min-w-0 flex-1">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Status</p>
+                <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                  {(
+                    [
+                      { value: "", label: "All" },
+                      { value: "open", label: "Open" },
+                      { value: "confirmed", label: "Confirmed" },
+                      { value: "pending", label: "Pending" },
+                      { value: "reopened", label: "Reopened" },
+                    ] as const
+                  ).map((opt) => (
+                    <Button
+                      key={opt.label}
+                      type="button"
+                      size="sm"
+                      variant={status === opt.value ? "secondary" : "ghost"}
+                      className="rounded-full h-9 px-3 sm:px-4 text-xs font-bold"
+                      onClick={() => setStatus(opt.value)}
+                    >
+                      {opt.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
               <Button
                 onClick={() => {
@@ -778,7 +807,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   void fetchList();
                 }}
                 variant="secondary"
-                className="h-11 rounded-2xl px-5 font-bold"
+                className="h-11 rounded-2xl px-5 font-bold w-full sm:w-auto shrink-0"
                 disabled={!canLoad || loading}
               >
                 <RefreshCw
@@ -824,57 +853,71 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               className="bg-card border-border/60 rounded-2xl overflow-hidden hover:bg-muted/10 hover:border-orange-500/20 transition-colors cursor-pointer"
               onClick={() => openDetail(it.id)}
             >
-              <CardContent className="p-5 flex items-center justify-between gap-6">
-                <div className="flex items-center gap-5 min-w-0">
-                  <div className="p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/20">
-                    <Calendar className="w-5 h-5 text-orange-600" />
+              <CardContent className="p-4 sm:p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                <div className="flex items-start sm:items-center gap-3 sm:gap-5 min-w-0 flex-1">
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/20 shrink-0">
+                    <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-black text-foreground truncate">
-                      {formatDayCloseListHeading(it)}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground/70 font-bold uppercase tracking-wider">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                      <p className="font-black text-sm sm:text-base text-foreground truncate min-w-0 flex-1">
+                        {formatDayCloseListHeading(it)}
+                      </p>
+                      <span className="sm:hidden">{statusBadge(it.status)}</span>
+                    </div>
+                    <p className="text-[10px] sm:text-[11px] text-muted-foreground/70 font-bold uppercase tracking-wider mt-0.5">
                       {listBusinessLineLabel(it.business_line)} • {String(it.status || "—")}
                     </p>
                     {coveredRange ? (
-                      <p className="text-xs font-medium text-foreground/80 mt-1">{coveredRange}</p>
+                      <p className="text-xs font-medium text-foreground/80 mt-1 break-words">{coveredRange}</p>
                     ) : null}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Net {formatDayCloseCurrency(it.net_sales)} • Expected cash{" "}
-                      {formatDayCloseCurrency(it.expected_cash)} • Actual cash{" "}
-                      {formatDayCloseCurrency(it.actual_cash)}
-                    </p>
+                    <div className="mt-2 grid grid-cols-1 min-[400px]:grid-cols-3 gap-1 sm:gap-2 text-xs text-muted-foreground">
+                      <span>
+                        <span className="font-semibold text-foreground/70">Net</span>{" "}
+                        {formatDayCloseCurrency(it.net_sales)}
+                      </span>
+                      <span>
+                        <span className="font-semibold text-foreground/70">Expected</span>{" "}
+                        {formatDayCloseCurrency(it.expected_cash)}
+                      </span>
+                      <span>
+                        <span className="font-semibold text-foreground/70">Actual</span>{" "}
+                        {formatDayCloseCurrency(it.actual_cash)}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  {statusBadge(it.status)}
-                  {String(it.status || "").toLowerCase() === "open" ? (
+                <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 shrink-0 border-t border-border/40 pt-3 sm:border-t-0 sm:pt-0">
+                  <span className="hidden sm:inline-flex">{statusBadge(it.status)}</span>
+                  <div className="flex items-center gap-2 sm:gap-3 ml-auto sm:ml-0">
+                    {String(it.status || "").toLowerCase() === "open" ? (
+                      <Button
+                        className="h-9 px-4 rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setWizardBusinessLine(
+                            String(it.business_line ?? "restaurant").toLowerCase() === "hotel"
+                              ? "hotel"
+                              : "restaurant",
+                          );
+                          setWizardOpen(true);
+                        }}
+                      >
+                        Close
+                      </Button>
+                    ) : null}
                     <Button
-                      className="h-9 px-4 rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white"
+                      variant="ghost"
+                      size="icon"
+                      className="rounded-full text-muted-foreground hover:text-foreground h-9 w-9"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setWizardBusinessLine(
-                          String(it.business_line ?? "restaurant").toLowerCase() === "hotel"
-                            ? "hotel"
-                            : "restaurant",
-                        );
-                        setWizardOpen(true);
+                        openDetail(it.id);
                       }}
                     >
-                      Close
+                      <FileText className="w-4 h-4" />
                     </Button>
-                  ) : null}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full text-muted-foreground hover:text-foreground"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openDetail(it.id);
-                    }}
-                  >
-                    <FileText className="w-4 h-4" />
-                  </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -975,16 +1018,16 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-emerald-50/50 dark:bg-emerald-500/5 border border-emerald-200/50 dark:border-emerald-500/20 p-6 rounded-2xl space-y-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div className="bg-emerald-50/50 dark:bg-emerald-500/5 border border-emerald-200/50 dark:border-emerald-500/20 p-4 sm:p-6 rounded-2xl space-y-1.5">
                     <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-500 uppercase tracking-normal opacity-80">Net Sales</p>
-                    <p className="text-3xl font-black text-emerald-700 dark:text-emerald-400 tracking-tight">
+                    <p className="text-2xl sm:text-3xl font-black text-emerald-700 dark:text-emerald-400 tracking-tight">
                       {formatDayCloseCurrency(displayNetSales)}
                     </p>
                   </div>
-                  <div className="bg-red-50/50 dark:bg-red-500/5 border border-red-200/50 dark:border-red-500/20 p-6 rounded-2xl space-y-1.5">
+                  <div className="bg-red-50/50 dark:bg-red-500/5 border border-red-200/50 dark:border-red-500/20 p-4 sm:p-6 rounded-2xl space-y-1.5">
                     <p className="text-[11px] font-bold text-red-700 dark:text-red-500 uppercase tracking-normal opacity-80">Total Expenses</p>
-                    <p className="text-3xl font-black text-red-700 dark:text-red-400 tracking-tight">
+                    <p className="text-2xl sm:text-3xl font-black text-red-700 dark:text-red-400 tracking-tight">
                       {formatDayCloseCurrency(displayExpenseTotal)}
                     </p>
                   </div>
@@ -1002,14 +1045,14 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                 ) : null}
 
                 <Tabs defaultValue="snapshot" className="w-full">
-                  <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-12">
-                    <TabsTrigger value="snapshot" className="rounded-xl px-5 font-bold" onClick={() => snapshot == null && loadSnapshot()}>
+                  <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-11 sm:h-12 w-full grid grid-cols-3">
+                    <TabsTrigger value="snapshot" className="rounded-xl px-2 sm:px-5 font-bold text-xs sm:text-sm" onClick={() => snapshot == null && loadSnapshot()}>
                       Snapshot
                     </TabsTrigger>
-                    <TabsTrigger value="audit" className="rounded-xl px-5 font-bold" onClick={() => audit == null && loadAudit()}>
+                    <TabsTrigger value="audit" className="rounded-xl px-2 sm:px-5 font-bold text-xs sm:text-sm" onClick={() => audit == null && loadAudit()}>
                       Audit
                     </TabsTrigger>
-                    <TabsTrigger value="adjustments" className="rounded-xl px-5 font-bold" onClick={() => adjustments == null && loadAdjustments()}>
+                    <TabsTrigger value="adjustments" className="rounded-xl px-2 sm:px-5 font-bold text-xs sm:text-sm" onClick={() => adjustments == null && loadAdjustments()}>
                       Adjustments
                     </TabsTrigger>
                   </TabsList>
