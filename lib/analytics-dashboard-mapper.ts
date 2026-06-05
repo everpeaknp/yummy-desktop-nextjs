@@ -156,9 +156,111 @@ export function formatCancellationRate(
   return `${Number(pct).toFixed(1)}%`;
 }
 
+export type ServiceEfficiencySnapshot = {
+  peak_hour: string | null;
+  avg_service_time_min: number | null;
+  order_cancellation_pct: number | null;
+  completed_orders: number | null;
+};
+
+function readMetricValue(
+  metrics: Array<{ key?: string; value?: number }> | null | undefined,
+  keys: string[]
+): number | undefined {
+  if (!Array.isArray(metrics)) return undefined;
+  for (const key of keys) {
+    const found = metrics.find((metric) => metric?.key === key);
+    if (found && typeof found.value === "number") return found.value;
+  }
+  return undefined;
+}
+
+/** Maps tabbed GET /analytics/dashboard payloads to Service Efficiency card fields. */
+export function mapServiceEfficiency(payload: any): ServiceEfficiencySnapshot {
+  if (!payload) {
+    return {
+      peak_hour: null,
+      avg_service_time_min: null,
+      order_cancellation_pct: null,
+      completed_orders: null,
+    };
+  }
+
+  const legacy = payload.operations;
+  const tableUtil = payload?.tabs?.overview?.table_utilization;
+  const ordersMetrics = payload?.tabs?.orders?.outcome_summary?.metrics || [];
+  const executiveMetrics =
+    payload?.tabs?.overview?.executive_summary?.metrics || [];
+  const legacyOverview = payload?.overview || {};
+
+  const completedOrders = readMetricValue(ordersMetrics, ["completed_orders"]);
+  const canceledOrders = readMetricValue(ordersMetrics, ["canceled_orders"]);
+  const delayedOrders = readMetricValue(ordersMetrics, ["delayed_orders"]) ?? 0;
+
+  const peak_hour =
+    (tableUtil?.peak_hour as string | undefined) ??
+    (legacy?.peak_hour as string | undefined) ??
+    null;
+
+  const avgRaw =
+    readMetricValue(ordersMetrics, ["avg_service_time_min"]) ??
+    (typeof legacy?.avg_service_time_min === "number"
+      ? legacy.avg_service_time_min
+      : undefined);
+
+  const avg_service_time_min =
+    avgRaw !== undefined && avgRaw !== null ? Number(avgRaw) : null;
+
+  let order_cancellation_pct: number | null =
+    typeof legacy?.order_cancellation_pct === "number"
+      ? legacy.order_cancellation_pct
+      : null;
+
+  if (order_cancellation_pct === null) {
+    const explicitPct = readMetricValue(ordersMetrics, [
+      "order_cancellation_pct",
+    ]);
+    if (explicitPct !== undefined) {
+      order_cancellation_pct = explicitPct;
+    } else if (canceledOrders !== undefined) {
+      const totalOrders =
+        readMetricValue(executiveMetrics, ["orders"]) ??
+        (typeof legacyOverview.orders_count === "number"
+          ? legacyOverview.orders_count
+          : completedOrders !== undefined
+            ? completedOrders + canceledOrders + delayedOrders
+            : undefined);
+
+      if (totalOrders && totalOrders > 0) {
+        order_cancellation_pct = Number(
+          ((canceledOrders / totalOrders) * 100).toFixed(1)
+        );
+      }
+    }
+  }
+
+  return {
+    peak_hour,
+    avg_service_time_min,
+    order_cancellation_pct,
+    completed_orders: completedOrders ?? null,
+  };
+}
+
 export function topItemQuantitySold(item: {
   quantity_sold?: number;
   quantity?: number;
+  qty?: number;
 }): number {
-  return item.quantity_sold ?? item.quantity ?? 0;
+  // Prefer analytics + V2 sold-count fields before legacy `quantity`
+  const raw = item.quantity_sold ?? item.qty ?? item.quantity;
+  return raw === undefined || raw === null ? 0 : Number(raw);
+}
+
+export function sortTopItemsByUnitsSold<T extends { quantity_sold?: number; quantity?: number; qty?: number }>(
+  items: T[]
+): T[] {
+  return [...items].sort(
+    (a, b) => topItemQuantitySold(b) - topItemQuantitySold(a)
+  );
 }

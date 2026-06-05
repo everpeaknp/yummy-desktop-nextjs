@@ -6,17 +6,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import apiClient from "@/lib/api-client"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { useAuth } from "@/hooks/use-auth"
-import { hasAnalyticsViewPermission } from "@/lib/role-permissions"
+import { useDashboardData } from "@/hooks/use-dashboard-data"
 import {
-  mapAnalyticsTrends,
-  mapBreakdownToPie,
+  mapServiceEfficiency,
   preferHourlyTrends,
+  sortTopItemsByUnitsSold,
   topItemQuantitySold,
 } from "@/lib/analytics-dashboard-mapper"
+import {
+  buildExportFilename,
+  formatDashboardTimestamp,
+  getCompareLabel,
+  getDashboardHealth,
+  getPeriodLabel,
+  mergeDashboardInsights,
+} from "@/lib/dashboard-utils"
 import { cn } from "@/lib/utils"
-import { DashboardApis, AnalyticsApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
+import { DashboardStatusBanner } from "@/components/dashboard/dashboard-status-banner"
+import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
+import { UnifiedInsightsCard } from "@/components/dashboard/unified-insights-card"
 import dynamic from "next/dynamic"
 import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown"
 import { DateRange } from "react-day-picker"
@@ -32,233 +42,68 @@ const CategoryPieChart = dynamic(() => import("@/components/analytics/category-p
 })
 
 // import * as XLSX from "xlsx" // Removed for optimization
-import { 
-  Activity, 
-  Clock, 
-  Users,
-  Zap,
-  Lightbulb,
-  TrendingDown,
-  Info,
-  AlertCircle,
-  TrendingUp,
-  ChefHat,
-  Download,
+import {
+  Activity,
+  Armchair,
+  ArrowRight,
+  Banknote,
+  Calendar,
   CheckCircle,
-  XCircle,
+  ChefHat,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Clock,
   CreditCard,
   DollarSign,
-  Briefcase,
-  Calendar,
-  ArrowRight,
-  ChevronRight,
+  Download,
+  Info,
+  Lightbulb,
+  Plus,
+  QrCode,
+  ReceiptText,
+  Smartphone,
   Siren,
+  TrendingDown,
+  TrendingUp,
+  Users,
   Wallet,
-  ReceiptText
+  XCircle,
+  Zap,
+  AlertCircle,
+  Briefcase,
+  ExternalLink,
+  RefreshCw,
+  type LucideIcon,
 } from "lucide-react"
 
 export default function DashboardPage() {
   const user = useAuth(state => state.user)
-  const [data, setData] = useState<any>(null)
-  const [analyticsData, setAnalyticsData] = useState<any>(null)
-  const [occupancy, setOccupancy] = useState<any[]>([])
-  const [trendsData, setTrendsData] = useState<any[]>([])
-  const [categoryData, setCategoryData] = useState<any[]>([])
-  const [activities, setActivities] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
-  const [analyticsUnavailable, setAnalyticsUnavailable] = useState(false)
   const [activeRange, setActiveRange] = useState<DateRangePreset>("today")
   const [date, setDate] = useState<DateRange | undefined>()
 
-  // Auth/session: RoleGuard + SessionBootstrap (avoid duplicate redirects in Electron).
+  const {
+    data,
+    analyticsData,
+    occupancy,
+    trendsData,
+    categoryData,
+    activities,
+    deltaData,
+    loading,
+    refreshing,
+    lastUpdated,
+    error,
+    analyticsError,
+    analyticsUnavailable,
+    dateFrom,
+    dateTo,
+    retry,
+  } = useDashboardData(user, activeRange, date)
 
-  // 2. Data Fetching
-  const fetchDashboard = async () => {
-    if (!user?.restaurant_id) return
-
-    const canViewAnalytics = hasAnalyticsViewPermission(user)
-
-    try {
-      setError(null)
-      setAnalyticsError(null)
-      if (!canViewAnalytics) {
-        setAnalyticsData(null)
-        setTrendsData([])
-        setCategoryData([])
-        setAnalyticsUnavailable(true)
-      } else {
-        setAnalyticsUnavailable(false)
-      }
-      const formatDate = (date: Date) => {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-      };
-      const now = new Date();
-      let dateFrom = formatDate(now);
-      let dateTo = formatDate(now);
-
-      if (activeRange === 'yesterday') {
-          const y = new Date(now);
-          y.setDate(y.getDate() - 1);
-          dateFrom = formatDate(y);
-          dateTo = formatDate(y);
-      } else if (activeRange === 'last7') {
-          const l7 = new Date(now);
-          l7.setDate(l7.getDate() - 6);
-          dateFrom = formatDate(l7);
-      } else if (activeRange === 'last30') {
-          const l30 = new Date(now);
-          l30.setDate(l30.getDate() - 29);
-          dateFrom = formatDate(l30);
-      } else if (activeRange === 'month') {
-          const m = new Date(now.getFullYear(), now.getMonth(), 1);
-          dateFrom = formatDate(m);
-      } else if (activeRange === 'custom' && date?.from) {
-          dateFrom = formatDate(date.from);
-          dateTo = date.to ? formatDate(date.to) : dateFrom;
-      }
-      let startTime: string | undefined = undefined;
-      let endTime: string | undefined = undefined;
-
-      if (activeRange === 'custom' && date?.from) {
-          startTime = date.from.toISOString();
-          endTime = date.to ? date.to.toISOString() : date.from.toISOString();
-      }
-
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      // Fetch V2 Dashboard (Health, Basic KPIs)
-      const v2Res = await apiClient.get(DashboardApis.dashboardDataV2({
-        restaurantId: user.restaurant_id,
-        timezone,
-        businessLine: "restaurant",
-      })).catch(err => { console.error("V2 failed:", err); return null })
-
-      // Fetch Advanced Analytics (Date filtered) — only when explicitly permitted
-      let analyticsRes = null
-      if (canViewAnalytics) {
-        analyticsRes = await apiClient
-          .get(
-            AnalyticsApis.dashboard({
-              restaurantId: user.restaurant_id,
-              dateFrom,
-              dateTo,
-              startTime,
-              endTime,
-              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-              businessLine: "restaurant",
-              include: "core,insights",
-            })
-          )
-          .catch((err) => {
-            const message =
-              err?.response?.data?.detail ||
-              err?.response?.data?.message ||
-              "Analytics data is unavailable."
-            setAnalyticsError(message)
-            return null
-          })
-      }
-
-      // Audit logs were removed; use Transactions as the unified activity timeline.
-      const historyRes = canViewAnalytics
-        ? await apiClient
-            .get(
-              TransactionsApis.list({
-                restaurantId: user.restaurant_id,
-                dateFrom: dateFrom,
-                dateTo: dateTo,
-                skip: 0,
-                limit: 15,
-              })
-            )
-            .catch((err) => {
-              console.error("History failed:", err)
-              return null
-            })
-        : null
-
-      // Fetch Occupancy
-      const occupancyRes = await apiClient.get(TableApis.tableSummary(user.restaurant_id))
-        .catch(err => { console.error("Occupancy failed:", err); return null })
-
-      if (v2Res?.data?.status === "success") setData(v2Res.data.data)
-      
-      if (analyticsRes?.data?.status === "success") {
-        const analytics = analyticsRes.data.data
-        setAnalyticsData(analytics)
-
-        setTrendsData(
-          mapAnalyticsTrends(analytics, preferHourlyTrends(activeRange))
-        )
-
-        setCategoryData(mapBreakdownToPie(analytics, "source"))
-      }
-
-      if (historyRes?.data?.status === "success") {
-        const items = historyRes.data.data.items || []
-        setActivities(
-          items.map((it: any) => ({
-            id: it.id,
-            actor_name: it.user_name || it.actor_name || "System",
-            created_at: it.created_at,
-            event: it.type || "transaction",
-            title: it.title,
-            entity_type: it.type,
-            entity_id: null,
-          }))
-        )
-      }
-
-      if (occupancyRes?.data?.status === "success") {
-        setOccupancy(occupancyRes.data.data || [])
-      }
-
-    } catch (err: any) {
-      console.error("Dashboard fetch error:", err)
-      setError("Failed to synchronize dashboard data.")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (user?.restaurant_id) {
-      if (activeRange === 'custom' && (!date?.from || !date?.to)) {
-        return; // wait until full range is selected
-      }
-      setLoading(true)
-      fetchDashboard()
-      const interval = setInterval(fetchDashboard, 60000)
-      return () => clearInterval(interval)
-    }
-  }, [user, activeRange, date])
-
-  // Export Reporting
-  const handleExport = async () => {
-    if (!analyticsData) return
-    
-    // Dynamic import for optimization
-    const XLSX = await import("xlsx")
-    
-    const exportData = [
-      { Metric: "Gross Sales", Value: kpis.gross_sales },
-      { Metric: "Net Profit", Value: kpis.net_profit },
-      { Metric: "Profit Margin %", Value: kpis.profit_margin },
-      { Metric: "Total Orders", Value: kpis.total_orders },
-      { Metric: "Avg Order Value", Value: kpis.average_order_value },
-      { Metric: "Total Expenses", Value: kpis.total_expense },
-      { Metric: "Cancelled Today", Value: kpis.cancelled_today },
-      { Metric: "Refunded Today", Value: kpis.refunded_today },
-    ]
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Financial Summary")
-    XLSX.writeFile(wb, `Business_Report_${new Date().toISOString().split('T')[0]}.xlsx`)
-  }
+  const connectionHealth = getDashboardHealth(error, analyticsError, Boolean(data))
+  const periodLabel = getPeriodLabel(activeRange)
+  const compareLabel = getCompareLabel(activeRange)
 
   if (loading && !data) return <DashboardSkeleton />
 
@@ -273,14 +118,25 @@ export default function DashboardPage() {
   const attentionItems = home?.attention_items?.items || []
   const dayCloseStatus = home?.day_close_status
   const topItemsLive = home?.top_items_live?.items || []
-  const health = data?.health
-  const overview = analyticsData?.overview
+  const healthSnapshot = data?.health
+  const overview =
+    analyticsData?.tabs?.overview?.overview || analyticsData?.overview || {}
   const v2Kpis = data?.kpis
   const currency = analyticsData?.meta?.currency || data?.meta?.currency || "NPR"
-  const topItems =
-    topItemsLive.length > 0
-      ? topItemsLive
-      : analyticsData?.menu_snapshot?.top_items || data?.breakdowns?.top_items || []
+  const analyticsTopItems =
+    analyticsData?.tabs?.menu?.top_items?.items ||
+    analyticsData?.tabs?.orders?.top_selling_items?.items ||
+    analyticsData?.tabs?.menu?.menu_snapshot?.top_items ||
+    analyticsData?.menu_snapshot?.top_items ||
+    []
+  // Analytics uses completed sales for the selected date range; V2 live items only reflect active orders (often qty 1).
+  const topItems = sortTopItemsByUnitsSold(
+    analyticsTopItems.length > 0
+      ? analyticsTopItems
+      : topItemsLive.length > 0
+        ? topItemsLive
+        : data?.breakdowns?.top_items || []
+  )
   const paymentSplit =
     data?.breakdowns?.payment_split?.length
       ? data.breakdowns.payment_split
@@ -295,17 +151,29 @@ export default function DashboardPage() {
     data?.breakdowns?.order_status?.length
       ? data.breakdowns.order_status
       : pipeline?.status_counts || []
-  const trendCards = [
-    {
-      label: "Sales vs Yesterday",
-      trend: data?.trends?.sales_vs_yesterday,
-    },
-    {
-      label: "Orders vs Yesterday",
-      trend: data?.trends?.orders_vs_yesterday,
-    },
-  ]
-  
+  const mapCompareTrend = (pct?: number, prevValue?: number) => {
+    if (pct === undefined || pct === null) return undefined;
+    const base = { previous_value: prevValue };
+    if (pct > 0) return { direction: 'UP', delta_percent: pct, ...base };
+    if (pct < 0) return { direction: 'DOWN', delta_percent: Math.abs(pct), ...base };
+    return { direction: 'SAME', delta_percent: 0, ...base };
+  }
+
+  const executiveMetrics = analyticsData?.tabs?.overview?.executive_summary?.metrics || [];
+  const findExecutiveMetric = (keys: string[]) => {
+    for (const key of keys) {
+      const found = executiveMetrics.find((m: any) => m?.key === key);
+      if (found) return found;
+    }
+    return null;
+  };
+  const incomeExecutive = findExecutiveMetric(["income", "sales"]);
+  const ordersExecutive = findExecutiveMetric(["orders"]);
+  const executiveIncomeDelta = incomeExecutive?.delta?.vs_previous_period_pct;
+  const executiveOrdersDelta = ordersExecutive?.delta?.vs_previous_period_pct;
+  const executivePrevIncome = incomeExecutive?.delta?.previous_value;
+  const executivePrevOrders = ordersExecutive?.delta?.previous_value;
+
   const kpis = {
     gross_sales:
       overview?.total_income ??
@@ -319,96 +187,263 @@ export default function DashboardPage() {
       orderStatus.reduce((sum: number, item: any) => sum + Number(item.count || 0), 0),
     average_order_value: overview?.avg_order_value ?? v2Kpis?.average_order_value ?? 0,
     total_expense: overview?.total_expense ?? 0,
-    cancelled_today: shiftPulse?.cancelled ?? health?.cancelled_today ?? 0,
-    refunded_today: shiftPulse?.refunded ?? health?.refunded_today ?? 0,
+    cancelled_today: shiftPulse?.cancelled ?? healthSnapshot?.cancelled_today ?? 0,
+    refunded_today: shiftPulse?.refunded ?? healthSnapshot?.refunded_today ?? 0,
   }
 
+  const handleExport = async () => {
+    const XLSX = await import("xlsx")
+    const exportData = [
+      { Metric: "Period", Value: periodLabel },
+      { Metric: "Date From", Value: dateFrom },
+      { Metric: "Date To", Value: dateTo },
+      { Metric: "Gross Sales", Value: kpis.gross_sales },
+      { Metric: "Net Profit", Value: kpis.net_profit },
+      { Metric: "Profit Margin %", Value: kpis.profit_margin },
+      { Metric: "Total Orders", Value: kpis.total_orders },
+      { Metric: "Avg Order Value", Value: kpis.average_order_value },
+      { Metric: "Total Expenses", Value: kpis.total_expense },
+      { Metric: "Cancelled", Value: kpis.cancelled_today },
+      { Metric: "Refunded", Value: kpis.refunded_today },
+    ]
+    const ws = XLSX.utils.json_to_sheet(exportData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Summary")
+    XLSX.writeFile(wb, buildExportFilename(activeRange, dateFrom, dateTo))
+  }
+
+  const aiInsights =
+    analyticsData?.insights ||
+    analyticsData?.tabs?.overview?.alert_insights?.items ||
+    []
+  const mergedInsights = mergeDashboardInsights(quickInsights, aiInsights)
+
+  const salesVsLabel =
+    activeRange === "today" ? "Sales vs Yesterday" : `Sales vs ${compareLabel}`;
+  const ordersVsLabel =
+    activeRange === "today" ? "Orders vs Yesterday" : `Orders vs ${compareLabel}`;
+
+  const salesTrendPct = executiveIncomeDelta ?? deltaData?.deltas?.income_pct;
+  const salesTrendPrev = executivePrevIncome ?? deltaData?.previous?.income;
+  const ordersTrendPct = executiveOrdersDelta ?? deltaData?.deltas?.orders_pct;
+  const ordersTrendPrev = executivePrevOrders ?? deltaData?.previous?.orders;
+
+  const serviceEfficiency = mapServiceEfficiency(analyticsData)
+
+  const trendCards = [
+    {
+      label: salesVsLabel,
+      trend:
+        mapCompareTrend(salesTrendPct, salesTrendPrev) ||
+        data?.trends?.sales_vs_yesterday,
+    },
+    {
+      label: ordersVsLabel,
+      trend:
+        mapCompareTrend(ordersTrendPct, ordersTrendPrev) ||
+        data?.trends?.orders_vs_yesterday,
+    },
+  ];
+
+  const healthBadge =
+    connectionHealth === "live"
+      ? {
+          label: "Live",
+          className:
+            "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400",
+          dot: "bg-emerald-500 animate-pulse",
+        }
+      : connectionHealth === "degraded"
+        ? {
+            label: "Degraded",
+            className:
+              "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400",
+            dot: "bg-amber-500",
+          }
+        : {
+            label: "Offline",
+            className:
+              "bg-destructive/10 text-destructive border-destructive/20",
+            dot: "bg-destructive",
+          }
+
   return (
-    <div className="flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
-      {/* 0. Header */}
+    <div className="relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
+      {refreshing ? (
+        <div className="pointer-events-none absolute right-4 top-0 z-10 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+          <RefreshCw className="h-3 w-3 animate-spin" />
+          Refreshing…
+        </div>
+      ) : null}
+
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Executive Dashboard</h1>
-          <p className="text-muted-foreground text-sm font-medium">Real-time operational overview for {data?.meta?.outlet_name || "your outlet"}</p>
+          <p className="text-muted-foreground text-sm font-medium">
+            Real-time operational overview for {data?.meta?.outlet_name || "your outlet"}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Analytics: <span className="font-semibold text-foreground">{periodLabel}</span>
+            {dateFrom !== dateTo ? ` (${dateFrom} – ${dateTo})` : ` (${dateFrom})`}
+            {" · "}
+            Updated {formatDashboardTimestamp(lastUpdated)}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <DateRangeDropdown 
-              activeRange={activeRange}
-              setActiveRange={setActiveRange}
-              date={date}
-              setDate={setDate}
+        <div className="flex flex-wrap items-center gap-3">
+          <DateRangeDropdown
+            activeRange={activeRange}
+            setActiveRange={setActiveRange}
+            date={date}
+            setDate={setDate}
           />
-          <Badge variant="secondary" className="gap-2 py-1 px-3 bg-green-500/10 text-green-600 border border-green-200 shrink-0">
-             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-             System Online
+          <Badge
+            variant="secondary"
+            className={cn("gap-2 shrink-0 border py-1 px-3", healthBadge.className)}
+          >
+            <div className={cn("h-2 w-2 rounded-full", healthBadge.dot)} />
+            {healthBadge.label}
           </Badge>
         </div>
       </div>
 
-      {/* 1. Health Cards (Top) */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <HealthCard 
-           label="Active Orders" 
-           value={shiftPulse?.active_orders ?? health?.active_orders ?? 0} 
-           icon={<Activity className="h-5 w-5" />}
-           color="text-primary"
+      <DashboardStatusBanner
+        error={error}
+        analyticsError={analyticsError}
+        refreshing={refreshing}
+        onRetry={retry}
+      />
+
+      {/* Live shift pulse */}
+      <section className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest">
+            Live
+          </Badge>
+          <p className="text-xs text-muted-foreground">Current shift metrics — not affected by date filter</p>
+        </div>
+        <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden lg:mx-0 lg:grid lg:grid-cols-5 lg:overflow-visible lg:px-0">
+        <ShiftPulseMetricCard
+          label="Active Orders"
+          value={shiftPulse?.active_orders ?? healthSnapshot?.active_orders ?? 0}
+          icon={<Activity className="h-5 w-5" />}
+          tone="primary"
+          href="/orders/active"
+          subtitle="In progress now"
+          hoverTitle="Active Orders"
+          hoverDescription="Orders currently in progress across dine-in, takeaway, and delivery."
         />
-        <HealthCard 
-           label="KOT Pending" 
-           value={shiftPulse?.kot_pending ?? health?.kot_pending ?? 0} 
-           icon={<Clock className="h-5 w-5" />}
-           color="text-amber-500"
+        <ShiftPulseMetricCard
+          label="KOT Pending"
+          value={shiftPulse?.kot_pending ?? healthSnapshot?.kot_pending ?? 0}
+          icon={<Clock className="h-5 w-5" />}
+          tone="amber"
+          href="/kitchen"
+          subtitle="Awaiting kitchen"
+          hoverTitle="KOT Pending"
+          hoverDescription="Kitchen tickets waiting to be prepared or acknowledged."
         />
-        <HealthCard 
-           label="Delayed KOTs" 
-           value={shiftPulse?.kot_delayed ?? health?.kot_delayed ?? 0} 
-           icon={<AlertCircle className="h-5 w-5" />}
-           color="text-destructive"
-           pulse={ (shiftPulse?.kot_delayed ?? health?.kot_delayed ?? 0) > 0 }
+        <ShiftPulseMetricCard
+          label="Delayed KOTs"
+          value={shiftPulse?.kot_delayed ?? healthSnapshot?.kot_delayed ?? 0}
+          icon={<AlertCircle className="h-5 w-5" />}
+          tone="rose"
+          alert={(shiftPulse?.kot_delayed ?? healthSnapshot?.kot_delayed ?? 0) > 0}
+          href="/kitchen"
+          subtitle="Over SLA"
+          hoverTitle="Delayed KOTs"
+          hoverDescription="Kitchen tickets that have exceeded the expected preparation time."
         />
+        <ShiftPulseMetricCard
+          label="Cancelled Today"
+          value={kpis.cancelled_today}
+          icon={<XCircle className="h-5 w-5" />}
+          tone="rose"
+          alert={kpis.cancelled_today > 0}
+          href="/orders/history"
+          subtitle="Today"
+          hoverTitle="Cancelled Orders"
+          hoverDescription="Orders cancelled during today's operating window."
+        />
+        <ShiftPulseMetricCard
+          label="Refunded Today"
+          value={kpis.refunded_today}
+          icon={<CreditCard className="h-5 w-5" />}
+          tone="sky"
+          alert={kpis.refunded_today > 0}
+          href="/orders/history"
+          subtitle="Today"
+          hoverTitle="Refunded Orders"
+          hoverDescription="Refunds processed during today's operating window."
+        />
+        </div>
       </section>
 
-      {/* 1.1 Summary Bar */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-         <div className="bg-card border border-border rounded-xl p-5 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
-                    <XCircle className="h-6 w-6 text-destructive" />
-                </div>
-                <div>
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Cancelled Today</p>
-                    <p className="text-2xl font-black">{kpis.cancelled_today}</p>
-                </div>
-            </div>
-            <TrendingUp className="h-5 w-5 text-muted-foreground opacity-20" />
-         </div>
-         <div className="bg-card border border-border rounded-xl p-5 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <CreditCard className="h-6 w-6 text-blue-500" />
-                </div>
-                <div>
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Refunded Today</p>
-                    <p className="text-2xl font-black">{kpis.refunded_today}</p>
-                </div>
-            </div>
-            <TrendingUp className="h-5 w-5 text-muted-foreground opacity-20" />
-         </div>
-      </section>
-
-      {/* 1.2 Dashboard V2 Priorities */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <AlertsBanner alerts={alerts} />
+      {/* Priorities */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+        <AlertsBanner alerts={alerts} attentionItems={attentionItems} />
         <QuickActionsCard actions={quickActions} />
-        <DayCloseStatusCard dayCloseStatus={dayCloseStatus} />
+        <DayCloseCashWatchCard
+          dayCloseStatus={dayCloseStatus}
+          cashWatch={cashWatch}
+          currency={currency}
+        />
       </section>
 
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AttentionItemsCard items={attentionItems} />
-        <QuickInsightsStack insights={quickInsights} />
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="flex flex-col gap-6">
+          <AttentionItemsCard items={attentionItems} />
+          <TrendComparisonSection trendCards={trendCards} />
+        </div>
+        <UnifiedInsightsCard
+          insights={mergedInsights}
+          loading={loading}
+          unavailable={analyticsUnavailable}
+        />
       </section>
 
-      {/* 2. Charts (Side-by-Side) */}
+      {/* Financial summary — moved up */}
+      <section className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold flex items-center gap-2 tracking-tight">
+              <Briefcase className="h-5 w-5 text-muted-foreground" />
+              Financial Summary
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              KPIs for {periodLabel}
+              {dateFrom !== dateTo ? ` (${dateFrom} – ${dateTo})` : ` (${dateFrom})`}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm" className="gap-2">
+              <Link href="/analytics">
+                Full analytics
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+            <Button
+              onClick={handleExport}
+              size="sm"
+              className="gap-2"
+              disabled={analyticsUnavailable && !data}
+            >
+              <Download className="h-4 w-4" />
+              Export summary
+            </Button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <SummaryMetric label="Gross Sales" value={kpis.gross_sales} prefix={currency} icon={<DollarSign className="h-4 w-4" />} trend={mapCompareTrend(salesTrendPct, salesTrendPrev) || data?.trends?.sales_vs_yesterday} compareLabel={compareLabel} />
+          <SummaryMetric label="Net Profit" value={kpis.net_profit} prefix={currency} icon={<TrendingUp className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.profit_pct, deltaData?.previous?.profit)} compareLabel={compareLabel} />
+          <SummaryMetric label="Profit Margin %" value={kpis.profit_margin} suffix="%" icon={<Lightbulb className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.margin_pct, deltaData?.previous?.margin)} compareLabel={compareLabel} />
+          <SummaryMetric label="Total Orders" value={kpis.total_orders} icon={<Briefcase className="h-4 w-4" />} trend={mapCompareTrend(ordersTrendPct, ordersTrendPrev) || data?.trends?.orders_vs_yesterday} compareLabel={compareLabel} />
+          <SummaryMetric label="Avg Order Value" value={kpis.average_order_value} prefix={currency} icon={<ReceiptText className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.aov_pct, deltaData?.previous?.aov)} compareLabel={compareLabel} />
+          <SummaryMetric label="Total Expenses" value={kpis.total_expense} prefix={currency} icon={<Wallet className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.expense_pct, deltaData?.previous?.expense)} compareLabel={compareLabel} />
+        </div>
+      </section>
+
+      {/* Charts */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {analyticsUnavailable ? (
           <Card className="lg:col-span-2 border-dashed">
@@ -449,16 +484,15 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* 3. Operational Pulse & Intelligence */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <OccupancyCard tables={occupancy} occupancySnapshot={home?.occupancy} />
-          <OperationalPulseCard operations={analyticsData?.operations} />
-          <CashWatchCard cashWatch={cashWatch} currency={currency} />
+      {/* Operational pulse */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <OccupancyCard tables={occupancy} occupancySnapshot={home?.occupancy} />
+        <OperationalPulseCard efficiency={serviceEfficiency} unavailable={analyticsUnavailable} />
       </section>
 
-      {/* 3.1 V2 Comparisons */}
+      {/* 3.1 Staff activity & order status */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <TrendComparisonSection trendCards={trendCards} />
+        <ActivityFeed activities={activities} />
         <OrderStatusCard statuses={orderStatus} />
       </section>
 
@@ -474,8 +508,8 @@ export default function DashboardPage() {
                 </CardHeader>
                 <CardContent className="pt-6">
                     <div className="space-y-5">
-                       {topItems.slice(0, 8).map((item: any) => (
-                         <div key={item.name} className="flex items-center justify-between group">
+                       {topItems.slice(0, 8).map((item: any, index: number) => (
+                         <div key={item.item_id ?? item.id ?? `${item.name}-${index}`} className="flex items-center justify-between group">
                             <div className="min-w-0 flex-1">
                                 <p className="text-sm font-bold truncate pr-4 group-hover:text-primary transition-colors">{item.name}</p>
                                 <p className="text-[10px] text-muted-foreground font-medium">{topItemQuantitySold(item)} units sold</p>
@@ -495,71 +529,179 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-7">
-          <ActivityFeed activities={activities} />
-        </div>
-        <div className="lg:col-span-5">
-          <InsightsCard insights={analyticsData?.insights || []} loading={loading} />
-        </div>
-      </section>
-
-      {/* 5. Downloads & Final Summary (Moved to Bottom) */}
-      <section className="mt-8 pt-10 border-t border-border/50 bg-muted/20 -mx-4 px-4 pb-10">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
-            <div>
-                <h2 className="text-xl font-bold flex items-center gap-2 tracking-tight">
-                    <Briefcase className="h-5 w-5 text-muted-foreground" />
-                    Business Summary & Reports
-                </h2>
-                <p className="text-xs text-muted-foreground font-medium">Consolidated financial overview and export tools.</p>
-            </div>
-            <Button onClick={handleExport} size="sm" className="gap-2 bg-primary hover:bg-primary/90 text-white shadow-md">
-                <Download className="h-4 w-4" /> Export Data to Excel
-            </Button>
-        </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
-            <SummaryMetric label="Gross Sales" value={kpis.gross_sales} prefix={currency} icon={<DollarSign className="h-4 w-4" />} />
-            <SummaryMetric label="Net Profit" value={kpis.net_profit} prefix={currency} icon={<TrendingUp className="h-4 w-4" />} />
-            <SummaryMetric label="Margin" value={kpis.profit_margin} suffix="%" icon={<Zap className="h-4 w-4" />} />
-            <SummaryMetric label="Total Orders" value={kpis.total_orders} icon={<Activity className="h-4 w-4" />} />
-            <SummaryMetric label="Avg Ticket" value={kpis.average_order_value} prefix={currency} icon={<Receipt className="h-4 w-4" />} />
-            <SummaryMetric label="Total Expenses" value={kpis.total_expense} prefix={currency} icon={<TrendingDown className="h-4 w-4" />} />
-        </div>
-      </section>
     </div>
   )
 }
 
-function HealthCard({ label, value, icon, color, borderColor, bgColor, pulse }: any) {
-    return (
-        <Card className="bg-card border border-border shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                   <p className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-1.5 opacity-70">{label}</p>
-                   <p className={cn("text-3xl font-black tracking-tighter text-foreground", pulse ? "animate-pulse" : "")}>{value}</p>
-                </div>
-                <div className={cn("p-2.5 rounded-lg bg-muted/40 border border-border/50 transition-colors", color)}>
-                   {icon}
-                </div>
-            </CardContent>
+type ShiftPulseTone = "primary" | "amber" | "rose" | "sky"
+
+const shiftPulseToneStyles: Record<
+  ShiftPulseTone,
+  { accent: string; icon: string; hoverIcon: string; value: string }
+> = {
+  primary: {
+    accent: "from-primary/80 to-primary",
+    icon: "bg-primary/10 text-primary",
+    hoverIcon: "bg-primary/10 text-primary",
+    value: "text-foreground",
+  },
+  amber: {
+    accent: "from-amber-500/80 to-amber-500",
+    icon: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    hoverIcon: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    value: "text-foreground",
+  },
+  rose: {
+    accent: "from-destructive/80 to-destructive",
+    icon: "bg-destructive/10 text-destructive",
+    hoverIcon: "bg-destructive/10 text-destructive",
+    value: "text-destructive",
+  },
+  sky: {
+    accent: "from-sky-500/80 to-sky-500",
+    icon: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+    hoverIcon: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+    value: "text-foreground",
+  },
+}
+
+function ShiftPulseMetricCard({
+  label,
+  value,
+  icon,
+  tone,
+  alert = false,
+  href,
+  subtitle,
+  hoverTitle,
+  hoverDescription,
+}: {
+  label: string
+  value: number
+  icon: React.ReactNode
+  tone: ShiftPulseTone
+  alert?: boolean
+  href?: string
+  subtitle?: string
+  hoverTitle: string
+  hoverDescription: string
+}) {
+  const styles = shiftPulseToneStyles[tone]
+  const showAlert = alert && value > 0
+  const asOf = new Date().toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: true,
+  })
+
+  const cardBody = (
+        <Card
+          className={cn(
+            "group relative min-w-[160px] flex-1 overflow-hidden rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm shadow-sm lg:min-w-0",
+            href ? "cursor-pointer" : "cursor-default",
+            "hover:-translate-y-1 hover:shadow-lg transition-all duration-300",
+            showAlert && "border-destructive/30"
+          )}
+        >
+          <div
+            className={cn(
+              "absolute left-0 top-0 h-full w-1 bg-gradient-to-b opacity-90 transition-all duration-300 group-hover:w-1.5",
+              styles.accent
+            )}
+          />
+          <CardContent className="relative z-10 flex h-full flex-col justify-between gap-4 p-4 pl-5">
+            <div className="flex items-start justify-between gap-2">
+              <div
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-105",
+                  styles.icon
+                )}
+              >
+                {icon}
+              </div>
+              {showAlert ? (
+                <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-destructive">
+                  Alert
+                </span>
+              ) : null}
+            </div>
+            <div>
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                {label}
+              </p>
+              <p
+                className={cn(
+                  "text-3xl font-black leading-none tabular-nums tracking-tight",
+                  showAlert ? cn(styles.value, "animate-pulse") : "text-foreground"
+                )}
+              >
+                {value}
+              </p>
+              {subtitle ? (
+                <p className="mt-1 text-[10px] text-muted-foreground lg:hidden">{subtitle}</p>
+              ) : null}
+            </div>
+          </CardContent>
         </Card>
-    )
+  )
+
+  return (
+    <HoverCard openDelay={200} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        {href ? <Link href={href}>{cardBody}</Link> : cardBody}
+      </HoverCardTrigger>
+      <HoverCardContent
+        align="start"
+        side="bottom"
+        sideOffset={8}
+        className="w-[max(300px,var(--radix-hover-card-trigger-width))] overflow-hidden rounded-2xl border-border/40 bg-card p-0 shadow-xl"
+      >
+        <div className="flex items-start gap-3 border-b border-border/40 p-4">
+          <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl", styles.hoverIcon)}>
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold tracking-tight text-foreground">{hoverTitle}</p>
+            <p className="text-xs text-muted-foreground">Live shift metric</p>
+          </div>
+        </div>
+        <div className="space-y-2 p-4">
+          <p className="text-sm leading-relaxed text-muted-foreground">{hoverDescription}</p>
+          <p className="text-sm text-foreground">
+            Current count:{" "}
+            <span className={cn("font-black tabular-nums", showAlert ? styles.value : "text-foreground")}>
+              {value}
+            </span>
+          </p>
+        </div>
+        <div className="flex items-center justify-between border-t border-border/40 px-4 py-3 text-xs text-muted-foreground">
+          <span>Data as of</span>
+          <span className="font-medium">{asOf}</span>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  )
 }
 
 function TrendCard({ label, trend }: { label: string, trend: any }) {
+  const hasTrend = trend && trend.delta_percent !== undefined && trend.delta_percent !== null
   const direction = String(trend?.direction || "SAME").toUpperCase()
   const isUp = direction === "UP"
   const isDown = direction === "DOWN"
   const delta = Math.abs(Number(trend?.delta_percent || 0))
 
   return (
-    <Card className="bg-card border-border shadow-sm">
-      <CardContent className="p-6">
+    <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-md hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-24 h-24 bg-current opacity-5 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+      <CardContent className="p-6 relative z-10">
         <div className="text-xs text-muted-foreground font-medium mb-1">{label}</div>
         <div className="flex items-end gap-3">
-          <span className="text-3xl font-bold text-foreground">{delta.toFixed(1)}%</span>
+          <span className="text-3xl font-bold text-foreground">
+            {hasTrend ? `${delta.toFixed(1)}%` : "—"}
+          </span>
           <div
             className={cn(
               "flex items-center text-sm font-medium mb-1 px-2 py-0.5 rounded-full",
@@ -579,7 +721,7 @@ function TrendCard({ label, trend }: { label: string, trend: any }) {
   )
 }
 
-function OccupancyCard({ tables, occupancySnapshot }: { tables: any[], occupancySnapshot?: any }) {
+function OccupancyCard({ tables, occupancySnapshot }: { tables: any[]; occupancySnapshot?: any }) {
   const hasSnapshot = occupancySnapshot?.available !== false && occupancySnapshot
   const occupied = hasSnapshot
     ? Number(occupancySnapshot?.occupied_tables || 0)
@@ -592,11 +734,13 @@ function OccupancyCard({ tables, occupancySnapshot }: { tables: any[], occupancy
   const capacity = Math.round(tables.length ? tables.reduce((acc, t) => acc + (t.capacity || 0), 0) : 0)
 
   return (
-    <Card className="bg-card border-border shadow-sm overflow-hidden">
+    <Link href="/tables" className="block h-full">
+    <Card className="h-full bg-card border-border shadow-sm overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-md">
       <CardHeader className="pb-2 border-b border-border/30">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <Users className="h-4 w-4 text-primary" />
           Live Table Occupancy
+          <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-6">
@@ -624,106 +768,102 @@ function OccupancyCard({ tables, occupancySnapshot }: { tables: any[], occupancy
         </div>
       </CardContent>
     </Card>
+    </Link>
   )
 }
 
-function OperationalPulseCard({ operations }: { operations: any }) {
+function OperationalPulseCard({
+  efficiency,
+  unavailable = false,
+}: {
+  efficiency: ReturnType<typeof mapServiceEfficiency>
+  unavailable?: boolean
+}) {
+  const peakHourLabel = efficiency.peak_hour || "—"
+  const avgPrepLabel =
+    efficiency.avg_service_time_min === null
+      ? "—"
+      : efficiency.completed_orders === 0
+        ? "—"
+        : `${Number(efficiency.avg_service_time_min).toFixed(
+            efficiency.avg_service_time_min < 10 ? 1 : 0
+          )} mins`
+  const cancellationPct = efficiency.order_cancellation_pct
+  const cancellationLabel =
+    cancellationPct === null ? "—" : `${Number(cancellationPct).toFixed(1)}%`
+
   return (
-    <Card className="bg-card border-border shadow-sm">
+    <Link href="/analytics" className="block h-full">
+    <Card className="h-full bg-card border-border shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
       <CardHeader className="pb-2 border-b border-border/30">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <Zap className="h-4 w-4 text-emerald-500" />
           Service Efficiency
+          <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6 pt-6">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0 border border-amber-500/20">
-            <Clock className="h-5 w-5 text-amber-600" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] text-muted-foreground font-black uppercase">Peak Demand Hour</p>
-            <p className="text-sm font-bold truncate">{operations?.peak_hour || "N/A"}</p>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
-            <Activity className="h-5 w-5 text-blue-600" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] text-muted-foreground font-black uppercase">Avg Prep Time</p>
-            <p className="text-sm font-bold">{Math.round(operations?.avg_service_time_min || 0)} mins</p>
-          </div>
-        </div>
-
-        <div className="pt-2 border-t border-border/50 flex justify-between items-center">
-          <span className="text-[10px] font-bold text-muted-foreground uppercase">Cancellation Rate</span>
-          <Badge variant="outline" className={cn("font-bold", (operations?.order_cancellation_pct || 0) > 10 ? "text-destructive border-destructive/20 bg-destructive/5" : "text-green-600 border-green-200 bg-green-50/50")}>
-            {operations?.order_cancellation_pct || 0}%
-          </Badge>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function InsightsCard({ insights = [], loading }: { insights: any[], loading: boolean }) {
-  const topInsight = insights?.[0]
-
-  return (
-    <Card className="bg-card border-indigo-500/30 shadow-sm border-2 relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-bl-full -mr-12 -mt-12" />
-      <CardHeader className="pb-2 border-b border-indigo-500/10">
-        <CardTitle className="text-sm font-bold flex items-center gap-2 text-indigo-600">
-          <Lightbulb className="h-4 w-4" />
-          AI Recommendations
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="pt-6">
-        {loading ? (
-           <div className="flex flex-col items-center justify-center py-6 text-center">
-             <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-2 animate-pulse" />
-             <p className="text-xs text-muted-foreground italic">Crunching latest figures...</p>
-           </div>
-        ) : topInsight ? (
-          <div className="space-y-4">
-            <div className={cn("p-4 rounded-xl border-l-4 shadow-sm", topInsight.level === 'warning' ? "bg-amber-500/5 border-amber-500/50" : "bg-indigo-500/5 border-indigo-500/50")}>
-              <div className="flex gap-4">
-                {topInsight.level === 'warning' ? (
-                  <TrendingDown className="h-6 w-6 text-amber-600 shrink-0" />
-                ) : (
-                  <CheckCircle className="h-6 w-6 text-indigo-600 shrink-0" />
-                )}
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground mb-1 leading-tight">{topInsight.message}</p>
-                  <p className="text-[11px] text-muted-foreground font-medium leading-relaxed">
-                    {topInsight.suggested_action}
-                  </p>
-                </div>
+        {unavailable ? (
+          <p className="text-sm text-muted-foreground">
+            Analytics access is required to load service efficiency metrics.
+          </p>
+        ) : (
+          <>
+            <div className="flex items-center gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-amber-500/20 bg-amber-500/10">
+                <Clock className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase text-muted-foreground">
+                  Peak Demand Hour
+                </p>
+                <p className="truncate text-sm font-bold">{peakHourLabel}</p>
               </div>
             </div>
-            {insights.length > 1 && (
-              <p className="text-[9px] text-indigo-600 font-black uppercase text-center tracking-widest pt-2 border-t border-indigo-500/10">
-                + {insights.length - 1} Additional Suggestions Available
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-10 text-center">
-            <div className="w-14 h-14 rounded-full bg-indigo-500/10 flex items-center justify-center mb-4 border border-indigo-500/20">
-              <CheckCircle className="h-8 w-8 text-indigo-600" />
+
+            <div className="flex items-center gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-blue-500/20 bg-blue-500/10">
+                <Activity className="h-5 w-5 text-blue-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase text-muted-foreground">
+                  Avg Prep Time
+                </p>
+                <p className="text-sm font-bold">{avgPrepLabel}</p>
+              </div>
             </div>
-            <p className="text-sm font-bold text-foreground">Performance is Optimal</p>
-            <p className="text-[11px] text-muted-foreground max-w-[200px] mt-1">No significant anomalies detected in recent data trends.</p>
-          </div>
+
+            <div className="flex items-center justify-between border-t border-border/50 pt-2">
+              <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                Cancellation Rate
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "font-bold",
+                  cancellationPct !== null && cancellationPct > 10
+                    ? "border-destructive/20 bg-destructive/5 text-destructive"
+                    : "border-green-200 bg-green-50/50 text-green-600"
+                )}
+              >
+                {cancellationLabel}
+              </Badge>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
+    </Link>
   )
 }
 
-function AlertsBanner({ alerts }: { alerts: any[] }) {
+function AlertsBanner({
+  alerts,
+  attentionItems = [],
+}: {
+  alerts: any[]
+  attentionItems?: any[]
+}) {
   const primary = alerts[0]
   const severity = String(primary?.severity || "LOW").toUpperCase()
   const tone =
@@ -733,73 +873,197 @@ function AlertsBanner({ alerts }: { alerts: any[] }) {
         ? "border-amber-500/30 bg-amber-500/5 text-amber-600"
         : "border-emerald-500/30 bg-emerald-500/5 text-emerald-600"
 
-  return (
-    <Card className={cn("shadow-sm", tone)}>
-      <CardHeader className="pb-3">
+  const firstAttention = attentionItems[0]
+  const href = firstAttention?.route
+    ? firstAttention.route === "/running-orders" && firstAttention.entity_id
+      ? `/orders/${firstAttention.entity_id}`
+      : firstAttention.route
+    : alerts.length > 0
+      ? "/analytics"
+      : undefined
+
+  const content = (
+    <Card
+      className={cn(
+        "h-full shadow-sm rounded-2xl border border-border/50 hover:shadow-md transition-all duration-300 relative overflow-hidden group",
+        tone,
+        href && "cursor-pointer"
+      )}
+    >
+      <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-5 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110" />
+      <CardHeader className="pb-3 relative z-10">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <Siren className="h-4 w-4" />
           Alerts
+          {href ? <ArrowRight className="ml-auto h-3.5 w-3.5 opacity-60" /> : null}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        <p className="text-sm font-semibold">{primary?.message || "No critical operational alerts right now."}</p>
+        <p className="text-sm font-semibold">
+          {primary?.message || "No critical operational alerts right now."}
+        </p>
         <p className="text-xs text-muted-foreground">
-          {primary?.action_hint || (alerts.length > 1 ? `+${alerts.length - 1} more alerts available.` : "System is stable." )}
+          {primary?.action_hint ||
+            (alerts.length > 1
+              ? `+${alerts.length - 1} more alerts available.`
+              : "System is stable.")}
         </p>
       </CardContent>
     </Card>
   )
+
+  if (href) {
+    return <Link href={href}>{content}</Link>
+  }
+
+  return content
+}
+
+const QUICK_ACTION_ROUTE_MAP: Record<string, string> = {
+  create_order: "/orders/new",
+  running_orders: "/orders/active",
+  kot: "/kitchen",
+  tables: "/tables",
+  reservations: "/reservations",
+  day_close: "/day-close",
+}
+
+const QUICK_ACTION_LEGACY_ROUTE_MAP: Record<string, string> = {
+  "/orders/create": "/orders/new",
+  "/running-orders": "/orders/active",
+  "/kot-management": "/kitchen",
+}
+
+const QUICK_ACTION_ICON_MAP: Record<string, LucideIcon> = {
+  create_order: Plus,
+  running_orders: ClipboardList,
+  kot: ChefHat,
+  tables: Armchair,
+  reservations: Calendar,
+  day_close: ReceiptText,
+}
+
+function resolveQuickActionHref(action: { key?: string; route?: string }) {
+  if (action.key && QUICK_ACTION_ROUTE_MAP[action.key]) {
+    return QUICK_ACTION_ROUTE_MAP[action.key]
+  }
+  if (action.route && QUICK_ACTION_LEGACY_ROUTE_MAP[action.route]) {
+    return QUICK_ACTION_LEGACY_ROUTE_MAP[action.route]
+  }
+  return action.route || "#"
+}
+
+function resolveQuickActionIcon(action: { key?: string }): LucideIcon {
+  if (action.key && QUICK_ACTION_ICON_MAP[action.key]) {
+    return QUICK_ACTION_ICON_MAP[action.key]
+  }
+  return Zap
 }
 
 function QuickActionsCard({ actions }: { actions: any[] }) {
   const enabledActions = actions.filter((action: any) => action.enabled).slice(0, 6)
   return (
-    <Card className="shadow-sm border-border/70 bg-gradient-to-br from-background to-muted/20">
+    <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-bold">Quick Actions</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {enabledActions.map((action: any) => (
-            <Link
-              key={action.key}
-              href={action.route}
-              className={cn(
-                "rounded-2xl border border-border/60 bg-background/70 px-3 py-4 transition-all hover:bg-background hover:border-primary/30 hover:shadow-sm"
-              )}
-            >
-              <p className="text-sm font-bold leading-tight">{action.title}</p>
-              <p className="text-[11px] text-muted-foreground mt-2">Open module</p>
-            </Link>
-          ))}
-          {enabledActions.length === 0 && <p className="col-span-2 md:col-span-3 text-sm text-muted-foreground">No quick actions available.</p>}
+          {enabledActions.map((action: any) => {
+            const Icon = resolveQuickActionIcon(action)
+            return (
+              <Link
+                key={action.key}
+                href={resolveQuickActionHref(action)}
+                className={cn(
+                  "group/btn relative flex flex-col items-center justify-center gap-2.5 overflow-hidden rounded-xl border border-border/40 bg-muted/30 px-3 py-4 text-center transition-all",
+                  "hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-md"
+                )}
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 transition-opacity group-hover/btn:opacity-100" />
+                <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-xl border border-border/50 bg-background/80 text-primary shadow-sm transition-transform group-hover/btn:scale-105">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <p className="relative z-10 text-xs font-bold leading-tight text-foreground">
+                  {action.title}
+                </p>
+              </Link>
+            )
+          })}
+          {enabledActions.length === 0 && (
+            <p className="col-span-2 text-sm text-muted-foreground md:col-span-3">
+              No quick actions available.
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>
   )
 }
 
-function DayCloseStatusCard({ dayCloseStatus }: { dayCloseStatus: any }) {
+function DayCloseCashWatchCard({
+  dayCloseStatus,
+  cashWatch,
+  currency,
+}: {
+  dayCloseStatus: any
+  cashWatch: any
+  currency: string
+}) {
   const status = String(dayCloseStatus?.status || "unavailable").replace(/_/g, " ")
+  const actionLabel = dayCloseStatus?.action_label || "Start Day Close"
+  const cashRows = [
+    { label: "Cash", value: cashWatch?.cash_collected || 0 },
+    { label: "Digital", value: cashWatch?.digital_collected || 0 },
+    { label: "Credit", value: cashWatch?.credit_sales || 0 },
+    { label: "Outstanding", value: cashWatch?.total_outstanding || 0 },
+  ]
+
   return (
-    <Card className="shadow-sm border-primary/20">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-bold flex items-center gap-2">
+    <Card className="relative overflow-hidden rounded-2xl border-border/50 bg-card/80 shadow-sm backdrop-blur-sm transition-all duration-300 group hover:shadow-md">
+      <div className="absolute top-0 right-0 -mr-4 -mt-4 h-24 w-24 rounded-bl-[80px] bg-primary/5 transition-transform group-hover:scale-110" />
+      <CardHeader className="relative z-10 pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-bold">
           <Calendar className="h-4 w-4 text-primary" />
           Day Close
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-lg font-black capitalize">{status}</p>
-          <p className="text-xs text-muted-foreground">{dayCloseStatus?.action_label || "Open Day Close"}</p>
+      <CardContent className="relative z-10 space-y-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-lg font-black capitalize">{status}</p>
+            <p className="text-xs text-muted-foreground">Today&apos;s settlement status</p>
+          </div>
+          <Button asChild size="sm" className="gap-2 shrink-0">
+            <Link href={dayCloseStatus?.route || "/day-close"}>
+              {actionLabel}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
         </div>
-        <Button asChild size="sm" className="gap-2">
-          <Link href={dayCloseStatus?.route || "/day-close"}>
-            {dayCloseStatus?.action_label || "Open Day Close"}
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </Button>
+
+        <div className="border-t border-border/40 pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-emerald-500" />
+            <p className="text-sm font-bold">Cash Watch</p>
+          </div>
+          {cashWatch?.available === false ? (
+            <p className="text-sm text-muted-foreground">
+              {cashWatch?.reason || "Cash watch is unavailable."}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {cashRows.map((row) => (
+                <div key={row.label} className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-muted-foreground">{row.label}</span>
+                  <span className="text-sm font-black tabular-nums">
+                    {currency} {Number(row.value || 0).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   )
@@ -1152,9 +1416,39 @@ function AttentionItemsCard({ items }: { items: any[] }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-bold">Needs Attention</h3>
-        {visibleItems.length > 1 ? <span className="text-[11px] text-muted-foreground">Swipe through issues</span> : null}
+        {visibleItems.length > 1 ? (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground hidden sm:inline">Swipe through issues</span>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-7 w-7 rounded-full shrink-0"
+                onClick={() => advanceAttentionItem(-1)}
+                onMouseEnter={() => setIsPaused(true)}
+                onMouseLeave={() => setIsPaused(false)}
+                aria-label="Previous issue"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-7 w-7 rounded-full shrink-0"
+                onClick={() => advanceAttentionItem(1)}
+                onMouseEnter={() => setIsPaused(true)}
+                onMouseLeave={() => setIsPaused(false)}
+                aria-label="Next issue"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
       {visibleItems.length > 0 ? (
         <div className="relative">
@@ -1214,22 +1508,6 @@ function AttentionItemsCard({ items }: { items: any[] }) {
             )
             })}
           </div>
-          {visibleItems.length > 1 ? (
-            <div className="mt-3 flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 gap-2 rounded-full px-3 text-xs"
-                onClick={() => advanceAttentionItem(1)}
-                onMouseEnter={() => setIsPaused(true)}
-                onMouseLeave={() => setIsPaused(false)}
-              >
-                Next
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          ) : null}
         </div>
       ) : (
         <Card className="shadow-sm border-emerald-500/20 bg-emerald-500/[0.05]">
@@ -1237,68 +1515,6 @@ function AttentionItemsCard({ items }: { items: any[] }) {
         </Card>
       )}
     </div>
-  )
-}
-
-function QuickInsightsStack({ insights }: { insights: any[] }) {
-  const visibleInsights = insights.slice(0, 4)
-  return (
-    <Card className="shadow-sm border-border/70 bg-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-bold">Quick Insights</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {visibleInsights.length > 0 ? visibleInsights.map((insight: any, index: number) => (
-          <div key={`${insight.type || "info"}-${index}`} className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
-            <div className="flex items-start gap-3">
-              <span
-                className={cn(
-                  "mt-1 h-2 w-2 shrink-0 rounded-full",
-                  String(insight?.type || "INFO").toUpperCase() === "POSITIVE"
-                    ? "bg-emerald-500"
-                    : String(insight?.type || "INFO").toUpperCase() === "WARNING"
-                      ? "bg-amber-500"
-                      : "bg-sky-500"
-                )}
-              />
-              <p className="text-sm leading-6">{insight?.message}</p>
-            </div>
-          </div>
-        )) : (
-          <p className="text-sm text-muted-foreground">No notable operational changes right now.</p>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function CashWatchCard({ cashWatch, currency }: { cashWatch: any, currency: string }) {
-  const rows = [
-    { label: "Cash", value: cashWatch?.cash_collected || 0 },
-    { label: "Digital", value: cashWatch?.digital_collected || 0 },
-    { label: "Credit", value: cashWatch?.credit_sales || 0 },
-    { label: "Outstanding", value: cashWatch?.total_outstanding || 0 },
-  ]
-
-  return (
-    <Card className="bg-card border-border shadow-sm">
-      <CardHeader className="pb-2 border-b border-border/30">
-        <CardTitle className="text-sm font-bold flex items-center gap-2">
-          <Wallet className="h-4 w-4 text-emerald-500" />
-          Cash Watch
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="pt-6 space-y-4">
-        {cashWatch?.available === false ? (
-          <p className="text-sm text-muted-foreground">{cashWatch?.reason || "Cash watch is unavailable."}</p>
-        ) : rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">{row.label}</span>
-            <span className="text-sm font-black">{currency} {Number(row.value || 0).toLocaleString()}</span>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
   )
 }
 
@@ -1315,7 +1531,7 @@ function TrendComparisonSection({ trendCards }: { trendCards: any[] }) {
 function OrderStatusCard({ statuses }: { statuses: any[] }) {
   const total = statuses.reduce((sum, item) => sum + Number(item.count || 0), 0)
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300 group">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-bold">Order Status</CardTitle>
       </CardHeader>
@@ -1339,34 +1555,116 @@ function OrderStatusCard({ statuses }: { statuses: any[] }) {
   )
 }
 
-function PaymentSplitCard({ payments, currency }: { payments: any[], currency: string }) {
+const PAYMENT_METHOD_VISUALS: Record<
+  string,
+  { icon: LucideIcon; iconClass: string; barClass: string; bgClass: string }
+> = {
+  cash: {
+    icon: Banknote,
+    iconClass: "text-emerald-600 dark:text-emerald-400",
+    barClass: "bg-emerald-500",
+    bgClass: "bg-emerald-500/10",
+  },
+  card: {
+    icon: CreditCard,
+    iconClass: "text-blue-600 dark:text-blue-400",
+    barClass: "bg-blue-500",
+    bgClass: "bg-blue-500/10",
+  },
+  digital: {
+    icon: Smartphone,
+    iconClass: "text-purple-600 dark:text-purple-400",
+    barClass: "bg-purple-500",
+    bgClass: "bg-purple-500/10",
+  },
+  fonepay: {
+    icon: QrCode,
+    iconClass: "text-fuchsia-600 dark:text-fuchsia-400",
+    barClass: "bg-fuchsia-500",
+    bgClass: "bg-fuchsia-500/10",
+  },
+  credit: {
+    icon: Wallet,
+    iconClass: "text-orange-600 dark:text-orange-400",
+    barClass: "bg-orange-500",
+    bgClass: "bg-orange-500/10",
+  },
+}
+
+const PAYMENT_METHOD_FALLBACK_COLORS = [
+  { barClass: "bg-amber-500", bgClass: "bg-amber-500/10", iconClass: "text-amber-600" },
+  { barClass: "bg-rose-500", bgClass: "bg-rose-500/10", iconClass: "text-rose-600" },
+  { barClass: "bg-sky-500", bgClass: "bg-sky-500/10", iconClass: "text-sky-600" },
+]
+
+function resolvePaymentMethodVisual(method: string, index: number) {
+  const key = String(method || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+
+  if (PAYMENT_METHOD_VISUALS[key]) {
+    return PAYMENT_METHOD_VISUALS[key]
+  }
+
+  if (key.includes("cash")) return PAYMENT_METHOD_VISUALS.cash
+  if (key.includes("card")) return PAYMENT_METHOD_VISUALS.card
+  if (key.includes("digital") || key.includes("qr")) return PAYMENT_METHOD_VISUALS.digital
+  if (key.includes("fonepay") || key.includes("fone")) return PAYMENT_METHOD_VISUALS.fonepay
+  if (key.includes("credit") || key.includes("outstanding")) return PAYMENT_METHOD_VISUALS.credit
+
+  const fallback = PAYMENT_METHOD_FALLBACK_COLORS[index % PAYMENT_METHOD_FALLBACK_COLORS.length]
+  return {
+    icon: Wallet,
+    iconClass: fallback.iconClass,
+    barClass: fallback.barClass,
+    bgClass: fallback.bgClass,
+  }
+}
+
+function PaymentSplitCard({ payments, currency }: { payments: any[]; currency: string }) {
   const total = payments.reduce((sum, item) => sum + Number(item.amount || 0), 0)
-  const colors = ["bg-emerald-500", "bg-blue-500", "bg-violet-500", "bg-amber-500", "bg-rose-500"]
   return (
-    <Card className="h-full border-border shadow-sm">
-      <CardHeader className="pb-4 border-b border-border/50">
+    <Card className="h-full shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300 relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+      <CardHeader className="pb-4 border-b border-border/30 relative z-10">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <ReceiptText className="h-4 w-4 text-primary" />
           Payment Split
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-6 space-y-5">
-        {payments.length > 0 ? payments.map((payment: any) => {
+        {payments.length > 0 ? payments.map((payment: any, index: number) => {
           const ratio = total > 0 ? (Number(payment.amount || 0) / total) * 100 : 0
+          const visual = resolvePaymentMethodVisual(payment.method, index)
+          const Icon = visual.icon
           return (
-            <div key={payment.method} className="space-y-2">
+            <div key={`${payment.method}-${index}`} className="space-y-2">
               <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <span className={cn("h-2.5 w-2.5 rounded-full", colors[payments.indexOf(payment) % colors.length])} />
-                  <span className="text-sm font-bold">{payment.method}</span>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/40",
+                      visual.bgClass
+                    )}
+                  >
+                    <Icon className={cn("h-4 w-4", visual.iconClass)} />
+                  </div>
+                  <span className="truncate text-sm font-bold">{payment.method}</span>
                 </div>
-                <span className="text-sm font-black">{currency} {Number(payment.amount || 0).toLocaleString()}</span>
+                <span className="shrink-0 text-sm font-black tabular-nums">
+                  {currency} {Number(payment.amount || 0).toLocaleString()}
+                </span>
               </div>
-              <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+              <div className="flex items-center justify-between gap-4 pl-12 text-xs text-muted-foreground">
                 <span>{Math.round(ratio)}% of captured sales</span>
               </div>
-              <div className="h-2 rounded-full bg-muted overflow-hidden">
-                <div className={cn("h-full rounded-full", colors[payments.indexOf(payment) % colors.length])} style={{ width: `${ratio}%` }} />
+              <div className="ml-12 h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn("h-full rounded-full transition-all duration-500", visual.barClass)}
+                  style={{ width: `${ratio}%` }}
+                />
               </div>
             </div>
           )
@@ -1378,8 +1676,9 @@ function PaymentSplitCard({ payments, currency }: { payments: any[], currency: s
 
 function ActivityFeed({ activities }: { activities: any[] }) {
   return (
-    <Card className="bg-card border-border shadow-sm overflow-hidden h-full flex flex-col">
-      <CardHeader className="pb-4 bg-muted/10 border-b border-border/50 shrink-0">
+    <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm overflow-hidden h-full flex flex-col rounded-2xl hover:shadow-md transition-all duration-300 group">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110 pointer-events-none" />
+      <CardHeader className="pb-4 bg-muted/10 border-b border-border/30 shrink-0 relative z-10">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <Activity className="h-4 w-4 text-primary" />
           Real-time Staff Activity
@@ -1424,85 +1723,86 @@ function ActivityFeed({ activities }: { activities: any[] }) {
   )
 }
 
-function SummaryMetric({ label, value, prefix = "", suffix = "", icon }: any) {
+function SummaryMetric({ label, value, prefix = "", suffix = "", icon, trend, compareLabel = "previous period" }: any) {
+  const isUp = trend?.direction?.toUpperCase() === 'UP';
+  const isDown = trend?.direction?.toUpperCase() === 'DOWN';
+  const isSame = trend?.direction?.toUpperCase() === 'SAME';
+  const trendColor = isUp ? "bg-emerald-500/10 text-emerald-500" : isDown ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground";
+
   return (
-    <Card className="bg-card border-border shadow-md hover:border-primary/40 transition-all group overflow-hidden relative">
-      <div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover:bg-primary transition-colors" />
-      <CardContent className="p-5 flex flex-col justify-center h-full">
-        <div className="flex items-center gap-2 mb-2">
-           <div className="p-1.5 rounded-md bg-muted text-muted-foreground group-hover:text-primary transition-colors">
-              {icon}
+    <HoverCard openDelay={0} closeDelay={0}>
+      <HoverCardTrigger asChild>
+        <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative cursor-default">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-primary/40 to-primary group-hover:w-full group-hover:opacity-5 transition-all duration-500" />
+          <CardContent className="p-5 flex flex-col justify-center h-full relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+               <div className="p-1.5 rounded-md bg-muted text-muted-foreground group-hover:text-primary transition-colors">
+                  {icon}
+               </div>
+               <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
+                 {label}
+               </p>
+            </div>
+            <div className="text-xl font-black text-foreground tabular-nums">
+              <span className="text-xs font-normal mr-0.5 opacity-50">{prefix}</span>
+              {Number(value).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+              <span className="text-xs font-normal ml-0.5 opacity-50">{suffix}</span>
+            </div>
+          </CardContent>
+        </Card>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" side="bottom" sideOffset={8} className="w-[max(320px,var(--radix-hover-card-trigger-width))] p-0 overflow-hidden rounded-2xl border-border/40 shadow-xl bg-card">
+        {/* Header */}
+        <div className="flex items-start gap-4 p-5 border-b border-border/40">
+           <div className="p-2.5 flex items-center justify-center rounded-full text-primary bg-primary/10">
+             {icon}
            </div>
-           <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
-             {label}
-           </p>
+           <div>
+             <p className="font-bold text-[15px] text-foreground tracking-tight">Total Amount of {label}</p>
+             <p className="text-[13px] text-muted-foreground mt-0.5">Detailed insights</p>
+           </div>
         </div>
-        <div className="text-xl font-black text-foreground tabular-nums">
-          <span className="text-xs font-normal mr-0.5 opacity-50">{prefix}</span>
-          {Number(value).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-          <span className="text-xs font-normal ml-0.5 opacity-50">{suffix}</span>
+        
+        {/* Performance Box */}
+        {trend && (
+          <div className="p-5 space-y-6">
+             <div className="flex flex-col gap-3 p-4 bg-muted/30 rounded-2xl border border-border/50">
+                <div className="flex justify-between items-center">
+                  <span className="text-[13px] font-semibold text-foreground">PERFORMANCE</span>
+                  <Badge variant="outline" className={cn("border-transparent rounded-lg px-2.5 py-0.5 text-[13px] font-medium flex items-center gap-1.5", trendColor)}>
+                    {`${isUp ? '+' : isDown ? '-' : ''}${trend.delta_percent}%`}
+                    {isUp && <TrendingUp className="w-4 h-4" />}
+                    {isDown && <TrendingDown className="w-4 h-4" />}
+                  </Badge>
+                </div>
+                <p className="text-[14px] text-muted-foreground">
+                   {`Compared to ${compareLabel}${trend.previous_value !== undefined ? ` (was ${prefix}${Number(trend.previous_value).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${suffix})` : ''}`}
+                </p>
+             </div>
+
+             <p className="text-[14px] text-muted-foreground leading-relaxed">
+               A total {String(label).toLowerCase().includes("income") || String(label).toLowerCase().includes("sales") ? "income of" : "of"} <strong className="text-foreground font-bold">{prefix}{Number(value).toLocaleString()}{suffix}</strong> was {String(label).toLowerCase().includes("income") || String(label).toLowerCase().includes("sales") ? "earned" : "generated"} <span className="underline decoration-muted-foreground/30 underline-offset-4">by today.</span>
+             </p>
+          </div>
+        )}
+
+        {!trend && (
+          <div className="p-5">
+             <p className="text-[14px] text-muted-foreground leading-relaxed">
+               A total {String(label).toLowerCase().includes("income") || String(label).toLowerCase().includes("sales") ? "income of" : "of"} <strong className="text-foreground font-bold">{prefix}{Number(value).toLocaleString()}{suffix}</strong> was {String(label).toLowerCase().includes("income") || String(label).toLowerCase().includes("sales") ? "earned" : "generated"} <span className="underline decoration-muted-foreground/30 underline-offset-4">by today.</span>
+             </p>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-border/40 flex justify-between items-center bg-card">
+          <span className="text-[13px] text-muted-foreground">Data as of</span>
+          <span className="text-[13px] font-medium text-muted-foreground">
+            {new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "numeric", hour12: true })}
+          </span>
         </div>
-      </CardContent>
-    </Card>
+      </HoverCardContent>
+    </HoverCard>
   )
 }
 
-function Receipt({ className }: { className?: string }) { return <CreditCard className={className} /> }
-
-function DashboardSkeleton() {
-  return (
-    <div className="flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4 animate-in fade-in duration-500">
-      {/* Header Skeleton */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <Skeleton className="h-10 w-64" />
-          <Skeleton className="h-4 w-96 transition-all" />
-        </div>
-        <Skeleton className="h-8 w-32 rounded-full" />
-      </div>
-
-      {/* Health Cards Skeleton */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-card border border-border rounded-xl p-6 flex justify-between items-center shadow-sm">
-            <div className="space-y-3">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-8 w-16" />
-            </div>
-            <Skeleton className="h-10 w-10 rounded-lg" />
-          </div>
-        ))}
-      </section>
-
-      {/* Summary Bar Skeleton */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {[1, 2].map((i) => (
-          <div key={i} className="bg-card border border-border rounded-xl p-5 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-4">
-              <Skeleton className="h-12 w-12 rounded-full" />
-              <div className="space-y-2">
-                <Skeleton className="h-3 w-28" />
-                <Skeleton className="h-7 w-20" />
-              </div>
-            </div>
-            <Skeleton className="h-5 w-5 rounded" />
-          </div>
-        ))}
-      </section>
-
-      {/* Charts Skeleton */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-card border border-border rounded-xl p-6 h-[400px] shadow-sm flex flex-col gap-4">
-           <Skeleton className="h-6 w-48" />
-           <Skeleton className="flex-1 w-full" />
-        </div>
-        <div className="bg-card border border-border rounded-xl p-6 h-[400px] shadow-sm flex flex-col gap-4">
-           <Skeleton className="h-6 w-32" />
-           <div className="flex-1 flex items-center justify-center">
-              <Skeleton className="h-64 w-64 rounded-full" />
-           </div>
-        </div>
-      </section>
-    </div>
-  )
-}
