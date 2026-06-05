@@ -24,7 +24,7 @@ import {
   formatDayCloseListHeading,
   pickBackendAmount,
 } from "@/lib/day-close-format";
-import { parseDayCloseDetail, unwrapApiData, type DayCloseDetail } from "@/types/day-close";
+import { parseDayCloseCurrent, unwrapApiData, type DayCloseCurrent } from "@/types/day-close";
 
 export default function DayClosePage() {
   const user = useAuth((s) => s.user);
@@ -33,7 +33,7 @@ export default function DayClosePage() {
   const [closeOpen, setCloseOpen] = useState(false);
   const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
   const [currentLoading, setCurrentLoading] = useState(false);
-  const [currentClose, setCurrentClose] = useState<DayCloseDetail | null>(null);
+  const [currentClose, setCurrentClose] = useState<DayCloseCurrent | null>(null);
 
   const showBusinessLinePicker = Boolean(
     restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
@@ -46,7 +46,7 @@ export default function DayClosePage() {
       const res = await apiClient.get(
         DayCloseApis.current({ restaurantId, businessLine }),
       );
-      setCurrentClose(unwrapApiData(res.data, parseDayCloseDetail));
+      setCurrentClose(unwrapApiData(res.data, parseDayCloseCurrent));
     } catch {
       setCurrentClose(null);
     } finally {
@@ -59,14 +59,20 @@ export default function DayClosePage() {
   }, [restaurantId, loadCurrent]);
 
   const actionLabel = useMemo(() => {
+    const label = currentClose?.action_label?.trim();
+    if (label) return label;
     const status = String(currentClose?.status ?? "open").toLowerCase();
     if (status === "pending") return "Continue Close";
     if (status === "confirmed") return "View Current Day";
     return "Close Today";
-  }, [currentClose?.status]);
+  }, [currentClose?.action_label, currentClose?.status]);
 
-  const displayNetSales = pickBackendAmount(currentClose?.net_sales);
-  const displayExpenseTotal = pickBackendAmount(currentClose?.expense_total);
+  const displayNetSales = pickBackendAmount(
+    currentClose?.snapshot_preview?.net_sales,
+  );
+  const displayExpenseTotal = pickBackendAmount(
+    currentClose?.snapshot_preview?.expense_total,
+  );
 
   return (
     <div className="flex flex-col gap-6 max-w-7xl mx-auto p-6">
@@ -116,8 +122,13 @@ export default function DayClosePage() {
                   </Button>
                 </div>
                 <p className="text-sm font-bold">
-                  {currentClose
-                    ? formatDayCloseListHeading(currentClose)
+                  {currentClose?.id
+                    ? formatDayCloseListHeading({
+                        id: currentClose.id,
+                        business_line: currentClose.business_line,
+                        period_start_at: currentClose.period_start_at,
+                        period_end_at: currentClose.period_end_at,
+                      })
                     : "—"}
                 </p>
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
