@@ -378,8 +378,8 @@ export const AnalyticsApis = {
     const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
     if (startTime) params.append('start_time', startTime);
     if (endTime) params.append('end_time', endTime);
-    if (!startTime && dateFrom) params.append('date_from', dateFrom);
-    if (!startTime && dateTo) params.append('date_to', dateTo);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
     if (timezone) params.append('timezone', timezone);
     if (station) params.append('station', station);
     if (businessLine) params.append('business_line', businessLine);

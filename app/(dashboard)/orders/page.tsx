@@ -57,6 +57,20 @@ function getOrderTimeMs(order: any): number {
 export default function OrdersPage() {
     const [activeTab, setActiveTab] = useState<"active" | "history">("active");
     const [activeFilter, setActiveFilter] = useState<"today" | "all">("today");
+
+    // Hydrate activeFilter from localStorage on mount
+    useEffect(() => {
+        const saved = localStorage.getItem("orders:activeFilter");
+        if (saved === "all" || saved === "today") {
+            setActiveFilter(saved);
+        }
+    }, []);
+
+    const setPersistedActiveFilter = (val: "today" | "all") => {
+        setActiveFilter(val);
+        localStorage.setItem("orders:activeFilter", val);
+    };
+
     const [orders, setOrders] = useState<any[]>([]);
     const [historyOrders, setHistoryOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -478,7 +492,7 @@ export default function OrdersPage() {
                     {activeTab === "active" && (
                          <div className="flex items-center bg-muted p-1 rounded-xl border border-border/40 shrink-0">
                              <button
-                                 onClick={() => setActiveFilter("today")}
+                                 onClick={() => setPersistedActiveFilter("today")}
                                  className={cn(
                                      "px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wider",
                                      activeFilter === "today"
@@ -489,7 +503,7 @@ export default function OrdersPage() {
                                  Today
                              </button>
                              <button
-                                 onClick={() => setActiveFilter("all")}
+                                 onClick={() => setPersistedActiveFilter("all")}
                                  className={cn(
                                      "px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wider",
                                      activeFilter === "all"

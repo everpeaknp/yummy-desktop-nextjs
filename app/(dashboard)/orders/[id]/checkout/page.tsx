@@ -774,6 +774,19 @@ export default function CheckoutPage() {
         toast.success("Multiple payments processed successfully");
         setShouldAutoRedirectAfterPayment(true);
       } catch (err: any) {
+        // Backend sometimes throws 500/400 but payment succeeds. Verify:
+        try {
+          const checkBill = await apiClient.get(OrderApis.getOrderBill(orderId));
+          if (checkBill.data?.data?.total_paid > (bill?.total_paid || 0)) {
+            setPaymentOpen(false);
+            setMultiPayments([{ method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }]);
+            setIsMultiPayment(false);
+            await Promise.all([fetchBill(), fetchCustomers()]);
+            toast.success("Multiple payments processed successfully");
+            if (checkBill.data.data.payment_complete) setShouldAutoRedirectAfterPayment(true);
+            return;
+          }
+        } catch (e) {}
         setPayError(err?.response?.data?.detail || "Failed to process multiple payments");
       } finally {
         setPaySubmitting(false);
@@ -844,6 +857,19 @@ export default function CheckoutPage() {
         setShouldAutoRedirectAfterPayment(true);
       }
     } catch (err: any) {
+      // Backend sometimes throws 500/400 but payment succeeds. Verify:
+      try {
+        const checkBill = await apiClient.get(OrderApis.getOrderBill(orderId));
+        if (checkBill.data?.data?.total_paid > (bill?.total_paid || 0)) {
+          setPaymentOpen(false);
+          setPayAmount("");
+          setPayReference("");
+          setPayMethod("cash");
+          await Promise.all([fetchBill(), fetchCustomers()]);
+          if (checkBill.data.data.payment_complete) setShouldAutoRedirectAfterPayment(true);
+          return;
+        }
+      } catch (e) {}
       setPayError(err?.response?.data?.detail || "Failed to add payment");
     } finally {
       setPaySubmitting(false);

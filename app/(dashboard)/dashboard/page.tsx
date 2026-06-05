@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import apiClient from "@/lib/api-client"
 import { useAuth } from "@/hooks/use-auth"
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions"
@@ -65,6 +66,7 @@ export default function DashboardPage() {
   const [trendsData, setTrendsData] = useState<any[]>([])
   const [categoryData, setCategoryData] = useState<any[]>([])
   const [activities, setActivities] = useState<any[]>([])
+  const [deltaData, setDeltaData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [analyticsError, setAnalyticsError] = useState<string | null>(null)
@@ -137,6 +139,28 @@ export default function DashboardPage() {
         businessLine: "restaurant",
       })).catch(err => { console.error("V2 failed:", err); return null })
 
+      let compareStartTime = startTime;
+      let compareEndTime = endTime;
+      
+      // For "today", pass the exact current time so the backend can do a time-wise comparison (e.g. today up to 1 PM vs yesterday up to 1 PM)
+      if (activeRange === 'today') {
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+        compareStartTime = startOfToday.toISOString();
+        compareEndTime = new Date().toISOString();
+      }
+
+      const deltaRes = await apiClient.get(AnalyticsApis.compare({
+        restaurantId: user.restaurant_id,
+        dateFrom,
+        dateTo,
+        startTime: compareStartTime,
+        endTime: compareEndTime,
+        timezone,
+        businessLine: "restaurant"
+      })).catch(err => { console.error("Compare failed:", err); return null })
+      
+      let finalDeltaData = deltaRes?.data?.status === "success" ? deltaRes.data.data : null;
       // Fetch Advanced Analytics (Date filtered) — only when explicitly permitted
       let analyticsRes = null
       if (canViewAnalytics) {
@@ -163,6 +187,79 @@ export default function DashboardPage() {
           })
       }
 
+      let prevAnalyticsRes = null;
+      if (canViewAnalytics) {
+         const dFrom = new Date(dateFrom);
+         const dTo = new Date(dateTo);
+         let prevDateFrom = dateFrom;
+         let prevDateTo = dateTo;
+         
+         if (activeRange === 'today') {
+            const y = new Date(dFrom); y.setDate(y.getDate() - 1);
+            prevDateFrom = formatDate(y); prevDateTo = formatDate(y);
+         } else if (activeRange === 'yesterday') {
+            const y = new Date(dFrom); y.setDate(y.getDate() - 1);
+            prevDateFrom = formatDate(y); prevDateTo = formatDate(y);
+         } else if (activeRange === 'last7') {
+            const yStart = new Date(dFrom); yStart.setDate(yStart.getDate() - 7);
+            const yEnd = new Date(dTo); yEnd.setDate(yEnd.getDate() - 7);
+            prevDateFrom = formatDate(yStart); prevDateTo = formatDate(yEnd);
+         } else if (activeRange === 'last30') {
+            const yStart = new Date(dFrom); yStart.setDate(yStart.getDate() - 30);
+            const yEnd = new Date(dTo); yEnd.setDate(yEnd.getDate() - 30);
+            prevDateFrom = formatDate(yStart); prevDateTo = formatDate(yEnd);
+         } else if (activeRange === 'month') {
+            const yStart = new Date(dFrom); yStart.setMonth(yStart.getMonth() - 1);
+            const yEnd = new Date(yStart.getFullYear(), yStart.getMonth() + 1, 0);
+            prevDateFrom = formatDate(yStart); prevDateTo = formatDate(yEnd);
+         }
+
+         prevAnalyticsRes = await apiClient.get(AnalyticsApis.dashboard({
+               restaurantId: user.restaurant_id,
+               dateFrom: prevDateFrom,
+               dateTo: prevDateTo,
+               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+               businessLine: "restaurant",
+               include: "core,insights"
+         })).catch(() => null);
+      }
+
+      if (analyticsRes?.data?.status === "success" && prevAnalyticsRes?.data?.status === "success" && finalDeltaData) {
+         const currOverview = analyticsRes.data.data.overview || {};
+         const prevOverview = prevAnalyticsRes.data.data.overview || {};
+         
+         const currOrders = currOverview.orders_count || 0;
+         const prevOrders = prevOverview.orders_count || 0;
+         
+         const currAov = currOverview.average_order_value || 0;
+         const prevAov = prevOverview.average_order_value || 0;
+         
+         const currIncome = currOverview.total_income || currOverview.gross_sales || 1;
+         const prevIncome = prevOverview.total_income || prevOverview.gross_sales || 1;
+         const currMargin = ((currOverview.net_profit || currOverview.total_income || 0) / currIncome) * 100;
+         const prevMargin = ((prevOverview.net_profit || prevOverview.total_income || 0) / prevIncome) * 100;
+
+         const calcPct = (curr: number, prev: number) => prev === 0 ? (curr > 0 ? 100 : 0) : ((curr - prev) / prev) * 100;
+
+         finalDeltaData = {
+            ...finalDeltaData,
+            previous: {
+               ...finalDeltaData.previous,
+               orders: prevOrders,
+               aov: prevAov,
+               margin: prevMargin
+            },
+            deltas: {
+               ...finalDeltaData.deltas,
+               orders_pct: calcPct(currOrders, prevOrders),
+               aov_pct: calcPct(currAov, prevAov),
+               margin_pct: calcPct(currMargin, prevMargin)
+            }
+         };
+      }
+
+      setDeltaData(finalDeltaData);
+
       // Audit logs were removed; use Transactions as the unified activity timeline.
       const historyRes = canViewAnalytics
         ? await apiClient
@@ -186,6 +283,7 @@ export default function DashboardPage() {
         .catch(err => { console.error("Occupancy failed:", err); return null })
 
       if (v2Res?.data?.status === "success") setData(v2Res.data.data)
+      if (deltaRes?.data?.status === "success") setDeltaData(deltaRes.data.data)
       
       if (analyticsRes?.data?.status === "success") {
         const analytics = analyticsRes.data.data
@@ -323,6 +421,21 @@ export default function DashboardPage() {
     refunded_today: shiftPulse?.refunded ?? health?.refunded_today ?? 0,
   }
 
+  const mapCompareTrend = (pct?: number, prevValue?: number) => {
+    if (pct === undefined || pct === null) return undefined;
+    const base = { previous_value: prevValue };
+    if (pct > 0) return { direction: 'UP', delta_percent: pct, ...base };
+    if (pct < 0) return { direction: 'DOWN', delta_percent: Math.abs(pct), ...base };
+    return { direction: 'SAME', delta_percent: 0, ...base };
+  }
+
+  let compareLabel = "previous period";
+  if (activeRange === "today") compareLabel = "yesterday (full day)";
+  else if (activeRange === "yesterday") compareLabel = "the day before yesterday";
+  else if (activeRange === "last7") compareLabel = "the previous 7 days";
+  else if (activeRange === "last30") compareLabel = "the previous 30 days";
+  else if (activeRange === "month") compareLabel = "the previous month";
+
   return (
     <div className="flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
       {/* 0. Header */}
@@ -370,30 +483,85 @@ export default function DashboardPage() {
 
       {/* 1.1 Summary Bar */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-         <div className="bg-card border border-border rounded-xl p-5 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
-                    <XCircle className="h-6 w-6 text-destructive" />
+        <HoverCard openDelay={0} closeDelay={0}>
+          <HoverCardTrigger asChild>
+             <div className="group relative overflow-hidden bg-card/80 backdrop-blur-md border border-border/50 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-destructive/10 to-transparent rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+                <div className="flex items-center gap-5 relative z-10">
+                    <div className="w-14 h-14 rounded-2xl bg-destructive/10 flex items-center justify-center border border-destructive/20 group-hover:bg-destructive/20 transition-colors shadow-sm">
+                        <XCircle className="h-7 w-7 text-destructive" />
+                    </div>
+                    <div>
+                        <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-80">Cancelled Today</p>
+                        <p className="text-3xl font-black tracking-tight">{kpis.cancelled_today}</p>
+                    </div>
                 </div>
-                <div>
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Cancelled Today</p>
-                    <p className="text-2xl font-black">{kpis.cancelled_today}</p>
-                </div>
+                <TrendingUp className="h-6 w-6 text-muted-foreground opacity-10 group-hover:opacity-20 transition-opacity" />
+             </div>
+          </HoverCardTrigger>
+          <HoverCardContent align="start" side="bottom" sideOffset={8} className="w-[var(--radix-hover-card-trigger-width)] p-0 overflow-hidden rounded-2xl border-border/40 shadow-xl bg-card">
+            <div className="flex items-start gap-4 p-5 border-b border-border/40">
+               <div className="p-2.5 rounded-full text-destructive bg-destructive/10">
+                 <XCircle className="h-5 w-5" />
+               </div>
+               <div>
+                 <p className="font-bold text-[15px] text-foreground tracking-tight">Cancelled Orders</p>
+                 <p className="text-[13px] text-muted-foreground mt-0.5">Detailed insights</p>
+               </div>
             </div>
-            <TrendingUp className="h-5 w-5 text-muted-foreground opacity-20" />
-         </div>
-         <div className="bg-card border border-border rounded-xl p-5 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <CreditCard className="h-6 w-6 text-blue-500" />
-                </div>
-                <div>
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Refunded Today</p>
-                    <p className="text-2xl font-black">{kpis.refunded_today}</p>
-                </div>
+            <div className="p-5">
+               <p className="text-[14px] text-muted-foreground leading-relaxed">
+                 A total of <strong className="text-foreground font-bold">{kpis.cancelled_today}</strong> orders were cancelled <span className="underline decoration-muted-foreground/30 underline-offset-4">by today.</span>
+               </p>
             </div>
-            <TrendingUp className="h-5 w-5 text-muted-foreground opacity-20" />
-         </div>
+            <div className="px-5 py-4 border-t border-border/40 flex justify-between items-center bg-card">
+              <span className="text-[13px] text-muted-foreground">Data as of</span>
+              <span className="text-[13px] font-medium text-muted-foreground">
+                {new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "numeric", hour12: true })}
+              </span>
+            </div>
+          </HoverCardContent>
+        </HoverCard>
+
+        <HoverCard openDelay={0} closeDelay={0}>
+          <HoverCardTrigger asChild>
+             <div className="group relative overflow-hidden bg-card/80 backdrop-blur-md border border-border/50 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+                <div className="flex items-center gap-5 relative z-10">
+                    <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 group-hover:bg-blue-500/20 transition-colors shadow-sm">
+                        <CreditCard className="h-7 w-7 text-blue-500" />
+                    </div>
+                    <div>
+                        <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-80">Refunded Today</p>
+                        <p className="text-3xl font-black tracking-tight">{kpis.refunded_today}</p>
+                    </div>
+                </div>
+                <TrendingUp className="h-6 w-6 text-muted-foreground opacity-10 group-hover:opacity-20 transition-opacity" />
+             </div>
+          </HoverCardTrigger>
+          <HoverCardContent align="start" side="bottom" sideOffset={8} className="w-[var(--radix-hover-card-trigger-width)] p-0 overflow-hidden rounded-2xl border-border/40 shadow-xl bg-card">
+            <div className="flex items-start gap-4 p-5 border-b border-border/40">
+               <div className="p-2.5 rounded-full text-blue-500 bg-blue-500/10">
+                 <CreditCard className="h-5 w-5" />
+               </div>
+               <div>
+                 <p className="font-bold text-[15px] text-foreground tracking-tight">Refunded Orders</p>
+                 <p className="text-[13px] text-muted-foreground mt-0.5">Detailed insights</p>
+               </div>
+            </div>
+            <div className="p-5">
+               <p className="text-[14px] text-muted-foreground leading-relaxed">
+                 A total of <strong className="text-foreground font-bold">{kpis.refunded_today}</strong> items were refunded <span className="underline decoration-muted-foreground/30 underline-offset-4">by today.</span>
+               </p>
+            </div>
+            <div className="px-5 py-4 border-t border-border/40 flex justify-between items-center bg-card">
+              <span className="text-[13px] text-muted-foreground">Data as of</span>
+              <span className="text-[13px] font-medium text-muted-foreground">
+                {new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "numeric", hour12: true })}
+              </span>
+            </div>
+          </HoverCardContent>
+        </HoverCard>
       </section>
 
       {/* 1.2 Dashboard V2 Priorities */}
@@ -520,31 +688,58 @@ export default function DashboardPage() {
         </div>
         
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
-            <SummaryMetric label="Gross Sales" value={kpis.gross_sales} prefix={currency} icon={<DollarSign className="h-4 w-4" />} />
-            <SummaryMetric label="Net Profit" value={kpis.net_profit} prefix={currency} icon={<TrendingUp className="h-4 w-4" />} />
-            <SummaryMetric label="Margin" value={kpis.profit_margin} suffix="%" icon={<Zap className="h-4 w-4" />} />
-            <SummaryMetric label="Total Orders" value={kpis.total_orders} icon={<Activity className="h-4 w-4" />} />
-            <SummaryMetric label="Avg Ticket" value={kpis.average_order_value} prefix={currency} icon={<Receipt className="h-4 w-4" />} />
-            <SummaryMetric label="Total Expenses" value={kpis.total_expense} prefix={currency} icon={<TrendingDown className="h-4 w-4" />} />
+            <SummaryMetric label="Gross Sales" value={kpis.gross_sales} prefix={currency} icon={<DollarSign className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.income_pct, deltaData?.previous?.income) || data?.trends?.sales_vs_yesterday} compareLabel={compareLabel} />
+            <SummaryMetric label="Net Profit" value={kpis.net_profit} prefix={currency} icon={<TrendingUp className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.profit_pct, deltaData?.previous?.profit)} compareLabel={compareLabel} />
+            <SummaryMetric label="Profit Margin %" value={kpis.profit_margin} suffix="%" icon={<Lightbulb className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.margin_pct, deltaData?.previous?.margin)} compareLabel={compareLabel} />
+            <SummaryMetric label="Total Orders" value={kpis.total_orders} icon={<Briefcase className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.orders_pct, deltaData?.previous?.orders)} compareLabel={compareLabel} />
+            <SummaryMetric label="Avg Order Value" value={kpis.average_order_value} prefix={currency} icon={<ReceiptText className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.aov_pct, deltaData?.previous?.aov)} compareLabel={compareLabel} />
+            <SummaryMetric label="Total Expenses" value={kpis.total_expense} prefix={currency} icon={<Wallet className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.expense_pct, deltaData?.previous?.expense)} compareLabel={compareLabel} />
         </div>
       </section>
     </div>
   )
 }
 
-function HealthCard({ label, value, icon, color, borderColor, bgColor, pulse }: any) {
+function HealthCard({ label, value, icon, color, pulse }: any) {
     return (
-        <Card className="bg-card border border-border shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                   <p className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-1.5 opacity-70">{label}</p>
-                   <p className={cn("text-3xl font-black tracking-tighter text-foreground", pulse ? "animate-pulse" : "")}>{value}</p>
-                </div>
-                <div className={cn("p-2.5 rounded-lg bg-muted/40 border border-border/50 transition-colors", color)}>
-                   {icon}
-                </div>
-            </CardContent>
-        </Card>
+      <HoverCard openDelay={0} closeDelay={0}>
+        <HoverCardTrigger asChild>
+          <Card className={cn("relative overflow-hidden bg-card/80 backdrop-blur-xl border border-border/50 shadow-sm hover:-translate-y-1 hover:shadow-xl transition-all duration-300 group rounded-2xl cursor-default", pulse ? "ring-1 ring-destructive/50 shadow-destructive/10" : "")}>
+              <div className={cn("absolute top-0 right-0 w-32 h-32 bg-gradient-to-br opacity-[0.03] dark:opacity-10 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110", "from-foreground to-transparent")} />
+              <CardContent className="p-6 flex items-center justify-between relative z-10">
+                  <div>
+                     <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-2 opacity-80">{label}</p>
+                     <p className={cn("text-4xl font-black tracking-tighter text-foreground drop-shadow-sm", pulse ? "animate-pulse text-destructive" : "")}>{value}</p>
+                  </div>
+                  <div className={cn("p-3.5 rounded-xl bg-background/50 border border-border/40 transition-colors shadow-sm group-hover:scale-110 duration-300", color, pulse ? "shadow-destructive/20 bg-destructive/10 border-destructive/20" : "group-hover:bg-muted")}>
+                     {icon}
+                  </div>
+              </CardContent>
+          </Card>
+        </HoverCardTrigger>
+        <HoverCardContent align="start" side="bottom" sideOffset={8} className="w-[var(--radix-hover-card-trigger-width)] p-0 overflow-hidden rounded-2xl border-border/40 shadow-xl bg-card">
+          <div className="flex items-start gap-4 p-5 border-b border-border/40">
+             <div className={cn("p-2.5 rounded-full flex items-center justify-center bg-muted/50", color)}>
+               {icon}
+             </div>
+             <div>
+               <p className="font-bold text-[15px] text-foreground tracking-tight">Operational Status: {label}</p>
+               <p className="text-[13px] text-muted-foreground mt-0.5">Detailed insights</p>
+             </div>
+          </div>
+          <div className="p-5">
+             <p className="text-[14px] text-muted-foreground leading-relaxed">
+               There are currently <strong className={cn("font-bold", pulse ? "text-destructive" : "text-foreground")}>{value}</strong> {String(label).toLowerCase()} actively being processed <span className="underline decoration-muted-foreground/30 underline-offset-4">right now.</span>
+             </p>
+          </div>
+          <div className="px-5 py-4 border-t border-border/40 flex justify-between items-center bg-card">
+            <span className="text-[13px] text-muted-foreground">Data as of</span>
+            <span className="text-[13px] font-medium text-muted-foreground">
+              {new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "numeric", hour12: true })}
+            </span>
+          </div>
+        </HoverCardContent>
+      </HoverCard>
     )
 }
 
@@ -555,8 +750,9 @@ function TrendCard({ label, trend }: { label: string, trend: any }) {
   const delta = Math.abs(Number(trend?.delta_percent || 0))
 
   return (
-    <Card className="bg-card border-border shadow-sm">
-      <CardContent className="p-6">
+    <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-md hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-24 h-24 bg-current opacity-5 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+      <CardContent className="p-6 relative z-10">
         <div className="text-xs text-muted-foreground font-medium mb-1">{label}</div>
         <div className="flex items-end gap-3">
           <span className="text-3xl font-bold text-foreground">{delta.toFixed(1)}%</span>
@@ -734,8 +930,9 @@ function AlertsBanner({ alerts }: { alerts: any[] }) {
         : "border-emerald-500/30 bg-emerald-500/5 text-emerald-600"
 
   return (
-    <Card className={cn("shadow-sm", tone)}>
-      <CardHeader className="pb-3">
+    <Card className={cn("shadow-sm rounded-2xl border border-border/50 hover:shadow-md transition-all duration-300 relative overflow-hidden group", tone)}>
+      <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-5 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110" />
+      <CardHeader className="pb-3 relative z-10">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <Siren className="h-4 w-4" />
           Alerts
@@ -754,7 +951,7 @@ function AlertsBanner({ alerts }: { alerts: any[] }) {
 function QuickActionsCard({ actions }: { actions: any[] }) {
   const enabledActions = actions.filter((action: any) => action.enabled).slice(0, 6)
   return (
-    <Card className="shadow-sm border-border/70 bg-gradient-to-br from-background to-muted/20">
+    <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-bold">Quick Actions</CardTitle>
       </CardHeader>
@@ -765,11 +962,12 @@ function QuickActionsCard({ actions }: { actions: any[] }) {
               key={action.key}
               href={action.route}
               className={cn(
-                "rounded-2xl border border-border/60 bg-background/70 px-3 py-4 transition-all hover:bg-background hover:border-primary/30 hover:shadow-sm"
+                "group/btn relative overflow-hidden rounded-xl border border-border/40 bg-muted/30 px-3 py-4 transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-primary/40 hover:bg-card"
               )}
             >
-              <p className="text-sm font-bold leading-tight">{action.title}</p>
-              <p className="text-[11px] text-muted-foreground mt-2">Open module</p>
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity" />
+              <p className="text-sm font-bold leading-tight relative z-10">{action.title}</p>
+              <p className="text-[11px] text-muted-foreground mt-2 relative z-10 font-medium">Open module</p>
             </Link>
           ))}
           {enabledActions.length === 0 && <p className="col-span-2 md:col-span-3 text-sm text-muted-foreground">No quick actions available.</p>}
@@ -782,8 +980,9 @@ function QuickActionsCard({ actions }: { actions: any[] }) {
 function DayCloseStatusCard({ dayCloseStatus }: { dayCloseStatus: any }) {
   const status = String(dayCloseStatus?.status || "unavailable").replace(/_/g, " ")
   return (
-    <Card className="shadow-sm border-primary/20">
-      <CardHeader className="pb-3">
+    <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm relative overflow-hidden group hover:shadow-md transition-all duration-300">
+      <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+      <CardHeader className="pb-3 relative z-10">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <Calendar className="h-4 w-4 text-primary" />
           Day Close
@@ -1243,7 +1442,7 @@ function AttentionItemsCard({ items }: { items: any[] }) {
 function QuickInsightsStack({ insights }: { insights: any[] }) {
   const visibleInsights = insights.slice(0, 4)
   return (
-    <Card className="shadow-sm border-border/70 bg-card">
+    <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300 group">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-bold">Quick Insights</CardTitle>
       </CardHeader>
@@ -1281,8 +1480,9 @@ function CashWatchCard({ cashWatch, currency }: { cashWatch: any, currency: stri
   ]
 
   return (
-    <Card className="bg-card border-border shadow-sm">
-      <CardHeader className="pb-2 border-b border-border/30">
+    <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-md hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+      <CardHeader className="pb-2 border-b border-border/30 relative z-10">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <Wallet className="h-4 w-4 text-emerald-500" />
           Cash Watch
@@ -1315,7 +1515,7 @@ function TrendComparisonSection({ trendCards }: { trendCards: any[] }) {
 function OrderStatusCard({ statuses }: { statuses: any[] }) {
   const total = statuses.reduce((sum, item) => sum + Number(item.count || 0), 0)
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300 group">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-bold">Order Status</CardTitle>
       </CardHeader>
@@ -1343,8 +1543,9 @@ function PaymentSplitCard({ payments, currency }: { payments: any[], currency: s
   const total = payments.reduce((sum, item) => sum + Number(item.amount || 0), 0)
   const colors = ["bg-emerald-500", "bg-blue-500", "bg-violet-500", "bg-amber-500", "bg-rose-500"]
   return (
-    <Card className="h-full border-border shadow-sm">
-      <CardHeader className="pb-4 border-b border-border/50">
+    <Card className="h-full shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300 relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+      <CardHeader className="pb-4 border-b border-border/30 relative z-10">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <ReceiptText className="h-4 w-4 text-primary" />
           Payment Split
@@ -1378,8 +1579,9 @@ function PaymentSplitCard({ payments, currency }: { payments: any[], currency: s
 
 function ActivityFeed({ activities }: { activities: any[] }) {
   return (
-    <Card className="bg-card border-border shadow-sm overflow-hidden h-full flex flex-col">
-      <CardHeader className="pb-4 bg-muted/10 border-b border-border/50 shrink-0">
+    <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm overflow-hidden h-full flex flex-col rounded-2xl hover:shadow-md transition-all duration-300 group">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110 pointer-events-none" />
+      <CardHeader className="pb-4 bg-muted/10 border-b border-border/30 shrink-0 relative z-10">
         <CardTitle className="text-sm font-bold flex items-center gap-2">
           <Activity className="h-4 w-4 text-primary" />
           Real-time Staff Activity
@@ -1424,26 +1626,86 @@ function ActivityFeed({ activities }: { activities: any[] }) {
   )
 }
 
-function SummaryMetric({ label, value, prefix = "", suffix = "", icon }: any) {
+function SummaryMetric({ label, value, prefix = "", suffix = "", icon, trend, compareLabel = "previous period" }: any) {
+  const isUp = trend?.direction?.toUpperCase() === 'UP';
+  const isDown = trend?.direction?.toUpperCase() === 'DOWN';
+  const isSame = trend?.direction?.toUpperCase() === 'SAME';
+  const trendColor = isUp ? "bg-emerald-500/10 text-emerald-500" : isDown ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground";
+
   return (
-    <Card className="bg-card border-border shadow-md hover:border-primary/40 transition-all group overflow-hidden relative">
-      <div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover:bg-primary transition-colors" />
-      <CardContent className="p-5 flex flex-col justify-center h-full">
-        <div className="flex items-center gap-2 mb-2">
-           <div className="p-1.5 rounded-md bg-muted text-muted-foreground group-hover:text-primary transition-colors">
-              {icon}
+    <HoverCard openDelay={0} closeDelay={0}>
+      <HoverCardTrigger asChild>
+        <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative cursor-default">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-primary/40 to-primary group-hover:w-full group-hover:opacity-5 transition-all duration-500" />
+          <CardContent className="p-5 flex flex-col justify-center h-full relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+               <div className="p-1.5 rounded-md bg-muted text-muted-foreground group-hover:text-primary transition-colors">
+                  {icon}
+               </div>
+               <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
+                 {label}
+               </p>
+            </div>
+            <div className="text-xl font-black text-foreground tabular-nums">
+              <span className="text-xs font-normal mr-0.5 opacity-50">{prefix}</span>
+              {Number(value).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+              <span className="text-xs font-normal ml-0.5 opacity-50">{suffix}</span>
+            </div>
+          </CardContent>
+        </Card>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" side="bottom" sideOffset={8} className="w-[max(320px,var(--radix-hover-card-trigger-width))] p-0 overflow-hidden rounded-2xl border-border/40 shadow-xl bg-card">
+        {/* Header */}
+        <div className="flex items-start gap-4 p-5 border-b border-border/40">
+           <div className="p-2.5 flex items-center justify-center rounded-full text-primary bg-primary/10">
+             {icon}
            </div>
-           <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
-             {label}
-           </p>
+           <div>
+             <p className="font-bold text-[15px] text-foreground tracking-tight">Total Amount of {label}</p>
+             <p className="text-[13px] text-muted-foreground mt-0.5">Detailed insights</p>
+           </div>
         </div>
-        <div className="text-xl font-black text-foreground tabular-nums">
-          <span className="text-xs font-normal mr-0.5 opacity-50">{prefix}</span>
-          {Number(value).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-          <span className="text-xs font-normal ml-0.5 opacity-50">{suffix}</span>
+        
+        {/* Performance Box */}
+        {trend && (
+          <div className="p-5 space-y-6">
+             <div className="flex flex-col gap-3 p-4 bg-muted/30 rounded-2xl border border-border/50">
+                <div className="flex justify-between items-center">
+                  <span className="text-[13px] font-semibold text-foreground">PERFORMANCE</span>
+                  <Badge variant="outline" className={cn("border-transparent rounded-lg px-2.5 py-0.5 text-[13px] font-medium flex items-center gap-1.5", trendColor)}>
+                    {`${isUp ? '+' : isDown ? '-' : ''}${trend.delta_percent}%`}
+                    {isUp && <TrendingUp className="w-4 h-4" />}
+                    {isDown && <TrendingDown className="w-4 h-4" />}
+                  </Badge>
+                </div>
+                <p className="text-[14px] text-muted-foreground">
+                   {`Compared to ${compareLabel}${trend.previous_value !== undefined ? ` (was ${prefix}${Number(trend.previous_value).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${suffix})` : ''}`}
+                </p>
+             </div>
+
+             <p className="text-[14px] text-muted-foreground leading-relaxed">
+               A total {String(label).toLowerCase().includes("income") || String(label).toLowerCase().includes("sales") ? "income of" : "of"} <strong className="text-foreground font-bold">{prefix}{Number(value).toLocaleString()}{suffix}</strong> was {String(label).toLowerCase().includes("income") || String(label).toLowerCase().includes("sales") ? "earned" : "generated"} <span className="underline decoration-muted-foreground/30 underline-offset-4">by today.</span>
+             </p>
+          </div>
+        )}
+
+        {!trend && (
+          <div className="p-5">
+             <p className="text-[14px] text-muted-foreground leading-relaxed">
+               A total {String(label).toLowerCase().includes("income") || String(label).toLowerCase().includes("sales") ? "income of" : "of"} <strong className="text-foreground font-bold">{prefix}{Number(value).toLocaleString()}{suffix}</strong> was {String(label).toLowerCase().includes("income") || String(label).toLowerCase().includes("sales") ? "earned" : "generated"} <span className="underline decoration-muted-foreground/30 underline-offset-4">by today.</span>
+             </p>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-border/40 flex justify-between items-center bg-card">
+          <span className="text-[13px] text-muted-foreground">Data as of</span>
+          <span className="text-[13px] font-medium text-muted-foreground">
+            {new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "numeric", hour12: true })}
+          </span>
         </div>
-      </CardContent>
-    </Card>
+      </HoverCardContent>
+    </HoverCard>
   )
 }
 
@@ -1453,53 +1715,71 @@ function DashboardSkeleton() {
   return (
     <div className="flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4 animate-in fade-in duration-500">
       {/* Header Skeleton */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-2">
           <Skeleton className="h-10 w-64" />
           <Skeleton className="h-4 w-96 transition-all" />
         </div>
-        <Skeleton className="h-8 w-32 rounded-full" />
+        <Skeleton className="h-10 w-48 rounded-md" />
       </div>
 
-      {/* Health Cards Skeleton */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-card border border-border rounded-xl p-6 flex justify-between items-center shadow-sm">
-            <div className="space-y-3">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-8 w-16" />
+      {/* 1. Performance Overview Skeleton (6 cols) */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+           <Skeleton className="h-5 w-32" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-5 h-[120px] shadow-sm flex flex-col justify-center gap-3">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-8 w-28" />
             </div>
-            <Skeleton className="h-10 w-10 rounded-lg" />
+          ))}
+        </div>
+      </section>
+
+      {/* 2. Quick Actions Skeleton (4 cols) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="h-16 w-full rounded-2xl" />
+        ))}
+      </div>
+
+      {/* 3. Kitchen & Dining Health Skeleton (4 cols) */}
+      <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="bg-card border border-border rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+            <div className="flex justify-between items-start">
+               <div className="space-y-2">
+                 <Skeleton className="h-5 w-24" />
+                 <Skeleton className="h-3 w-16" />
+               </div>
+               <Skeleton className="h-10 w-10 rounded-full" />
+            </div>
+            <Skeleton className="h-10 w-16" />
+            <Skeleton className="h-3 w-full" />
           </div>
         ))}
       </section>
 
-      {/* Summary Bar Skeleton */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {[1, 2].map((i) => (
-          <div key={i} className="bg-card border border-border rounded-xl p-5 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-4">
-              <Skeleton className="h-12 w-12 rounded-full" />
-              <div className="space-y-2">
-                <Skeleton className="h-3 w-28" />
-                <Skeleton className="h-7 w-20" />
-              </div>
-            </div>
-            <Skeleton className="h-5 w-5 rounded" />
-          </div>
-        ))}
-      </section>
-
-      {/* Charts Skeleton */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-card border border-border rounded-xl p-6 h-[400px] shadow-sm flex flex-col gap-4">
+      {/* 4. Charts & Activity Skeleton (8 + 4 cols) */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="lg:col-span-8 bg-card border border-border rounded-2xl p-6 h-[450px] shadow-sm flex flex-col gap-4">
            <Skeleton className="h-6 w-48" />
            <Skeleton className="flex-1 w-full" />
         </div>
-        <div className="bg-card border border-border rounded-xl p-6 h-[400px] shadow-sm flex flex-col gap-4">
+        <div className="lg:col-span-4 bg-card border border-border rounded-2xl p-6 h-[450px] shadow-sm flex flex-col gap-4">
            <Skeleton className="h-6 w-32" />
-           <div className="flex-1 flex items-center justify-center">
-              <Skeleton className="h-64 w-64 rounded-full" />
+           <div className="space-y-4 mt-4">
+             {[1, 2, 3, 4].map((i) => (
+               <div key={i} className="flex gap-4 items-center">
+                  <Skeleton className="h-10 w-10 rounded-full flex-shrink-0" />
+                  <div className="space-y-2 flex-1">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-3 w-2/3" />
+                  </div>
+               </div>
+             ))}
            </div>
         </div>
       </section>

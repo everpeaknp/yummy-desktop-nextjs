@@ -69,19 +69,22 @@ function SidebarNavLink({
 }) {
   const classes = cn(
     "flex items-center rounded-lg transition-all group relative",
-    collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5",
-    isActive
+    collapsed ? "justify-center px-0 py-2.5" : "gap-3 py-2.5",
+    !collapsed && item.isNestedChild ? "pl-9 pr-3 mt-0.5 text-[13px]" : "px-3",
+    isActive && !item.isNestedChild
       ? "bg-primary/10 text-primary font-semibold"
+      : isActive && item.isNestedChild
+      ? "text-primary font-semibold"
       : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
   );
 
   const content = (
     <>
-      {isActive && !collapsed && (
+      {isActive && !collapsed && !item.isNestedChild && (
         <div className="absolute left-0 top-1/2 -translate-y-1/2 h-2/3 w-1 bg-primary rounded-r-md" />
       )}
-      <item.icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "")} />
-      {!collapsed && <span className="flex-1 truncate text-sm">{item.title}</span>}
+      <item.icon className={cn("shrink-0", item.isNestedChild ? "h-4 w-4" : "h-5 w-5", isActive ? "text-primary" : "")} />
+      {!collapsed && <span className={cn("flex-1 truncate", item.isNestedChild ? "text-[13px]" : "text-sm")}>{item.title}</span>}
       {!collapsed && hasSubItems && (
         <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", isOpen && "rotate-90")} />
       )}
