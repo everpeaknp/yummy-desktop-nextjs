@@ -59,18 +59,18 @@ import {
   dayCloseSessionToListItem,
   pickBackendAmount,
 } from "@/lib/day-close-format";
+import { fetchDayCloseSnapshotForDetail } from "@/lib/day-close-snapshot-fetch";
 import { snapshotMetricRows } from "@/lib/day-close-snapshot-view";
-import type { BusinessLine } from "@/lib/api/endpoint-types";
 import {
   parseDayCloseDetail,
   parseDayCloseList,
   parseDayCloseSessions,
   parseDayCloseSnapshotData,
-  parseDayCloseSnapshotResponse,
   type DayCloseDetail,
   type DayCloseListItem,
   type DayCloseSession,
   type DayCloseSnapshotResponse,
+  type BusinessLine,
 } from "@/types/day-close";
 
 function humanizeKey(k: string) {
@@ -296,18 +296,18 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     setWizardOpen(false);
     setWizardBusinessLine("restaurant");
     try {
-      const [detailRes, snapshotRes] = await Promise.all([
-        apiClient.get(DayCloseApis.get(id)),
-        apiClient.get(DayCloseApis.snapshot(id)),
-      ]);
-      if (detailRes.data?.status === "success") {
-        setDetail(parseDayCloseDetail(detailRes.data.data));
-      } else {
+      const detailRes = await apiClient.get(DayCloseApis.get(id));
+      if (detailRes.data?.status !== "success") {
         toast.error(detailRes.data?.message || "Failed to load day close");
+        return;
       }
-      if (snapshotRes.data?.status === "success") {
-        setSnapshot(parseDayCloseSnapshotResponse(snapshotRes.data.data));
-      }
+      const parsedDetail = parseDayCloseDetail(detailRes.data.data);
+      setDetail(parsedDetail);
+      const snap = await fetchDayCloseSnapshotForDetail(id, parsedDetail, {
+        restaurantId,
+        businessLine,
+      });
+      setSnapshot(snap);
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Failed to load day close");
     } finally {
@@ -451,10 +451,12 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const loadSnapshot = async () => {
     if (!activeId) return;
     try {
-      const res = await apiClient.get(DayCloseApis.snapshot(activeId));
-      if (res.data?.status === "success") {
-        setSnapshot(parseDayCloseSnapshotResponse(res.data.data));
-      } else toast.error(res.data?.message || "Snapshot not available");
+      const snap = await fetchDayCloseSnapshotForDetail(activeId, detail, {
+        restaurantId,
+        businessLine,
+      });
+      if (snap) setSnapshot(snap);
+      else toast.error("Snapshot not available");
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Snapshot not available");
     }

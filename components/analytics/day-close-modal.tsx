@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { DayCloseApis } from "@/lib/api/endpoints";
-import type { BusinessLine } from "@/lib/api/endpoint-types";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
 import {
   formatDayCloseCloseName,
@@ -29,6 +28,7 @@ import {
   unwrapApiData,
   type DayCloseDetail,
   type DayCloseSnapshotData,
+  type BusinessLine,
 } from "@/types/day-close";
 
 interface DayCloseModalProps {

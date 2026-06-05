@@ -1,6 +1,6 @@
 /** Backend-driven day close types — financial values are authoritative from API only. */
 
-import type { BusinessLine } from "@/lib/api/endpoint-types";
+export type BusinessLine = "restaurant" | "hotel";
 
 export type DayCloseStatus = "open" | "pending" | "confirmed" | "reopened" | string;
 
