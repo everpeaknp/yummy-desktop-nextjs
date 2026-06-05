@@ -27,6 +27,34 @@ export type KotPrintContext = {
   hasCancelledItems: boolean;
 };
 
+export function getKotTableName(data: any): string {
+  const kot = data?.kot || data || {};
+  const order = data?.order || kot?.order || {};
+  const topLevelTable = data?.table || kot?.table;
+
+  return (
+    order?.table_name ||
+    order?.table?.table_name ||
+    order?.table?.name ||
+    kot?.table_name ||
+    topLevelTable?.table_name ||
+    topLevelTable?.name ||
+    "N/A"
+  );
+}
+
+export function getKotDisplayOrderId(data: any): string | number {
+  const kot = data?.kot || data || {};
+  const order = data?.order || kot?.order || {};
+  return (
+    order?.restaurant_order_id ||
+    order?.id ||
+    kot?.restaurant_order_id ||
+    kot?.order_id ||
+    ""
+  );
+}
+
 export function getKotItems(kot: any): KotPrintItem[] {
   return Array.isArray(kot?.items) ? kot.items : [];
 }

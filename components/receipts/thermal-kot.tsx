@@ -2,7 +2,7 @@
 
 import React from "react";
 import { KOTUpdate } from "@/types/order";
-import { getKotPrintContext } from "@/components/receipts/kot-print-context";
+import { getKotDisplayOrderId, getKotPrintContext, getKotTableName } from "@/components/receipts/kot-print-context";
 
 interface ThermalKOTProps {
     data: any; // Using any to accommodate the KOT data structure which might include order info
@@ -11,6 +11,8 @@ interface ThermalKOTProps {
 
 export function ThermalKOT({ data, template }: ThermalKOTProps) {
     const { kot, order, restaurant, activeItems, cancelledItems, title } = getKotPrintContext(data);
+    const tableName = getKotTableName(data);
+    const orderId = getKotDisplayOrderId(data);
 
     const row = (a: React.ReactNode, b: React.ReactNode, style?: React.CSSProperties): React.ReactNode => (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', ...style }}>{a}{b}</div>
@@ -65,7 +67,7 @@ export function ThermalKOT({ data, template }: ThermalKOTProps) {
                 </div>
                 <div style={{ borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '8px' }}>
                     {row(<span style={{ fontWeight: 600 }}>KOT No:</span>, <span style={{ fontWeight: 800 }}>{kot.kot_number || kot.id}</span>)}
-                    {row(<span style={{ fontWeight: 600 }}>Table:</span>, <span style={{ fontWeight: 800 }}>{order.table_name || 'N/A'}</span>)}
+                    {row(<span style={{ fontWeight: 600 }}>Table:</span>, <span style={{ fontWeight: 800 }}>{tableName}</span>)}
                     {row(<span style={{ fontWeight: 600 }}>Time:</span>, <span>{new Date(kot.created_at || new Date()).toLocaleTimeString()}</span>)}
                 </div>
                 <div>
@@ -133,6 +135,8 @@ export function ThermalKOT({ data, template }: ThermalKOTProps) {
 function renderKotBlock(block: any, global: any, kot: any, order: any, restaurant: any, ff: string, baseFs: number) {
     const { config, type } = block;
     const { activeItems, cancelledItems } = getKotPrintContext({ kot, order, restaurant });
+    const tableName = getKotTableName({ kot, order });
+    const orderId = getKotDisplayOrderId({ kot, order });
     
     // Exact mapping from designer-components.tsx style block
     const effectiveFontType = config.font_type || global.global_font_type || 'A';
@@ -217,12 +221,12 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
                             {(showType || showTable) && (
                                 <div className="flex justify-between">
                                     {showType && <span>{config.type_label || 'TYPE'}: {kot.type || 'INITIAL'}</span>}
-                                    {showTable && <span className="text-right">{config.table_label || 'TABLE'}: {order.table_name || 'N/A'}</span>}
+                                    {showTable && <span className="text-right">{config.table_label || 'TABLE'}: {tableName}</span>}
                                 </div>
                             )}
                             {(showOrderId || showDate) && (
                                 <div className="flex justify-between">
-                                    {showOrderId && <span>{config.order_label || 'Ref'}: #{order.id}</span>}
+                                    {showOrderId && <span>{config.order_label || 'Ref'}: #{orderId}</span>}
                                     {showDate && <span className="text-right">{config.date_label || 'DATE'}: {dateStr}</span>}
                                 </div>
                             )}
@@ -236,17 +240,17 @@ function renderKotBlock(block: any, global: any, kot: any, order: any, restauran
                     ) : (
                         <>
                             <div className="flex justify-between">
-                                <span>{config.bill_label || 'BILL'} #{order.id}</span>
+                                <span>{config.bill_label || 'BILL'} #{orderId}</span>
                                 <span className="text-right">{dateStr}</span>
                             </div>
                             {showOrderId && (
                                 <div>
-                                    <span>{config.order_label || 'Order'} #{order.id}</span>
+                                    <span>{config.order_label || 'Order'} #{orderId}</span>
                                 </div>
                             )}
                             {showTable && (
                                 <div>
-                                    <span>{config.table_label || 'Table'}: {order.table_name || 'N/A'}</span>
+                                    <span>{config.table_label || 'Table'}: {tableName}</span>
                                 </div>
                             )}
                         </>
@@ -369,15 +373,17 @@ function resolvePlaceholders(text: string, kot: any, order: any, restaurant: any
     const date = kot?.created_at ? new Date(kot.created_at) : new Date();
     const dateStr = date.toLocaleDateString('en-GB');
     const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const tableName = getKotTableName({ kot, order });
+    const orderId = getKotDisplayOrderId({ kot, order });
 
     return text
         .replace(/\{\{station_ticket_title\}\}/g, kot?.station || kot?.station_name || "KITCHEN")
         .replace(/\{\{station\}\}/g, kot?.station || "KITCHEN")
         .replace(/\{\{kot_number\}\}/g, String(kot?.kot_number || kot?.id || ""))
-        .replace(/\{\{table\}\}/g, order?.table_name || "N/A")
+        .replace(/\{\{table\}\}/g, tableName)
         .replace(/\{\{date\}\}/g, dateStr)
         .replace(/\{\{time\}\}/g, timeStr)
-        .replace(/\{\{order_id\}\}/g, String(order?.id || ""))
+        .replace(/\{\{order_id\}\}/g, String(orderId))
         .replace(/\{\{type\}\}/g, kot?.type || 'INITIAL')
         .replace(/\{\{restaurant_name\}\}/g, restaurant?.name || "YUMMY RESTAURANT")
         .replace(/\{\{restaurant_address\}\}/g, restaurant?.address || "")

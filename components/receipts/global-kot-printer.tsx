@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from "react";
 import apiClient from "@/lib/api-client";
 import { PrinterApis, RestaurantApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { getKotItems, getKotPrintContext } from "@/components/receipts/kot-print-context";
+import { getKotDisplayOrderId, getKotItems, getKotPrintContext, getKotTableName } from "@/components/receipts/kot-print-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ESC/POS helpers
@@ -39,14 +39,16 @@ function resolvePlaceholders(text: string, kot: any, order: any, restaurant: any
     const date    = kot?.created_at ? new Date(kot.created_at) : new Date();
     const dateStr = date.toLocaleDateString("en-GB");
     const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    const tableName = getKotTableName({ kot, order });
+    const orderId = getKotDisplayOrderId({ kot, order });
     return text
         .replace(/\{\{station_ticket_title\}\}/g, `${(kot?.station || "KITCHEN").toUpperCase()} ORDER TICKET`)
         .replace(/\{\{station\}\}/g, kot?.station || "KITCHEN")
         .replace(/\{\{kot_number\}\}/g, String(kot?.kot_number || kot?.id || ""))
-        .replace(/\{\{table\}\}/g, order?.table_name || "N/A")
+        .replace(/\{\{table\}\}/g, tableName)
         .replace(/\{\{date\}\}/g, dateStr)
         .replace(/\{\{time\}\}/g, timeStr)
-        .replace(/\{\{order_id\}\}/g, String(order?.id || ""))
+        .replace(/\{\{order_id\}\}/g, String(orderId))
         .replace(/\{\{type\}\}/g, kot?.type || "INITIAL")
         .replace(/\{\{restaurant_name\}\}/g, restaurant?.name || "YUMMY RESTAURANT")
         .replace(/\{\{restaurant_address\}\}/g, restaurant?.address || "")
@@ -81,7 +83,7 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
         const id        = kot.id || kotData.kot_id || "-";
         const kotNumber = kot.kot_number || String(id);
         const station   = kot.station || "";
-        const table     = order.table_name || order.table || "";
+        const table     = getKotTableName({ kot, order });
         const date      = new Date().toLocaleString();
         const items: any[] = activeItems;
         const nameW     = WIDTH - 6;
@@ -175,12 +177,12 @@ function buildEscPosKot(kotData: any, template: any[] = []): string {
                     }
 
                     if (cfg.show_table !== false) {
-                        const tbl = order.table_name || "N/A";
+                        const tbl = getKotTableName({ kot, order });
                         p += `${cfg.table_label || "TABLE"}: ${tbl}${LF}`;
                     }
 
                     if (cfg.show_order_id !== false) {
-                        p += `${cfg.order_label || "ORDER"}: #${order.id || ""}${LF}`;
+                        p += `${cfg.order_label || "ORDER"}: #${getKotDisplayOrderId({ kot, order })}${LF}`;
                     }
 
                     if (cfg.show_date === true) {
