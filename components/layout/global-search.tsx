@@ -95,7 +95,17 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
         const items = new Map();
 
         sidebarItems.forEach((item) => {
-            items.set(item.href, { ...item, section: item.section || "Main Menu" });
+            if (item.subItems && item.subItems.length > 0) {
+                item.subItems.forEach((sub) => {
+                    items.set(sub.href, { ...sub, section: item.title });
+                });
+                // Also add the parent if it has a unique href
+                if (!items.has(item.href)) {
+                    items.set(item.href, { ...item, section: "Main Menu" });
+                }
+            } else {
+                items.set(item.href, { ...item, section: item.section || "Main Menu" });
+            }
         });
 
         MANAGE_ITEMS.forEach((item) => {
@@ -129,7 +139,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="p-0 sm:max-w-xl gap-0 overflow-hidden rounded-xl border-border bg-card shadow-2xl">
-                <div className="flex items-center px-4 py-3 border-b bg-muted/40">
+                <div className="flex items-center px-4 py-3 border-b bg-muted/40 pr-12">
                     <Search className="w-5 h-5 text-muted-foreground mr-3 shrink-0" />
                     <input 
                         className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-base placeholder:text-muted-foreground/70"
