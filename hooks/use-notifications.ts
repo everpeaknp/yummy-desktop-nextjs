@@ -451,11 +451,21 @@ export function useNotifications() {
             showBrowserNotification(content.title, content.body);
           }
 
-          // Auto-print logic for KOTs
-          // NOTE: Normal `kot_created` printing is now handled directly via API response
-          // in pos-system.tsx to prevent double printing between Flutter and Electron.
-          // We only listen to fallback/released events here.
+          // Auto-print logic for KOTs.
+          // We allow both direct-response and websocket creation signals to reach
+          // GlobalKotPrinter; the sink handles dedupe + backend claim.
           const payload = data.payload || data.data || data;
+
+          if ((event === "kot_created" || event === "kot") && payload.kot_id) {
+            window.dispatchEvent(
+              new CustomEvent("yummy:kot-print", {
+                detail: {
+                  ...payload,
+                  __printEvent: event,
+                },
+              }),
+            );
+          }
 
           if (event === "kot_print_fallback" || event === "kot_print_released") {
             // Fallback/released KOTs are meant for whoever can print — print regardless of actor

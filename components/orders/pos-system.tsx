@@ -288,7 +288,7 @@ export default function POSSystem({
   const [processing, setProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [orderData, setOrderData] = useState<any>(null);
-  const printedKotsRef = useRef<Set<number>>(new Set());
+  const printedKotsRef = useRef<Set<string>>(new Set());
   const [tableData, setTableData] = useState<any>(null);
   const [tablesList, setTablesList] = useState<any[]>([]);
 
@@ -538,18 +538,54 @@ export default function POSSystem({
         // Direct Print Integration
         const triggerDirectPrint = async (orderDataResponse: any) => {
           try {
-            // Helper to print a single KOT if we haven't printed it yet
+            const getKotPrintKey = (kot: any) => {
+              const kotId = kot.id || kot.kot_id || "unknown";
+              const itemSignature = Array.isArray(kot?.items)
+                ? kot.items
+                    .map((item: any) => [
+                      item?.id ?? item?.item_id ?? item?.item_name ?? "item",
+                      item?.qty_change ?? item?.qty ?? item?.quantity ?? 0,
+                      item?.deleted_qty ?? 0,
+                      item?.is_deleted ?? 0,
+                    ].join(":"))
+                    .join("|")
+                : "";
+              const version = String(
+                kot?.print_event_id ||
+                kot?.print_event_created_at ||
+                kot?.last_modified_at ||
+                kot?.updated_at ||
+                kot?.created_at ||
+                kot?.modification_type ||
+                itemSignature
+              );
+              return `${String(kotId)}:${version}`;
+            };
+
+            // Helper to print a single KOT if we haven't printed this version yet
             const printIfNew = (kot: any) => {
               const kotId = kot.id || kot.kot_id;
-              if (kotId && !printedKotsRef.current.has(kotId)) {
-                // Do not reprint INITIAL KOTs if we are updating an existing order
-                if (isEditing && kot.type === "INITIAL") {
-                  console.log(`[POS] Ignoring INITIAL KOT ${kotId} during order edit.`);
-                  printedKotsRef.current.add(kotId);
+              const printKey = getKotPrintKey(kot);
+              const isModifiedVersion = Boolean(
+                kot?.modification_type ||
+                kot?.last_modified_at ||
+                (Array.isArray(kot?.items) &&
+                  kot.items.some((item: any) =>
+                    Number(item?.deleted_qty ?? 0) > 0 ||
+                    Number(item?.is_deleted ?? 0) === 1 ||
+                    Number(item?.qty_change ?? 0) < 0
+                  ))
+              );
+
+              if (kotId && !printedKotsRef.current.has(printKey)) {
+                // Do not reprint the untouched initial KOT when editing an existing order.
+                if (isEditing && kot.type === "INITIAL" && !isModifiedVersion) {
+                  console.log(`[POS] Ignoring untouched INITIAL KOT ${kotId} during order edit.`);
+                  printedKotsRef.current.add(printKey);
                   return;
                 }
-                console.log(`[POS] Dispatching direct print for new KOT ${kotId}`);
-                printedKotsRef.current.add(kotId);
+                console.log(`[POS] Dispatching direct print for KOT ${kotId} (${printKey})`);
+                printedKotsRef.current.add(printKey);
                 window.dispatchEvent(new CustomEvent("yummy:kot-print", { detail: kot }));
               }
             };

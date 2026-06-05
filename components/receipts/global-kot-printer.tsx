@@ -363,15 +363,18 @@ export function GlobalKotPrinter() {
 
             console.log("[GlobalKotPrinter] Received KOT event:", data);
 
-            // ── Skip if already auto-printed ─────────────────────────────────
             const kotId = data.kot_id || data.id || data.kot?.id;
-            if (data.auto_printed_at || data.kot?.auto_printed_at) {
-                console.log(`[GlobalKotPrinter] KOT ${kotId} already auto-printed. Skipping.`);
-                return;
-            }
+            const shouldRefreshFromBackend = Boolean(
+                kotId && (
+                    data.__printEvent ||
+                    !Array.isArray(data.items) ||
+                    data.items.length === 0 ||
+                    !data.order
+                )
+            );
 
-            // ── Fetch full KOT if items missing ──────────────────────────────
-            if ((!data.items || data.items.length === 0) && kotId) {
+            // ── Fetch fresh KOT when event payload may be partial/stale ──────
+            if (shouldRefreshFromBackend) {
                 try {
                     console.log(`[GlobalKotPrinter] Fetching full KOT #${kotId}...`);
                     const res = await apiClient.get(`/kots/${kotId}`);
@@ -380,6 +383,12 @@ export function GlobalKotPrinter() {
                     console.error("[GlobalKotPrinter] Failed to fetch KOT:", err);
                     return;
                 }
+            }
+
+            // ── Skip if the latest KOT state is already printed ──────────────
+            if (data.auto_printed_at || data.kot?.auto_printed_at) {
+                console.log(`[GlobalKotPrinter] KOT ${kotId} already auto-printed. Skipping.`);
+                return;
             }
 
             // ── Deduplication (8s window, version-aware for modified KOTs) ──
