@@ -17,7 +17,6 @@ import {
 } from "@/lib/analytics-dashboard-mapper"
 import {
   buildExportFilename,
-  formatDashboardTimestamp,
   getCompareLabel,
   getDashboardHealth,
   getPeriodLabel,
@@ -68,9 +67,9 @@ import {
   TrendingUp,
   Users,
   Wallet,
-  XCircle,
   Zap,
   AlertCircle,
+  XCircle,
   Briefcase,
   ExternalLink,
   RefreshCw,
@@ -283,12 +282,6 @@ export default function DashboardPage() {
           <p className="text-muted-foreground text-sm font-medium">
             Real-time operational overview for {data?.meta?.outlet_name || "your outlet"}
           </p>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            Analytics: <span className="font-semibold text-foreground">{periodLabel}</span>
-            {dateFrom !== dateTo ? ` (${dateFrom} – ${dateTo})` : ` (${dateFrom})`}
-            {" · "}
-            Updated {formatDashboardTimestamp(lastUpdated)}
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <DateRangeDropdown
@@ -297,13 +290,23 @@ export default function DashboardPage() {
             date={date}
             setDate={setDate}
           />
-          <Badge
-            variant="secondary"
-            className={cn("gap-2 shrink-0 border py-1 px-3", healthBadge.className)}
-          >
-            <div className={cn("h-2 w-2 rounded-full", healthBadge.dot)} />
-            {healthBadge.label}
-          </Badge>
+          {connectionHealth === "live" ? (
+            <Badge
+              variant="secondary"
+              className="gap-2 shrink-0 border border-green-200 bg-green-500/10 py-1 px-3 text-green-600"
+            >
+              <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+              System Online
+            </Badge>
+          ) : (
+            <Badge
+              variant="secondary"
+              className={cn("gap-2 shrink-0 border py-1 px-3", healthBadge.className)}
+            >
+              <div className={cn("h-2 w-2 rounded-full", healthBadge.dot)} />
+              {healthBadge.label}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -314,69 +317,113 @@ export default function DashboardPage() {
         onRetry={retry}
       />
 
-      {/* Live shift pulse */}
-      <section className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest">
-            Live
-          </Badge>
-          <p className="text-xs text-muted-foreground">Current shift metrics — not affected by date filter</p>
-        </div>
-        <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden lg:mx-0 lg:grid lg:grid-cols-5 lg:overflow-visible lg:px-0">
-        <ShiftPulseMetricCard
+      {/* Live shift metrics — not affected by date filter */}
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <HealthCard
           label="Active Orders"
           value={shiftPulse?.active_orders ?? healthSnapshot?.active_orders ?? 0}
           icon={<Activity className="h-5 w-5" />}
-          tone="primary"
+          color="text-primary"
           href="/orders/active"
-          subtitle="In progress now"
-          hoverTitle="Active Orders"
-          hoverDescription="Orders currently in progress across dine-in, takeaway, and delivery."
         />
-        <ShiftPulseMetricCard
+        <HealthCard
           label="KOT Pending"
           value={shiftPulse?.kot_pending ?? healthSnapshot?.kot_pending ?? 0}
           icon={<Clock className="h-5 w-5" />}
-          tone="amber"
+          color="text-amber-500"
           href="/kitchen"
-          subtitle="Awaiting kitchen"
-          hoverTitle="KOT Pending"
-          hoverDescription="Kitchen tickets waiting to be prepared or acknowledged."
         />
-        <ShiftPulseMetricCard
+        <HealthCard
           label="Delayed KOTs"
           value={shiftPulse?.kot_delayed ?? healthSnapshot?.kot_delayed ?? 0}
           icon={<AlertCircle className="h-5 w-5" />}
-          tone="rose"
-          alert={(shiftPulse?.kot_delayed ?? healthSnapshot?.kot_delayed ?? 0) > 0}
+          color="text-destructive"
+          pulse={(shiftPulse?.kot_delayed ?? healthSnapshot?.kot_delayed ?? 0) > 0}
           href="/kitchen"
-          subtitle="Over SLA"
-          hoverTitle="Delayed KOTs"
-          hoverDescription="Kitchen tickets that have exceeded the expected preparation time."
         />
-        <ShiftPulseMetricCard
-          label="Cancelled Today"
-          value={kpis.cancelled_today}
-          icon={<XCircle className="h-5 w-5" />}
-          tone="rose"
-          alert={kpis.cancelled_today > 0}
-          href="/orders/history"
-          subtitle="Today"
-          hoverTitle="Cancelled Orders"
-          hoverDescription="Orders cancelled during today's operating window."
-        />
-        <ShiftPulseMetricCard
-          label="Refunded Today"
-          value={kpis.refunded_today}
-          icon={<CreditCard className="h-5 w-5" />}
-          tone="sky"
-          alert={kpis.refunded_today > 0}
-          href="/orders/history"
-          subtitle="Today"
-          hoverTitle="Refunded Orders"
-          hoverDescription="Refunds processed during today's operating window."
-        />
-        </div>
+      </section>
+
+      {/* 1.1 Summary Bar */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <HoverCard openDelay={0} closeDelay={0}>
+          <HoverCardTrigger asChild>
+            <div className="group relative overflow-hidden bg-card/80 backdrop-blur-md border border-border/50 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-destructive/10 to-transparent rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+              <div className="flex items-center gap-5 relative z-10">
+                <div className="w-14 h-14 rounded-2xl bg-destructive/10 flex items-center justify-center border border-destructive/20 group-hover:bg-destructive/20 transition-colors shadow-sm">
+                  <XCircle className="h-7 w-7 text-destructive" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-80">Cancelled Today</p>
+                  <p className="text-3xl font-black tracking-tight">{kpis.cancelled_today}</p>
+                </div>
+              </div>
+              <TrendingUp className="h-6 w-6 text-muted-foreground opacity-10 group-hover:opacity-20 transition-opacity" />
+            </div>
+          </HoverCardTrigger>
+          <HoverCardContent align="start" side="bottom" sideOffset={8} className="w-[var(--radix-hover-card-trigger-width)] p-0 overflow-hidden rounded-2xl border-border/40 shadow-xl bg-card">
+            <div className="flex items-start gap-4 p-5 border-b border-border/40">
+              <div className="p-2.5 rounded-full text-destructive bg-destructive/10">
+                <XCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-bold text-[15px] text-foreground tracking-tight">Cancelled Orders</p>
+                <p className="text-[13px] text-muted-foreground mt-0.5">Detailed insights</p>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-[14px] text-muted-foreground leading-relaxed">
+                A total of <strong className="text-foreground font-bold">{kpis.cancelled_today}</strong> orders were cancelled <span className="underline decoration-muted-foreground/30 underline-offset-4">by today.</span>
+              </p>
+            </div>
+            <div className="px-5 py-4 border-t border-border/40 flex justify-between items-center bg-card">
+              <span className="text-[13px] text-muted-foreground">Data as of</span>
+              <span className="text-[13px] font-medium text-muted-foreground">
+                {new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "numeric", hour12: true })}
+              </span>
+            </div>
+          </HoverCardContent>
+        </HoverCard>
+
+        <HoverCard openDelay={0} closeDelay={0}>
+          <HoverCardTrigger asChild>
+            <div className="group relative overflow-hidden bg-card/80 backdrop-blur-md border border-border/50 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+              <div className="flex items-center gap-5 relative z-10">
+                <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 group-hover:bg-blue-500/20 transition-colors shadow-sm">
+                  <CreditCard className="h-7 w-7 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-80">Refunded Today</p>
+                  <p className="text-3xl font-black tracking-tight">{kpis.refunded_today}</p>
+                </div>
+              </div>
+              <TrendingUp className="h-6 w-6 text-muted-foreground opacity-10 group-hover:opacity-20 transition-opacity" />
+            </div>
+          </HoverCardTrigger>
+          <HoverCardContent align="start" side="bottom" sideOffset={8} className="w-[var(--radix-hover-card-trigger-width)] p-0 overflow-hidden rounded-2xl border-border/40 shadow-xl bg-card">
+            <div className="flex items-start gap-4 p-5 border-b border-border/40">
+              <div className="p-2.5 rounded-full text-blue-500 bg-blue-500/10">
+                <CreditCard className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-bold text-[15px] text-foreground tracking-tight">Refunded Orders</p>
+                <p className="text-[13px] text-muted-foreground mt-0.5">Detailed insights</p>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-[14px] text-muted-foreground leading-relaxed">
+                A total of <strong className="text-foreground font-bold">{kpis.refunded_today}</strong> items were refunded <span className="underline decoration-muted-foreground/30 underline-offset-4">by today.</span>
+              </p>
+            </div>
+            <div className="px-5 py-4 border-t border-border/40 flex justify-between items-center bg-card">
+              <span className="text-[13px] text-muted-foreground">Data as of</span>
+              <span className="text-[13px] font-medium text-muted-foreground">
+                {new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "numeric", hour12: true })}
+              </span>
+            </div>
+          </HoverCardContent>
+        </HoverCard>
       </section>
 
       {/* Priorities */}
@@ -533,156 +580,63 @@ export default function DashboardPage() {
   )
 }
 
-type ShiftPulseTone = "primary" | "amber" | "rose" | "sky"
-
-const shiftPulseToneStyles: Record<
-  ShiftPulseTone,
-  { accent: string; icon: string; hoverIcon: string; value: string }
-> = {
-  primary: {
-    accent: "from-primary/80 to-primary",
-    icon: "bg-primary/10 text-primary",
-    hoverIcon: "bg-primary/10 text-primary",
-    value: "text-foreground",
-  },
-  amber: {
-    accent: "from-amber-500/80 to-amber-500",
-    icon: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    hoverIcon: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    value: "text-foreground",
-  },
-  rose: {
-    accent: "from-destructive/80 to-destructive",
-    icon: "bg-destructive/10 text-destructive",
-    hoverIcon: "bg-destructive/10 text-destructive",
-    value: "text-destructive",
-  },
-  sky: {
-    accent: "from-sky-500/80 to-sky-500",
-    icon: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-    hoverIcon: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-    value: "text-foreground",
-  },
-}
-
-function ShiftPulseMetricCard({
+function HealthCard({
   label,
   value,
   icon,
-  tone,
-  alert = false,
+  color,
+  pulse = false,
   href,
-  subtitle,
-  hoverTitle,
-  hoverDescription,
 }: {
   label: string
   value: number
   icon: React.ReactNode
-  tone: ShiftPulseTone
-  alert?: boolean
+  color: string
+  pulse?: boolean
   href?: string
-  subtitle?: string
-  hoverTitle: string
-  hoverDescription: string
 }) {
-  const styles = shiftPulseToneStyles[tone]
-  const showAlert = alert && value > 0
-  const asOf = new Date().toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "numeric",
-    hour12: true,
-  })
-
-  const cardBody = (
-        <Card
-          className={cn(
-            "group relative min-w-[160px] flex-1 overflow-hidden rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm shadow-sm lg:min-w-0",
-            href ? "cursor-pointer" : "cursor-default",
-            "hover:-translate-y-1 hover:shadow-lg transition-all duration-300",
-            showAlert && "border-destructive/30"
-          )}
-        >
-          <div
+  const showAlert = pulse && value > 0
+  const card = (
+    <Card
+      className={cn(
+        "group relative cursor-default overflow-hidden rounded-2xl border border-border/50 bg-card/80 shadow-sm backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
+        showAlert ? "border-destructive/30 ring-1 ring-destructive/50 shadow-destructive/10" : ""
+      )}
+    >
+      <div className="pointer-events-none absolute -right-10 -top-10 z-0 h-32 w-32 rounded-full bg-[#FBFBFB] dark:bg-muted/25" />
+      <CardContent className="relative z-10 flex items-center justify-between p-6">
+        <div>
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground opacity-80">
+            {label}
+          </p>
+          <p
             className={cn(
-              "absolute left-0 top-0 h-full w-1 bg-gradient-to-b opacity-90 transition-all duration-300 group-hover:w-1.5",
-              styles.accent
+              "text-4xl font-black tabular-nums tracking-tighter text-foreground drop-shadow-sm",
+              showAlert ? "animate-pulse text-destructive" : ""
             )}
-          />
-          <CardContent className="relative z-10 flex h-full flex-col justify-between gap-4 p-4 pl-5">
-            <div className="flex items-start justify-between gap-2">
-              <div
-                className={cn(
-                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-105",
-                  styles.icon
-                )}
-              >
-                {icon}
-              </div>
-              {showAlert ? (
-                <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-destructive">
-                  Alert
-                </span>
-              ) : null}
-            </div>
-            <div>
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                {label}
-              </p>
-              <p
-                className={cn(
-                  "text-3xl font-black leading-none tabular-nums tracking-tight",
-                  showAlert ? cn(styles.value, "animate-pulse") : "text-foreground"
-                )}
-              >
-                {value}
-              </p>
-              {subtitle ? (
-                <p className="mt-1 text-[10px] text-muted-foreground lg:hidden">{subtitle}</p>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-  )
-
-  return (
-    <HoverCard openDelay={200} closeDelay={100}>
-      <HoverCardTrigger asChild>
-        {href ? <Link href={href}>{cardBody}</Link> : cardBody}
-      </HoverCardTrigger>
-      <HoverCardContent
-        align="start"
-        side="bottom"
-        sideOffset={8}
-        className="w-[max(300px,var(--radix-hover-card-trigger-width))] overflow-hidden rounded-2xl border-border/40 bg-card p-0 shadow-xl"
-      >
-        <div className="flex items-start gap-3 border-b border-border/40 p-4">
-          <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl", styles.hoverIcon)}>
-            {icon}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-bold tracking-tight text-foreground">{hoverTitle}</p>
-            <p className="text-xs text-muted-foreground">Live shift metric</p>
-          </div>
-        </div>
-        <div className="space-y-2 p-4">
-          <p className="text-sm leading-relaxed text-muted-foreground">{hoverDescription}</p>
-          <p className="text-sm text-foreground">
-            Current count:{" "}
-            <span className={cn("font-black tabular-nums", showAlert ? styles.value : "text-foreground")}>
-              {value}
-            </span>
+          >
+            {value}
           </p>
         </div>
-        <div className="flex items-center justify-between border-t border-border/40 px-4 py-3 text-xs text-muted-foreground">
-          <span>Data as of</span>
-          <span className="font-medium">{asOf}</span>
+        <div
+          className={cn(
+            "relative z-20 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border/40 bg-white shadow-sm transition-colors duration-300 group-hover:scale-110 dark:bg-background",
+            color,
+            showAlert ? "border-destructive/20 bg-destructive/[0.06]" : "group-hover:bg-muted"
+          )}
+        >
+          {icon}
         </div>
-      </HoverCardContent>
-    </HoverCard>
+      </CardContent>
+    </Card>
+  )
+
+  return href ? (
+    <Link href={href} className="block">
+      {card}
+    </Link>
+  ) : (
+    card
   )
 }
 
