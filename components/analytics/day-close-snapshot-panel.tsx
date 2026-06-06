@@ -17,11 +17,11 @@ import {
   snapshotMetricRows,
   snapshotPaymentMethodRows,
   snapshotPurchaseRows,
-  snapshotReceivableRows,
   snapshotRefundRows,
 } from "@/lib/day-close-snapshot-view";
 import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
 import { DayClosePaymentMethodsCard } from "@/components/analytics/day-close-payment-methods-card";
+import { DayCloseReceivablesSection } from "@/components/analytics/day-close-receivables-section";
 import { cn } from "@/lib/utils";
 
 type DayCloseSnapshotPanelProps = {
@@ -38,7 +38,6 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
   const hotelSplit = isHotelDayClose(snapshot) ? snapshotHotelSplitRows(snapshot) : [];
   const credit = snapshot.credit_settlement;
   const refunds = snapshotRefundRows(snapshot);
-  const receivables = snapshotReceivableRows(snapshot);
   const purchases = snapshotPurchaseRows(snapshot);
   const coveredRange = formatDayCloseCoveredRange(
     snapshot.period_start_at,
@@ -75,16 +74,12 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
           <TabsTrigger value="expenses" className="rounded-xl font-bold text-xs sm:text-sm">
             Expenses
           </TabsTrigger>
-          {refunds.length > 0 ? (
-            <TabsTrigger value="refunds" className="rounded-xl font-bold text-xs sm:text-sm">
-              Refunds
-            </TabsTrigger>
-          ) : null}
-          {receivables.length > 0 ? (
-            <TabsTrigger value="receivables" className="rounded-xl font-bold text-xs sm:text-sm">
-              Receivables
-            </TabsTrigger>
-          ) : null}
+          <TabsTrigger value="refunds" className="rounded-xl font-bold text-xs sm:text-sm">
+            Refunds
+          </TabsTrigger>
+          <TabsTrigger value="receivables" className="rounded-xl font-bold text-xs sm:text-sm">
+            Receivables
+          </TabsTrigger>
           {purchases.length > 0 ? (
             <TabsTrigger value="purchases" className="rounded-xl font-bold text-xs sm:text-sm">
               Purchases
@@ -174,16 +169,16 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
               <EmptySnapshotNotice message="Expense breakdown is not available in this snapshot." />
             )}
           </TabsContent>
-          {refunds.length > 0 ? (
-            <TabsContent value="refunds" className="m-0">
+          <TabsContent value="refunds" className="m-0">
+            {refunds.length > 0 ? (
               <SimpleListCard title="Refunds" rows={refunds} expenseTone />
-            </TabsContent>
-          ) : null}
-          {receivables.length > 0 ? (
-            <TabsContent value="receivables" className="m-0">
-              <SimpleListCard title="Receivables" rows={receivables} />
-            </TabsContent>
-          ) : null}
+            ) : (
+              <EmptySnapshotNotice message="No refunds recorded in this close window." />
+            )}
+          </TabsContent>
+          <TabsContent value="receivables" className="m-0">
+            <DayCloseReceivablesSection snapshot={snapshot} />
+          </TabsContent>
           {purchases.length > 0 ? (
             <TabsContent value="purchases" className="m-0">
               <SimpleListCard title="Purchases" rows={purchases} />

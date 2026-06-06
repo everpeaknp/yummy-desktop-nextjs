@@ -325,6 +325,7 @@ export default function DashboardPage() {
           icon={<Activity className="h-5 w-5" />}
           color="text-primary"
           href="/orders/active"
+          linkLabel="View active orders →"
         />
         <HealthCard
           label="KOT Pending"
@@ -332,6 +333,7 @@ export default function DashboardPage() {
           icon={<Clock className="h-5 w-5" />}
           color="text-amber-500"
           href="/kitchen"
+          linkLabel="Open kitchen →"
         />
         <HealthCard
           label="Delayed KOTs"
@@ -340,6 +342,7 @@ export default function DashboardPage() {
           color="text-destructive"
           pulse={(shiftPulse?.kot_delayed ?? healthSnapshot?.kot_delayed ?? 0) > 0}
           href="/kitchen"
+          linkLabel="Review delayed KOTs →"
         />
       </section>
 
@@ -580,6 +583,25 @@ export default function DashboardPage() {
   )
 }
 
+function healthCardDetailText(label: string, value: number): string {
+  switch (label) {
+    case "Active Orders":
+      return value === 1
+        ? "There is currently 1 active order in progress."
+        : `There are currently ${value} active orders in progress across dine-in, takeaway, and delivery.`
+    case "KOT Pending":
+      return value === 1
+        ? "1 kitchen ticket is waiting to be prepared."
+        : `${value} kitchen tickets are waiting to be prepared.`
+    case "Delayed KOTs":
+      return value === 1
+        ? "1 kitchen ticket is past its expected preparation time."
+        : `${value} kitchen tickets are past their expected preparation time.`
+    default:
+      return `Current count: ${value}.`
+  }
+}
+
 function HealthCard({
   label,
   value,
@@ -587,6 +609,7 @@ function HealthCard({
   color,
   pulse = false,
   href,
+  linkLabel,
 }: {
   label: string
   value: number
@@ -594,49 +617,98 @@ function HealthCard({
   color: string
   pulse?: boolean
   href?: string
+  linkLabel?: string
 }) {
   const showAlert = pulse && value > 0
-  const card = (
-    <Card
-      className={cn(
-        "group relative cursor-default overflow-hidden rounded-2xl border border-border/50 bg-card/80 shadow-sm backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
-        showAlert ? "border-destructive/30 ring-1 ring-destructive/50 shadow-destructive/10" : ""
-      )}
-    >
-      <div className="pointer-events-none absolute -right-10 -top-10 z-0 h-32 w-32 rounded-full bg-[#FBFBFB] dark:bg-muted/25" />
-      <CardContent className="relative z-10 flex items-center justify-between p-6">
-        <div>
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground opacity-80">
-            {label}
-          </p>
-          <p
-            className={cn(
-              "text-4xl font-black tabular-nums tracking-tighter text-foreground drop-shadow-sm",
-              showAlert ? "animate-pulse text-destructive" : ""
-            )}
-          >
-            {value}
-          </p>
-        </div>
+
+  return (
+    <HoverCard openDelay={0} closeDelay={0}>
+      <HoverCardTrigger asChild>
         <div
           className={cn(
-            "relative z-20 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border/40 bg-white shadow-sm transition-colors duration-300 group-hover:scale-110 dark:bg-background",
-            color,
-            showAlert ? "border-destructive/20 bg-destructive/[0.06]" : "group-hover:bg-muted"
+            "group relative block cursor-default overflow-hidden rounded-2xl border border-border/50 bg-card/80 shadow-sm backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
+            showAlert ? "border-destructive/30 ring-1 ring-destructive/50 shadow-destructive/10" : ""
           )}
         >
-          {icon}
+          <div className="pointer-events-none absolute -right-10 -top-10 z-0 h-32 w-32 rounded-full bg-[#FBFBFB] dark:bg-muted/25" />
+          <div className="relative z-10 flex items-center justify-between p-6">
+            <div>
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground opacity-80">
+                {label}
+              </p>
+              <p
+                className={cn(
+                  "text-4xl font-black tabular-nums tracking-tighter text-foreground drop-shadow-sm",
+                  showAlert ? "animate-pulse text-destructive" : ""
+                )}
+              >
+                {value}
+              </p>
+            </div>
+            <div
+              className={cn(
+                "relative z-20 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border/40 bg-white shadow-sm transition-colors duration-300 group-hover:scale-110 dark:bg-background",
+                color,
+                showAlert ? "border-destructive/20 bg-destructive/[0.06]" : "group-hover:bg-muted"
+              )}
+            >
+              {icon}
+            </div>
+          </div>
         </div>
-      </CardContent>
-    </Card>
-  )
-
-  return href ? (
-    <Link href={href} className="block">
-      {card}
-    </Link>
-  ) : (
-    card
+      </HoverCardTrigger>
+      <HoverCardContent
+        align="start"
+        side="bottom"
+        sideOffset={8}
+        className="w-[var(--radix-hover-card-trigger-width)] p-0 overflow-hidden rounded-2xl border-border/40 shadow-xl bg-card"
+      >
+        <div className="flex items-start gap-4 border-b border-border/40 p-5">
+          <div
+            className={cn(
+              "rounded-full p-2.5",
+              color === "text-primary" && "bg-primary/10 text-primary",
+              color === "text-amber-500" && "bg-amber-500/10 text-amber-500",
+              color === "text-destructive" && "bg-destructive/10 text-destructive"
+            )}
+          >
+            {icon}
+          </div>
+          <div>
+            <p className="text-[15px] font-bold tracking-tight text-foreground">{label}</p>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">Live shift status</p>
+          </div>
+        </div>
+        <div className="p-5">
+          <p className="text-[14px] leading-relaxed text-muted-foreground">
+            {healthCardDetailText(label, value)}
+          </p>
+        </div>
+        <div className="flex items-center justify-between border-t border-border/40 bg-card px-5 py-4">
+          <span className="text-[13px] text-muted-foreground">Data as of</span>
+          <span className="text-[13px] font-medium text-muted-foreground">
+            {new Date().toLocaleString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "numeric",
+              minute: "numeric",
+              hour12: true,
+            })}
+          </span>
+        </div>
+        {href ? (
+          <div className="border-t border-border/40 px-5 py-3">
+            <Link
+              href={href}
+              className="text-[13px] font-semibold text-primary hover:underline"
+            >
+              {linkLabel ?? `View ${label.toLowerCase()} →`}
+            </Link>
+          </div>
+        ) : null}
+      </HoverCardContent>
+    </HoverCard>
   )
 }
 

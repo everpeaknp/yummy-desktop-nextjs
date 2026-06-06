@@ -149,10 +149,21 @@ function statusBadge(status: string) {
   return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-bold uppercase">Open</Badge>;
 }
 
-export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
+export function DayCloseHistory({
+  restaurantId,
+  businessLine: businessLineProp,
+}: {
+  restaurantId?: number;
+  businessLine?: BusinessLine;
+}) {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<DayCloseListItem[]>([]);
-  const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
+  const [businessLine, setBusinessLine] = useState<BusinessLine>(businessLineProp ?? "restaurant");
+
+  useEffect(() => {
+    if (businessLineProp) setBusinessLine(businessLineProp);
+  }, [businessLineProp]);
+
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
     from: startOfDay(subDays(new Date(), 30)),
     to: endOfDay(new Date()),
