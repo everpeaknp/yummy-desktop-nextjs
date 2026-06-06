@@ -306,8 +306,10 @@ export const Header = memo(function Header() {
 
         <div className="h-6 w-px bg-border mx-1 hidden md:block" />
         <div className="flex items-center gap-2 pl-1">
-          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden">
-            {user?.full_name ? (
+          <div className="relative h-8 w-8 min-w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-border/50">
+            {restaurant?.profile_picture ? (
+               <Image src={getImageUrl(restaurant.profile_picture)} alt="Profile" className="object-cover" fill unoptimized />
+            ) : user?.full_name ? (
               <span className="text-xs font-bold">{user.full_name.charAt(0).toUpperCase()}</span>
             ) : (
               <User className="h-5 w-5" />

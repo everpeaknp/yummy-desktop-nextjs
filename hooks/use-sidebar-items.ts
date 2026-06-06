@@ -42,6 +42,7 @@ export interface SidebarItem {
   section?: string; // optional group label
   externalUrl?: string;
   subItems?: SidebarItem[];
+  isNestedChild?: boolean;
 }
 
 const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
@@ -168,9 +169,13 @@ export function useSidebarItems(): SidebarItem[] {
     };
 
     flatItems.forEach((item) => {
-      if (["/orders", "/orders/history", "/orders/new"].includes(item.href)) {
-        const group = getGroup("orders", "Orders", ClipboardList, "/orders");
-        if (item.href !== "/orders") group.subItems!.push(item);
+      if (item.href === "/orders/history") {
+        // Skip history, it's inside the Orders page
+        return;
+      } else if (item.href === "/orders") {
+        result.push(item);
+      } else if (item.href === "/orders/new") {
+        result.push({ ...item, isNestedChild: true });
       } else if (["/menu/items", "/menu/categories", "/menu/modifiers"].includes(item.href)) {
         const group = getGroup("menu", "Menu", UtensilsCrossed, "/menu/items");
         if (item.href !== "/menu/items") group.subItems!.push(item);
