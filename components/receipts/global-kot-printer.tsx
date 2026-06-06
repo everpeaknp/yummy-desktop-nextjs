@@ -417,7 +417,7 @@ export function GlobalKotPrinter() {
                 return;
             }
             recentPrintsRef.current.set(key, now);
-            for (const [existingKey, ts] of recentPrintsRef.current.entries()) {
+            for (const [existingKey, ts] of Array.from(recentPrintsRef.current.entries())) {
                 if (now - ts > 30000) {
                     recentPrintsRef.current.delete(existingKey);
                 }

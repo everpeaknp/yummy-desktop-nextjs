@@ -92,6 +92,16 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
     const resBody = await upstream.arrayBuffer();
     // Helpful for debugging in devtools: see what the backend actually responded with.
     resHeaders.set("x-upstream-status", String(upstream.status));
+    if (!upstream.ok) {
+      const snippet = new TextDecoder().decode(resBody).slice(0, 1000);
+      console.error(
+        `[PROXY DEBUG] upstream error method=${method} url=${url.toString()} status=${upstream.status} body=${snippet}`
+      );
+    }
+    
+    // DEBUG LOG
+    console.log(`[PROXY DEBUG] method=${method} url=${url.toString()} status=${upstream.status}`);
+
     return new Response(resBody, { status: upstream.status, headers: resHeaders });
   } catch (err: any) {
     console.error("[api/proxy] Upstream fetch failed", {

@@ -22,6 +22,25 @@ import { hasPermission } from "@/lib/role-permissions";
 
 import { memo } from "react";
 
+function formatRoleLabel(role: string) {
+  return role
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getVisibleRoleLabels(user: { role?: string | null; roles?: string[] | null } | null | undefined) {
+  const rawRoles = (user?.roles || []).filter((role) => role && !role.startsWith("__user_"));
+  const normalized = Array.from(new Set(rawRoles.map((role) => role.toLowerCase())));
+
+  const platformOnly = normalized.filter((role) => role === "platform_staff" || role === "superadmin");
+  const restaurantRoles = normalized.filter((role) => role !== "platform_staff" && role !== "superadmin");
+
+  const effective = restaurantRoles.length ? restaurantRoles : platformOnly;
+  if (effective.length) return effective.map(formatRoleLabel).join(", ");
+
+  return formatRoleLabel(user?.role || "Manager");
+}
+
 const LiveStats = memo(function LiveStats() {
   const user = useAuth(state => state.user);
   const [stats, setStats] = useState<{ activeOrders: number; kotPending: number; todaySales: number } | null>(null);
@@ -317,7 +336,7 @@ export const Header = memo(function Header() {
           </div>
           <div className="hidden md:block">
             <p className="text-sm font-medium leading-tight">{user?.full_name || "Admin User"}</p>
-            <p className="text-xs text-muted-foreground capitalize leading-tight">{user?.roles?.length ? user.roles.join(", ") : user?.role || "Manager"}</p>
+            <p className="text-xs text-muted-foreground leading-tight">{getVisibleRoleLabels(user)}</p>
           </div>
         </div>
       </div>

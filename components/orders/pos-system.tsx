@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Plus, Minus, Trash2, ChefHat, ShoppingBag, Loader2, Utensils, Receipt, ImageIcon, ShoppingCart } from "lucide-react";
+import { Search, Plus, Minus, Trash2, ChefHat, ShoppingBag, Loader2, Utensils, Receipt, ImageIcon, ShoppingCart, Award } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import apiClient from "@/lib/api-client";
@@ -45,6 +45,7 @@ interface CartItem {
   category_name_snapshot?: string;
   category_type_snapshot?: string | null;
   revenue_category?: string;
+  is_nc?: boolean;
 }
 
 const getItemUnitPrice = (item: any) => {
@@ -55,6 +56,31 @@ const getItemUnitPrice = (item: any) => {
     });
   }
   return price;
+};
+
+const getItemChargeableTotal = (item: any) => {
+  if (item?.is_nc) return 0;
+  return getItemUnitPrice(item) * (item.quantity || 0);
+};
+
+const extractApiErrorMessage = (data: any): string | null => {
+  if (!data) return null;
+  if (typeof data === "string") return data;
+  if (typeof data?.detail === "string" && data.detail.trim()) return data.detail;
+  if (typeof data?.message === "string" && data.message.trim()) return data.message;
+  if (typeof data?.error === "string" && data.error.trim()) return data.error;
+  if (typeof data?.data?.detail === "string" && data.data.detail.trim()) return data.data.detail;
+  if (typeof data?.data?.message === "string" && data.data.message.trim()) return data.data.message;
+  if (Array.isArray(data?.errors) && data.errors.length > 0) {
+    const first = data.errors[0];
+    if (typeof first === "string") return first;
+    if (typeof first?.message === "string") return first.message;
+  }
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return null;
+  }
 };
 
 const CartContent = ({ 
@@ -77,7 +103,9 @@ const CartContent = ({
     customerPhone,
     setCustomerPhone,
     deliveryAddress,
-    setDeliveryAddress
+    setDeliveryAddress,
+    canMarkNc,
+    toggleNc
 }: {
   cart: CartItem[];
   orderId: string | undefined;
@@ -99,8 +127,14 @@ const CartContent = ({
   setCustomerPhone: (p: string) => void;
   deliveryAddress: string;
   setDeliveryAddress: (a: string) => void;
+  canMarkNc?: boolean;
+  toggleNc?: (cartItemId: number) => void;
 }) => {
-  const subtotal = cart.reduce((acc: number, item: any) => acc + (getItemUnitPrice(item) * item.quantity), 0);
+  const subtotal = cart.reduce((acc: number, item: any) => acc + getItemChargeableTotal(item), 0);
+  const complimentaryTotal = cart.reduce(
+    (acc: number, item: any) => acc + (item.is_nc ? getItemUnitPrice(item) * item.quantity : 0),
+    0,
+  );
   const taxRate = restaurant?.tax_enabled ? fixedTaxRate : 0;
   const tax = subtotal * taxRate;
   const total = subtotal + tax;
@@ -146,6 +180,9 @@ const CartContent = ({
                       Note: {item.notes}
                     </p>
                   )}
+                  {item.is_nc && (
+                    <Badge variant="outline" className="mt-1 h-4 text-[10px] text-orange-500 border-orange-500">NC</Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 bg-muted/50 rounded-md p-1">
                   <Button
@@ -168,8 +205,20 @@ const CartContent = ({
                     <Plus className="h-3 w-3" />
                   </Button>
                 </div>
+                {canMarkNc && toggleNc && (
+                  <Button
+                    variant={item.is_nc ? "default" : "outline"}
+                    size="icon"
+                    className={cn("h-6 w-6 rounded-sm", item.is_nc ? "bg-orange-500 hover:bg-orange-600" : "")}
+                    onClick={() => toggleNc(item.id)}
+                    disabled={processing}
+                    title="Mark as NC"
+                  >
+                    <Award className="h-3 w-3" />
+                  </Button>
+                )}
                 <div className="text-sm font-medium w-16 text-right">
-                  {restaurant?.currency || "Rs."}{(getItemUnitPrice(item) * item.quantity).toLocaleString()}
+                  {restaurant?.currency || "Rs."}{getItemChargeableTotal(item).toLocaleString()}
                 </div>
               </div>
               {item.revenue_category === 'rent' && (
@@ -212,6 +261,12 @@ const CartContent = ({
           </div>
         )}
         <div className="space-y-2 text-sm">
+          {complimentaryTotal > 0 && (
+            <div className="flex justify-between text-orange-600">
+              <span>NC Items</span>
+              <span>{restaurant?.currency || "Rs."}{complimentaryTotal.toLocaleString()}</span>
+            </div>
+          )}
           <div className="flex justify-between text-muted-foreground">
             <span>Subtotal</span>
             <span>{restaurant?.currency || "Rs."}{subtotal.toLocaleString()}</span>
@@ -297,7 +352,7 @@ export default function POSSystem({
   const [deliveryAddress, setDeliveryAddress] = useState("");
 
   const user = useAuth(state => state.user);
-  const { canVoidItem } = usePosBillingPermissions();
+  const { canVoidItem, canMarkNc } = usePosBillingPermissions();
   const restaurant = useRestaurant((s) => s.restaurant);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -384,7 +439,8 @@ export default function POSSystem({
             modifiers: item.modifiers || [],
             category_name_snapshot: item.category_name_snapshot,
             category_type_snapshot: item.category_type_snapshot,
-            revenue_category: item.revenue_category
+            revenue_category: item.revenue_category,
+            is_nc: item.is_nc || false
           })));
         }
       } catch (err) {
@@ -416,11 +472,11 @@ export default function POSSystem({
       // Create a unique hash for the item based on its modifiers and notes
       // so that different customized versions of the same item don't merge
       const modSignature = selectedModifiers.map(m => m.id).sort().join(',');
-      const itemSignature = `${item.id}-${modSignature}-${notes}`;
+      const itemSignature = `${item.id}-${modSignature}-${notes}-nc:false`;
 
       const existingIndex = prev.findIndex(i => {
          const iModSig = (i.modifiers || []).map((m: any) => m.modifier_id || m.id).sort().join(',');
-         const iSig = `${i.menu_item_id}-${iModSig}-${i.notes || ""}`;
+         const iSig = `${i.menu_item_id}-${iModSig}-${i.notes || ""}-nc:${i.is_nc || false}`;
          return iSig === itemSignature;
       });
 
@@ -442,7 +498,8 @@ export default function POSSystem({
         notes: notes,
         category_name_snapshot: item.category_name || "Uncategorized",
         category_type_snapshot: item.category_type || null,
-        revenue_category: (item as any).revenue_category || "food"
+        revenue_category: (item as any).revenue_category || "food",
+        is_nc: false
       }];
     });
   };
@@ -473,6 +530,15 @@ export default function POSSystem({
     });
   };
 
+  const toggleNc = (cartItemId: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.id === cartItemId) {
+        return { ...item, is_nc: !item.is_nc };
+      }
+      return item;
+    }));
+  };
+
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     setProcessing(true);
@@ -485,6 +551,7 @@ export default function POSSystem({
         category_name_snapshot: item.category_name_snapshot,
         category_type_snapshot: item.category_type_snapshot,
         revenue_category: item.revenue_category,
+        is_nc: item.is_nc || false,
         qty: item.quantity,
         notes: item.notes || null,
         modifiers: item.modifiers ? item.modifiers.map((m: any) => ({
@@ -650,7 +717,7 @@ export default function POSSystem({
     } catch (err: any) {
       console.error("[POS] Failed to place/update order. Full error:", err);
       console.error("[POS] Error data:", err?.response?.data);
-      const detail = err?.response?.data?.detail || err?.response?.data?.message;
+      const detail = extractApiErrorMessage(err?.response?.data);
       toast.error(detail || "Failed to process order. Please try again.");
     } finally {
       setProcessing(false);
@@ -668,7 +735,7 @@ export default function POSSystem({
     return tableData?.table_name || 'No Table';
   }, [orderData, defaultTableIds, tablesList, tableData]);
 
-  const subtotal = cart.reduce((acc, item) => acc + (getItemUnitPrice(item) * item.quantity), 0);
+  const subtotal = cart.reduce((acc, item) => acc + getItemChargeableTotal(item), 0);
   const tax = subtotal * 0.13;
   const total = subtotal + tax;
 
@@ -867,6 +934,8 @@ export default function POSSystem({
             setCustomerPhone={setCustomerPhone}
             deliveryAddress={deliveryAddress}
             setDeliveryAddress={setDeliveryAddress}
+            canMarkNc={canMarkNc}
+            toggleNc={toggleNc}
         />
       </Card>
 
@@ -908,6 +977,8 @@ export default function POSSystem({
                 setCustomerPhone={setCustomerPhone}
                 deliveryAddress={deliveryAddress}
                 setDeliveryAddress={setDeliveryAddress}
+                canMarkNc={canMarkNc}
+                toggleNc={toggleNc}
             />
           </SheetContent>
         </Sheet>

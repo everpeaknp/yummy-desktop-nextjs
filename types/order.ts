@@ -23,6 +23,7 @@ export interface OrderItem {
   line_total: number;
   price?: number; // legacy alias
   notes?: string | null;
+  is_nc?: boolean;
   modifiers: OrderItemModifier[];
   created_at: string;
   pre_tax_unit_price?: number | null;

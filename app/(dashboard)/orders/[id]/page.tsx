@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type Dispatch, type SetStateAction } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import apiClient from "@/lib/api-client";
@@ -23,6 +23,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -57,6 +58,7 @@ import {
   Ban,
   Plus,
   Minus,
+  Pencil,
   CreditCard,
   Armchair,
   Eye,
@@ -66,6 +68,7 @@ import {
   Zap,
   Calendar,
   Truck,
+  Award,
 } from "lucide-react";
 import { 
   getStatusColor, 
@@ -102,6 +105,25 @@ function timeAgo(dateStr: string) {
 
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function computeOrderDiscount(order: Order) {
+  return Math.max(
+    0,
+    Number((((order.subtotal || 0) + (order.tax_total || 0) + (order.service_charge || 0)) - (order.grand_total || 0)).toFixed(2))
+  );
+}
+
+function getOrderItemEffectiveUnitPrice(item: OrderItem) {
+  const modifierTotal = Array.isArray(item.modifiers)
+    ? item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price_adjustment_snapshot || 0), 0)
+    : 0;
+  return Number(item.unit_price || 0) + modifierTotal;
+}
+
+function getOrderItemEffectiveLineTotal(item: OrderItem) {
+  if (item.is_nc) return 0;
+  return getOrderItemEffectiveUnitPrice(item) * Number(item.qty || 0);
 }
 
 function isTableAvailable(status: string | undefined) {
@@ -181,8 +203,37 @@ export default function OrderDetailPage() {
   const [allTables, setAllTables] = useState<TableData[]>([]);
   const [tableTypes, setTableTypes] = useState<any[]>([]);
   const [selectedArea, setSelectedArea] = useState("All Areas");
+  const [itemOverrides, setItemOverrides] = useState<Record<number, Partial<OrderItem>>>({});
 
-  const { canVoidOrder, canVoidItem, canTransferOrder } = usePosBillingPermissions();
+  const { canVoidOrder, canVoidItem, canTransferOrder, canMarkNc } = usePosBillingPermissions();
+  const sourceOrder = context?.order;
+  const displayOrder = sourceOrder
+    ? (() => {
+        const items = sourceOrder.items.map((item) => {
+          const overrides = itemOverrides[item.id] || {};
+          const displayItem = {
+            ...item,
+            ...overrides,
+            qty: overrides.qty ?? item.qty,
+            notes: overrides.notes !== undefined ? overrides.notes : item.notes,
+            is_nc: overrides.is_nc !== undefined ? overrides.is_nc : item.is_nc,
+          };
+          return {
+            ...displayItem,
+            line_total: getOrderItemEffectiveLineTotal(displayItem),
+          };
+        });
+        const subtotal = Number(items.reduce((sum, item) => sum + Number(item.line_total || 0), 0).toFixed(2));
+        const computedDiscount = computeOrderDiscount(sourceOrder);
+        const grandTotal = Number((subtotal + Number(sourceOrder.tax_total || 0) + Number(sourceOrder.service_charge || 0) - computedDiscount).toFixed(2));
+        return {
+          ...sourceOrder,
+          items,
+          subtotal,
+          grand_total: grandTotal,
+        };
+      })()
+    : null;
 
   // Auth guard
   useEffect(() => {
@@ -217,6 +268,10 @@ export default function OrderDetailPage() {
       fetchEvents();
     }
   }, [activeTab, fetchEvents, events.length]);
+
+  useEffect(() => {
+    setItemOverrides({});
+  }, [sourceOrder?.updated_at]);
 
   // Cancel order
   const handleCancel = async () => {
@@ -445,46 +500,47 @@ export default function OrderDetailPage() {
     );
   }
 
-  if (!context) return null;
+  if (!context || !displayOrder) return null;
 
-  const order = context.order;
-  const statusColors = getStatusColor(order.status);
-  const statusBadgeColor = getStatusBadgeColor(order.status);
-  const ChannelIcon = getChannelIcon(order.channel);
-  const isEditable = !["completed", "canceled"].includes(order.status);
-  const isCancellable = !["completed", "canceled"].includes(order.status);
-  const isTableOrder = order.channel === "table";
+  const order = displayOrder;
+  const computedDiscount = computeOrderDiscount(displayOrder);
+  const statusColors = getStatusColor(displayOrder.status);
+  const statusBadgeColor = getStatusBadgeColor(displayOrder.status);
+  const ChannelIcon = getChannelIcon(displayOrder.channel);
+  const isEditable = !["completed", "canceled"].includes(displayOrder.status);
+  const isCancellable = !["completed", "canceled"].includes(displayOrder.status);
+  const isTableOrder = displayOrder.channel === "table";
   const assignedTables = context.tables.length > 0
     ? context.tables
-    : getAssignedTableIds(order, context.tables).map((id) => ({
+    : getAssignedTableIds(displayOrder, context.tables).map((id) => ({
         id,
-        name: id === order.table_id ? order.table_name : null,
+        name: id === displayOrder.table_id ? displayOrder.table_name : null,
         status: null,
         capacity: null,
         table_type_id: null,
       }));
   
   // Format Title
-  let title = `Order #${order.restaurant_order_id || order.id}`;
+  let title = `Order #${displayOrder.restaurant_order_id || displayOrder.id}`;
   if (assignedTables.length > 1) {
     const primary =
-      assignedTables.find((t) => t.id === order.table_id) ?? assignedTables[0];
+      assignedTables.find((t) => t.id === displayOrder.table_id) ?? assignedTables[0];
     const primaryLabel =
       primary?.name ||
-      order.table_name ||
-      `Table ${primary?.id ?? order.table_id}`;
+      displayOrder.table_name ||
+      `Table ${primary?.id ?? displayOrder.table_id}`;
     title = `${primaryLabel} + ${assignedTables.length - 1}`;
-  } else if (order.table_name || assignedTables[0]?.name) {
-    const name = order.table_name || assignedTables[0]?.name;
-    title = order.table_category_name
-      ? `${order.table_category_name} - ${name}`
+  } else if (displayOrder.table_name || assignedTables[0]?.name) {
+    const name = displayOrder.table_name || assignedTables[0]?.name;
+    title = displayOrder.table_category_name
+      ? `${displayOrder.table_category_name} - ${name}`
       : (name as string);
   }
 
   // Format Subtitle
-  let subtitle = order.channel.toUpperCase().replace('_', ' ');
-  if (order.channel === 'table' || order.table_name) subtitle = 'DINE-IN';
-  if (order.customer_name) subtitle = order.customer_name;
+  let subtitle = displayOrder.channel.toUpperCase().replace('_', ' ');
+  if (displayOrder.channel === 'table' || displayOrder.table_name) subtitle = 'DINE-IN';
+  if (displayOrder.customer_name) subtitle = displayOrder.customer_name;
 
   const tabs: { key: TabKey; label: string; icon: any; count?: number }[] = [
     { key: "details", label: "Details", icon: FileText },
@@ -681,7 +737,15 @@ export default function OrderDetailPage() {
         {/* Left: Main Content */}
         <div className="lg:col-span-2 space-y-4">
           {activeTab === "details" && (
-            <DetailsTab order={order} tables={context.tables} onRefresh={fetchContext} canVoidItem={canVoidItem} />
+            <DetailsTab
+              order={displayOrder}
+              tables={context.tables}
+              onRefresh={fetchContext}
+              canVoidItem={canVoidItem}
+              canMarkNc={canMarkNc}
+              itemOverrides={itemOverrides}
+              setItemOverrides={setItemOverrides}
+            />
           )}
           {activeTab === "kots" && <KOTsTab kots={context.kots} />}
           {activeTab === "events" && <EventsTab events={events} loading={eventsLoading} />}
@@ -697,28 +761,28 @@ export default function OrderDetailPage() {
 
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span className="tabular-nums font-medium">{formatCurrency(order.subtotal)}</span>
+                  <span className="tabular-nums font-medium">{formatCurrency(displayOrder.subtotal)}</span>
                 </div>
 
-                {order.tax_total > 0 && (
+                {displayOrder.tax_total > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Tax</span>
-                    <span className="tabular-nums font-medium">{formatCurrency(order.tax_total)}</span>
+                    <span className="tabular-nums font-medium">{formatCurrency(displayOrder.tax_total)}</span>
                   </div>
                 )}
 
-                {order.service_charge > 0 && (
+                {displayOrder.service_charge > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Service Charge</span>
-                    <span className="tabular-nums font-medium">{formatCurrency(order.service_charge)}</span>
+                    <span className="tabular-nums font-medium">{formatCurrency(displayOrder.service_charge)}</span>
                   </div>
                 )}
 
-                {(order.discount_total > 0 || order.manual_discount_amount > 0) && (
+                {computedDiscount > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-emerald-600 dark:text-emerald-400 font-medium">Discount</span>
                     <span className="tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">
-                      -{formatCurrency((order.discount_total || 0) + (order.manual_discount_amount || 0))}
+                      -{formatCurrency(computedDiscount)}
                     </span>
                   </div>
                 )}
@@ -749,9 +813,9 @@ export default function OrderDetailPage() {
             {/* Total Footer */}
             <div className="bg-muted/30 px-5 py-4 border-t border-border/20 flex justify-between items-center rounded-b-xl">
               <span className="text-xs font-black uppercase tracking-[0.1em] text-muted-foreground">Total Amount</span>
-              <span className="text-2xl font-black tracking-tight tabular-nums text-foreground">
-                <span className="text-sm mr-1.5 font-bold text-muted-foreground/50">Rs.</span>
-                {order.grand_total.toLocaleString()}
+                <span className="text-2xl font-black tracking-tight tabular-nums text-foreground">
+                  <span className="text-sm mr-1.5 font-bold text-muted-foreground/50">Rs.</span>
+                {displayOrder.grand_total.toLocaleString()}
               </span>
             </div>
           </Card>
@@ -954,45 +1018,49 @@ function DetailsTab({
   tables,
   onRefresh,
   canVoidItem,
+  canMarkNc,
+  itemOverrides,
+  setItemOverrides,
 }: {
   order: Order;
   tables: OrderTableSummary[];
   onRefresh: () => void;
   canVoidItem: boolean;
+  canMarkNc: boolean;
+  itemOverrides: Record<number, Partial<OrderItem>>;
+  setItemOverrides: Dispatch<SetStateAction<Record<number, Partial<OrderItem>>>>;
 }) {
-  const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
-  const [editQty, setEditQty] = useState(1);
-  const [editNotes, setEditNotes] = useState("");
+  const router = useRouter();
+  const [editingItemNote, setEditingItemNote] = useState<OrderItem | null>(null);
+  const [editNoteValue, setEditNoteValue] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const handleOpenEdit = (item: OrderItem) => {
-    setEditingItem(item);
-    setEditQty(item.qty);
-    setEditNotes(item.notes || "");
-  };
+  const displayItems = order.items;
 
-  const handleSaveEdit = async () => {
-    if (!editingItem) return;
-
-    const isRemovingItem = editQty === 0;
-    if (isRemovingItem && !canVoidItem) {
+  const handleQtyChange = useCallback(async (item: OrderItem, delta: number) => {
+    // Read current qty from overrides or original item
+    const currentQty = itemOverrides[item.id]?.qty ?? item.qty;
+    const nextQty = Math.max(0, currentQty + delta);
+    if (nextQty === currentQty) return;
+    if (nextQty <= 0 && !canVoidItem) {
       toast.error("You do not have permission to void order items.");
       return;
     }
+    // Optimistically update
+    setItemOverrides(prev => ({
+      ...prev,
+      [item.id]: { ...(prev[item.id] || {}), qty: nextQty }
+    }));
+    await handleApplyItemUpdate(item.id, { qty: nextQty });
+  }, [canVoidItem, itemOverrides]);
 
+  const handleApplyItemUpdate = useCallback(async (itemId: number, patch: { qty?: number; notes?: string | null; is_nc?: boolean }) => {
     setIsUpdating(true);
     try {
-      // Build the bulk-update payload representing the new desired state
       const payload = {
         items: order.items.map((item) => {
-          let finalQty = item.qty;
-          let finalNotes = item.notes;
-          
-          if (item.id === editingItem.id) {
-            finalQty = editQty;
-            finalNotes = editNotes;
-          }
-
+          const isTarget = item.id === itemId;
+          const displayItem = displayItems.find(di => di.id === item.id) || item;
           return {
             menu_item_id: item.menu_item_id,
             name_snapshot: item.name_snapshot,
@@ -1000,8 +1068,9 @@ function DetailsTab({
             category_type_snapshot: item.category_type_snapshot,
             revenue_category: (item as any).revenue_category,
             unit_price: item.unit_price,
-            qty: finalQty,
-            notes: finalNotes || null,
+            qty: isTarget ? (patch.qty ?? displayItem.qty) : displayItem.qty,
+            notes: isTarget ? (patch.notes !== undefined ? patch.notes : (displayItem.notes || null)) : (displayItem.notes || null),
+            is_nc: isTarget ? (patch.is_nc ?? Boolean(displayItem.is_nc)) : Boolean(displayItem.is_nc),
             modifiers: item.modifiers ? item.modifiers.map((m) => ({
               modifier_id: m.modifier_id,
               modifier_name_snapshot: m.modifier_name_snapshot,
@@ -1012,15 +1081,34 @@ function DetailsTab({
       };
 
       await apiClient.post(OrderApis.updateOrderItems(order.id), payload);
-      toast.success("Item updated successfully");
-      setEditingItem(null);
-      onRefresh();
+      if (patch.notes !== undefined) toast.success("Note updated");
+      if (patch.qty !== undefined) toast.success("Quantity updated");
+      if (patch.is_nc !== undefined) toast.success("NC status updated");
+      await onRefresh();
+      setItemOverrides({});
     } catch (err: any) {
       console.error("Failed to update item:", err);
       toast.error(err.response?.data?.detail || "Failed to update item");
+      // Revert optimistic update on error
+      setItemOverrides(prev => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
     } finally {
       setIsUpdating(false);
     }
+  }, [order.id, order.items, displayItems, onRefresh, setItemOverrides]);
+
+  const handleOpenNoteEdit = (item: OrderItem) => {
+    setEditingItemNote(item);
+    setEditNoteValue(item.notes || "");
+  };
+
+  const handleSaveNote = async () => {
+    if (!editingItemNote) return;
+    await handleApplyItemUpdate(editingItemNote.id, { notes: editNoteValue || null });
+    setEditingItemNote(null);
   };
 
   return (
@@ -1036,12 +1124,12 @@ function DetailsTab({
               </span>
             </div>
             <Badge variant="secondary" className="text-[10px] font-black">
-              {order.items.length} items
+              {displayItems.length} items
             </Badge>
           </div>
 
           <div className="divide-y divide-border/20">
-            {order.items.map((item: OrderItem) => (
+            {displayItems.map((item: OrderItem) => (
               <div key={item.id} className="px-5 py-4 hover:bg-muted/5 transition-colors">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -1066,10 +1154,41 @@ function DetailsTab({
                     {item.notes && (
                       <p className="text-xs text-muted-foreground italic mt-1.5">📝 {item.notes}</p>
                     )}
+                    {item.is_nc && (
+                      <Badge variant="outline" className="mt-2 h-5 text-[10px] font-semibold text-orange-600 border-orange-500/40">
+                        NC
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground tabular-nums">×{item.qty}</span>
+                      {order.status !== 'completed' && order.status !== 'canceled' ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={isUpdating || (item.qty <= 1 && !canVoidItem)}
+                            onClick={() => void handleQtyChange(item, -1)}
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </Button>
+                          <div className="min-w-[2.5rem] text-center font-semibold tabular-nums text-sm">
+                            {item.qty}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={isUpdating}
+                            onClick={() => void handleQtyChange(item, 1)}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground tabular-nums">×{item.qty}</span>
+                      )}
                       <span className="font-bold text-sm tabular-nums">{formatCurrency(item.line_total)}</span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1077,14 +1196,42 @@ function DetailsTab({
                         @ {formatCurrency(item.unit_price)}
                       </span>
                       {order.status !== 'completed' && order.status !== 'canceled' && (
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-muted"
-                          onClick={() => handleOpenEdit(item)}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                        </Button>
+                        <>
+                          <Button
+                            variant={item.is_nc ? "default" : "outline"}
+                            size="sm"
+                            className={cn(
+                              "h-8 gap-1.5 px-2 text-xs font-semibold",
+                              item.is_nc && "bg-orange-500 hover:bg-orange-600 text-white"
+                            )}
+                            disabled={isUpdating || !canMarkNc}
+                            onClick={() => {
+                              // Read current value from overrides or original item
+                              const currentNc = itemOverrides[item.id]?.is_nc ?? item.is_nc;
+                              const nextNc = !Boolean(currentNc);
+                              // Optimistically update
+                              setItemOverrides(prev => ({
+                                ...prev,
+                                [item.id]: { ...(prev[item.id] || {}), is_nc: nextNc }
+                              }));
+                              void handleApplyItemUpdate(item.id, {
+                                is_nc: nextNc,
+                              });
+                            }}
+                          >
+                            <Award className="h-3.5 w-3.5" />
+                            NC
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 px-2 text-xs font-semibold"
+                            onClick={() => handleOpenNoteEdit(item)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Note
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1221,56 +1368,34 @@ function DetailsTab({
       </Card>
 
 
-      {/* Edit Item Dialog */}
-      <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>
-        <DialogContent className="sm:max-w-sm">
+      {/* Note Edit Modal */}
+      <Dialog open={!!editingItemNote} onOpenChange={(open) => !open && setEditingItemNote(null)}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit Item</DialogTitle>
-            <DialogDescription>Update quantity or add special instructions.</DialogDescription>
+            <DialogTitle>Edit Note</DialogTitle>
+            <DialogDescription>
+              {editingItemNote ? editingItemNote.name_snapshot : "Update the item note."}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase text-muted-foreground">Quantity</label>
-              <div className="flex items-center gap-3">
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => {
-                    if (editQty <= 1 && !canVoidItem) {
-                      toast.error("You do not have permission to void order items.");
-                      return;
-                    }
-                    setEditQty(Math.max(0, editQty - 1));
-                  }}
-                  disabled={editQty <= 0 || (editQty <= 1 && !canVoidItem)}
-                >
-                  <Minus className="h-4 w-4" />
-                </Button>
-                <div className="flex-1 text-center font-bold text-lg">{editQty}</div>
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => setEditQty(editQty + 1)}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-              {editQty === 0 && <p className="text-[10px] text-destructive mt-1">Item will be removed from order.</p>}
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase text-muted-foreground">Notes</label>
-              <Input 
-                placeholder="e.g., Less spicy, no onions" 
-                value={editNotes} 
-                onChange={(e) => setEditNotes(e.target.value)} 
-              />
-            </div>
+
+          <div className="space-y-3 py-2">
+            <Textarea
+              value={editNoteValue}
+              onChange={(e) => setEditNoteValue(e.target.value)}
+              placeholder="Add a note for this item"
+              className="min-h-[96px]"
+            />
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingItem(null)}>Cancel</Button>
-            <Button onClick={handleSaveEdit} disabled={isUpdating || (editQty === 0 && !canVoidItem)}>
-              {isUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Save Changes
+            <Button variant="outline" onClick={() => setEditingItemNote(null)}>Cancel</Button>
+            <Button
+              onClick={handleSaveNote}
+              disabled={!editingItemNote || isUpdating}
+              className="gap-2"
+            >
+              {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Save Note
             </Button>
           </DialogFooter>
         </DialogContent>

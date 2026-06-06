@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -65,6 +65,8 @@ import {
   Siren,
   TrendingDown,
   TrendingUp,
+  Tag,
+  Utensils,
   Users,
   Wallet,
   Zap,
@@ -118,6 +120,9 @@ export default function DashboardPage() {
   const dayCloseStatus = home?.day_close_status
   const topItemsLive = home?.top_items_live?.items || []
   const healthSnapshot = data?.health
+  const ncSummary = home?.nc_summary
+  const ncSummaryMetrics = ncSummary?.summary || {}
+  const ncTopSummaryItems = ncSummary?.top_items || []
   const overview =
     analyticsData?.tabs?.overview?.overview || analyticsData?.overview || {}
   const v2Kpis = data?.kpis
@@ -463,6 +468,53 @@ export default function DashboardPage() {
           currency={currency}
         />
       </section>
+
+      {ncSummary?.available !== false && (Number(ncSummaryMetrics.nc_items_count || 0) > 0 || ncTopSummaryItems.length > 0) ? (
+        <section>
+          <Card className="bg-card border-border shadow-sm">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Tag className="w-4 h-4 text-orange-500" />
+                    NC Summary
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Complimentary items are tracked separately from billable dashboard metrics.
+                  </p>
+                </div>
+                <Link href="/analytics">
+                  <Button variant="outline" size="sm" className="h-8 text-xs font-semibold">
+                    View Details
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <MetricMiniCard label="NC Value" value={fmtMoney(Number(ncSummaryMetrics.nc_total_value || 0))} icon={<DollarSign className="h-4 w-4 text-orange-500" />} />
+                <MetricMiniCard label="NC Items" value={Number(ncSummaryMetrics.nc_items_count || 0).toLocaleString()} icon={<Utensils className="h-4 w-4 text-blue-500" />} />
+                <MetricMiniCard label="NC Orders" value={Number(ncSummaryMetrics.nc_orders_count || 0).toLocaleString()} icon={<ReceiptText className="h-4 w-4 text-emerald-500" />} />
+                <MetricMiniCard label="Customers" value={Number(ncSummaryMetrics.customers_with_nc_items || 0).toLocaleString()} icon={<Users className="h-4 w-4 text-violet-500" />} />
+              </div>
+              {ncTopSummaryItems.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {ncTopSummaryItems.slice(0, 3).map((item: any) => (
+                    <div key={`${item.item_id}-${item.name}`} className="rounded-xl border border-border/50 bg-muted/30 p-3">
+                      <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Top NC Item</div>
+                      <div className="mt-1 font-semibold truncate">{item.name}</div>
+                      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{Number(item.qty || 0).toLocaleString()} items</span>
+                        <span className="font-semibold text-foreground">{fmtMoney(Number(item.value || 0))}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <div className="flex flex-col gap-6">
@@ -1753,6 +1805,22 @@ function ActivityFeed({ activities }: { activities: any[] }) {
   )
 }
 
+function fmtMoney(value: number) {
+  return `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function MetricMiniCard({ label, value, icon }: { label: string; value: string; icon: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/30 p-3">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        {icon}
+        <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+      </div>
+      <div className="mt-2 text-base font-bold text-foreground">{value}</div>
+    </div>
+  )
+}
+
 function SummaryMetric({ label, value, prefix = "", suffix = "", icon, trend, compareLabel = "previous period" }: any) {
   const isUp = trend?.direction?.toUpperCase() === 'UP';
   const isDown = trend?.direction?.toUpperCase() === 'DOWN';
@@ -1835,4 +1903,3 @@ function SummaryMetric({ label, value, prefix = "", suffix = "", icon, trend, co
     </HoverCard>
   )
 }
-
