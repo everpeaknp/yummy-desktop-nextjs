@@ -456,7 +456,7 @@ export default function Home() {
         </div>
         <div className="text-center space-y-2">
           <h1 className="text-3xl font-extrabold tracking-tight">
-            <span className="text-primary">Yummy</span> <span className="text-foreground">Kitchen</span>
+            <span className="text-primary">Yummy</span> <span className="text-foreground">Manage</span>
           </h1>
           <p className="text-muted-foreground text-sm max-w-xs mx-auto">
             Manage your restaurant with ease and style.

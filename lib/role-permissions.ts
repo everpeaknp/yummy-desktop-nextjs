@@ -111,6 +111,7 @@ export type PermissionKey =
   | "pos.order.discount.apply"
   | "pos.order.discount.override"
   | "pos.order.serve_override"
+  | "pos.order.nc.mark"
   | "pos.quick_bill"
   | "pos.delivery"
   | "pos.pickup"
@@ -253,9 +254,9 @@ export function hasPermission(
   if (permission === ANALYTICS_VIEW_PERMISSION) {
     return hasAnalyticsViewPermission(user);
   }
-  // Admin bypass — works for both legacy role field and roles array
+  // Admin and Platform Staff bypass
   const roles = normalizeRolesForUser(user);
-  if (roles.includes("admin")) return true;
+  if (roles.includes("admin") || (user.permissions?.includes("platform.restaurants.view") ?? false)) return true;
   // Granular permission check (works for all custom-role users)
   return user.permissions?.includes(permission) ?? false;
 }
@@ -517,6 +518,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/feedback": ALL_DASHBOARD_ROLES,
   "/premium": ADMIN_MANAGER,
   "/welcome": ["user", ...ALL_DASHBOARD_ROLES],
+  "/gateway": ["user", ...ALL_DASHBOARD_ROLES],
 };
 
 export function isRouteAllowed(
@@ -532,9 +534,9 @@ export function isRouteAllowed(
 
   // Build the set of normalized legacy roles for this user
   const roles = normalizeRolesForUser(user);
-  const isAdmin = roles.includes("admin");
+  const isGlobalAdmin = roles.includes("admin") || (user.permissions?.includes("platform.restaurants.view") ?? false);
 
-  if (isAdmin) return true;
+  if (isGlobalAdmin) return true;
 
   // 1. Check Granular Permissions first (works for both legacy & custom-role users)
   const sortedPermissionPrefixes = Object.keys(ROUTE_PERMISSIONS).sort(

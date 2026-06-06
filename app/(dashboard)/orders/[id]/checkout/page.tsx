@@ -22,6 +22,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -49,6 +50,9 @@ import {
   Award,
   Trash2,
   Users,
+  Pencil,
+  Plus,
+  Minus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
@@ -119,6 +123,7 @@ interface BillItem {
   qty: number;
   line_total: number;
   notes: string | null;
+  is_nc?: boolean;
   modifiers: BillItemModifier[];
   created_at: string;
 }
@@ -185,6 +190,18 @@ function formatCurrency(amount: number, currency = "Rs.") {
   return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function getItemEffectiveUnitPrice(item: BillItem) {
+  const modifierTotal = Array.isArray(item.modifiers)
+    ? item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price_adjustment_snapshot || 0), 0)
+    : 0;
+  return Number(item.unit_price || 0) + modifierTotal;
+}
+
+function getItemEffectiveLineTotal(item: BillItem) {
+  if (item.is_nc) return 0;
+  return getItemEffectiveUnitPrice(item) * Number(item.qty || 0);
+}
+
 function formatCustomerLabel(c: any, currency: string) {
   const name = c?.full_name || c?.name || "Guest";
   const phone = c?.phone || "No phone";
@@ -232,7 +249,15 @@ export default function CheckoutPage() {
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const curr = restaurant?.currency || "Rs.";
-  const { canApplyDiscount, canProcessPayment, canEditPayment, canDeletePayment, canProcessRefund } = usePosBillingPermissions();
+  const {
+    canApplyDiscount,
+    canProcessPayment,
+    canEditPayment,
+    canDeletePayment,
+    canProcessRefund,
+    canVoidItem,
+    canMarkNc,
+  } = usePosBillingPermissions();
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
   const [bill, setBill] = useState<OrderBill | null>(null);
@@ -240,6 +265,7 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [itemOverrides, setItemOverrides] = useState<Record<number, Partial<BillItem>>>({});
 
   // Payment dialog
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -267,6 +293,10 @@ export default function CheckoutPage() {
   const [editSelectedCardIndex, setEditSelectedCardIndex] = useState(0);
   const [removingPaymentId, setRemovingPaymentId] = useState<number | null>(null);
   const [shouldAutoRedirectAfterPayment, setShouldAutoRedirectAfterPayment] = useState(false);
+  const [editingItem, setEditingItem] = useState<BillItem | null>(null);
+  const [editItemNotes, setEditItemNotes] = useState("");
+  const [itemUpdating, setItemUpdating] = useState(false);
+
 
   // Multi-Payment state
   const [isMultiPayment, setIsMultiPayment] = useState(false);
@@ -300,6 +330,9 @@ export default function CheckoutPage() {
     ? context.order.items
     : (bill?.items || []);
   const hasSuccessfulPayments = Number(bill?.total_paid || 0) > 0;
+  const orderEditLocked = ["completed", "canceled"].includes(
+    String(orderMeta?.status || context?.order?.status || "").toLowerCase(),
+  );
 
   const buildSplitInitialItems = () => {
     const initialItems: Record<number, number> = {};
@@ -337,6 +370,13 @@ export default function CheckoutPage() {
   const [manualDiscountAmount, setManualDiscountAmount] = useState("");
   const [manualDiscountPercent, setManualDiscountPercent] = useState("");
   const [discountSubmitting, setDiscountSubmitting] = useState(false);
+
+  const hasNcItems = Boolean(
+    (context?.order?.items || bill?.items || []).some((item: any) => Boolean(item?.is_nc))
+  );
+  const pendingCheckoutCustomerId =
+    orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
+  const ncNeedsCustomer = hasNcItems && !pendingCheckoutCustomerId;
   const [discountError, setDiscountError] = useState<string | null>(null);
   const [loyaltyOpen, setLoyaltyOpen] = useState(false);
   const [loyaltyPoints, setLoyaltyPoints] = useState("");
@@ -391,6 +431,91 @@ export default function CheckoutPage() {
       setLoading(false);
     }
   }, [orderId, fetchGuestBills]);
+
+  const handleOpenItemEdit = (item: BillItem) => {
+    setEditingItem(item);
+    setEditItemNotes(item.notes || "");
+  };
+
+  const handleCloseItemEdit = () => {
+    setEditingItem(null);
+    setEditItemNotes("");
+  };
+
+  const attachSelectedCustomerToOrderIfNeeded = useCallback(async () => {
+    if (orderMeta?.customer_id || !selectedCustomerId) return orderMeta?.customer_id || undefined;
+    const customerId = parseInt(selectedCustomerId, 10);
+    await apiClient.patch(OrderApis.updateOrder(orderId), {
+      customer_id: customerId,
+    });
+    setOrderMeta((prev) => (prev ? { ...prev, customer_id: customerId } : prev));
+    return customerId;
+  }, [orderId, orderMeta?.customer_id, selectedCustomerId]);
+
+  const handleApplyItemUpdate = useCallback(async (
+    targetItemId: number,
+    patch: { qty?: number; notes?: string | null; is_nc?: boolean },
+    options?: { successMessage?: string }
+  ) => {
+    if (!context?.order?.items?.length) return;
+
+    setItemUpdating(true);
+    try {
+      const payload = {
+        items: context.order.items.map((item: any) => {
+          const isTarget = Number(item.id) === Number(targetItemId);
+          const displayItem = {
+            ...item,
+            ...(itemOverrides[item.id] || {})
+          };
+          return {
+            menu_item_id: item.menu_item_id,
+            name_snapshot: item.name_snapshot,
+            category_name_snapshot: item.category_name_snapshot,
+            category_type_snapshot: item.category_type_snapshot,
+            revenue_category: item.revenue_category,
+            unit_price: item.unit_price,
+            qty: isTarget ? (patch.qty ?? displayItem.qty) : displayItem.qty,
+            notes: isTarget ? (patch.notes !== undefined ? patch.notes : (displayItem.notes || null)) : (displayItem.notes || null),
+            is_nc: isTarget ? (patch.is_nc ?? Boolean(displayItem.is_nc)) : Boolean(displayItem.is_nc),
+            modifiers: Array.isArray(item.modifiers)
+              ? item.modifiers.map((modifier: any) => ({
+                  modifier_id: modifier.modifier_id,
+                  modifier_name_snapshot: modifier.modifier_name_snapshot,
+                  price_adjustment_snapshot: modifier.price_adjustment_snapshot,
+                }))
+              : [],
+          };
+        }),
+      };
+
+      await apiClient.post(OrderApis.updateOrderItems(orderId), payload);
+      if (options?.successMessage) toast.success(options.successMessage);
+      await Promise.all([fetchContext(), fetchBill()]);
+      setItemOverrides({});
+    } catch (err: any) {
+      console.error("Failed to update item from checkout:", err);
+      toast.error(extractApiErrorMessage(err, "Failed to update item"));
+      // Revert optimistic update on error
+      setItemOverrides(prev => {
+        const next = { ...prev };
+        delete next[targetItemId];
+        return next;
+      });
+    } finally {
+      setItemUpdating(false);
+    }
+  }, [context?.order?.items, orderId, itemOverrides, fetchBill, fetchContext]);
+
+  const handleSaveItemEdit = async () => {
+    if (!editingItem) return;
+    await handleApplyItemUpdate(
+      Number(editingItem.id),
+      { notes: editItemNotes || null },
+      { successMessage: "Note updated" }
+    );
+    setEditingItem(null);
+  };
 
   useEffect(() => {
     fetchBill();
@@ -480,10 +605,58 @@ export default function CheckoutPage() {
     }
   }, [guestBills, orderId, orderMeta, completing]);
 
+
+  const handleQtyChange = useCallback(async (item: BillItem, delta: number) => {
+    // Read current qty from overrides or original item
+    const currentQty = itemOverrides[item.id]?.qty ?? item.qty;
+    const nextQty = Math.max(0, currentQty + delta);
+    if (nextQty === currentQty) return;
+    if (nextQty <= 0 && !canVoidItem) {
+      toast.error("You do not have permission to void order items.");
+      return;
+    }
+    // Optimistically update
+    setItemOverrides(prev => ({
+      ...prev,
+      [item.id]: { ...(prev[item.id] || {}), qty: nextQty }
+    }));
+    await handleApplyItemUpdate(
+      Number(item.id),
+      { qty: nextQty },
+      { successMessage: "Quantity updated" }
+    );
+  }, [canVoidItem, handleApplyItemUpdate, itemOverrides]);
+
+  const handleNcToggle = useCallback(async (item: BillItem) => {
+    if (!canMarkNc) {
+      toast.error("You do not have permission to mark items as NC.");
+      return;
+    }
+    // Read current value from overrides or original item
+    const currentNc = itemOverrides[item.id]?.is_nc ?? item.is_nc;
+    const nextNc = !Boolean(currentNc);
+    // Optimistically update
+    setItemOverrides(prev => ({
+      ...prev,
+      [item.id]: { ...(prev[item.id] || {}), is_nc: nextNc }
+    }));
+    await handleApplyItemUpdate(
+      Number(item.id),
+      { is_nc: nextNc },
+      { successMessage: "NC status updated" }
+    );
+  }, [canMarkNc, handleApplyItemUpdate, itemOverrides]);
   // ── Complete Order ──
   const handleComplete = async () => {
     setCompleting(true);
     try {
+      if (hasNcItems) {
+        const customerId = await attachSelectedCustomerToOrderIfNeeded();
+        if (!customerId) {
+          toast.error("Select a customer before completing an order with NC items.");
+          return;
+        }
+      }
       await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
       await fetchCustomers();
       if (returnTo) {
@@ -538,7 +711,7 @@ export default function CheckoutPage() {
       return;
     }
     if (!bill) return;
-    const amount = parseFloat(payAmount || String(bill.balance_due || 0));
+    const amount = parseFloat(payAmount || String(displayBalanceDue || 0));
     if (!amount || amount <= 0) {
       setPayError("Enter a valid amount");
       return;
@@ -1040,8 +1213,8 @@ export default function CheckoutPage() {
 
       const paidAmountRaw = Number(payload?.amount ?? payload?.paid_amount ?? payload?.total_amount ?? 0);
       const amountToApply = Math.min(
-        paidAmountRaw > 0 ? paidAmountRaw : (bill.balance_due || 0),
-        bill.balance_due || 0
+        paidAmountRaw > 0 ? paidAmountRaw : displayBalanceDue,
+        displayBalanceDue
       );
 
       // Only attempt to record the payment if there's still a balance due.
@@ -1243,7 +1416,25 @@ export default function CheckoutPage() {
     Number((bill.subtotal + bill.tax_total + bill.service_charge - bill.grand_total).toFixed(2))
   );
   const hasDiscount = computedDiscount > 0;
-  const dueAmountForManualDiscount = Math.max(0, Number(bill.balance_due || 0));
+  const displayBillItems = bill.items.map((item) => {
+    const overrides = itemOverrides[item.id] || {};
+    const displayItem = {
+      ...item,
+      ...overrides,
+      qty: overrides.qty ?? item.qty,
+      notes: overrides.notes !== undefined ? overrides.notes : item.notes,
+      is_nc: overrides.is_nc !== undefined ? overrides.is_nc : item.is_nc,
+    };
+    return {
+      ...displayItem,
+      line_total: getItemEffectiveLineTotal(displayItem),
+    };
+  });
+  const displaySubtotal = Number(displayBillItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0).toFixed(2));
+  const displayGrandTotal = Number((displaySubtotal + Number(bill.tax_total || 0) + Number(bill.service_charge || 0) - computedDiscount).toFixed(2));
+  const displayBalanceDue = Math.max(0, Number((displayGrandTotal - Number(bill.total_paid || 0)).toFixed(2)));
+  const displayIsFullyPaid = displayBalanceDue <= 0;
+  const dueAmountForManualDiscount = displayBalanceDue;
   const checkoutCustomerId = orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
   const checkoutCustomer = checkoutCustomerId
     ? customers.find((c: any) => Number(c?.id) === Number(checkoutCustomerId))
@@ -1284,7 +1475,7 @@ export default function CheckoutPage() {
           <Button variant="outline" size="sm" onClick={fetchBill} className="gap-2">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
-          {bill.is_fully_paid && (
+          {displayIsFullyPaid && (
             <Button variant="outline" size="sm" onClick={handlePrintReceipt} className="gap-2">
               <Printer className="h-3.5 w-3.5" /> Print
             </Button>
@@ -1293,7 +1484,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* ── Fully Paid Banner ── */}
-      {bill.is_fully_paid && (!guestBills?.split_group_id || guestBills.orders.every((g: any) => g.is_fully_paid)) && (
+      {displayIsFullyPaid && (!guestBills?.split_group_id || guestBills.orders.every((g: any) => g.is_fully_paid)) && (
         <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl">
           <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
           <div>
@@ -1351,22 +1542,25 @@ export default function CheckoutPage() {
                   <thead>
                     <tr className="border-b bg-muted/30">
                       <th className="text-left p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Item</th>
-                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-20">Qty</th>
+                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-40">Qty</th>
                       <th className="text-right p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-28">Price</th>
                       <th className="text-right p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-32">Total</th>
+                      <th className="text-right p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground w-44">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {bill.items.map((item) => (
+                    {displayBillItems.map((displayItem) => {
+                      const item = bill.items.find((source) => source.id === displayItem.id) || displayItem;
+                      return (
                       <tr key={item.id} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
                         <td className="p-4">
-                          <p className="font-medium text-sm">{item.name_snapshot}</p>
-                          {item.category_name_snapshot && (
-                            <p className="text-xs text-muted-foreground">{item.category_name_snapshot}</p>
+                          <p className="font-medium text-sm">{displayItem.name_snapshot}</p>
+                          {displayItem.category_name_snapshot && (
+                            <p className="text-xs text-muted-foreground">{displayItem.category_name_snapshot}</p>
                           )}
-                          {item.modifiers.length > 0 && (
+                          {displayItem.modifiers.length > 0 && (
                             <div className="mt-1 flex flex-wrap gap-1">
-                              {item.modifiers.map((m) => (
+                              {displayItem.modifiers.map((m) => (
                                 <Badge key={m.id} variant="secondary" className="text-[10px] font-normal">
                                   {m.modifier_name_snapshot}
                                   {m.price_adjustment_snapshot !== 0 && (
@@ -1376,24 +1570,146 @@ export default function CheckoutPage() {
                               ))}
                             </div>
                           )}
-                          {item.notes && (
-                            <p className="text-xs text-muted-foreground mt-1 italic">{item.notes}</p>
+                          {displayItem.notes && (
+                            <p className="text-xs text-muted-foreground mt-1 italic">{displayItem.notes}</p>
+                          )}
+                          {displayItem.is_nc && (
+                            <Badge variant="outline" className="mt-2 h-5 text-[10px] font-semibold text-orange-600 border-orange-500/40">
+                              NC
+                            </Badge>
                           )}
                         </td>
-                        <td className="p-4 text-center font-medium tabular-nums">{item.qty}</td>
+                        <td className="p-4">
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={orderEditLocked || itemUpdating || (displayItem.qty <= 1 && !canVoidItem)}
+                              onClick={() => void handleQtyChange(item, -1)}
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </Button>
+                            <div className="min-w-[2.5rem] text-center font-semibold tabular-nums">
+                              {displayItem.qty}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={orderEditLocked || itemUpdating}
+                              onClick={() => void handleQtyChange(item, 1)}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
                         <td className="p-4 text-right text-sm tabular-nums text-muted-foreground">
-                          {formatCurrency(item.unit_price, curr)}
+                          {formatCurrency(displayItem.unit_price, curr)}
                         </td>
                         <td className="p-4 text-right font-semibold tabular-nums">
-                          {formatCurrency(item.line_total, curr)}
+                          {formatCurrency(displayItem.line_total, curr)}
+                        </td>
+                        <td className="p-4 text-right">
+                          {!orderEditLocked ? (
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant={displayItem.is_nc ? "default" : "outline"}
+                                size="sm"
+                                className={cn(
+                                  "h-8 gap-1.5 px-2 text-xs font-semibold",
+                                  displayItem.is_nc && "bg-orange-500 hover:bg-orange-600 text-white"
+                                )}
+                                disabled={itemUpdating || !canMarkNc}
+                                onClick={() => handleNcToggle(item)}
+                              >
+                                <Award className="h-3.5 w-3.5" />
+                                NC
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 gap-1.5 px-2 text-xs font-semibold"
+                                onClick={() => handleOpenItemEdit(item)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                Note
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">
+                              Locked
+                            </span>
+                          )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </CardContent>
           </Card>
+          {orderEditLocked && (
+            <p className="text-xs text-muted-foreground">
+              Item quantity changes are available until the order is completed or canceled. Completed-order item changes need backend support.
+            </p>
+          )}
+          <Dialog
+            open={Boolean(editingItem)}
+            onOpenChange={(open) => {
+              if (!open) handleCloseItemEdit();
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Edit Note</DialogTitle>
+                <DialogDescription>
+                  {editingItem ? editingItem.name_snapshot : "Update the item note."}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3 py-2">
+                <Textarea
+                  value={editItemNotes}
+                  onChange={(e) => setEditItemNotes(e.target.value)}
+                  placeholder="Add a note for this item"
+                  className="min-h-[96px]"
+                />
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={handleCloseItemEdit}>Cancel</Button>
+                <Button
+                  onClick={handleSaveItemEdit}
+                  disabled={!editingItem || itemUpdating}
+                  className="gap-2"
+                >
+                  {itemUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Save Note
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {hasNcItems && !pendingCheckoutCustomerId && (
+            <Card className="border-amber-500/30 bg-amber-500/10">
+              <CardContent className="p-4 text-sm">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 text-amber-500" />
+                  <div>
+                    <p className="font-semibold text-foreground">Customer required before checkout</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      NC items can be marked here, but you must select a customer in checkout before payment or completion.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* ── Right: Summary & Actions ── */}
@@ -1405,7 +1721,7 @@ export default function CheckoutPage() {
 
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span className="tabular-nums">{formatCurrency(bill.subtotal, curr)}</span>
+                <span className="tabular-nums">{formatCurrency(displaySubtotal, curr)}</span>
               </div>
 
               <div className="flex justify-between text-sm">
@@ -1430,7 +1746,7 @@ export default function CheckoutPage() {
                   <div className="flex items-center gap-1.5">
                     <Percent className="h-3.5 w-3.5 text-emerald-600" />
                     <span className="text-emerald-600 font-medium">Discount</span>
-                    {!bill.is_fully_paid && canApplyDiscount && (
+                    {!displayIsFullyPaid && canApplyDiscount && (
                       <button onClick={handleRemoveDiscount} className="text-destructive hover:text-destructive/80 ml-1">
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -1444,7 +1760,7 @@ export default function CheckoutPage() {
 
               <div className="flex justify-between font-bold text-lg">
                 <span>Grand Total</span>
-                <span className="tabular-nums">{formatCurrency(bill.grand_total, curr)}</span>
+                <span className="tabular-nums">{formatCurrency(displayGrandTotal, curr)}</span>
               </div>
 
               <Separator />
@@ -1457,11 +1773,11 @@ export default function CheckoutPage() {
               )}
 
               <div className="flex justify-between font-bold text-base">
-                <span className={bill.balance_due > 0 ? "text-destructive" : "text-emerald-600"}>
-                  {bill.balance_due > 0 ? "Balance Due" : "Settled"}
+                <span className={displayBalanceDue > 0 ? "text-destructive" : "text-emerald-600"}>
+                  {displayBalanceDue > 0 ? "Balance Due" : "Settled"}
                 </span>
-                <span className={cn("tabular-nums", bill.balance_due > 0 ? "text-destructive" : "text-emerald-600")}>
-                  {formatCurrency(bill.balance_due, curr)}
+                <span className={cn("tabular-nums", displayBalanceDue > 0 ? "text-destructive" : "text-emerald-600")}>
+                  {formatCurrency(displayBalanceDue, curr)}
                 </span>
               </div>
             </CardContent>
@@ -1541,7 +1857,7 @@ export default function CheckoutPage() {
           )}
 
           {/* Action Buttons */}
-          {(!bill.is_fully_paid || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)) && (
+          {(!displayIsFullyPaid || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)) && (
             <div className="space-y-3">
               <Card className="border-border/40">
                 <CardContent className="p-4 space-y-3">
@@ -1572,6 +1888,15 @@ export default function CheckoutPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                    </div>
+                  )}
+
+                  {hasNcItems && !pendingCheckoutCustomerId && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+                      <p className="font-semibold text-foreground">NC items are on this order.</p>
+                      <p className="mt-1 text-muted-foreground">
+                        Select a customer here before taking payment or completing the order.
+                      </p>
                     </div>
                   )}
 
@@ -1666,7 +1991,7 @@ export default function CheckoutPage() {
                                   className="h-8 px-2.5 font-semibold text-xs"
                                   onClick={() => {
                                     if (String(gOrder.order_id) === String(orderId)) {
-                                      setPayAmount(bill.balance_due.toFixed(2));
+                                      setPayAmount(displayBalanceDue.toFixed(2));
                                       setPaymentOpen(true);
                                     } else {
                                       router.push(`/orders/${gOrder.order_id}/checkout?returnTo=${encodeURIComponent(window.location.pathname)}`);
@@ -1699,17 +2024,25 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              {canProcessPayment && bill.balance_due > 0 ? (
+              {canProcessPayment && displayBalanceDue > 0 ? (
                 <Button
                   className="w-full h-12 text-base font-semibold shadow-lg gap-2"
-                  onClick={() => {
-                    setPayAmount(bill.balance_due.toFixed(2));
+                  onClick={async () => {
+                    if (hasNcItems) {
+                      const customerId = await attachSelectedCustomerToOrderIfNeeded();
+                      if (!customerId) {
+                        setPayError("Select a customer before taking payment for an order with NC items.");
+                        toast.error("Select a customer before taking payment for an order with NC items.");
+                        return;
+                      }
+                    }
+                    setPayAmount(displayBalanceDue.toFixed(2));
                     setPaymentOpen(true);
                   }}
                   disabled={guestBills?.orders?.length > 0 && guestBills?.split_group_id && String(guestBills.anchor_order_id) === String(orderId) && !guestBills.orders.every((g: any) => g.is_fully_paid)}
                 >
                   <CreditCard className="h-4 w-4" />
-                  Take Payment ({formatCurrency(bill.balance_due, curr)})
+                  Take Payment ({formatCurrency(displayBalanceDue, curr)})
                 </Button>
               ) : (
                 <p className="text-xs text-muted-foreground text-center px-2">
@@ -1764,7 +2097,7 @@ export default function CheckoutPage() {
                     setSplitError(null);
                     setSplitBillOpen(true);
                   }}
-                  disabled={bill.is_fully_paid || hasSuccessfulPayments || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)}
+                  disabled={displayIsFullyPaid || hasSuccessfulPayments || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)}
                 >
                   <RefreshCw className="h-4 w-4" />
                   Split Bill
@@ -1792,16 +2125,18 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {bill.is_fully_paid && (
+          {displayIsFullyPaid && (
             <div className="space-y-3">
               {(allKotsServed || orderMeta?.channel === "room_service") && orderMeta?.status !== 'completed' && (
                 <Button 
                   className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
                   onClick={handleComplete}
-                  disabled={completing}
+                  disabled={completing || ncNeedsCustomer}
                 >
                   {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                  Complete {orderMeta?.channel === "room_service" ? "Stay & Checkout" : "Order"}
+                  {ncNeedsCustomer
+                    ? "Select Customer For NC"
+                    : `Complete ${orderMeta?.channel === "room_service" ? "Stay & Checkout" : "Order"}`}
                 </Button>
               )}
 
@@ -1847,6 +2182,36 @@ export default function CheckoutPage() {
         </div>
       </div>
 
+      <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Note</DialogTitle>
+            <DialogDescription>
+              Add or update a note for this item.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase text-muted-foreground">Notes</Label>
+              <Input
+                placeholder="e.g., Less spicy, no onions"
+                value={editItemNotes}
+                onChange={(e) => setEditItemNotes(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingItem(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveItemEdit} disabled={itemUpdating}>
+              {itemUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Save Note
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Payment Dialog ── */}
       <Dialog open={paymentOpen} onOpenChange={(open) => {
         setPaymentOpen(open);
@@ -1859,7 +2224,7 @@ export default function CheckoutPage() {
           <DialogHeader>
             <DialogTitle>Add Payment</DialogTitle>
             <DialogDescription>
-              Balance due: <span className="font-bold text-foreground">{formatCurrency(bill.balance_due, curr)}</span>
+              Balance due: <span className="font-bold text-foreground">{formatCurrency(displayBalanceDue, curr)}</span>
             </DialogDescription>
           </DialogHeader>
 
@@ -1880,8 +2245,8 @@ export default function CheckoutPage() {
               onClick={() => {
                 setIsMultiPayment(true);
                 setMultiPayments([
-                  { method: "cash", amount: (bill.balance_due / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 },
-                  { method: "digital", amount: (bill.balance_due / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
+                  { method: "cash", amount: (displayBalanceDue / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 },
+                  { method: "digital", amount: (displayBalanceDue / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
                 ]);
               }}
               className={cn(
@@ -2071,7 +2436,7 @@ export default function CheckoutPage() {
                   </div>
                   {(() => {
                     const entered = parseFloat(payAmount) || 0;
-                    const change = entered > bill.balance_due ? entered - bill.balance_due : 0;
+                    const change = entered > displayBalanceDue ? entered - displayBalanceDue : 0;
                     if (change > 0) {
                       return (
                         <div className="flex justify-between text-sm px-1">
@@ -2160,7 +2525,7 @@ export default function CheckoutPage() {
                                     return sum + (parseFloat(r.amount) || 0);
                                   }, 0);
 
-                                  const remaining = Math.max(0, bill.balance_due - otherSum - newValNum);
+                                  const remaining = Math.max(0, displayBalanceDue - otherSum - newValNum);
                                   newRows[targetAdjustIdx].amount = remaining.toFixed(2);
                                 }
 
@@ -2265,7 +2630,7 @@ export default function CheckoutPage() {
                   size="sm"
                   onClick={() => {
                     const totalAllocated = multiPayments.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
-                    const remaining = Math.max(0, bill.balance_due - totalAllocated);
+                    const remaining = Math.max(0, displayBalanceDue - totalAllocated);
                     setMultiPayments([
                       ...multiPayments,
                       { method: "cash", amount: remaining > 0 ? remaining.toFixed(2) : "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
@@ -2330,13 +2695,13 @@ export default function CheckoutPage() {
                 <div className="p-3 bg-muted/40 rounded-xl space-y-1.5 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Balance Due:</span>
-                    <span className="font-bold">{formatCurrency(bill.balance_due, curr)}</span>
+                    <span className="font-bold">{formatCurrency(displayBalanceDue, curr)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Allocated:</span>
                     {(() => {
                       const totalAllocated = multiPayments.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
-                      const difference = totalAllocated - bill.balance_due;
+                      const difference = totalAllocated - displayBalanceDue;
                       return (
                         <span className={cn(
                           "font-bold",
@@ -2761,7 +3126,7 @@ export default function CheckoutPage() {
                 const maxAllowedByProfile = customerMaxDiscount > 0 ? customerMaxDiscount : Number.MAX_SAFE_INTEGER;
                 const redeemAmount = Math.min(
                   points, // 1 point = 1 currency unit
-                  bill.grand_total || 0,
+                  displayGrandTotal || 0,
                   maxAllowedByProfile
                 );
                 if (!Number.isFinite(redeemAmount) || redeemAmount <= 0) {
@@ -2771,7 +3136,7 @@ export default function CheckoutPage() {
                 setLoyaltySubmitting(true);
                 setLoyaltyError(null);
                 try {
-                  const beforeGrandTotal = Number(bill.grand_total || 0);
+                  const beforeGrandTotal = Number(displayGrandTotal || 0);
 
                   // Ensure order has selected customer before applying loyalty discount.
                   if (String(orderMeta?.customer_id || "") !== String(checkoutCustomerId)) {

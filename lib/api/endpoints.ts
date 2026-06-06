@@ -453,6 +453,43 @@ export const AnalyticsApis = {
     if (businessLine) params.append('business_line', businessLine);
     return `/analytics/staff/details?${params.toString()}`;
   },
+  ncOrders: ({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    startTime,
+    endTime,
+    timezone,
+    businessLine,
+    skip = 0,
+    limit = 20,
+  }: {
+    restaurantId: number;
+    dateFrom?: string;
+    dateTo?: string;
+    startTime?: string;
+    endTime?: string;
+    timezone?: string;
+    businessLine?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+    if (startTime && endTime) {
+      params.append('start_time', startTime);
+      params.append('end_time', endTime);
+    } else {
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+    }
+    if (timezone) params.append('timezone', timezone);
+    if (businessLine) params.append('business_line', businessLine);
+    return `/analytics/nc/orders?${params.toString()}`;
+  },
   kitchenDetails: ({
     restaurantId,
     dateFrom,

@@ -347,6 +347,8 @@ export default function StaffPage() {
     try {
       if (editingStaff) {
         // Update user
+        const selectedRoleObj = availableRoles.find(r => r.name === formData.primary_role);
+
         const payload: any = {
           name: formData.name,
           email: formData.email,
@@ -354,6 +356,14 @@ export default function StaffPage() {
           roles: formData.roles,
           primary_role: formData.primary_role
         };
+        
+        // Ensure custom role mappings are cleared or updated correctly in backend
+        if (selectedRoleObj && !String(selectedRoleObj.id).startsWith("default-") && !String(selectedRoleObj.id).startsWith("adhoc-")) {
+            payload.custom_role_id = selectedRoleObj.id;
+        } else {
+            payload.custom_role_id = null;
+        }
+
         // Only include password if provided
         if (formData.password) payload.password = formData.password;
         
@@ -361,7 +371,8 @@ export default function StaffPage() {
         
         toast.success("Staff profile updated successfully");
       } else {
-        // Create user
+        const selectedRoleObj = availableRoles.find(r => r.name === formData.primary_role);
+        
         const createPayload: any = {
           name: formData.name,
           email: formData.email,
@@ -369,6 +380,10 @@ export default function StaffPage() {
           roles: formData.roles,
           primary_role: formData.primary_role
         };
+
+        if (selectedRoleObj && !String(selectedRoleObj.id).startsWith("default-") && !String(selectedRoleObj.id).startsWith("adhoc-")) {
+            createPayload.custom_role_id = selectedRoleObj.id;
+        }
         
         if (formData.password) createPayload.password = formData.password;
         if (user?.restaurant_id) createPayload.restaurant_id = user.restaurant_id;

@@ -168,12 +168,11 @@ export default function OrdersPage() {
 
         try {
             const todayStr = format(new Date(), "yyyy-MM-dd");
-            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
             const ordersPromise = apiClient.get(`${OrderApis.activeOrders}`, {
                 params: { 
                     restaurant_id: user.restaurant_id,
-                    timezone: timezone,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                     _t: Date.now()
                 }
             });
@@ -184,7 +183,7 @@ export default function OrdersPage() {
                     restaurantId: user.restaurant_id,
                     dateFrom: todayStr,
                     dateTo: todayStr,
-                    timezone: timezone,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                     include: "core",
                 })).catch(err => {
                     console.warn("Analytics revenue stat unavailable:", err.message);
@@ -224,6 +223,8 @@ export default function OrdersPage() {
             }
         } catch (err) {
             console.error("Failed to fetch active data:", err);
+            console.error("Failed to fetch active data response:", (err as any)?.response?.data);
+            console.error("Failed to fetch active data response json:", JSON.stringify((err as any)?.response?.data ?? null));
         } finally {
             setLoading(false);
         }

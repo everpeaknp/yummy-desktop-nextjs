@@ -347,7 +347,7 @@ export function Sidebar() {
                         Premium (Trial)
                       </div>
                       <div className="text-[10px] font-bold bg-muted px-2 py-0.5 rounded-md text-foreground/80 tracking-tight">
-                        Role: {user?.roles?.[0] || user?.role || "Admin"}
+                        Role: {user?.roles?.filter(r => !r.startsWith("__user_"))?.[0] || user?.role || "Admin"}
                       </div>
                     </div>
                   </div>

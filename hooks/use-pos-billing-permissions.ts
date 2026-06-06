@@ -40,6 +40,10 @@ export function usePosBillingPermissions() {
     const canDeletePayment = can("billing.payment.delete");
     const canProcessRefund = can("billing.refund.process");
     const canApproveHistoricalRefund = can("billing.refund.approve");
+    const canMarkNc =
+      can("pos.order.nc.mark") ||
+      can("pos.order.create") ||
+      can("pos.order.edit");
 
     const canRefundOrder = (orderCreatedAt?: string | null) => {
       if (!canProcessRefund) return false;
@@ -60,6 +64,7 @@ export function usePosBillingPermissions() {
       canProcessRefund,
       canApproveHistoricalRefund,
       canRefundOrder,
+      canMarkNc,
     };
   }, [user]);
 }

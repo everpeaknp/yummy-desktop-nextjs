@@ -120,6 +120,10 @@ export default function AnalyticsPage() {
         prevBusinessLineRef.current = businessLine;
     }, [activeRange, date, station, businessLine]);
 
+    useEffect(() => {
+        setNcOrdersPage(1);
+    }, [activeRange, date, selectedDayCloseSession, businessLine]);
+
     const [activeTab, setActiveTab] = useState<string>("overview");
 
     // Menu Details Tab State
@@ -138,6 +142,12 @@ export default function AnalyticsPage() {
     const [staffLoading, setStaffLoading] = useState(false);
     const [staffPage, setStaffPage] = useState(1);
     const [staffPageSize] = useState(20);
+    
+    // NC Details Tab State
+    const [ncOrdersData, setNcOrdersData] = useState<any>(null);
+    const [ncOrdersLoading, setNcOrdersLoading] = useState(false);
+    const [ncOrdersPage, setNcOrdersPage] = useState(1);
+    const [ncOrdersPageSize] = useState(20);
 
     const formatDateStr = (d: Date) => {
         const year = d.getFullYear();
@@ -261,6 +271,37 @@ export default function AnalyticsPage() {
         };
         fetchStaffDetails();
     }, [activeTab, user?.restaurant_id, getActiveDates, selectedDayCloseSession, staffPage, staffPageSize]);
+
+    // Fetch NC Order History
+    useEffect(() => {
+        if (activeTab !== "nc" || !user?.restaurant_id) return;
+        const fetchNcOrders = async () => {
+            setNcOrdersLoading(true);
+            try {
+                const dates = getActiveDates();
+                const url = AnalyticsApis.ncOrders({
+                    restaurantId: user.restaurant_id!,
+                    dateFrom: dates.startTime ? undefined : dates.dateFrom,
+                    dateTo: dates.startTime ? undefined : dates.dateTo,
+                    startTime: dates.startTime,
+                    endTime: dates.endTime,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    businessLine: dates.businessLine,
+                    skip: (ncOrdersPage - 1) * ncOrdersPageSize,
+                    limit: ncOrdersPageSize,
+                });
+                const res = await apiClient.get(url);
+                if (res.data?.status === "success") {
+                    setNcOrdersData(res.data.data);
+                }
+            } catch (e) {
+                console.error("Failed to load NC orders history", e);
+            } finally {
+                setNcOrdersLoading(false);
+            }
+        };
+        fetchNcOrders();
+    }, [activeTab, user?.restaurant_id, getActiveDates, selectedDayCloseSession, ncOrdersPage, ncOrdersPageSize]);
 
     // Fetch day-close sessions
     useEffect(() => {
@@ -690,7 +731,22 @@ export default function AnalyticsPage() {
     const staffSummaryMetrics = data?.tabs?.staff?.productivity_summary?.metrics || [];
     const topStaff = staffLeaderboard[0] || staffTopPerformer;
 
-    // ── Finance tab data ──────────────────────────────────────────────────────
+    // ── NC tab data ───────────────────────────────────────────────────────────
+    const ncTab = data?.tabs?.nc || {};
+    const ncSummary = ncTab.summary || {};
+    const ncTopItems = ncTab.top_items?.items || [];
+    const ncTopCustomers = ncTab.top_customers?.items || [];
+    const ncTrend = ncTab.trend?.items || [];
+    const ncRecentOrders = ncTab.recent_orders?.items || [];
+    const ncOrdersList = ncOrdersData?.items || [];
+    const ncOrdersTotal = ncOrdersData?.total_items || 0;
+    const ncOrdersHasMore = Boolean(ncOrdersData?.has_more);
+    const ncOrdersTotalPages = Math.max(1, Math.ceil(ncOrdersTotal / ncOrdersPageSize));
+    const ncTotalValue = Number(ncSummary.nc_total_value || 0);
+    const ncTotalItems = Number(ncSummary.nc_items_count || 0);
+    const ncOrdersCount = Number(ncSummary.nc_orders_count || 0);
+    const ncCustomersCount = Number(ncSummary.customers_with_nc_items || 0);
+
     const incomeVsExpenseData = useMemo(() => {
         const ivs = data?.tabs?.finance?.income_vs_expense || {};
         if (!ivs.labels) return [];
@@ -1002,6 +1058,7 @@ export default function AnalyticsPage() {
                             <TabsTrigger value="finance" className="rounded-lg font-semibold shrink-0">Finance</TabsTrigger>
                             <TabsTrigger value="menu" className="rounded-lg font-semibold shrink-0">Menu</TabsTrigger>
                             <TabsTrigger value="staff" className="rounded-lg font-semibold shrink-0">Staff</TabsTrigger>
+                            <TabsTrigger value="nc" className="rounded-lg font-semibold shrink-0">NC</TabsTrigger>
                         </TabsList>
                         <div className="flex flex-wrap items-center gap-2">
                             <Link href="/analytics/kitchen">
@@ -1471,6 +1528,117 @@ export default function AnalyticsPage() {
                             </CardContent>
                         </Card>
 
+                        {/* Non-Chargeable (NC) Snapshot */}
+                        {ncTotalItems > 0 && (
+                            <Card className="bg-card border-border shadow-sm">
+                                <CardHeader className="pb-2">
+                                    <div className="flex items-center justify-between">
+                                        <CardTitle className="text-base font-bold flex items-center gap-2">
+                                            <Utensils className="w-4 h-4 text-orange-500" /> Non-Chargeable (NC) Given
+                                        </CardTitle>
+                                        <div className="text-right">
+                                            <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Total Value</p>
+                                            <p className="text-lg font-black text-foreground">Rs. {Number(ncTotalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                    </div>
+                                    <CardDescription>Complimentary items are tracked separately from billable analytics.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+                                        <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
+                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">NC Items</span>
+                                            <span className="text-lg font-bold text-foreground">{fmtCount(ncTotalItems)}</span>
+                                        </div>
+                                        <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
+                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">NC Orders</span>
+                                            <span className="text-lg font-bold text-foreground">{fmtCount(ncOrdersCount)}</span>
+                                        </div>
+                                        <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
+                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Customers</span>
+                                            <span className="text-lg font-bold text-foreground">{fmtCount(ncCustomersCount)}</span>
+                                        </div>
+                                        <div className="bg-orange-500/5 border border-orange-500/10 rounded-xl p-3.5 flex flex-col gap-1">
+                                            <span className="text-[10px] font-black text-orange-500 uppercase tracking-wider">Track Details</span>
+                                            <Button
+                                                variant="outline"
+                                                className="h-8 px-3 mt-1 text-xs font-semibold"
+                                                onClick={() => setActiveTab("nc")}
+                                            >
+                                                Open NC Tab
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                        <div className="space-y-4">
+                                            <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Top NC Items</h4>
+                                            <div className="space-y-2">
+                                                {ncTopItems.slice(0, 5).map((item: any, i: number) => (
+                                                    <div key={`${item.item_id}-${i}`} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-6 h-6 rounded-md bg-orange-500/10 flex items-center justify-center text-[10px] font-black text-orange-500">
+                                                                #{i + 1}
+                                                            </div>
+                                                            <span className="font-semibold text-sm truncate max-w-[150px]">{item.name}</span>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <p className="text-xs font-bold">Rs. {Number(item.value).toLocaleString()}</p>
+                                                            <p className="text-[10px] text-muted-foreground">{item.qty} items</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-4">
+                                            <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Top Customers With NC</h4>
+                                            <div className="space-y-2">
+                                                {ncTopCustomers.slice(0, 5).map((customer: any, i: number) => (
+                                                    <div key={`${customer.customer_id}-${i}`} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-6 h-6 rounded-full bg-blue-500/10 flex items-center justify-center text-[10px] font-black text-blue-500">
+                                                                {(customer.name || "?").slice(0, 1).toUpperCase()}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <span className="font-semibold text-sm truncate block max-w-[150px]">{customer.name}</span>
+                                                                <span className="text-[10px] text-muted-foreground">{customer.phone || "No phone"}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <p className="text-xs font-bold">Rs. {Number(customer.value).toLocaleString()}</p>
+                                                            <p className="text-[10px] text-muted-foreground">{customer.orders_count} orders • {customer.qty} items</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="mt-6 pt-4 border-t border-border/30">
+                                        <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3">Recent NC Orders</h4>
+                                        <div className="max-h-60 overflow-y-auto pr-2 space-y-1">
+                                            {ncRecentOrders.slice(0, 5).map((row: any, i: number) => {
+                                                const d = new Date(row.created_at);
+                                                const timeStr = d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                                return (
+                                                    <div key={i} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/30 transition-colors">
+                                                        <div className="flex flex-col min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-semibold text-sm truncate">{row.customer_name || "Walk-in / Unknown"}</span>
+                                                                <Link href={row.order_route || `/orders/${row.order_id}`} target="_blank" className="text-[10px] text-blue-500 hover:underline">
+                                                                    #{row.restaurant_order_id || row.order_id}
+                                                                </Link>
+                                                            </div>
+                                                            <span className="text-[10px] text-muted-foreground">{timeStr} • {row.nc_items_count} NC items • {row.table_name || row.channel}</span>
+                                                        </div>
+                                                        <span className="text-xs font-bold">Rs. {Number(row.nc_total_value).toLocaleString()}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
                         {/* Income vs Expense Chart */}
                         <RevenueTrendsCard data={incomeVsExpenseData.length > 0 ? incomeVsExpenseData : revenueTrendsData} loading={loading} activeRange={activeRange} title="Income vs Expense" />
 
@@ -1503,6 +1671,193 @@ export default function AnalyticsPage() {
 
                         {/* Payment Methods (also in Finance) */}
                         <PaymentMethodsBreakdownCard expandedMethods={expandedPaymentMethods} />
+                    </TabsContent>
+
+                    {/* ══════════════════════════════════════════════════ NC TAB */}
+                    <TabsContent value="nc" className="space-y-6 outline-none">
+                        <section className="space-y-3">
+                            <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">NC Summary</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                                <BigMetricCard label="NC Value" value={ncTotalValue} icon={<Tag className="w-4.5 h-4.5" />} color="text-orange-500" />
+                                <BigMetricCard label="NC Items" value={ncTotalItems} noCurrency icon={<Utensils className="w-4.5 h-4.5" />} color="text-blue-500" />
+                                <BigMetricCard label="NC Orders" value={ncOrdersCount} noCurrency icon={<ReceiptText className="w-4.5 h-4.5" />} color="text-emerald-500" />
+                                <BigMetricCard label="Customers" value={ncCustomersCount} noCurrency icon={<Users className="w-4.5 h-4.5" />} color="text-violet-500" />
+                            </div>
+                        </section>
+
+                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                            <Card className="bg-card border-border shadow-sm xl:col-span-1">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                                        <Utensils className="w-4 h-4 text-orange-500" /> Top NC Items
+                                    </CardTitle>
+                                    <CardDescription>Highest complimentary value items in the selected period</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-2">
+                                    {ncTopItems.length > 0 ? ncTopItems.map((item: any, i: number) => (
+                                        <div key={`${item.item_id}-${i}`} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                                            <div className="min-w-0">
+                                                <div className="font-semibold text-sm truncate">{item.name}</div>
+                                                <div className="text-[10px] text-muted-foreground">{fmtCount(item.qty)} items</div>
+                                            </div>
+                                            <div className="text-xs font-bold">{fmtShort(item.value)}</div>
+                                        </div>
+                                    )) : <div className="text-sm text-muted-foreground">No NC items in this window.</div>}
+                                </CardContent>
+                            </Card>
+
+                            <Card className="bg-card border-border shadow-sm xl:col-span-1">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                                        <UserCheck className="w-4 h-4 text-blue-500" /> Top Customers
+                                    </CardTitle>
+                                    <CardDescription>Customers who received the most NC value</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-2">
+                                    {ncTopCustomers.length > 0 ? ncTopCustomers.map((customer: any, i: number) => (
+                                        <div key={`${customer.customer_id}-${i}`} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                                            <div className="min-w-0">
+                                                <div className="font-semibold text-sm truncate">{customer.name}</div>
+                                                <div className="text-[10px] text-muted-foreground">{customer.phone || "No phone"} • {customer.orders_count} orders</div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-xs font-bold">{fmtShort(customer.value)}</div>
+                                                <div className="text-[10px] text-muted-foreground">{fmtCount(customer.qty)} items</div>
+                                            </div>
+                                        </div>
+                                    )) : <div className="text-sm text-muted-foreground">No customer-linked NC activity yet.</div>}
+                                </CardContent>
+                            </Card>
+
+                            <Card className="bg-card border-border shadow-sm xl:col-span-1">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                                        <Calendar className="w-4 h-4 text-emerald-500" /> NC Trend
+                                    </CardTitle>
+                                    <CardDescription>Daily NC movement in the selected range</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-2">
+                                    {ncTrend.length > 0 ? ncTrend.map((row: any, i: number) => (
+                                        <div key={`${row.label}-${i}`} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                                            <div>
+                                                <div className="font-semibold text-sm">{row.label}</div>
+                                                <div className="text-[10px] text-muted-foreground">{row.orders_count} orders • {row.qty} items</div>
+                                            </div>
+                                            <div className="text-xs font-bold">{fmtShort(row.value)}</div>
+                                        </div>
+                                    )) : <div className="text-sm text-muted-foreground">No NC trend data in this window.</div>}
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <Card className="bg-card border-border shadow-sm">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-base font-bold flex items-center gap-2">
+                                    <ReceiptText className="w-4 h-4 text-orange-500" /> NC Order History
+                                </CardTitle>
+                                <CardDescription>Deep drilldown of orders where complimentary items were given</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                {ncOrdersLoading ? (
+                                    <div className="text-sm text-muted-foreground">Loading NC order history...</div>
+                                ) : ncOrdersList.length > 0 ? (
+                                    <>
+                                        <div className="rounded-xl border border-border/50 overflow-hidden">
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow>
+                                                        <TableHead>Order</TableHead>
+                                                        <TableHead>Customer</TableHead>
+                                                        <TableHead>Date</TableHead>
+                                                        <TableHead>NC Items</TableHead>
+                                                        <TableHead>NC Value</TableHead>
+                                                        <TableHead>Receipt</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {ncOrdersList.map((order: any) => (
+                                                        <TableRow key={order.order_id}>
+                                                            <TableCell>
+                                                                <div className="flex flex-col">
+                                                                    <Link href={order.order_route || `/orders/${order.order_id}`} className="font-semibold text-blue-500 hover:underline">
+                                                                        #{order.restaurant_order_id || order.order_id}
+                                                                    </Link>
+                                                                    <span className="text-[11px] text-muted-foreground">{order.table_name || order.channel}</span>
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-medium">{order.customer_name || "Walk-in / Unknown"}</span>
+                                                                    <span className="text-[11px] text-muted-foreground">{order.customer_phone || "No phone"}</span>
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-medium">
+                                                                        {new Date(order.created_at).toLocaleDateString()}
+                                                                    </span>
+                                                                    <span className="text-[11px] text-muted-foreground">
+                                                                        {new Date(order.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                                                    </span>
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <div className="flex flex-col gap-1">
+                                                                    <span className="font-medium">{fmtCount(order.nc_items_count)}</span>
+                                                                    <div className="text-[11px] text-muted-foreground">
+                                                                        {(order.items || []).slice(0, 2).map((item: any) => item.name).join(", ")}
+                                                                        {(order.items || []).length > 2 ? "..." : ""}
+                                                                    </div>
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell className="font-semibold">{fmt(order.nc_total_value)}</TableCell>
+                                                            <TableCell>
+                                                                <div className="flex gap-2">
+                                                                    <Link href={order.order_route || `/orders/${order.order_id}`}>
+                                                                        <Button variant="outline" size="sm" className="h-8 text-xs">Order</Button>
+                                                                    </Link>
+                                                                    <Link href={order.receipt_route || `/orders/${order.order_id}/checkout`}>
+                                                                        <Button variant="outline" size="sm" className="h-8 text-xs">Receipt</Button>
+                                                                    </Link>
+                                                                </div>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-xs text-muted-foreground">
+                                                Showing page {ncOrdersPage} of {ncOrdersTotalPages} • {fmtCount(ncOrdersTotal)} NC orders total
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 text-xs"
+                                                    disabled={ncOrdersPage <= 1}
+                                                    onClick={() => setNcOrdersPage((p) => Math.max(1, p - 1))}
+                                                >
+                                                    Previous
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 text-xs"
+                                                    disabled={!ncOrdersHasMore}
+                                                    onClick={() => setNcOrdersPage((p) => p + 1)}
+                                                >
+                                                    Next
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="text-sm text-muted-foreground">No NC order history found for the selected period.</div>
+                                )}
+                            </CardContent>
+                        </Card>
                     </TabsContent>
 
                     {/* ══════════════════════════════════════════════════ MENU TAB */}
