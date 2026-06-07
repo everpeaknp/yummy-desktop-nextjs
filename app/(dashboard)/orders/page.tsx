@@ -9,6 +9,7 @@ import { OrderApis, AnalyticsApis, TableApis } from "@/lib/api/endpoints";
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions";
 import {
   defaultHistoryDateRange,
+  hasExtendedHistoryAccess,
   resolvePrimaryRole,
   validateHistoryDateRange,
   validationToScopeError,
@@ -120,10 +121,11 @@ export default function OrdersPage() {
     const me = useAuth(state => state.me);
     const restaurant = useRestaurant(state => state.restaurant);
     const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
+    const canUseExtendedHistory = useMemo(() => hasExtendedHistoryAccess(user), [user]);
 
     useEffect(() => {
         if (!user || dateRangeInitialized.current) return;
-        setDateRange(defaultHistoryDateRange(primaryRole));
+        setDateRange(defaultHistoryDateRange(primaryRole, { user }));
         dateRangeInitialized.current = true;
     }, [user, primaryRole]);
     const router = useRouter();
@@ -237,6 +239,7 @@ export default function OrdersPage() {
         const validation = validateHistoryDateRange(dateRange, {
             role: primaryRole,
             effectivePlan: restaurant?.effective_plan,
+            user,
         });
         if (!validation.allowed) {
             setScopeNotice(validationToScopeError(validation));
@@ -519,6 +522,11 @@ export default function OrdersPage() {
 
                     {activeTab === "history" && (
                         <div className="flex items-center gap-2">
+                             {canUseExtendedHistory ? (
+                                <Badge variant="secondary" className="h-10 rounded-xl px-3 text-[10px] font-bold uppercase tracking-widest">
+                                    Extended history
+                                </Badge>
+                             ) : null}
                              <Popover>
                                 <PopoverTrigger asChild>
                                     <Button variant="outline" className="h-10 rounded-xl gap-2 font-bold text-xs uppercase tracking-widest">
@@ -568,7 +576,7 @@ export default function OrdersPage() {
                                         </div>
                                         <button
                                             className="text-[9px] font-bold uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
-                                            onClick={() => setDateRange(defaultHistoryDateRange(primaryRole))}
+                                            onClick={() => setDateRange(defaultHistoryDateRange(primaryRole, { user }))}
                                         >
                                             Reset
                                         </button>

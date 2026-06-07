@@ -1,10 +1,22 @@
 import { endOfDay, startOfDay, subDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
 
-import { normalizeRole, normalizeRolesForUser, type UserRole } from "@/lib/role-permissions";
+import {
+  hasExplicitPermission,
+  normalizeRole,
+  normalizeRolesForUser,
+  type UserRole,
+} from "@/lib/role-permissions";
 
 export const MANAGER_MAX_LOOKBACK_DAYS = 30;
 export const FREE_PLAN_MAX_LOOKBACK_DAYS = 30;
+
+type HistoryScopeUser = {
+  role?: string | null;
+  roles?: string[] | null;
+  primary_role?: string | null;
+  permissions?: string[] | null;
+} | null;
 
 export function resolvePrimaryRole(
   user: { role?: string | null; roles?: string[] | null; primary_role?: string | null } | null
@@ -17,13 +29,32 @@ export function resolvePrimaryRole(
   return roles[0] ?? normalizeRole(user?.role);
 }
 
+export function hasExtendedHistoryAccess(user: HistoryScopeUser): boolean {
+  if (!user) return false;
+  const permissionUser = {
+    permissions: user.permissions ?? undefined,
+  };
+  return (
+    hasExplicitPermission(permissionUser, "reports.daily.view") ||
+    hasExplicitPermission(permissionUser, "reports.periodic") ||
+    hasExplicitPermission(permissionUser, "reports.periodic.view") ||
+    hasExplicitPermission(permissionUser, "reports.analytics.view")
+  );
+}
+
 export function isFreePlan(effectivePlan?: string | null): boolean {
   const plan = (effectivePlan || "free").toLowerCase();
   return plan === "free";
 }
 
-export function defaultHistoryDateRange(role: UserRole | null): DateRange {
+export function defaultHistoryDateRange(
+  role: UserRole | null,
+  options?: { user?: HistoryScopeUser }
+): DateRange {
   const today = new Date();
+  if (hasExtendedHistoryAccess(options?.user ?? null)) {
+    return { from: subDays(today, FREE_PLAN_MAX_LOOKBACK_DAYS - 1), to: today };
+  }
   if (role === "cashier" || role === "waiter") {
     return { from: startOfDay(today), to: endOfDay(today) };
   }
@@ -118,6 +149,7 @@ export function validateHistoryDateRange(
   options: {
     role: UserRole | null;
     effectivePlan?: string | null;
+    user?: HistoryScopeUser;
   }
 ): DateScopeValidation {
   const from = range?.from;
@@ -137,7 +169,7 @@ export function validateHistoryDateRange(
     };
   }
 
-  if (options.role === "cashier" || options.role === "waiter") {
+  if ((options.role === "cashier" || options.role === "waiter") && !hasExtendedHistoryAccess(options.user ?? null)) {
     const todayStart = startOfDay(today);
     if (startOfDay(from) < todayStart || startOfDay(to) < todayStart) {
       return {
@@ -150,7 +182,7 @@ export function validateHistoryDateRange(
     }
   }
 
-  if (options.role === "manager") {
+  if (options.role === "manager" && !hasExtendedHistoryAccess(options.user ?? null)) {
     const oldestManagerAllowed = subDays(today, MANAGER_MAX_LOOKBACK_DAYS);
     if (startOfDay(from) < startOfDay(oldestManagerAllowed)) {
       return {

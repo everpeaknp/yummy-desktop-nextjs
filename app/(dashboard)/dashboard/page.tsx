@@ -121,8 +121,18 @@ export default function DashboardPage() {
   const topItemsLive = home?.top_items_live?.items || []
   const healthSnapshot = data?.health
   const ncSummary = home?.nc_summary
-  const ncSummaryMetrics = ncSummary?.summary || {}
-  const ncTopSummaryItems = ncSummary?.top_items || []
+  const analyticsNcTab = analyticsData?.tabs?.nc
+  const ncSummaryMetrics =
+    ncSummary?.summary ||
+    analyticsNcTab?.summary ||
+    {}
+  const ncTopSummaryItems =
+    ncSummary?.top_items ||
+    analyticsNcTab?.top_items?.items ||
+    []
+  const shouldShowNcSummary =
+    ncSummary?.available !== false &&
+    (Boolean(ncSummary) || Boolean(analyticsNcTab))
   const overview =
     analyticsData?.tabs?.overview?.overview || analyticsData?.overview || {}
   const v2Kpis = data?.kpis
@@ -151,6 +161,18 @@ export default function DashboardPage() {
             { method: "Credit", amount: cashWatch?.credit_sales || 0 },
           ].filter((item) => item.amount > 0)
         : []
+  const liveRevenueTrend =
+    home?.throughput?.points?.map((point: any) => ({
+      date: point.timestamp,
+      value: Number(point.sales_collected || 0),
+    })) || []
+  const livePaymentMix = paymentSplit.map((item: any) => ({
+    name: item.method || item.name || "Unknown",
+    value: Number(item.amount || 0),
+  }))
+  const revenueChartData = trendsData.length > 0 ? trendsData : liveRevenueTrend
+  const mixChartData = categoryData.length > 0 ? categoryData : livePaymentMix
+  const usingDashboardChartFallback = analyticsUnavailable
   const orderStatus =
     data?.breakdowns?.order_status?.length
       ? data.breakdowns.order_status
@@ -469,7 +491,7 @@ export default function DashboardPage() {
         />
       </section>
 
-      {ncSummary?.available !== false && (Number(ncSummaryMetrics.nc_items_count || 0) > 0 || ncTopSummaryItems.length > 0) ? (
+      {shouldShowNcSummary ? (
         <section>
           <Card className="bg-card border-border shadow-sm">
             <CardHeader className="pb-2">
@@ -510,7 +532,11 @@ export default function DashboardPage() {
                     </div>
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-4 py-5 text-sm text-muted-foreground">
+                  No NC activity in the selected window yet. This section stays visible so the complimentary tracking area is easy to find.
+                </div>
+              )}
             </CardContent>
           </Card>
         </section>
@@ -571,13 +597,7 @@ export default function DashboardPage() {
 
       {/* Charts */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {analyticsUnavailable ? (
-          <Card className="lg:col-span-2 border-dashed">
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              Revenue and source breakdown charts require the reports.analytics.view permission.
-            </CardContent>
-          </Card>
-        ) : analyticsError ? (
+        {analyticsError && revenueChartData.length === 0 && mixChartData.length === 0 ? (
           <Card className="lg:col-span-2 border-destructive/30 bg-destructive/5">
             <CardContent className="py-8 text-center space-y-2">
               <p className="text-sm font-medium text-destructive">Analytics data unavailable</p>
@@ -588,22 +608,34 @@ export default function DashboardPage() {
           <>
             <div className="h-[400px]">
               <RevenueChart
-                data={trendsData}
+                data={revenueChartData}
                 loading={loading}
-                title={preferHourlyTrends(activeRange) ? "Hourly Revenue" : "Revenue Trend"}
+                title={
+                  usingDashboardChartFallback
+                    ? "Live Revenue"
+                    : preferHourlyTrends(activeRange)
+                      ? "Hourly Revenue"
+                      : "Revenue Trend"
+                }
                 description={
-                  preferHourlyTrends(activeRange)
-                    ? "Hour-by-hour gross sales for the selected day."
-                    : "Your gross sales over the selected period."
+                  usingDashboardChartFallback
+                    ? "Live sales collected from the dashboard feed for the selected window."
+                    : preferHourlyTrends(activeRange)
+                      ? "Hour-by-hour gross sales for the selected day."
+                      : "Your gross sales over the selected period."
                 }
               />
             </div>
             <div className="h-[400px]">
               <CategoryPieChart
-                data={categoryData}
+                data={mixChartData}
                 loading={loading}
-                title="Sales by Source"
-                description="Breakdown of sales by order source (Dine-in, Takeaway, etc.)"
+                title={usingDashboardChartFallback ? "Collections Mix" : "Sales by Source"}
+                description={
+                  usingDashboardChartFallback
+                    ? "Live payment mix from the dashboard feed when full analytics access is not available."
+                    : "Breakdown of sales by order source (Dine-in, Takeaway, etc.)"
+                }
               />
             </div>
           </>

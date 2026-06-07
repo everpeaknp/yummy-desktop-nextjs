@@ -26,6 +26,49 @@ type ErrorDetailObject = {
   feature?: string;
 };
 
+function formatIsoDateForMessage(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function humanizeScopeKey(scopeKey: string): string {
+  switch (scopeKey.trim().toLowerCase()) {
+    case "orders":
+      return "order history";
+    case "payments":
+      return "payments";
+    case "analytics":
+      return "analytics";
+    default:
+      return scopeKey.replace(/[_\.]+/g, " ");
+  }
+}
+
+function parseUserScopeWindowMessage(text: string): string | null {
+  const fromMatch = text.match(/^This user can access (.+) only from (\d{4}-\d{2}-\d{2}) onward\.?$/i);
+  if (fromMatch) {
+    const [, scopeKey, rawDate] = fromMatch;
+    return `This account has a custom access window for ${humanizeScopeKey(scopeKey)}. Data is available from ${formatIsoDateForMessage(rawDate)} onward.`;
+  }
+
+  const toMatch = text.match(/^This user can access (.+) only up to (\d{4}-\d{2}-\d{2})\.?$/i);
+  if (toMatch) {
+    const [, scopeKey, rawDate] = toMatch;
+    return `This account has a custom access window for ${humanizeScopeKey(scopeKey)}. Data is available only up to ${formatIsoDateForMessage(rawDate)}.`;
+  }
+
+  if (/^Configured .+ access window does not allow this date range\.?$/i.test(text)) {
+    return "This account has a custom access window, and the selected date range falls outside it.";
+  }
+
+  return null;
+}
+
 function asDetailObject(detail: unknown): ErrorDetailObject | null {
   if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
   return detail as ErrorDetailObject;
@@ -76,7 +119,16 @@ export function parseApiScopeError(
   if (/only from .+ onward|only up to/i.test(text)) {
     return {
       kind: "user_access_scope",
-      message: text,
+      message: parseUserScopeWindowMessage(text) || text,
+      code,
+    };
+  }
+
+  const customWindowMessage = parseUserScopeWindowMessage(text);
+  if (customWindowMessage) {
+    return {
+      kind: "user_access_scope",
+      message: customWindowMessage,
       code,
     };
   }

@@ -3,13 +3,13 @@ import { syncAuthFromRefreshResponse } from '@/lib/auth-session';
 import { clearStoredTokens, readStoredTokens } from '@/lib/auth-storage';
 import { isAuthRecoveryActive } from '@/lib/auth-recovery';
 
-const API_BASE_URL = (() => {
+const getApiBaseUrl = () => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
   if (typeof window !== 'undefined' && window.location.protocol === 'https:' && envUrl.startsWith('http://')) {
     return envUrl.replace('http://', 'https://');
   }
   return envUrl;
-})();
+};
 
 const isLocalhost =
   typeof window !== 'undefined' &&
@@ -19,12 +19,13 @@ const PROXY_BASE = '/api/proxy';
 
 const apiClient = axios.create({
   // In local dev we proxy API calls through Next.js rewrites to avoid CORS when hitting a remote backend.
-  baseURL: isLocalhost ? PROXY_BASE : API_BASE_URL,
+  baseURL: isLocalhost ? PROXY_BASE : getApiBaseUrl(),
 });
 
 // Request Interceptor: Attach Token
 apiClient.interceptors.request.use(
   (config) => {
+    config.baseURL = isLocalhost ? PROXY_BASE : getApiBaseUrl();
     // TODO: Get token from Zustand store or localStorage
     const token =
       typeof window !== 'undefined' ? readStoredTokens().accessToken : null;
@@ -85,7 +86,7 @@ apiClient.interceptors.response.use(
           typeof window !== 'undefined' ? readStoredTokens().refreshToken : null;
         if (!refreshToken) throw new Error('No refresh token');
 
-        const refreshBase = isLocalhost ? PROXY_BASE : API_BASE_URL;
+        const refreshBase = isLocalhost ? PROXY_BASE : getApiBaseUrl();
         const res = await axios.post(`${refreshBase}/auth/refresh`, { refresh_token: refreshToken });
         if (res.data?.status === 'success' && res.data.data?.access_token) {
           const refreshData = res.data.data;
