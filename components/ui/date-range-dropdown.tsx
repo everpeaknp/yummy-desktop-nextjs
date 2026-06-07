@@ -80,10 +80,10 @@ export function DateRangeDropdown({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant="ghost"
           className={cn(
-            "w-[auto] min-w-[160px] justify-between text-left font-normal bg-background/50 backdrop-blur-sm rounded-xl border-border/50",
-            !date && "text-muted-foreground"
+            "dc-filter-control dc-filter-control-active h-11 min-w-[160px] justify-between rounded-2xl px-4 font-medium",
+            !date && "text-muted-foreground",
           )}
         >
           <div className="flex items-center gap-2">
@@ -104,10 +104,8 @@ export function DateRangeDropdown({
                   setOpen(false)
                 }}
                 className={cn(
-                  "text-sm px-3 py-2 rounded-lg text-left transition-colors flex items-center justify-between",
-                  activeRange === preset.value
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  "dc-filter-quick w-full justify-between text-left flex items-center",
+                  activeRange === preset.value && "dc-filter-chip-active",
                 )}
               >
                 {preset.label}
@@ -118,10 +116,8 @@ export function DateRangeDropdown({
             <button
               onClick={() => setActiveRange('custom')}
               className={cn(
-                "text-sm px-3 py-2 rounded-lg text-left transition-colors flex items-center justify-between",
-                activeRange === 'custom'
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                "dc-filter-quick w-full justify-between text-left flex items-center",
+                activeRange === "custom" && "dc-filter-chip-active",
               )}
             >
               Custom Range
@@ -176,7 +172,7 @@ export function DateRangeDropdown({
               <div className="px-2 pb-1">
                 <Button
                   size="sm"
-                  className="w-full font-bold uppercase tracking-widest text-[10px] h-9 shadow-md"
+                  className="dc-btn-close-day w-full h-9 rounded-xl text-xs font-medium"
                   disabled={!date?.from}
                   onClick={() => setOpen(false)}
                 >

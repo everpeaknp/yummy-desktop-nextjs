@@ -207,19 +207,25 @@
 
   .day-close-ui button.dc-filter-chip:not(:disabled),
   .day-close-ui button.dc-filter-control:not(:disabled),
-  .day-close-ui button.dc-filter-refresh:not(:disabled) {
+  .day-close-ui button.dc-filter-refresh:not(:disabled),
+  .dashboard-ui button.dc-filter-chip:not(:disabled),
+  .dashboard-ui button.dc-filter-control:not(:disabled),
+  .dashboard-ui button.dc-filter-refresh:not(:disabled) {
     @apply border border-black/[0.08] shadow-none bg-transparent text-muted-foreground;
     @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
   }
 
   .day-close-ui button.dc-filter-chip-active:not(:disabled),
-  .day-close-ui button.dc-filter-control-active:not(:disabled) {
+  .day-close-ui button.dc-filter-control-active:not(:disabled),
+  .dashboard-ui button.dc-filter-chip-active:not(:disabled),
+  .dashboard-ui button.dc-filter-control-active:not(:disabled) {
     @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
     background-color: hsl(var(--primary) / 0.1) !important;
     color: hsl(var(--primary)) !important;
   }
 
-  .day-close-ui button.dc-filter-control[data-state="open"]:not(:disabled) {
+  .day-close-ui button.dc-filter-control[data-state="open"]:not(:disabled),
+  .dashboard-ui button.dc-filter-control[data-state="open"]:not(:disabled) {
     @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
     background-color: hsl(var(--primary) / 0.1) !important;
     color: hsl(var(--primary)) !important;
@@ -239,7 +245,10 @@
   .dark .dc-filter-quick,
   .dark .day-close-ui button.dc-filter-chip:not(:disabled),
   .dark .day-close-ui button.dc-filter-control:not(:disabled),
-  .dark .day-close-ui button.dc-filter-refresh:not(:disabled) {
+  .dark .day-close-ui button.dc-filter-refresh:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-chip:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-control:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-refresh:not(:disabled) {
     @apply border-white/15 hover:border-white/25;
   }
 
@@ -248,7 +257,10 @@
   .dark .dc-filter-chip-active,
   .dark .day-close-ui button.dc-filter-chip-active:not(:disabled),
   .dark .day-close-ui button.dc-filter-control-active:not(:disabled),
-  .dark .day-close-ui button.dc-filter-control[data-state="open"]:not(:disabled) {
+  .dark .day-close-ui button.dc-filter-control[data-state="open"]:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-chip-active:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-control-active:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-control[data-state="open"]:not(:disabled) {
     @apply border-white/25;
   }
 

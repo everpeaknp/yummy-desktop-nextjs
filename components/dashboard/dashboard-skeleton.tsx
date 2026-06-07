@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export function DashboardSkeleton() {
   return (
-    <div className="mx-auto flex max-w-[1600px] animate-in flex-col gap-10 px-4 pb-20 duration-500 fade-in">
+    <div className="dashboard-ui mx-auto flex max-w-[1600px] animate-in flex-col gap-10 px-4 pb-20 duration-500 fade-in">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div className="space-y-2">
           <Skeleton className="h-10 w-64" />

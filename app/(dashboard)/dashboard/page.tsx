@@ -267,7 +267,7 @@ export default function DashboardPage() {
           }
 
   return (
-    <div className="relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
+    <div className="dashboard-ui relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
       {refreshing ? (
         <div className="pointer-events-none absolute right-4 top-0 z-10 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
           <RefreshCw className="h-3 w-3 animate-spin" />
@@ -277,9 +277,9 @@ export default function DashboardPage() {
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight">Executive Dashboard</h1>
-          <p className="text-muted-foreground text-sm font-medium">
+        <div className="space-y-1">
+          <h1 className="dc-page-title">Executive Dashboard</h1>
+          <p className="dc-page-subtitle">
             Real-time operational overview for {data?.meta?.outlet_name || "your outlet"}
           </p>
         </div>
@@ -318,6 +318,7 @@ export default function DashboardPage() {
       />
 
       {/* Live shift metrics — not affected by date filter */}
+      <div className="flex flex-col gap-3">
       <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <HealthCard
           label="Active Orders"
@@ -374,15 +375,15 @@ export default function DashboardPage() {
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <HoverCard openDelay={0} closeDelay={0}>
           <HoverCardTrigger asChild>
-            <div className="group relative overflow-hidden bg-card/80 backdrop-blur-md border border-border/50 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-destructive/10 to-transparent rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
-              <div className="flex items-center gap-5 relative z-10">
-                <div className="w-14 h-14 rounded-2xl bg-destructive/10 flex items-center justify-center border border-destructive/20 group-hover:bg-destructive/20 transition-colors shadow-sm">
-                  <XCircle className="h-7 w-7 text-destructive" />
+            <div className="group relative overflow-hidden dc-card min-h-[108px] p-5 flex items-center justify-between transition-all duration-300 hover:-translate-y-1 cursor-default">
+              <div className="absolute top-0 right-0 w-28 h-28 bg-destructive/5 rounded-bl-[100px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+              <div className="flex items-center gap-4 relative z-10">
+                <div className="w-12 h-12 rounded-xl bg-destructive/10 flex items-center justify-center border border-destructive/20 group-hover:bg-destructive/15 transition-colors shadow-sm">
+                  <XCircle className="h-6 w-6 text-destructive" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-80">Cancelled Today</p>
-                  <p className="text-3xl font-black tracking-tight">{kpis.cancelled_today}</p>
+                  <p className="dc-metric-label mb-1">Cancelled Today</p>
+                  <p className="text-2xl font-black tracking-tight tabular-nums">{kpis.cancelled_today}</p>
                 </div>
               </div>
               <TrendingUp className="h-6 w-6 text-muted-foreground opacity-10 group-hover:opacity-20 transition-opacity" />
@@ -414,15 +415,15 @@ export default function DashboardPage() {
 
         <HoverCard openDelay={0} closeDelay={0}>
           <HoverCardTrigger asChild>
-            <div className="group relative overflow-hidden bg-card/80 backdrop-blur-md border border-border/50 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
-              <div className="flex items-center gap-5 relative z-10">
-                <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 group-hover:bg-blue-500/20 transition-colors shadow-sm">
-                  <CreditCard className="h-7 w-7 text-blue-500" />
+            <div className="group relative overflow-hidden dc-card min-h-[108px] p-5 flex items-center justify-between transition-all duration-300 hover:-translate-y-1 cursor-default">
+              <div className="absolute top-0 right-0 w-28 h-28 bg-blue-500/5 rounded-bl-[100px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+              <div className="flex items-center gap-4 relative z-10">
+                <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 group-hover:bg-blue-500/15 transition-colors shadow-sm">
+                  <CreditCard className="h-6 w-6 text-blue-500" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-80">Refunded Today</p>
-                  <p className="text-3xl font-black tracking-tight">{kpis.refunded_today}</p>
+                  <p className="dc-metric-label mb-1">Refunded Today</p>
+                  <p className="text-2xl font-black tracking-tight tabular-nums">{kpis.refunded_today}</p>
                 </div>
               </div>
               <TrendingUp className="h-6 w-6 text-muted-foreground opacity-10 group-hover:opacity-20 transition-opacity" />
@@ -452,6 +453,7 @@ export default function DashboardPage() {
           </HoverCardContent>
         </HoverCard>
       </section>
+      </div>
 
       {/* Priorities */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
@@ -480,17 +482,17 @@ export default function DashboardPage() {
       <section className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold flex items-center gap-2 tracking-tight">
-              <Briefcase className="h-5 w-5 text-muted-foreground" />
+            <h2 className="dc-card-title text-base flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-primary" />
               Financial Summary
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="dc-page-subtitle mt-1">
               KPIs for {periodLabel}
               {dateFrom !== dateTo ? ` (${dateFrom} – ${dateTo})` : ` (${dateFrom})`}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm" className="gap-2">
+            <Button asChild variant="ghost" size="sm" className="dc-filter-refresh h-9 gap-2 rounded-2xl px-4">
               <Link href="/analytics">
                 Full analytics
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -499,7 +501,7 @@ export default function DashboardPage() {
             <Button
               onClick={handleExport}
               size="sm"
-              className="gap-2"
+              className="dc-btn-close-day h-9 gap-2 rounded-2xl px-4 font-medium"
               disabled={analyticsUnavailable && !data}
             >
               <Download className="h-4 w-4" />
@@ -520,13 +522,13 @@ export default function DashboardPage() {
       {/* Charts */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {analyticsUnavailable ? (
-          <Card className="lg:col-span-2 border-dashed">
+          <Card className="lg:col-span-2 dc-card border-dashed">
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
               Revenue and source breakdown charts require the reports.analytics.view permission.
             </CardContent>
           </Card>
         ) : analyticsError ? (
-          <Card className="lg:col-span-2 border-destructive/30 bg-destructive/5">
+          <Card className="lg:col-span-2 dc-card border-destructive/30 bg-destructive/5">
             <CardContent className="py-8 text-center space-y-2">
               <p className="text-sm font-medium text-destructive">Analytics data unavailable</p>
               <p className="text-xs text-muted-foreground">{analyticsError}</p>
@@ -573,9 +575,9 @@ export default function DashboardPage() {
       {/* 4. Performers & Staff Activity */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-5">
-            <Card className="h-full border-border shadow-sm">
-                <CardHeader className="pb-4 border-b border-border/50">
-                    <CardTitle className="text-sm font-bold flex items-center gap-2">
+            <Card className="h-full dc-card">
+                <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
+                    <CardTitle className="dc-card-title flex items-center gap-2">
                         <ChefHat className="h-4 w-4 text-primary" />
                         Top Performing Items
                     </CardTitle>
@@ -589,7 +591,7 @@ export default function DashboardPage() {
                                 <p className="text-[10px] text-muted-foreground font-medium">{topItemQuantitySold(item)} units sold</p>
                             </div>
                             <div className="text-right">
-                                <p className="text-sm font-black">{currency} {item.revenue?.toLocaleString()}</p>
+                                <p className="dc-amount text-sm">{currency} {item.revenue?.toLocaleString()}</p>
                             </div>
                          </div>
                        ))}
@@ -650,20 +652,18 @@ function HealthCard({
         >
           <Card
             className={cn(
-              "relative overflow-hidden rounded-2xl border border-border/50 bg-card/80 shadow-sm backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
-              showAlert ? "border-destructive/30 ring-1 ring-destructive/50 shadow-destructive/10" : ""
+              "dc-card relative overflow-hidden transition-all duration-300 hover:-translate-y-1",
+              showAlert ? "border-destructive/30 ring-1 ring-destructive/50 shadow-destructive/10" : "",
             )}
           >
-            <div className="pointer-events-none absolute -right-10 -top-10 z-0 h-32 w-32 rounded-full bg-[#FBFBFB] dark:bg-muted/25" />
-            <CardContent className="relative z-10 flex items-center justify-between p-6">
+            <div className="pointer-events-none absolute top-0 right-0 -mr-4 -mt-4 h-28 w-28 rounded-bl-[100px] bg-[#fbfbfb] transition-transform group-hover:scale-110 dark:bg-white/[0.04]" />
+            <CardContent className="relative z-10 flex min-h-[108px] items-center justify-between p-5">
               <div>
-                <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground opacity-80">
-                  {label}
-                </p>
+                <p className="dc-metric-label mb-1.5">{label}</p>
                 <p
                   className={cn(
-                    "text-4xl font-black tabular-nums tracking-tighter text-foreground drop-shadow-sm",
-                    showAlert ? "animate-pulse text-destructive" : ""
+                    "text-3xl font-black tabular-nums tracking-tight text-foreground",
+                    showAlert ? "animate-pulse text-destructive" : "",
                   )}
                 >
                   {value}
@@ -671,9 +671,9 @@ function HealthCard({
               </div>
               <div
                 className={cn(
-                  "relative z-20 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border/40 bg-white shadow-sm transition-colors duration-300 group-hover:scale-110 dark:bg-background",
+                  "relative z-20 flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-black/[0.08] bg-white shadow-sm transition-colors duration-300 group-hover:scale-110 dark:border-white/15 dark:bg-muted [&_svg]:h-5 [&_svg]:w-5",
                   color,
-                  showAlert ? "border-destructive/20 bg-destructive/[0.06]" : "group-hover:bg-muted"
+                  showAlert ? "border-destructive/20 bg-destructive/[0.06]" : "group-hover:bg-primary/5",
                 )}
               >
                 {icon}
@@ -724,12 +724,12 @@ function TrendCard({ label, trend }: { label: string, trend: any }) {
   const delta = Math.abs(Number(trend?.delta_percent || 0))
 
   return (
-    <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-md hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
-      <div className="absolute top-0 right-0 w-24 h-24 bg-current opacity-5 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+    <Card className="dc-card hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
       <CardContent className="p-6 relative z-10">
-        <div className="text-xs text-muted-foreground font-medium mb-1">{label}</div>
+        <div className="dc-metric-label mb-1">{label}</div>
         <div className="flex items-end gap-3">
-          <span className="text-3xl font-bold text-foreground">
+          <span className="dc-metric-value text-3xl">
             {hasTrend ? `${delta.toFixed(1)}%` : "—"}
           </span>
           <div
@@ -765,9 +765,9 @@ function OccupancyCard({ tables, occupancySnapshot }: { tables: any[]; occupancy
 
   return (
     <Link href="/tables" className="block h-full">
-    <Card className="h-full bg-card border-border shadow-sm overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-md">
-      <CardHeader className="pb-2 border-b border-border/30">
-        <CardTitle className="text-sm font-bold flex items-center gap-2">
+    <Card className="dc-card h-full overflow-hidden transition-all hover:-translate-y-1">
+      <CardHeader className="pb-2 border-b border-black/[0.08] dark:border-white/10">
+        <CardTitle className="dc-card-title flex items-center gap-2">
           <Users className="h-4 w-4 text-primary" />
           Live Table Occupancy
           <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
@@ -776,8 +776,8 @@ function OccupancyCard({ tables, occupancySnapshot }: { tables: any[]; occupancy
       <CardContent className="pt-6">
         <div className="flex items-end justify-between mb-4">
           <div>
-            <span className="text-3xl font-black">{occupied}</span>
-            <span className="text-muted-foreground text-xs ml-1 font-bold">/ {total} Tables Active</span>
+            <span className="dc-metric-value text-3xl">{occupied}</span>
+            <span className="text-muted-foreground text-xs ml-1 font-medium">/ {total} Tables Active</span>
           </div>
           <Badge className={cn("font-bold px-2 py-1", pct > 80 ? "bg-destructive text-white" : "bg-green-500 text-white")}>
             {pct}% Busy
@@ -787,13 +787,13 @@ function OccupancyCard({ tables, occupancySnapshot }: { tables: any[]; occupancy
           <div className={cn("h-full transition-all duration-700", pct > 80 ? "bg-destructive" : pct > 50 ? "bg-amber-500" : "bg-primary")} style={{ width: `${pct}%` }} />
         </div>
         <div className="grid grid-cols-2 gap-3 mt-6">
-          <div className="bg-muted/50 p-2 rounded-lg text-center border border-border/50">
-            <p className="text-[9px] text-muted-foreground uppercase font-black">Available</p>
-            <p className="text-sm font-black">{free}</p>
+          <div className="bg-muted/50 p-2 rounded-lg text-center border border-black/[0.08] dark:border-white/15">
+            <p className="dc-eyebrow">Available</p>
+            <p className="dc-metric-value text-sm">{free}</p>
           </div>
-          <div className="bg-muted/50 p-2 rounded-lg text-center border border-border/50">
-            <p className="text-[9px] text-muted-foreground uppercase font-black">Capacity</p>
-            <p className="text-sm font-black">{capacity}</p>
+          <div className="bg-muted/50 p-2 rounded-lg text-center border border-black/[0.08] dark:border-white/15">
+            <p className="dc-eyebrow">Capacity</p>
+            <p className="dc-metric-value text-sm">{capacity}</p>
           </div>
         </div>
       </CardContent>
@@ -824,9 +824,9 @@ function OperationalPulseCard({
 
   return (
     <Link href="/analytics" className="block h-full">
-    <Card className="h-full bg-card border-border shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
-      <CardHeader className="pb-2 border-b border-border/30">
-        <CardTitle className="text-sm font-bold flex items-center gap-2">
+    <Card className="dc-card h-full transition-all hover:-translate-y-1">
+      <CardHeader className="pb-2 border-b border-black/[0.08] dark:border-white/10">
+        <CardTitle className="dc-card-title flex items-center gap-2">
           <Zap className="h-4 w-4 text-emerald-500" />
           Service Efficiency
           <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
@@ -844,10 +844,10 @@ function OperationalPulseCard({
                 <Clock className="h-5 w-5 text-amber-600" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase text-muted-foreground">
+                <p className="dc-metric-label">
                   Peak Demand Hour
                 </p>
-                <p className="truncate text-sm font-bold">{peakHourLabel}</p>
+                <p className="truncate text-sm font-semibold">{peakHourLabel}</p>
               </div>
             </div>
 
@@ -856,15 +856,15 @@ function OperationalPulseCard({
                 <Activity className="h-5 w-5 text-blue-600" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase text-muted-foreground">
+                <p className="dc-metric-label">
                   Avg Prep Time
                 </p>
-                <p className="text-sm font-bold">{avgPrepLabel}</p>
+                <p className="text-sm font-semibold">{avgPrepLabel}</p>
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-border/50 pt-2">
-              <span className="text-[10px] font-bold uppercase text-muted-foreground">
+            <div className="flex items-center justify-between border-t border-black/[0.08] dark:border-white/10 pt-2">
+              <span className="dc-metric-label">
                 Cancellation Rate
               </span>
               <Badge
@@ -915,14 +915,14 @@ function AlertsBanner({
   const content = (
     <Card
       className={cn(
-        "h-full shadow-sm rounded-2xl border border-border/50 hover:shadow-md transition-all duration-300 relative overflow-hidden group",
+        "dc-card h-full transition-all duration-300 hover:-translate-y-1 relative overflow-hidden group",
         tone,
-        href && "cursor-pointer"
+        href && "cursor-pointer",
       )}
     >
       <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-5 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110" />
       <CardHeader className="pb-3 relative z-10">
-        <CardTitle className="text-sm font-bold flex items-center gap-2">
+        <CardTitle className="dc-card-title flex items-center gap-2">
           <Siren className="h-4 w-4" />
           Alerts
           {href ? <ArrowRight className="ml-auto h-3.5 w-3.5 opacity-60" /> : null}
@@ -993,9 +993,9 @@ function resolveQuickActionIcon(action: { key?: string }): LucideIcon {
 function QuickActionsCard({ actions }: { actions: any[] }) {
   const enabledActions = actions.filter((action: any) => action.enabled).slice(0, 6)
   return (
-    <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300">
+    <Card className="dc-card transition-all duration-300 hover:-translate-y-1">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-bold">Quick Actions</CardTitle>
+        <CardTitle className="dc-card-title">Quick Actions</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -1006,15 +1006,15 @@ function QuickActionsCard({ actions }: { actions: any[] }) {
                 key={action.key}
                 href={resolveQuickActionHref(action)}
                 className={cn(
-                  "group/btn relative flex flex-col items-center justify-center gap-2.5 overflow-hidden rounded-xl border border-border/40 bg-muted/30 px-3 py-4 text-center transition-all",
-                  "hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-md"
+                  "group/btn relative flex flex-col items-center justify-center gap-2.5 overflow-hidden rounded-xl border border-black/[0.08] bg-transparent px-3 py-4 text-center transition-all dark:border-white/15",
+                  "hover:-translate-y-0.5 hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary dark:hover:border-white/25",
                 )}
               >
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 transition-opacity group-hover/btn:opacity-100" />
-                <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-xl border border-border/50 bg-background/80 text-primary shadow-sm transition-transform group-hover/btn:scale-105">
+                <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-xl border border-black/[0.08] bg-white text-primary shadow-sm transition-transform group-hover/btn:scale-105 dark:border-white/15 dark:bg-muted">
                   <Icon className="h-5 w-5" />
                 </div>
-                <p className="relative z-10 text-xs font-bold leading-tight text-foreground">
+                <p className="relative z-10 text-xs font-medium leading-tight text-foreground">
                   {action.title}
                 </p>
               </Link>
@@ -1050,10 +1050,10 @@ function DayCloseCashWatchCard({
   ]
 
   return (
-    <Card className="relative overflow-hidden rounded-2xl border-border/50 bg-card/80 shadow-sm backdrop-blur-sm transition-all duration-300 group hover:shadow-md">
+    <Card className="dc-card relative overflow-hidden transition-all duration-300 group hover:-translate-y-1">
       <div className="absolute top-0 right-0 -mr-4 -mt-4 h-24 w-24 rounded-bl-[80px] bg-primary/5 transition-transform group-hover:scale-110" />
       <CardHeader className="relative z-10 pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-bold">
+        <CardTitle className="dc-card-title flex items-center gap-2">
           <Calendar className="h-4 w-4 text-primary" />
           Day Close
         </CardTitle>
@@ -1061,10 +1061,10 @@ function DayCloseCashWatchCard({
       <CardContent className="relative z-10 space-y-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-lg font-black capitalize">{status}</p>
-            <p className="text-xs text-muted-foreground">Today&apos;s settlement status</p>
+            <p className="text-lg font-medium capitalize text-foreground">{status}</p>
+            <p className="dc-page-subtitle">Today&apos;s settlement status</p>
           </div>
-          <Button asChild size="sm" className="gap-2 shrink-0">
+          <Button asChild size="sm" className="dc-btn-close-day h-9 shrink-0 gap-2 rounded-2xl px-4 font-medium">
             <Link href={dayCloseStatus?.route || "/day-close"}>
               {actionLabel}
               <ArrowRight className="h-4 w-4" />
@@ -1075,7 +1075,7 @@ function DayCloseCashWatchCard({
         <div className="border-t border-border/40 pt-4">
           <div className="mb-3 flex items-center gap-2">
             <Wallet className="h-4 w-4 text-emerald-500" />
-            <p className="text-sm font-bold">Cash Watch</p>
+            <p className="dc-card-title text-sm">Cash Watch</p>
           </div>
           {cashWatch?.available === false ? (
             <p className="text-sm text-muted-foreground">
@@ -1086,7 +1086,7 @@ function DayCloseCashWatchCard({
               {cashRows.map((row) => (
                 <div key={row.label} className="flex items-center justify-between gap-3">
                   <span className="text-sm text-muted-foreground">{row.label}</span>
-                  <span className="text-sm font-black tabular-nums">
+                  <span className="text-sm font-semibold tabular-nums dc-amount">
                     {currency} {Number(row.value || 0).toLocaleString()}
                   </span>
                 </div>
@@ -1447,16 +1447,16 @@ function AttentionItemsCard({ items }: { items: any[] }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-bold">Needs Attention</h3>
+        <h3 className="dc-card-title">Needs Attention</h3>
         {visibleItems.length > 1 ? (
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-muted-foreground hidden sm:inline">Swipe through issues</span>
             <div className="flex items-center gap-1">
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-full shrink-0"
+                className="dc-filter-control h-7 w-7 rounded-full shrink-0"
                 onClick={() => advanceAttentionItem(-1)}
                 onMouseEnter={() => setIsPaused(true)}
                 onMouseLeave={() => setIsPaused(false)}
@@ -1466,9 +1466,9 @@ function AttentionItemsCard({ items }: { items: any[] }) {
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-full shrink-0"
+                className="dc-filter-control h-7 w-7 rounded-full shrink-0"
                 onClick={() => advanceAttentionItem(1)}
                 onMouseEnter={() => setIsPaused(true)}
                 onMouseLeave={() => setIsPaused(false)}
@@ -1561,9 +1561,9 @@ function TrendComparisonSection({ trendCards }: { trendCards: any[] }) {
 function OrderStatusCard({ statuses }: { statuses: any[] }) {
   const total = statuses.reduce((sum, item) => sum + Number(item.count || 0), 0)
   return (
-    <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300 group">
+    <Card className="dc-card transition-all duration-300 hover:-translate-y-1">
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-bold">Order Status</CardTitle>
+        <CardTitle className="dc-card-title">Order Status</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {statuses.length > 0 ? statuses.map((status: any) => {
@@ -1656,10 +1656,10 @@ function resolvePaymentMethodVisual(method: string, index: number) {
 function PaymentSplitCard({ payments, currency }: { payments: any[]; currency: string }) {
   const total = payments.reduce((sum, item) => sum + Number(item.amount || 0), 0)
   return (
-    <Card className="h-full shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm hover:shadow-md transition-all duration-300 relative overflow-hidden group">
+    <Card className="dc-card h-full transition-all duration-300 hover:-translate-y-1 relative overflow-hidden group">
       <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
-      <CardHeader className="pb-4 border-b border-border/30 relative z-10">
-        <CardTitle className="text-sm font-bold flex items-center gap-2">
+      <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10 relative z-10">
+        <CardTitle className="dc-card-title flex items-center gap-2">
           <ReceiptText className="h-4 w-4 text-primary" />
           Payment Split
         </CardTitle>
@@ -1683,7 +1683,7 @@ function PaymentSplitCard({ payments, currency }: { payments: any[]; currency: s
                   </div>
                   <span className="truncate text-sm font-bold">{payment.method}</span>
                 </div>
-                <span className="shrink-0 text-sm font-black tabular-nums">
+                <span className="shrink-0 text-sm font-semibold tabular-nums dc-amount">
                   {currency} {Number(payment.amount || 0).toLocaleString()}
                 </span>
               </div>
@@ -1706,10 +1706,10 @@ function PaymentSplitCard({ payments, currency }: { payments: any[]; currency: s
 
 function ActivityFeed({ activities }: { activities: any[] }) {
   return (
-    <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm overflow-hidden h-full flex flex-col rounded-2xl hover:shadow-md transition-all duration-300 group">
+    <Card className="dc-card overflow-hidden h-full flex flex-col transition-all duration-300 hover:-translate-y-1 relative group">
       <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-[100px] -mr-8 -mt-8 transition-transform group-hover:scale-110 pointer-events-none" />
-      <CardHeader className="pb-4 bg-muted/10 border-b border-border/30 shrink-0 relative z-10">
-        <CardTitle className="text-sm font-bold flex items-center gap-2">
+      <CardHeader className="pb-4 bg-muted/10 border-b border-black/[0.08] dark:border-white/10 shrink-0 relative z-10">
+        <CardTitle className="dc-card-title flex items-center gap-2">
           <Activity className="h-4 w-4 text-primary" />
           Real-time Staff Activity
         </CardTitle>
@@ -1719,12 +1719,12 @@ function ActivityFeed({ activities }: { activities: any[] }) {
           {activities.length > 0 ? (
             activities.map((log: any) => (
               <div key={log.id} className="p-4 flex items-start gap-4 hover:bg-muted/20 transition-all cursor-default group">
-                <div className="w-8 h-8 rounded-full bg-background border border-border/50 flex items-center justify-center shrink-0 group-hover:border-primary/50 transition-colors">
+                <div className="w-8 h-8 rounded-full bg-background border border-black/[0.08] dark:border-white/15 flex items-center justify-center shrink-0 group-hover:border-primary/50 transition-colors">
                     <Users className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
 	                  <div className="flex items-center justify-between gap-2 mb-1">
-	                    <span className="text-xs font-black text-foreground truncate uppercase tracking-tight">
+	                    <span className="text-xs font-semibold text-foreground truncate tracking-tight">
 	                      {log.actor_name || "System"}
 	                    </span>
                     <span className="text-[10px] font-bold text-muted-foreground whitespace-nowrap bg-muted/50 px-2 py-0.5 rounded">
@@ -1762,18 +1762,18 @@ function SummaryMetric({ label, value, prefix = "", suffix = "", icon, trend, co
   return (
     <HoverCard openDelay={0} closeDelay={0}>
       <HoverCardTrigger asChild>
-        <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative cursor-default">
+        <Card className="dc-card hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative cursor-default">
           <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-primary/40 to-primary group-hover:w-full group-hover:opacity-5 transition-all duration-500" />
           <CardContent className="p-5 flex flex-col justify-center h-full relative z-10">
             <div className="flex items-center gap-2 mb-2">
-               <div className="p-1.5 rounded-md bg-muted text-muted-foreground group-hover:text-primary transition-colors">
+               <div className="p-1.5 rounded-md border border-black/[0.08] bg-white text-muted-foreground group-hover:text-primary group-hover:border-black/[0.12] transition-colors dark:border-white/15 dark:bg-muted">
                   {icon}
                </div>
-               <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
+               <p className="dc-metric-label">
                  {label}
                </p>
             </div>
-            <div className="text-xl font-black text-foreground tabular-nums">
+            <div className="dc-metric-value tabular-nums">
               <span className="text-xs font-normal mr-0.5 opacity-50">{prefix}</span>
               {Number(value).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
               <span className="text-xs font-normal ml-0.5 opacity-50">{suffix}</span>
@@ -1796,7 +1796,7 @@ function SummaryMetric({ label, value, prefix = "", suffix = "", icon, trend, co
         {/* Performance Box */}
         {trend && (
           <div className="p-5 space-y-6">
-             <div className="flex flex-col gap-3 p-4 bg-muted/30 rounded-2xl border border-border/50">
+             <div className="flex flex-col gap-3 p-4 bg-muted/30 rounded-2xl border border-black/[0.08] dark:border-white/15">
                 <div className="flex justify-between items-center">
                   <span className="text-[13px] font-semibold text-foreground">PERFORMANCE</span>
                   <Badge variant="outline" className={cn("border-transparent rounded-lg px-2.5 py-0.5 text-[13px] font-medium flex items-center gap-1.5", trendColor)}>

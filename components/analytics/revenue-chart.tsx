@@ -73,29 +73,29 @@ export function RevenueChart({
       : "Your gross sales over the selected period.");
 
   return (
-    <Card className="col-span-4 bg-card border-border shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+    <Card className="col-span-4 dc-card h-full">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b border-black/[0.08] pb-4 dark:border-white/10">
         <div>
-          <CardTitle>{chartTitle}</CardTitle>
-          <CardDescription>{chartDescription}</CardDescription>
+          <CardTitle className="dc-card-title">{chartTitle}</CardTitle>
+          <CardDescription className="text-xs text-muted-foreground">{chartDescription}</CardDescription>
         </div>
-        <div className="flex bg-muted p-1 rounded-lg text-xs">
+        <div className="flex rounded-xl border border-black/[0.08] bg-muted/50 p-1 text-xs dark:border-white/15">
           <button
             onClick={() => setChartType("area")}
-            className={`px-3 py-1.5 rounded-md transition-all ${
+            className={`rounded-lg px-3 py-1.5 transition-all ${
               chartType === "area"
-                ? "bg-background text-foreground shadow-sm font-medium"
-                : "text-muted-foreground"
+                ? "bg-primary/10 font-semibold text-primary"
+                : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
             }`}
           >
             Area/Line
           </button>
           <button
             onClick={() => setChartType("bar")}
-            className={`px-3 py-1.5 rounded-md transition-all ${
+            className={`rounded-lg px-3 py-1.5 transition-all ${
               chartType === "bar"
-                ? "bg-background text-foreground shadow-sm font-medium"
-                : "text-muted-foreground"
+                ? "bg-primary/10 font-semibold text-primary"
+                : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
             }`}
           >
             Bar
