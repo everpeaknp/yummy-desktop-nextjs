@@ -10,7 +10,11 @@ import {
 } from "lucide-react";
 import type { DayCloseDetail, DayCloseSnapshotData } from "@/types/day-close";
 import { formatDayCloseCurrency } from "@/lib/day-close-format";
-import { snapshotFinancialSummaryRows } from "@/lib/day-close-snapshot-view";
+import {
+  financialSummarySnapshotTab,
+  snapshotFinancialSummaryRows,
+  type DayCloseSnapshotTab,
+} from "@/lib/day-close-snapshot-view";
 import {
   DayCloseMetricCard,
   DC_METRIC_ACCENT_IN,
@@ -34,8 +38,9 @@ const FINANCIAL_SUMMARY_CARD: Record<
   Expenses: { icon: Wallet, flow: "out" },
   "Credit Sales": { icon: Receipt, flow: "in" },
   "Credit Collection": { icon: TrendingUp, flow: "in" },
-  Receivables: { icon: Building2, flow: "in" },
-  Drawer: { icon: Landmark, flow: "in" },
+  "Outstanding Receivables": { icon: Building2, flow: "in" },
+  "Expected Drawer": { icon: Landmark, flow: "in" },
+  "Drawer (Actual)": { icon: Landmark, flow: "in" },
 };
 
 const FINANCIAL_SUMMARY_PRIMARY = new Set([
@@ -49,22 +54,26 @@ const FINANCIAL_SUMMARY_SECONDARY = new Set([
   "Expenses",
   "Credit Sales",
   "Credit Collection",
-  "Receivables",
-  "Drawer",
+  "Outstanding Receivables",
+  "Expected Drawer",
+  "Drawer (Actual)",
 ]);
 
 function FinancialSummaryCard({
   label,
   value,
   dense = false,
+  onNavigate,
 }: {
   label: string;
   value: number;
   dense?: boolean;
+  onNavigate?: (tab: DayCloseSnapshotTab) => void;
 }) {
   const config = FINANCIAL_SUMMARY_CARD[label];
   const Icon = config?.icon;
   const isOut = config?.flow === "out";
+  const targetTab = onNavigate ? financialSummarySnapshotTab(label) : null;
 
   return (
     <DayCloseMetricCard
@@ -78,6 +87,7 @@ function FinancialSummaryCard({
       accent={isOut ? DC_METRIC_ACCENT_OUT : DC_METRIC_ACCENT_IN}
       valueClassName={isOut ? DC_METRIC_VALUE_OUT : DC_METRIC_VALUE_IN}
       className="h-full min-w-0"
+      onClick={targetTab && onNavigate ? () => onNavigate(targetTab) : undefined}
     />
   );
 }
@@ -88,6 +98,8 @@ type DayCloseFinancialSummaryProps = {
   showTitle?: boolean;
   /** Tighter grid for day-close dialog minimized view */
   compact?: boolean;
+  /** Opens the matching snapshot breakdown tab when a card is clicked. */
+  onMetricNavigate?: (tab: DayCloseSnapshotTab) => void;
 };
 
 export function DayCloseFinancialSummary({
@@ -95,6 +107,7 @@ export function DayCloseFinancialSummary({
   detail,
   showTitle = true,
   compact = false,
+  onMetricNavigate,
 }: DayCloseFinancialSummaryProps) {
   const rows = snapshotFinancialSummaryRows(snapshot, detail);
   if (rows.length === 0) return null;
@@ -113,6 +126,7 @@ export function DayCloseFinancialSummary({
               label={row.label}
               value={row.value!}
               dense
+              onNavigate={onMetricNavigate}
             />
           ))}
         </div>
@@ -127,14 +141,25 @@ export function DayCloseFinancialSummary({
         {primaryRows.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-stretch pt-1">
             {primaryRows.map((row) => (
-              <FinancialSummaryCard key={row.label} label={row.label} value={row.value!} />
+              <FinancialSummaryCard
+                key={row.label}
+                label={row.label}
+                value={row.value!}
+                onNavigate={onMetricNavigate}
+              />
             ))}
           </div>
         ) : null}
         {secondaryRows.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 items-stretch pt-1">
             {secondaryRows.map((row) => (
-              <FinancialSummaryCard key={row.label} label={row.label} value={row.value!} />
+              <FinancialSummaryCard
+                key={row.label}
+                label={row.label}
+                value={row.value!}
+                dense
+                onNavigate={onMetricNavigate}
+              />
             ))}
           </div>
         ) : null}

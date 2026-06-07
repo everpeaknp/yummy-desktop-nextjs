@@ -212,6 +212,8 @@ export function DayCloseModal({
             <CashReconciliationStep
               snapshot={snapshotData}
               dayCloseId={dayCloseId}
+              restaurantId={restaurantId}
+              businessLine={businessLine}
               onNext={(data, finalizedSnapshot) => {
                 setConfirmedData(data);
                 setConfirmedSnapshot(finalizedSnapshot);
@@ -242,7 +244,7 @@ function HealthCheckStep({
   businessLine: BusinessLine;
 }) {
   const [checks, setChecks] = useState<
-    Array<{ label: string; status: "pass" | "fail"; message?: string }>
+    Array<{ label: string; status: "pass" | "fail" | "warn"; message?: string }>
   >([]);
   const [loading, setLoading] = useState(true);
   const [canProceed, setCanProceed] = useState(false);
@@ -259,7 +261,7 @@ function HealthCheckStep({
           return;
         }
 
-        const newChecks: Array<{ label: string; status: "pass" | "fail"; message?: string }> = [];
+        const newChecks: Array<{ label: string; status: "pass" | "fail" | "warn"; message?: string }> = [];
 
         if ((data.active_orders_count ?? 0) > 0) {
           newChecks.push({
@@ -292,11 +294,19 @@ function HealthCheckStep({
         if (data.blockers?.length) {
           data.blockers
             .filter(
-              (b) => !b.includes("active order") && !b.includes("pending refund")
+              (b) =>
+                !b.toLowerCase().includes("active order") &&
+                !b.toLowerCase().includes("pending refund"),
             )
             .forEach((b) => {
               newChecks.push({ label: "System Validation", status: "fail", message: b });
             });
+        }
+
+        if (data.warnings?.length) {
+          data.warnings.forEach((warning) => {
+            newChecks.push({ label: "Advisory", status: "warn", message: warning });
+          });
         }
 
         setChecks(newChecks);
@@ -398,7 +408,17 @@ function FinancialSnapshotStep({
       });
       const detail = unwrapApiData(res.data, parseDayCloseDetail);
       if (detail?.id) {
-        onNext(snapshot, detail.id);
+        let freshSnapshot = snapshot;
+        try {
+          const snapRes = await apiClient.get(
+            DayCloseApis.generateSnapshot({ restaurantId, businessLine }),
+          );
+          const parsed = unwrapApiData(snapRes.data, parseDayCloseSnapshotData);
+          if (parsed) freshSnapshot = parsed;
+        } catch {
+          // Keep snapshot from step load if refresh fails.
+        }
+        onNext(freshSnapshot, detail.id);
       } else {
         setError(
           (res.data as { message?: string })?.message ?? "Failed to initiate day close"
@@ -471,17 +491,41 @@ function CashReconciliationStep({
   onNext,
   snapshot,
   dayCloseId,
+  restaurantId,
+  businessLine,
 }: {
   onNext: (data: DayCloseDetail, finalizedSnapshot: DayCloseSnapshotData | null) => void;
   snapshot: DayCloseSnapshotData | null;
   dayCloseId: number | null;
+  restaurantId: number;
+  businessLine: BusinessLine;
 }) {
   const [actualCash, setActualCash] = useState("");
   const [confirmationNotes, setConfirmationNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [liveSnapshot, setLiveSnapshot] = useState<DayCloseSnapshotData | null>(snapshot);
 
-  const expectedCash = snapshot?.expected_cash;
+  useEffect(() => {
+    setLiveSnapshot(snapshot);
+  }, [snapshot]);
+
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const res = await apiClient.get(
+          DayCloseApis.generateSnapshot({ restaurantId, businessLine }),
+        );
+        const parsed = unwrapApiData(res.data, parseDayCloseSnapshotData);
+        if (parsed) setLiveSnapshot(parsed);
+      } catch {
+        // Keep prior snapshot if refresh fails.
+      }
+    };
+    void refresh();
+  }, [restaurantId, businessLine]);
+
+  const expectedCash = liveSnapshot?.expected_cash;
 
   const handleSubmit = async () => {
     if (!dayCloseId) {
@@ -491,13 +535,23 @@ function CashReconciliationStep({
     setSubmitting(true);
     setError(null);
     try {
+      try {
+        const snapRes = await apiClient.get(
+          DayCloseApis.generateSnapshot({ restaurantId, businessLine }),
+        );
+        const parsed = unwrapApiData(snapRes.data, parseDayCloseSnapshotData);
+        if (parsed) setLiveSnapshot(parsed);
+      } catch {
+        // Proceed with last known expected cash.
+      }
+
       const res = await apiClient.post(DayCloseApis.confirm(dayCloseId), {
         actual_cash: Number(actualCash),
         confirmation_notes: confirmationNotes || undefined,
       });
       const detail = unwrapApiData(res.data, parseDayCloseDetail);
       if (detail) {
-        let finalizedSnapshot: DayCloseSnapshotData | null = snapshot;
+        let finalizedSnapshot: DayCloseSnapshotData | null = liveSnapshot ?? snapshot;
         try {
           const snapRes = await apiClient.get(DayCloseApis.snapshot(detail.id));
           const snapPayload = unwrapApiData(snapRes.data, parseDayCloseSnapshotResponse);
@@ -697,9 +751,18 @@ function CheckItem({
   message,
 }: {
   label: string;
-  status: "pass" | "fail";
+  status: "pass" | "fail" | "warn";
   message?: string;
 }) {
+  const toneClass =
+    status === "pass"
+      ? "text-green-600"
+      : status === "warn"
+        ? "text-amber-600"
+        : "text-red-500";
+  const statusLabel =
+    status === "pass" ? "Passed" : status === "warn" ? "Warning" : "Action Needed";
+
   return (
     <div className="flex items-center justify-between p-3 rounded-lg border bg-white dark:bg-slate-950">
       <div>
@@ -709,7 +772,7 @@ function CheckItem({
       <div
         className={cn(
           "flex items-center gap-2 text-xs font-semibold uppercase tracking-wider",
-          status === "pass" ? "text-green-600" : "text-red-500"
+          toneClass,
         )}
       >
         {status === "pass" ? (
@@ -717,7 +780,7 @@ function CheckItem({
         ) : (
           <AlertTriangle className="w-4 h-4" />
         )}
-        {status === "pass" ? "Passed" : "Action Needed"}
+        {statusLabel}
       </div>
     </div>
   );

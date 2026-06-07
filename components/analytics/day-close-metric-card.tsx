@@ -36,6 +36,7 @@ type DayCloseMetricCardProps = {
   compact?: boolean;
   dense?: boolean;
   className?: string;
+  onClick?: () => void;
 };
 
 export function DayCloseMetricCard({
@@ -49,6 +50,7 @@ export function DayCloseMetricCard({
   compact = false,
   dense = false,
   className,
+  onClick,
 }: DayCloseMetricCardProps) {
   const iconTopRight = Boolean(icon) && iconPosition === "top-right";
   const cornerSize = dense
@@ -60,8 +62,22 @@ export function DayCloseMetricCard({
 
   return (
     <Card
+      onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
       className={cn(
         "dc-card hover:-translate-y-1 active:-translate-y-1 transition-all duration-300 group overflow-hidden relative h-full",
+        onClick && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
         className,
       )}
     >
