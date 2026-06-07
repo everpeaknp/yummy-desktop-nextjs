@@ -120,6 +120,7 @@ export interface DayCloseDetail {
   tax_total?: number;
   service_charge_total?: number;
   net_sales?: number;
+  total_income?: number;
   cash_sales?: number;
   card_sales?: number;
   digital_sales?: number;
@@ -179,6 +180,15 @@ export interface DayCloseValidateResult {
   active_orders_count?: number;
   pending_refunds_count?: number;
   blockers?: string[];
+  warnings?: string[];
+}
+
+/** Merge generate-snapshot summary root with nested `detailed` breakdown. */
+function mergeSnapshotPayload(raw: Record<string, unknown>): Record<string, unknown> {
+  const detailed = asRecord(raw.detailed);
+  if (!detailed) return raw;
+  const { detailed: _omit, ...summary } = raw;
+  return { ...detailed, ...summary };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -226,8 +236,9 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
   if (!root) return null;
 
   const nested = root.snapshot_data ?? root;
-  const data = asRecord(nested);
-  if (!data) return null;
+  const raw = asRecord(nested);
+  if (!raw) return null;
+  const data = mergeSnapshotPayload(raw);
 
   const payment_distribution: DayCloseSnapshotData["payment_distribution"] = {};
   for (const key of ["cash", "card", "digital", "fonepay", "credit"] as const) {
@@ -378,6 +389,7 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
     "tax_total",
     "service_charge_total",
     "net_sales",
+    "total_income",
     "cash_sales",
     "card_sales",
     "digital_sales",
@@ -520,6 +532,7 @@ export function parseDayCloseValidateResult(payload: unknown): DayCloseValidateR
     pending_refunds_count:
       typeof row.pending_refunds_count === "number" ? row.pending_refunds_count : undefined,
     blockers: Array.isArray(row.blockers) ? row.blockers.map(String) : undefined,
+    warnings: Array.isArray(row.warnings) ? row.warnings.map(String) : undefined,
   };
 }
 

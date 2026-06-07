@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { Calendar } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DayCloseDetail, DayCloseSnapshotData } from "@/types/day-close";
@@ -21,6 +22,7 @@ import {
   snapshotRefundRows,
   snapshotSalesByCategoryRows,
   snapshotSalesByTableRows,
+  type DayCloseSnapshotTab,
 } from "@/lib/day-close-snapshot-view";
 import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
 import { DayCloseFinancialSummary } from "@/components/analytics/day-close-financial-summary";
@@ -34,6 +36,8 @@ type DayCloseSnapshotPanelProps = {
   hideFinancialSummary?: boolean;
   /** Tighter summary + snapshot tab grid for dialog minimized view */
   compact?: boolean;
+  activeTab?: DayCloseSnapshotTab;
+  onTabChange?: (tab: DayCloseSnapshotTab) => void;
 };
 
 export function DayCloseSnapshotPanel({
@@ -42,6 +46,8 @@ export function DayCloseSnapshotPanel({
   className,
   hideFinancialSummary = false,
   compact = false,
+  activeTab,
+  onTabChange,
 }: DayCloseSnapshotPanelProps) {
   const paymentMethods = snapshotPaymentMethodRows(snapshot);
   const cardInstruments = snapshotInstrumentRows(snapshot, "card");
@@ -59,6 +65,13 @@ export function DayCloseSnapshotPanel({
     snapshot.period_start_at,
     snapshot.period_end_at,
   );
+  const [internalTab, setInternalTab] = useState<DayCloseSnapshotTab>("payments");
+  const resolvedTab = activeTab ?? internalTab;
+  const handleTabChange = (value: string) => {
+    const next = value as DayCloseSnapshotTab;
+    if (activeTab === undefined) setInternalTab(next);
+    onTabChange?.(next);
+  };
 
   return (
     <div className={cn("space-y-6", className)}>
@@ -84,10 +97,15 @@ export function DayCloseSnapshotPanel({
           snapshot={snapshot}
           detail={detail}
           compact={compact}
+          onMetricNavigate={onTabChange}
         />
       ) : null}
 
-      <Tabs defaultValue="payments" className="w-full">
+      <Tabs
+        value={resolvedTab}
+        onValueChange={handleTabChange}
+        className="w-full"
+      >
         <TabsList
           className={cn(
             "dc-tabs-list rounded-2xl",
@@ -105,16 +123,12 @@ export function DayCloseSnapshotPanel({
           <TabsTrigger value="expenses" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Expenses
           </TabsTrigger>
-          {refunds.length > 0 ? (
-            <TabsTrigger value="refunds" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
-              Refunds
-            </TabsTrigger>
-          ) : null}
-          {receivables.length > 0 ? (
-            <TabsTrigger value="receivables" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
-              Receivables
-            </TabsTrigger>
-          ) : null}
+          <TabsTrigger value="refunds" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
+            Refunds
+          </TabsTrigger>
+          <TabsTrigger value="receivables" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
+            Receivables
+          </TabsTrigger>
           {purchases.length > 0 ? (
             <TabsTrigger value="purchases" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
               Purchases
@@ -211,16 +225,20 @@ export function DayCloseSnapshotPanel({
               <EmptySnapshotNotice message="Expense breakdown is not available in this snapshot." />
             )}
           </TabsContent>
-          {refunds.length > 0 ? (
-            <TabsContent value="refunds" className="m-0">
+          <TabsContent value="refunds" className="m-0">
+            {refunds.length > 0 ? (
               <SimpleListCard title="Refunds" rows={refunds} expenseTone />
-            </TabsContent>
-          ) : null}
-          {receivables.length > 0 ? (
-            <TabsContent value="receivables" className="m-0">
+            ) : (
+              <EmptySnapshotNotice message="No refunds recorded in this close window." />
+            )}
+          </TabsContent>
+          <TabsContent value="receivables" className="m-0">
+            {receivables.length > 0 ? (
               <SimpleListCard title="Receivables" rows={receivables} />
-            </TabsContent>
-          ) : null}
+            ) : (
+              <EmptySnapshotNotice message="No receivable breakdown in this snapshot." />
+            )}
+          </TabsContent>
           {purchases.length > 0 ? (
             <TabsContent value="purchases" className="m-0">
               <SimpleListCard title="Purchases" rows={purchases} />

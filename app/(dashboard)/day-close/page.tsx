@@ -34,6 +34,7 @@ import {
   Wallet,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
+import { toast } from "sonner";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import {
   formatDayCloseCurrency,
@@ -83,9 +84,15 @@ export default function DayClosePage() {
       } else {
         setSnapshotPreview(null);
       }
-    } catch {
+    } catch (err: unknown) {
       setCurrentClose(null);
       setSnapshotPreview(null);
+      const message =
+        (err as { response?: { data?: { message?: string; detail?: string } } })?.response?.data
+          ?.message ??
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Failed to load day close data.";
+      toast.error(message);
     } finally {
       setCurrentLoading(false);
     }

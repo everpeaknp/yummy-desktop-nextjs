@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import apiClient from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { DayCloseApis } from "@/lib/api/endpoints";
@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
   format,
@@ -66,6 +67,7 @@ import {
   dayCloseSessionToListItem,
 } from "@/lib/day-close-format";
 import { fetchDayCloseSnapshotForDetail } from "@/lib/day-close-snapshot-fetch";
+import type { DayCloseSnapshotTab } from "@/lib/day-close-snapshot-view";
 import {
   parseDayCloseDetail,
   parseDayCloseList,
@@ -190,6 +192,87 @@ function DetailMaximizeToggleButton({
   );
 }
 
+function SkeletonMetricCard({ dense = false }: { dense?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "dc-card rounded-2xl border border-border/50 bg-card/80 space-y-3",
+        dense ? "p-3" : "p-4",
+      )}
+    >
+      <Skeleton className={cn("h-3", dense ? "w-16" : "w-20")} />
+      <Skeleton className={cn(dense ? "h-6 w-24" : "h-7 w-28")} />
+    </div>
+  );
+}
+
+function DayCloseDetailDialogSkeleton({ compact = false }: { compact?: boolean }) {
+  const primaryCount = 4;
+  const secondaryCount = 5;
+
+  return (
+    <div className="space-y-4 animate-in fade-in duration-300">
+      <section className="space-y-3">
+        <Skeleton className="h-4 w-36" />
+        {compact ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 pt-1">
+            {Array.from({ length: primaryCount + secondaryCount }).map((_, index) => (
+              <SkeletonMetricCard key={index} dense />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-1">
+              {Array.from({ length: primaryCount }).map((_, index) => (
+                <SkeletonMetricCard key={`primary-${index}`} />
+              ))}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 pt-1">
+              {Array.from({ length: secondaryCount }).map((_, index) => (
+                <SkeletonMetricCard key={`secondary-${index}`} dense />
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-2 rounded-2xl bg-muted/40 p-1">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-9 rounded-xl" />
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-5 w-24 rounded-full" />
+          </div>
+          <Skeleton className="h-10 w-full rounded-2xl" />
+          <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-3">
+            <Skeleton className="h-4 w-32" />
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="flex items-center justify-between gap-4">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-4 w-20" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="pt-6 mt-2 border-t border-border/40 space-y-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Skeleton className="h-12 flex-1 rounded-2xl" />
+          <Skeleton className="h-12 flex-1 rounded-2xl" />
+          <Skeleton className="h-12 flex-1 rounded-2xl" />
+        </div>
+        <Skeleton className="mx-auto h-3 w-64 max-w-full" />
+      </div>
+    </div>
+  );
+}
+
 export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<DayCloseListItem[]>([]);
@@ -213,6 +296,9 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const [adjustments, setAdjustments] = useState<any[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailMaximized, setDetailMaximized] = useState(false);
+  const [detailTab, setDetailTab] = useState<"snapshot" | "audit" | "adjustments">("snapshot");
+  const [snapshotTab, setSnapshotTab] = useState<DayCloseSnapshotTab>("payments");
+  const snapshotSectionRef = useRef<HTMLDivElement>(null);
   const detailDialogStyle = useResizableDialogStyle(detailMaximized, "detail");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardBusinessLine, setWizardBusinessLine] = useState<BusinessLine>("restaurant");
@@ -329,6 +415,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     setSnapshot(null);
     setAudit(null);
     setAdjustments(null);
+    setDetailTab("snapshot");
+    setSnapshotTab("payments");
     setDetailLoading(true);
     setActionOpen(null);
     setActionSaving(false);
@@ -351,6 +439,10 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         return;
       }
       const parsedDetail = parseDayCloseDetail(detailRes.data.data);
+      if (!parsedDetail) {
+        toast.error("Invalid day close detail from server");
+        return;
+      }
       setDetail(parsedDetail);
       const snap = await fetchDayCloseSnapshotForDetail(id, parsedDetail, {
         restaurantId,
@@ -368,7 +460,17 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     if (!activeId) return;
     try {
       const res = await apiClient.get(DayCloseApis.get(activeId));
-      if (res.data?.status === "success") setDetail(parseDayCloseDetail(res.data.data));
+      if (res.data?.status === "success") {
+        const parsedDetail = parseDayCloseDetail(res.data.data);
+        setDetail(parsedDetail);
+        if (parsedDetail) {
+          const snap = await fetchDayCloseSnapshotForDetail(activeId, parsedDetail, {
+            restaurantId,
+            businessLine,
+          });
+          setSnapshot(snap);
+        }
+      }
     } catch {
       // ignore
     }
@@ -564,6 +666,18 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const parsedSnapshotData = useMemo(
     () => parseDayCloseSnapshotData(snapshot?.snapshot_data ?? snapshot),
     [snapshot],
+  );
+
+  const handleFinancialMetricNavigate = useCallback(
+    (tab: DayCloseSnapshotTab) => {
+      setDetailTab("snapshot");
+      setSnapshotTab(tab);
+      if (!snapshot && activeId) void loadSnapshot();
+      window.requestAnimationFrame(() => {
+        snapshotSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    },
+    [activeId, snapshot, loadSnapshot],
   );
 
   const isConfirmed = String(detail?.status || "").toLowerCase() === "confirmed";
@@ -918,22 +1032,52 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         <DialogContent
           className={resizableDialogContentClass(
             detailMaximized,
-            "day-close-ui bg-card border-border p-0 overflow-hidden shadow-2xl flex flex-col",
+            "day-close-ui relative bg-card border-border p-0 overflow-hidden shadow-2xl flex flex-col",
           )}
           style={detailDialogStyle}
         >
+          {detailLoading ? (
+            <div
+              className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background/10 backdrop-blur-[2px]"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              <div className="h-9 w-9 rounded-full border-4 border-orange-500 border-t-transparent animate-spin" />
+              <p className="text-sm font-medium text-foreground">Please wait</p>
+            </div>
+          ) : null}
           <DialogHeader className="px-5 sm:px-6 py-3.5 pr-14 sm:pr-16 flex flex-row items-start justify-between gap-2 border-b border-border/40 bg-muted/20 shrink-0">
             <div className="min-w-0 flex-1">
-              <DialogTitle className="text-lg sm:text-xl font-semibold tracking-tight leading-snug break-words">
-                {detail ? formatDayCloseListHeading(detail) : "Day Close"}
-              </DialogTitle>
-              {detailSubtitle ? (
-                <p className="mt-1 text-xs text-muted-foreground leading-snug">{detailSubtitle}</p>
-              ) : null}
+              {detailLoading ? (
+                <div className="space-y-2 py-0.5">
+                  <Skeleton className="h-6 w-full max-w-md" />
+                  <Skeleton className="h-3 w-44" />
+                </div>
+              ) : (
+                <>
+                  <DialogTitle className="text-lg sm:text-xl font-semibold tracking-tight leading-snug break-words">
+                    {detail ? formatDayCloseListHeading(detail) : "Day Close"}
+                  </DialogTitle>
+                  {detailSubtitle ? (
+                    <p className="mt-1 text-xs text-muted-foreground leading-snug">{detailSubtitle}</p>
+                  ) : null}
+                </>
+              )}
               <DialogDescription className="sr-only">Day close details dialog.</DialogDescription>
             </div>
             <div className="flex items-center gap-2 shrink-0 flex-nowrap justify-end max-w-full">
-              {showConfirmedActionsInHeader ? (
+              {detailLoading ? (
+                <>
+                  <Skeleton className="hidden sm:block h-8 w-40 rounded-xl" />
+                  <Skeleton className="hidden sm:block h-8 w-28 rounded-xl" />
+                  <Skeleton className="h-8 w-24 rounded-xl" />
+                  <Skeleton className="h-6 w-20 rounded-full" />
+                  <DetailMaximizeToggleButton
+                    maximized={detailMaximized}
+                    onToggle={() => setDetailMaximized((v) => !v)}
+                  />
+                </>
+              ) : showConfirmedActionsInHeader ? (
                 <>
                   <ConfirmedDayCloseActionButtons
                     onAdjustCash={() => {
@@ -972,10 +1116,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
 
           <div className="px-5 sm:px-6 py-4 space-y-4 overflow-auto no-scrollbar flex-1 min-h-0">
             {detailLoading ? (
-              <div className="h-40 flex items-center justify-center text-muted-foreground">
-                <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-                Loading…
-              </div>
+              <DayCloseDetailDialogSkeleton compact={!detailMaximized} />
             ) : !detail ? (
               <div className="h-40 flex items-center justify-center text-muted-foreground">
                 Day close not available.
@@ -1018,10 +1159,11 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                     snapshot={parsedSnapshotData}
                     detail={detail}
                     compact={!detailMaximized}
+                    onMetricNavigate={handleFinancialMetricNavigate}
                   />
                 ) : null}
 
-                <Tabs defaultValue="snapshot" className="w-full">
+                <Tabs value={detailTab} onValueChange={(v) => setDetailTab(v as typeof detailTab)} className="w-full">
                   <TabsList className="dc-tabs-list grid grid-cols-3 rounded-2xl">
                     <TabsTrigger value="snapshot" className="dc-tab-trigger" onClick={() => snapshot == null && loadSnapshot()}>
                       Snapshot
@@ -1046,7 +1188,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </Button>
                       </div>
                     ) : (
-                      <div className="space-y-3">
+                      <div ref={snapshotSectionRef} className="space-y-3 scroll-mt-4">
                         <div className="flex items-center justify-between px-1">
                           <p className="dc-eyebrow">
                             Generated{" "}
@@ -1063,6 +1205,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                           detail={detail}
                           hideFinancialSummary
                           compact={!detailMaximized}
+                          activeTab={snapshotTab}
+                          onTabChange={setSnapshotTab}
                         />
                       </div>
                     )}
@@ -1139,6 +1283,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </>
             )}
 
+            {!detailLoading ? (
             <div className="pt-6 mt-2 border-t border-border/40 flex flex-col gap-3 shrink-0">
               <div className="flex flex-col sm:flex-row gap-3 w-full">
                 <Button variant="outline" className="dc-btn-outline h-12 rounded-2xl flex-1" onClick={() => setDetailOpen(false)}>
@@ -1166,6 +1311,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                 PDF and Excel are generated on the server from the saved day-close snapshot.
               </p>
             </div>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>

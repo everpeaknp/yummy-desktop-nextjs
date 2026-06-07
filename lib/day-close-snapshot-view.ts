@@ -22,6 +22,35 @@ export type SnapshotListRow = {
   secondary?: string;
 };
 
+/** Snapshot panel tabs opened from financial summary cards. */
+export type DayCloseSnapshotTab =
+  | "payments"
+  | "credit"
+  | "expenses"
+  | "refunds"
+  | "receivables"
+  | "purchases"
+  | "day-orders"
+  | "sales-by-category"
+  | "sales-by-table";
+
+const FINANCIAL_SUMMARY_SNAPSHOT_TAB: Record<string, DayCloseSnapshotTab> = {
+  "Gross Sales": "sales-by-category",
+  "Net Sales": "day-orders",
+  "Total Income": "payments",
+  Refunds: "refunds",
+  Expenses: "expenses",
+  "Credit Sales": "credit",
+  "Credit Collection": "credit",
+  "Outstanding Receivables": "receivables",
+  "Expected Drawer": "payments",
+  "Drawer (Actual)": "payments",
+};
+
+export function financialSummarySnapshotTab(label: string): DayCloseSnapshotTab | null {
+  return FINANCIAL_SUMMARY_SNAPSHOT_TAB[label] ?? null;
+}
+
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: "Cash",
   card: "Card",
@@ -66,15 +95,11 @@ export function snapshotFinancialSummaryRows(
   detail?: DayCloseDetail | null,
 ): SnapshotMetricRow[] {
   const netSales = summaryAmount(snapshot.net_sales, detail?.net_sales);
-  const manualIncome = summaryAmount(
-    snapshot.manual_income_total,
-    snapshot.manual_cash_income,
-    detail?.manual_cash_income,
-  );
-  const totalIncome = summaryAmount(
-    snapshot.total_income,
-    netSales + manualIncome > 0 ? netSales + manualIncome : undefined,
-  );
+  const totalIncome = summaryAmount(snapshot.total_income, detail?.total_income);
+
+  const isConfirmed =
+    String(detail?.status ?? "").toLowerCase() === "confirmed" &&
+    detail?.actual_cash != null;
 
   return [
     { label: "Gross Sales", value: summaryAmount(snapshot.gross_sales, detail?.gross_sales) },
@@ -91,15 +116,19 @@ export function snapshotFinancialSummaryRows(
       value: summaryAmount(snapshot.receivables?.credit_collections, detail?.credit_collections),
     },
     {
-      label: "Receivables",
+      label: "Outstanding Receivables",
       value: summaryAmount(
         snapshot.receivables?.outstanding_receivables,
         detail?.outstanding_receivables,
       ),
     },
     {
-      label: "Drawer",
-      value: summaryAmount(detail?.actual_cash, detail?.expected_cash, snapshot.expected_cash),
+      label: isConfirmed ? "Drawer (Actual)" : "Expected Drawer",
+      value: summaryAmount(
+        isConfirmed ? detail?.actual_cash : undefined,
+        detail?.expected_cash,
+        snapshot.expected_cash,
+      ),
     },
   ];
 }
