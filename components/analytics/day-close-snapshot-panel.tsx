@@ -163,19 +163,17 @@ export function DayCloseSnapshotPanel({
                     compact
                     label="Customers"
                     value={credit.customers_count != null ? String(credit.customers_count) : "—"}
-                    accent="from-blue-500/50 to-blue-500/10"
                   />
                   <DayCloseMetricCard
                     compact
                     label="Orders"
                     value={credit.orders_count != null ? String(credit.orders_count) : "—"}
-                    accent="from-amber-500/50 to-amber-500/10"
                   />
                   <DayCloseMetricCard
                     compact
                     label="Amount"
                     value={formatDayCloseCurrency(credit.amount)}
-                    accent="from-rose-500/50 to-rose-500/10"
+                    iconPosition="top-right"
                   />
                 </div>
                 {credit.orders && credit.orders.length > 0 ? (

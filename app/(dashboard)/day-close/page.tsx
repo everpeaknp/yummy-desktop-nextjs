@@ -16,7 +16,15 @@ import {
 } from "@/components/ui/select";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import { DayCloseHistory } from "@/components/analytics/day-close-history";
-import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
+import {
+  DayCloseMetricCard,
+  DC_METRIC_ACCENT_IN,
+  DC_METRIC_ACCENT_OUT,
+  DC_METRIC_ICON_IN,
+  DC_METRIC_ICON_OUT,
+  DC_METRIC_VALUE_IN,
+  DC_METRIC_VALUE_OUT,
+} from "@/components/analytics/day-close-metric-card";
 import { cn } from "@/lib/utils";
 import {
   Calendar,
@@ -199,15 +207,19 @@ export default function DayClosePage() {
             label="Net Sales"
             value={formatDayCloseCurrency(displayNetSales)}
             icon={<DollarSign className="h-4 w-4" />}
-            iconClassName="border-emerald-200 bg-emerald-50 text-emerald-600 group-hover:border-emerald-300 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-400 dark:group-hover:border-emerald-400/60"
-            accent="from-emerald-500/50 to-emerald-500/10"
+            iconPosition="top-right"
+            iconClassName={DC_METRIC_ICON_IN}
+            accent={DC_METRIC_ACCENT_IN}
+            valueClassName={DC_METRIC_VALUE_IN}
           />
           <DayCloseMetricCard
             label="Total Expenses"
             value={formatDayCloseCurrency(displayExpenseTotal)}
             icon={<Wallet className="h-4 w-4" />}
-            iconClassName="border-red-200 bg-red-50 text-red-600 group-hover:border-red-300 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-400 dark:group-hover:border-red-400/60"
-            accent="from-destructive/50 to-destructive/10"
+            iconPosition="top-right"
+            iconClassName={DC_METRIC_ICON_OUT}
+            accent={DC_METRIC_ACCENT_OUT}
+            valueClassName={DC_METRIC_VALUE_OUT}
           />
         </div>
       </section>

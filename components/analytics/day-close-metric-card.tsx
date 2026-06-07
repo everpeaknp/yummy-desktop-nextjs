@@ -4,6 +4,27 @@ import type { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+/** Cash in — green */
+export const DC_METRIC_ACCENT_IN = "from-green-600/35 to-green-600/5";
+export const DC_METRIC_ICON_IN =
+  "border-green-200 bg-green-50 text-green-600 group-hover:border-green-300 group-hover:bg-green-100 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-400 dark:group-hover:border-green-400/50 dark:group-hover:bg-green-500/15";
+export const DC_METRIC_VALUE_IN = "text-green-600 dark:text-green-400";
+
+/** Cash out — red (theme destructive) */
+export const DC_METRIC_ACCENT_OUT = "from-destructive/35 to-destructive/5";
+export const DC_METRIC_ICON_OUT =
+  "border-destructive/20 bg-destructive/5 text-destructive group-hover:border-destructive/30 group-hover:bg-destructive/10";
+export const DC_METRIC_VALUE_OUT = "text-destructive";
+
+/** @deprecated use DC_METRIC_ACCENT_IN */
+export const DC_METRIC_ACCENT = DC_METRIC_ACCENT_IN;
+/** @deprecated use DC_METRIC_ACCENT_OUT */
+export const DC_METRIC_ACCENT_DESTRUCTIVE = DC_METRIC_ACCENT_OUT;
+/** @deprecated use DC_METRIC_ICON_IN */
+export const DC_METRIC_ICON = DC_METRIC_ICON_IN;
+/** @deprecated use DC_METRIC_ICON_OUT */
+export const DC_METRIC_ICON_DESTRUCTIVE = DC_METRIC_ICON_OUT;
+
 type DayCloseMetricCardProps = {
   label: string;
   value: string;
@@ -23,25 +44,34 @@ export function DayCloseMetricCard({
   icon,
   iconClassName,
   iconPosition = "inline",
-  accent = "from-primary/40 to-primary",
+  accent = DC_METRIC_ACCENT_IN,
   valueClassName,
   compact = false,
   dense = false,
   className,
 }: DayCloseMetricCardProps) {
   const iconTopRight = Boolean(icon) && iconPosition === "top-right";
+  const cornerSize = dense
+    ? "h-12 w-12 rounded-bl-[48px]"
+    : "h-16 w-16 rounded-bl-[56px]";
+
+  const cornerSpread =
+    "group-hover:h-full group-hover:w-full group-active:h-full group-active:w-full group-hover:rounded-2xl group-active:rounded-2xl group-hover:opacity-[0.12] group-active:opacity-[0.12]";
 
   return (
     <Card
       className={cn(
-        "dc-card hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative h-full",
+        "dc-card hover:-translate-y-1 active:-translate-y-1 transition-all duration-300 group overflow-hidden relative h-full",
         className,
       )}
     >
       <div
         className={cn(
-          "absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b group-hover:w-full group-hover:opacity-5 transition-all duration-500",
+          "pointer-events-none absolute z-0 top-0 right-0 origin-top-right bg-gradient-to-bl transition-all duration-500 ease-out",
           accent,
+          cornerSize,
+          "opacity-100",
+          cornerSpread,
         )}
       />
       <CardContent
@@ -60,8 +90,7 @@ export function DayCloseMetricCard({
             className={cn(
               "absolute rounded-md border transition-colors shrink-0",
               dense ? "top-2 right-2 p-1" : "top-3 right-3 p-1.5",
-              iconClassName ??
-                "border-black/10 bg-white text-neutral-700 group-hover:border-black/20 dark:border-white/25 dark:bg-muted dark:text-foreground dark:group-hover:border-white/40",
+              iconClassName ?? DC_METRIC_ICON_IN,
             )}
           >
             {icon}
@@ -78,8 +107,7 @@ export function DayCloseMetricCard({
             <div
               className={cn(
                 "p-1.5 rounded-md border transition-colors shrink-0",
-                iconClassName ??
-                  "border-black/10 bg-white text-neutral-700 group-hover:border-black/20 dark:border-white/25 dark:bg-muted dark:text-foreground dark:group-hover:border-white/40",
+                iconClassName ?? DC_METRIC_ICON_IN,
               )}
             >
               {icon}
