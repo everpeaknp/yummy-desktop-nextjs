@@ -22,7 +22,7 @@ export function DashboardStatusBanner({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+        "dashboard-ui flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
         error
           ? "border-destructive/30 bg-destructive/5"
           : "border-amber-500/30 bg-amber-500/5"
@@ -48,9 +48,9 @@ export function DashboardStatusBanner({
       </div>
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
-        className="shrink-0 gap-2"
+        className="dc-filter-refresh shrink-0 gap-2 rounded-2xl px-4"
         onClick={onRetry}
         disabled={refreshing}
       >

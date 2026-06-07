@@ -3,7 +3,9 @@
  * Maps backend snapshot_data fields to display rows — never sums or derives totals.
  */
 
+import { pickBackendAmount } from "@/lib/day-close-format";
 import type {
+  DayCloseDetail,
   DayCloseSnapshotData,
   PaymentInstrumentRow,
 } from "@/types/day-close";
@@ -51,14 +53,55 @@ export function snapshotMetricRows(snapshot: DayCloseSnapshotData): SnapshotMetr
           ? ops.avg_order_value
           : undefined,
     },
-    {
-      label: "Avg Items / Order",
-      value:
-        typeof ops?.avg_items_per_order === "number"
-          ? ops.avg_items_per_order
-          : undefined,
-    },
   ].filter((row) => row.value !== undefined);
+}
+
+function summaryAmount(...values: Array<number | null | undefined>): number {
+  return pickBackendAmount(...values) ?? 0;
+}
+
+/** Cards shown in Restaurant Close popup, detail dialog, and snapshot panel. */
+export function snapshotFinancialSummaryRows(
+  snapshot: DayCloseSnapshotData,
+  detail?: DayCloseDetail | null,
+): SnapshotMetricRow[] {
+  const netSales = summaryAmount(snapshot.net_sales, detail?.net_sales);
+  const manualIncome = summaryAmount(
+    snapshot.manual_income_total,
+    snapshot.manual_cash_income,
+    detail?.manual_cash_income,
+  );
+  const totalIncome = summaryAmount(
+    snapshot.total_income,
+    netSales + manualIncome > 0 ? netSales + manualIncome : undefined,
+  );
+
+  return [
+    { label: "Gross Sales", value: summaryAmount(snapshot.gross_sales, detail?.gross_sales) },
+    { label: "Net Sales", value: netSales },
+    { label: "Total Income", value: totalIncome },
+    { label: "Refunds", value: summaryAmount(snapshot.refunds?.total, detail?.refund_total) },
+    { label: "Expenses", value: summaryAmount(snapshot.expense_total, detail?.expense_total) },
+    {
+      label: "Credit Sales",
+      value: summaryAmount(snapshot.receivables?.credit_sales, detail?.credit_sales),
+    },
+    {
+      label: "Credit Collection",
+      value: summaryAmount(snapshot.receivables?.credit_collections, detail?.credit_collections),
+    },
+    {
+      label: "Receivables",
+      value: summaryAmount(
+        snapshot.receivables?.outstanding_receivables,
+        detail?.outstanding_receivables,
+      ),
+    },
+    {
+      label: "Drawer",
+      value: summaryAmount(detail?.actual_cash, detail?.expected_cash, snapshot.expected_cash),
+    },
+  ];
 }
 
 export function snapshotPaymentMethodRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
@@ -225,4 +268,109 @@ export function snapshotPurchaseRows(snapshot: DayCloseSnapshotData): SnapshotLi
     });
   }
   return rows;
+}
+
+function readSnapshotNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function mapLabelAmountRows(value: unknown): SnapshotListRow[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.entries(value as Record<string, unknown>)
+    .map(([label, amount]) => ({
+      label,
+      amount: readSnapshotNumber(amount),
+    }))
+    .filter((row) => row.amount != null)
+    .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0));
+}
+
+export type DayCloseOrderSnapshotRow = {
+  orderId: number;
+  restaurantOrderId?: string | number;
+  tableName?: string;
+  channel?: string;
+  status?: string;
+  grandTotal?: number;
+  isRefunded?: boolean;
+  refundAmount?: number;
+};
+
+export function snapshotDayOrderRows(snapshot: DayCloseSnapshotData): DayCloseOrderSnapshotRow[] {
+  if (!Array.isArray(snapshot.orders)) return [];
+
+  const rows: DayCloseOrderSnapshotRow[] = [];
+  for (const entry of snapshot.orders) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const orderId = Number(row.order_id);
+    if (!Number.isFinite(orderId)) continue;
+
+    rows.push({
+      orderId,
+      restaurantOrderId:
+        row.restaurant_order_id != null ? (row.restaurant_order_id as string | number) : undefined,
+      tableName: row.table_name != null ? String(row.table_name) : undefined,
+      channel: row.channel != null ? String(row.channel) : undefined,
+      status: row.status != null ? String(row.status) : undefined,
+      grandTotal: readSnapshotNumber(row.grand_total),
+      isRefunded: Boolean(row.is_refunded),
+      refundAmount: readSnapshotNumber(row.refund_amount),
+    });
+  }
+  return rows;
+}
+
+export function snapshotSalesByCategoryRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
+  const details = Array.isArray(snapshot.category_details) ? snapshot.category_details : [];
+  if (details.length > 0) {
+    const rows: SnapshotListRow[] = [];
+    details.forEach((entry, idx) => {
+      if (!entry || typeof entry !== "object") return;
+      const row = entry as Record<string, unknown>;
+      const label = String(row.category ?? row.name ?? `Category ${idx + 1}`);
+      const amount = readSnapshotNumber(row.revenue ?? row.amount ?? row.total);
+      if (amount == null) return;
+      const quantity = readSnapshotNumber(row.quantity ?? row.qty);
+      const ordersCount = readSnapshotNumber(row.orders_count ?? row.order_count);
+      const secondary =
+        quantity != null
+          ? `${quantity} items`
+          : ordersCount != null
+            ? `${ordersCount} orders`
+            : undefined;
+      rows.push({ label, amount, secondary });
+    });
+    return rows.sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0));
+  }
+
+  return mapLabelAmountRows(snapshot.sales_by_category);
+}
+
+export function snapshotSalesByTableRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
+  const details = Array.isArray(snapshot.table_details) ? snapshot.table_details : [];
+  if (details.length > 0) {
+    const rows: SnapshotListRow[] = [];
+    details.forEach((entry, idx) => {
+      if (!entry || typeof entry !== "object") return;
+      const row = entry as Record<string, unknown>;
+      const label = String(row.table_name ?? row.name ?? `Table ${idx + 1}`);
+      const amount = readSnapshotNumber(row.revenue ?? row.sales ?? row.amount ?? row.total);
+      if (amount == null) return;
+      const ordersCount = readSnapshotNumber(row.orders_count ?? row.order_count);
+      rows.push({
+        label,
+        amount,
+        secondary: ordersCount != null ? `${ordersCount} orders` : undefined,
+      });
+    });
+    return rows.sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0));
+  }
+
+  return mapLabelAmountRows(snapshot.sales_by_table);
 }

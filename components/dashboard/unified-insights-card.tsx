@@ -50,14 +50,14 @@ export function UnifiedInsightsCard({
   const visible = insights.slice(0, 3)
 
   return (
-    <Card className="h-full rounded-2xl border-border/50 bg-card/80 shadow-sm backdrop-blur-sm">
-      <CardHeader className="border-b border-border/30 pb-3">
+    <Card className="dc-card h-full transition-all duration-300 hover:-translate-y-1">
+      <CardHeader className="border-b border-black/[0.08] pb-3 dark:border-white/10">
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-sm font-bold">
+          <CardTitle className="dc-card-title flex items-center gap-2">
             <Lightbulb className="h-4 w-4 text-primary" />
             Insights
           </CardTitle>
-          <Button asChild variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs">
+          <Button asChild variant="ghost" size="sm" className="dc-filter-refresh h-8 gap-1 rounded-xl px-2 text-xs">
             <Link href="/analytics">
               View all
               <ArrowRight className="h-3.5 w-3.5" />
@@ -84,7 +84,7 @@ export function UnifiedInsightsCard({
               const content = (
                 <div
                   className={cn(
-                    "rounded-xl border p-3 transition-colors",
+                    "rounded-xl border border-black/[0.08] p-3 transition-colors dark:border-white/15",
                     tone.border,
                     insight.route && "hover:shadow-sm"
                   )}
@@ -92,7 +92,7 @@ export function UnifiedInsightsCard({
                   <div className="flex gap-3">
                     <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", tone.iconClass)} />
                     <div className="min-w-0 space-y-1">
-                      <p className="text-xs font-bold leading-snug text-foreground">
+                      <p className="text-xs font-semibold leading-snug text-foreground">
                         <span>{insight.message}</span>
                         <span className="font-semibold text-muted-foreground">
                           {" "}
@@ -123,7 +123,7 @@ export function UnifiedInsightsCard({
         ) : (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <CheckCircle className="mb-3 h-8 w-8 text-emerald-500" />
-            <p className="text-sm font-bold">No notable issues</p>
+            <p className="dc-card-title text-sm">No notable issues</p>
             <p className="mt-1 max-w-[220px] text-[11px] text-muted-foreground">
               Operations look stable for the selected period.
             </p>

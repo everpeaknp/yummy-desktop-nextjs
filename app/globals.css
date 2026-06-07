@@ -122,6 +122,240 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* Day Close — lighter typography (Inter) */
+  .dc-page-title {
+    @apply text-3xl font-semibold tracking-tight text-foreground;
+  }
+  .dc-page-subtitle {
+    @apply text-sm font-normal text-muted-foreground leading-relaxed;
+  }
+  .dc-eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80;
+  }
+  .dc-section-title {
+    @apply text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground;
+  }
+  .dc-metric-label {
+    @apply text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground leading-snug;
+  }
+  .dc-metric-value {
+    @apply text-xl font-semibold tabular-nums tracking-tight text-foreground;
+  }
+  .dc-amount {
+    @apply font-semibold tabular-nums text-foreground;
+  }
+  .dc-card-title {
+    @apply text-sm font-medium text-foreground;
+  }
+  .dc-tab-trigger {
+    @apply rounded-lg px-3 sm:px-5 font-medium text-xs sm:text-sm shadow-none transition-all;
+    @apply border border-black/[0.08] bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .dc-tab-trigger-compact {
+    @apply h-auto min-h-[2.25rem] w-full px-2 py-1.5 text-[11px] leading-tight whitespace-normal text-center;
+  }
+
+  .dc-tab-trigger[data-state="active"] {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
+    box-shadow: none !important;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+  }
+
+  /* Sidebar-aligned filter controls (history filters, selects, refresh) */
+  .dc-filter-control {
+    @apply border border-black/[0.08] shadow-none transition-all;
+    @apply bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .dc-filter-control-active,
+  .dc-filter-control[data-state="open"] {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+    box-shadow: none !important;
+  }
+
+  .dc-filter-chip {
+    @apply rounded-full h-9 px-3 sm:px-4 text-xs font-medium border border-black/[0.08] shadow-none transition-all;
+    @apply bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .dc-filter-chip-active {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+    box-shadow: none !important;
+  }
+
+  .dc-filter-refresh {
+    @apply border border-black/[0.08] shadow-none transition-all;
+    @apply bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .dc-filter-quick {
+    @apply shrink-0 sm:shrink px-3 py-2 rounded-lg text-xs font-medium border border-black/[0.08] transition-all;
+    @apply bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .day-close-ui button.dc-filter-chip:not(:disabled),
+  .day-close-ui button.dc-filter-control:not(:disabled),
+  .day-close-ui button.dc-filter-refresh:not(:disabled),
+  .dashboard-ui button.dc-filter-chip:not(:disabled),
+  .dashboard-ui button.dc-filter-control:not(:disabled),
+  .dashboard-ui button.dc-filter-refresh:not(:disabled) {
+    @apply border border-black/[0.08] shadow-none bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .day-close-ui button.dc-filter-chip-active:not(:disabled),
+  .day-close-ui button.dc-filter-control-active:not(:disabled),
+  .dashboard-ui button.dc-filter-chip-active:not(:disabled),
+  .dashboard-ui button.dc-filter-control-active:not(:disabled) {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+  }
+
+  .day-close-ui button.dc-filter-control[data-state="open"]:not(:disabled),
+  .dashboard-ui button.dc-filter-control[data-state="open"]:not(:disabled) {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+  }
+
+  .dark .dc-tab-trigger {
+    @apply border-white/15 hover:border-white/25;
+  }
+
+  .dark .dc-tab-trigger[data-state="active"] {
+    @apply border-white/25;
+  }
+
+  .dark .dc-filter-control,
+  .dark .dc-filter-chip,
+  .dark .dc-filter-refresh,
+  .dark .dc-filter-quick,
+  .dark .day-close-ui button.dc-filter-chip:not(:disabled),
+  .dark .day-close-ui button.dc-filter-control:not(:disabled),
+  .dark .day-close-ui button.dc-filter-refresh:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-chip:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-control:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-refresh:not(:disabled) {
+    @apply border-white/15 hover:border-white/25;
+  }
+
+  .dark .dc-filter-control-active,
+  .dark .dc-filter-control[data-state="open"],
+  .dark .dc-filter-chip-active,
+  .dark .day-close-ui button.dc-filter-chip-active:not(:disabled),
+  .dark .day-close-ui button.dc-filter-control-active:not(:disabled),
+  .dark .day-close-ui button.dc-filter-control[data-state="open"]:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-chip-active:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-control-active:not(:disabled),
+  .dark .dashboard-ui button.dc-filter-control[data-state="open"]:not(:disabled) {
+    @apply border-white/25;
+  }
+
+  .dc-tabs-list {
+    @apply h-auto w-full gap-1.5 bg-transparent p-0 border-0 shadow-none;
+  }
+
+  .dc-btn-outline {
+    @apply border border-black/10 bg-white text-neutral-800 shadow-sm;
+    @apply hover:border-black/20 hover:bg-neutral-50;
+  }
+
+  .dc-btn-primary {
+    @apply bg-primary text-primary-foreground font-medium shadow-md hover:bg-primary/90;
+  }
+
+  .dc-btn-close-day {
+    @apply border-0 bg-orange-600 text-white shadow-md hover:bg-orange-700;
+  }
+
+  .dc-surface {
+    @apply rounded-2xl border border-black/10 bg-white shadow-sm;
+  }
+
+  .dc-card {
+    @apply rounded-2xl border border-black/10 bg-white shadow-sm;
+    @apply hover:border-black/20 hover:shadow-md;
+  }
+
+  .dc-input-outline {
+    @apply border border-black/10 bg-white text-neutral-800 shadow-sm;
+    @apply hover:border-black/20 focus:border-black/25 focus:ring-black/10;
+  }
+
+  .day-close-ui button.border-input:not(:disabled) {
+    @apply border-black/10 bg-white text-neutral-800 shadow-sm;
+    @apply hover:border-black/20 hover:bg-neutral-50;
+  }
+
+  .day-close-ui button.bg-secondary:not(:disabled) {
+    @apply border border-black/20 bg-white text-neutral-900 shadow-sm;
+    @apply hover:border-black/25 hover:bg-neutral-50;
+  }
+
+  /* Confirmed actions — borderless, original day-close colors */
+  .day-close-ui button.dc-action-secondary:not(:disabled),
+  .day-close-ui button.dc-action-outline:not(:disabled) {
+    border-width: 0 !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .day-close-ui button.dc-action-secondary:not(:disabled) {
+    @apply bg-orange-100 text-orange-700 hover:bg-orange-200;
+  }
+
+  .dark .day-close-ui button.dc-action-secondary:not(:disabled) {
+    @apply bg-orange-950/40 text-orange-400 hover:bg-orange-950/55;
+  }
+
+  .day-close-ui button.dc-action-outline:not(:disabled) {
+    @apply bg-white text-neutral-800 hover:bg-neutral-50;
+  }
+
+  .dark .day-close-ui button.dc-action-outline:not(:disabled) {
+    @apply bg-muted text-foreground hover:bg-muted/80;
+  }
+
+  .dark .dc-btn-outline,
+  .dark .day-close-ui button.border-input:not(:disabled) {
+    @apply border-white/25 bg-muted text-foreground shadow-sm;
+    @apply hover:border-white/40 hover:bg-muted/80;
+  }
+
+  .dark .dc-card .dc-btn-outline {
+    @apply border-white/30 bg-muted/90 hover:bg-muted;
+  }
+
+  .dark .dc-surface {
+    @apply border-white/10 bg-card/90;
+  }
+
+  .dark .dc-card {
+    @apply border-white/10 bg-card hover:border-white/20;
+  }
+
+  .dark .dc-input-outline {
+    @apply border-white/25 bg-muted text-foreground focus:ring-white/10;
+  }
+
+  .dark .day-close-ui button.bg-secondary:not(:disabled) {
+    @apply border-white/25 bg-muted text-foreground hover:bg-muted/80;
+  }
+
+
   .animate-progress-loading {
     animation: progress-loading 2s ease-in-out infinite;
     transform-origin: left;

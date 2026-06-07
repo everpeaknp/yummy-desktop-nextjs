@@ -16,7 +16,15 @@ import {
 } from "@/components/ui/select";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import { DayCloseHistory } from "@/components/analytics/day-close-history";
-import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
+import {
+  DayCloseMetricCard,
+  DC_METRIC_ACCENT_IN,
+  DC_METRIC_ACCENT_OUT,
+  DC_METRIC_ICON_IN,
+  DC_METRIC_ICON_OUT,
+  DC_METRIC_VALUE_IN,
+  DC_METRIC_VALUE_OUT,
+} from "@/components/analytics/day-close-metric-card";
 import { cn } from "@/lib/utils";
 import {
   Calendar,
@@ -117,11 +125,11 @@ export default function DayClosePage() {
   })();
 
   return (
-    <div className="flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
+    <div className="day-close-page day-close-ui flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight">Day Close</h1>
-          <p className="text-muted-foreground text-sm font-medium">
+          <h1 className="dc-page-title">Day Close</h1>
+          <p className="dc-page-subtitle">
             Period and totals come from the backend day-close service
           </p>
         </div>
@@ -131,7 +139,7 @@ export default function DayClosePage() {
               value={businessLine}
               onValueChange={(value) => setBusinessLine(value as BusinessLine)}
             >
-              <SelectTrigger className="h-11 rounded-2xl font-bold min-w-[200px] bg-card/80 border-border/50">
+              <SelectTrigger className="dc-filter-control dc-filter-control-active h-11 rounded-2xl font-medium min-w-[200px]">
                 <SelectValue placeholder="Business line" />
               </SelectTrigger>
               <SelectContent>
@@ -142,7 +150,7 @@ export default function DayClosePage() {
           ) : null}
           <Button
             onClick={() => setCloseOpen(true)}
-            className="bg-primary hover:bg-primary/90 text-white font-bold h-11 px-6 rounded-2xl shadow-md gap-2"
+            className="bg-primary hover:bg-primary/90 text-white font-medium h-11 px-6 rounded-2xl shadow-md gap-2"
             disabled={!restaurantId}
           >
             <CheckCircle2 className="w-4 h-4" />
@@ -152,11 +160,11 @@ export default function DayClosePage() {
       </div>
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-1 shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm relative overflow-hidden group hover:shadow-md transition-all duration-300">
+        <Card className="dc-card lg:col-span-1 relative overflow-hidden group transition-all duration-300">
           <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
           <CardHeader className="pb-3 relative z-10">
             <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <CardTitle className="dc-card-title flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-primary" />
                 {businessLineLabel}
               </CardTitle>
@@ -164,7 +172,7 @@ export default function DayClosePage() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 rounded-full shrink-0"
+                className="dc-filter-control h-8 w-8 rounded-full shrink-0"
                 onClick={loadCurrent}
                 disabled={!restaurantId || currentLoading}
                 aria-label="Refresh current day close"
@@ -174,10 +182,8 @@ export default function DayClosePage() {
             </div>
           </CardHeader>
           <CardContent className="relative z-10 space-y-3">
-            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest opacity-80">
-              Current day
-            </p>
-            <p className="text-lg font-black tracking-tight break-words">
+            <p className="dc-eyebrow">Current day</p>
+            <p className="text-lg font-medium tracking-tight break-words text-foreground">
               {currentClose?.id
                 ? formatDayCloseListHeading({
                     id: currentClose.id,
@@ -189,7 +195,7 @@ export default function DayClosePage() {
             </p>
             <Badge
               variant="outline"
-              className={cn("capitalize font-semibold border", statusTone)}
+              className={cn("capitalize font-medium border", statusTone)}
             >
               {statusLabel}
             </Badge>
@@ -201,23 +207,29 @@ export default function DayClosePage() {
             label="Net Sales"
             value={formatDayCloseCurrency(displayNetSales)}
             icon={<DollarSign className="h-4 w-4" />}
-            accent="from-emerald-500/50 to-emerald-500/10"
+            iconPosition="top-right"
+            iconClassName={DC_METRIC_ICON_IN}
+            accent={DC_METRIC_ACCENT_IN}
+            valueClassName={DC_METRIC_VALUE_IN}
           />
           <DayCloseMetricCard
             label="Total Expenses"
             value={formatDayCloseCurrency(displayExpenseTotal)}
             icon={<Wallet className="h-4 w-4" />}
-            accent="from-destructive/50 to-destructive/10"
+            iconPosition="top-right"
+            iconClassName={DC_METRIC_ICON_OUT}
+            accent={DC_METRIC_ACCENT_OUT}
+            valueClassName={DC_METRIC_VALUE_OUT}
           />
         </div>
       </section>
 
       <Tabs defaultValue="history" className="w-full">
-        <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-11 sm:h-12 w-full grid grid-cols-2">
-          <TabsTrigger value="history" className="rounded-xl px-3 sm:px-5 font-bold text-xs sm:text-sm">
+        <TabsList className="dc-tabs-list grid grid-cols-2 rounded-2xl">
+          <TabsTrigger value="history" className="dc-tab-trigger">
             History
           </TabsTrigger>
-          <TabsTrigger value="about" className="rounded-xl px-3 sm:px-5 font-bold text-xs sm:text-sm">
+          <TabsTrigger value="about" className="dc-tab-trigger">
             What This Does
           </TabsTrigger>
         </TabsList>

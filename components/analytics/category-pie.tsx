@@ -72,10 +72,10 @@ export function CategoryPieChart({
   }
 
   return (
-    <Card className="col-span-3 bg-card border-border shadow-sm">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>
+    <Card className="col-span-3 dc-card h-full">
+      <CardHeader className="border-b border-black/[0.08] pb-4 dark:border-white/10">
+        <CardTitle className="dc-card-title">{title}</CardTitle>
+        <CardDescription className="text-xs text-muted-foreground">
           {description}
         </CardDescription>
       </CardHeader>

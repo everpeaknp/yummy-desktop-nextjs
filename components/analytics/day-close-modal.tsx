@@ -116,7 +116,7 @@ export function DayCloseModal({
       <DialogContent
         className={resizableDialogContentClass(
           modalMaximized,
-          "p-0 gap-0 overflow-hidden flex flex-col",
+          "day-close-ui p-0 gap-0 overflow-hidden flex flex-col",
         )}
         style={modalDialogStyle}
       >
@@ -130,7 +130,7 @@ export function DayCloseModal({
         <div className="bg-slate-50 dark:bg-slate-900 border-b p-6 pr-14 sm:pr-16 flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="text-xl font-bold">End of Day Close</h2>
+              <h2 className="text-xl font-semibold">End of Day Close</h2>
               <p className="text-muted-foreground text-sm font-semibold">{closeName}</p>
               {loadingCurrent ? (
                 <p className="text-xs text-muted-foreground mt-1">Loading close window…</p>
@@ -535,14 +535,14 @@ function CashReconciliationStep({
       <div className="space-y-4">
         <div className="p-4 border rounded-xl bg-slate-50 dark:bg-slate-900">
           <p className="text-sm font-medium mb-2">Expected Cash (from snapshot)</p>
-          <p className="text-2xl font-bold text-slate-700 dark:text-slate-200">
+          <p className="text-2xl font-semibold text-slate-700 dark:text-slate-200">
             {formatDayCloseCurrency(expectedCash)}
           </p>
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium">Actual Cash Count</label>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-medium text-muted-foreground">
               Rs.
             </span>
             <input
@@ -622,7 +622,7 @@ function SuccessStep({
         )}
       </div>
       <div className="space-y-2">
-        <h2 className="text-2xl font-bold">
+        <h2 className="text-2xl font-semibold">
           {isMatched ? "Day Closed Successfully!" : "Day Closed with Discrepancy"}
         </h2>
         <p className="text-muted-foreground max-w-xs mx-auto text-sm">
@@ -654,7 +654,7 @@ function SuccessStep({
             <span className="font-semibold">{isOverage ? "Overage:" : "Shortage:"}</span>
             <span
               className={cn(
-                "font-mono text-right font-bold",
+                "font-mono text-right font-semibold",
                 isOverage ? "text-blue-600" : "text-red-600"
               )}
             >
@@ -670,12 +670,14 @@ function SuccessStep({
           <Button
             type="button"
             variant="outline"
-            className="w-full rounded-xl font-semibold"
+            className="dc-btn-outline w-full rounded-xl font-semibold"
             onClick={() => setShowSnapshot((v) => !v)}
           >
             {showSnapshot ? "Hide Snapshot" : "View Snapshot"}
           </Button>
-          {showSnapshot ? <DayCloseSnapshotPanel snapshot={snapshot} /> : null}
+          {showSnapshot ? (
+            <DayCloseSnapshotPanel snapshot={snapshot} detail={data} />
+          ) : null}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground max-w-sm">
