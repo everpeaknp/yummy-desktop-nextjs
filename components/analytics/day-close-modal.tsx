@@ -675,7 +675,9 @@ function SuccessStep({
           >
             {showSnapshot ? "Hide Snapshot" : "View Snapshot"}
           </Button>
-          {showSnapshot ? <DayCloseSnapshotPanel snapshot={snapshot} /> : null}
+          {showSnapshot ? (
+            <DayCloseSnapshotPanel snapshot={snapshot} detail={data} />
+          ) : null}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground max-w-sm">

@@ -213,7 +213,7 @@ export default function DayClosePage() {
       </section>
 
       <Tabs defaultValue="history" className="w-full">
-        <TabsList className="bg-muted/20 border border-black/10 rounded-2xl p-1 h-11 sm:h-12 w-full grid grid-cols-2">
+        <TabsList className="dc-tabs-list grid grid-cols-2 rounded-2xl">
           <TabsTrigger value="history" className="dc-tab-trigger">
             History
           </TabsTrigger>

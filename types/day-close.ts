@@ -94,6 +94,8 @@ export interface DayCloseSnapshotData {
   orders?: unknown[];
   sales_by_category?: unknown;
   sales_by_table?: unknown;
+  category_details?: unknown[];
+  table_details?: unknown[];
   [key: string]: unknown;
 }
 

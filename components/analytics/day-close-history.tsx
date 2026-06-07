@@ -504,6 +504,16 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const showConfirmedActions = isConfirmed || isReopened;
   const showConfirmedActionsInHeader = detailMaximized && showConfirmedActions;
 
+  const openCloseWizard = useCallback(() => {
+    if (!detail) return;
+    setWizardBusinessLine(
+      String(detail.business_line ?? "restaurant").toLowerCase() === "hotel"
+        ? "hotel"
+        : "restaurant",
+    );
+    setWizardOpen(true);
+  }, [detail]);
+
   const detailSubtitle = useMemo(() => {
     if (!detail) return null;
     if (detail.confirmed_at) {
@@ -855,7 +865,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="rounded-xl font-medium h-8 text-xs sm:text-sm border-black/20 bg-white text-neutral-900 hover:bg-neutral-50"
+                    className="dc-action-secondary rounded-xl font-medium h-8 text-xs sm:text-sm"
                     onClick={() => {
                       setCashActual(String(detail?.actual_cash ?? detail?.expected_cash ?? ""));
                       setActionOpen("adjustCash");
@@ -866,19 +876,28 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-xl font-medium h-8 text-xs sm:text-sm dc-btn-outline"
+                    className="dc-action-outline rounded-xl font-medium h-8 text-xs sm:text-sm"
                     onClick={() => setActionOpen("addAdjustment")}
                   >
                     Add Adjustment
                   </Button>
                   <Button
                     size="sm"
-                    className="rounded-xl font-medium h-8 text-xs sm:text-sm bg-orange-600 hover:bg-orange-700 text-white"
+                    className="dc-btn-close-day rounded-xl font-medium h-8 text-xs sm:text-sm"
                     onClick={() => setActionOpen("reopen")}
                   >
                     Reopen Day
                   </Button>
                 </div>
+              ) : null}
+              {isOpen ? (
+                <Button
+                  size="sm"
+                  className="dc-btn-close-day rounded-xl font-medium h-8 shrink-0 text-xs sm:text-sm"
+                  onClick={openCloseWizard}
+                >
+                  Close This Day
+                </Button>
               ) : null}
               {detail?.status ? statusBadge(detail.status) : null}
               <Button
@@ -911,23 +930,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </div>
             ) : (
               <>
-                {(isOpen || isPending || (showConfirmedActions && !showConfirmedActionsInHeader)) ? (
+                {(isPending || (showConfirmedActions && !showConfirmedActionsInHeader)) ? (
                   <div className="dc-surface flex flex-wrap items-center justify-end gap-2 p-3 sm:p-4">
-                    {isOpen ? (
-                      <Button
-                        className="rounded-2xl font-medium bg-orange-600 hover:bg-orange-700 text-white"
-                        onClick={() => {
-                          setWizardBusinessLine(
-                            String(detail.business_line ?? "restaurant").toLowerCase() === "hotel"
-                              ? "hotel"
-                              : "restaurant",
-                          );
-                          setWizardOpen(true);
-                        }}
-                      >
-                        Close This Day
-                      </Button>
-                    ) : null}
                     {isPending ? (
                       <Button
                         variant="outline"
@@ -941,7 +945,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       <>
                         <Button
                           variant="secondary"
-                          className="rounded-2xl font-medium"
+                          className="dc-action-secondary rounded-2xl font-medium"
                           onClick={() => {
                             setCashActual(String(detail.actual_cash ?? detail.expected_cash ?? ""));
                             setActionOpen("adjustCash");
@@ -951,13 +955,13 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </Button>
                         <Button
                           variant="outline"
-                          className="dc-btn-outline rounded-2xl font-medium"
+                          className="dc-action-outline rounded-2xl font-medium"
                           onClick={() => setActionOpen("addAdjustment")}
                         >
                           Add Adjustment
                         </Button>
                         <Button
-                          className="rounded-2xl font-medium bg-orange-600 hover:bg-orange-700 text-white"
+                          className="dc-btn-close-day rounded-2xl font-medium"
                           onClick={() => setActionOpen("reopen")}
                         >
                           Reopen Day
@@ -968,18 +972,18 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                 ) : null}
 
                 {parsedSnapshotData ? (
-                  <DayCloseFinancialSummary snapshot={parsedSnapshotData} />
+                  <DayCloseFinancialSummary snapshot={parsedSnapshotData} detail={detail} />
                 ) : null}
 
                 <Tabs defaultValue="snapshot" className="w-full">
-                  <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-11 sm:h-12 w-full grid grid-cols-3">
-                    <TabsTrigger value="snapshot" className="rounded-xl px-2 sm:px-5 font-medium text-xs sm:text-sm" onClick={() => snapshot == null && loadSnapshot()}>
+                  <TabsList className="dc-tabs-list grid grid-cols-3 rounded-2xl">
+                    <TabsTrigger value="snapshot" className="dc-tab-trigger" onClick={() => snapshot == null && loadSnapshot()}>
                       Snapshot
                     </TabsTrigger>
-                    <TabsTrigger value="audit" className="rounded-xl px-2 sm:px-5 font-medium text-xs sm:text-sm" onClick={() => audit == null && loadAudit()}>
+                    <TabsTrigger value="audit" className="dc-tab-trigger" onClick={() => audit == null && loadAudit()}>
                       Audit
                     </TabsTrigger>
-                    <TabsTrigger value="adjustments" className="rounded-xl px-2 sm:px-5 font-medium text-xs sm:text-sm" onClick={() => adjustments == null && loadAdjustments()}>
+                    <TabsTrigger value="adjustments" className="dc-tab-trigger" onClick={() => adjustments == null && loadAdjustments()}>
                       Adjustments
                     </TabsTrigger>
                   </TabsList>
@@ -1008,7 +1012,11 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                             Saved Snapshot
                           </Badge>
                         </div>
-                        <DayCloseSnapshotPanel snapshot={parsedSnapshotData} hideFinancialSummary />
+                        <DayCloseSnapshotPanel
+                          snapshot={parsedSnapshotData}
+                          detail={detail}
+                          hideFinancialSummary
+                        />
                       </div>
                     )}
                   </TabsContent>

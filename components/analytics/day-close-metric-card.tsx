@@ -44,7 +44,7 @@ export function DayCloseMetricCard({
           compact ? "p-4 min-h-[96px]" : "p-5 min-h-[120px]",
         )}
       >
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-start gap-2 mb-2 min-h-[2rem]">
           {icon ? (
             <div
               className={cn(
@@ -56,9 +56,15 @@ export function DayCloseMetricCard({
               {icon}
             </div>
           ) : null}
-          <p className="dc-metric-label">{label}</p>
+          <p className="dc-metric-label leading-snug">{label}</p>
         </div>
-        <p className={cn("dc-metric-value", compact ? "text-lg" : "text-xl", valueClassName)}>
+        <p
+          className={cn(
+            "dc-metric-value tabular-nums break-all",
+            compact ? "text-lg" : "text-xl",
+            valueClassName,
+          )}
+        >
           {value}
         </p>
       </CardContent>

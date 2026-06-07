@@ -3,39 +3,43 @@
 import Link from "next/link";
 import { Calendar } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { DayCloseSnapshotData } from "@/types/day-close";
-import { formatDayCloseCurrency, formatDayCloseNumber } from "@/lib/day-close-format";
+import type { DayCloseDetail, DayCloseSnapshotData } from "@/types/day-close";
+import { formatDayCloseCurrency } from "@/lib/day-close-format";
 import {
   formatDayCloseCoveredRange,
   formatDayCloseCloseName,
 } from "@/lib/day-close-format";
 import {
   isHotelDayClose,
+  snapshotDayOrderRows,
   snapshotExpenseRows,
   snapshotHotelSplitRows,
   snapshotInstrumentRows,
-  snapshotMetricRows,
   snapshotPaymentMethodRows,
   snapshotPurchaseRows,
   snapshotReceivableRows,
   snapshotRefundRows,
+  snapshotSalesByCategoryRows,
+  snapshotSalesByTableRows,
 } from "@/lib/day-close-snapshot-view";
 import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
+import { DayCloseFinancialSummary } from "@/components/analytics/day-close-financial-summary";
 import { DayClosePaymentMethodsCard } from "@/components/analytics/day-close-payment-methods-card";
 import { cn } from "@/lib/utils";
 
 type DayCloseSnapshotPanelProps = {
   snapshot: DayCloseSnapshotData;
+  detail?: DayCloseDetail | null;
   className?: string;
   hideFinancialSummary?: boolean;
 };
 
 export function DayCloseSnapshotPanel({
   snapshot,
+  detail,
   className,
   hideFinancialSummary = false,
 }: DayCloseSnapshotPanelProps) {
-  const metrics = snapshotMetricRows(snapshot);
   const paymentMethods = snapshotPaymentMethodRows(snapshot);
   const cardInstruments = snapshotInstrumentRows(snapshot, "card");
   const digitalInstruments = snapshotInstrumentRows(snapshot, "digital");
@@ -45,6 +49,9 @@ export function DayCloseSnapshotPanel({
   const refunds = snapshotRefundRows(snapshot);
   const receivables = snapshotReceivableRows(snapshot);
   const purchases = snapshotPurchaseRows(snapshot);
+  const dayOrders = snapshotDayOrderRows(snapshot);
+  const salesByCategory = snapshotSalesByCategoryRows(snapshot);
+  const salesByTable = snapshotSalesByTableRows(snapshot);
   const coveredRange = formatDayCloseCoveredRange(
     snapshot.period_start_at,
     snapshot.period_end_at,
@@ -69,8 +76,12 @@ export function DayCloseSnapshotPanel({
         </div>
       ) : null}
 
+      {!hideFinancialSummary ? (
+        <DayCloseFinancialSummary snapshot={snapshot} detail={detail} />
+      ) : null}
+
       <Tabs defaultValue="payments" className="w-full">
-        <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 bg-muted/20 border border-border/50 rounded-2xl">
+        <TabsList className="dc-tabs-list flex w-full justify-start overflow-x-auto flex-wrap rounded-2xl pl-2 sm:pl-3">
           <TabsTrigger value="payments" className="dc-tab-trigger">
             Payments
           </TabsTrigger>
@@ -95,6 +106,15 @@ export function DayCloseSnapshotPanel({
               Purchases
             </TabsTrigger>
           ) : null}
+          <TabsTrigger value="day-orders" className="dc-tab-trigger">
+            Day Orders
+          </TabsTrigger>
+          <TabsTrigger value="sales-by-category" className="dc-tab-trigger">
+            Sales by Category
+          </TabsTrigger>
+          <TabsTrigger value="sales-by-table" className="dc-tab-trigger">
+            Sales by Table
+          </TabsTrigger>
         </TabsList>
         <div className="mt-4 space-y-4">
           <TabsContent value="payments" className="m-0 space-y-4">
@@ -149,7 +169,7 @@ export function DayCloseSnapshotPanel({
                     <p className="dc-eyebrow px-5 py-3 border-b border-border/40">
                       Credit Orders
                     </p>
-                    <div className="max-h-48 overflow-auto">
+                    <div>
                       {credit.orders.map((order) => (
                         <Link
                           key={order.order_id}
@@ -194,32 +214,29 @@ export function DayCloseSnapshotPanel({
               <SimpleListCard title="Purchases" rows={purchases} />
             </TabsContent>
           ) : null}
+          <TabsContent value="day-orders" className="m-0">
+            {dayOrders.length > 0 ? (
+              <DayOrdersList orders={dayOrders} />
+            ) : (
+              <EmptySnapshotNotice message="Day orders are not available in this snapshot." />
+            )}
+          </TabsContent>
+          <TabsContent value="sales-by-category" className="m-0">
+            {salesByCategory.length > 0 ? (
+              <SimpleListCard title="Sales by Category" rows={salesByCategory} />
+            ) : (
+              <EmptySnapshotNotice message="Sales by category are not available in this snapshot." />
+            )}
+          </TabsContent>
+          <TabsContent value="sales-by-table" className="m-0">
+            {salesByTable.length > 0 ? (
+              <SimpleListCard title="Sales by Table" rows={salesByTable} />
+            ) : (
+              <EmptySnapshotNotice message="Sales by table are not available in this snapshot." />
+            )}
+          </TabsContent>
         </div>
       </Tabs>
-
-      {metrics.length > 0 && !hideFinancialSummary ? (
-        <section className="space-y-4">
-          <h4 className="dc-section-title">
-            Financial Summary
-          </h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {metrics.map((row) => (
-              <DayCloseMetricCard
-                key={row.label}
-                compact
-                label={row.label}
-                value={
-                  row.label === "Total Orders"
-                    ? formatDayCloseNumber(row.value)
-                    : formatDayCloseCurrency(row.value)
-                }
-              />
-            ))}
-          </div>
-        </section>
-      ) : metrics.length === 0 && !hideFinancialSummary ? (
-        <EmptySnapshotNotice message="Financial summary is not available in this snapshot." />
-      ) : null}
 
       {hotelSplit.length > 0 ? (
         <section className="space-y-4">
@@ -229,6 +246,64 @@ export function DayCloseSnapshotPanel({
           <SimpleListCard title="Room vs Food" rows={hotelSplit} />
         </section>
       ) : null}
+    </div>
+  );
+}
+
+function DayOrdersList({
+  orders,
+}: {
+  orders: ReturnType<typeof snapshotDayOrderRows>;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm">
+      <p className="dc-eyebrow px-5 py-3 border-b border-border/40">
+        Day Orders ({orders.length})
+      </p>
+      <div>
+        {orders.map((order) => {
+          const isRefunded =
+            order.isRefunded || String(order.status ?? "").toLowerCase() === "refunded";
+          const statusLabel = isRefunded
+            ? "REFUNDED"
+            : String(order.status ?? "completed").toUpperCase();
+          const subtitleParts = [
+            order.tableName ?? "Takeaway/Delivery",
+            order.channel ? order.channel.toUpperCase() : null,
+            statusLabel,
+            isRefunded && order.refundAmount
+              ? `Refund ${formatDayCloseCurrency(order.refundAmount)}`
+              : null,
+          ].filter(Boolean);
+
+          return (
+            <Link
+              key={order.orderId}
+              href={`/orders/${order.orderId}`}
+              className="flex items-center justify-between gap-3 px-5 py-3 border-b last:border-none hover:bg-muted/30 text-sm transition-colors"
+            >
+              <div className="min-w-0">
+                <span className="font-medium block truncate">
+                  Order #{order.restaurantOrderId ?? order.orderId}
+                </span>
+                <span
+                  className={cn(
+                    "text-xs truncate block",
+                    isRefunded
+                      ? "text-rose-600 dark:text-rose-400 font-medium"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {subtitleParts.join(" · ")}
+                </span>
+              </div>
+              <span className="dc-amount shrink-0">
+                {formatDayCloseCurrency(order.grandTotal)}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
