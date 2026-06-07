@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Calendar } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DayCloseSnapshotData } from "@/types/day-close";
-import { formatDayCloseCurrency } from "@/lib/day-close-format";
+import { formatDayCloseCurrency, formatDayCloseNumber } from "@/lib/day-close-format";
 import {
   formatDayCloseCoveredRange,
   formatDayCloseCloseName,
@@ -27,9 +27,14 @@ import { cn } from "@/lib/utils";
 type DayCloseSnapshotPanelProps = {
   snapshot: DayCloseSnapshotData;
   className?: string;
+  hideFinancialSummary?: boolean;
 };
 
-export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotPanelProps) {
+export function DayCloseSnapshotPanel({
+  snapshot,
+  className,
+  hideFinancialSummary = false,
+}: DayCloseSnapshotPanelProps) {
   const metrics = snapshotMetricRows(snapshot);
   const paymentMethods = snapshotPaymentMethodRows(snapshot);
   const cardInstruments = snapshotInstrumentRows(snapshot, "card");
@@ -55,7 +60,7 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
               <Calendar className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground opacity-80">
+              <p className="dc-eyebrow">
                 {formatDayCloseCloseName(snapshot.business_line)}
               </p>
               <p className="text-sm font-semibold text-foreground mt-1 break-words">{coveredRange}</p>
@@ -66,27 +71,27 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
 
       <Tabs defaultValue="payments" className="w-full">
         <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 bg-muted/20 border border-border/50 rounded-2xl">
-          <TabsTrigger value="payments" className="rounded-xl font-bold text-xs sm:text-sm">
+          <TabsTrigger value="payments" className="dc-tab-trigger">
             Payments
           </TabsTrigger>
-          <TabsTrigger value="credit" className="rounded-xl font-bold text-xs sm:text-sm">
+          <TabsTrigger value="credit" className="dc-tab-trigger">
             Credit
           </TabsTrigger>
-          <TabsTrigger value="expenses" className="rounded-xl font-bold text-xs sm:text-sm">
+          <TabsTrigger value="expenses" className="dc-tab-trigger">
             Expenses
           </TabsTrigger>
           {refunds.length > 0 ? (
-            <TabsTrigger value="refunds" className="rounded-xl font-bold text-xs sm:text-sm">
+            <TabsTrigger value="refunds" className="dc-tab-trigger">
               Refunds
             </TabsTrigger>
           ) : null}
           {receivables.length > 0 ? (
-            <TabsTrigger value="receivables" className="rounded-xl font-bold text-xs sm:text-sm">
+            <TabsTrigger value="receivables" className="dc-tab-trigger">
               Receivables
             </TabsTrigger>
           ) : null}
           {purchases.length > 0 ? (
-            <TabsTrigger value="purchases" className="rounded-xl font-bold text-xs sm:text-sm">
+            <TabsTrigger value="purchases" className="dc-tab-trigger">
               Purchases
             </TabsTrigger>
           ) : null}
@@ -141,7 +146,7 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
                 </div>
                 {credit.orders && credit.orders.length > 0 ? (
                   <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm">
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground px-5 py-3 border-b border-border/40">
+                    <p className="dc-eyebrow px-5 py-3 border-b border-border/40">
                       Credit Orders
                     </p>
                     <div className="max-h-48 overflow-auto">
@@ -156,7 +161,7 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
                             {order.customer_name ? ` • ${order.customer_name}` : ""}
                             {order.table_name ? ` • ${order.table_name}` : ""}
                           </span>
-                          <span className="font-bold tabular-nums">
+                          <span className="dc-amount">
                             {formatDayCloseCurrency(order.credit_amount ?? order.grand_total)}
                           </span>
                         </Link>
@@ -192,9 +197,9 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
         </div>
       </Tabs>
 
-      {metrics.length > 0 ? (
+      {metrics.length > 0 && !hideFinancialSummary ? (
         <section className="space-y-4">
-          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+          <h4 className="dc-section-title">
             Financial Summary
           </h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -203,18 +208,22 @@ export function DayCloseSnapshotPanel({ snapshot, className }: DayCloseSnapshotP
                 key={row.label}
                 compact
                 label={row.label}
-                value={formatDayCloseCurrency(row.value)}
+                value={
+                  row.label === "Total Orders"
+                    ? formatDayCloseNumber(row.value)
+                    : formatDayCloseCurrency(row.value)
+                }
               />
             ))}
           </div>
         </section>
-      ) : (
+      ) : metrics.length === 0 && !hideFinancialSummary ? (
         <EmptySnapshotNotice message="Financial summary is not available in this snapshot." />
-      )}
+      ) : null}
 
       {hotelSplit.length > 0 ? (
         <section className="space-y-4">
-          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+          <h4 className="dc-section-title">
             Hotel Revenue Split
           </h4>
           <SimpleListCard title="Room vs Food" rows={hotelSplit} />
@@ -237,7 +246,7 @@ function SimpleListCard({
 }) {
   return (
     <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm shadow-sm overflow-hidden">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground px-5 py-3 border-b border-border/40">
+      <p className="dc-eyebrow px-5 py-3 border-b border-border/40">
         {title}
       </p>
       <div className={cn("p-3 space-y-2", scrollable && "max-h-44 overflow-auto")}>
@@ -254,7 +263,7 @@ function SimpleListCard({
             </div>
             <span
               className={cn(
-                "text-sm font-bold whitespace-nowrap tabular-nums",
+                "text-sm dc-amount whitespace-nowrap",
                 expenseTone
                   ? "text-rose-600 dark:text-rose-400"
                   : "text-emerald-600 dark:text-emerald-400",

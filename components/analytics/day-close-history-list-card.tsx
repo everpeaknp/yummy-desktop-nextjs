@@ -14,27 +14,27 @@ function statusBadge(status: string) {
   const s = String(status || "").toLowerCase();
   if (s === "confirmed") {
     return (
-      <span className="inline-flex h-7 items-center rounded-full bg-primary/10 px-3 text-[10px] font-bold uppercase text-primary">
+      <span className="inline-flex h-7 items-center rounded-full bg-primary/10 px-3 text-[10px] font-medium uppercase text-primary">
         Confirmed
       </span>
     );
   }
   if (s === "pending") {
     return (
-      <span className="inline-flex h-7 items-center rounded-full bg-orange-500/10 px-3 text-[10px] font-bold uppercase text-orange-700 dark:text-orange-500">
+      <span className="inline-flex h-7 items-center rounded-full bg-orange-500/10 px-3 text-[10px] font-medium uppercase text-orange-700 dark:text-orange-500">
         Pending
       </span>
     );
   }
   if (s === "reopened") {
     return (
-      <span className="inline-flex h-7 items-center rounded-full bg-amber-500/10 px-3 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-500">
+      <span className="inline-flex h-7 items-center rounded-full bg-amber-500/10 px-3 text-[10px] font-medium uppercase text-amber-700 dark:text-amber-500">
         Reopened
       </span>
     );
   }
   return (
-    <span className="inline-flex h-7 items-center rounded-full bg-emerald-500/10 px-3 text-[10px] font-bold uppercase text-emerald-600">
+    <span className="inline-flex h-7 items-center rounded-full bg-emerald-500/10 px-3 text-[10px] font-medium uppercase text-emerald-600">
       Open
     </span>
   );
@@ -69,7 +69,7 @@ export function DayCloseHistoryListCard({
               <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm sm:text-base font-bold text-foreground leading-snug break-words">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground leading-snug break-words">
                 {formatDayCloseListHeading(item)}
               </h3>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1">
@@ -84,26 +84,26 @@ export function DayCloseHistoryListCard({
           >
             <div className="grid grid-cols-3 gap-3 sm:gap-5 flex-1 min-w-0">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                <p className="dc-metric-label">
                   Net
                 </p>
-                <p className="text-sm font-bold tabular-nums truncate mt-0.5">
+                <p className="text-sm dc-amount truncate mt-0.5">
                   {formatDayCloseCurrency(item.net_sales)}
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                <p className="dc-metric-label">
                   Expected
                 </p>
-                <p className="text-sm font-bold tabular-nums truncate mt-0.5">
+                <p className="text-sm dc-amount truncate mt-0.5">
                   {formatDayCloseCurrency(item.expected_cash)}
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                <p className="dc-metric-label">
                   Actual
                 </p>
-                <p className="text-sm font-bold tabular-nums truncate mt-0.5">
+                <p className="text-sm dc-amount truncate mt-0.5">
                   {formatDayCloseCurrency(item.actual_cash)}
                 </p>
               </div>
@@ -113,7 +113,7 @@ export function DayCloseHistoryListCard({
               {statusBadge(item.status)}
               {isOpen && onClose ? (
                 <Button
-                  className="h-9 px-4 rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white"
+                  className="h-9 px-4 rounded-2xl font-medium bg-orange-600 hover:bg-orange-700 text-white"
                   onClick={onClose}
                 >
                   Close

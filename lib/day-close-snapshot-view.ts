@@ -51,12 +51,23 @@ export function snapshotMetricRows(snapshot: DayCloseSnapshotData): SnapshotMetr
           ? ops.avg_order_value
           : undefined,
     },
+  ].filter((row) => row.value !== undefined);
+}
+
+/** Cards shown above Snapshot / Audit / Adjustments in day-close detail. */
+export function snapshotFinancialSummaryRows(snapshot: DayCloseSnapshotData): SnapshotMetricRow[] {
+  const ops = snapshot.operational_snapshot as Record<string, unknown> | undefined;
+  return [
+    { label: "Total Income", value: snapshot.total_income },
+    { label: "Manual Income", value: snapshot.manual_income_total },
     {
-      label: "Avg Items / Order",
+      label: "Total Orders",
       value:
-        typeof ops?.avg_items_per_order === "number"
-          ? ops.avg_items_per_order
-          : undefined,
+        typeof ops?.total_orders === "number" ? ops.total_orders : undefined,
+    },
+    {
+      label: "Total Expenses",
+      value: snapshot.expense_total ?? 0,
     },
   ].filter((row) => row.value !== undefined);
 }

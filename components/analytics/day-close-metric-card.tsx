@@ -8,7 +8,9 @@ type DayCloseMetricCardProps = {
   label: string;
   value: string;
   icon?: ReactNode;
+  iconClassName?: string;
   accent?: string;
+  valueClassName?: string;
   compact?: boolean;
   className?: string;
 };
@@ -17,14 +19,16 @@ export function DayCloseMetricCard({
   label,
   value,
   icon,
+  iconClassName,
   accent = "from-primary/40 to-primary",
+  valueClassName,
   compact = false,
   className,
 }: DayCloseMetricCardProps) {
   return (
     <Card
       className={cn(
-        "bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative h-full",
+        "dc-card hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative h-full",
         className,
       )}
     >
@@ -42,20 +46,19 @@ export function DayCloseMetricCard({
       >
         <div className="flex items-center gap-2 mb-2">
           {icon ? (
-            <div className="p-1.5 rounded-md bg-muted text-muted-foreground group-hover:text-primary transition-colors shrink-0">
+            <div
+              className={cn(
+                "p-1.5 rounded-md border transition-colors shrink-0",
+                iconClassName ??
+                  "border-black/10 bg-white text-neutral-700 group-hover:border-black/20 dark:border-white/25 dark:bg-muted dark:text-foreground dark:group-hover:border-white/40",
+              )}
+            >
               {icon}
             </div>
           ) : null}
-          <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">
-            {label}
-          </p>
+          <p className="dc-metric-label">{label}</p>
         </div>
-        <p
-          className={cn(
-            "font-black text-foreground tabular-nums tracking-tight",
-            compact ? "text-lg" : "text-xl",
-          )}
-        >
+        <p className={cn("dc-metric-value", compact ? "text-lg" : "text-xl", valueClassName)}>
           {value}
         </p>
       </CardContent>

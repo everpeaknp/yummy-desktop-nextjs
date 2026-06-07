@@ -112,7 +112,7 @@ export function DayClosePaymentMethodsCard({
       )}
     >
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-bold flex items-center gap-2">
+        <CardTitle className="dc-card-title flex items-center gap-2">
           <Wallet className="h-4 w-4 text-emerald-500" />
           {title}
         </CardTitle>
@@ -144,7 +144,7 @@ export function DayClosePaymentMethodsCard({
                     {row.secondary ? ` · ${row.secondary}` : ""}
                   </p>
                 </div>
-                <p className="font-bold text-sm tabular-nums shrink-0">
+                <p className="dc-amount text-sm shrink-0">
                   {formatDayCloseCurrency(amount)}
                 </p>
               </div>
@@ -167,8 +167,8 @@ export function DayClosePaymentMethodsCard({
         })}
         {total > 0 ? (
           <div className="flex justify-between items-center rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 text-xs">
-            <span className="font-bold text-muted-foreground">Total captured</span>
-            <span className="font-extrabold text-foreground text-sm tabular-nums">
+            <span className="font-medium text-muted-foreground">Total captured</span>
+            <span className="font-semibold text-foreground text-sm tabular-nums">
               {formatDayCloseCurrency(total)}
             </span>
           </div>

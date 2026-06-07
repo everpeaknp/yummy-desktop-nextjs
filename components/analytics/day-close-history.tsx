@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import apiClient from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,10 +50,7 @@ import {
   AlertCircle,
   Maximize2,
   Minimize2,
-  DollarSign,
-  Wallet,
 } from "lucide-react";
-import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
 import { DayCloseHistoryListCard } from "@/components/analytics/day-close-history-list-card";
 import {
   resizableDialogContentClass,
@@ -60,17 +58,14 @@ import {
 } from "@/lib/resizable-dialog";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
+import { DayCloseFinancialSummary } from "@/components/analytics/day-close-financial-summary";
 import {
-  formatDayCloseCurrency,
-  formatDayCloseCoveredRange,
   formatDayCloseExportFilename,
   formatDayCloseListHeading,
   formatDayCloseSessionLabel,
   dayCloseSessionToListItem,
-  pickBackendAmount,
 } from "@/lib/day-close-format";
 import { fetchDayCloseSnapshotForDetail } from "@/lib/day-close-snapshot-fetch";
-import { snapshotMetricRows } from "@/lib/day-close-snapshot-view";
 import {
   parseDayCloseDetail,
   parseDayCloseList,
@@ -89,30 +84,6 @@ function humanizeKey(k: string) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (m) => m.toUpperCase());
-}
-
-function formatDetailMetric(key: string, value: unknown): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-  const lower = key.toLowerCase();
-  const looksLikeMoney =
-    lower.includes("amount") ||
-    lower.includes("sales") ||
-    lower.includes("revenue") ||
-    lower.includes("income") ||
-    lower.includes("expense") ||
-    lower.includes("profit") ||
-    lower.includes("loss") ||
-    lower.includes("total") ||
-    lower.includes("tax") ||
-    lower.includes("discount") ||
-    lower.includes("refund") ||
-    lower.includes("charge") ||
-    lower.includes("cash") ||
-    lower.includes("receivable") ||
-    lower.includes("collection") ||
-    lower.includes("discrepancy") ||
-    lower.includes("position");
-  return looksLikeMoney ? formatDayCloseCurrency(value) : value.toLocaleString();
 }
 
 function getFilenameFromContentDisposition(v: string | undefined | null) {
@@ -143,10 +114,10 @@ async function downloadBlobFromApi(url: string, fallbackName: string, mime: stri
 
 function statusBadge(status: string) {
   const s = String(status || "").toLowerCase();
-  if (s === "confirmed") return <Badge variant="success" className="h-7 px-3 rounded-full text-[10px] font-bold uppercase">Confirmed</Badge>;
-  if (s === "pending") return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-bold uppercase bg-orange-500/10 text-orange-700 dark:text-orange-500 border-none">Pending</Badge>;
-  if (s === "reopened") return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-bold uppercase bg-amber-500/10 text-amber-700 dark:text-amber-500 border-none">Reopened</Badge>;
-  return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-bold uppercase">Open</Badge>;
+  if (s === "confirmed") return <Badge variant="success" className="h-7 px-3 rounded-full text-[10px] font-medium uppercase">Confirmed</Badge>;
+  if (s === "pending") return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-medium uppercase bg-orange-500/10 text-orange-700 dark:text-orange-500 border-none">Pending</Badge>;
+  if (s === "reopened") return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-medium uppercase bg-amber-500/10 text-amber-700 dark:text-amber-500 border-none">Reopened</Badge>;
+  return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-medium uppercase">Open</Badge>;
 }
 
 export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
@@ -281,6 +252,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   }, [items, selectedSessionId, sessions]);
 
   const openDetail = async (id: number) => {
+    setDetailMaximized(true);
     setActiveId(id);
     setDetailOpen(true);
     setDetail(null);
@@ -526,49 +498,28 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
 
   const isConfirmed = String(detail?.status || "").toLowerCase() === "confirmed";
 
-  const summaryRows = useMemo(() => {
-    if (parsedSnapshotData && isConfirmed) {
-      return snapshotMetricRows(parsedSnapshotData)
-        .map((row) => ({
-          label: row.label,
-          value: formatDayCloseCurrency(row.value),
-        }))
-        .filter((row) => row.value !== "—");
-    }
-    if (!detail) return [];
-    const keys = [
-      "gross_sales",
-      "discount_total",
-      "tax_total",
-      "service_charge_total",
-      "net_sales",
-      "expense_total",
-      "refund_total",
-      "expected_cash",
-      "actual_cash",
-      "cash_discrepancy",
-    ] as const;
-    return keys
-      .map((k) => ({
-        label: humanizeKey(k),
-        value: formatDetailMetric(k, detail[k]),
-      }))
-      .filter((row) => row.value !== "—");
-  }, [detail, parsedSnapshotData, isConfirmed]);
-
-  const displayNetSales = useMemo(
-    () => pickBackendAmount(detail?.net_sales, parsedSnapshotData?.net_sales),
-    [detail?.net_sales, parsedSnapshotData?.net_sales],
-  );
-
-  const displayExpenseTotal = useMemo(
-    () => pickBackendAmount(detail?.expense_total, parsedSnapshotData?.expense_total),
-    [detail?.expense_total, parsedSnapshotData?.expense_total],
-  );
-
   const isPending = String(detail?.status || "").toLowerCase() === "pending";
   const isReopened = String(detail?.status || "").toLowerCase() === "reopened";
   const isOpen = String(detail?.status || "").toLowerCase() === "open";
+  const showConfirmedActions = isConfirmed || isReopened;
+  const showConfirmedActionsInHeader = detailMaximized && showConfirmedActions;
+
+  const detailSubtitle = useMemo(() => {
+    if (!detail) return null;
+    if (detail.confirmed_at) {
+      const confirmed = new Date(detail.confirmed_at);
+      if (!Number.isNaN(confirmed.getTime())) {
+        return `Confirmed ${confirmed.toLocaleString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })}`;
+      }
+    }
+    return "Server snapshot — totals are not recalculated in the browser";
+  }, [detail]);
 
   const setRangeAndClose = (next: DateRange) => {
     setDateRange(next);
@@ -576,12 +527,12 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="day-close-ui space-y-4">
       <Card className="bg-card/80 backdrop-blur-sm border-border/50 shadow-sm rounded-2xl overflow-hidden">
         <CardContent className="p-4 sm:p-6 lg:p-7">
           <div className="space-y-4 sm:space-y-5">
             <div>
-              <h2 className="text-base sm:text-lg font-black tracking-tight">Day Close History</h2>
+              <h2 className="text-base sm:text-lg font-semibold tracking-tight">Day Close History</h2>
               <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
                 Export reports, inspect snapshots, and review what changed.
               </p>
@@ -589,12 +540,12 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
               <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Date Range</p>
+                <p className="dc-eyebrow">Date Range</p>
                 <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
-                      className="h-11 rounded-2xl gap-2 font-bold text-xs uppercase tracking-wide sm:tracking-widest px-4 w-full justify-start sm:justify-center"
+                      className="dc-btn-outline h-11 rounded-2xl gap-2 font-medium text-xs uppercase tracking-wide sm:tracking-widest px-4 w-full justify-start sm:justify-center"
                     >
                       <Calendar className="h-4 w-4 shrink-0" />
                       <span className="truncate">
@@ -619,20 +570,20 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                     style={{ fontFamily: "inherit" }}
                   >
                     <div className="flex sm:flex-col gap-1 p-3 sm:p-5 border-b sm:border-b-0 sm:border-r border-border/40 bg-muted/20 sm:w-[140px] shrink-0 overflow-x-auto sm:overflow-x-visible no-scrollbar">
-                      <p className="hidden sm:block text-[9px] font-black uppercase tracking-[0.3em] text-orange-500 mb-2 sm:mb-4 shrink-0">
+                      <p className="hidden sm:block text-[9px] font-semibold uppercase tracking-[0.3em] text-orange-500 mb-2 sm:mb-4 shrink-0">
                         Quick Select
                       </p>
                       <div className="flex sm:flex-col gap-1 flex-1 min-w-0">
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
                           onClick={() => setRangeAndClose({ from: startOfDay(new Date()), to: endOfDay(new Date()) })}
                         >
                           Today
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
                           onClick={() => {
                             const d = subDays(new Date(), 1);
                             setRangeAndClose({ from: startOfDay(d), to: endOfDay(d) });
@@ -642,7 +593,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -654,7 +605,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfDay(subDays(new Date(), 7)),
@@ -666,7 +617,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfDay(subDays(new Date(), 30)),
@@ -678,7 +629,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfMonth(new Date()),
@@ -690,7 +641,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
                           onClick={() => {
                             const d = subMonths(new Date(), 1);
                             setRangeAndClose({ from: startOfMonth(d), to: endOfMonth(d) });
@@ -700,7 +651,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfYear(new Date()),
@@ -713,7 +664,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       </div>
                       <button
                         type="button"
-                        className="hidden sm:block text-[9px] font-bold uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
+                        className="hidden sm:block text-[9px] font-medium uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
                         onClick={() =>
                           setRangeAndClose({
                             from: startOfDay(subDays(new Date(), 30)),
@@ -744,9 +695,9 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </div>
 
               <div className="space-y-1.5">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Business Line</p>
+                <p className="dc-eyebrow">Business Line</p>
                 <Select value={businessLine} onValueChange={(v) => setBusinessLine(v as BusinessLine)}>
-                  <SelectTrigger className="h-11 rounded-2xl w-full font-bold">
+                  <SelectTrigger className="h-11 rounded-2xl w-full font-medium dc-input-outline">
                     <SelectValue placeholder="Business line" />
                   </SelectTrigger>
                   <SelectContent>
@@ -757,7 +708,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </div>
 
               <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                <p className="dc-eyebrow">
                   Confirmed Close
                 </p>
                 <Select
@@ -765,7 +716,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   onValueChange={(v) => setSelectedSessionId(v === "all" ? null : Number(v))}
                   disabled={sessionsLoading && sessions.length === 0}
                 >
-                  <SelectTrigger className="h-11 rounded-2xl w-full font-bold text-xs">
+                  <SelectTrigger className="h-11 rounded-2xl w-full font-medium text-xs dc-input-outline">
                     <SelectValue
                       placeholder={sessionsLoading ? "Loading sessions…" : "All closes in range"}
                     />
@@ -784,7 +735,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div className="space-y-1.5 min-w-0 flex-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Status</p>
+                <p className="dc-eyebrow">Status</p>
                 <div className="flex flex-wrap gap-1.5 sm:gap-2">
                   {(
                     [
@@ -799,8 +750,11 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       key={opt.label}
                       type="button"
                       size="sm"
-                      variant={status === opt.value ? "secondary" : "ghost"}
-                      className="rounded-full h-9 px-3 sm:px-4 text-xs font-bold"
+                      variant="outline"
+                      className={cn(
+                        "dc-btn-outline rounded-full h-9 px-3 sm:px-4 text-xs font-medium",
+                        status === opt.value && "border-black/25 font-semibold text-neutral-900",
+                      )}
                       onClick={() => setStatus(opt.value)}
                     >
                       {opt.label}
@@ -814,7 +768,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   void fetchList();
                 }}
                 variant="secondary"
-                className="h-11 rounded-2xl px-5 font-bold w-full sm:w-auto shrink-0"
+                className="h-11 rounded-2xl px-5 font-medium w-full sm:w-auto shrink-0"
                 disabled={!canLoad || loading}
               >
                 <RefreshCw
@@ -881,24 +835,51 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         <DialogContent
           className={resizableDialogContentClass(
             detailMaximized,
-            "bg-card border-border p-0 overflow-hidden shadow-2xl flex flex-col",
+            "day-close-ui bg-card border-border p-0 overflow-hidden shadow-2xl flex flex-col",
           )}
           style={detailDialogStyle}
         >
-          <DialogHeader className="p-6 sm:p-8 pb-4 sm:pb-5 pr-14 sm:pr-16 flex flex-row flex-wrap items-start justify-between gap-3 bg-muted/20 border-b border-border/40">
-            <div className="space-y-1.5 min-w-0 flex-1">
-              <DialogTitle className="text-xl sm:text-2xl font-bold tracking-tight break-words">
+          <DialogHeader className="px-5 sm:px-6 py-3.5 pr-14 sm:pr-16 flex flex-row items-start justify-between gap-2 border-b border-border/40 bg-muted/20 shrink-0">
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="text-lg sm:text-xl font-semibold tracking-tight leading-snug break-words">
                 {detail ? formatDayCloseListHeading(detail) : "Day Close"}
               </DialogTitle>
-              <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-normal opacity-80 break-words">
-                {detail
-                  ? formatDayCloseCoveredRange(detail.period_start_at, detail.period_end_at) ??
-                    "Frozen snapshot from server — no browser calculations"
-                  : "Day close details"}
-              </p>
+              {detailSubtitle ? (
+                <p className="mt-1 text-xs text-muted-foreground leading-snug">{detailSubtitle}</p>
+              ) : null}
               <DialogDescription className="sr-only">Day close details dialog.</DialogDescription>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end max-w-full">
+              {showConfirmedActionsInHeader ? (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-xl font-medium h-8 text-xs sm:text-sm border-black/20 bg-white text-neutral-900 hover:bg-neutral-50"
+                    onClick={() => {
+                      setCashActual(String(detail?.actual_cash ?? detail?.expected_cash ?? ""));
+                      setActionOpen("adjustCash");
+                    }}
+                  >
+                    Adjust Cash Reconciliation
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl font-medium h-8 text-xs sm:text-sm dc-btn-outline"
+                    onClick={() => setActionOpen("addAdjustment")}
+                  >
+                    Add Adjustment
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="rounded-xl font-medium h-8 text-xs sm:text-sm bg-orange-600 hover:bg-orange-700 text-white"
+                    onClick={() => setActionOpen("reopen")}
+                  >
+                    Reopen Day
+                  </Button>
+                </div>
+              ) : null}
               {detail?.status ? statusBadge(detail.status) : null}
               <Button
                 type="button"
@@ -918,7 +899,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
             </div>
           </DialogHeader>
 
-          <div className="p-6 sm:p-8 pt-6 space-y-6 overflow-auto no-scrollbar flex-1 min-h-0">
+          <div className="px-5 sm:px-6 py-4 space-y-4 overflow-auto no-scrollbar flex-1 min-h-0">
             {detailLoading ? (
               <div className="h-40 flex items-center justify-center text-muted-foreground">
                 <RefreshCw className="w-5 h-5 animate-spin mr-2" />
@@ -930,18 +911,11 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </div>
             ) : (
               <>
-                <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm shadow-sm p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-bl-[70px] -mr-3 -mt-3" />
-                  <div className="space-y-1 relative z-10">
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground opacity-80">Actions</p>
-                    <p className="text-sm text-muted-foreground">
-                      Open days can be closed, pending closes can be canceled, and confirmed closes can be corrected with an audit trail.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 relative z-10">
+                {(isOpen || isPending || (showConfirmedActions && !showConfirmedActionsInHeader)) ? (
+                  <div className="dc-surface flex flex-wrap items-center justify-end gap-2 p-3 sm:p-4">
                     {isOpen ? (
                       <Button
-                        className="rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white"
+                        className="rounded-2xl font-medium bg-orange-600 hover:bg-orange-700 text-white"
                         onClick={() => {
                           setWizardBusinessLine(
                             String(detail.business_line ?? "restaurant").toLowerCase() === "hotel"
@@ -957,17 +931,17 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                     {isPending ? (
                       <Button
                         variant="outline"
-                        className="rounded-2xl font-bold"
+                        className="dc-btn-outline rounded-2xl font-medium"
                         onClick={() => setActionOpen("cancel")}
                       >
                         Cancel Pending Close
                       </Button>
                     ) : null}
-                    {isConfirmed || isReopened ? (
+                    {showConfirmedActions && !showConfirmedActionsInHeader ? (
                       <>
                         <Button
                           variant="secondary"
-                          className="rounded-2xl font-bold"
+                          className="rounded-2xl font-medium"
                           onClick={() => {
                             setCashActual(String(detail.actual_cash ?? detail.expected_cash ?? ""));
                             setActionOpen("adjustCash");
@@ -977,13 +951,13 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </Button>
                         <Button
                           variant="outline"
-                          className="rounded-2xl font-bold"
+                          className="dc-btn-outline rounded-2xl font-medium"
                           onClick={() => setActionOpen("addAdjustment")}
                         >
                           Add Adjustment
                         </Button>
                         <Button
-                          className="rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white"
+                          className="rounded-2xl font-medium bg-orange-600 hover:bg-orange-700 text-white"
                           onClick={() => setActionOpen("reopen")}
                         >
                           Reopen Day
@@ -991,49 +965,21 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       </>
                     ) : null}
                   </div>
-                </div>
+                ) : null}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <DayCloseMetricCard
-                    label="Net Sales"
-                    value={formatDayCloseCurrency(displayNetSales)}
-                    icon={<DollarSign className="h-4 w-4" />}
-                    accent="from-emerald-500/50 to-emerald-500/10"
-                  />
-                  <DayCloseMetricCard
-                    label="Total Expenses"
-                    value={formatDayCloseCurrency(displayExpenseTotal)}
-                    icon={<Wallet className="h-4 w-4" />}
-                    accent="from-destructive/50 to-destructive/10"
-                  />
-                </div>
-
-                {summaryRows.filter(
-                  (r) => r.label !== "Net Sales" && r.label !== "Total Expenses",
-                ).length > 0 ? (
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {summaryRows
-                      .filter((r) => r.label !== "Net Sales" && r.label !== "Total Expenses")
-                      .map((r) => (
-                        <DayCloseMetricCard
-                          key={r.label}
-                          compact
-                          label={r.label}
-                          value={r.value}
-                        />
-                      ))}
-                  </div>
+                {parsedSnapshotData ? (
+                  <DayCloseFinancialSummary snapshot={parsedSnapshotData} />
                 ) : null}
 
                 <Tabs defaultValue="snapshot" className="w-full">
                   <TabsList className="bg-muted/20 border border-border/60 rounded-2xl p-1 h-11 sm:h-12 w-full grid grid-cols-3">
-                    <TabsTrigger value="snapshot" className="rounded-xl px-2 sm:px-5 font-bold text-xs sm:text-sm" onClick={() => snapshot == null && loadSnapshot()}>
+                    <TabsTrigger value="snapshot" className="rounded-xl px-2 sm:px-5 font-medium text-xs sm:text-sm" onClick={() => snapshot == null && loadSnapshot()}>
                       Snapshot
                     </TabsTrigger>
-                    <TabsTrigger value="audit" className="rounded-xl px-2 sm:px-5 font-bold text-xs sm:text-sm" onClick={() => audit == null && loadAudit()}>
+                    <TabsTrigger value="audit" className="rounded-xl px-2 sm:px-5 font-medium text-xs sm:text-sm" onClick={() => audit == null && loadAudit()}>
                       Audit
                     </TabsTrigger>
-                    <TabsTrigger value="adjustments" className="rounded-xl px-2 sm:px-5 font-bold text-xs sm:text-sm" onClick={() => adjustments == null && loadAdjustments()}>
+                    <TabsTrigger value="adjustments" className="rounded-xl px-2 sm:px-5 font-medium text-xs sm:text-sm" onClick={() => adjustments == null && loadAdjustments()}>
                       Adjustments
                     </TabsTrigger>
                   </TabsList>
@@ -1045,24 +991,24 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                           <AlertCircle className="w-5 h-5 opacity-60" />
                           <p className="text-sm font-semibold">Snapshot not available for this day close.</p>
                         </div>
-                        <Button variant="secondary" className="rounded-2xl font-bold" onClick={loadSnapshot}>
+                        <Button variant="secondary" className="rounded-2xl font-medium" onClick={loadSnapshot}>
                           Retry Snapshot
                         </Button>
                       </div>
                     ) : (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between px-1">
-                          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
+                          <p className="dc-eyebrow">
                             Generated{" "}
                             {snapshot?.generated_at
                               ? format(new Date(snapshot.generated_at), "MMM dd, yyyy HH:mm")
                               : "—"}
                           </p>
-                          <Badge variant="secondary" className="rounded-full text-[10px] font-bold uppercase">
+                          <Badge variant="secondary" className="rounded-full text-[10px] font-medium uppercase">
                             Saved Snapshot
                           </Badge>
                         </div>
-                        <DayCloseSnapshotPanel snapshot={parsedSnapshotData} />
+                        <DayCloseSnapshotPanel snapshot={parsedSnapshotData} hideFinancialSummary />
                       </div>
                     )}
                   </TabsContent>
@@ -1071,7 +1017,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                     {!audit ? (
                       <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground flex items-center justify-between">
                         <p className="text-sm font-semibold">Audit log not loaded yet.</p>
-                        <Button variant="secondary" className="rounded-2xl font-bold" onClick={loadAudit}>
+                        <Button variant="secondary" className="rounded-2xl font-medium" onClick={loadAudit}>
                           Load Audit
                         </Button>
                       </div>
@@ -1085,7 +1031,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                           {audit.map((a, idx) => (
                             <div key={idx} className="px-5 py-4 border-b border-border/30 last:border-none">
                               <div className="flex items-center justify-between">
-                                <p className="text-sm font-black text-foreground">{humanizeKey(a.action || "Action")}</p>
+                                <p className="text-sm font-semibold text-foreground">{humanizeKey(a.action || "Action")}</p>
                                 <p className="text-xs font-semibold text-muted-foreground">
                                   {a.created_at ? format(new Date(a.created_at), "MMM dd, yyyy HH:mm") : "—"}
                                 </p>
@@ -1104,7 +1050,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                     {!adjustments ? (
                       <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground flex items-center justify-between">
                         <p className="text-sm font-semibold">Adjustments not loaded yet.</p>
-                        <Button variant="secondary" className="rounded-2xl font-bold" onClick={loadAdjustments}>
+                        <Button variant="secondary" className="rounded-2xl font-medium" onClick={loadAdjustments}>
                           Load Adjustments
                         </Button>
                       </div>
@@ -1118,10 +1064,10 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                           {adjustments.map((adj, idx) => (
                             <div key={idx} className="px-5 py-4 border-b border-border/30 last:border-none">
                               <div className="flex items-center justify-between">
-                                <p className="text-sm font-black text-foreground">
+                                <p className="text-sm font-semibold text-foreground">
                                   {humanizeKey(adj.adjustment_type || "Adjustment")}
                                 </p>
-                                <p className="text-sm font-black text-foreground">
+                                <p className="text-sm font-semibold text-foreground">
                                   Rs. {Number(adj.amount || 0).toLocaleString()}
                                 </p>
                               </div>
@@ -1137,33 +1083,42 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                 </Tabs>
               </>
             )}
-          </div>
 
-          <DialogFooter className="p-6 sm:p-8 pt-4 flex flex-col gap-3 bg-muted/30 border-t border-border/40">
-            <div className="flex flex-col sm:flex-row gap-3 w-full">
-              <Button variant="outline" className="h-12 rounded-2xl flex-1" onClick={() => setDetailOpen(false)}>
-                Close
-              </Button>
-              <Button variant="secondary" className="h-12 rounded-2xl flex-1 font-bold" onClick={exportExcel} disabled={!detail}>
-                <Download className="w-4 h-4 mr-2" />
-                Export Excel
-              </Button>
-              <Button className="h-12 rounded-2xl flex-1 font-bold bg-orange-600 hover:bg-orange-700 text-white" onClick={exportPdf} disabled={!detail}>
-                <FileText className="w-4 h-4 mr-2" />
-                Export PDF
-              </Button>
+            <div className="pt-6 mt-2 border-t border-border/40 flex flex-col gap-3 shrink-0">
+              <div className="flex flex-col sm:flex-row gap-3 w-full">
+                <Button variant="outline" className="dc-btn-outline h-12 rounded-2xl flex-1" onClick={() => setDetailOpen(false)}>
+                  Close
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-12 rounded-2xl flex-1 font-medium"
+                  onClick={exportExcel}
+                  disabled={!detail}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Excel
+                </Button>
+                <Button
+                  className="dc-btn-primary h-12 rounded-2xl flex-1"
+                  onClick={exportPdf}
+                  disabled={!detail}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Export PDF
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground font-medium text-center sm:text-left pb-2">
+                PDF and Excel are generated on the server from the saved day-close snapshot.
+              </p>
             </div>
-            <p className="text-[11px] text-muted-foreground font-semibold text-center sm:text-left">
-              PDF and Excel are generated on the server from the saved day-close snapshot.
-            </p>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={actionOpen === "cancel"} onOpenChange={(o) => !o && setActionOpen(null)}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[520px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
+        <DialogContent className="day-close-ui w-[calc(100vw-1.5rem)] sm:max-w-[520px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
           <DialogHeader className="p-6 sm:p-8 pb-5 bg-muted/20 border-b border-border/40">
-            <DialogTitle className="text-xl font-bold tracking-tight">Cancel Pending Close?</DialogTitle>
+            <DialogTitle className="text-xl font-medium tracking-tight">Cancel Pending Close?</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground mt-1">
               This will cancel the pending day close so you can re-initiate when ready.
             </DialogDescription>
@@ -1175,10 +1130,10 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
             </div>
           </div>
           <DialogFooter className="p-6 sm:p-8 pt-4 flex gap-3 bg-muted/30 border-t border-border/40">
-            <Button variant="outline" onClick={() => setActionOpen(null)} disabled={actionSaving} className="flex-1 h-12 rounded-2xl">
+            <Button variant="outline" onClick={() => setActionOpen(null)} disabled={actionSaving} className="dc-btn-outline flex-1 h-12 rounded-2xl">
               Back
             </Button>
-            <Button onClick={cancelPending} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-bold">
+            <Button onClick={cancelPending} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-medium">
               {actionSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Cancel Close"}
             </Button>
           </DialogFooter>
@@ -1186,15 +1141,15 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
       </Dialog>
 
       <Dialog open={actionOpen === "reopen"} onOpenChange={(o) => !o && setActionOpen(null)}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[560px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
+        <DialogContent className="day-close-ui w-[calc(100vw-1.5rem)] sm:max-w-[560px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
           <DialogHeader className="p-6 sm:p-8 pb-5 bg-muted/20 border-b border-border/40">
-            <DialogTitle className="text-xl font-bold tracking-tight">Reopen Day Close</DialogTitle>
+            <DialogTitle className="text-xl font-medium tracking-tight">Reopen Day Close</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground mt-1">
               Reopening is tracked in audit logs. Write a clear reason so the team understands what changed.
             </DialogDescription>
           </DialogHeader>
           <div className="p-6 sm:p-8 pt-6 space-y-2 overflow-auto flex-1 min-h-0 no-scrollbar">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Reason</p>
+            <p className="dc-eyebrow">Reason</p>
             <Textarea
               value={reopenReason}
               onChange={(e) => setReopenReason(e.target.value)}
@@ -1203,10 +1158,10 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
             />
           </div>
           <DialogFooter className="p-6 sm:p-8 pt-4 flex gap-3 bg-muted/30 border-t border-border/40">
-            <Button variant="outline" onClick={() => setActionOpen(null)} disabled={actionSaving} className="flex-1 h-12 rounded-2xl">
+            <Button variant="outline" onClick={() => setActionOpen(null)} disabled={actionSaving} className="dc-btn-outline flex-1 h-12 rounded-2xl">
               Back
             </Button>
-            <Button onClick={reopenDay} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-bold">
+            <Button onClick={reopenDay} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-medium">
               {actionSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Reopen"}
             </Button>
           </DialogFooter>
@@ -1214,9 +1169,9 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
       </Dialog>
 
       <Dialog open={actionOpen === "adjustCash"} onOpenChange={(o) => !o && setActionOpen(null)}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[640px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
+        <DialogContent className="day-close-ui w-[calc(100vw-1.5rem)] sm:max-w-[640px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
           <DialogHeader className="p-6 sm:p-8 pb-5 bg-muted/20 border-b border-border/40">
-            <DialogTitle className="text-xl font-bold tracking-tight">Adjust Cash Reconciliation</DialogTitle>
+            <DialogTitle className="text-xl font-medium tracking-tight">Adjust Cash Reconciliation</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground mt-1">
               This updates the confirmed close with a required reason and optional notes.
             </DialogDescription>
@@ -1224,24 +1179,24 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
           <div className="p-6 sm:p-8 pt-6 space-y-4 overflow-auto flex-1 min-h-0 no-scrollbar">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Actual Cash</p>
+                <p className="dc-eyebrow">Actual Cash</p>
                 <Input value={cashActual} onChange={(e) => setCashActual(e.target.value)} inputMode="decimal" className="h-11 rounded-2xl" placeholder="0" />
               </div>
               <div className="space-y-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Reason</p>
+                <p className="dc-eyebrow">Reason</p>
                 <Input value={cashReason} onChange={(e) => setCashReason(e.target.value)} className="h-11 rounded-2xl" placeholder="Short reason" />
               </div>
             </div>
             <div className="space-y-1">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Notes (optional)</p>
+              <p className="dc-eyebrow">Notes (optional)</p>
               <Textarea value={cashNotes} onChange={(e) => setCashNotes(e.target.value)} className="min-h-[110px] rounded-2xl" placeholder="Add context for the audit trail…" />
             </div>
           </div>
           <DialogFooter className="p-6 sm:p-8 pt-4 flex gap-3 bg-muted/30 border-t border-border/40">
-            <Button variant="outline" onClick={() => setActionOpen(null)} disabled={actionSaving} className="flex-1 h-12 rounded-2xl">
+            <Button variant="outline" onClick={() => setActionOpen(null)} disabled={actionSaving} className="dc-btn-outline flex-1 h-12 rounded-2xl">
               Back
             </Button>
-            <Button onClick={adjustCash} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-bold">
+            <Button onClick={adjustCash} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-medium">
               {actionSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Save"}
             </Button>
           </DialogFooter>
@@ -1249,9 +1204,9 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
       </Dialog>
 
       <Dialog open={actionOpen === "addAdjustment"} onOpenChange={(o) => !o && setActionOpen(null)}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[720px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
+        <DialogContent className="day-close-ui w-[calc(100vw-1.5rem)] sm:max-w-[720px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
           <DialogHeader className="p-6 sm:p-8 pb-5 bg-muted/20 border-b border-border/40">
-            <DialogTitle className="text-xl font-bold tracking-tight">Add Adjustment</DialogTitle>
+            <DialogTitle className="text-xl font-medium tracking-tight">Add Adjustment</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground mt-1">
               Record a correction after close (income or expense) with payment method and description.
             </DialogDescription>
@@ -1259,9 +1214,9 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
           <div className="p-6 sm:p-8 pt-6 space-y-4 overflow-auto flex-1 min-h-0 no-scrollbar">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Type</p>
+                <p className="dc-eyebrow">Type</p>
                 <Select value={adjType} onValueChange={(v) => setAdjType(v as any)}>
-                  <SelectTrigger className="h-11 rounded-2xl">
+                  <SelectTrigger className="h-11 rounded-2xl dc-input-outline">
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1271,13 +1226,13 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                 </Select>
               </div>
               <div className="space-y-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Amount</p>
+                <p className="dc-eyebrow">Amount</p>
                 <Input value={adjAmount} onChange={(e) => setAdjAmount(e.target.value)} inputMode="decimal" className="h-11 rounded-2xl" placeholder="0" />
               </div>
               <div className="space-y-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Payment Method</p>
+                <p className="dc-eyebrow">Payment Method</p>
                 <Select value={adjMethod} onValueChange={(v) => setAdjMethod(v as any)}>
-                  <SelectTrigger className="h-11 rounded-2xl">
+                  <SelectTrigger className="h-11 rounded-2xl dc-input-outline">
                     <SelectValue placeholder="Select method" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1293,26 +1248,26 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
 
             {adjType === "expense" ? (
               <div className="space-y-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Category ID (optional)</p>
+                <p className="dc-eyebrow">Category ID (optional)</p>
                 <Input value={adjCategoryId} onChange={(e) => setAdjCategoryId(e.target.value)} inputMode="numeric" className="h-11 rounded-2xl" placeholder="Leave blank" />
               </div>
             ) : null}
 
             <div className="space-y-1">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Description</p>
+              <p className="dc-eyebrow">Description</p>
               <Input value={adjDesc} onChange={(e) => setAdjDesc(e.target.value)} className="h-11 rounded-2xl" placeholder="Example: Supplier cash expense missed during the day" />
             </div>
 
             <div className="space-y-1">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Notes (optional)</p>
+              <p className="dc-eyebrow">Notes (optional)</p>
               <Textarea value={adjNotes} onChange={(e) => setAdjNotes(e.target.value)} className="min-h-[110px] rounded-2xl" placeholder="Anything to remember later…" />
             </div>
           </div>
           <DialogFooter className="p-6 sm:p-8 pt-4 flex gap-3 bg-muted/30 border-t border-border/40">
-            <Button variant="outline" onClick={() => setActionOpen(null)} disabled={actionSaving} className="flex-1 h-12 rounded-2xl">
+            <Button variant="outline" onClick={() => setActionOpen(null)} disabled={actionSaving} className="dc-btn-outline flex-1 h-12 rounded-2xl">
               Back
             </Button>
-            <Button onClick={addAdjustment} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-bold">
+            <Button onClick={addAdjustment} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-medium">
               {actionSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Add"}
             </Button>
           </DialogFooter>

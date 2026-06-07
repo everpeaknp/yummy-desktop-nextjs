@@ -45,7 +45,7 @@ export function DayClosePaymentSummary({
     <div className={cn("space-y-4", className)}>
       <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
         <div className="px-5 py-3 border-b border-border/40 bg-muted/5">
-          <p className="text-[11px] font-bold text-muted-foreground/70 uppercase tracking-[0.18em]">
+          <p className="dc-eyebrow">
             {title}
           </p>
           <p className="text-[11px] text-muted-foreground mt-1">
@@ -92,7 +92,7 @@ function PaymentSummaryRow({
     <div className="px-5 py-3 border-b border-border/30 last:border-none">
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm font-semibold text-muted-foreground">{line.label}</p>
-        <p className="text-sm font-black text-foreground tabular-nums whitespace-nowrap">
+        <p className="text-sm dc-amount whitespace-nowrap">
           {formatDayCloseCurrency(line.amount)}
         </p>
       </div>
