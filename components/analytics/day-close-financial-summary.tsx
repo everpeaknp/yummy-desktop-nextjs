@@ -95,9 +95,11 @@ const FINANCIAL_SUMMARY_SECONDARY = new Set([
 function FinancialSummaryCard({
   label,
   value,
+  dense = false,
 }: {
   label: string;
   value: number;
+  dense?: boolean;
 }) {
   const config = FINANCIAL_SUMMARY_CARD[label as keyof typeof FINANCIAL_SUMMARY_CARD];
   const Icon = config?.icon;
@@ -105,9 +107,11 @@ function FinancialSummaryCard({
   return (
     <DayCloseMetricCard
       compact
+      dense={dense}
       label={label}
       value={formatDayCloseCurrency(value)}
-      icon={Icon ? <Icon className="h-4 w-4" /> : undefined}
+      icon={Icon ? <Icon className={dense ? "h-3.5 w-3.5" : "h-4 w-4"} /> : undefined}
+      iconPosition="top-right"
       iconClassName={config?.iconClassName}
       accent={config?.accent}
       valueClassName={
@@ -122,18 +126,39 @@ type DayCloseFinancialSummaryProps = {
   snapshot: DayCloseSnapshotData;
   detail?: DayCloseDetail | null;
   showTitle?: boolean;
+  /** Tighter grid for day-close dialog minimized view */
+  compact?: boolean;
 };
 
 export function DayCloseFinancialSummary({
   snapshot,
   detail,
   showTitle = true,
+  compact = false,
 }: DayCloseFinancialSummaryProps) {
   const rows = snapshotFinancialSummaryRows(snapshot, detail);
   if (rows.length === 0) return null;
 
   const primaryRows = rows.filter((row) => FINANCIAL_SUMMARY_PRIMARY.has(row.label));
   const secondaryRows = rows.filter((row) => FINANCIAL_SUMMARY_SECONDARY.has(row.label));
+
+  if (compact) {
+    return (
+      <section className="space-y-3">
+        {showTitle ? <h4 className="dc-section-title">Financial Summary</h4> : null}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 items-stretch">
+          {rows.map((row) => (
+            <FinancialSummaryCard
+              key={row.label}
+              label={row.label}
+              value={row.value!}
+              dense
+            />
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-3">

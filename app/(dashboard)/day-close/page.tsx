@@ -131,7 +131,7 @@ export default function DayClosePage() {
               value={businessLine}
               onValueChange={(value) => setBusinessLine(value as BusinessLine)}
             >
-              <SelectTrigger className="h-11 rounded-2xl font-medium min-w-[200px] dc-input-outline">
+              <SelectTrigger className="dc-filter-control dc-filter-control-active h-11 rounded-2xl font-medium min-w-[200px]">
                 <SelectValue placeholder="Business line" />
               </SelectTrigger>
               <SelectContent>
@@ -162,9 +162,9 @@ export default function DayClosePage() {
               </CardTitle>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="icon"
-                className="dc-btn-outline h-8 w-8 rounded-full shrink-0 text-foreground"
+                className="dc-filter-control h-8 w-8 rounded-full shrink-0"
                 onClick={loadCurrent}
                 disabled={!restaurantId || currentLoading}
                 aria-label="Refresh current day close"

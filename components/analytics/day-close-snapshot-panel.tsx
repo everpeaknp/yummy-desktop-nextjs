@@ -32,6 +32,8 @@ type DayCloseSnapshotPanelProps = {
   detail?: DayCloseDetail | null;
   className?: string;
   hideFinancialSummary?: boolean;
+  /** Tighter summary + snapshot tab grid for dialog minimized view */
+  compact?: boolean;
 };
 
 export function DayCloseSnapshotPanel({
@@ -39,6 +41,7 @@ export function DayCloseSnapshotPanel({
   detail,
   className,
   hideFinancialSummary = false,
+  compact = false,
 }: DayCloseSnapshotPanelProps) {
   const paymentMethods = snapshotPaymentMethodRows(snapshot);
   const cardInstruments = snapshotInstrumentRows(snapshot, "card");
@@ -77,42 +80,53 @@ export function DayCloseSnapshotPanel({
       ) : null}
 
       {!hideFinancialSummary ? (
-        <DayCloseFinancialSummary snapshot={snapshot} detail={detail} />
+        <DayCloseFinancialSummary
+          snapshot={snapshot}
+          detail={detail}
+          compact={compact}
+        />
       ) : null}
 
       <Tabs defaultValue="payments" className="w-full">
-        <TabsList className="dc-tabs-list flex w-full justify-start overflow-x-auto flex-wrap rounded-2xl pl-2 sm:pl-3">
-          <TabsTrigger value="payments" className="dc-tab-trigger">
+        <TabsList
+          className={cn(
+            "dc-tabs-list rounded-2xl",
+            compact
+              ? "!grid grid-cols-3 gap-1.5 w-full p-1 h-auto"
+              : "flex w-full justify-start overflow-x-auto flex-wrap gap-1.5 pl-2 sm:pl-3 h-auto",
+          )}
+        >
+          <TabsTrigger value="payments" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Payments
           </TabsTrigger>
-          <TabsTrigger value="credit" className="dc-tab-trigger">
+          <TabsTrigger value="credit" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Credit
           </TabsTrigger>
-          <TabsTrigger value="expenses" className="dc-tab-trigger">
+          <TabsTrigger value="expenses" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Expenses
           </TabsTrigger>
           {refunds.length > 0 ? (
-            <TabsTrigger value="refunds" className="dc-tab-trigger">
+            <TabsTrigger value="refunds" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
               Refunds
             </TabsTrigger>
           ) : null}
           {receivables.length > 0 ? (
-            <TabsTrigger value="receivables" className="dc-tab-trigger">
+            <TabsTrigger value="receivables" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
               Receivables
             </TabsTrigger>
           ) : null}
           {purchases.length > 0 ? (
-            <TabsTrigger value="purchases" className="dc-tab-trigger">
+            <TabsTrigger value="purchases" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
               Purchases
             </TabsTrigger>
           ) : null}
-          <TabsTrigger value="day-orders" className="dc-tab-trigger">
+          <TabsTrigger value="day-orders" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Day Orders
           </TabsTrigger>
-          <TabsTrigger value="sales-by-category" className="dc-tab-trigger">
+          <TabsTrigger value="sales-by-category" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Sales by Category
           </TabsTrigger>
-          <TabsTrigger value="sales-by-table" className="dc-tab-trigger">
+          <TabsTrigger value="sales-by-table" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Sales by Table
           </TabsTrigger>
         </TabsList>

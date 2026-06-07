@@ -149,19 +149,107 @@
     @apply text-sm font-medium text-foreground;
   }
   .dc-tab-trigger {
-    @apply rounded-xl px-3 sm:px-5 font-medium text-xs sm:text-sm shadow-none;
+    @apply rounded-lg px-3 sm:px-5 font-medium text-xs sm:text-sm shadow-none transition-all;
+    @apply border border-black/[0.08] bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
   }
 
-  :root:not(.dark) .dc-tab-trigger {
-    @apply border border-black/[0.08] text-neutral-800;
-    @apply hover:border-black/[0.12];
-    background-color: #fefefe;
+  .dc-tab-trigger-compact {
+    @apply h-auto min-h-[2.25rem] w-full px-2 py-1.5 text-[11px] leading-tight whitespace-normal text-center;
   }
 
-  :root:not(.dark) .dc-tab-trigger[data-state="active"] {
-    @apply border-black/[0.12] text-neutral-900 font-semibold;
-    background-color: #fafbfc !important;
+  .dc-tab-trigger[data-state="active"] {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
     box-shadow: none !important;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+  }
+
+  /* Sidebar-aligned filter controls (history filters, selects, refresh) */
+  .dc-filter-control {
+    @apply border border-black/[0.08] shadow-none transition-all;
+    @apply bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .dc-filter-control-active,
+  .dc-filter-control[data-state="open"] {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+    box-shadow: none !important;
+  }
+
+  .dc-filter-chip {
+    @apply rounded-full h-9 px-3 sm:px-4 text-xs font-medium border border-black/[0.08] shadow-none transition-all;
+    @apply bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .dc-filter-chip-active {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+    box-shadow: none !important;
+  }
+
+  .dc-filter-refresh {
+    @apply border border-black/[0.08] shadow-none transition-all;
+    @apply bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .dc-filter-quick {
+    @apply shrink-0 sm:shrink px-3 py-2 rounded-lg text-xs font-medium border border-black/[0.08] transition-all;
+    @apply bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .day-close-ui button.dc-filter-chip:not(:disabled),
+  .day-close-ui button.dc-filter-control:not(:disabled),
+  .day-close-ui button.dc-filter-refresh:not(:disabled) {
+    @apply border border-black/[0.08] shadow-none bg-transparent text-muted-foreground;
+    @apply hover:border-black/[0.12] hover:bg-primary/5 hover:text-primary;
+  }
+
+  .day-close-ui button.dc-filter-chip-active:not(:disabled),
+  .day-close-ui button.dc-filter-control-active:not(:disabled) {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+  }
+
+  .day-close-ui button.dc-filter-control[data-state="open"]:not(:disabled) {
+    @apply border-black/[0.12] bg-primary/10 text-primary font-semibold;
+    background-color: hsl(var(--primary) / 0.1) !important;
+    color: hsl(var(--primary)) !important;
+  }
+
+  .dark .dc-tab-trigger {
+    @apply border-white/15 hover:border-white/25;
+  }
+
+  .dark .dc-tab-trigger[data-state="active"] {
+    @apply border-white/25;
+  }
+
+  .dark .dc-filter-control,
+  .dark .dc-filter-chip,
+  .dark .dc-filter-refresh,
+  .dark .dc-filter-quick,
+  .dark .day-close-ui button.dc-filter-chip:not(:disabled),
+  .dark .day-close-ui button.dc-filter-control:not(:disabled),
+  .dark .day-close-ui button.dc-filter-refresh:not(:disabled) {
+    @apply border-white/15 hover:border-white/25;
+  }
+
+  .dark .dc-filter-control-active,
+  .dark .dc-filter-control[data-state="open"],
+  .dark .dc-filter-chip-active,
+  .dark .day-close-ui button.dc-filter-chip-active:not(:disabled),
+  .dark .day-close-ui button.dc-filter-control-active:not(:disabled),
+  .dark .day-close-ui button.dc-filter-control[data-state="open"]:not(:disabled) {
+    @apply border-white/25;
   }
 
   .dc-tabs-list {
@@ -205,28 +293,28 @@
     @apply hover:border-black/25 hover:bg-neutral-50;
   }
 
-  /* Confirmed actions — theme buttons, not white/black day-close outline */
-  .day-close-ui button.dc-action-secondary:not(:disabled) {
-    border-color: transparent;
-    background-color: hsl(var(--secondary));
-    color: hsl(var(--secondary-foreground));
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  /* Confirmed actions — borderless, original day-close colors */
+  .day-close-ui button.dc-action-secondary:not(:disabled),
+  .day-close-ui button.dc-action-outline:not(:disabled) {
+    border-width: 0 !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
   }
 
-  .day-close-ui button.dc-action-secondary:not(:disabled):hover {
-    background-color: hsl(var(--secondary) / 0.8);
+  .day-close-ui button.dc-action-secondary:not(:disabled) {
+    @apply bg-orange-100 text-orange-700 hover:bg-orange-200;
+  }
+
+  .dark .day-close-ui button.dc-action-secondary:not(:disabled) {
+    @apply bg-orange-950/40 text-orange-400 hover:bg-orange-950/55;
   }
 
   .day-close-ui button.dc-action-outline:not(:disabled) {
-    border-color: hsl(var(--input));
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    @apply bg-white text-neutral-800 hover:bg-neutral-50;
   }
 
-  .day-close-ui button.dc-action-outline:not(:disabled):hover {
-    background-color: hsl(var(--accent));
-    color: hsl(var(--accent-foreground));
+  .dark .day-close-ui button.dc-action-outline:not(:disabled) {
+    @apply bg-muted text-foreground hover:bg-muted/80;
   }
 
   .dark .dc-btn-outline,
@@ -255,17 +343,6 @@
     @apply border-white/25 bg-muted text-foreground hover:bg-muted/80;
   }
 
-  .dark .dc-tab-trigger {
-    @apply border border-white/15 bg-muted text-foreground hover:border-white/20 hover:bg-muted/80;
-  }
-
-  .dark .dc-tab-trigger[data-state="active"] {
-    @apply font-semibold;
-    border-color: transparent !important;
-    background-color: #000000 !important;
-    color: #ffffff !important;
-    box-shadow: none !important;
-  }
 
   .animate-progress-loading {
     animation: progress-loading 2s ease-in-out infinite;

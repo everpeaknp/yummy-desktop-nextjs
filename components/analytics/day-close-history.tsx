@@ -120,6 +120,76 @@ function statusBadge(status: string) {
   return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-medium uppercase">Open</Badge>;
 }
 
+function ConfirmedDayCloseActionButtons({
+  compact = false,
+  onAdjustCash,
+  onAddAdjustment,
+  onReopen,
+}: {
+  compact?: boolean;
+  onAdjustCash: () => void;
+  onAddAdjustment: () => void;
+  onReopen: () => void;
+}) {
+  const buttonClass = cn(
+    "border-0 shadow-none font-medium shrink-0",
+    compact
+      ? "flex-1 h-auto min-h-10 py-2.5 px-2 rounded-2xl text-xs sm:text-sm text-center leading-snug"
+      : "h-8 rounded-xl text-xs sm:text-sm whitespace-nowrap",
+  );
+
+  return (
+    <div
+      className={cn(
+        "flex gap-2",
+        compact ? "flex-row items-stretch w-full" : "flex-nowrap items-center shrink-0",
+      )}
+    >
+      <Button
+        variant="secondary"
+        size="sm"
+        className={cn("dc-action-secondary", buttonClass)}
+        onClick={onAdjustCash}
+      >
+        Adjust Cash Reconciliation
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className={cn("dc-action-outline", buttonClass)}
+        onClick={onAddAdjustment}
+      >
+        Add Adjustment
+      </Button>
+      <Button size="sm" className={cn("dc-btn-close-day", buttonClass)} onClick={onReopen}>
+        Reopen Day
+      </Button>
+    </div>
+  );
+}
+
+function DetailMaximizeToggleButton({
+  maximized,
+  onToggle,
+}: {
+  maximized: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 shrink-0 rounded-full"
+      onClick={onToggle}
+      aria-label={maximized ? "Minimize window" : "Maximize window"}
+      title={maximized ? "Minimize" : "Maximize"}
+    >
+      {maximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+    </Button>
+  );
+}
+
 export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<DayCloseListItem[]>([]);
@@ -554,8 +624,11 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                 <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
                   <PopoverTrigger asChild>
                     <Button
-                      variant="outline"
-                      className="dc-btn-outline h-11 rounded-2xl gap-2 font-medium text-xs uppercase tracking-wide sm:tracking-widest px-4 w-full justify-start sm:justify-center"
+                      variant="ghost"
+                      className={cn(
+                        "dc-filter-control h-11 rounded-2xl gap-2 font-medium text-xs sm:text-sm px-4 w-full justify-start sm:justify-center",
+                        dateRange?.from && "dc-filter-control-active",
+                      )}
                     >
                       <Calendar className="h-4 w-4 shrink-0" />
                       <span className="truncate">
@@ -586,14 +659,14 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       <div className="flex sm:flex-col gap-1 flex-1 min-w-0">
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="dc-filter-quick whitespace-nowrap"
                           onClick={() => setRangeAndClose({ from: startOfDay(new Date()), to: endOfDay(new Date()) })}
                         >
                           Today
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="dc-filter-quick whitespace-nowrap"
                           onClick={() => {
                             const d = subDays(new Date(), 1);
                             setRangeAndClose({ from: startOfDay(d), to: endOfDay(d) });
@@ -603,7 +676,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="dc-filter-quick whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -615,7 +688,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="dc-filter-quick whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfDay(subDays(new Date(), 7)),
@@ -627,7 +700,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="dc-filter-quick whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfDay(subDays(new Date(), 30)),
@@ -639,7 +712,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="dc-filter-quick whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfMonth(new Date()),
@@ -651,7 +724,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="dc-filter-quick whitespace-nowrap"
                           onClick={() => {
                             const d = subMonths(new Date(), 1);
                             setRangeAndClose({ from: startOfMonth(d), to: endOfMonth(d) });
@@ -661,7 +734,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         </button>
                         <button
                           type="button"
-                          className="shrink-0 sm:shrink px-3 py-2 rounded-xl text-xs font-medium hover:bg-orange-500/10 transition-colors whitespace-nowrap"
+                          className="dc-filter-quick whitespace-nowrap"
                           onClick={() =>
                             setRangeAndClose({
                               from: startOfYear(new Date()),
@@ -707,7 +780,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               <div className="space-y-1.5">
                 <p className="dc-eyebrow">Business Line</p>
                 <Select value={businessLine} onValueChange={(v) => setBusinessLine(v as BusinessLine)}>
-                  <SelectTrigger className="h-11 rounded-2xl w-full font-medium dc-input-outline">
+                  <SelectTrigger className="dc-filter-control dc-filter-control-active h-11 rounded-2xl w-full font-medium">
                     <SelectValue placeholder="Business line" />
                   </SelectTrigger>
                   <SelectContent>
@@ -726,7 +799,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   onValueChange={(v) => setSelectedSessionId(v === "all" ? null : Number(v))}
                   disabled={sessionsLoading && sessions.length === 0}
                 >
-                  <SelectTrigger className="h-11 rounded-2xl w-full font-medium text-xs dc-input-outline">
+                  <SelectTrigger className="dc-filter-control dc-filter-control-active h-11 rounded-2xl w-full font-medium text-xs">
                     <SelectValue
                       placeholder={sessionsLoading ? "Loading sessions…" : "All closes in range"}
                     />
@@ -760,10 +833,10 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       key={opt.label}
                       type="button"
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
                       className={cn(
-                        "dc-btn-outline rounded-full h-9 px-3 sm:px-4 text-xs font-medium",
-                        status === opt.value && "border-black/25 font-semibold text-neutral-900",
+                        "dc-filter-chip",
+                        status === opt.value && "dc-filter-chip-active",
                       )}
                       onClick={() => setStatus(opt.value)}
                     >
@@ -777,8 +850,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                   void fetchSessions();
                   void fetchList();
                 }}
-                variant="secondary"
-                className="h-11 rounded-2xl px-5 font-medium w-full sm:w-auto shrink-0"
+                variant="ghost"
+                className="dc-filter-refresh h-11 rounded-2xl px-5 font-medium w-full sm:w-auto shrink-0"
                 disabled={!canLoad || loading}
               >
                 <RefreshCw
@@ -859,62 +932,41 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               ) : null}
               <DialogDescription className="sr-only">Day close details dialog.</DialogDescription>
             </div>
-            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end max-w-full">
+            <div className="flex items-center gap-2 shrink-0 flex-nowrap justify-end max-w-full">
               {showConfirmedActionsInHeader ? (
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="dc-action-secondary rounded-xl font-medium h-8 text-xs sm:text-sm"
-                    onClick={() => {
+                <>
+                  <ConfirmedDayCloseActionButtons
+                    onAdjustCash={() => {
                       setCashActual(String(detail?.actual_cash ?? detail?.expected_cash ?? ""));
                       setActionOpen("adjustCash");
                     }}
-                  >
-                    Adjust Cash Reconciliation
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="dc-action-outline rounded-xl font-medium h-8 text-xs sm:text-sm"
-                    onClick={() => setActionOpen("addAdjustment")}
-                  >
-                    Add Adjustment
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="dc-btn-close-day rounded-xl font-medium h-8 text-xs sm:text-sm"
-                    onClick={() => setActionOpen("reopen")}
-                  >
-                    Reopen Day
-                  </Button>
-                </div>
-              ) : null}
-              {isOpen ? (
-                <Button
-                  size="sm"
-                  className="dc-btn-close-day rounded-xl font-medium h-8 shrink-0 text-xs sm:text-sm"
-                  onClick={openCloseWizard}
-                >
-                  Close This Day
-                </Button>
-              ) : null}
-              {detail?.status ? statusBadge(detail.status) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-full"
-                onClick={() => setDetailMaximized((v) => !v)}
-                aria-label={detailMaximized ? "Minimize window" : "Maximize window"}
-                title={detailMaximized ? "Minimize" : "Maximize"}
-              >
-                {detailMaximized ? (
-                  <Minimize2 className="h-4 w-4" />
-                ) : (
-                  <Maximize2 className="h-4 w-4" />
-                )}
-              </Button>
+                    onAddAdjustment={() => setActionOpen("addAdjustment")}
+                    onReopen={() => setActionOpen("reopen")}
+                  />
+                  {detail?.status ? statusBadge(detail.status) : null}
+                  <DetailMaximizeToggleButton
+                    maximized={detailMaximized}
+                    onToggle={() => setDetailMaximized((v) => !v)}
+                  />
+                </>
+              ) : (
+                <>
+                  {isOpen ? (
+                    <Button
+                      size="sm"
+                      className="dc-btn-close-day rounded-xl font-medium h-8 shrink-0 text-xs sm:text-sm whitespace-nowrap"
+                      onClick={openCloseWizard}
+                    >
+                      Close This Day
+                    </Button>
+                  ) : null}
+                  {detail?.status ? statusBadge(detail.status) : null}
+                  <DetailMaximizeToggleButton
+                    maximized={detailMaximized}
+                    onToggle={() => setDetailMaximized((v) => !v)}
+                  />
+                </>
+              )}
             </div>
           </DialogHeader>
 
@@ -931,48 +983,42 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
             ) : (
               <>
                 {(isPending || (showConfirmedActions && !showConfirmedActionsInHeader)) ? (
-                  <div className="dc-surface flex flex-wrap items-center justify-end gap-2 p-3 sm:p-4">
+                  <div
+                    className={cn(
+                      isPending && detailMaximized && "dc-surface p-3 sm:p-4",
+                      isPending && !detailMaximized && "w-full",
+                      showConfirmedActions && !showConfirmedActionsInHeader && "w-full",
+                    )}
+                  >
                     {isPending ? (
                       <Button
                         variant="outline"
-                        className="dc-btn-outline rounded-2xl font-medium"
+                        className="dc-btn-outline border-0 shadow-none rounded-2xl font-medium w-full sm:w-auto"
                         onClick={() => setActionOpen("cancel")}
                       >
                         Cancel Pending Close
                       </Button>
                     ) : null}
                     {showConfirmedActions && !showConfirmedActionsInHeader ? (
-                      <>
-                        <Button
-                          variant="secondary"
-                          className="dc-action-secondary rounded-2xl font-medium"
-                          onClick={() => {
-                            setCashActual(String(detail.actual_cash ?? detail.expected_cash ?? ""));
-                            setActionOpen("adjustCash");
-                          }}
-                        >
-                          Adjust Cash Reconciliation
-                        </Button>
-                        <Button
-                          variant="outline"
-                          className="dc-action-outline rounded-2xl font-medium"
-                          onClick={() => setActionOpen("addAdjustment")}
-                        >
-                          Add Adjustment
-                        </Button>
-                        <Button
-                          className="dc-btn-close-day rounded-2xl font-medium"
-                          onClick={() => setActionOpen("reopen")}
-                        >
-                          Reopen Day
-                        </Button>
-                      </>
+                      <ConfirmedDayCloseActionButtons
+                        compact
+                        onAdjustCash={() => {
+                          setCashActual(String(detail.actual_cash ?? detail.expected_cash ?? ""));
+                          setActionOpen("adjustCash");
+                        }}
+                        onAddAdjustment={() => setActionOpen("addAdjustment")}
+                        onReopen={() => setActionOpen("reopen")}
+                      />
                     ) : null}
                   </div>
                 ) : null}
 
                 {parsedSnapshotData ? (
-                  <DayCloseFinancialSummary snapshot={parsedSnapshotData} detail={detail} />
+                  <DayCloseFinancialSummary
+                    snapshot={parsedSnapshotData}
+                    detail={detail}
+                    compact={!detailMaximized}
+                  />
                 ) : null}
 
                 <Tabs defaultValue="snapshot" className="w-full">
@@ -1016,6 +1062,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                           snapshot={parsedSnapshotData}
                           detail={detail}
                           hideFinancialSummary
+                          compact={!detailMaximized}
                         />
                       </div>
                     )}
