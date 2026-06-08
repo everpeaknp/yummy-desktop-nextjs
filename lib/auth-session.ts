@@ -18,6 +18,10 @@ export interface RefreshSessionData {
 export function syncAuthFromRefreshResponse(data: RefreshSessionData): void {
   const roles: string[] =
     data.user_roles || (data.user_role ? [data.user_role] : []);
+  const currentUser = useAuth.getState().user;
+  const permissions = Array.isArray(data.permissions)
+    ? data.permissions
+    : currentUser?.permissions || [];
 
   useAuth.getState().setAuth(
     {
@@ -29,7 +33,7 @@ export function syncAuthFromRefreshResponse(data: RefreshSessionData): void {
       primary_role: data.primary_role || data.user_role || null,
       restaurant_id: data.restaurant_id ?? null,
       currency: data.currency,
-      permissions: data.permissions || [],
+      permissions,
     },
     data.access_token,
     data.refresh_token ?? useAuth.getState().refreshToken
