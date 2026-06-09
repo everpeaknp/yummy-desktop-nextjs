@@ -116,6 +116,10 @@ export const useAuth = create<AuthState>()(
             });
             if (res.data.status === 'success') {
               syncAuthFromRefreshResponse(res.data.data);
+              const refreshed = get().user;
+              if (!Array.isArray(refreshed?.permissions) || refreshed.permissions.length === 0) {
+                await get().syncUserProfile();
+              }
             }
           } catch (error) {
             console.warn('[useAuth] refreshSession failed', error);
@@ -189,11 +193,14 @@ export const useAuth = create<AuthState>()(
               if (res.data.status === 'success') {
                 syncAuthFromRefreshResponse(res.data.data);
                 const restored = get().user;
+                const hasPermissionPayload =
+                  Array.isArray(restored?.permissions) &&
+                  restored.permissions.length > 0;
                 if (
                   restored?.id &&
+                  hasPermissionPayload &&
                   (restored.restaurant_id != null ||
-                    (restored.roles?.length ?? 0) > 0 ||
-                    (restored.permissions?.length ?? 0) > 0)
+                    (restored.roles?.length ?? 0) > 0)
                 ) {
                   return;
                 }
