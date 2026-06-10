@@ -229,11 +229,20 @@ export function hasExplicitPermission(
   return user.permissions?.includes(permission) ?? false;
 }
 
-/** Analytics access — requires reports.analytics.view on the user, no admin bypass. */
+/**
+ * Analytics access.
+ * Admin/manager shell users should not lose the route or sidebar during
+ * transient auth/profile races; custom-role users still require the explicit
+ * analytics permission.
+ */
 export function hasAnalyticsViewPermission(
   user: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null
 ): boolean {
   if (!user) return false;
+  const roles = normalizeRolesForUser(user);
+  if (roles.includes("admin") || roles.includes("manager")) {
+    return true;
+  }
   const perms = user.permissions ?? [];
   return (
     perms.includes(ANALYTICS_VIEW_PERMISSION) ||

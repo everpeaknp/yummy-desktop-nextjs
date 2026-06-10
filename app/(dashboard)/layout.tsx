@@ -6,8 +6,11 @@ import { RoleGuard } from "@/components/auth/role-guard";
 import { GlobalKotPrinter } from "@/components/receipts/global-kot-printer";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { useAuth, useAuthHydrated } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { usePermissionsSync } from "@/hooks/use-permissions-sync";
+import { hasStoredSession } from "@/lib/auth-storage";
+import { hasSessionRestoreFinished, isSessionRestoreInFlight } from "@/lib/session-restore";
 
 export default function DashboardLayout({
   children,
@@ -21,6 +24,10 @@ export default function DashboardLayout({
   const setSelectedModule = useRestaurant((s) => s.setSelectedModule);
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
   const loading = useRestaurant((s) => s.loading);
+  const user = useAuth((s) => s.user);
+  const token = useAuth((s) => s.token);
+  const meLoading = useAuth((s) => s.meLoading);
+  const authHydrated = useAuthHydrated();
   const router = useRouter();
   const pathname = usePathname() || "";
   const [mounted, setMounted] = useState(false);
@@ -98,7 +105,14 @@ export default function DashboardLayout({
     storeHydrated,
   ]);
 
-  const showShell = mounted && (restaurant || !loading);
+  const waitingForAuth =
+    !authHydrated ||
+    meLoading ||
+    isSessionRestoreInFlight() ||
+    (hasStoredSession() && !hasSessionRestoreFinished()) ||
+    ((token || hasStoredSession()) && !user);
+
+  const showShell = mounted && !waitingForAuth && (restaurant || !loading);
 
   if (!mounted) {
     return (

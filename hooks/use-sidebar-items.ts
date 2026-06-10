@@ -89,16 +89,26 @@ function getHotelSidebarItems(
   }
 
   const financeIndex = base.findIndex((item) => item.href === "/finance/income");
-  if (financeIndex < 0) {
-    return base;
-  }
-
   const analyticsItem: SidebarItem = {
     title: "Analytics",
     href: "/analytics",
     icon: BarChart3,
     section: "Hotel",
   };
+
+  if (base.some((item) => item.href === analyticsItem.href)) {
+    return base;
+  }
+
+  if (financeIndex < 0) {
+    const manageIndex = base.findIndex((item) => item.href === "/manage");
+    const insertAt = manageIndex >= 0 ? manageIndex : base.length;
+    return [
+      ...base.slice(0, insertAt),
+      analyticsItem,
+      ...base.slice(insertAt),
+    ];
+  }
 
   return [
     ...base.slice(0, financeIndex),
