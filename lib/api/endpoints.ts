@@ -637,6 +637,322 @@ export const IncomeApis = {
   },
 };
 
+type FinanceCoreParams = {
+  restaurantId: number;
+  dateFrom?: string;
+  dateTo?: string;
+  timezone?: string;
+  businessLine?: string;
+  station?: string;
+  startTime?: string;
+  endTime?: string;
+};
+
+type FinanceTransactionParams = FinanceCoreParams & {
+  eventType?: string;
+  limit?: number;
+  offset?: number;
+};
+
+type FinanceReportParams = FinanceCoreParams & {
+  paymentMethod?: string;
+  instrumentType?: string;
+  instrumentName?: string;
+  customerId?: number;
+  billNumber?: string;
+  limit?: number;
+  offset?: number;
+};
+
+type AccountingCoreParams = Pick<
+  FinanceCoreParams,
+  'restaurantId' | 'dateFrom' | 'dateTo' | 'businessLine' | 'timezone' | 'station'
+>;
+
+type AccountingLedgerParams = AccountingCoreParams & {
+  customerId?: number;
+  supplierId?: number;
+  asOf?: string;
+};
+
+type AccountingSettlementParams = Pick<AccountingCoreParams, 'restaurantId' | 'dateFrom' | 'dateTo'> & {
+  paymentMethod?: string;
+  status?: string;
+};
+
+type AccountingVatExportParams = Pick<AccountingCoreParams, 'restaurantId' | 'dateFrom' | 'dateTo'> & {
+  status?: string;
+  limit?: number;
+};
+
+type AccountingDrilldownParams = Pick<AccountingCoreParams, 'restaurantId' | 'dateFrom' | 'dateTo' | 'station'> & {
+  accountId?: number;
+  journalEntryId?: number;
+  journalLineId?: number;
+  financeEventId?: number;
+  sourceType?: string;
+  sourceId?: number;
+};
+
+const buildFinanceQuery = ({
+  restaurantId,
+  dateFrom,
+  dateTo,
+  timezone,
+  businessLine,
+  station,
+  startTime,
+  endTime,
+}: FinanceCoreParams) => {
+  const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+  if (dateFrom) params.append('date_from', dateFrom);
+  if (dateTo) params.append('date_to', dateTo);
+  if (timezone) params.append('timezone', timezone);
+  if (businessLine) params.append('business_line', businessLine);
+  if (station) params.append('station', station);
+  if (startTime) params.append('start_time', startTime);
+  if (endTime) params.append('end_time', endTime);
+  return params;
+};
+
+const buildAccountingQuery = ({
+  restaurantId,
+  dateFrom,
+  dateTo,
+  businessLine,
+  timezone,
+  station,
+  customerId,
+  supplierId,
+  asOf,
+}: AccountingLedgerParams) => {
+  const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+  if (dateFrom) params.append('date_from', dateFrom);
+  if (dateTo) params.append('date_to', dateTo);
+  if (businessLine) params.append('business_line', businessLine);
+  if (timezone) params.append('timezone', timezone);
+  if (station) params.append('station', station);
+  if (customerId) params.append('customer_id', customerId.toString());
+  if (supplierId) params.append('supplier_id', supplierId.toString());
+  if (asOf) params.append('as_of', asOf);
+  return params;
+};
+
+const buildSettlementQuery = ({
+  restaurantId,
+  dateFrom,
+  dateTo,
+  paymentMethod,
+  status,
+}: AccountingSettlementParams) => {
+  const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+  if (dateFrom) params.append('date_from', dateFrom);
+  if (dateTo) params.append('date_to', dateTo);
+  if (paymentMethod) params.append('payment_method', paymentMethod);
+  if (status) params.append('status', status);
+  return params;
+};
+
+const buildVatExportQuery = ({
+  restaurantId,
+  dateFrom,
+  dateTo,
+  status,
+  limit,
+}: AccountingVatExportParams) => {
+  const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+  if (dateFrom) params.append('date_from', dateFrom);
+  if (dateTo) params.append('date_to', dateTo);
+  if (status) params.append('status', status);
+  if (limit) params.append('limit', limit.toString());
+  return params;
+};
+
+const buildAccountingDrilldownQuery = ({
+  restaurantId,
+  dateFrom,
+  dateTo,
+  station,
+  accountId,
+  journalEntryId,
+  journalLineId,
+  financeEventId,
+  sourceType,
+  sourceId,
+}: AccountingDrilldownParams) => {
+  const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+  if (dateFrom) params.append('date_from', dateFrom);
+  if (dateTo) params.append('date_to', dateTo);
+  if (station) params.append('station', station);
+  if (accountId) params.append('account_id', accountId.toString());
+  if (journalEntryId) params.append('journal_entry_id', journalEntryId.toString());
+  if (journalLineId) params.append('journal_line_id', journalLineId.toString());
+  if (financeEventId) params.append('finance_event_id', financeEventId.toString());
+  if (sourceType) params.append('source_type', sourceType);
+  if (sourceId) params.append('source_id', sourceId.toString());
+  return params;
+};
+
+const buildFinanceReportQuery = ({
+  restaurantId,
+  dateFrom,
+  dateTo,
+  timezone,
+  businessLine,
+  station,
+  paymentMethod,
+  instrumentType,
+  instrumentName,
+  customerId,
+  billNumber,
+  limit,
+  offset,
+}: FinanceReportParams) => {
+  const params = buildFinanceQuery({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    timezone,
+    businessLine,
+    station,
+  });
+  if (paymentMethod) params.append('payment_method', paymentMethod);
+  if (instrumentType) params.append('instrument_type', instrumentType);
+  if (instrumentName) params.append('instrument_name', instrumentName);
+  if (customerId) params.append('customer_id', customerId.toString());
+  if (billNumber) params.append('bill_number', billNumber);
+  if (limit) params.append('limit', limit.toString());
+  if (offset) params.append('offset', offset.toString());
+  return params;
+};
+
+export const FinanceApis = {
+  overview: (params: FinanceCoreParams) => `/finance/overview?${buildFinanceQuery(params).toString()}`,
+  transactions: (params: FinanceTransactionParams) => {
+    const query = buildFinanceQuery(params);
+    if (params.eventType) query.append('event_type', params.eventType);
+    if (params.limit) query.append('limit', params.limit.toString());
+    if (params.offset) query.append('offset', params.offset.toString());
+    return `/finance/transactions?${query.toString()}`;
+  },
+  expenses: (params: FinanceCoreParams) => `/finance/expenses?${buildFinanceQuery(params).toString()}`,
+  receivables: (params: FinanceCoreParams) => `/finance/receivables?${buildFinanceQuery(params).toString()}`,
+  reconciliation: (params: FinanceCoreParams) => `/finance/reconciliation?${buildFinanceQuery(params).toString()}`,
+};
+
+export const FinanceReportApis = {
+  salesBook: (params: FinanceReportParams) =>
+    `/finance-reports/sales-book?${buildFinanceReportQuery(params).toString()}`,
+  invoices: (params: FinanceReportParams) =>
+    `/finance-reports/invoices?${buildFinanceReportQuery(params).toString()}`,
+  payments: (params: FinanceReportParams) =>
+    `/finance-reports/payments?${buildFinanceReportQuery(params).toString()}`,
+  refunds: (params: FinanceReportParams) =>
+    `/finance-reports/refunds?${buildFinanceReportQuery(params).toString()}`,
+  vatSales: (params: FinanceReportParams) =>
+    `/finance-reports/vat-sales?${buildFinanceReportQuery(params).toString()}`,
+};
+
+export const AccountingApis = {
+  health: (params: AccountingCoreParams) =>
+    `/accounting/health?${buildAccountingQuery(params).toString()}`,
+  setupStatus: (params: Pick<AccountingCoreParams, 'restaurantId'>) =>
+    `/accounting/setup/status?${buildAccountingQuery(params).toString()}`,
+  repairSetup: (params: Pick<AccountingCoreParams, 'restaurantId'>) =>
+    `/accounting/setup/repair?${buildAccountingQuery(params).toString()}`,
+  openingBalances: (params: Pick<AccountingCoreParams, 'restaurantId'>) =>
+    `/accounting/opening-balances?${buildAccountingQuery(params).toString()}`,
+  createOpeningBalance: () => '/accounting/opening-balances',
+  updateOpeningBalance: (batchId: number) => `/accounting/opening-balances/${batchId}`,
+  postOpeningBalance: (batchId: number) => `/accounting/opening-balances/${batchId}/post`,
+  reverseOpeningBalance: (batchId: number) => `/accounting/opening-balances/${batchId}/reverse`,
+  journalVouchers: (params: Pick<AccountingCoreParams, 'restaurantId'>) =>
+    `/accounting/journal-vouchers?${buildAccountingQuery(params).toString()}`,
+  createJournalVoucher: () => '/accounting/journal-vouchers',
+  updateJournalVoucher: (entryId: number) => `/accounting/journal-vouchers/${entryId}`,
+  submitJournalVoucher: (entryId: number) => `/accounting/journal-vouchers/${entryId}/submit`,
+  approveJournalVoucher: (entryId: number) => `/accounting/journal-vouchers/${entryId}/approve`,
+  rejectJournalVoucher: (entryId: number) => `/accounting/journal-vouchers/${entryId}/reject`,
+  postJournalVoucher: (entryId: number) => `/accounting/journal-vouchers/${entryId}/post`,
+  journalEntry: (entryId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/journal-entries/${entryId}?restaurant_id=${restaurantId}`
+      : `/accounting/journal-entries/${entryId}`,
+  reverseJournalEntry: (entryId: number) => `/accounting/journal-entries/${entryId}/reverse`,
+  drilldown: (params: AccountingDrilldownParams) =>
+    `/accounting/drilldown?${buildAccountingDrilldownQuery(params).toString()}`,
+  sourceTrace: ({ restaurantId, sourceType, sourceId }: { restaurantId: number; sourceType: string; sourceId: number }) =>
+    `/accounting/source-trace?restaurant_id=${restaurantId}&source_type=${encodeURIComponent(sourceType)}&source_id=${sourceId}`,
+  arAging: (params: Pick<AccountingLedgerParams, 'restaurantId' | 'asOf' | 'customerId'>) =>
+    `/accounting/ar-aging?${buildAccountingQuery(params).toString()}`,
+  apAging: (params: Pick<AccountingLedgerParams, 'restaurantId' | 'asOf' | 'supplierId'>) =>
+    `/accounting/ap-aging?${buildAccountingQuery(params).toString()}`,
+  customerStatement: (params: Pick<AccountingLedgerParams, 'restaurantId' | 'dateFrom' | 'dateTo' | 'customerId'>) =>
+    `/accounting/customer-statement?${buildAccountingQuery(params).toString()}`,
+  supplierStatement: (params: Pick<AccountingLedgerParams, 'restaurantId' | 'dateFrom' | 'dateTo' | 'supplierId'>) =>
+    `/accounting/supplier-statement?${buildAccountingQuery(params).toString()}`,
+  settlements: (params: AccountingSettlementParams) =>
+    `/accounting/settlements?${buildSettlementQuery(params).toString()}`,
+  previewSettlement: () => '/accounting/settlements/preview',
+  createSettlement: () => '/accounting/settlements',
+  matchSettlement: (batchId: number) => `/accounting/settlements/${batchId}/match`,
+  approveSettlementVariance: (batchId: number) => `/accounting/settlements/${batchId}/approve-variance`,
+  postSettlement: (batchId: number) => `/accounting/settlements/${batchId}/post`,
+  reverseSettlement: (batchId: number, reversalDate?: string) =>
+    reversalDate
+      ? `/accounting/settlements/${batchId}/reverse?reversal_date=${encodeURIComponent(reversalDate)}`
+      : `/accounting/settlements/${batchId}/reverse`,
+  vatExportRuns: (params: AccountingVatExportParams) =>
+    `/accounting/vat-export/runs?${buildVatExportQuery(params).toString()}`,
+  validateVatExport: () => '/accounting/vat-export/validate',
+  generateVatExport: () => '/accounting/vat-export/generate',
+  downloadVatExport: (runId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/vat-export/${runId}/download?restaurant_id=${restaurantId}`
+      : `/accounting/vat-export/${runId}/download`,
+  periods: (params: Pick<AccountingCoreParams, 'restaurantId'>) =>
+    `/accounting/periods?${buildAccountingQuery(params).toString()}`,
+  generatePeriods: () => '/accounting/periods/generate',
+  periodPreflight: (periodId: number) => `/accounting/periods/${periodId}/preflight`,
+  softClosePeriod: (periodId: number) => `/accounting/periods/${periodId}/soft-close`,
+  lockPeriod: (periodId: number, force = false) => `/accounting/periods/${periodId}/lock?force=${force}`,
+  reopenPeriod: (periodId: number) => `/accounting/periods/${periodId}/reopen`,
+  accounts: (params: Pick<AccountingCoreParams, 'restaurantId'>) =>
+    `/accounting/accounts?${buildAccountingQuery(params).toString()}`,
+  mappings: (params: Pick<AccountingCoreParams, 'restaurantId' | 'businessLine'>) =>
+    `/accounting/mappings?${buildAccountingQuery(params).toString()}`,
+  seedDefaults: (params: Pick<AccountingCoreParams, 'restaurantId' | 'businessLine'>) =>
+    `/accounting/seed-defaults?${buildAccountingQuery(params).toString()}`,
+  seedDefaultsAll: () => '/accounting/seed-defaults/all',
+  postFinanceEvents: (params: AccountingCoreParams) =>
+    `/accounting/post-finance-events?${buildAccountingQuery(params).toString()}`,
+  backfillDryRun: () => '/accounting/backfill/dry-run',
+  backfillCommit: (dryRunId: number) => `/accounting/backfill/commit?dry_run_id=${dryRunId}`,
+  backfillRuns: ({ restaurantId, limit = 50 }: { restaurantId: number; limit?: number }) =>
+    `/accounting/backfill/runs?restaurant_id=${restaurantId}&limit=${limit}`,
+};
+
+export const AccountingReportApis = {
+  trialBalance: (params: AccountingCoreParams) =>
+    `/accounting/trial-balance?${buildAccountingQuery(params).toString()}`,
+  profitLoss: (params: AccountingCoreParams) =>
+    `/accounting/profit-loss?${buildAccountingQuery(params).toString()}`,
+  balanceSheet: (params: AccountingCoreParams) =>
+    `/accounting/balance-sheet?${buildAccountingQuery(params).toString()}`,
+  generalLedger: (params: AccountingCoreParams) =>
+    `/accounting/general-ledger?${buildAccountingQuery(params).toString()}`,
+  vatSummary: (params: AccountingCoreParams) =>
+    `/accounting/vat-summary?${buildAccountingQuery(params).toString()}`,
+  customerLedger: (params: AccountingLedgerParams) =>
+    `/accounting/customer-ledger?${buildAccountingQuery(params).toString()}`,
+  supplierLedger: (params: AccountingLedgerParams) =>
+    `/accounting/supplier-ledger?${buildAccountingQuery(params).toString()}`,
+  cashFlow: (params: AccountingCoreParams) =>
+    `/accounting/cash-flow?${buildAccountingQuery(params).toString()}`,
+  mappingExceptions: (params: AccountingCoreParams) =>
+    `/accounting/mapping-exceptions?${buildAccountingQuery(params).toString()}`,
+};
+
 export const KotApis = {
   getKotById: (kotId: number) => `/kots/${kotId}`,
   getKotUpdatesByOrder: (orderId: number) => `/kots/orders/${orderId}`,

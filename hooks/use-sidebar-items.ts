@@ -185,7 +185,7 @@ export function useSidebarItems(): SidebarItem[] {
       } else if (["/kitchen", "/discounts"].includes(item.href)) {
         const group = getGroup("services", "Services", ChefHat, item.href === "/kitchen" ? "/kitchen" : item.href);
         group.subItems!.push(item);
-      } else if (["/finance/income", "/finance/expenses", "/transactions", "/day-close", "/payroll"].includes(item.href)) {
+      } else if (["/finance/income", "/finance/expenses", "/finance/accounting", "/transactions", "/day-close", "/payroll"].includes(item.href)) {
         const group = getGroup("finance", "Finance", CreditCard, "/finance/income");
         group.subItems!.push(item);
       } else if (["/manage", "/settings"].includes(item.href)) {
@@ -198,6 +198,28 @@ export function useSidebarItems(): SidebarItem[] {
         result.push(item);
       }
     });
+
+    if (hasPermission(user, "finance.income.view")) {
+      const group = getGroup("finance", "Finance", CreditCard, "/finance/income");
+      const subItems = group.subItems ?? [];
+      if (!subItems.some((item) => item.href === "/finance/expenses")) {
+        subItems.push({
+          title: "Expenses",
+          href: "/finance/expenses",
+          icon: CreditCard,
+          isNestedChild: true,
+        });
+      }
+      if (!subItems.some((item) => item.href === "/finance/accounting")) {
+        subItems.push({
+          title: "Accounting",
+          href: "/finance/accounting",
+          icon: Layers,
+          isNestedChild: true,
+        });
+      }
+      group.subItems = subItems;
+    }
 
     // Clean up empty subItems arrays
     return result.map(r => ({

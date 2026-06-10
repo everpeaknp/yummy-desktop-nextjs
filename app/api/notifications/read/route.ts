@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authHeadersFrom, getUpstreamBaseUrl } from "@/lib/server/upstream";
+import { authHeadersFrom, getUpstreamBaseUrl, upstreamFetchFailedResponse } from "@/lib/server/upstream";
 
 export async function PATCH(req: NextRequest) {
   const url = new URL(req.url);
@@ -7,16 +7,21 @@ export async function PATCH(req: NextRequest) {
 
   const body = await req.text();
 
-  const res = await fetch(upstream, {
-    method: "PATCH",
-    headers: {
-      ...authHeadersFrom(req),
-      "content-type": req.headers.get("content-type") || "application/json",
-      accept: "application/json",
-    },
-    body,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(upstream, {
+      method: "PATCH",
+      headers: {
+        ...authHeadersFrom(req),
+        "content-type": req.headers.get("content-type") || "application/json",
+        accept: "application/json",
+      },
+      body,
+      cache: "no-store",
+    });
+  } catch (err) {
+    return upstreamFetchFailedResponse("api/notifications/read", upstream, err);
+  }
 
   const contentType = res.headers.get("content-type") || "application/json";
   const buf = await res.arrayBuffer();

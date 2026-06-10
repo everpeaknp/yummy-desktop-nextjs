@@ -176,6 +176,20 @@ export type PermissionKey =
   | "reports.export"
   // Finance
   | "finance.income.view"
+  | "finance.accounting.view"
+  | "finance.accounting.setup"
+  | "finance.accounting.opening_balances.manage"
+  | "finance.accounting.vouchers.create"
+  | "finance.accounting.vouchers.approve"
+  | "finance.accounting.vouchers.post"
+  | "finance.accounting.vouchers.reverse"
+  | "finance.accounting.periods.close"
+  | "finance.accounting.periods.lock"
+  | "finance.accounting.periods.reopen"
+  | "finance.accounting.settlements.manage"
+  | "finance.accounting.vat.export"
+  | "finance.accounting.override_locked_period"
+  | "finance.ledger.backfill"
   | "finance.expenses.view"
   | "finance.expenses.manage"
   | "finance.expenses.approve"
@@ -206,6 +220,7 @@ export const CANONICAL_ROUTE_GATES = {
   analytics: ANALYTICS_VIEW_PERMISSION,
   reservations: "tables.reservation.view",
   income: "finance.income.view",
+  accounting: "finance.accounting.view",
   inventory: "inventory.view",
 } as const satisfies Record<string, PermissionKey>;
 
@@ -484,6 +499,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/customers": "customers.view",
   "/rooms": "hotel.manage",
   // Finance
+  "/finance/accounting": "finance.accounting.view",
   "/finance": "finance.income.view",
   // Admin
   "/staff": "admin.staff.view",

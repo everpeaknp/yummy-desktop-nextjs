@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { ExpenseApis } from "@/lib/api/endpoints";
+import { ExpenseApis, FinanceApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,26 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
 import Link from "next/link";
+import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
+import type { FinanceExpensesResponse } from "@/types/finance";
+
+function hasFinanceActivity(metrics: FinanceExpensesResponse["metrics"] | undefined): boolean {
+  if (!metrics) return false;
+  return [
+    metrics.sales_total,
+    metrics.collections_total,
+    metrics.credit_sales,
+    metrics.refund_total,
+    metrics.manual_income_total,
+    metrics.manual_operating_expense,
+    metrics.inventory_cash_outflow,
+    metrics.inventory_asset_acquired,
+    metrics.inventory_cogs,
+    metrics.refund_liabilities,
+    metrics.supplier_payables,
+    metrics.supplier_payments,
+  ].some((value) => Math.abs(Number(value) || 0) > 0.0001);
+}
 
 type BusinessLineFilter = "all" | "restaurant" | "hotel";
 
@@ -71,6 +91,7 @@ function buildExpensePaymentMethodBreakdown(expenses: any[]) {
 export default function ExpensesPage() {
   const [loading, setLoading] = useState(false);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [financeExpenses, setFinanceExpenses] = useState<FinanceExpensesResponse | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [dateFilter, setDateFilter] = useState("this_month");
   const [businessLine, setBusinessLine] = useState<BusinessLineFilter>("all");
@@ -199,9 +220,42 @@ export default function ExpensesPage() {
     const { start, end } = getDateRange();
     const stationParam = selectedStation === "all" ? undefined : selectedStation;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let startTimeVal: string | undefined = undefined;
+    let endTimeVal: string | undefined = undefined;
+
+    if (dateFilter === "custom") {
+      const startDateStr = customStartDate || new Date().toISOString().split("T")[0];
+      const endDateStr = customEndDate || new Date().toISOString().split("T")[0];
+      const startTimeStr = customStartTime || "00:00";
+      const endTimeStr = customEndTime || "23:59";
+
+      try {
+        const startLocal = new Date(`${startDateStr}T${startTimeStr}:00`);
+        const endLocal = new Date(`${endDateStr}T${endTimeStr}:59`);
+        if (!isNaN(startLocal.getTime())) {
+          startTimeVal = startLocal.toISOString();
+        }
+        if (!isNaN(endLocal.getTime())) {
+          endTimeVal = endLocal.toISOString();
+        }
+      } catch (e) {
+        console.error("Failed to parse custom dates", e);
+      }
+    }
 
     try {
-      const res = await apiClient.get(ExpenseApis.list, {
+      const financeExpensesUrl = FinanceApis.expenses({
+        restaurantId: user.restaurant_id,
+        dateFrom: start,
+        dateTo: end,
+        station: stationParam,
+        businessLine: listBusinessLineParam,
+        timezone: tz,
+        startTime: startTimeVal,
+        endTime: endTimeVal,
+      });
+      const [res, financeRes] = await Promise.all([
+        apiClient.get(ExpenseApis.list, {
         params: {
           restaurant_id: user.restaurant_id,
           date_from: start,
@@ -212,9 +266,16 @@ export default function ExpensesPage() {
           limit: recentLimit,
           timezone: tz,
         },
-      });
+        }),
+        apiClient.get(financeExpensesUrl).catch(() => null),
+      ]);
       if (res.data.status === "success") {
         setExpenses(res.data.data.expenses || []);
+      }
+      if (financeRes?.data?.status === "success") {
+        setFinanceExpenses(financeRes.data.data);
+      } else {
+        setFinanceExpenses(null);
       }
     } catch (err) {
       console.error("Failed to fetch expenses:", err);
@@ -230,6 +291,8 @@ export default function ExpensesPage() {
     dateFilter,
     customStartDate,
     customEndDate,
+    customStartTime,
+    customEndTime,
   ]);
 
   const handleAddExpense = async () => {
@@ -296,6 +359,11 @@ export default function ExpensesPage() {
     () => buildExpensePaymentMethodBreakdown(filteredExpenses),
     [filteredExpenses],
   );
+  const financeExpenseMetrics = hasFinanceActivity(financeExpenses?.metrics) ? financeExpenses?.metrics : null;
+  const operatingExpenseTotal =
+    financeExpenseMetrics?.manual_operating_expense ??
+    filteredExpenses.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+  const inventoryCashOutflow = financeExpenseMetrics?.inventory_cash_outflow ?? 0;
 
   const handleExport = async () => {
     if (!filteredExpenses.length) return;
@@ -412,6 +480,8 @@ export default function ExpensesPage() {
           </div>
         </div>
 
+        <FinanceSectionTabs />
+
         {dateFilter === "custom" && (
           <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end w-full animate-in fade-in slide-in-from-top-1 duration-200 bg-muted/30 p-3 rounded-xl border border-border">
             <span className="text-xs font-semibold text-muted-foreground mr-1">Time Slice:</span>
@@ -444,13 +514,20 @@ export default function ExpensesPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
-          label="Total Expenses"
-          value={filteredExpenses.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0)}
+          label="Operating Expenses"
+          value={operatingExpenseTotal}
           icon={<TrendingDown className="w-5 h-5" />}
           color="text-red-500"
           bg="bg-red-50 dark:bg-red-950/20"
+        />
+        <MetricCard
+          label="Inventory Cash Outflow"
+          value={inventoryCashOutflow}
+          icon={<TrendingUp className="w-5 h-5" />}
+          color="text-orange-500"
+          bg="bg-orange-50 dark:bg-orange-950/20"
         />
         <MetricCard
           label="Expense Entries"
