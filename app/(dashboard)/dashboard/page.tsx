@@ -202,17 +202,19 @@ export default function DashboardPage() {
 
   const kpis = {
     gross_sales:
+      incomeExecutive?.value ??
       overview?.total_income ??
       v2Kpis?.gross_sales ??
       ((cashWatch?.cash_collected || 0) + (cashWatch?.digital_collected || 0) + (cashWatch?.credit_sales || 0)),
-    net_profit: overview?.net_profit ?? 0,
-    profit_margin: overview?.profit_margin ?? 0,
+    net_profit: findExecutiveMetric(["net_profit"])?.value ?? overview?.net_profit ?? 0,
+    profit_margin: findExecutiveMetric(["margin", "profit_margin"])?.value ?? overview?.profit_margin ?? 0,
     total_orders:
+      ordersExecutive?.value ??
       overview?.orders_count ??
       v2Kpis?.total_orders ??
       orderStatus.reduce((sum: number, item: any) => sum + Number(item.count || 0), 0),
-    average_order_value: overview?.avg_order_value ?? v2Kpis?.average_order_value ?? 0,
-    total_expense: overview?.total_expense ?? 0,
+    average_order_value: findExecutiveMetric(["aov", "average_order_value"])?.value ?? overview?.avg_order_value ?? v2Kpis?.average_order_value ?? 0,
+    total_expense: findExecutiveMetric(["expense"])?.value ?? overview?.total_expense ?? 0,
     cancelled_today: shiftPulse?.cancelled ?? healthSnapshot?.cancelled_today ?? 0,
     refunded_today: shiftPulse?.refunded ?? healthSnapshot?.refunded_today ?? 0,
   }
@@ -504,7 +506,7 @@ export default function DashboardPage() {
                     NC Summary
                   </CardTitle>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Complimentary items are tracked separately from billable dashboard metrics.
+                    Complimentary value is tracked from NC payment entries and kept separate from billable dashboard revenue.
                   </p>
                 </div>
                 <Link href="/analytics">
@@ -517,7 +519,7 @@ export default function DashboardPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <MetricMiniCard label="NC Value" value={fmtMoney(Number(ncSummaryMetrics.nc_total_value || 0))} icon={<DollarSign className="h-4 w-4 text-orange-500" />} />
-                <MetricMiniCard label="NC Items" value={Number(ncSummaryMetrics.nc_items_count || 0).toLocaleString()} icon={<Utensils className="h-4 w-4 text-blue-500" />} />
+                <MetricMiniCard label="NC Entries" value={Number(ncSummaryMetrics.nc_items_count || 0).toLocaleString()} icon={<Utensils className="h-4 w-4 text-blue-500" />} />
                 <MetricMiniCard label="NC Orders" value={Number(ncSummaryMetrics.nc_orders_count || 0).toLocaleString()} icon={<ReceiptText className="h-4 w-4 text-emerald-500" />} />
                 <MetricMiniCard label="Customers" value={Number(ncSummaryMetrics.customers_with_nc_items || 0).toLocaleString()} icon={<Users className="h-4 w-4 text-violet-500" />} />
               </div>
@@ -536,7 +538,7 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-4 py-5 text-sm text-muted-foreground">
-                  No NC activity in the selected window yet. This section stays visible so the complimentary tracking area is easy to find.
+                  Item-level NC breakdown is unavailable because NC is now recorded as a payment method. The summary values above still reflect NC activity correctly.
                 </div>
               )}
             </CardContent>

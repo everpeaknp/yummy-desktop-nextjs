@@ -122,7 +122,6 @@ function getOrderItemEffectiveUnitPrice(item: OrderItem) {
 }
 
 function getOrderItemEffectiveLineTotal(item: OrderItem) {
-  if (item.is_nc) return 0;
   return getOrderItemEffectiveUnitPrice(item) * Number(item.qty || 0);
 }
 
@@ -216,7 +215,6 @@ export default function OrderDetailPage() {
             ...overrides,
             qty: overrides.qty ?? item.qty,
             notes: overrides.notes !== undefined ? overrides.notes : item.notes,
-            is_nc: overrides.is_nc !== undefined ? overrides.is_nc : item.is_nc,
           };
           return {
             ...displayItem,
@@ -225,7 +223,10 @@ export default function OrderDetailPage() {
         });
         const subtotal = Number(items.reduce((sum, item) => sum + Number(item.line_total || 0), 0).toFixed(2));
         const computedDiscount = computeOrderDiscount(sourceOrder);
-        const grandTotal = Number((subtotal + Number(sourceOrder.tax_total || 0) + Number(sourceOrder.service_charge || 0) - computedDiscount).toFixed(2));
+        
+        const rawGrandTotal = Number((subtotal + Number(sourceOrder.tax_total || 0) + Number(sourceOrder.service_charge || 0) - computedDiscount).toFixed(2));
+        const grandTotal = Math.max(0, rawGrandTotal);
+        
         return {
           ...sourceOrder,
           items,
@@ -1054,7 +1055,7 @@ function DetailsTab({
     await handleApplyItemUpdate(item.id, { qty: nextQty });
   }, [canVoidItem, itemOverrides]);
 
-  const handleApplyItemUpdate = useCallback(async (itemId: number, patch: { qty?: number; notes?: string | null; is_nc?: boolean }) => {
+  const handleApplyItemUpdate = useCallback(async (itemId: number, patch: { qty?: number; notes?: string | null }) => {
     setIsUpdating(true);
     try {
       const payload = {
@@ -1070,7 +1071,6 @@ function DetailsTab({
             unit_price: item.unit_price,
             qty: isTarget ? (patch.qty ?? displayItem.qty) : displayItem.qty,
             notes: isTarget ? (patch.notes !== undefined ? patch.notes : (displayItem.notes || null)) : (displayItem.notes || null),
-            is_nc: isTarget ? (patch.is_nc ?? Boolean(displayItem.is_nc)) : Boolean(displayItem.is_nc),
             modifiers: item.modifiers ? item.modifiers.map((m) => ({
               modifier_id: m.modifier_id,
               modifier_name_snapshot: m.modifier_name_snapshot,
@@ -1083,7 +1083,6 @@ function DetailsTab({
       await apiClient.post(OrderApis.updateOrderItems(order.id), payload);
       if (patch.notes !== undefined) toast.success("Note updated");
       if (patch.qty !== undefined) toast.success("Quantity updated");
-      if (patch.is_nc !== undefined) toast.success("NC status updated");
       await onRefresh();
       setItemOverrides({});
     } catch (err: any) {
@@ -1154,11 +1153,6 @@ function DetailsTab({
                     {item.notes && (
                       <p className="text-xs text-muted-foreground italic mt-1.5">📝 {item.notes}</p>
                     )}
-                    {item.is_nc && (
-                      <Badge variant="outline" className="mt-2 h-5 text-[10px] font-semibold text-orange-600 border-orange-500/40">
-                        NC
-                      </Badge>
-                    )}
                   </div>
                   <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
                     <div className="flex items-center gap-3">
@@ -1197,31 +1191,6 @@ function DetailsTab({
                       </span>
                       {order.status !== 'completed' && order.status !== 'canceled' && (
                         <>
-                          <Button
-                            variant={item.is_nc ? "default" : "outline"}
-                            size="sm"
-                            className={cn(
-                              "h-8 gap-1.5 px-2 text-xs font-semibold",
-                              item.is_nc && "bg-orange-500 hover:bg-orange-600 text-white"
-                            )}
-                            disabled={isUpdating || !canMarkNc}
-                            onClick={() => {
-                              // Read current value from overrides or original item
-                              const currentNc = itemOverrides[item.id]?.is_nc ?? item.is_nc;
-                              const nextNc = !Boolean(currentNc);
-                              // Optimistically update
-                              setItemOverrides(prev => ({
-                                ...prev,
-                                [item.id]: { ...(prev[item.id] || {}), is_nc: nextNc }
-                              }));
-                              void handleApplyItemUpdate(item.id, {
-                                is_nc: nextNc,
-                              });
-                            }}
-                          >
-                            <Award className="h-3.5 w-3.5" />
-                            NC
-                          </Button>
                           <Button
                             variant="outline"
                             size="sm"

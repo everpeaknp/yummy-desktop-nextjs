@@ -45,7 +45,6 @@ interface CartItem {
   category_name_snapshot?: string;
   category_type_snapshot?: string | null;
   revenue_category?: string;
-  is_nc?: boolean;
 }
 
 const getItemUnitPrice = (item: any) => {
@@ -59,7 +58,6 @@ const getItemUnitPrice = (item: any) => {
 };
 
 const getItemChargeableTotal = (item: any) => {
-  if (item?.is_nc) return 0;
   return getItemUnitPrice(item) * (item.quantity || 0);
 };
 
@@ -128,13 +126,9 @@ const CartContent = ({
   deliveryAddress: string;
   setDeliveryAddress: (a: string) => void;
   canMarkNc?: boolean;
-  toggleNc?: (cartItemId: number) => void;
+  toggleNc?: any;
 }) => {
   const subtotal = cart.reduce((acc: number, item: any) => acc + getItemChargeableTotal(item), 0);
-  const complimentaryTotal = cart.reduce(
-    (acc: number, item: any) => acc + (item.is_nc ? getItemUnitPrice(item) * item.quantity : 0),
-    0,
-  );
   const taxRate = restaurant?.tax_enabled ? fixedTaxRate : 0;
   const tax = subtotal * taxRate;
   const total = subtotal + tax;
@@ -180,9 +174,6 @@ const CartContent = ({
                       Note: {item.notes}
                     </p>
                   )}
-                  {item.is_nc && (
-                    <Badge variant="outline" className="mt-1 h-4 text-[10px] text-orange-500 border-orange-500">NC</Badge>
-                  )}
                 </div>
                 <div className="flex items-center gap-2 bg-muted/50 rounded-md p-1">
                   <Button
@@ -205,18 +196,6 @@ const CartContent = ({
                     <Plus className="h-3 w-3" />
                   </Button>
                 </div>
-                {canMarkNc && toggleNc && (
-                  <Button
-                    variant={item.is_nc ? "default" : "outline"}
-                    size="icon"
-                    className={cn("h-6 w-6 rounded-sm", item.is_nc ? "bg-orange-500 hover:bg-orange-600" : "")}
-                    onClick={() => toggleNc(item.id)}
-                    disabled={processing}
-                    title="Mark as NC"
-                  >
-                    <Award className="h-3 w-3" />
-                  </Button>
-                )}
                 <div className="text-sm font-medium w-16 text-right">
                   {restaurant?.currency || "Rs."}{getItemChargeableTotal(item).toLocaleString()}
                 </div>
@@ -261,12 +240,6 @@ const CartContent = ({
           </div>
         )}
         <div className="space-y-2 text-sm">
-          {complimentaryTotal > 0 && (
-            <div className="flex justify-between text-orange-600">
-              <span>NC Items</span>
-              <span>{restaurant?.currency || "Rs."}{complimentaryTotal.toLocaleString()}</span>
-            </div>
-          )}
           <div className="flex justify-between text-muted-foreground">
             <span>Subtotal</span>
             <span>{restaurant?.currency || "Rs."}{subtotal.toLocaleString()}</span>
@@ -439,8 +412,7 @@ export default function POSSystem({
             modifiers: item.modifiers || [],
             category_name_snapshot: item.category_name_snapshot,
             category_type_snapshot: item.category_type_snapshot,
-            revenue_category: item.revenue_category,
-            is_nc: item.is_nc || false
+            revenue_category: item.revenue_category
           })));
         }
       } catch (err) {
@@ -472,17 +444,21 @@ export default function POSSystem({
       // Create a unique hash for the item based on its modifiers and notes
       // so that different customized versions of the same item don't merge
       const modSignature = selectedModifiers.map(m => m.id).sort().join(',');
-      const itemSignature = `${item.id}-${modSignature}-${notes}-nc:false`;
+      const itemSignature = `${item.id}-${modSignature}-${notes}`;
 
       const existingIndex = prev.findIndex(i => {
          const iModSig = (i.modifiers || []).map((m: any) => m.modifier_id || m.id).sort().join(',');
-         const iSig = `${i.menu_item_id}-${iModSig}-${i.notes || ""}-nc:${i.is_nc || false}`;
+         const iSig = `${i.menu_item_id}-${iModSig}-${i.notes || ""}`;
          return iSig === itemSignature;
       });
 
       if (existingIndex >= 0) {
         const newCart = [...prev];
-        newCart[existingIndex].quantity += 1;
+        const existingItem = newCart[existingIndex];
+        newCart[existingIndex] = {
+          ...existingItem,
+          quantity: (existingItem.quantity || 0) + 1,
+        };
         return newCart;
       }
       
@@ -498,8 +474,7 @@ export default function POSSystem({
         notes: notes,
         category_name_snapshot: item.category_name || "Uncategorized",
         category_type_snapshot: item.category_type || null,
-        revenue_category: (item as any).revenue_category || "food",
-        is_nc: false
+        revenue_category: (item as any).revenue_category || "food"
       }];
     });
   };
@@ -530,15 +505,6 @@ export default function POSSystem({
     });
   };
 
-  const toggleNc = (cartItemId: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === cartItemId) {
-        return { ...item, is_nc: !item.is_nc };
-      }
-      return item;
-    }));
-  };
-
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     setProcessing(true);
@@ -551,7 +517,6 @@ export default function POSSystem({
         category_name_snapshot: item.category_name_snapshot,
         category_type_snapshot: item.category_type_snapshot,
         revenue_category: item.revenue_category,
-        is_nc: item.is_nc || false,
         qty: item.quantity,
         notes: item.notes || null,
         modifiers: item.modifiers ? item.modifiers.map((m: any) => ({
@@ -576,16 +541,6 @@ export default function POSSystem({
       }
 
       if (!isEditing && (channelFromQuery === 'delivery' || channelFromQuery === 'pickup')) {
-        if (!customerName.trim() || !customerPhone.trim()) {
-          toast.error("Customer Name and Phone are required.");
-          setProcessing(false);
-          return;
-        }
-        if (channelFromQuery === 'delivery' && !deliveryAddress.trim()) {
-          toast.error("Delivery address is required.");
-          setProcessing(false);
-          return;
-        }
         payload.customer_name = customerName;
         payload.customer_phone = customerPhone;
         payload.delivery_address = deliveryAddress;
@@ -935,7 +890,6 @@ export default function POSSystem({
             deliveryAddress={deliveryAddress}
             setDeliveryAddress={setDeliveryAddress}
             canMarkNc={canMarkNc}
-            toggleNc={toggleNc}
         />
       </Card>
 
@@ -978,7 +932,6 @@ export default function POSSystem({
                 deliveryAddress={deliveryAddress}
                 setDeliveryAddress={setDeliveryAddress}
                 canMarkNc={canMarkNc}
-                toggleNc={toggleNc}
             />
           </SheetContent>
         </Sheet>

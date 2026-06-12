@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
@@ -123,7 +123,6 @@ interface BillItem {
   qty: number;
   line_total: number;
   notes: string | null;
-  is_nc?: boolean;
   modifiers: BillItemModifier[];
   created_at: string;
 }
@@ -184,7 +183,9 @@ const PAYMENT_METHODS = [
   { value: "fonepay", label: "Fonepay", icon: QrCode, color: "text-fuchsia-600" },
   { value: "digital", label: "Digital/QR", icon: Smartphone, color: "text-purple-600" },
   { value: "credit", label: "Credit", icon: Wallet, color: "text-orange-600" },
+  { value: "nc", label: "NC", icon: Award, color: "text-amber-600" },
 ];
+const NO_CUSTOMER_VALUE = "__none__";
 
 function formatCurrency(amount: number, currency = "Rs.") {
   return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -198,7 +199,6 @@ function getItemEffectiveUnitPrice(item: BillItem) {
 }
 
 function getItemEffectiveLineTotal(item: BillItem) {
-  if (item.is_nc) return 0;
   return getItemEffectiveUnitPrice(item) * Number(item.qty || 0);
 }
 
@@ -207,6 +207,47 @@ function formatCustomerLabel(c: any, currency: string) {
   const phone = c?.phone || "No phone";
   const bal = typeof c?.credit === "number" ? ` - Balance: ${formatCurrency(c.credit || 0, currency)}` : "";
   return `${name} (${phone})${bal}`;
+}
+
+function customerSelectValue(selectedCustomerId: string) {
+  return selectedCustomerId || NO_CUSTOMER_VALUE;
+}
+
+function renderCustomerSelectContent(
+  filteredCustomers: any[],
+  curr: string,
+  customerSearchTerm: string,
+  setCustomerSearchTerm: (value: string) => void,
+) {
+  return (
+    <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
+      <div className="sticky top-0 z-10 bg-popover px-2 pt-2 pb-1">
+        <Input
+          value={customerSearchTerm}
+          onChange={(e) => setCustomerSearchTerm(e.target.value)}
+          onKeyDown={(e) => e.stopPropagation()}
+          placeholder="Search customer by name, phone, or email"
+          className="h-9"
+        />
+      </div>
+      <SelectItem value={NO_CUSTOMER_VALUE}>
+        None
+      </SelectItem>
+      {filteredCustomers.length > 0 ? (
+        filteredCustomers.map((c: any) => (
+          <SelectItem key={c.id} value={String(c.id)}>
+            <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
+              {formatCustomerLabel(c, curr)}
+            </span>
+          </SelectItem>
+        ))
+      ) : (
+        <div className="px-3 py-2 text-sm text-muted-foreground">
+          No customers found.
+        </div>
+      )}
+    </SelectContent>
+  );
 }
 
 function readPaymentInstrument(payment: BillPayment | null | undefined) {
@@ -256,7 +297,6 @@ export default function CheckoutPage() {
     canDeletePayment,
     canProcessRefund,
     canVoidItem,
-    canMarkNc,
   } = usePosBillingPermissions();
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
@@ -353,6 +393,7 @@ export default function CheckoutPage() {
 
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
+  const [customerSearchTerm, setCustomerSearchTerm] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddSubmitting, setQuickAddSubmitting] = useState(false);
@@ -371,12 +412,6 @@ export default function CheckoutPage() {
   const [manualDiscountPercent, setManualDiscountPercent] = useState("");
   const [discountSubmitting, setDiscountSubmitting] = useState(false);
 
-  const hasNcItems = Boolean(
-    (context?.order?.items || bill?.items || []).some((item: any) => Boolean(item?.is_nc))
-  );
-  const pendingCheckoutCustomerId =
-    orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
-  const ncNeedsCustomer = hasNcItems && !pendingCheckoutCustomerId;
   const [discountError, setDiscountError] = useState<string | null>(null);
   const [loyaltyOpen, setLoyaltyOpen] = useState(false);
   const [loyaltyPoints, setLoyaltyPoints] = useState("");
@@ -392,6 +427,16 @@ export default function CheckoutPage() {
         .filter((c: any) => c && typeof c.name === "string" && c.name.trim())
         .map((c: any) => ({ name: String(c.name), identifier: c.identifier ? String(c.identifier) : null }))
     : [];
+  const filteredCustomers = useMemo(() => {
+    const query = customerSearchTerm.trim().toLowerCase();
+    if (!query) return customers;
+    return customers.filter((customer: any) => {
+      const name = String(customer?.full_name || customer?.name || "").toLowerCase();
+      const phone = String(customer?.phone || "").toLowerCase();
+      const email = String(customer?.email || "").toLowerCase();
+      return name.includes(query) || phone.includes(query) || email.includes(query);
+    });
+  }, [customerSearchTerm, customers]);
 
   // ── Fetch Guest Bills ──────────────────────────────
   const fetchGuestBills = useCallback(async () => {
@@ -442,19 +487,9 @@ export default function CheckoutPage() {
     setEditItemNotes("");
   };
 
-  const attachSelectedCustomerToOrderIfNeeded = useCallback(async () => {
-    if (orderMeta?.customer_id || !selectedCustomerId) return orderMeta?.customer_id || undefined;
-    const customerId = parseInt(selectedCustomerId, 10);
-    await apiClient.patch(OrderApis.updateOrder(orderId), {
-      customer_id: customerId,
-    });
-    setOrderMeta((prev) => (prev ? { ...prev, customer_id: customerId } : prev));
-    return customerId;
-  }, [orderId, orderMeta?.customer_id, selectedCustomerId]);
-
   const handleApplyItemUpdate = useCallback(async (
     targetItemId: number,
-    patch: { qty?: number; notes?: string | null; is_nc?: boolean },
+    patch: { qty?: number; notes?: string | null },
     options?: { successMessage?: string }
   ) => {
     if (!context?.order?.items?.length) return;
@@ -477,7 +512,6 @@ export default function CheckoutPage() {
             unit_price: item.unit_price,
             qty: isTarget ? (patch.qty ?? displayItem.qty) : displayItem.qty,
             notes: isTarget ? (patch.notes !== undefined ? patch.notes : (displayItem.notes || null)) : (displayItem.notes || null),
-            is_nc: isTarget ? (patch.is_nc ?? Boolean(displayItem.is_nc)) : Boolean(displayItem.is_nc),
             modifiers: Array.isArray(item.modifiers)
               ? item.modifiers.map((modifier: any) => ({
                   modifier_id: modifier.modifier_id,
@@ -527,7 +561,12 @@ export default function CheckoutPage() {
     try {
       const { data } = await apiClient.get(CustomerApis.listCustomers(user.restaurant_id));
       if (data.status === "success") {
-        setCustomers(data.data.customers || []);
+        const customerRows = Array.isArray(data.data?.customers)
+          ? data.data.customers
+          : Array.isArray(data.data)
+            ? data.data
+            : [];
+        setCustomers(customerRows);
         return;
       }
     } catch (err: any) {
@@ -627,36 +666,10 @@ export default function CheckoutPage() {
     );
   }, [canVoidItem, handleApplyItemUpdate, itemOverrides]);
 
-  const handleNcToggle = useCallback(async (item: BillItem) => {
-    if (!canMarkNc) {
-      toast.error("You do not have permission to mark items as NC.");
-      return;
-    }
-    // Read current value from overrides or original item
-    const currentNc = itemOverrides[item.id]?.is_nc ?? item.is_nc;
-    const nextNc = !Boolean(currentNc);
-    // Optimistically update
-    setItemOverrides(prev => ({
-      ...prev,
-      [item.id]: { ...(prev[item.id] || {}), is_nc: nextNc }
-    }));
-    await handleApplyItemUpdate(
-      Number(item.id),
-      { is_nc: nextNc },
-      { successMessage: "NC status updated" }
-    );
-  }, [canMarkNc, handleApplyItemUpdate, itemOverrides]);
   // ── Complete Order ──
   const handleComplete = async () => {
     setCompleting(true);
     try {
-      if (hasNcItems) {
-        const customerId = await attachSelectedCustomerToOrderIfNeeded();
-        if (!customerId) {
-          toast.error("Select a customer before completing an order with NC items.");
-          return;
-        }
-      }
       await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
       await fetchCustomers();
       if (returnTo) {
@@ -694,7 +707,10 @@ export default function CheckoutPage() {
 
       const created = res.data?.data;
       await fetchCustomers();
-      if (created?.id) setSelectedCustomerId(String(created.id));
+      if (created?.id) {
+        setSelectedCustomerId(String(created.id));
+        setCustomerSearchTerm("");
+      }
 
       setQuickAddForm({ name: "", phone: "", email: "" });
       setQuickAddOpen(false);
@@ -719,7 +735,7 @@ export default function CheckoutPage() {
 
     const initPayload = {
       order_id: orderId,
-      amount: Math.min(amount, bill?.balance_due || amount),
+      amount: Math.min(amount, displayBalanceDue || amount),
       reference: payReference.trim() || undefined,
       restaurant_id: user?.restaurant_id,
       customer_id: orderMeta?.customer_id || undefined,
@@ -917,8 +933,8 @@ export default function CheckoutPage() {
       }
 
       const tolerance = 0.01;
-      if (Math.abs(totalAllocated - (bill?.balance_due || 0)) > tolerance) {
-        setPayError(`Total payment amount (${totalAllocated.toFixed(2)}) must equal the balance due (${(bill?.balance_due || 0).toFixed(2)})`);
+      if (Math.abs(totalAllocated - displayBalanceDue) > tolerance) {
+        setPayError(`Total payment amount (${totalAllocated.toFixed(2)}) must equal the balance due (${displayBalanceDue.toFixed(2)})`);
         return;
       }
 
@@ -1038,7 +1054,7 @@ export default function CheckoutPage() {
       const res = await apiClient.post(OrderApis.addPayment(orderId), {
         payment: {
           method: payMethod,
-          amount: Math.min(amount, bill?.balance_due || amount),
+          amount: Math.min(amount, displayBalanceDue || amount),
           reference: payReference.trim() || null,
           instrument,
           status: "success",
@@ -1337,7 +1353,7 @@ export default function CheckoutPage() {
           discount_code: discountCode.trim(),
         });
       } else {
-        const dueAmountForManualDiscount = Math.max(0, Number(bill?.balance_due || 0));
+        const dueAmountForManualDiscount = displayBalanceDue;
         const amt = parseFloat(manualDiscountAmount);
         if (!amt || amt <= 0) {
           setDiscountError("Enter a valid amount");
@@ -1411,11 +1427,16 @@ export default function CheckoutPage() {
 
   if (!bill) return null;
 
-  const computedDiscount = Math.max(
-    0,
-    Number((bill.subtotal + bill.tax_total + bill.service_charge - bill.grand_total).toFixed(2))
+  const ncAppliedTotal = Number(
+    (bill.payments || []).reduce((sum, payment) => {
+      if (String(payment?.method || "").toLowerCase() !== "nc") return sum;
+      const amount = Number(payment?.amount || 0);
+      return amount > 0 ? sum + amount : sum;
+    }, 0).toFixed(2)
   );
-  const hasDiscount = computedDiscount > 0;
+  const displayDiscountTotal = Math.max(0, Number(bill.discount_total || 0));
+  const hasDiscount = displayDiscountTotal > 0;
+  const hasNcApplied = ncAppliedTotal > 0;
   const displayBillItems = bill.items.map((item) => {
     const overrides = itemOverrides[item.id] || {};
     const displayItem = {
@@ -1423,7 +1444,6 @@ export default function CheckoutPage() {
       ...overrides,
       qty: overrides.qty ?? item.qty,
       notes: overrides.notes !== undefined ? overrides.notes : item.notes,
-      is_nc: overrides.is_nc !== undefined ? overrides.is_nc : item.is_nc,
     };
     return {
       ...displayItem,
@@ -1431,14 +1451,20 @@ export default function CheckoutPage() {
     };
   });
   const displaySubtotal = Number(displayBillItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0).toFixed(2));
-  const displayGrandTotal = Number((displaySubtotal + Number(bill.tax_total || 0) + Number(bill.service_charge || 0) - computedDiscount).toFixed(2));
-  const displayBalanceDue = Math.max(0, Number((displayGrandTotal - Number(bill.total_paid || 0)).toFixed(2)));
+  const subtotalDelta = Number((displaySubtotal - Number(bill.subtotal || 0)).toFixed(2));
+  const displayGrandTotal = Math.max(0, Number((Number(bill.grand_total || 0) + subtotalDelta).toFixed(2)));
+  const displayBalanceDue = Math.max(0, Number((Number(bill.balance_due || 0) + subtotalDelta).toFixed(2)));
   const displayIsFullyPaid = displayBalanceDue <= 0;
   const dueAmountForManualDiscount = displayBalanceDue;
   const checkoutCustomerId = orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
   const checkoutCustomer = checkoutCustomerId
     ? customers.find((c: any) => Number(c?.id) === Number(checkoutCustomerId))
     : null;
+  const trackedPaymentCustomerName =
+    checkoutCustomer?.full_name ||
+    checkoutCustomer?.name ||
+    orderMeta?.customer_name ||
+    null;
   const availableLoyaltyPoints = Number(checkoutCustomer?.loyalty_points || 0);
   const customerTotalSpent = Number(checkoutCustomer?.total_spent ?? checkoutCustomer?.totalSpent ?? checkoutCustomer?.lifetime_spent ?? 0);
   const customerCredit = Number(checkoutCustomer?.credit ?? checkoutCustomer?.outstanding_credit ?? 0);
@@ -1573,11 +1599,6 @@ export default function CheckoutPage() {
                           {displayItem.notes && (
                             <p className="text-xs text-muted-foreground mt-1 italic">{displayItem.notes}</p>
                           )}
-                          {displayItem.is_nc && (
-                            <Badge variant="outline" className="mt-2 h-5 text-[10px] font-semibold text-orange-600 border-orange-500/40">
-                              NC
-                            </Badge>
-                          )}
                         </td>
                         <td className="p-4">
                           <div className="flex items-center justify-center gap-1">
@@ -1615,20 +1636,6 @@ export default function CheckoutPage() {
                         <td className="p-4 text-right">
                           {!orderEditLocked ? (
                             <div className="flex justify-end gap-2">
-                              <Button
-                                type="button"
-                                variant={displayItem.is_nc ? "default" : "outline"}
-                                size="sm"
-                                className={cn(
-                                  "h-8 gap-1.5 px-2 text-xs font-semibold",
-                                  displayItem.is_nc && "bg-orange-500 hover:bg-orange-600 text-white"
-                                )}
-                                disabled={itemUpdating || !canMarkNc}
-                                onClick={() => handleNcToggle(item)}
-                              >
-                                <Award className="h-3.5 w-3.5" />
-                                NC
-                              </Button>
                               <Button
                                 type="button"
                                 variant="outline"
@@ -1695,21 +1702,6 @@ export default function CheckoutPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          {hasNcItems && !pendingCheckoutCustomerId && (
-            <Card className="border-amber-500/30 bg-amber-500/10">
-              <CardContent className="p-4 text-sm">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="mt-0.5 h-4 w-4 text-amber-500" />
-                  <div>
-                    <p className="font-semibold text-foreground">Customer required before checkout</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      NC items can be marked here, but you must select a customer in checkout before payment or completion.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         {/* ── Right: Summary & Actions ── */}
@@ -1752,7 +1744,17 @@ export default function CheckoutPage() {
                       </button>
                     )}
                   </div>
-                  <span className="tabular-nums text-emerald-600 font-medium">-{formatCurrency(computedDiscount, curr)}</span>
+                  <span className="tabular-nums text-emerald-600 font-medium">-{formatCurrency(displayDiscountTotal, curr)}</span>
+                </div>
+              )}
+
+              {hasNcApplied && (
+                <div className="flex justify-between text-sm items-center">
+                  <div className="flex items-center gap-1.5">
+                    <Award className="h-3.5 w-3.5 text-amber-600" />
+                    <span className="text-amber-600 font-medium">NC Applied</span>
+                  </div>
+                  <span className="tabular-nums text-amber-600 font-medium">-{formatCurrency(ncAppliedTotal, curr)}</span>
                 </div>
               )}
 
@@ -1802,6 +1804,11 @@ export default function CheckoutPage() {
                         </div>
                         <div>
                           <p className="text-sm font-medium capitalize">{p.method}</p>
+                          {(p.method === "credit" || p.method === "nc") && trackedPaymentCustomerName && (
+                            <p className="text-xs text-muted-foreground">
+                              Customer: {trackedPaymentCustomerName}
+                            </p>
+                          )}
                           {instrument?.name && (
                             <p className="text-xs text-muted-foreground">
                               {instrument.name}
@@ -1874,29 +1881,23 @@ export default function CheckoutPage() {
                   {!orderMeta?.customer_id && (
                     <div className="space-y-2">
                       <Label className="text-xs">Customer</Label>
-                      <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                      <Select
+                        value={customerSelectValue(selectedCustomerId)}
+                        onValueChange={(value) => {
+                          setSelectedCustomerId(value === NO_CUSTOMER_VALUE ? "" : value);
+                          setCustomerSearchTerm("");
+                        }}
+                      >
                         <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
                           <SelectValue placeholder="Select customer to view loyalty details" />
                         </SelectTrigger>
-                        <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
-                          {customers.map((c: any) => (
-                            <SelectItem key={c.id} value={String(c.id)}>
-                              <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
-                                {formatCustomerLabel(c, curr)}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
+                        {renderCustomerSelectContent(
+                          filteredCustomers,
+                          curr,
+                          customerSearchTerm,
+                          setCustomerSearchTerm,
+                        )}
                       </Select>
-                    </div>
-                  )}
-
-                  {hasNcItems && !pendingCheckoutCustomerId && (
-                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-                      <p className="font-semibold text-foreground">NC items are on this order.</p>
-                      <p className="mt-1 text-muted-foreground">
-                        Select a customer here before taking payment or completing the order.
-                      </p>
                     </div>
                   )}
 
@@ -2028,14 +2029,6 @@ export default function CheckoutPage() {
                 <Button
                   className="w-full h-12 text-base font-semibold shadow-lg gap-2"
                   onClick={async () => {
-                    if (hasNcItems) {
-                      const customerId = await attachSelectedCustomerToOrderIfNeeded();
-                      if (!customerId) {
-                        setPayError("Select a customer before taking payment for an order with NC items.");
-                        toast.error("Select a customer before taking payment for an order with NC items.");
-                        return;
-                      }
-                    }
                     setPayAmount(displayBalanceDue.toFixed(2));
                     setPaymentOpen(true);
                   }}
@@ -2131,12 +2124,10 @@ export default function CheckoutPage() {
                 <Button 
                   className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
                   onClick={handleComplete}
-                  disabled={completing || ncNeedsCustomer}
+                  disabled={completing}
                 >
                   {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                  {ncNeedsCustomer
-                    ? "Select Customer For NC"
-                    : `Complete ${orderMeta?.channel === "room_service" ? "Stay & Checkout" : "Order"}`}
+                  {`Complete ${orderMeta?.channel === "room_service" ? "Stay & Checkout" : "Order"}`}
                 </Button>
               )}
 
@@ -2289,10 +2280,10 @@ export default function CheckoutPage() {
                 </div>
 
                 {/* Customer Selection for Credit Method */}
-                {payMethod === "credit" && !orderMeta?.customer_id && (
+                {(payMethod === "credit" || payMethod === "nc") && !orderMeta?.customer_id && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
-                      <Label>Select Customer</Label>
+                      <Label>{payMethod === "credit" ? "Select Customer" : "Select Customer (Optional)"}</Label>
                       <Button
                         type="button"
                         variant="outline"
@@ -2303,31 +2294,34 @@ export default function CheckoutPage() {
                         + Quick Add
                       </Button>
                     </div>
-                    <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                    <Select
+                      value={customerSelectValue(selectedCustomerId)}
+                      onValueChange={(value) => {
+                        setSelectedCustomerId(value === NO_CUSTOMER_VALUE ? "" : value);
+                        setCustomerSearchTerm("");
+                      }}
+                    >
                       <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
-                        <SelectValue placeholder="Select a customer to assign credit tracking">
+                        <SelectValue placeholder={payMethod === "nc" ? "Optionally select a customer to tag this NC payment" : "Select a customer to assign credit tracking"}>
                           {selectedCustomerId
                             ? formatCustomerLabel(customers.find((c: any) => String(c.id) === selectedCustomerId), curr)
                             : undefined}
                         </SelectValue>
                       </SelectTrigger>
-                      <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
-                        {customers.map((c: any) => (
-                          <SelectItem key={c.id} value={String(c.id)}>
-                            <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
-                              {formatCustomerLabel(c, curr)}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
+                      {renderCustomerSelectContent(
+                        filteredCustomers,
+                        curr,
+                        customerSearchTerm,
+                        setCustomerSearchTerm,
+                      )}
                     </Select>
                   </div>
                 )}
                 
-                {payMethod === "credit" && orderMeta?.customer_id && (
+                {(payMethod === "credit" || payMethod === "nc") && orderMeta?.customer_id && (
                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
                       <User className="h-4 w-4" />
-                      Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
+                      {payMethod === "nc" ? "NC will be tagged to order's customer:" : "Charging to order's customer:"} <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
                    </div>
                 )}
 
@@ -2498,6 +2492,7 @@ export default function CheckoutPage() {
                               <SelectItem value="card">Card</SelectItem>
                               <SelectItem value="digital">Digital (Static QR)</SelectItem>
                               <SelectItem value="credit">Credit / Charge Customer</SelectItem>
+                              <SelectItem value="nc">NC</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -2618,6 +2613,37 @@ export default function CheckoutPage() {
                               ))}
                             </div>
                           )}
+                          {staticPaymentQrs.length > 0 && staticPaymentQrs[row.selectedStaticQrIndex] && (
+                            <div className="space-y-2">
+                              <div className="mx-auto h-[180px] w-[180px] rounded-xl border bg-white p-2">
+                                <img
+                                  src={`https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(staticPaymentQrs[row.selectedStaticQrIndex]?.payload || "")}`}
+                                  alt={staticPaymentQrs[row.selectedStaticQrIndex]?.name || "Static payment QR"}
+                                  className="h-full w-full object-contain"
+                                />
+                              </div>
+                              <p className="text-[11px] text-muted-foreground break-all">
+                                {staticPaymentQrs[row.selectedStaticQrIndex]?.payload}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {(row.method === "credit" || row.method === "nc") && (
+                        <div className="rounded-lg border border-blue-200/70 bg-blue-50/70 px-3 py-2 text-xs text-blue-700 dark:border-blue-900 dark:bg-blue-900/20 dark:text-blue-300">
+                          {trackedPaymentCustomerName ? (
+                            <>
+                              <span className="font-semibold">
+                                {row.method === "credit" ? "Credit customer:" : "NC tagged customer:"}
+                              </span>{" "}
+                              <span>{trackedPaymentCustomerName}</span>
+                            </>
+                          ) : row.method === "credit" ? (
+                            "Select a customer below for this credit row."
+                          ) : (
+                            "NC can be recorded without a customer. Select one below only if you want to tag it."
+                          )}
                         </div>
                       )}
                     </div>
@@ -2643,15 +2669,15 @@ export default function CheckoutPage() {
 
                 {/* Customer Selection for Credit in Multi Payment */}
                 {(() => {
-                  const hasCreditInMulti = multiPayments.some(r => r.method === "credit");
-                  if (!hasCreditInMulti) return null;
+                  const hasTrackedCustomerPayment = multiPayments.some((r) => r.method === "credit" || r.method === "nc");
+                  if (!hasTrackedCustomerPayment) return null;
 
                   return (
                     <div className="space-y-2 border-t pt-3 mt-2">
                       {!orderMeta?.customer_id ? (
                         <>
                           <div className="flex items-center justify-between gap-2">
-                            <Label>Select Customer for Credit</Label>
+                            <Label>Tracked Customer</Label>
                             <Button
                               type="button"
                               variant="outline"
@@ -2662,29 +2688,35 @@ export default function CheckoutPage() {
                               + Quick Add
                             </Button>
                           </div>
-                          <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                          <Select
+                            value={customerSelectValue(selectedCustomerId)}
+                            onValueChange={(value) => {
+                              setSelectedCustomerId(value === NO_CUSTOMER_VALUE ? "" : value);
+                              setCustomerSearchTerm("");
+                            }}
+                          >
                             <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
-                              <SelectValue placeholder="Select a customer to assign credit tracking">
+                              <SelectValue placeholder="Select a customer for credit, or optionally tag NC">
                                 {selectedCustomerId
                                   ? formatCustomerLabel(customers.find((c: any) => String(c.id) === selectedCustomerId), curr)
                                   : undefined}
                               </SelectValue>
                             </SelectTrigger>
-                            <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
-                              {customers.map((c: any) => (
-                                <SelectItem key={c.id} value={String(c.id)}>
-                                  <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
-                                    {formatCustomerLabel(c, curr)}
-                                  </span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
+                            {renderCustomerSelectContent(
+                              filteredCustomers,
+                              curr,
+                              customerSearchTerm,
+                              setCustomerSearchTerm,
+                            )}
                           </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Credit rows require a customer. NC rows can use the same customer optionally.
+                          </p>
                         </>
                       ) : (
                         <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
                           <User className="h-4 w-4" />
-                          Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
+                          Credit / optional NC tagging will use: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
                         </div>
                       )}
                     </div>

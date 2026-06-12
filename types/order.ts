@@ -1,6 +1,6 @@
 export type OrderStatus = 'pending' | 'running' | 'scheduled' | 'preparing' | 'ready' | 'out_for_delivery' | 'ready_for_pickup' | 'completed' | 'canceled';
 export type OrderType = 'quick_billing' | 'delivery' | 'pickup' | 'reservation' | 'table' | 'group' | 'online' | 'room_service';
-export type PaymentMethod = 'cash' | 'card' | 'digital' | 'fonepay' | 'credit';
+export type PaymentMethod = 'cash' | 'card' | 'digital' | 'fonepay' | 'credit' | 'nc';
 export type PaymentStatus = 'success' | 'pending' | 'failed' | 'refunded';
 
 export interface OrderItemModifier {
@@ -23,7 +23,7 @@ export interface OrderItem {
   line_total: number;
   price?: number; // legacy alias
   notes?: string | null;
-  is_nc?: boolean;
+  deleted_qty?: number;
   modifiers: OrderItemModifier[];
   created_at: string;
   pre_tax_unit_price?: number | null;

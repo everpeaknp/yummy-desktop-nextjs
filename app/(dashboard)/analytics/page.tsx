@@ -734,7 +734,6 @@ export default function AnalyticsPage() {
     // ── NC tab data ───────────────────────────────────────────────────────────
     const ncTab = data?.tabs?.nc || {};
     const ncSummary = ncTab.summary || {};
-    const ncTopItems = ncTab.top_items?.items || [];
     const ncTopCustomers = ncTab.top_customers?.items || [];
     const ncTrend = ncTab.trend?.items || [];
     const ncRecentOrders = ncTab.recent_orders?.items || [];
@@ -1529,24 +1528,24 @@ export default function AnalyticsPage() {
                         </Card>
 
                         {/* Non-Chargeable (NC) Snapshot */}
-                        {ncTotalItems > 0 && (
+                        {(ncOrdersCount > 0 || ncTotalValue > 0) && (
                             <Card className="bg-card border-border shadow-sm">
                                 <CardHeader className="pb-2">
                                     <div className="flex items-center justify-between">
                                         <CardTitle className="text-base font-bold flex items-center gap-2">
-                                            <Utensils className="w-4 h-4 text-orange-500" /> Non-Chargeable (NC) Given
+                                            <Utensils className="w-4 h-4 text-orange-500" /> Non-Chargeable (NC) Activity
                                         </CardTitle>
                                         <div className="text-right">
                                             <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Total Value</p>
                                             <p className="text-lg font-black text-foreground">Rs. {Number(ncTotalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                                         </div>
                                     </div>
-                                    <CardDescription>Complimentary items are tracked separately from billable analytics.</CardDescription>
+                                    <CardDescription>Complimentary value is now tracked from NC payment entries and excluded from normal billable revenue.</CardDescription>
                                 </CardHeader>
                                 <CardContent>
                                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                                         <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
-                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">NC Items</span>
+                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">NC Entries</span>
                                             <span className="text-lg font-bold text-foreground">{fmtCount(ncTotalItems)}</span>
                                         </div>
                                         <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
@@ -1568,26 +1567,7 @@ export default function AnalyticsPage() {
                                             </Button>
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                        <div className="space-y-4">
-                                            <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Top NC Items</h4>
-                                            <div className="space-y-2">
-                                                {ncTopItems.slice(0, 5).map((item: any, i: number) => (
-                                                    <div key={`${item.item_id}-${i}`} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="w-6 h-6 rounded-md bg-orange-500/10 flex items-center justify-center text-[10px] font-black text-orange-500">
-                                                                #{i + 1}
-                                                            </div>
-                                                            <span className="font-semibold text-sm truncate max-w-[150px]">{item.name}</span>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <p className="text-xs font-bold">Rs. {Number(item.value).toLocaleString()}</p>
-                                                            <p className="text-[10px] text-muted-foreground">{item.qty} items</p>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
+                                    <div className="grid grid-cols-1 gap-6">
                                         <div className="space-y-4">
                                             <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Top Customers With NC</h4>
                                             <div className="space-y-2">
@@ -1604,7 +1584,7 @@ export default function AnalyticsPage() {
                                                         </div>
                                                         <div className="text-right">
                                                             <p className="text-xs font-bold">Rs. {Number(customer.value).toLocaleString()}</p>
-                                                            <p className="text-[10px] text-muted-foreground">{customer.orders_count} orders • {customer.qty} items</p>
+                                                            <p className="text-[10px] text-muted-foreground">{customer.orders_count} orders • {customer.qty} NC entries</p>
                                                         </div>
                                                     </div>
                                                 ))}
@@ -1627,7 +1607,7 @@ export default function AnalyticsPage() {
                                                                     #{row.restaurant_order_id || row.order_id}
                                                                 </Link>
                                                             </div>
-                                                            <span className="text-[10px] text-muted-foreground">{timeStr} • {row.nc_items_count} NC items • {row.table_name || row.channel}</span>
+                                                            <span className="text-[10px] text-muted-foreground">{timeStr} • {row.nc_items_count} NC entries • {row.table_name || row.channel}</span>
                                                         </div>
                                                         <span className="text-xs font-bold">Rs. {Number(row.nc_total_value).toLocaleString()}</span>
                                                     </div>
@@ -1679,33 +1659,13 @@ export default function AnalyticsPage() {
                             <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">NC Summary</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                                 <BigMetricCard label="NC Value" value={ncTotalValue} icon={<Tag className="w-4.5 h-4.5" />} color="text-orange-500" />
-                                <BigMetricCard label="NC Items" value={ncTotalItems} noCurrency icon={<Utensils className="w-4.5 h-4.5" />} color="text-blue-500" />
+                                <BigMetricCard label="NC Entries" value={ncTotalItems} noCurrency icon={<Utensils className="w-4.5 h-4.5" />} color="text-blue-500" />
                                 <BigMetricCard label="NC Orders" value={ncOrdersCount} noCurrency icon={<ReceiptText className="w-4.5 h-4.5" />} color="text-emerald-500" />
                                 <BigMetricCard label="Customers" value={ncCustomersCount} noCurrency icon={<Users className="w-4.5 h-4.5" />} color="text-violet-500" />
                             </div>
                         </section>
 
-                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                            <Card className="bg-card border-border shadow-sm xl:col-span-1">
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-base font-bold flex items-center gap-2">
-                                        <Utensils className="w-4 h-4 text-orange-500" /> Top NC Items
-                                    </CardTitle>
-                                    <CardDescription>Highest complimentary value items in the selected period</CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-2">
-                                    {ncTopItems.length > 0 ? ncTopItems.map((item: any, i: number) => (
-                                        <div key={`${item.item_id}-${i}`} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
-                                            <div className="min-w-0">
-                                                <div className="font-semibold text-sm truncate">{item.name}</div>
-                                                <div className="text-[10px] text-muted-foreground">{fmtCount(item.qty)} items</div>
-                                            </div>
-                                            <div className="text-xs font-bold">{fmtShort(item.value)}</div>
-                                        </div>
-                                    )) : <div className="text-sm text-muted-foreground">No NC items in this window.</div>}
-                                </CardContent>
-                            </Card>
-
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                             <Card className="bg-card border-border shadow-sm xl:col-span-1">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-base font-bold flex items-center gap-2">
@@ -1722,7 +1682,7 @@ export default function AnalyticsPage() {
                                             </div>
                                             <div className="text-right">
                                                 <div className="text-xs font-bold">{fmtShort(customer.value)}</div>
-                                                <div className="text-[10px] text-muted-foreground">{fmtCount(customer.qty)} items</div>
+                                                <div className="text-[10px] text-muted-foreground">{fmtCount(customer.qty)} NC entries</div>
                                             </div>
                                         </div>
                                     )) : <div className="text-sm text-muted-foreground">No customer-linked NC activity yet.</div>}
@@ -1734,14 +1694,14 @@ export default function AnalyticsPage() {
                                     <CardTitle className="text-base font-bold flex items-center gap-2">
                                         <Calendar className="w-4 h-4 text-emerald-500" /> NC Trend
                                     </CardTitle>
-                                    <CardDescription>Daily NC movement in the selected range</CardDescription>
+                                    <CardDescription>Daily NC payment activity in the selected range</CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-2">
                                     {ncTrend.length > 0 ? ncTrend.map((row: any, i: number) => (
                                         <div key={`${row.label}-${i}`} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
                                             <div>
                                                 <div className="font-semibold text-sm">{row.label}</div>
-                                                <div className="text-[10px] text-muted-foreground">{row.orders_count} orders • {row.qty} items</div>
+                                                <div className="text-[10px] text-muted-foreground">{row.orders_count} orders • {row.qty} NC entries</div>
                                             </div>
                                             <div className="text-xs font-bold">{fmtShort(row.value)}</div>
                                         </div>
@@ -1755,7 +1715,7 @@ export default function AnalyticsPage() {
                                 <CardTitle className="text-base font-bold flex items-center gap-2">
                                     <ReceiptText className="w-4 h-4 text-orange-500" /> NC Order History
                                 </CardTitle>
-                                <CardDescription>Deep drilldown of orders where complimentary items were given</CardDescription>
+                                <CardDescription>Orders with successful NC payment entries in the selected period</CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 {ncOrdersLoading ? (
@@ -1769,7 +1729,7 @@ export default function AnalyticsPage() {
                                                         <TableHead>Order</TableHead>
                                                         <TableHead>Customer</TableHead>
                                                         <TableHead>Date</TableHead>
-                                                        <TableHead>NC Items</TableHead>
+                                                        <TableHead>NC Entries</TableHead>
                                                         <TableHead>NC Value</TableHead>
                                                         <TableHead>Receipt</TableHead>
                                                     </TableRow>
@@ -1805,8 +1765,9 @@ export default function AnalyticsPage() {
                                                                 <div className="flex flex-col gap-1">
                                                                     <span className="font-medium">{fmtCount(order.nc_items_count)}</span>
                                                                     <div className="text-[11px] text-muted-foreground">
-                                                                        {(order.items || []).slice(0, 2).map((item: any) => item.name).join(", ")}
-                                                                        {(order.items || []).length > 2 ? "..." : ""}
+                                                                        {(order.items || []).length > 0
+                                                                            ? `${(order.items || []).slice(0, 2).map((item: any) => item.name).join(", ")}${(order.items || []).length > 2 ? "..." : ""}`
+                                                                            : "Payment-based NC"}
                                                                     </div>
                                                                 </div>
                                                             </TableCell>
