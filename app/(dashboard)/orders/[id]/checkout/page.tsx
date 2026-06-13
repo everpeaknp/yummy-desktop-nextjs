@@ -23,6 +23,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -30,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowLeft,
   Loader2,
@@ -46,6 +48,8 @@ import {
   RefreshCw,
   CheckCircle,
   User,
+  ChevronDown,
+  Search,
   QrCode,
   Award,
   Trash2,
@@ -227,6 +231,142 @@ function readPaymentInstrument(payment: BillPayment | null | undefined) {
     };
   }
   return null;
+}
+
+type CustomerOption = {
+  id: number;
+  full_name?: string | null;
+  name?: string | null;
+  phone?: string | null;
+  credit?: number | null;
+};
+
+function CustomerSearchSelect({
+  label,
+  placeholder,
+  customers,
+  value,
+  currency,
+  onValueChange,
+  onQuickAdd,
+  helperText,
+}: {
+  label: string;
+  placeholder: string;
+  customers: CustomerOption[];
+  value: string;
+  currency: string;
+  onValueChange: (value: string) => void;
+  onQuickAdd: () => void;
+  helperText?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = customers.find((c) => String(c.id) === value);
+  const selectedLabel = selected ? formatCustomerLabel(selected, currency) : placeholder;
+
+  const filteredCustomers = customers.filter((customer) => {
+    const haystack = [
+      customer.full_name,
+      customer.name,
+      customer.phone,
+      String(customer.id),
+      typeof customer.credit === "number" ? String(customer.credit) : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(query.trim().toLowerCase());
+  });
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label>{label}</Label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 px-2 text-[11px] font-bold"
+          onClick={onQuickAdd}
+        >
+          + Quick Add
+        </Button>
+      </div>
+
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setQuery("");
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-between gap-3 h-11 pr-3 font-normal"
+          >
+            <span className="min-w-0 flex-1 truncate text-left">
+              {selectedLabel}
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[min(92vw,680px)] p-0" align="start">
+          <div className="border-b border-border/40 p-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search customers..."
+                autoFocus
+                className="pl-9"
+              />
+            </div>
+          </div>
+          <ScrollArea className="max-h-72">
+            <div className="p-1">
+              {filteredCustomers.length === 0 ? (
+                <div className="px-3 py-6 text-sm text-muted-foreground">No customers found.</div>
+              ) : (
+                filteredCustomers.map((customer) => {
+                  const customerLabel = formatCustomerLabel(customer, currency);
+                  const isSelected = String(customer.id) === value;
+                  return (
+                    <button
+                      key={customer.id}
+                      type="button"
+                      onClick={() => {
+                        onValueChange(String(customer.id));
+                        setOpen(false);
+                        setQuery("");
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
+                        isSelected
+                          ? "bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
+                          : "hover:bg-muted/70 text-foreground"
+                      )}
+                    >
+                      <span className="block min-w-0 flex-1 truncate" title={customerLabel}>
+                        {customerLabel}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </ScrollArea>
+        </PopoverContent>
+      </Popover>
+
+      {helperText && (
+        <p className="text-xs text-muted-foreground">{helperText}</p>
+      )}
+    </div>
+  );
 }
 
 // ── Main Checkout Page ─────────────────────────────
@@ -525,24 +665,60 @@ export default function CheckoutPage() {
   const fetchCustomers = useCallback(async () => {
     if (!user?.restaurant_id) return;
     try {
-      const { data } = await apiClient.get(CustomerApis.listCustomers(user.restaurant_id));
-      if (data.status === "success") {
-        setCustomers(data.data.customers || []);
-        return;
+      const pageSize = 500;
+      let skip = 0;
+      const loadedCustomers: CustomerOption[] = [];
+      const seenCustomerIds = new Set<number>();
+
+      while (true) {
+        const { data } = await apiClient.get(CustomerApis.listCustomers(user.restaurant_id), {
+          params: { skip, limit: pageSize },
+        });
+
+        if (data.status !== "success") {
+          break;
+        }
+
+        const pageCustomers = (data.data.customers || []) as CustomerOption[];
+        let addedCount = 0;
+        for (const customer of pageCustomers) {
+          const customerId = Number(customer?.id || 0);
+          if (!customerId || seenCustomerIds.has(customerId)) continue;
+          seenCustomerIds.add(customerId);
+          loadedCustomers.push(customer);
+          addedCount += 1;
+        }
+
+        if (pageCustomers.length < pageSize || addedCount === 0) {
+          break;
+        }
+        skip += pageSize;
       }
+
+      setCustomers(loadedCustomers);
+      return;
     } catch (err: any) {
       // Fallback for roles that can checkout but don't have `customers.view`.
       // Build a selectable customer list from order history (requires `pos.view`).
       if (err?.response?.status === 403) {
         try {
-          const { data: ordersData } = await apiClient.get(OrderApis.listOrders, {
-            params: {
-              restaurant_id: user.restaurant_id,
-              limit: 1000,
-              skip: 0,
-            },
-          });
-          const orders = ordersData?.data?.orders || [];
+          const pageSize = 1000;
+          let skip = 0;
+          const orders: any[] = [];
+          while (true) {
+            const { data: ordersData } = await apiClient.get(OrderApis.listOrders, {
+              params: {
+                restaurant_id: user.restaurant_id,
+                limit: pageSize,
+                skip,
+              },
+            });
+            const pageOrders = ordersData?.data?.orders || [];
+            orders.push(...pageOrders);
+            if (pageOrders.length < pageSize) break;
+            skip += pageSize;
+          }
+
           const seen = new Set<number>();
           const derivedCustomers = orders
             .filter((o: any) => o?.customer_id)
@@ -1434,6 +1610,9 @@ export default function CheckoutPage() {
   const displayGrandTotal = Number((displaySubtotal + Number(bill.tax_total || 0) + Number(bill.service_charge || 0) - computedDiscount).toFixed(2));
   const displayBalanceDue = Math.max(0, Number((displayGrandTotal - Number(bill.total_paid || 0)).toFixed(2)));
   const displayIsFullyPaid = displayBalanceDue <= 0;
+  const showCheckoutControls = !displayIsFullyPaid
+    || hasNcItems
+    || (guestBills?.orders?.length > 0 && guestBills?.split_group_id);
   const dueAmountForManualDiscount = displayBalanceDue;
   const checkoutCustomerId = orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
   const checkoutCustomer = checkoutCustomerId
@@ -1857,7 +2036,7 @@ export default function CheckoutPage() {
           )}
 
           {/* Action Buttons */}
-          {(!displayIsFullyPaid || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)) && (
+          {showCheckoutControls && (
             <div className="space-y-3">
               <Card className="border-border/40">
                 <CardContent className="p-4 space-y-3">
@@ -1874,20 +2053,15 @@ export default function CheckoutPage() {
                   {!orderMeta?.customer_id && (
                     <div className="space-y-2">
                       <Label className="text-xs">Customer</Label>
-                      <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                        <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
-                          <SelectValue placeholder="Select customer to view loyalty details" />
-                        </SelectTrigger>
-                        <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
-                          {customers.map((c: any) => (
-                            <SelectItem key={c.id} value={String(c.id)}>
-                              <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
-                                {formatCustomerLabel(c, curr)}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <CustomerSearchSelect
+                        label="Customer"
+                        placeholder="Select customer to view loyalty details"
+                        customers={customers}
+                        value={selectedCustomerId}
+                        currency={curr}
+                        onValueChange={setSelectedCustomerId}
+                        onQuickAdd={() => setQuickAddOpen(true)}
+                      />
                     </div>
                   )}
 
@@ -2043,12 +2217,12 @@ export default function CheckoutPage() {
                 >
                   <CreditCard className="h-4 w-4" />
                   Take Payment ({formatCurrency(displayBalanceDue, curr)})
-                </Button>
-              ) : (
+                  </Button>
+              ) : displayBalanceDue > 0 ? (
                 <p className="text-xs text-muted-foreground text-center px-2">
                   Payment processing requires the billing.payment.process permission.
                 </p>
-              )}
+              ) : null}
 
               {guestBills?.orders?.length > 0 && guestBills?.split_group_id && String(guestBills.anchor_order_id) === String(orderId) && !guestBills.orders.every((g: any) => g.is_fully_paid) && (
                 <p className="text-[11px] text-orange-600 dark:text-orange-400 text-center mt-1">
@@ -2291,36 +2465,15 @@ export default function CheckoutPage() {
                 {/* Customer Selection for Credit Method */}
                 {payMethod === "credit" && !orderMeta?.customer_id && (
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label>Select Customer</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-2 text-[11px] font-bold"
-                        onClick={() => setQuickAddOpen(true)}
-                      >
-                        + Quick Add
-                      </Button>
-                    </div>
-                    <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                      <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
-                        <SelectValue placeholder="Select a customer to assign credit tracking">
-                          {selectedCustomerId
-                            ? formatCustomerLabel(customers.find((c: any) => String(c.id) === selectedCustomerId), curr)
-                            : undefined}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
-                        {customers.map((c: any) => (
-                          <SelectItem key={c.id} value={String(c.id)}>
-                            <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
-                              {formatCustomerLabel(c, curr)}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <CustomerSearchSelect
+                      label="Select Customer"
+                      placeholder="Select a customer to assign credit tracking"
+                      customers={customers}
+                      value={selectedCustomerId}
+                      currency={curr}
+                      onValueChange={setSelectedCustomerId}
+                      onQuickAdd={() => setQuickAddOpen(true)}
+                    />
                   </div>
                 )}
                 
@@ -2649,38 +2802,15 @@ export default function CheckoutPage() {
                   return (
                     <div className="space-y-2 border-t pt-3 mt-2">
                       {!orderMeta?.customer_id ? (
-                        <>
-                          <div className="flex items-center justify-between gap-2">
-                            <Label>Select Customer for Credit</Label>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 px-2 text-[11px] font-bold"
-                              onClick={() => setQuickAddOpen(true)}
-                            >
-                              + Quick Add
-                            </Button>
-                          </div>
-                          <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                            <SelectTrigger className="w-full pr-8 min-w-0 [&>span]:truncate">
-                              <SelectValue placeholder="Select a customer to assign credit tracking">
-                                {selectedCustomerId
-                                  ? formatCustomerLabel(customers.find((c: any) => String(c.id) === selectedCustomerId), curr)
-                                  : undefined}
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent className="max-w-[86vw] sm:max-w-[680px]">
-                              {customers.map((c: any) => (
-                                <SelectItem key={c.id} value={String(c.id)}>
-                                  <span className="block max-w-[78vw] sm:max-w-[620px] truncate" title={formatCustomerLabel(c, curr)}>
-                                    {formatCustomerLabel(c, curr)}
-                                  </span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </>
+                        <CustomerSearchSelect
+                          label="Select Customer for Credit"
+                          placeholder="Select a customer to assign credit tracking"
+                          customers={customers}
+                          value={selectedCustomerId}
+                          currency={curr}
+                          onValueChange={setSelectedCustomerId}
+                          onQuickAdd={() => setQuickAddOpen(true)}
+                        />
                       ) : (
                         <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
                           <User className="h-4 w-4" />
