@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DayCloseModal } from "@/components/analytics/day-close-modal";
-import { DayCloseHistory } from "@/components/analytics/day-close-history";
+import {
+  DayCloseHistory,
+  type DayCloseHistoryHandle,
+} from "@/components/analytics/day-close-history";
 import {
   DayCloseMetricCard,
   DC_METRIC_ACCENT_IN,
@@ -59,6 +62,7 @@ export default function DayClosePage() {
   const [currentLoading, setCurrentLoading] = useState(false);
   const [currentClose, setCurrentClose] = useState<DayCloseCurrent | null>(null);
   const [snapshotPreview, setSnapshotPreview] = useState<DayCloseSnapshotData | null>(null);
+  const dayCloseHistoryRef = useRef<DayCloseHistoryHandle | null>(null);
 
   const showBusinessLinePicker = Boolean(
     restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
@@ -111,6 +115,15 @@ export default function DayClosePage() {
     return "Close Today";
   }, [currentClose?.action_label, currentClose?.status]);
 
+  const handlePrimaryAction = useCallback(async () => {
+    const status = String(currentClose?.status ?? "open").toLowerCase();
+    if (status === "confirmed" && currentClose?.id) {
+      await dayCloseHistoryRef.current?.openDayCloseDetail(currentClose.id);
+      return;
+    }
+    setCloseOpen(true);
+  }, [currentClose?.id, currentClose?.status]);
+
   const displayNetSales = pickBackendAmount(
     snapshotPreview?.net_sales,
     currentClose?.snapshot_preview?.net_sales,
@@ -156,7 +169,7 @@ export default function DayClosePage() {
             </Select>
           ) : null}
           <Button
-            onClick={() => setCloseOpen(true)}
+            onClick={handlePrimaryAction}
             className="bg-primary hover:bg-primary/90 text-white font-medium h-11 px-6 rounded-2xl shadow-md gap-2"
             disabled={!restaurantId}
           >
@@ -242,7 +255,13 @@ export default function DayClosePage() {
         </TabsList>
 
         <TabsContent value="history" className="mt-5">
-          <DayCloseHistory restaurantId={restaurantId} />
+          <DayCloseHistory
+            ref={dayCloseHistoryRef}
+            restaurantId={restaurantId}
+            liveCurrentClose={currentClose}
+            liveSnapshotPreview={snapshotPreview}
+            onLiveCurrentRefresh={loadCurrent}
+          />
         </TabsContent>
 
         <TabsContent value="about" className="mt-5">
