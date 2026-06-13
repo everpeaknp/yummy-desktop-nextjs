@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import apiClient from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { DayCloseApis } from "@/lib/api/endpoints";
@@ -31,15 +39,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
   format,
+  isToday,
+  isYesterday,
   subDays,
   startOfDay,
   endOfDay,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  subMonths,
-  startOfYear,
 } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import {
@@ -73,9 +77,11 @@ import {
   parseDayCloseList,
   parseDayCloseSessions,
   parseDayCloseSnapshotData,
+  type DayCloseCurrent,
   type DayCloseDetail,
   type DayCloseListItem,
   type DayCloseSession,
+  type DayCloseSnapshotData,
   type DayCloseSnapshotResponse,
   type BusinessLine,
 } from "@/types/day-close";
@@ -99,6 +105,21 @@ function getFilenameFromContentDisposition(v: string | undefined | null) {
   }
 }
 
+function getDayCloseActionErrorMessage(err: any, fallback: string) {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (detail && typeof detail === "object") {
+    if (detail.error_code === "DAY_CLOSED_LOCKED") {
+      const businessDate = detail.business_date ? ` ${detail.business_date}` : "";
+      return `Day close${businessDate} is already finalized. You cannot reopen older confirmed days. Use Adjust Cash Reconciliation or Add Adjustment instead.`;
+    }
+    if (typeof detail.message === "string" && detail.message.trim()) {
+      return detail.message;
+    }
+  }
+  return err?.response?.data?.message || fallback;
+}
+
 async function downloadBlobFromApi(url: string, fallbackName: string, mime: string) {
   const res = await apiClient.get(url, { responseType: "blob" });
   const contentDisposition = (res as any)?.headers?.["content-disposition"] as string | undefined;
@@ -120,6 +141,23 @@ function statusBadge(status: string) {
   if (s === "pending") return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-medium uppercase bg-orange-500/10 text-orange-700 dark:text-orange-500 border-none">Pending</Badge>;
   if (s === "reopened") return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-medium uppercase bg-amber-500/10 text-amber-700 dark:text-amber-500 border-none">Reopened</Badge>;
   return <Badge variant="secondary" className="h-7 px-3 rounded-full text-[10px] font-medium uppercase">Open</Badge>;
+}
+
+function PresetButton({ label, onClick, active, className }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center w-full px-3 py-2.5 rounded-xl text-left text-[10px] font-semibold transition-all duration-200",
+        active
+          ? "bg-orange-500 text-white shadow-md shadow-orange-500/30"
+          : "hover:bg-accent text-muted-foreground hover:text-foreground",
+        className,
+      )}
+    >
+      {label}
+    </button>
+  );
 }
 
 function ConfirmedDayCloseActionButtons({
@@ -167,6 +205,27 @@ function ConfirmedDayCloseActionButtons({
         Reopen Day
       </Button>
     </div>
+  );
+}
+
+function ReopenedDayCloseActionButtons({
+  compact = false,
+  onReconfirm,
+}: {
+  compact?: boolean;
+  onReconfirm: () => void;
+}) {
+  const buttonClass = cn(
+    "font-medium shrink-0",
+    compact
+      ? "w-full h-auto min-h-10 py-2.5 px-3 rounded-2xl text-xs sm:text-sm text-center leading-snug"
+      : "h-8 rounded-xl text-xs sm:text-sm whitespace-nowrap",
+  );
+
+  return (
+    <Button size="sm" className={cn("dc-btn-close-day", buttonClass)} onClick={onReconfirm}>
+      Re-confirm Day Close
+    </Button>
   );
 }
 
@@ -273,7 +332,23 @@ function DayCloseDetailDialogSkeleton({ compact = false }: { compact?: boolean }
   );
 }
 
-export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
+type DayCloseHistoryProps = {
+  restaurantId?: number;
+  liveCurrentClose?: DayCloseCurrent | null;
+  liveSnapshotPreview?: DayCloseSnapshotData | null;
+  onLiveCurrentRefresh?: () => Promise<void> | void;
+};
+
+export type DayCloseHistoryHandle = {
+  openDayCloseDetail: (id: number) => Promise<void>;
+};
+
+export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistoryProps>(function DayCloseHistory({
+  restaurantId,
+  liveCurrentClose,
+  liveSnapshotPreview,
+  onLiveCurrentRefresh,
+}: DayCloseHistoryProps, ref) {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<DayCloseListItem[]>([]);
   const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
@@ -281,8 +356,6 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     from: startOfDay(subDays(new Date(), 30)),
     to: endOfDay(new Date()),
   }));
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const [calendarMonths, setCalendarMonths] = useState(1);
   const [status, setStatus] = useState<string>(""); // open|pending|confirmed|reopened
   const [sessions, setSessions] = useState<DayCloseSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -302,6 +375,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const detailDialogStyle = useResizableDialogStyle(detailMaximized, "detail");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardBusinessLine, setWizardBusinessLine] = useState<BusinessLine>("restaurant");
+  const [wizardDayCloseId, setWizardDayCloseId] = useState<number | null>(null);
+  const [wizardBusinessDate, setWizardBusinessDate] = useState<string | null>(null);
 
   const [actionOpen, setActionOpen] = useState<null | "reopen" | "adjustCash" | "addAdjustment" | "cancel">(null);
   const [actionSaving, setActionSaving] = useState(false);
@@ -319,16 +394,6 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const [adjCategoryId, setAdjCategoryId] = useState<string>("");
 
   const canLoad = !!restaurantId;
-
-  useEffect(() => {
-    // 2 months on >=sm screens, 1 month on mobile.
-    if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(min-width: 640px)");
-    const apply = () => setCalendarMonths(mq.matches ? 2 : 1);
-    apply();
-    mq.addEventListener?.("change", apply);
-    return () => mq.removeEventListener?.("change", apply);
-  }, []);
 
   const fetchSessions = useCallback(async () => {
     if (!restaurantId) return;
@@ -399,15 +464,43 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   }, [canLoad, fetchList]);
 
   const displayItems = useMemo(() => {
-    if (!selectedSessionId) return items;
-    const fromList = items.filter((it) => it.id === selectedSessionId);
+    const liveBusinessLine = String(liveCurrentClose?.business_line ?? businessLine).toLowerCase();
+    const currentBusinessLine = String(businessLine ?? "restaurant").toLowerCase();
+    const canOverlayLiveCurrent =
+      !!liveCurrentClose?.id &&
+      liveBusinessLine === currentBusinessLine &&
+      ["open", "pending", "reopened"].includes(String(liveCurrentClose?.status ?? "").toLowerCase());
+
+    const withLiveOverlay = items.map((it) => {
+      if (!canOverlayLiveCurrent || it.id !== liveCurrentClose?.id) return it;
+      return {
+        ...it,
+        status: liveCurrentClose?.status ?? it.status,
+        business_line: liveCurrentClose?.business_line ?? it.business_line,
+        business_date: liveCurrentClose?.business_date ?? it.business_date,
+        period_start_at: liveCurrentClose?.period_start_at ?? it.period_start_at,
+        period_end_at: liveCurrentClose?.period_end_at ?? it.period_end_at,
+        net_sales:
+          typeof liveSnapshotPreview?.net_sales === "number"
+            ? liveSnapshotPreview.net_sales
+            : it.net_sales,
+        expected_cash:
+          typeof liveSnapshotPreview?.expected_cash === "number"
+            ? liveSnapshotPreview.expected_cash
+            : it.expected_cash,
+        actual_cash: undefined,
+      } satisfies DayCloseListItem;
+    });
+
+    if (!selectedSessionId) return withLiveOverlay;
+    const fromList = withLiveOverlay.filter((it) => it.id === selectedSessionId);
     if (fromList.length) return fromList;
     const session = sessions.find((s) => s.id === selectedSessionId);
     if (session) return [dayCloseSessionToListItem(session)];
     return [];
-  }, [items, selectedSessionId, sessions]);
+  }, [items, selectedSessionId, sessions, liveCurrentClose, liveSnapshotPreview, businessLine]);
 
-  const openDetail = async (id: number) => {
+  const openDetail = useCallback(async (id: number) => {
     setDetailMaximized(true);
     setActiveId(id);
     setDetailOpen(true);
@@ -454,7 +547,11 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     } finally {
       setDetailLoading(false);
     }
-  };
+  }, [businessLine, restaurantId]);
+
+  useImperativeHandle(ref, () => ({
+    openDayCloseDetail: openDetail,
+  }), [openDetail]);
 
   const refreshAfterMutation = async () => {
     if (!activeId) return;
@@ -474,7 +571,16 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
     } catch {
       // ignore
     }
-    fetchList();
+    if (adjustments != null) {
+      await loadAdjustments();
+    }
+    if (audit != null) {
+      await loadAudit();
+    }
+    await Promise.all([
+      fetchList(),
+      Promise.resolve(onLiveCurrentRefresh?.()),
+    ]);
   };
 
   const cancelPending = async () => {
@@ -514,7 +620,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         toast.error(res.data?.message || "Failed to reopen day");
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Failed to reopen day");
+      toast.error(getDayCloseActionErrorMessage(err, "Failed to reopen day"));
     } finally {
       setActionSaving(false);
     }
@@ -549,7 +655,9 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         toast.error(res.data?.message || "Failed to update cash reconciliation");
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Failed to update cash reconciliation");
+      toast.error(
+        getDayCloseActionErrorMessage(err, "Failed to update cash reconciliation"),
+      );
     } finally {
       setActionSaving(false);
     }
@@ -588,12 +696,18 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         toast.success(`${adjType === "expense" ? "Expense" : "Income"} adjustment added`);
         setActionOpen(null);
         setAdjustments(null);
+        setAdjType("expense");
+        setAdjAmount("");
+        setAdjMethod("cash");
+        setAdjDesc("");
+        setAdjNotes("");
+        setAdjCategoryId("");
         await refreshAfterMutation();
       } else {
         toast.error(res.data?.message || "Failed to add adjustment");
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Failed to add adjustment");
+      toast.error(getDayCloseActionErrorMessage(err, "Failed to add adjustment"));
     } finally {
       setActionSaving(false);
     }
@@ -685,8 +799,10 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
   const isPending = String(detail?.status || "").toLowerCase() === "pending";
   const isReopened = String(detail?.status || "").toLowerCase() === "reopened";
   const isOpen = String(detail?.status || "").toLowerCase() === "open";
-  const showConfirmedActions = isConfirmed || isReopened;
+  const showConfirmedActions = isConfirmed;
+  const showReopenedActions = isReopened;
   const showConfirmedActionsInHeader = detailMaximized && showConfirmedActions;
+  const showReopenedActionsInHeader = detailMaximized && showReopenedActions;
 
   const openCloseWizard = useCallback(() => {
     if (!detail) return;
@@ -695,11 +811,16 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
         ? "hotel"
         : "restaurant",
     );
+    setWizardDayCloseId(detail.id);
+    setWizardBusinessDate(detail.business_date ?? null);
     setWizardOpen(true);
   }, [detail]);
 
   const detailSubtitle = useMemo(() => {
     if (!detail) return null;
+    if (isReopened) {
+      return "This day close was reopened. Review the numbers, then use Re-confirm Day Close to save a fresh close.";
+    }
     if (detail.confirmed_at) {
       const confirmed = new Date(detail.confirmed_at);
       if (!Number.isNaN(confirmed.getTime())) {
@@ -713,12 +834,7 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
       }
     }
     return "Server snapshot — totals are not recalculated in the browser";
-  }, [detail]);
-
-  const setRangeAndClose = (next: DateRange) => {
-    setDateRange(next);
-    setDatePickerOpen(false);
-  };
+  }, [detail, isReopened]);
 
   return (
     <div className="day-close-ui space-y-4">
@@ -735,13 +851,12 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
               <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
                 <p className="dc-eyebrow">Date Range</p>
-                <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                <Popover>
                   <PopoverTrigger asChild>
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       className={cn(
-                        "dc-filter-control h-11 rounded-2xl gap-2 font-medium text-xs sm:text-sm px-4 w-full justify-start sm:justify-center",
-                        dateRange?.from && "dc-filter-control-active",
+                        "h-11 rounded-xl gap-2 font-bold text-xs uppercase tracking-widest w-full justify-start",
                       )}
                     >
                       <Calendar className="h-4 w-4 shrink-0" />
@@ -761,109 +876,38 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent
-                    className="w-[calc(100vw-2rem)] sm:w-auto max-w-[calc(100vw-2rem)] sm:max-w-none p-0 flex flex-col sm:flex-row shadow-2xl border border-border/40 rounded-2xl sm:rounded-[24px] overflow-hidden bg-background"
-                    align="start"
-                    sideOffset={8}
+                    className="w-auto p-0 flex shadow-2xl border border-border/40 rounded-[24px] overflow-hidden bg-background"
+                    align="center"
                     style={{ fontFamily: "inherit" }}
                   >
-                    <div className="flex sm:flex-col gap-1 p-3 sm:p-5 border-b sm:border-b-0 sm:border-r border-border/40 bg-muted/20 sm:w-[140px] shrink-0 overflow-x-auto sm:overflow-x-visible no-scrollbar">
-                      <p className="hidden sm:block text-[9px] font-semibold uppercase tracking-[0.3em] text-orange-500 mb-2 sm:mb-4 shrink-0">
-                        Quick Select
-                      </p>
-                      <div className="flex sm:flex-col gap-1 flex-1 min-w-0">
-                        <button
-                          type="button"
-                          className="dc-filter-quick whitespace-nowrap"
-                          onClick={() => setRangeAndClose({ from: startOfDay(new Date()), to: endOfDay(new Date()) })}
-                        >
-                          Today
-                        </button>
-                        <button
-                          type="button"
-                          className="dc-filter-quick whitespace-nowrap"
-                          onClick={() => {
-                            const d = subDays(new Date(), 1);
-                            setRangeAndClose({ from: startOfDay(d), to: endOfDay(d) });
-                          }}
-                        >
-                          Yesterday
-                        </button>
-                        <button
-                          type="button"
-                          className="dc-filter-quick whitespace-nowrap"
-                          onClick={() =>
-                            setRangeAndClose({
-                              from: startOfWeek(new Date(), { weekStartsOn: 1 }),
-                              to: endOfWeek(new Date(), { weekStartsOn: 1 }),
-                            })
-                          }
-                        >
-                          This Week
-                        </button>
-                        <button
-                          type="button"
-                          className="dc-filter-quick whitespace-nowrap"
-                          onClick={() =>
-                            setRangeAndClose({
-                              from: startOfDay(subDays(new Date(), 7)),
-                              to: endOfDay(new Date()),
-                            })
-                          }
-                        >
-                          Last 7 Days
-                        </button>
-                        <button
-                          type="button"
-                          className="dc-filter-quick whitespace-nowrap"
-                          onClick={() =>
-                            setRangeAndClose({
-                              from: startOfDay(subDays(new Date(), 30)),
-                              to: endOfDay(new Date()),
-                            })
-                          }
-                        >
-                          Last 30 Days
-                        </button>
-                        <button
-                          type="button"
-                          className="dc-filter-quick whitespace-nowrap"
-                          onClick={() =>
-                            setRangeAndClose({
-                              from: startOfMonth(new Date()),
-                              to: endOfMonth(new Date()),
-                            })
-                          }
-                        >
-                          This Month
-                        </button>
-                        <button
-                          type="button"
-                          className="dc-filter-quick whitespace-nowrap"
-                          onClick={() => {
-                            const d = subMonths(new Date(), 1);
-                            setRangeAndClose({ from: startOfMonth(d), to: endOfMonth(d) });
-                          }}
-                        >
-                          Last Month
-                        </button>
-                        <button
-                          type="button"
-                          className="dc-filter-quick whitespace-nowrap"
-                          onClick={() =>
-                            setRangeAndClose({
-                              from: startOfYear(new Date()),
-                              to: endOfDay(new Date()),
-                            })
-                          }
-                        >
-                          Year To Date
-                        </button>
+                    <div className="flex flex-col p-5 border-r border-border/40 bg-muted/20 w-[140px] shrink-0">
+                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-orange-500 mb-4">Quick Select</p>
+                      <div className="flex flex-col gap-1 flex-1">
+                        <PresetButton
+                          label="Today"
+                          onClick={() => setDateRange({ from: startOfDay(new Date()), to: endOfDay(new Date()) })}
+                          active={dateRange?.from && isToday(dateRange.from) && (!dateRange.to || isToday(dateRange.to))}
+                        />
+                        <PresetButton
+                          label="Yesterday"
+                          onClick={() => setDateRange({ from: startOfDay(subDays(new Date(), 1)), to: endOfDay(subDays(new Date(), 1)) })}
+                          active={dateRange?.from && isYesterday(dateRange.from)}
+                        />
+                        <PresetButton
+                          label="Last 7 Days"
+                          onClick={() => setDateRange({ from: startOfDay(subDays(new Date(), 7)), to: endOfDay(new Date()) })}
+                          active={dateRange?.from && format(dateRange.from, "yyyy-MM-dd") === format(subDays(new Date(), 7), "yyyy-MM-dd")}
+                        />
+                        <PresetButton
+                          label="Last 30 Days"
+                          onClick={() => setDateRange({ from: startOfDay(subDays(new Date(), 30)), to: endOfDay(new Date()) })}
+                          active={dateRange?.from && format(dateRange.from, "yyyy-MM-dd") === format(subDays(new Date(), 30), "yyyy-MM-dd")}
+                        />
                       </div>
                       <button
-                        type="button"
-                        className="hidden sm:block text-[9px] font-medium uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
+                        className="text-[9px] font-bold uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
                         onClick={() =>
-                          setRangeAndClose({
+                          setDateRange({
                             from: startOfDay(subDays(new Date(), 30)),
                             to: endOfDay(new Date()),
                           })
@@ -872,17 +916,14 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         Reset
                       </button>
                     </div>
-                    <div className="p-2 sm:p-4 flex justify-center overflow-x-auto">
+                    <div className="p-4">
                       <CalendarComponent
                         initialFocus
                         mode="range"
                         defaultMonth={dateRange?.from || new Date()}
                         selected={dateRange}
-                        onSelect={(next) => {
-                          setDateRange(next);
-                          if (next?.from && next?.to) setDatePickerOpen(false);
-                        }}
-                        numberOfMonths={calendarMonths}
+                        onSelect={setDateRange}
+                        numberOfMonths={1}
                         className="p-0"
                         weekStartsOn={1}
                       />
@@ -1013,6 +1054,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                           ? "hotel"
                           : "restaurant",
                       );
+                      setWizardDayCloseId(null);
+                      setWizardBusinessDate(null);
                       setWizardOpen(true);
                     }
                   : undefined
@@ -1093,6 +1136,15 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                     onToggle={() => setDetailMaximized((v) => !v)}
                   />
                 </>
+              ) : showReopenedActionsInHeader ? (
+                <>
+                  <ReopenedDayCloseActionButtons onReconfirm={openCloseWizard} />
+                  {detail?.status ? statusBadge(detail.status) : null}
+                  <DetailMaximizeToggleButton
+                    maximized={detailMaximized}
+                    onToggle={() => setDetailMaximized((v) => !v)}
+                  />
+                </>
               ) : (
                 <>
                   {isOpen ? (
@@ -1123,12 +1175,13 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
               </div>
             ) : (
               <>
-                {(isPending || (showConfirmedActions && !showConfirmedActionsInHeader)) ? (
+                {(isPending || (showConfirmedActions && !showConfirmedActionsInHeader) || (showReopenedActions && !showReopenedActionsInHeader)) ? (
                   <div
                     className={cn(
                       isPending && detailMaximized && "dc-surface p-3 sm:p-4",
                       isPending && !detailMaximized && "w-full",
                       showConfirmedActions && !showConfirmedActionsInHeader && "w-full",
+                      showReopenedActions && !showReopenedActionsInHeader && "w-full",
                     )}
                   >
                     {isPending ? (
@@ -1139,6 +1192,9 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                       >
                         Cancel Pending Close
                       </Button>
+                    ) : null}
+                    {showReopenedActions && !showReopenedActionsInHeader ? (
+                      <ReopenedDayCloseActionButtons compact onReconfirm={openCloseWizard} />
                     ) : null}
                     {showConfirmedActions && !showConfirmedActionsInHeader ? (
                       <ConfirmedDayCloseActionButtons
@@ -1151,6 +1207,12 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
                         onReopen={() => setActionOpen("reopen")}
                       />
                     ) : null}
+                  </div>
+                ) : null}
+
+                {isReopened ? (
+                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
+                    This close is reopened. Make any corrections you need, then use <span className="font-semibold">Re-confirm Day Close</span> to save the updated close for this business day.
                   </div>
                 ) : null}
 
@@ -1480,6 +1542,8 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
           isOpen={wizardOpen}
           onClose={async () => {
             setWizardOpen(false);
+            setWizardDayCloseId(null);
+            setWizardBusinessDate(null);
             await fetchList();
             if (activeId) {
               try {
@@ -1494,8 +1558,10 @@ export function DayCloseHistory({ restaurantId }: { restaurantId?: number }) {
           }}
           restaurantId={restaurantId}
           businessLine={wizardBusinessLine}
+          targetDayCloseId={wizardDayCloseId}
+          targetBusinessDate={wizardBusinessDate}
         />
       ) : null}
     </div>
   );
-}
+});
