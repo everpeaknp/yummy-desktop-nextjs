@@ -36,6 +36,7 @@ const FINANCIAL_SUMMARY_CARD: Record<
   "Total Income": { icon: TrendingUp, flow: "in" },
   Refunds: { icon: RotateCcw, flow: "out" },
   Expenses: { icon: Wallet, flow: "out" },
+  "Opening Balance": { icon: Landmark, flow: "in" },
   "Credit Sales": { icon: Receipt, flow: "in" },
   "Credit Collection": { icon: TrendingUp, flow: "in" },
   "Outstanding Receivables": { icon: Building2, flow: "in" },
@@ -52,6 +53,7 @@ const FINANCIAL_SUMMARY_PRIMARY = new Set([
 
 const FINANCIAL_SUMMARY_SECONDARY = new Set([
   "Expenses",
+  "Opening Balance",
   "Credit Sales",
   "Credit Collection",
   "Outstanding Receivables",
@@ -151,7 +153,7 @@ export function DayCloseFinancialSummary({
           </div>
         ) : null}
         {secondaryRows.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 items-stretch pt-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 items-stretch pt-1">
             {secondaryRows.map((row) => (
               <FinancialSummaryCard
                 key={row.label}
