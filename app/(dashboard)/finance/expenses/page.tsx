@@ -9,9 +9,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, TrendingDown, Receipt, Download, ArrowLeft, Plus, Calendar, TrendingUp, DollarSign, Utensils, Hotel } from "lucide-react";
+import { Loader2, TrendingDown, Receipt, Download, ArrowLeft, Plus, Calendar, TrendingUp, DollarSign, Utensils, Hotel, CheckCircle2, XCircle, Clock, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import {
   Dialog,
@@ -28,6 +29,7 @@ import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
 import Link from "next/link";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import type { FinanceExpensesResponse } from "@/types/finance";
+import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
 
 function hasFinanceActivity(metrics: FinanceExpensesResponse["metrics"] | undefined): boolean {
   if (!metrics) return false;
@@ -91,6 +93,8 @@ function buildExpensePaymentMethodBreakdown(expenses: any[]) {
 export default function ExpensesPage() {
   const [loading, setLoading] = useState(false);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState("approved");
   const [financeExpenses, setFinanceExpenses] = useState<FinanceExpensesResponse | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [dateFilter, setDateFilter] = useState("this_month");
@@ -98,6 +102,7 @@ export default function ExpensesPage() {
   const [selectedStation, setSelectedStation] = useState("all");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const [newExpense, setNewExpense] = useState({
     amount: "",
@@ -254,7 +259,7 @@ export default function ExpensesPage() {
         startTime: startTimeVal,
         endTime: endTimeVal,
       });
-      const [res, financeRes] = await Promise.all([
+      const [res, financeRes, candidatesRes] = await Promise.all([
         apiClient.get(ExpenseApis.list, {
         params: {
           restaurant_id: user.restaurant_id,
@@ -268,6 +273,14 @@ export default function ExpensesPage() {
         },
         }),
         apiClient.get(financeExpensesUrl).catch(() => null),
+        apiClient.get(ExpenseApis.pendingCandidates, {
+          params: {
+            restaurant_id: user.restaurant_id,
+            status: "pending",
+            include: "adjustment",
+            limit: 100,
+          }
+        }).catch(() => null),
       ]);
       if (res.data.status === "success") {
         setExpenses(res.data.data.expenses || []);
@@ -276,6 +289,9 @@ export default function ExpensesPage() {
         setFinanceExpenses(financeRes.data.data);
       } else {
         setFinanceExpenses(null);
+      }
+      if (candidatesRes?.data?.status === "success") {
+        setCandidates(candidatesRes.data.data || []);
       }
     } catch (err) {
       console.error("Failed to fetch expenses:", err);
@@ -313,23 +329,51 @@ export default function ExpensesPage() {
         business_line: createBusinessLine,
       };
 
-      const res = await apiClient.post(ExpenseApis.list, payload);
+      const res = editingExpense
+        ? await apiClient.patch(ExpenseApis.update(editingExpense.id), {
+            amount: payload.amount,
+            description: payload.description,
+            category_id: payload.category_id,
+            payment_method: payload.payment_method,
+            station: payload.station,
+            business_line: payload.business_line,
+          })
+        : await apiClient.post(ExpenseApis.list, payload);
       if (res.data.status === "success") {
-        toast.success("Expense recorded successfully");
+        toast.success(editingExpense ? "Expense updated successfully" : "Expense recorded successfully");
         setIsAddDialogOpen(false);
-        setNewExpense({
-          amount: "",
-          description: "",
-          station: "other",
-          category_id: "",
-          payment_method: "cash",
-        });
+        resetExpenseForm();
         void fetchData();
       }
     } catch {
       toast.error("Failed to record expense");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleApproveCandidate = async (id: number) => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const res = await apiClient.post(ExpenseApis.approveCandidate(id), null, { params: { timezone: tz } });
+      if (res.data.status === "success") {
+        toast.success("Expense approved");
+        void fetchData();
+      }
+    } catch {
+      toast.error("Failed to approve expense");
+    }
+  };
+
+  const handleRejectCandidate = async (id: number) => {
+    try {
+      const res = await apiClient.post(ExpenseApis.rejectCandidate(id));
+      if (res.data.status === "success") {
+        toast.success("Expense rejected");
+        void fetchData();
+      }
+    } catch {
+      toast.error("Failed to reject expense");
     }
   };
 
@@ -364,6 +408,42 @@ export default function ExpensesPage() {
     financeExpenseMetrics?.manual_operating_expense ??
     filteredExpenses.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
   const inventoryCashOutflow = financeExpenseMetrics?.inventory_cash_outflow ?? 0;
+
+  const resetExpenseForm = () => {
+    setEditingExpense(null);
+    setNewExpense({
+      amount: "",
+      description: "",
+      station: "other",
+      category_id: "",
+      payment_method: "cash",
+    });
+  };
+
+  const handleEditExpense = (expense: any) => {
+    setEditingExpense(expense);
+    setNewExpense({
+      amount: String(expense.amount ?? ""),
+      description: expense.description || "",
+      station: expense.station || "other",
+      category_id: expense.category_id ? String(expense.category_id) : "",
+      payment_method: expense.payment_method || "cash",
+    });
+    setIsAddDialogOpen(true);
+  };
+
+  const handleDeleteExpense = async (expense: any) => {
+    if (!expense?.id) return;
+    const ok = window.confirm(`Delete expense "${expense.description || "Untitled"}"?`);
+    if (!ok) return;
+    try {
+      await apiClient.delete(ExpenseApis.delete(expense.id));
+      toast.success("Expense deleted");
+      void fetchData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to delete expense");
+    }
+  };
 
   const handleExport = async () => {
     if (!filteredExpenses.length) return;
@@ -607,19 +687,28 @@ export default function ExpensesPage() {
           </Button>
           <Button
             className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-            onClick={() => setIsAddDialogOpen(true)}
+            onClick={() => {
+              resetExpenseForm();
+              setIsAddDialogOpen(true);
+            }}
           >
             <Plus className="w-4 h-4 mr-2" /> Add Expense
           </Button>
         </div>
       </div>
 
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+      <Dialog
+        open={isAddDialogOpen}
+        onOpenChange={(open) => {
+          setIsAddDialogOpen(open);
+          if (!open) resetExpenseForm();
+        }}
+      >
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Add New Expense</DialogTitle>
+            <DialogTitle>{editingExpense ? "Edit Expense" : "Add New Expense"}</DialogTitle>
             <DialogDescription>
-              Record a new business expense. Required fields are marked with *.
+              {editingExpense ? "Update this business expense." : "Record a new business expense. Required fields are marked with *."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -696,9 +785,11 @@ export default function ExpensesPage() {
                   <SelectValue placeholder="Method" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="digital">Digital (FonePay/Esewa)</SelectItem>
+                  {PAYMENT_METHOD_OPTIONS.map((method) => (
+                    <SelectItem key={method.value} value={method.value}>
+                      {method.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -725,13 +816,31 @@ export default function ExpensesPage() {
               disabled={saving}
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              Record Expense
+              {editingExpense ? "Update Expense" : "Record Expense"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {loading ? (
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="approved" className="gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            Approved Expenses
+          </TabsTrigger>
+          <TabsTrigger value="pending" className="gap-2">
+            <Clock className="w-4 h-4" />
+            Pending Approvals
+            {candidates.length > 0 && (
+              <Badge variant="destructive" className="ml-1 px-1.5 py-0 min-w-[20px] text-center">
+                {candidates.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="approved" className="mt-0">
+          {loading ? (
         <div className="h-64 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-red-500" />
         </div>
@@ -752,6 +861,7 @@ export default function ExpensesPage() {
                     <th className="px-6 py-4">Amount</th>
                     <th className="px-6 py-4">Date</th>
                     <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -778,6 +888,30 @@ export default function ExpensesPage() {
                           {expense.status || "Completed"}
                         </Badge>
                       </td>
+                      <td className="px-6 py-4">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            onClick={() => handleEditExpense(expense)}
+                            aria-label="Edit expense"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => handleDeleteExpense(expense)}
+                            aria-label="Delete expense"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -798,6 +932,67 @@ export default function ExpensesPage() {
           </CardContent>
         </Card>
       )}
+      </TabsContent>
+
+      <TabsContent value="pending" className="mt-0">
+        <Card className="border-border">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              {candidates.length === 0 ? (
+                <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/20">
+                  <CheckCircle2 className="w-12 h-12 mb-4 opacity-20" />
+                  <p>No pending expenses to approve.</p>
+                </div>
+              ) : (
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
+                    <tr>
+                      <th className="px-6 py-4">Description</th>
+                      <th className="px-6 py-4">Source</th>
+                      <th className="px-6 py-4">Amount</th>
+                      <th className="px-6 py-4">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {candidates.map((candidate: any) => (
+                      <tr key={candidate.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-6 py-4 font-medium">{candidate.description || "Untitled"}</td>
+                        <td className="px-6 py-4 text-muted-foreground capitalize">
+                          {candidate.source_type}
+                        </td>
+                        <td className="px-6 py-4 font-bold text-orange-600 dark:text-orange-500">
+                          Rs. {Number(candidate.amount).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-900/50"
+                              onClick={() => handleApproveCandidate(candidate.id)}
+                            >
+                              <CheckCircle2 className="w-4 h-4 mr-1" /> Approve
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              className="text-destructive hover:bg-destructive/10 border-destructive/20"
+                              onClick={() => handleRejectCandidate(candidate.id)}
+                            >
+                              <XCircle className="w-4 h-4 mr-1" /> Reject
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+      </Tabs>
     </div>
   );
 }

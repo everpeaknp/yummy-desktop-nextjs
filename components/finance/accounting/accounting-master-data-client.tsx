@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Database, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Database, Loader2, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import { AccountTable } from "./account-table";
 import { AccountingNav } from "./accounting-nav";
+import { LedgerMappingDialog } from "./ledger-mapping-dialog";
 import { LedgerMappingTable } from "./ledger-mapping-table";
 import type { AccountingSeedDefaultsResult, ChartAccount, LedgerMapping } from "@/types/accounting";
 
@@ -37,6 +38,10 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState<AccountingSeedDefaultsResult | null>(null);
+  const [mappingDialogOpen, setMappingDialogOpen] = useState(false);
+  const [selectedMapping, setSelectedMapping] = useState<LedgerMapping | null>(null);
+  const [accountSearch, setAccountSearch] = useState("");
+  const [accountType, setAccountType] = useState("all");
 
   const canView = hasPermission(user, "finance.accounting.view");
   const canSetupAccounting = hasPermission(user, "finance.accounting.setup");
@@ -65,10 +70,14 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
         );
         setAccounts(res.data?.data ?? []);
       } else {
-        const res = await apiClient.get<BaseResponse<LedgerMapping[]>>(
-          AccountingApis.mappings({ restaurantId, businessLine: "restaurant" })
-        );
-        setMappings(res.data?.data ?? []);
+        const [accountsRes, mappingsRes] = await Promise.all([
+          apiClient.get<BaseResponse<ChartAccount[]>>(AccountingApis.accounts({ restaurantId })),
+          apiClient.get<BaseResponse<LedgerMapping[]>>(
+            AccountingApis.mappings({ restaurantId, businessLine: "restaurant" })
+          ),
+        ]);
+        setAccounts(accountsRes.data?.data ?? []);
+        setMappings(mappingsRes.data?.data ?? []);
       }
     } catch (error) {
       console.error(`Failed to load ${mode}`, error);
@@ -101,6 +110,16 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
     } finally {
       setSeeding(false);
     }
+  };
+
+  const openCreateMapping = () => {
+    setSelectedMapping(null);
+    setMappingDialogOpen(true);
+  };
+
+  const openEditMapping = (mapping: LedgerMapping) => {
+    setSelectedMapping(mapping);
+    setMappingDialogOpen(true);
   };
 
   if (!user) {
@@ -142,6 +161,12 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {mode === "mappings" && (
+              <Button variant="outline" onClick={openCreateMapping} disabled={!canSetupAccounting}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Mapping
+              </Button>
+            )}
             <Button variant="outline" onClick={loadData} disabled={loading || seeding}>
               <RefreshCw className={loading ? "mr-2 h-4 w-4 animate-spin" : "mr-2 h-4 w-4"} />
               Refresh
@@ -172,12 +197,30 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
         </CardHeader>
         <CardContent className="p-0">
           {mode === "accounts" ? (
-            <AccountTable accounts={accounts} loading={loading} />
+            <AccountTable
+              accounts={accounts}
+              loading={loading}
+              search={accountSearch}
+              accountType={accountType}
+              onSearchChange={setAccountSearch}
+              onAccountTypeChange={setAccountType}
+            />
           ) : (
-            <LedgerMappingTable mappings={mappings} loading={loading} />
+            <LedgerMappingTable mappings={mappings} loading={loading} onEdit={openEditMapping} />
           )}
         </CardContent>
       </Card>
+
+      {mode === "mappings" && restaurantId ? (
+        <LedgerMappingDialog
+          open={mappingDialogOpen}
+          onOpenChange={setMappingDialogOpen}
+          restaurantId={restaurantId}
+          accounts={accounts}
+          mapping={selectedMapping}
+          onSaved={loadData}
+        />
+      ) : null}
     </div>
   );
 }

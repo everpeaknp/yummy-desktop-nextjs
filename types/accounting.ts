@@ -37,8 +37,38 @@ export type LedgerMapping = {
   business_line: string;
   debit_account_id: number;
   credit_account_id: number;
+  label?: string | null;
+  description?: string | null;
+  is_active?: boolean;
+  updated_by_id?: number | null;
+  updated_at?: string | null;
   debit_account?: ChartAccount | null;
   credit_account?: ChartAccount | null;
+};
+
+export type LedgerMappingPayload = {
+  restaurant_id: number;
+  event_type: string;
+  payment_method?: string | null;
+  business_line: string;
+  debit_account_id: number;
+  credit_account_id: number;
+  label?: string | null;
+  description?: string | null;
+  is_active?: boolean;
+  reason?: string | null;
+};
+
+export type MappingExceptionResolvePayload = {
+  restaurant_id: number;
+  event_type: string;
+  payment_method?: string | null;
+  business_line: string;
+  debit_account_id: number;
+  credit_account_id: number;
+  label?: string | null;
+  description?: string | null;
+  reason?: string | null;
 };
 
 export type AccountingSeedDefaultsResult = {

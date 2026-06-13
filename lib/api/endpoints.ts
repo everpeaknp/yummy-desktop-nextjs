@@ -593,6 +593,8 @@ export const ItemCategoryApis = {
 
 export const ExpenseApis = {
   list: '/expenses/',
+  update: (id: number) => `/expenses/${id}`,
+  delete: (id: number) => `/expenses/${id}`,
   summaryTotal: '/expenses/summary/total',
   pendingCandidates: '/expenses/candidates',
   approveCandidate: (id: number) => `/expenses/candidates/${id}/approve`,
@@ -921,6 +923,12 @@ export const AccountingApis = {
     `/accounting/accounts?${buildAccountingQuery(params).toString()}`,
   mappings: (params: Pick<AccountingCoreParams, 'restaurantId' | 'businessLine'>) =>
     `/accounting/mappings?${buildAccountingQuery(params).toString()}`,
+  createMapping: () => '/accounting/mappings',
+  updateMapping: (mappingId: number, restaurantId: number) =>
+    `/accounting/mappings/${mappingId}?restaurant_id=${restaurantId}`,
+  resolveMappingException: () => "/accounting/mapping-exceptions/resolve",
+  mappingAudit: (mappingId: number, restaurantId: number) =>
+    `/accounting/mappings/${mappingId}/audit?restaurant_id=${restaurantId}`,
   seedDefaults: (params: Pick<AccountingCoreParams, 'restaurantId' | 'businessLine'>) =>
     `/accounting/seed-defaults?${buildAccountingQuery(params).toString()}`,
   seedDefaultsAll: () => '/accounting/seed-defaults/all',

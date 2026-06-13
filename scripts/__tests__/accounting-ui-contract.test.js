@@ -820,3 +820,109 @@ test("accounting navigation groups workflows for owner and accountant use", () =
     assert.match(nav, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 });
+
+test("accounting event labels explain system event types in accountant language", () => {
+  const source = read("lib/accounting-event-labels.ts");
+
+  for (const token of [
+    "ACCOUNTING_EVENT_LABELS",
+    "inventory_cash_outflow",
+    "Inventory purchase paid",
+    "supplier_payable_created",
+    "Supplier payable created",
+    "collection_received",
+    "Payment collected",
+    "mappingPriorityHelp",
+  ]) {
+    assert.match(source, new RegExp(token));
+  }
+});
+
+test("accounting report filters expose presets reset scope and report basis", () => {
+  const source = read("components/finance/accounting/financial-report-filters.tsx");
+
+  for (const token of [
+    "DATE_PRESETS",
+    "Today",
+    "This Month",
+    "Last Month",
+    "onReset",
+    "businessLine",
+    "reportBasis",
+    "Active scope",
+    "Reset filters",
+  ]) {
+    assert.match(source, new RegExp(token));
+  }
+});
+
+test("accounting overview groups accountant workflows by purpose", () => {
+  const overview = read("components/finance/accounting/accounting-overview-client.tsx");
+  const nav = read("components/finance/accounting/accounting-nav.tsx");
+
+  for (const token of [
+    "Accounting health",
+    "Daily controls",
+    "Financial statements",
+    "People ledgers",
+    "Setup",
+    "Resolve Exceptions",
+    "Create Voucher",
+    "Open Reports",
+  ]) {
+    assert.match(overview, new RegExp(token));
+  }
+
+  for (const token of ["Overview", "Reports", "Setup", "Controls"]) {
+    assert.match(nav, new RegExp(token));
+  }
+});
+
+test("ledger mapping UI supports accountant-safe manual mapping edits", () => {
+  const table = read("components/finance/accounting/ledger-mapping-table.tsx");
+  const dialog = read("components/finance/accounting/ledger-mapping-dialog.tsx");
+  const master = read("components/finance/accounting/accounting-master-data-client.tsx");
+
+  for (const token of [
+    "accountingEventLabel",
+    "Edit Mapping",
+    "Mapping changes apply to future postings only",
+    "reason",
+    "debit_account_id",
+    "credit_account_id",
+    "is_active",
+  ]) {
+    assert.match(`${table}\n${dialog}\n${master}`, new RegExp(token));
+  }
+});
+
+test("mapping exceptions are presented as an actionable resolver queue", () => {
+  const resolver = read("components/finance/accounting/mapping-exception-resolver.tsx");
+  const overview = read("components/finance/accounting/accounting-overview-client.tsx");
+
+  for (const token of [
+    "MappingExceptionResolver",
+    "Create mapping for future postings",
+    "Open source trace",
+    "Create correction voucher",
+    "Reverse and repost",
+    "does not automatically fix already-posted journals",
+  ]) {
+    assert.match(`${resolver}\n${overview}`, new RegExp(token));
+  }
+});
+
+test("chart of accounts UI supports search filters and account usage warnings", () => {
+  const table = read("components/finance/accounting/account-table.tsx");
+  const master = read("components/finance/accounting/accounting-master-data-client.tsx");
+
+  for (const token of [
+    "Search accounts",
+    "Filter by type",
+    "Suspense account",
+    "Used in mappings",
+    "Deactivate",
+  ]) {
+    assert.match(`${table}\n${master}`, new RegExp(token));
+  }
+});

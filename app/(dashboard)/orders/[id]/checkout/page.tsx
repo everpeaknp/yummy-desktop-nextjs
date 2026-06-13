@@ -56,6 +56,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
+import { REFUND_PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
 
 function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
   if (!input) return null;
@@ -185,6 +186,15 @@ const PAYMENT_METHODS = [
   { value: "digital", label: "Digital/QR", icon: Smartphone, color: "text-purple-600" },
   { value: "credit", label: "Credit", icon: Wallet, color: "text-orange-600" },
 ];
+
+const REFUND_PAYMENT_METHODS = REFUND_PAYMENT_METHOD_OPTIONS.map((method) => {
+  const fullMethod = PAYMENT_METHODS.find((option) => option.value === method.value);
+  return {
+    ...method,
+    icon: fullMethod?.icon || Banknote,
+    color: fullMethod?.color || "text-emerald-600",
+  };
+});
 
 function formatCurrency(amount: number, currency = "Rs.") {
   return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -2327,7 +2337,7 @@ export default function CheckoutPage() {
                 {payMethod === "credit" && orderMeta?.customer_id && (
                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
                       <User className="h-4 w-4" />
-                      Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
+                      Charging to order&apos;s customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
                    </div>
                 )}
 
@@ -2684,7 +2694,7 @@ export default function CheckoutPage() {
                       ) : (
                         <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2 border border-blue-100 dark:border-blue-900">
                           <User className="h-4 w-4" />
-                          Charging to order's customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
+                          Charging to order&apos;s customer: <span className="font-bold">{orderMeta.customer_name || "Guest"}</span>
                         </div>
                       )}
                     </div>
@@ -3494,7 +3504,7 @@ export default function CheckoutPage() {
                   <SelectValue placeholder="Select refund method" />
                 </SelectTrigger>
                 <SelectContent>
-                  {PAYMENT_METHODS.map((m) => (
+                  {REFUND_PAYMENT_METHODS.map((m) => (
                     <SelectItem key={m.value} value={m.value}>
                       <span className="flex items-center gap-2">
                         <m.icon className={cn("h-4 w-4", m.color)} />

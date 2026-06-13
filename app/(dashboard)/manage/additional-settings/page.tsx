@@ -728,7 +728,7 @@ export default function AdditionalSettingsPage() {
                         <div className="flex items-center justify-between">
                             <div>
                                 <h3 className="text-lg font-medium tracking-tight">Menu Gallery</h3>
-                                <p className="text-sm text-muted-foreground font-medium">Photos you've uploaded for your menu and branding.</p>
+                                <p className="text-sm text-muted-foreground font-medium">Photos you&apos;ve uploaded for your menu and branding.</p>
                             </div>
                             <div>
                                 <input
@@ -902,7 +902,7 @@ export default function AdditionalSettingsPage() {
                         <div className="space-y-1">
                             <p className="font-black text-lg">Coming Very Soon</p>
                             <p className="text-sm text-muted-foreground max-w-[280px] mx-auto font-medium">
-                                We're porting the {selectedSetting?.replace("_", " ")} logic from our mobile platform to provide the best experience.
+                                We&apos;re porting the {selectedSetting?.replace("_", " ")} logic from our mobile platform to provide the best experience.
                             </p>
                         </div>
                     </div>

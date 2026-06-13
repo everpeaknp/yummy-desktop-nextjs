@@ -1,4 +1,13 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -18,12 +27,30 @@ function labelize(value: string) {
 type AccountTableProps = {
   accounts: ChartAccount[];
   loading?: boolean;
+  search?: string;
+  accountType?: string;
+  onSearchChange?: (value: string) => void;
+  onAccountTypeChange?: (value: string) => void;
 };
 
-export function AccountTable({ accounts, loading }: AccountTableProps) {
+export function AccountTable({
+  accounts,
+  loading,
+  search = "",
+  accountType = "all",
+  onSearchChange,
+  onAccountTypeChange,
+}: AccountTableProps) {
   if (loading) {
     return <div className="p-6 text-sm text-muted-foreground">Loading accounts...</div>;
   }
+
+  const filteredAccounts = accounts.filter((account) => {
+    const haystack = `${account.code} ${account.name}`.toLowerCase();
+    const matchesSearch = !search || haystack.includes(search.toLowerCase());
+    const matchesType = !accountType || accountType === "all" || account.account_type === accountType;
+    return matchesSearch && matchesType;
+  });
 
   if (accounts.length === 0) {
     return (
@@ -34,7 +61,30 @@ export function AccountTable({ accounts, loading }: AccountTableProps) {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div>
+      <div className="flex flex-wrap gap-2 border-b border-border p-3">
+        <Input
+          placeholder="Search accounts"
+          value={search}
+          onChange={(event) => onSearchChange?.(event.target.value)}
+          className="h-9 w-full sm:w-[260px]"
+        />
+        <Select value={accountType || "all"} onValueChange={(value) => onAccountTypeChange?.(value)}>
+          <SelectTrigger className="h-9 w-[180px]">
+            <SelectValue placeholder="Filter by type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            <SelectItem value="asset">Assets</SelectItem>
+            <SelectItem value="liability">Liabilities</SelectItem>
+            <SelectItem value="equity">Equity</SelectItem>
+            <SelectItem value="revenue">Revenue</SelectItem>
+            <SelectItem value="contra_revenue">Contra revenue</SelectItem>
+            <SelectItem value="expense">Expenses</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
@@ -43,13 +93,22 @@ export function AccountTable({ accounts, loading }: AccountTableProps) {
             <TableHead>Type</TableHead>
             <TableHead>Normal</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Usage</TableHead>
+            <TableHead className="text-right">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {accounts.map((account) => (
+          {filteredAccounts.map((account) => (
             <TableRow key={account.id}>
               <TableCell className="font-mono text-xs">{account.code}</TableCell>
-              <TableCell className="font-medium">{account.name}</TableCell>
+              <TableCell>
+                <div className="font-medium">{account.name}</div>
+                {account.is_suspense && (
+                  <Badge variant="outline" className="mt-1">
+                    Suspense account
+                  </Badge>
+                )}
+              </TableCell>
               <TableCell>
                 <Badge variant="secondary">{labelize(account.account_type)}</Badge>
               </TableCell>
@@ -63,10 +122,19 @@ export function AccountTable({ accounts, loading }: AccountTableProps) {
                   <Badge variant="secondary">Inactive</Badge>
                 )}
               </TableCell>
+              <TableCell>
+                <span className="text-xs text-muted-foreground">Used in mappings</span>
+              </TableCell>
+              <TableCell className="text-right">
+                <Button variant="ghost" size="sm" disabled>
+                  Deactivate
+                </Button>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

@@ -300,7 +300,7 @@ export default function StaffDetailPage() {
         <Card>
           <CardContent className="p-12 text-center">
             <h2 className="text-xl font-semibold mb-2">Staff Member Not Found</h2>
-            <p className="text-muted-foreground">The staff record you are looking for does not exist or you don't have permission to view it.</p>
+            <p className="text-muted-foreground">The staff record you are looking for does not exist or you don&apos;t have permission to view it.</p>
           </CardContent>
         </Card>
       </div>

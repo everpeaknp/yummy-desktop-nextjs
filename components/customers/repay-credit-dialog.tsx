@@ -60,7 +60,7 @@ export function RepayCreditDialog({ customer, open, onOpenChange, onSuccess }: R
         <DialogHeader>
           <DialogTitle>Repay Credit</DialogTitle>
           <DialogDescription>
-            Record a partial or full payment for {customer?.full_name || customer?.name}'s credit.
+            Record a partial or full payment for {customer?.full_name || customer?.name}&apos;s credit.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-4">

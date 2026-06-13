@@ -482,7 +482,10 @@ export default function POSSystem({
 
       if (existingIndex >= 0) {
         const newCart = [...prev];
-        newCart[existingIndex].quantity += 1;
+        newCart[existingIndex] = {
+          ...newCart[existingIndex],
+          quantity: newCart[existingIndex].quantity + 1
+        };
         return newCart;
       }
       

@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { GeneralPurchaseApis, SupplierApis } from "@/lib/api/endpoints";
 import { Loader2 } from "lucide-react";
+import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
 
 interface PurchaseDialogProps {
     open: boolean;
@@ -39,7 +40,7 @@ const STATUS_OPTIONS = [
 ];
 
 const PAYMENT_STATUS_OPTIONS = [
-    { label: "Unpaid", value: "unpaid" },
+    { label: "Unpaid", value: "pending" },
     { label: "Paid", value: "paid" },
 ];
 
@@ -52,7 +53,8 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
         unit: "",
         total_cost: "",
         supplier_id: "",
-        payment_status: "unpaid",
+        payment_status: "pending",
+        payment_method: "cash",
         status: "draft",
         notes: "",
         purchased_date: new Date().toISOString().split('T')[0],
@@ -79,7 +81,8 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                     unit: purchase.unit || "",
                     total_cost: purchase.total_cost?.toString() || "",
                     supplier_id: purchase.supplier_id?.toString() || "",
-                    payment_status: purchase.payment_status || "unpaid",
+                    payment_status: purchase.payment_status || "pending",
+                    payment_method: purchase.payment_method || "cash",
                     status: purchase.status || "draft",
                     notes: purchase.notes || "",
                     purchased_date: purchase.purchased_date ? new Date(purchase.purchased_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -90,7 +93,8 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                     unit: "",
                     total_cost: "",
                     supplier_id: "",
-                    payment_status: "unpaid",
+                    payment_status: "pending",
+                    payment_method: "cash",
                     status: "draft",
                     notes: "",
                     purchased_date: new Date().toISOString().split('T')[0],
@@ -102,6 +106,11 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user?.restaurant_id) return;
+
+        if (formData.payment_status !== "paid" && !formData.supplier_id) {
+            toast.error("Supplier is required for unpaid purchases.");
+            return;
+        }
 
         setLoading(true);
         try {
@@ -116,6 +125,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                 business_line: resolvedBusinessLine,
                 total_cost: parseFloat(formData.total_cost),
                 supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
+                payment_method: formData.payment_status === "paid" ? formData.payment_method : null,
                 purchased_date: formData.purchased_date + "T00:00:00Z"
             };
 
@@ -256,6 +266,26 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                                 </SelectContent>
                             </Select>
                         </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="payment_method">Payment Method</Label>
+                        <Select
+                            value={formData.payment_method}
+                            onValueChange={(val) => setFormData({ ...formData, payment_method: val })}
+                            disabled={formData.payment_status !== "paid"}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select payment method" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {PAYMENT_METHOD_OPTIONS.map((method) => (
+                                    <SelectItem key={method.value} value={method.value}>
+                                        {method.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     <div className="space-y-2">

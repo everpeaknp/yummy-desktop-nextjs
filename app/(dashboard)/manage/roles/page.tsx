@@ -189,9 +189,9 @@ export default function RolesPage() {
 
   // Group permissions by module
   const groupedPermissions = permissions.reduce((acc: Record<string, Permission[]>, perm) => {
-    const module = perm.module || "General";
-    if (!acc[module]) acc[module] = [];
-    acc[module].push(perm);
+    const permissionModule = perm.module || "General";
+    if (!acc[permissionModule]) acc[permissionModule] = [];
+    acc[permissionModule].push(perm);
     return acc;
   }, {});
 

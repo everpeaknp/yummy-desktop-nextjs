@@ -155,3 +155,92 @@ test("operational finance reports are exposed as real UI routes", () => {
     assert.match(client, new RegExp(`\\b${token}\\b`));
   }
 });
+
+test("general purchase dialog submits backend payment status values", () => {
+  const source = read("components/manage/purchases/purchase-dialog.tsx");
+
+  assert.match(source, /label: "Unpaid", value: "pending"/);
+  assert.doesNotMatch(source, /value: "unpaid"/);
+  assert.doesNotMatch(source, /payment_status: "unpaid"/);
+});
+
+test("unpaid inventory and purchases require a supplier before submit", () => {
+  const inventorySource = read("app/(dashboard)/inventory/page.tsx");
+  const purchaseSource = read("components/manage/purchases/purchase-dialog.tsx");
+
+  assert.match(inventorySource, /Supplier is required for unpaid inventory purchases\./);
+  assert.match(inventorySource, /opening_stock_payment_status/);
+  assert.match(inventorySource, /payment_status/);
+
+  assert.match(purchaseSource, /Supplier is required for unpaid purchases\./);
+  assert.match(purchaseSource, /payment_status/);
+  assert.match(purchaseSource, /supplier_id/);
+});
+
+test("expense page exposes edit and delete actions for recorded expenses", () => {
+  const source = read("app/(dashboard)/finance/expenses/page.tsx");
+
+  assert.match(source, /\bhandleEditExpense\b/);
+  assert.match(source, /\bhandleDeleteExpense\b/);
+  assert.match(source, /ExpenseApis\.update/);
+  assert.match(source, /ExpenseApis\.delete/);
+});
+
+test("payable payments use canonical POS payment methods", () => {
+  const endpoints = read("lib/api/endpoints.ts");
+  const payableDialog = read("components/manage/payments/payment-dialog.tsx");
+  const purchaseDialog = read("components/manage/purchases/purchase-dialog.tsx");
+  const expensesPage = read("app/(dashboard)/finance/expenses/page.tsx");
+
+  assert.match(endpoints, /\bupdate:\s*\(id: number\) => `\/expenses\/\$\{id\}`/);
+  assert.match(endpoints, /\bdelete:\s*\(id: number\) => `\/expenses\/\$\{id\}`/);
+
+  for (const source of [payableDialog, purchaseDialog, expensesPage]) {
+    assert.match(source, /PAYMENT_METHOD_OPTIONS/);
+    assert.doesNotMatch(source, /bank_transfer/);
+    assert.doesNotMatch(source, /digital_wallet/);
+    assert.doesNotMatch(source, /cheque/);
+  }
+});
+
+test("payable payment dialog submits selected payment instruments", () => {
+  const source = read("components/manage/payments/payment-dialog.tsx");
+  const helper = read("lib/payment-instruments.ts");
+
+  assert.match(helper, /extractPaymentInstruments/);
+  assert.match(helper, /buildPaymentInstrument/);
+  assert.match(source, /useRestaurant/);
+  assert.match(source, /selectedStaticQrIndex/);
+  assert.match(source, /selectedCardIndex/);
+  assert.match(source, /buildPaymentInstrument/);
+  assert.match(source, /instrument:/);
+  assert.match(source, /staticPaymentQrs\.map/);
+  assert.match(source, /staticPaymentCards\.map/);
+  assert.match(source, /No QR instruments configured/);
+  assert.match(source, /No card instruments configured/);
+});
+
+test("inventory paid receipts require explicit cash-out payment method", () => {
+  const source = read("app/(dashboard)/inventory/page.tsx");
+
+  assert.match(source, /CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS/);
+  assert.match(source, /opening_stock_payment_method/);
+  assert.match(source, /payload\.payment_method = \(adjustForm as any\)\.payment_method/);
+  assert.match(source, /opening_stock_payment_method:[\s\S]*itemForm\.opening_stock_payment_method/);
+  assert.match(source, /Supplier is required for unpaid inventory purchases\./);
+});
+
+test("refund payout methods exclude customer credit", () => {
+  const shared = read("lib/payment-method-options.ts");
+  const checkout = read("app/(dashboard)/orders/[id]/checkout/page.tsx");
+  const refundStart = checkout.indexOf('htmlFor="refund-method"');
+  const refundEnd = checkout.indexOf('htmlFor="refund-reason"', refundStart);
+  const refundBlock = checkout.slice(refundStart, refundEnd);
+
+  assert.match(shared, /REFUND_PAYMENT_METHOD_OPTIONS/);
+  assert.match(checkout, /REFUND_PAYMENT_METHOD_OPTIONS/);
+  assert.match(checkout, /REFUND_PAYMENT_METHODS\.map/);
+  assert.match(refundBlock, /REFUND_PAYMENT_METHODS\.map/);
+  assert.doesNotMatch(refundBlock, /\{PAYMENT_METHODS\.map/);
+  assert.doesNotMatch(refundBlock, /value="credit"/);
+});

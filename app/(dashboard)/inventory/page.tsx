@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
 
 export default function InventoryPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -58,6 +59,7 @@ export default function InventoryPage() {
     cost: "",
     supplier_id: "none",
     payment_status: "pending",
+    payment_method: "cash",
   });
   const [adjustSubmitting, setAdjustSubmitting] = useState(false);
 
@@ -73,6 +75,7 @@ export default function InventoryPage() {
     min_stock_level: "",
     opening_stock_total_cost: "",
     opening_stock_payment_status: "paid",
+    opening_stock_payment_method: "cash",
     supplier_id: "",
     location: "",
     cost_per_unit: "",
@@ -387,11 +390,24 @@ export default function InventoryPage() {
     e.preventDefault();
     if (!adjustingItem || !adjustForm.quantity) return;
 
+    const selectedPayment = normalizePaymentStatus((adjustForm as any).payment_status);
+    const selectedSupplierId = (adjustForm as any).supplier_id;
+    const isUnpaidStockAdd =
+      adjustForm.type === "add" &&
+      Number(adjustForm.cost || 0) > 0 &&
+      selectedPayment !== "paid";
+
+    if (isUnpaidStockAdd && (!selectedSupplierId || selectedSupplierId === "none")) {
+      toast({
+        title: "Supplier Required",
+        description: "Supplier is required for unpaid inventory purchases.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setAdjustSubmitting(true);
     try {
-      const selectedPayment = normalizePaymentStatus((adjustForm as any).payment_status);
-      const wantPaid = adjustForm.type === "add" && selectedPayment === "paid";
-
       const payload: any = {
         adjustment_type: adjustForm.type,
         quantity: Number(adjustForm.quantity),
@@ -401,50 +417,15 @@ export default function InventoryPage() {
 
       if (adjustForm.type === 'add') {
         payload.payment_status = (adjustForm as any).payment_status || 'pending';
+        if (payload.payment_status === "paid") {
+          payload.payment_method = (adjustForm as any).payment_method || "cash";
+        }
         if ((adjustForm as any).supplier_id && (adjustForm as any).supplier_id !== "none") {
           payload.supplier_id = Number((adjustForm as any).supplier_id);
         }
       }
 
-      const res = await apiClient.post(InventoryApis.adjustInventory(adjustingItem.id), payload);
-
-      const created = res.data?.data;
-      const createdId = Number(created?.id || created?.adjustment?.id || created?.adjustment_id || created?.adjustmentId);
-
-      // If the user picked "Paid", convert the linked awaiting-payment record to an expense immediately.
-      if (wantPaid) {
-        const restaurantId = user?.restaurant_id;
-        if (restaurantId) {
-          try {
-            const ap = await apiClient.get(AwaitingPaymentApis.list(restaurantId, { status: "active", limit: 200 }));
-            const items = ap.data?.data?.items || [];
-            let record = createdId ? items.find((r: any) => Number(r?.inventory_adjustment_id) === createdId) : null;
-            if (!record) {
-              // Fallback: latest awaiting-payment for this item
-              const matches = items
-                .filter((r: any) => r?.source_type === "inventory_adjustment" && Number(r?.inventory_item_id) === Number(adjustingItem.id))
-                .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-              record = matches[0];
-            }
-            if (record?.id) {
-              const amount = Number(record.amount || 0);
-              const paid = Number(record.paid_amount || 0);
-              const remaining = Math.max(0, amount - paid);
-              await apiClient.post(
-                AwaitingPaymentApis.markPaid(Number(record.id), restaurantId),
-                { paid_amount: remaining || undefined, payment_method: "cash" }
-              );
-            }
-          } catch (err: any) {
-            console.error("[inventory] auto convert awaiting-payment failed", err);
-            toast({
-              title: "Saved as Pending",
-              description: err.response?.data?.detail || "Saved, but could not auto-mark paid. Use Mark Paid in history.",
-              variant: "destructive",
-            });
-          }
-        }
-      }
+      await apiClient.post(InventoryApis.adjustInventory(adjustingItem.id), payload);
       
       toast({
         title: "Success",
@@ -459,6 +440,7 @@ export default function InventoryPage() {
         cost: "",
         supplier_id: "none",
         payment_status: "pending",
+        payment_method: "cash",
       });
       
       // Refresh inventory
@@ -487,6 +469,23 @@ export default function InventoryPage() {
     e.preventDefault();
     if (!user?.restaurant_id) return;
 
+    const openingQuantity = Number(itemForm.current_stock || 0);
+    const openingCost = Number(itemForm.opening_stock_total_cost || 0);
+    const isUnpaidOpeningStock =
+      !editingItem &&
+      openingQuantity > 0 &&
+      openingCost > 0 &&
+      itemForm.opening_stock_payment_status !== "paid";
+
+    if (isUnpaidOpeningStock && (!itemForm.supplier_id || itemForm.supplier_id === "none")) {
+      toast({
+        title: "Supplier Required",
+        description: "Supplier is required for unpaid inventory purchases.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setItemSubmitting(true);
     try {
       if (editingItem) {
@@ -514,6 +513,9 @@ export default function InventoryPage() {
           min_stock_level: Number(itemForm.min_stock_level),
           opening_stock_total_cost: itemForm.opening_stock_total_cost ? Number(itemForm.opening_stock_total_cost) : null,
           opening_stock_payment_status: itemForm.opening_stock_payment_status,
+          opening_stock_payment_method: itemForm.opening_stock_payment_status === "paid"
+            ? itemForm.opening_stock_payment_method
+            : null,
           supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
           location: itemForm.location || null,
           is_active: itemForm.is_active,
@@ -548,6 +550,7 @@ export default function InventoryPage() {
         reason: "", 
         cost: "",
         payment_status: "pending",
+        payment_method: "cash",
         supplier_id: item.supplier_id?.toString() || "none",
     });
   };
@@ -563,6 +566,7 @@ export default function InventoryPage() {
       min_stock_level: "",
       opening_stock_total_cost: "",
       opening_stock_payment_status: "paid",
+      opening_stock_payment_method: "cash",
       supplier_id: "",
       location: "",
       cost_per_unit: "",
@@ -583,6 +587,7 @@ export default function InventoryPage() {
       cost_per_unit: item.cost_per_unit?.toString() || "",
       opening_stock_total_cost: "",
       opening_stock_payment_status: "paid",
+      opening_stock_payment_method: "cash",
       supplier_id: item.supplier_id?.toString() || "none",
       location: item.location || "",
       is_active: item.is_active ?? true,
@@ -811,7 +816,9 @@ export default function InventoryPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                        <Label htmlFor="adjust_supplier">Supplier</Label>
+                        <Label htmlFor="adjust_supplier">
+                          Supplier {adjustForm.payment_status !== "paid" ? "*" : ""}
+                        </Label>
                         <Select 
                             value={(adjustForm as any).supplier_id || "none"} 
                             onValueChange={(v) => setAdjustForm({ ...adjustForm, supplier_id: v } as any)}
@@ -820,7 +827,9 @@ export default function InventoryPage() {
                                 <SelectValue placeholder="Select supplier" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="none">No Supplier</SelectItem>
+                                <SelectItem value="none" disabled={adjustForm.payment_status !== "paid"}>
+                                  No Supplier
+                                </SelectItem>
                                 {Array.isArray(suppliers) && suppliers.map((s) => (
                                     <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
                                 ))}
@@ -837,12 +846,32 @@ export default function InventoryPage() {
                                 <SelectValue placeholder="Select status" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="paid">Paid</SelectItem>
-                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="paid">Paid Now</SelectItem>
+                                <SelectItem value="pending">Unpaid / Supplier Payable</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
                   </div>
+                  {adjustForm.payment_status === "paid" && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="adjust_payment_method">Payment Method</Label>
+                      <Select
+                        value={(adjustForm as any).payment_method || "cash"}
+                        onValueChange={(v) => setAdjustForm({ ...adjustForm, payment_method: v } as any)}
+                      >
+                        <SelectTrigger id="adjust_payment_method">
+                          <SelectValue placeholder="Select payment method" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PAYMENT_METHOD_OPTIONS.map((method) => (
+                            <SelectItem key={method.value} value={method.value}>
+                              {method.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </>
               )}
               <div className="grid gap-2">
@@ -963,11 +992,31 @@ export default function InventoryPage() {
                         <SelectValue placeholder="Select status" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="paid">Paid (Cash/Purchase)</SelectItem>
-                        <SelectItem value="pending">Pending (Awaiting Payment)</SelectItem>
+                        <SelectItem value="paid">Paid Now</SelectItem>
+                        <SelectItem value="pending">Unpaid / Supplier Payable</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                  {itemForm.opening_stock_payment_status === "paid" && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="opening_payment_method">Opening Payment Method</Label>
+                      <Select
+                        value={itemForm.opening_stock_payment_method}
+                        onValueChange={(v) => setItemForm({ ...itemForm, opening_stock_payment_method: v })}
+                      >
+                        <SelectTrigger id="opening_payment_method">
+                          <SelectValue placeholder="Select payment method" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PAYMENT_METHOD_OPTIONS.map((method) => (
+                            <SelectItem key={method.value} value={method.value}>
+                              {method.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </>
               )}
               <div className="grid gap-2">
@@ -996,7 +1045,9 @@ export default function InventoryPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="supplier">Supplier</Label>
+                <Label htmlFor="supplier">
+                  Supplier {!editingItem && itemForm.opening_stock_payment_status !== "paid" ? "*" : ""}
+                </Label>
                 <Select 
                   value={itemForm.supplier_id || "none"} 
                   onValueChange={(v) => setItemForm({ ...itemForm, supplier_id: v })}
@@ -1005,7 +1056,12 @@ export default function InventoryPage() {
                     <SelectValue placeholder="Select supplier" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">No Supplier</SelectItem>
+                    <SelectItem
+                      value="none"
+                      disabled={!editingItem && itemForm.opening_stock_payment_status !== "paid"}
+                    >
+                      No Supplier
+                    </SelectItem>
                     {Array.isArray(suppliers) && suppliers.map((s) => (
                       <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
                     ))}
@@ -1038,7 +1094,7 @@ export default function InventoryPage() {
                 <div className="space-y-0.5">
                   <Label htmlFor="is_active">Active Status</Label>
                   <p className="text-[10px] text-muted-foreground">
-                    Inactive items won't show in the POS system.
+                    Inactive items won&apos;t show in the POS system.
                   </p>
                 </div>
                 <Switch

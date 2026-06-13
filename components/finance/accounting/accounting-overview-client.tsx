@@ -16,7 +16,9 @@ import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import { AccountingNav } from "./accounting-nav";
 import { AccountingDrilldownDrawer } from "./accounting-drilldown-drawer";
 import { FinancialReportFilters } from "./financial-report-filters";
+import { LedgerMappingDialog } from "./ledger-mapping-dialog";
 import { MappingExceptionBanner } from "./mapping-exception-banner";
+import { MappingExceptionResolver } from "./mapping-exception-resolver";
 import { TrialBalanceTable } from "./trial-balance-table";
 import type {
   AccountingBackfillRequest,
@@ -25,6 +27,8 @@ import type {
   AccountingHealthItem,
   AccountingHealthResponse,
   AccountingPostResult,
+  ChartAccount,
+  LedgerMapping,
   MappingExceptionReportResponse,
   TrialBalanceResponse,
 } from "@/types/accounting";
@@ -65,6 +69,9 @@ type BaseResponse<T> = {
   message?: string;
 };
 
+const ACCOUNTING_HEALTH_LABEL = "Accounting health";
+const LEGACY_ACCOUNTING_HEALTH_LABEL = "Accounting Health";
+
 function metricDifference(data: TrialBalanceResponse | null) {
   return Math.abs(Number(data?.total_debit ?? 0) - Number(data?.total_credit ?? 0));
 }
@@ -83,6 +90,89 @@ function formatHealthValue(item: AccountingHealthItem) {
   return String(item.value);
 }
 
+const accountingShortcutGroups = [
+  {
+    title: "Daily controls",
+    items: [
+      {
+        label: "Trial Balance",
+        href: "/finance/accounting/trial-balance",
+        description: "Check whether posted debits and credits balance.",
+      },
+      {
+        label: "General Ledger",
+        href: "/finance/accounting/general-ledger",
+        description: "Review journal lines by account.",
+      },
+      {
+        label: "Cash Flow",
+        href: "/finance/accounting/cash-flow",
+        description: "Track cash inflows and outflows.",
+      },
+    ],
+  },
+  {
+    title: "Financial statements",
+    items: [
+      {
+        label: "Profit & Loss",
+        href: "/finance/accounting/profit-loss",
+        description: "Revenue, costs, and profit.",
+      },
+      {
+        label: "Balance Sheet",
+        href: "/finance/accounting/balance-sheet",
+        description: "Assets, liabilities, and equity.",
+      },
+      {
+        label: "VAT Summary",
+        href: "/finance/accounting/vat-summary",
+        description: "Taxable sales and tax payable.",
+      },
+    ],
+  },
+  {
+    title: "People ledgers",
+    items: [
+      {
+        label: "Customer Ledger",
+        href: "/finance/accounting/customer-ledger",
+        description: "Customer receivables activity.",
+      },
+      {
+        label: "Supplier Ledger",
+        href: "/finance/accounting/supplier-ledger",
+        description: "Supplier payable activity.",
+      },
+      {
+        label: "AR/AP Aging",
+        href: "/finance/accounting/ar-aging",
+        description: "Outstanding balances by age.",
+      },
+    ],
+  },
+  {
+    title: "Setup",
+    items: [
+      {
+        label: "Chart of Accounts",
+        href: "/finance/accounting/chart-of-accounts",
+        description: "Manage account structure.",
+      },
+      {
+        label: "Ledger Mappings",
+        href: "/finance/accounting/ledger-mapping",
+        description: "Map finance events to accounts.",
+      },
+      {
+        label: "Opening Balances",
+        href: "/finance/accounting/opening-balances",
+        description: "Set starting balances.",
+      },
+    ],
+  },
+];
+
 export function AccountingOverviewClient() {
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
@@ -92,6 +182,9 @@ export function AccountingOverviewClient() {
   const [station, setStation] = useState("");
   const [trialBalance, setTrialBalance] = useState<TrialBalanceResponse | null>(null);
   const [mappingExceptions, setMappingExceptions] = useState<MappingExceptionReportResponse | null>(null);
+  const [mappingAccounts, setMappingAccounts] = useState<ChartAccount[]>([]);
+  const [prefillMapping, setPrefillMapping] = useState<LedgerMapping | null>(null);
+  const [mappingDialogOpen, setMappingDialogOpen] = useState(false);
   const [accountingHealth, setAccountingHealth] = useState<AccountingHealthResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -131,21 +224,24 @@ export function AccountingOverviewClient() {
         timezone: "Asia/Katmandu",
         station: station.trim() || undefined,
       };
-      const [healthRes, trialBalanceRes, mappingExceptionRes] = await Promise.all([
+      const [healthRes, trialBalanceRes, mappingExceptionRes, accountsRes] = await Promise.all([
         apiClient.get<BaseResponse<AccountingHealthResponse>>(AccountingApis.health(params)),
         apiClient.get<BaseResponse<TrialBalanceResponse>>(AccountingReportApis.trialBalance(params)),
         apiClient.get<BaseResponse<MappingExceptionReportResponse>>(
           AccountingReportApis.mappingExceptions(params)
         ),
+        apiClient.get<BaseResponse<ChartAccount[]>>(AccountingApis.accounts({ restaurantId })),
       ]);
       setAccountingHealth(healthRes.data?.data ?? null);
       setTrialBalance(trialBalanceRes.data?.data ?? null);
       setMappingExceptions(mappingExceptionRes.data?.data ?? null);
+      setMappingAccounts(accountsRes.data?.data ?? []);
     } catch (error) {
       console.error("Failed to load trial balance", error);
       setAccountingHealth(null);
       setTrialBalance(null);
       setMappingExceptions(null);
+      setMappingAccounts([]);
       toast.error("Failed to load trial balance");
     } finally {
       setLoading(false);
@@ -227,6 +323,20 @@ export function AccountingOverviewClient() {
     } finally {
       setPosting(false);
     }
+  };
+
+  const openExceptionMapping = (eventType: string, paymentMethod: string | null, businessLine: string) => {
+    setPrefillMapping({
+      id: 0,
+      restaurant_id: restaurantId ?? 0,
+      event_type: eventType,
+      payment_method: paymentMethod,
+      business_line: businessLine || "restaurant",
+      debit_account_id: 0,
+      credit_account_id: 0,
+      is_active: true,
+    });
+    setMappingDialogOpen(true);
   };
 
   const runBackfillDryRun = async () => {
@@ -399,7 +509,7 @@ export function AccountingOverviewClient() {
               ) : (
                 <AlertCircle className="h-4 w-4 text-amber-600" />
               )}
-              Accounting Health
+              {ACCOUNTING_HEALTH_LABEL}
             </span>
             <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${healthStatusClasses(accountingHealth?.status)}`}>
               {accountingHealth?.status ?? "loading"}
@@ -454,6 +564,63 @@ export function AccountingOverviewClient() {
         missingCount={mappingExceptions?.missing_mapping_count ?? 0}
         suspenseAmount={mappingExceptions?.suspense_amount ?? 0}
       />
+
+      <MappingExceptionResolver report={mappingExceptions} onCreateMapping={openExceptionMapping} />
+
+      <section className="grid gap-3 md:grid-cols-3">
+        <Link href="/finance/accounting/ledger-mapping">
+          <Button variant="outline" className="h-auto w-full justify-start p-4 text-left">
+            <div>
+              <div className="font-semibold">Resolve Exceptions</div>
+              <div className="text-xs font-normal text-muted-foreground">
+                Fix suspense postings by adding or updating mappings.
+              </div>
+            </div>
+          </Button>
+        </Link>
+        <Link href="/finance/accounting/vouchers">
+          <Button variant="outline" className="h-auto w-full justify-start p-4 text-left">
+            <div>
+              <div className="font-semibold">Create Voucher</div>
+              <div className="text-xs font-normal text-muted-foreground">
+                Post manual adjustments through approval.
+              </div>
+            </div>
+          </Button>
+        </Link>
+        <Link href="/finance/accounting/trial-balance">
+          <Button variant="outline" className="h-auto w-full justify-start p-4 text-left">
+            <div>
+              <div className="font-semibold">Open Reports</div>
+              <div className="text-xs font-normal text-muted-foreground">
+                Start with trial balance, ledger, P&L, and balance sheet.
+              </div>
+            </div>
+          </Button>
+        </Link>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-4">
+        {accountingShortcutGroups.map((group) => (
+          <Card key={group.title}>
+            <CardHeader className="border-b border-border p-4">
+              <CardTitle className="text-base">{group.title}</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-2 p-4">
+              {group.items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="block rounded-md border border-border p-3 hover:bg-muted/50"
+                >
+                  <div className="text-sm font-semibold">{item.label}</div>
+                  <div className="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</div>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+        ))}
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <Card className="overflow-hidden">
@@ -604,6 +771,16 @@ export function AccountingOverviewClient() {
         data={drilldownData}
         loading={drilldownLoading}
       />
+      {restaurantId ? (
+        <LedgerMappingDialog
+          open={mappingDialogOpen}
+          onOpenChange={setMappingDialogOpen}
+          restaurantId={restaurantId}
+          accounts={mappingAccounts}
+          mapping={prefillMapping}
+          onSaved={loadTrialBalance}
+        />
+      ) : null}
     </div>
   );
 }
