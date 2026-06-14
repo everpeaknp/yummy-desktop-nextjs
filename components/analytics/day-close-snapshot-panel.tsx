@@ -61,6 +61,10 @@ export function DayCloseSnapshotPanel({
   const dayOrders = snapshotDayOrderRows(snapshot);
   const salesByCategory = snapshotSalesByCategoryRows(snapshot);
   const salesByTable = snapshotSalesByTableRows(snapshot);
+  const accountingBridge =
+    snapshot.accounting_bridge && typeof snapshot.accounting_bridge === "object"
+      ? (snapshot.accounting_bridge as Record<string, unknown>)
+      : null;
   const coveredRange = formatDayCloseCoveredRange(
     snapshot.period_start_at,
     snapshot.period_end_at,
@@ -142,6 +146,9 @@ export function DayCloseSnapshotPanel({
           </TabsTrigger>
           <TabsTrigger value="sales-by-table" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Sales by Table
+          </TabsTrigger>
+          <TabsTrigger value="accounting-checks" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
+            Accounting Checks
           </TabsTrigger>
         </TabsList>
         <div className="mt-4 space-y-4">
@@ -265,6 +272,13 @@ export function DayCloseSnapshotPanel({
               <EmptySnapshotNotice message="Sales by table are not available in this snapshot." />
             )}
           </TabsContent>
+          <TabsContent value="accounting-checks" className="m-0">
+            {accountingBridge ? (
+              <AccountingChecksCard bridge={accountingBridge} />
+            ) : (
+              <EmptySnapshotNotice message="Accounting bridge checks are not available in this snapshot. Reconfirm or review this close from Accounting > Day Closes." />
+            )}
+          </TabsContent>
         </div>
       </Tabs>
 
@@ -275,6 +289,52 @@ export function DayCloseSnapshotPanel({
           </h4>
           <SimpleListCard title="Room vs Food" rows={hotelSplit} />
         </section>
+      ) : null}
+    </div>
+  );
+}
+
+function AccountingChecksCard({ bridge }: { bridge: Record<string, unknown> }) {
+  const status = String(bridge.status ?? "needs_review");
+  const blockers = Array.isArray(bridge.blockers) ? bridge.blockers.map(String) : [];
+  const rows = [
+    { label: "Unposted Finance Events", value: String(Number(bridge.unposted_finance_events ?? 0)) },
+    { label: "Journal Count", value: String(Number(bridge.journal_count ?? 0)) },
+    { label: "Trial Balance Difference", value: formatDayCloseCurrency(Number(bridge.trial_balance_difference ?? 0)) },
+    { label: "Suspense Amount", value: formatDayCloseCurrency(Number(bridge.suspense_amount ?? 0)) },
+    { label: "Cash Variance", value: formatDayCloseCurrency(Number(bridge.cash_variance ?? 0)) },
+  ];
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-border/50 bg-card/80 p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="dc-eyebrow">Accounting Status</p>
+          <p className={cn("mt-1 text-sm font-semibold capitalize", status === "blocked" ? "text-rose-600" : "text-emerald-600")}>
+            {status.replace(/_/g, " ")}
+          </p>
+        </div>
+        <Link href="/finance/accounting/day-closes" className="text-sm font-semibold text-primary hover:underline">
+          Open accounting review
+        </Link>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label} className="rounded-xl border border-border/50 bg-muted/10 px-3 py-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{row.label}</p>
+            <p className="mt-1 text-sm font-semibold text-foreground">{row.value}</p>
+          </div>
+        ))}
+      </div>
+      {blockers.length ? (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-700 dark:text-rose-300">
+          <p className="mb-2 font-semibold">Blockers</p>
+          <ul className="space-y-1">
+            {blockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </div>
   );

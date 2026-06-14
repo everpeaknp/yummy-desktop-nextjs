@@ -94,6 +94,44 @@ export type AccountingPostResult = {
   skipped_count: number;
 };
 
+export type AccountingDayClosePostingStatus = {
+  day_close_id: number;
+  restaurant_id: number;
+  business_date: string;
+  business_line: string;
+  status: "posted" | "blocked" | "soft_closed" | "needs_review" | string;
+  can_confirm: boolean;
+  cash_expected: number;
+  cash_actual: number;
+  cash_variance: number;
+  finance_events_posted: number;
+  finance_events_skipped: number;
+  journal_count: number;
+  unposted_finance_events: number;
+  trial_balance_difference: number;
+  missing_mapping_count: number;
+  suspense_amount: number;
+  cash_variance_event_id?: number | null;
+  cash_variance_journal_entry_id?: number | null;
+  blockers: string[];
+};
+
+export type AccountingDayClose = {
+  id: number;
+  restaurant_id: number;
+  business_date: string;
+  business_line: string;
+  status: string;
+  period_start_at?: string | null;
+  period_end_at?: string | null;
+  confirmed_at?: string | null;
+  expected_cash: number;
+  actual_cash: number;
+  cash_discrepancy: number;
+  accounting_status: AccountingDayClosePostingStatus;
+  snapshot_data?: Record<string, unknown> | null;
+};
+
 export type AccountingSettings = {
   id: number;
   restaurant_id: number;

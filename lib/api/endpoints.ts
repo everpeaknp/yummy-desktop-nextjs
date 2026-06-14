@@ -858,6 +858,28 @@ export const FinanceReportApis = {
 export const AccountingApis = {
   health: (params: AccountingCoreParams) =>
     `/accounting/health?${buildAccountingQuery(params).toString()}`,
+  dayCloses: (params: AccountingCoreParams & { skip?: number; limit?: number }) => {
+    const query = buildAccountingQuery(params);
+    if (params.skip !== undefined) query.append('skip', params.skip.toString());
+    if (params.limit !== undefined) query.append('limit', params.limit.toString());
+    return `/accounting/day-closes?${query.toString()}`;
+  },
+  dayClose: (dayCloseId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/day-closes/${dayCloseId}?restaurant_id=${restaurantId}`
+      : `/accounting/day-closes/${dayCloseId}`,
+  dayClosePostingStatus: (dayCloseId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/day-closes/${dayCloseId}/posting-status?restaurant_id=${restaurantId}`
+      : `/accounting/day-closes/${dayCloseId}/posting-status`,
+  postDayCloseMissingEvents: (dayCloseId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/day-closes/${dayCloseId}/post-missing-events?restaurant_id=${restaurantId}`
+      : `/accounting/day-closes/${dayCloseId}/post-missing-events`,
+  softCloseDayClose: (dayCloseId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/day-closes/${dayCloseId}/soft-close?restaurant_id=${restaurantId}`
+      : `/accounting/day-closes/${dayCloseId}/soft-close`,
   setupStatus: (params: Pick<AccountingCoreParams, 'restaurantId'>) =>
     `/accounting/setup/status?${buildAccountingQuery(params).toString()}`,
   repairSetup: (params: Pick<AccountingCoreParams, 'restaurantId'>) =>

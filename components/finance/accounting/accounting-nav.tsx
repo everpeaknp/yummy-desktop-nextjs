@@ -11,6 +11,7 @@ import {
   FilePenLine,
   FileSpreadsheet,
   FileText,
+  History,
   Landmark,
   ListChecks,
   Map,
@@ -62,6 +63,8 @@ const accountingNavGroups = [
     eyebrow: "Tax & Settlement",
     items: [
       { href: "/finance/accounting/vouchers", label: "Vouchers", icon: FilePenLine },
+      { href: "/finance/accounting/day-closes", label: "Day Closes", icon: History },
+      { href: "/finance/accounting/period-reports", label: "Period Reports", icon: FileSpreadsheet },
       { href: "/finance/accounting/periods", label: "Periods", icon: CalendarDays },
       { href: "/finance/accounting/settlements", label: "Settlements", icon: CreditCard },
       { href: "/finance/accounting/vat-summary", label: "VAT", icon: ReceiptText },

@@ -32,7 +32,8 @@ export type DayCloseSnapshotTab =
   | "purchases"
   | "day-orders"
   | "sales-by-category"
-  | "sales-by-table";
+  | "sales-by-table"
+  | "accounting-checks";
 
 const FINANCIAL_SUMMARY_SNAPSHOT_TAB: Record<string, DayCloseSnapshotTab> = {
   "Gross Sales": "sales-by-category",
