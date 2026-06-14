@@ -1,0 +1,18 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../flutter applications/yummy"
+		},
+		{
+			"path": "../../../../../yummy_backend"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"java.configuration.updateBuildConfiguration": "interactive",
+		"dart.flutterHotReloadOnSave": "all",
+		"liveServer.settings.multiRootWorkspaceName": "yummy"
+	}
+}
