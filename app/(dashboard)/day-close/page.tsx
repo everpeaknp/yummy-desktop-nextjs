@@ -116,13 +116,12 @@ export default function DayClosePage() {
   }, [currentClose?.action_label, currentClose?.status]);
 
   const handlePrimaryAction = useCallback(async () => {
-    const status = String(currentClose?.status ?? "open").toLowerCase();
-    if (status === "confirmed" && currentClose?.id) {
+    if (currentClose?.id) {
       await dayCloseHistoryRef.current?.openDayCloseDetail(currentClose.id);
       return;
     }
     setCloseOpen(true);
-  }, [currentClose?.id, currentClose?.status]);
+  }, [currentClose?.id]);
 
   const displayNetSales = pickBackendAmount(
     snapshotPreview?.net_sales,
@@ -180,7 +179,22 @@ export default function DayClosePage() {
       </div>
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="dc-card lg:col-span-1 relative overflow-hidden group transition-all duration-300">
+        <Card
+          className="dc-card lg:col-span-1 relative overflow-hidden group transition-all duration-300"
+          role={currentClose?.id ? "button" : undefined}
+          tabIndex={currentClose?.id ? 0 : undefined}
+          onClick={currentClose?.id ? () => void handlePrimaryAction() : undefined}
+          onKeyDown={
+            currentClose?.id
+              ? (event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    void handlePrimaryAction();
+                  }
+                }
+              : undefined
+          }
+        >
           <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
           <CardHeader className="pb-3 relative z-10">
             <div className="flex items-center justify-between gap-3">
@@ -210,6 +224,7 @@ export default function DayClosePage() {
                     business_line: currentClose.business_line,
                     period_start_at: currentClose.period_start_at,
                     period_end_at: currentClose.period_end_at,
+                    timezone: restaurant?.timezone ?? currentClose.timezone,
                   })
                 : "—"}
             </p>
@@ -258,6 +273,7 @@ export default function DayClosePage() {
           <DayCloseHistory
             ref={dayCloseHistoryRef}
             restaurantId={restaurantId}
+            timezone={restaurant?.timezone}
             liveCurrentClose={currentClose}
             liveSnapshotPreview={snapshotPreview}
             onLiveCurrentRefresh={loadCurrent}

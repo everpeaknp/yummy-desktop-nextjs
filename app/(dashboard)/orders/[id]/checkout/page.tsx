@@ -238,8 +238,13 @@ type CustomerOption = {
   full_name?: string | null;
   name?: string | null;
   phone?: string | null;
+  email?: string | null;
   credit?: number | null;
 };
+
+function normalizeCustomerPhone(value?: string | null) {
+  return String(value || "").replace(/\D/g, "");
+}
 
 function CustomerSearchSelect({
   label,
@@ -514,8 +519,9 @@ export default function CheckoutPage() {
   const hasNcItems = Boolean(
     (context?.order?.items || bill?.items || []).some((item: any) => Boolean(item?.is_nc))
   );
+  const selectedCheckoutCustomerId = selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined;
   const pendingCheckoutCustomerId =
-    orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
+    selectedCheckoutCustomerId ?? orderMeta?.customer_id;
   const ncNeedsCustomer = hasNcItems && !pendingCheckoutCustomerId;
   const [discountError, setDiscountError] = useState<string | null>(null);
   const [loyaltyOpen, setLoyaltyOpen] = useState(false);
@@ -583,8 +589,9 @@ export default function CheckoutPage() {
   };
 
   const attachSelectedCustomerToOrderIfNeeded = useCallback(async () => {
-    if (orderMeta?.customer_id || !selectedCustomerId) return orderMeta?.customer_id || undefined;
+    if (!selectedCustomerId) return orderMeta?.customer_id || undefined;
     const customerId = parseInt(selectedCustomerId, 10);
+    if (Number(orderMeta?.customer_id) === customerId) return customerId;
     await apiClient.patch(OrderApis.updateOrder(orderId), {
       customer_id: customerId,
     });
@@ -662,8 +669,8 @@ export default function CheckoutPage() {
   }, [fetchBill]);
 
   // ── Fetch Customers ───────────────────────────────
-  const fetchCustomers = useCallback(async () => {
-    if (!user?.restaurant_id) return;
+  const fetchCustomers = useCallback(async (): Promise<CustomerOption[] | null> => {
+    if (!user?.restaurant_id) return null;
     try {
       const pageSize = 500;
       let skip = 0;
@@ -696,7 +703,7 @@ export default function CheckoutPage() {
       }
 
       setCustomers(loadedCustomers);
-      return;
+      return loadedCustomers;
     } catch (err: any) {
       // Fallback for roles that can checkout but don't have `customers.view`.
       // Build a selectable customer list from order history (requires `pos.view`).
@@ -727,20 +734,22 @@ export default function CheckoutPage() {
               full_name: o.customer_name || "Guest",
               name: o.customer_name || "Guest",
               phone: o.customer_phone || "",
+              email: null,
               credit: undefined,
             }))
             .filter((c: any) => {
               if (!c.id || seen.has(c.id)) return false;
               seen.add(c.id);
               return true;
-            });
+          });
           setCustomers(derivedCustomers);
-          return;
+          return derivedCustomers;
         } catch (fallbackErr) {
           console.error("Failed to load fallback customers from orders:", fallbackErr);
         }
       }
       console.error("Failed to load customers:", err);
+      return null;
     }
   }, [user?.restaurant_id]);
 
@@ -856,10 +865,12 @@ export default function CheckoutPage() {
     setQuickAddSubmitting(true);
     setQuickAddError(null);
     try {
+      const phone = quickAddForm.phone.trim();
+      const email = quickAddForm.email.trim();
       const payload = {
         name: quickAddForm.name.trim(),
-        phone: quickAddForm.phone.trim(),
-        email: quickAddForm.email.trim() || undefined,
+        phone,
+        email: email || undefined,
         restaurant_id: user.restaurant_id,
         is_active: true,
       };
@@ -875,7 +886,29 @@ export default function CheckoutPage() {
       setQuickAddForm({ name: "", phone: "", email: "" });
       setQuickAddOpen(false);
     } catch (err: any) {
-      setQuickAddError(err?.response?.data?.detail || err?.message || "Failed to add customer");
+      const backendDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to add customer";
+      const duplicateCustomer = typeof backendDetail === "string" && /already exists/i.test(backendDetail);
+      if (duplicateCustomer) {
+        const refreshedCustomers = await fetchCustomers();
+        const phoneDigits = normalizeCustomerPhone(quickAddForm.phone);
+        const emailLower = quickAddForm.email.trim().toLowerCase();
+        const existing = (refreshedCustomers || customers).find((customer) => {
+          const candidatePhone = normalizeCustomerPhone(customer.phone);
+          const candidateEmail = String(customer.email || "").trim().toLowerCase();
+          return (
+            (phoneDigits && candidatePhone && candidatePhone === phoneDigits) ||
+            (emailLower && candidateEmail && candidateEmail === emailLower)
+          );
+        });
+        if (existing?.id) {
+          setSelectedCustomerId(String(existing.id));
+          setQuickAddForm({ name: "", phone: "", email: "" });
+          setQuickAddOpen(false);
+          toast.info("Customer already exists, selected them instead.");
+          return;
+        }
+      }
+      setQuickAddError(backendDetail);
     } finally {
       setQuickAddSubmitting(false);
     }
@@ -1614,7 +1647,7 @@ export default function CheckoutPage() {
     || hasNcItems
     || (guestBills?.orders?.length > 0 && guestBills?.split_group_id);
   const dueAmountForManualDiscount = displayBalanceDue;
-  const checkoutCustomerId = orderMeta?.customer_id || (selectedCustomerId ? parseInt(selectedCustomerId, 10) : undefined);
+  const checkoutCustomerId = selectedCheckoutCustomerId ?? orderMeta?.customer_id;
   const checkoutCustomer = checkoutCustomerId
     ? customers.find((c: any) => Number(c?.id) === Number(checkoutCustomerId))
     : null;
@@ -2050,20 +2083,17 @@ export default function CheckoutPage() {
                     </span>
                   </div>
 
-                  {!orderMeta?.customer_id && (
-                    <div className="space-y-2">
-                      <Label className="text-xs">Customer</Label>
-                      <CustomerSearchSelect
-                        label="Customer"
-                        placeholder="Select customer to view loyalty details"
-                        customers={customers}
-                        value={selectedCustomerId}
-                        currency={curr}
-                        onValueChange={setSelectedCustomerId}
-                        onQuickAdd={() => setQuickAddOpen(true)}
-                      />
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <CustomerSearchSelect
+                      label="Customer"
+                      placeholder="Select customer to view loyalty details"
+                      customers={customers}
+                      value={checkoutCustomerId ? String(checkoutCustomerId) : ""}
+                      currency={curr}
+                      onValueChange={setSelectedCustomerId}
+                      onQuickAdd={() => setQuickAddOpen(true)}
+                    />
+                  </div>
 
                   {hasNcItems && !pendingCheckoutCustomerId && (
                     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">

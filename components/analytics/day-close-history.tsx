@@ -334,6 +334,7 @@ function DayCloseDetailDialogSkeleton({ compact = false }: { compact?: boolean }
 
 type DayCloseHistoryProps = {
   restaurantId?: number;
+  timezone?: string;
   liveCurrentClose?: DayCloseCurrent | null;
   liveSnapshotPreview?: DayCloseSnapshotData | null;
   onLiveCurrentRefresh?: () => Promise<void> | void;
@@ -345,6 +346,7 @@ export type DayCloseHistoryHandle = {
 
 export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistoryProps>(function DayCloseHistory({
   restaurantId,
+  timezone,
   liveCurrentClose,
   liveSnapshotPreview,
   onLiveCurrentRefresh,
@@ -496,9 +498,16 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
     const fromList = withLiveOverlay.filter((it) => it.id === selectedSessionId);
     if (fromList.length) return fromList;
     const session = sessions.find((s) => s.id === selectedSessionId);
-    if (session) return [dayCloseSessionToListItem(session)];
+    if (session) {
+      return [
+        {
+          ...dayCloseSessionToListItem(session),
+          timezone: timezone ?? session.timezone,
+        },
+      ];
+    }
     return [];
-  }, [items, selectedSessionId, sessions, liveCurrentClose, liveSnapshotPreview, businessLine]);
+  }, [items, selectedSessionId, sessions, liveCurrentClose, liveSnapshotPreview, businessLine, timezone]);
 
   const openDetail = useCallback(async (id: number) => {
     setDetailMaximized(true);
@@ -813,6 +822,7 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
     );
     setWizardDayCloseId(detail.id);
     setWizardBusinessDate(detail.business_date ?? null);
+    setDetailOpen(false);
     setWizardOpen(true);
   }, [detail]);
 
@@ -963,7 +973,10 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
                     <SelectItem value="all">All closes in range</SelectItem>
                     {sessions.map((session) => (
                       <SelectItem key={session.id} value={String(session.id)}>
-                        {formatDayCloseSessionLabel(session)}
+                        {formatDayCloseSessionLabel({
+                          ...session,
+                          timezone: timezone ?? session.timezone,
+                        })}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1044,20 +1057,12 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
           {displayItems.map((it) => (
             <DayCloseHistoryListCard
               key={it.id}
-              item={it}
+              item={{ ...it, timezone: timezone ?? it.timezone }}
+              timezone={timezone}
               onOpen={() => openDetail(it.id)}
               onClose={
                 String(it.status || "").toLowerCase() === "open"
-                  ? () => {
-                      setWizardBusinessLine(
-                        String(it.business_line ?? "restaurant").toLowerCase() === "hotel"
-                          ? "hotel"
-                          : "restaurant",
-                      );
-                      setWizardDayCloseId(null);
-                      setWizardBusinessDate(null);
-                      setWizardOpen(true);
-                    }
+                  ? () => openDetail(it.id)
                   : undefined
               }
             />
@@ -1099,7 +1104,12 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
               ) : (
                 <>
                   <DialogTitle className="text-lg sm:text-xl font-semibold tracking-tight leading-snug break-words">
-                    {detail ? formatDayCloseListHeading(detail) : "Day Close"}
+                    {detail
+                      ? formatDayCloseListHeading({
+                          ...detail,
+                          timezone: timezone ?? detail.timezone,
+                        })
+                      : "Day Close"}
                   </DialogTitle>
                   {detailSubtitle ? (
                     <p className="mt-1 text-xs text-muted-foreground leading-snug">{detailSubtitle}</p>

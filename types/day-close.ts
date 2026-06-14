@@ -141,6 +141,7 @@ export interface DayCloseDetail {
   net_cash_position?: number;
   confirmed_at?: string;
   confirmation_notes?: string | null;
+  timezone?: string;
 }
 
 export interface DayCloseListItem {
@@ -154,6 +155,7 @@ export interface DayCloseListItem {
   expected_cash?: number;
   actual_cash?: number;
   total_orders?: number;
+  timezone?: string;
 }
 
 /** Confirmed close window from GET /day-closes/sessions (analytics/history filters). */
@@ -164,6 +166,7 @@ export interface DayCloseSession {
   confirmed_at?: string;
   period_start_at?: string;
   period_end_at?: string;
+  timezone?: string;
 }
 
 export interface DayCloseCurrent {
@@ -175,6 +178,7 @@ export interface DayCloseCurrent {
   period_start_at?: string;
   period_end_at?: string;
   snapshot_preview?: DayCloseSnapshotData | null;
+  timezone?: string;
 }
 
 export interface DayCloseValidateResult {
@@ -425,6 +429,7 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
       row.confirmation_notes === null || row.confirmation_notes === undefined
         ? row.confirmation_notes
         : String(row.confirmation_notes),
+    timezone: row.timezone != null ? String(row.timezone) : undefined,
   };
 
   for (const key of numericFields) {
@@ -450,6 +455,7 @@ export function parseDayCloseListItem(payload: unknown): DayCloseListItem | null
     business_line: row.business_line != null ? String(row.business_line) : undefined,
     period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
     period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    timezone: row.timezone != null ? String(row.timezone) : undefined,
   };
 
   for (const key of ["net_sales", "expected_cash", "actual_cash", "total_orders"] as const) {
@@ -474,6 +480,7 @@ export function parseDayCloseSession(payload: unknown): DayCloseSession | null {
     confirmed_at: row.confirmed_at != null ? String(row.confirmed_at) : undefined,
     period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
     period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    timezone: row.timezone != null ? String(row.timezone) : undefined,
   };
 }
 
@@ -522,6 +529,7 @@ export function parseDayCloseCurrent(payload: unknown): DayCloseCurrent | null {
     action_label: row.action_label != null ? String(row.action_label) : undefined,
     period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
     period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    timezone: row.timezone != null ? String(row.timezone) : undefined,
     snapshot_preview: parseDayCloseSnapshotData(row.snapshot_preview ?? row.snapshot_data),
   };
 }
