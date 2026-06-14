@@ -176,7 +176,7 @@ export default function CategoriesPage() {
                   <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
                        <AlertCircle className="h-8 w-8 opacity-50" />
-                       <p>No categories found. Click 'Add Category' to create one.</p>
+                       <p>No categories found. Click &apos;Add Category&apos; to create one.</p>
                     </div>
                   </TableCell>
                 </TableRow>

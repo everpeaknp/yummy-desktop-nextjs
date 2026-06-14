@@ -376,6 +376,26 @@ export default function AnalyticsPage() {
         return `Covers ${getSessionRangeLabel(session)}`;
     };
 
+    const financeSummaryScopeLabel = useMemo(() => {
+        const dates = getActiveDates();
+        const parts: string[] = [];
+
+        if (selectedDayCloseSession) {
+            const sessionLabel = formatSessionCoveredRange(selectedDayCloseSession);
+            parts.push(sessionLabel || "Selected day-close session");
+        } else {
+            const dateLabel = dates.dateFrom === dates.dateTo
+                ? dates.dateFrom
+                : `${dates.dateFrom} to ${dates.dateTo}`;
+            parts.push(`Date range: ${dateLabel}`);
+        }
+
+        parts.push(`Business line: ${dates.businessLine || "all"}`);
+        parts.push(`Station: ${station ? station : "All stations"}`);
+
+        return parts.join(" | ");
+    }, [getActiveDates, selectedDayCloseSession, station]);
+
     const applyAllowedAnalyticsRange = useCallback(() => {
         setActiveRange("last30");
         setDate(undefined);
@@ -621,6 +641,24 @@ export default function AnalyticsPage() {
         const netSales =
             getValOptional(financeMetrics, ["net_sales"]) ??
             getValOptional(overviewMetrics, ["net_sales"]);
+        const collectionsTotal = getVal(financeMetrics, ["collections_total"]);
+        const creditSales = getVal(financeMetrics, ["credit_sales"]);
+        const refundTotal = getVal(financeMetrics, ["refund_total", "refunds"]);
+        const refundLiabilities = getVal(financeMetrics, ["refund_liabilities"]);
+        const discountTotal = getVal(financeMetrics, ["discount_total", "discount", "discounts", "total_discount"]);
+        const manualIncomeTotal = getVal(financeMetrics, ["manual_income_total"]);
+        const manualOperatingExpense = getVal(financeMetrics, ["manual_operating_expense"]);
+        const inventoryCashOutflow = getVal(financeMetrics, ["inventory_cash_outflow"]);
+        const inventoryCogs = getVal(financeMetrics, ["inventory_cogs"]);
+        const cashExpected = getVal(financeMetrics, ["cash_expected"]);
+        const currentPeriodSalesCollected = getVal(financeMetrics, ["current_period_sales_collected"]);
+        const priorPeriodPaymentsApplied = getVal(financeMetrics, ["prior_period_payments_applied"]);
+        const postPeriodPaymentsApplied = getVal(financeMetrics, ["post_period_payments_applied"]);
+        const collectionsForOtherPeriodSales = getVal(financeMetrics, ["collections_for_other_period_sales"]);
+        const uncollectedSalesBalance = getVal(financeMetrics, ["uncollected_sales_balance"]);
+        const salesCollectionGap = getVal(financeMetrics, ["sales_collection_gap"]);
+        const paidOpenOrdersCount = getVal(financeMetrics, ["paid_open_orders_count"]);
+        const paidOpenOrdersAmount = getVal(financeMetrics, ["paid_open_orders_amount"]);
 
         const grossIncomeDelta = getDelta(financeMetrics, ["gross_income", "income", "sales"]);
         const netProfitDelta = getDelta(financeMetrics, ["net_profit", "profit"]);
@@ -634,6 +672,11 @@ export default function AnalyticsPage() {
             grossIncome, grossIncomeDelta, netProfit, netProfitDelta,
             totalExpense, totalExpenseDelta, discount, discountDelta,
             netSales,
+            collectionsTotal, creditSales, refundTotal, refundLiabilities, discountTotal, manualIncomeTotal,
+            manualOperatingExpense, inventoryCashOutflow, inventoryCogs, cashExpected,
+            currentPeriodSalesCollected, priorPeriodPaymentsApplied, postPeriodPaymentsApplied,
+            collectionsForOtherPeriodSales, uncollectedSalesBalance, salesCollectionGap,
+            paidOpenOrdersCount, paidOpenOrdersAmount,
         };
     }, [data]);
 
@@ -1489,13 +1532,47 @@ export default function AnalyticsPage() {
                     <TabsContent value="finance" className="space-y-6 outline-none">
                         {/* Finance Summary Cards */}
                         <section className="space-y-3">
-                            <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">Finance Summary</h3>
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                <BigMetricCard label="Gross Income" value={v2?.grossIncome ?? currentIncome} icon={<Wallet className="w-4.5 h-4.5" />} color="text-emerald-500" trend={v2?.grossIncomeDelta ?? compIncomeDelta} tagColor={Number(v2?.grossIncomeDelta ?? compIncomeDelta) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />
-                                <BigMetricCard label="Expenses" value={v2?.totalExpense ?? currentExpense} icon={<TrendingDown className="w-4.5 h-4.5" />} color="text-red-500" trend={v2?.totalExpenseDelta ?? compExpenseDelta} tagColor={Number(v2?.totalExpenseDelta ?? compExpenseDelta) <= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />
-                                <BigMetricCard label="Discount" value={v2?.discount ?? currentDiscounts} icon={<Tag className="w-4.5 h-4.5" />} color="text-amber-500" trend={v2?.discountDelta} tagColor="bg-amber-500/10 text-amber-500" />
-                                <BigMetricCard label="Net Profit" value={v2?.netProfit ?? currentProfit} icon={<TrendingUp className="w-4.5 h-4.5" />} color="text-blue-500" trend={v2?.netProfitDelta ?? compProfitDelta} tagColor={Number(v2?.netProfitDelta ?? compProfitDelta) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                                <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">Finance Summary</h3>
+                                <p className="text-[11px] font-semibold text-muted-foreground">
+                                    {financeSummaryScopeLabel}
+                                </p>
                             </div>
+                            <FinanceMetricGroup title="Sales Earned">
+                                <BigMetricCard label="Net Sales" value={v2?.netSales ?? currentIncome} icon={<Wallet className="w-4.5 h-4.5" />} color="text-emerald-500" trend={v2?.grossIncomeDelta ?? compIncomeDelta} tagColor={Number(v2?.grossIncomeDelta ?? compIncomeDelta) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />
+                                <BigMetricCard label="Discounts" value={v2?.discountTotal ?? currentDiscounts} icon={<Tag className="w-4.5 h-4.5" />} color="text-amber-500" tagColor="bg-amber-500/10 text-amber-500" />
+                                <BigMetricCard label="Refunds" value={v2?.refundTotal ?? currentRefunds} icon={<TrendingDown className="w-4.5 h-4.5" />} color="text-red-500" tagColor="bg-red-500/10 text-red-500" />
+                                <BigMetricCard label="Net Profit" value={v2?.netProfit ?? currentProfit} icon={<TrendingUp className="w-4.5 h-4.5" />} color="text-blue-500" trend={v2?.netProfitDelta ?? compProfitDelta} tagColor={Number(v2?.netProfitDelta ?? compProfitDelta) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />
+                            </FinanceMetricGroup>
+                            <FinanceMetricGroup title="Money Collected">
+                                <BigMetricCard label="Collections" value={v2?.collectionsTotal ?? currentIncome} icon={<CreditCard className="w-4.5 h-4.5" />} color="text-indigo-500" tagColor="bg-indigo-500/10 text-indigo-500" />
+                                <BigMetricCard label="Manual Income" value={v2?.manualIncomeTotal ?? 0} icon={<DollarSign className="w-4.5 h-4.5" />} color="text-emerald-500" tagColor="bg-emerald-500/10 text-emerald-500" />
+                                <BigMetricCard label="Cash Expected" value={v2?.cashExpected ?? 0} icon={<Wallet className="w-4.5 h-4.5" />} color="text-cyan-500" tagColor="bg-cyan-500/10 text-cyan-500" />
+                            </FinanceMetricGroup>
+                            <FinanceMetricGroup title="Money Owed">
+                                <BigMetricCard label="Credit Sales" value={v2?.creditSales ?? receivables.credit_sales ?? 0} icon={<ReceiptText className="w-4.5 h-4.5" />} color="text-blue-500" tagColor="bg-blue-500/10 text-blue-500" />
+                                <BigMetricCard label="Refund Liabilities" value={v2?.refundLiabilities ?? 0} icon={<AlertCircle className="w-4.5 h-4.5" />} color="text-orange-500" tagColor="bg-orange-500/10 text-orange-500" />
+                            </FinanceMetricGroup>
+                            <FinanceMetricGroup title="Costs">
+                                <BigMetricCard label="Operating Expenses" value={v2?.manualOperatingExpense ?? currentExpense} icon={<TrendingDown className="w-4.5 h-4.5" />} color="text-rose-500" trend={v2?.totalExpenseDelta ?? compExpenseDelta} tagColor={Number(v2?.totalExpenseDelta ?? compExpenseDelta) <= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"} />
+                                <BigMetricCard label="Inventory Cash Outflow" value={v2?.inventoryCashOutflow ?? 0} icon={<Package className="w-4.5 h-4.5" />} color="text-orange-500" tagColor="bg-orange-500/10 text-orange-500" />
+                                <BigMetricCard label="COGS" value={v2?.inventoryCogs ?? 0} icon={<Boxes className="w-4.5 h-4.5" />} color="text-amber-500" tagColor="bg-amber-500/10 text-amber-500" />
+                            </FinanceMetricGroup>
+                            <FinanceMetricGroup title="Exceptions">
+                                <BigMetricCard label="Paid Open Orders" value={v2?.paidOpenOrdersCount ?? 0} noCurrency icon={<AlertCircle className="w-4.5 h-4.5" />} color={Number(v2?.paidOpenOrdersCount ?? 0) > 0 ? "text-red-500" : "text-muted-foreground"} tagColor="bg-red-500/10 text-red-500" />
+                                <BigMetricCard label="Paid Open Amount" value={v2?.paidOpenOrdersAmount ?? 0} icon={<Wallet className="w-4.5 h-4.5" />} color={Number(v2?.paidOpenOrdersAmount ?? 0) > 0 ? "text-red-500" : "text-muted-foreground"} tagColor="bg-red-500/10 text-red-500" />
+                            </FinanceMetricGroup>
+                            <SalesToCashReconciliation
+                                netSales={v2?.netSales ?? currentIncome}
+                                collectionsTotal={v2?.collectionsTotal ?? currentIncome}
+                                creditSales={v2?.creditSales ?? receivables.credit_sales ?? 0}
+                                currentPeriodSalesCollected={v2?.currentPeriodSalesCollected ?? 0}
+                                priorPeriodPaymentsApplied={v2?.priorPeriodPaymentsApplied ?? 0}
+                                postPeriodPaymentsApplied={v2?.postPeriodPaymentsApplied ?? 0}
+                                collectionsForOtherPeriodSales={v2?.collectionsForOtherPeriodSales ?? 0}
+                                uncollectedSalesBalance={v2?.uncollectedSalesBalance ?? 0}
+                                salesCollectionGap={v2?.salesCollectionGap ?? 0}
+                            />
                         </section>
 
                         {/* Receivables */}
@@ -2206,6 +2283,87 @@ function BigMetricCard({ label, value, trend, icon, color, tagColor, noCurrency 
                     <div className="text-xl font-black text-foreground tracking-tight">
                         {noCurrency ? value : `Rs. ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     </div>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+function FinanceMetricGroup({ title, children }: { title: string; children: any }) {
+    return (
+        <section className="space-y-3">
+            <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">{title}</h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">{children}</div>
+        </section>
+    );
+}
+
+function SalesToCashReconciliation({
+    netSales,
+    collectionsTotal,
+    creditSales,
+    currentPeriodSalesCollected,
+    priorPeriodPaymentsApplied,
+    postPeriodPaymentsApplied,
+    collectionsForOtherPeriodSales,
+    uncollectedSalesBalance,
+    salesCollectionGap,
+}: {
+    netSales: number;
+    collectionsTotal: number;
+    creditSales: number;
+    currentPeriodSalesCollected: number;
+    priorPeriodPaymentsApplied: number;
+    postPeriodPaymentsApplied: number;
+    collectionsForOtherPeriodSales: number;
+    uncollectedSalesBalance: number;
+    salesCollectionGap: number;
+}) {
+    const fmtMoney = (value: number) =>
+        `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const rows = [
+        { label: "Collected from this period's sales", value: currentPeriodSalesCollected, tone: "text-emerald-600 dark:text-emerald-400" },
+        { label: "Credit sales from this period", value: creditSales, tone: "text-blue-600 dark:text-blue-400" },
+        { label: "Prior-period payments applied", value: priorPeriodPaymentsApplied, tone: "text-amber-600 dark:text-amber-400" },
+        { label: "Later payments applied", value: postPeriodPaymentsApplied, tone: "text-violet-600 dark:text-violet-400" },
+        { label: "Collections for other-period sales", value: collectionsForOtherPeriodSales, tone: "text-indigo-600 dark:text-indigo-400" },
+        { label: "Uncollected sales balance", value: uncollectedSalesBalance, tone: Number(uncollectedSalesBalance || 0) > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground" },
+    ];
+
+    return (
+        <Card className="bg-card border-border shadow-sm">
+            <CardContent className="p-4 space-y-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h4 className="text-sm font-black uppercase tracking-wider text-foreground">Sales to Cash Reconciliation</h4>
+                        <p className="text-xs text-muted-foreground">Net sales and collections use different timing rules. This bridge explains the gap.</p>
+                    </div>
+                    <div className="text-left sm:text-right">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Net Sales - Collections</p>
+                        <p className="text-lg font-black text-foreground">{fmtMoney(salesCollectionGap)}</p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Net Sales</p>
+                        <p className="text-xl font-black text-foreground">{fmtMoney(netSales)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Collections</p>
+                        <p className="text-xl font-black text-foreground">{fmtMoney(collectionsTotal)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Current Sales Collected</p>
+                        <p className="text-xl font-black text-foreground">{fmtMoney(currentPeriodSalesCollected)}</p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                    {rows.map((row) => (
+                        <div key={row.label} className="flex items-center justify-between gap-3 rounded-md border border-border/40 px-3 py-2">
+                            <span className="text-xs font-semibold text-muted-foreground">{row.label}</span>
+                            <span className={cn("text-sm font-black whitespace-nowrap", row.tone)}>{fmtMoney(row.value)}</span>
+                        </div>
+                    ))}
                 </div>
             </CardContent>
         </Card>

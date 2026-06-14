@@ -119,7 +119,7 @@ export function TaxDialog({ open, onOpenChange, tax, onSuccess, restaurantId }: 
                     <div className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="space-y-0.5">
                             <Label>Active Status</Label>
-                            <p className="text-[10px] text-muted-foreground">Inactive taxes won't apply to new orders.</p>
+                            <p className="text-[10px] text-muted-foreground">Inactive taxes won&apos;t apply to new orders.</p>
                         </div>
                         <Switch 
                             checked={formData.is_active} 

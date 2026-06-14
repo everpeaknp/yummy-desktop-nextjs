@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { 
     Dialog, 
     DialogContent, 
@@ -23,6 +23,13 @@ import apiClient from "@/lib/api-client";
 import { AwaitingPaymentApis } from "@/lib/api/endpoints";
 import { Loader2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import {
+    buildPaymentInstrument,
+    extractPaymentInstruments,
+    paymentMethodNeedsInstrument,
+} from "@/lib/payment-instruments";
 
 interface PaymentDialogProps {
     open: boolean;
@@ -32,22 +39,21 @@ interface PaymentDialogProps {
     mode: 'pay' | 'reject';
 }
 
-const PAYMENT_METHODS = [
-    { label: "Cash", value: "cash" },
-    { label: "Bank Transfer", value: "bank_transfer" },
-    { label: "FonePay/QR", value: "fonepay" },
-    { label: "Cheque", value: "cheque" },
-    { label: "Digital Wallet", value: "digital_wallet" },
-];
-
 export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: PaymentDialogProps) {
+    const restaurant = useRestaurant((s) => s.restaurant);
     const [loading, setLoading] = useState(false);
+    const [selectedStaticQrIndex, setSelectedStaticQrIndex] = useState(0);
+    const [selectedCardIndex, setSelectedCardIndex] = useState(0);
     const [formData, setFormData] = useState({
         paid_amount: "",
         payment_method: "cash",
         reference: "",
         note: "",
     });
+    const { staticPaymentQrs, staticPaymentCards } = useMemo(
+        () => extractPaymentInstruments(restaurant),
+        [restaurant],
+    );
 
     useEffect(() => {
         if (record && mode === 'pay') {
@@ -58,6 +64,8 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                 reference: "",
                 note: "",
             });
+            setSelectedStaticQrIndex(0);
+            setSelectedCardIndex(0);
         }
     }, [record, mode, open]);
 
@@ -68,12 +76,20 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
         setLoading(true);
         try {
             if (mode === 'pay') {
+                const instrument = buildPaymentInstrument(
+                    formData.payment_method,
+                    staticPaymentQrs,
+                    staticPaymentCards,
+                    selectedStaticQrIndex,
+                    selectedCardIndex,
+                );
                 const res = await apiClient.post(
                     AwaitingPaymentApis.markPaid(record.id, record.restaurant_id), 
                     {
                         paid_amount: parseFloat(formData.paid_amount),
                         payment_method: formData.payment_method,
                         reference: formData.reference,
+                        instrument: instrument,
                     }
                 );
                 if (res.data.status === "success") {
@@ -127,13 +143,17 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                                 <Label htmlFor="payment_method">Payment Method</Label>
                                 <Select 
                                     value={formData.payment_method} 
-                                    onValueChange={(val) => setFormData({ ...formData, payment_method: val })}
+                                    onValueChange={(val) => {
+                                        setFormData({ ...formData, payment_method: val });
+                                        setSelectedStaticQrIndex(0);
+                                        setSelectedCardIndex(0);
+                                    }}
                                 >
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {PAYMENT_METHODS.map(m => (
+                                        {PAYMENT_METHOD_OPTIONS.map(m => (
                                             <SelectItem key={m.value} value={m.value}>
                                                 {m.label}
                                             </SelectItem>
@@ -141,6 +161,63 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                                     </SelectContent>
                                 </Select>
                             </div>
+
+                            {paymentMethodNeedsInstrument(formData.payment_method) && (
+                                <div className="space-y-2">
+                                    <Label>
+                                        Payment Instrument
+                                    </Label>
+                                    {formData.payment_method === "card" ? (
+                                        staticPaymentCards.length > 0 ? (
+                                            <div className="grid grid-cols-1 gap-2">
+                                                {staticPaymentCards.map((card, idx) => (
+                                                    <button
+                                                        key={`${card.name}-${idx}`}
+                                                        type="button"
+                                                        onClick={() => setSelectedCardIndex(idx)}
+                                                        className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                                                            selectedCardIndex === idx
+                                                                ? "border-primary bg-primary/10 text-primary"
+                                                                : "border-border bg-background hover:bg-muted"
+                                                        }`}
+                                                    >
+                                                        <span className="font-medium">{card.name}</span>
+                                                        {card.identifier && (
+                                                            <span className="block text-xs text-muted-foreground">{card.identifier}</span>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                                                No card instruments configured.
+                                            </p>
+                                        )
+                                    ) : staticPaymentQrs.length > 0 ? (
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {staticPaymentQrs.map((qr, idx) => (
+                                                <button
+                                                    key={`${qr.name}-${idx}`}
+                                                    type="button"
+                                                    onClick={() => setSelectedStaticQrIndex(idx)}
+                                                    className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                                                        selectedStaticQrIndex === idx
+                                                            ? "border-primary bg-primary/10 text-primary"
+                                                            : "border-border bg-background hover:bg-muted"
+                                                    }`}
+                                                >
+                                                    <span className="font-medium">{qr.name}</span>
+                                                    <span className="block truncate text-xs text-muted-foreground">{qr.payload}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                                            No QR instruments configured.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="space-y-2">
                                 <Label htmlFor="reference">Reference / Transaction ID</Label>

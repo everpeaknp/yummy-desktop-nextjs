@@ -544,7 +544,7 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
             {/* Local Device Settings */}
             <div className="space-y-3 pt-4 border-t border-border/20">
                 <div className="space-y-0.5">
-                    <h2 className="text-[11px] font-black tracking-[0.2em] text-orange-500 uppercase">This Computer's Print Duties</h2>
+                    <h2 className="text-[11px] font-black tracking-[0.2em] text-orange-500 uppercase">This Computer&apos;s Print Duties</h2>
                     <p className="text-sm font-bold tracking-tight">Select which KOT stations should auto-print on THIS specific device</p>
                     <p className="text-[11px] text-muted-foreground">If none are selected, this computer will not auto-print any KOTs (useful for front-desk PCs).</p>
                 </div>

@@ -56,7 +56,7 @@ export function CheckoutModal({
           <div className="text-center">
             <h3 className="text-lg font-medium">Folio Active</h3>
             <p className="text-sm text-muted-foreground">
-              Add incidental charges or meals to this room's folio.
+              Add incidental charges or meals to this room&apos;s folio.
             </p>
           </div>
           <Button 

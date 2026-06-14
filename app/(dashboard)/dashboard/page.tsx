@@ -133,8 +133,6 @@ export default function DashboardPage() {
   const shouldShowNcSummary =
     ncSummary?.available !== false &&
     (Boolean(ncSummary) || Boolean(analyticsNcTab))
-  const overview =
-    analyticsData?.tabs?.overview?.overview || analyticsData?.overview || {}
   const v2Kpis = data?.kpis
   const currency = analyticsData?.meta?.currency || data?.meta?.currency || "NPR"
   const analyticsTopItems =
@@ -185,10 +183,18 @@ export default function DashboardPage() {
     return { direction: 'SAME', delta_percent: 0, ...base };
   }
 
-  const executiveMetrics = analyticsData?.tabs?.overview?.executive_summary?.metrics || [];
+  const analyticsExecutiveMetrics = analyticsData?.tabs?.overview?.executive_summary?.metrics || [];
+  const analyticsFinanceMetrics = analyticsData?.tabs?.finance?.pnl_summary?.metrics || [];
+  const readAnalyticsMetric = (metrics: any[], keys: string[], fallback = 0) => {
+    for (const key of keys) {
+      const found = metrics.find((m: any) => m?.key === key);
+      if (found && typeof found.value === "number") return found.value;
+    }
+    return fallback;
+  };
   const findExecutiveMetric = (keys: string[]) => {
     for (const key of keys) {
-      const found = executiveMetrics.find((m: any) => m?.key === key);
+      const found = analyticsExecutiveMetrics.find((m: any) => m?.key === key);
       if (found) return found;
     }
     return null;
@@ -201,21 +207,34 @@ export default function DashboardPage() {
   const executivePrevOrders = ordersExecutive?.delta?.previous_value;
 
   const kpis = {
-    gross_sales:
-      overview?.total_income ??
-      v2Kpis?.gross_sales ??
+    net_sales:
+      readAnalyticsMetric(analyticsFinanceMetrics, ["net_sales"],
+        readAnalyticsMetric(analyticsExecutiveMetrics, ["sales", "income"],
+          v2Kpis?.gross_sales ??
       ((cashWatch?.cash_collected || 0) + (cashWatch?.digital_collected || 0) + (cashWatch?.credit_sales || 0)),
-    net_profit: overview?.net_profit ?? 0,
-    profit_margin: overview?.profit_margin ?? 0,
+        )
+      ),
+    collections_total:
+      readAnalyticsMetric(analyticsFinanceMetrics, ["collections_total"],
+        (cashWatch?.cash_collected || 0) + (cashWatch?.digital_collected || 0)
+      ),
+    credit_sales:
+      readAnalyticsMetric(analyticsFinanceMetrics, ["credit_sales"], cashWatch?.credit_sales || 0),
+    discount_total: readAnalyticsMetric(analyticsFinanceMetrics, ["discount_total", "discount"], 0),
+    net_profit: readAnalyticsMetric(analyticsFinanceMetrics, ["net_profit"], 0),
+    profit_margin: 0,
     total_orders:
-      overview?.orders_count ??
+      readAnalyticsMetric(analyticsExecutiveMetrics, ["orders"],
       v2Kpis?.total_orders ??
-      orderStatus.reduce((sum: number, item: any) => sum + Number(item.count || 0), 0),
-    average_order_value: overview?.avg_order_value ?? v2Kpis?.average_order_value ?? 0,
-    total_expense: overview?.total_expense ?? 0,
+      orderStatus.reduce((sum: number, item: any) => sum + Number(item.count || 0), 0)),
+    average_order_value: v2Kpis?.average_order_value ?? 0,
+    total_expense: readAnalyticsMetric(analyticsFinanceMetrics, ["expenses", "manual_operating_expense"], 0),
     cancelled_today: shiftPulse?.cancelled ?? healthSnapshot?.cancelled_today ?? 0,
     refunded_today: shiftPulse?.refunded ?? healthSnapshot?.refunded_today ?? 0,
   }
+  kpis.profit_margin = kpis.net_sales > 0 ? Number(((kpis.net_profit / kpis.net_sales) * 100).toFixed(2)) : 0
+  kpis.average_order_value =
+    kpis.average_order_value || (kpis.total_orders > 0 ? Number((kpis.net_sales / kpis.total_orders).toFixed(2)) : 0)
 
   const handleExport = async () => {
     const XLSX = await import("xlsx")
@@ -223,7 +242,10 @@ export default function DashboardPage() {
       { Metric: "Period", Value: periodLabel },
       { Metric: "Date From", Value: dateFrom },
       { Metric: "Date To", Value: dateTo },
-      { Metric: "Gross Sales", Value: kpis.gross_sales },
+      { Metric: "Net Sales", Value: kpis.net_sales },
+      { Metric: "Collections", Value: kpis.collections_total },
+      { Metric: "Credit Sales", Value: kpis.credit_sales },
+      { Metric: "Discounts", Value: kpis.discount_total },
       { Metric: "Net Profit", Value: kpis.net_profit },
       { Metric: "Profit Margin %", Value: kpis.profit_margin },
       { Metric: "Total Orders", Value: kpis.total_orders },
@@ -588,12 +610,15 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <SummaryMetric label="Gross Sales" value={kpis.gross_sales} prefix={currency} icon={<DollarSign className="h-4 w-4" />} trend={mapCompareTrend(salesTrendPct, salesTrendPrev) || data?.trends?.sales_vs_yesterday} compareLabel={compareLabel} />
+          <SummaryMetric label="Net Sales" value={kpis.net_sales} prefix={currency} icon={<DollarSign className="h-4 w-4" />} trend={mapCompareTrend(salesTrendPct, salesTrendPrev) || data?.trends?.sales_vs_yesterday} compareLabel={compareLabel} />
+          <SummaryMetric label="Collections" value={kpis.collections_total} prefix={currency} icon={<CreditCard className="h-4 w-4" />} compareLabel={compareLabel} />
+          <SummaryMetric label="Credit Sales" value={kpis.credit_sales} prefix={currency} icon={<ReceiptText className="h-4 w-4" />} compareLabel={compareLabel} />
+          <SummaryMetric label="Discounts" value={kpis.discount_total} prefix={currency} icon={<Tag className="h-4 w-4" />} compareLabel={compareLabel} />
           <SummaryMetric label="Net Profit" value={kpis.net_profit} prefix={currency} icon={<TrendingUp className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.profit_pct, deltaData?.previous?.profit)} compareLabel={compareLabel} />
           <SummaryMetric label="Profit Margin %" value={kpis.profit_margin} suffix="%" icon={<Lightbulb className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.margin_pct, deltaData?.previous?.margin)} compareLabel={compareLabel} />
           <SummaryMetric label="Total Orders" value={kpis.total_orders} icon={<Briefcase className="h-4 w-4" />} trend={mapCompareTrend(ordersTrendPct, ordersTrendPrev) || data?.trends?.orders_vs_yesterday} compareLabel={compareLabel} />
           <SummaryMetric label="Avg Order Value" value={kpis.average_order_value} prefix={currency} icon={<ReceiptText className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.aov_pct, deltaData?.previous?.aov)} compareLabel={compareLabel} />
-          <SummaryMetric label="Total Expenses" value={kpis.total_expense} prefix={currency} icon={<Wallet className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.expense_pct, deltaData?.previous?.expense)} compareLabel={compareLabel} />
+          <SummaryMetric label="Operating Expenses" value={kpis.total_expense} prefix={currency} icon={<Wallet className="h-4 w-4" />} trend={mapCompareTrend(deltaData?.deltas?.expense_pct, deltaData?.previous?.expense)} compareLabel={compareLabel} />
         </div>
       </section>
 

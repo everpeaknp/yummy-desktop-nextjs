@@ -174,7 +174,7 @@ export function SupplierDialog({ open, onOpenChange, supplier, onSuccess }: Supp
                         <Label htmlFor="is_active" className="flex flex-col space-y-1">
                             <span>Active Status</span>
                             <span className="font-normal text-xs text-muted-foreground">
-                                Inactive suppliers won't appear in purchase forms.
+                                Inactive suppliers won&apos;t appear in purchase forms.
                             </span>
                         </Label>
                         <Switch 

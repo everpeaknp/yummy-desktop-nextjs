@@ -196,7 +196,7 @@ export function ReservationDetailsSheet({
                   <MessageSquare className="h-3 w-3" /> Notes
                 </div>
                 <div className="bg-muted/50 p-3 rounded-xl text-sm italic text-muted-foreground">
-                  "{reservation.notes}"
+                  &quot;{reservation.notes}&quot;
                 </div>
               </div>
             )}

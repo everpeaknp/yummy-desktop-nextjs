@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { IncomeApis, ExpenseApis, AnalyticsApis } from "@/lib/api/endpoints";
+import { IncomeApis, ExpenseApis, AnalyticsApis, FinanceApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, DollarSign, TrendingUp, Receipt, Download, ArrowLeft, TrendingDown, Utensils, Hotel, CreditCard } from "lucide-react";
+import { Loader2, DollarSign, TrendingUp, Receipt, Download, ArrowLeft, TrendingDown, Utensils, Hotel, CreditCard, Tag, AlertCircle, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
@@ -17,12 +17,35 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { CategoryPieChart } from "@/components/analytics/category-pie";
 import { RevenueChart } from "@/components/analytics/revenue-chart";
+import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
+import type { FinanceOverviewResponse } from "@/types/finance";
 
+function hasFinanceActivity(metrics: FinanceOverviewResponse["metrics"] | undefined): boolean {
+  if (!metrics) return false;
+  return [
+    metrics.sales_total,
+    metrics.discount_total,
+    metrics.collections_total,
+    metrics.credit_sales,
+    metrics.refund_total,
+    metrics.manual_income_total,
+    metrics.manual_operating_expense,
+    metrics.inventory_cash_outflow,
+    metrics.inventory_asset_acquired,
+    metrics.inventory_cogs,
+    metrics.refund_liabilities,
+    metrics.supplier_payables,
+    metrics.supplier_payments,
+    metrics.paid_open_orders_count,
+    metrics.paid_open_orders_amount,
+  ].some((value) => Math.abs(Number(value) || 0) > 0.0001);
+}
 
 export default function IncomePage() {
   const [loading, setLoading] = useState(false);
   const [incomeData, setIncomeData] = useState<any>(null);
   const [expenseSummary, setExpenseSummary] = useState<any>(null);
+  const [financeOverview, setFinanceOverview] = useState<FinanceOverviewResponse | null>(null);
   const [dateFilter, setDateFilter] = useState("this_month");
   const [selectedStation, setSelectedStation] = useState("all");
   const [businessLine, setBusinessLine] = useState("all");
@@ -82,6 +105,28 @@ export default function IncomePage() {
     const { start, end } = getDateRange();
     const stationParam = selectedStation === 'all' ? undefined : selectedStation;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let startTimeVal: string | undefined = undefined;
+    let endTimeVal: string | undefined = undefined;
+
+    if (dateFilter === 'custom') {
+      const startDateStr = customStartDate || new Date().toISOString().split('T')[0];
+      const endDateStr = customEndDate || new Date().toISOString().split('T')[0];
+      const startTimeStr = customStartTime || "00:00";
+      const endTimeStr = customEndTime || "23:59";
+
+      try {
+        const startLocal = new Date(`${startDateStr}T${startTimeStr}:00`);
+        const endLocal = new Date(`${endDateStr}T${endTimeStr}:59`);
+        if (!isNaN(startLocal.getTime())) {
+          startTimeVal = startLocal.toISOString();
+        }
+        if (!isNaN(endLocal.getTime())) {
+          endTimeVal = endLocal.toISOString();
+        }
+      } catch (e) {
+        console.error("Failed to parse custom dates", e);
+      }
+    }
 
     try {
       const dashboardUrl = IncomeApis.dashboard({
@@ -92,8 +137,18 @@ export default function IncomePage() {
         businessLine: businessLine === 'all' ? undefined : businessLine,
         timezone: tz
       });
+      const financeOverviewUrl = FinanceApis.overview({
+        restaurantId: user.restaurant_id,
+        dateFrom: start,
+        dateTo: end,
+        station: stationParam,
+        businessLine: businessLine === 'all' ? undefined : businessLine,
+        timezone: tz,
+        startTime: startTimeVal,
+        endTime: endTimeVal,
+      });
 
-      const [dashboardRes, recentRes, expenseSummaryRes] = await Promise.all([
+      const [dashboardRes, recentRes, expenseSummaryRes, financeOverviewRes] = await Promise.all([
         apiClient.get(dashboardUrl),
         apiClient.get(IncomeApis.recent, {
           params: { 
@@ -114,7 +169,8 @@ export default function IncomePage() {
             station: stationParam,
             timezone: tz
           }
-        })
+        }),
+        apiClient.get(financeOverviewUrl).catch(() => null)
       ]);
 
       if (dashboardRes.data.status === 'success') {
@@ -126,32 +182,14 @@ export default function IncomePage() {
       if (expenseSummaryRes.data.status === 'success') {
         setExpenseSummary(expenseSummaryRes.data.data);
       }
+      if (financeOverviewRes?.data?.status === 'success') {
+        setFinanceOverview(financeOverviewRes.data.data);
+      } else {
+        setFinanceOverview(null);
+      }
 
       // Fetch trends asynchronously to ensure main finance page loads instantly
       try {
-        let startTimeVal: string | undefined = undefined;
-        let endTimeVal: string | undefined = undefined;
-
-        if (dateFilter === 'custom') {
-          const startDateStr = customStartDate || new Date().toISOString().split('T')[0];
-          const endDateStr = customEndDate || new Date().toISOString().split('T')[0];
-          const startTimeStr = customStartTime || "00:00";
-          const endTimeStr = customEndTime || "23:59";
-          
-          try {
-            const startLocal = new Date(`${startDateStr}T${startTimeStr}:00`);
-            const endLocal = new Date(`${endDateStr}T${endTimeStr}:59`);
-            if (!isNaN(startLocal.getTime())) {
-              startTimeVal = startLocal.toISOString();
-            }
-            if (!isNaN(endLocal.getTime())) {
-              endTimeVal = endLocal.toISOString();
-            }
-          } catch (e) {
-            console.error("Failed to parse custom dates", e);
-          }
-        }
-
         const trendsUrl = AnalyticsApis.trends({
           metric: 'income',
           restaurantId: user.restaurant_id,
@@ -228,6 +266,36 @@ export default function IncomePage() {
     value: point.income,
     revenue: point.income
   }));
+  const financeMetrics = hasFinanceActivity(financeOverview?.metrics) ? financeOverview?.metrics : null;
+  const netSales = financeMetrics
+    ? financeMetrics.net_sales
+    : incomeData?.summary?.total_net_income || 0;
+  const manualIncome = financeMetrics?.manual_income_total ?? incomeData?.summary?.manual_income_total ?? 0;
+  const collectionsTotal = financeMetrics?.collections_total ?? (incomeData?.by_payment_method || [])
+    .filter((item: any) => String(item.method || "").toLowerCase() !== "credit")
+    .reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0);
+  const creditSales = financeMetrics?.credit_sales ?? incomeData?.receivables?.credit_sales ?? 0;
+  const refundTotal = financeMetrics?.refund_total ?? incomeData?.summary?.refund_total ?? 0;
+  const refundLiabilities = financeMetrics?.refund_liabilities ?? 0;
+  const discountTotal = financeMetrics?.discount_total ?? incomeData?.summary?.total_discount ?? incomeData?.summary?.discount_total ?? 0;
+  const currentPeriodSalesCollected = financeMetrics?.current_period_sales_collected ?? 0;
+  const priorPeriodPaymentsApplied = financeMetrics?.prior_period_payments_applied ?? 0;
+  const postPeriodPaymentsApplied = financeMetrics?.post_period_payments_applied ?? 0;
+  const collectionsForOtherPeriodSales = financeMetrics?.collections_for_other_period_sales ?? 0;
+  const uncollectedSalesBalance = financeMetrics?.uncollected_sales_balance ?? 0;
+  const salesCollectionGap = financeMetrics?.sales_collection_gap ?? netSales - collectionsTotal;
+  const paidOpenOrdersCount = financeMetrics?.paid_open_orders_count ?? 0;
+  const paidOpenOrdersAmount = financeMetrics?.paid_open_orders_amount ?? 0;
+  const operatingExpenses = financeMetrics
+    ? financeMetrics.manual_operating_expense + financeMetrics.inventory_cogs
+    : expenseSummary?.total_amount || 0;
+  const operatingProfit = financeMetrics?.operating_profit ?? netSales - operatingExpenses;
+  const paymentMethodRows = financeOverview?.payment_method_breakdown?.length
+    ? financeOverview.payment_method_breakdown
+    : incomeData?.by_payment_method || [];
+  const paymentInstrumentRows = financeOverview?.payment_instrument_breakdown?.length
+    ? financeOverview.payment_instrument_breakdown
+    : incomeData?.by_payment_instrument || [];
 
   return (
     <div className="flex flex-col gap-8 max-w-[1600px] mx-auto p-6">
@@ -314,6 +382,8 @@ export default function IncomePage() {
           </div>
         </div>
 
+        <FinanceSectionTabs />
+
         {dateFilter === 'custom' && (
           <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end w-full animate-in fade-in slide-in-from-top-1 duration-200 bg-muted/30 p-3 rounded-xl border border-border">
             <span className="text-xs font-semibold text-muted-foreground mr-1">Time Slice:</span>
@@ -352,37 +422,111 @@ export default function IncomePage() {
         </div>
       ) : (
         <div className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <FinanceMetricSection title="Sales Earned">
             <MetricCard
-              label="Total Revenue"
-              value={incomeData?.summary?.total_net_income || 0}
+              label="Net Sales"
+              value={netSales}
               icon={<DollarSign className="w-5 h-5" />}
               color="text-emerald-500"
               bg="bg-emerald-50 dark:bg-emerald-950/20"
             />
             <MetricCard
-              label="Gross Sales"
-              value={incomeData?.summary?.gross_sales || 0}
-              icon={<Receipt className="w-5 h-5" />}
+              label="Discounts"
+              value={discountTotal}
+              icon={<Tag className="w-5 h-5" />}
+              color="text-amber-500"
+              bg="bg-amber-50 dark:bg-amber-950/20"
+            />
+            <MetricCard
+              label="Refunds"
+              value={refundTotal}
+              icon={<TrendingDown className="w-5 h-5" />}
+              color="text-red-500"
+              bg="bg-red-50 dark:bg-red-950/20"
+            />
+            <MetricCard
+              label="Operating Profit"
+              value={operatingProfit}
+              icon={<TrendingUp className="w-5 h-5" />}
+              color={operatingProfit >= 0 ? "text-blue-500" : "text-red-500"}
+              bg={operatingProfit >= 0 ? "bg-blue-50 dark:bg-blue-950/20" : "bg-red-50 dark:bg-red-950/20"}
+            />
+          </FinanceMetricSection>
+
+          <FinanceMetricSection title="Money Collected">
+            <MetricCard
+              label="Collections"
+              value={collectionsTotal}
+              icon={<CreditCard className="w-5 h-5" />}
               color="text-indigo-500"
               bg="bg-indigo-50 dark:bg-indigo-950/20"
             />
             <MetricCard
-              label="Net Profit"
-              value={(incomeData?.summary?.total_net_income || 0) - (expenseSummary?.total_amount || 0)}
-              icon={<TrendingUp className="w-5 h-5" />}
-              color={(incomeData?.summary?.total_net_income || 0) - (expenseSummary?.total_amount || 0) >= 0 ? "text-blue-500" : "text-red-500"}
-              bg={(incomeData?.summary?.total_net_income || 0) - (expenseSummary?.total_amount || 0) >= 0 ? "bg-blue-50 dark:bg-blue-950/20" : "bg-red-50 dark:bg-red-950/20"}
+              label="Manual Income"
+              value={manualIncome}
+              icon={<DollarSign className="w-5 h-5" />}
+              color="text-teal-500"
+              bg="bg-teal-50 dark:bg-teal-950/20"
+            />
+          </FinanceMetricSection>
+
+          <FinanceMetricSection title="Money Owed">
+            <MetricCard
+              label="Credit Sales"
+              value={creditSales}
+              icon={<Receipt className="w-5 h-5" />}
+              color="text-blue-500"
+              bg="bg-blue-50 dark:bg-blue-950/20"
             />
             <MetricCard
-              label="Total Expenses"
-              value={expenseSummary?.total_amount || 0}
+              label="Refund Liabilities"
+              value={refundLiabilities}
+              icon={<AlertCircle className="w-5 h-5" />}
+              color="text-orange-500"
+              bg="bg-orange-50 dark:bg-orange-950/20"
+            />
+          </FinanceMetricSection>
+
+          <FinanceMetricSection title="Costs">
+            <MetricCard
+              label="Operating Expenses"
+              value={operatingExpenses}
               icon={<TrendingDown className="w-5 h-5" />}
-              color="text-red-500"
-              bg="bg-red-50 dark:bg-red-950/20"
+              color="text-rose-500"
+              bg="bg-rose-50 dark:bg-rose-950/20"
               href="/finance/expenses"
             />
-          </div>
+          </FinanceMetricSection>
+
+          <FinanceMetricSection title="Exceptions">
+            <MetricCard
+              label="Paid Open Orders"
+              value={paidOpenOrdersCount}
+              noCurrency
+              icon={<AlertCircle className="w-5 h-5" />}
+              color={paidOpenOrdersCount > 0 ? "text-red-500" : "text-muted-foreground"}
+              bg={paidOpenOrdersCount > 0 ? "bg-red-50 dark:bg-red-950/20" : "bg-muted/40"}
+            />
+            <MetricCard
+              label="Paid Open Amount"
+              value={paidOpenOrdersAmount}
+              icon={<Wallet className="w-5 h-5" />}
+              color={paidOpenOrdersAmount > 0 ? "text-red-500" : "text-muted-foreground"}
+              bg={paidOpenOrdersAmount > 0 ? "bg-red-50 dark:bg-red-950/20" : "bg-muted/40"}
+            />
+          </FinanceMetricSection>
+
+          <SalesToCashReconciliation
+            netSales={netSales}
+            collectionsTotal={collectionsTotal}
+            creditSales={creditSales}
+            currentPeriodSalesCollected={currentPeriodSalesCollected}
+            priorPeriodPaymentsApplied={priorPeriodPaymentsApplied}
+            postPeriodPaymentsApplied={postPeriodPaymentsApplied}
+            collectionsForOtherPeriodSales={collectionsForOtherPeriodSales}
+            uncollectedSalesBalance={uncollectedSalesBalance}
+            salesCollectionGap={salesCollectionGap}
+          />
 
           {/* Credit Receivables, Cash vs Digital Collections breakdown (Mobile alignment) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -399,12 +543,12 @@ export default function IncomePage() {
                    <div className="grid grid-cols-2 gap-4">
                       <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3.5 flex flex-col justify-between">
                          <span className="text-[9px] font-black text-blue-500 uppercase tracking-wider mb-1">Credit Sales (Period)</span>
-                         <span className="text-xl font-bold">Rs. {Number(incomeData?.receivables?.credit_sales ?? 0).toLocaleString()}</span>
+                         <span className="text-xl font-bold">Rs. {Number(financeMetrics?.credit_sales ?? incomeData?.receivables?.credit_sales ?? 0).toLocaleString()}</span>
                          <span className="text-[9px] text-muted-foreground font-medium mt-1">{incomeData?.receivables?.credit_orders_count ?? 0} credit bills</span>
                       </div>
                       <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3.5 flex flex-col justify-between">
                          <span className="text-[9px] font-black text-red-500 uppercase tracking-wider mb-1">Total Outstanding exposed</span>
-                         <span className="text-xl font-bold text-red-600 dark:text-red-400">Rs. {Number(incomeData?.receivables?.total_outstanding ?? 0).toLocaleString()}</span>
+                         <span className="text-xl font-bold text-red-600 dark:text-red-400">Rs. {Number(financeMetrics?.outstanding_receivables ?? incomeData?.receivables?.total_outstanding ?? 0).toLocaleString()}</span>
                          <span className="text-[9px] text-muted-foreground font-medium mt-1">Outstanding credit book</span>
                       </div>
                    </div>
@@ -422,7 +566,7 @@ export default function IncomePage() {
                       <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Collections split</span>
                    </div>
                    <div className="space-y-2">
-                      {(incomeData?.by_payment_method || []).map((pm: any, idx: number) => (
+                      {paymentMethodRows.map((pm: any, idx: number) => (
                          <div key={idx} className="flex justify-between items-center text-xs py-1 border-b border-border/10 last:border-0">
                             <span className="capitalize text-muted-foreground font-medium">{pm.method}</span>
                             <div className="flex items-center gap-4">
@@ -431,7 +575,7 @@ export default function IncomePage() {
                             </div>
                          </div>
                       ))}
-                      {(!incomeData?.by_payment_method || incomeData.by_payment_method.length === 0) && (
+                      {paymentMethodRows.length === 0 && (
                          <div className="text-center py-4 text-xs text-muted-foreground">No payments split available</div>
                       )}
                    </div>
@@ -441,10 +585,10 @@ export default function IncomePage() {
                         Card/QR Collections by Instrument
                       </div>
                       <div className="space-y-2">
-                        {(incomeData?.by_payment_instrument || []).map((item: any, idx: number) => (
+                        {paymentInstrumentRows.map((item: any, idx: number) => (
                           <div key={`instrument-${idx}`} className="flex justify-between items-center text-xs py-1 border-b border-border/10 last:border-0">
                             <div className="min-w-0">
-                              <div className="font-semibold text-foreground truncate">{item.instrument || "Unspecified"}</div>
+                              <div className="font-semibold text-foreground truncate">{item.instrument || item.instrument_name || "Unspecified"}</div>
                               <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{String(item.method || "").toUpperCase()}</div>
                             </div>
                             <div className="flex items-center gap-4">
@@ -455,7 +599,7 @@ export default function IncomePage() {
                             </div>
                           </div>
                         ))}
-                        {(!incomeData?.by_payment_instrument || incomeData.by_payment_instrument.length === 0) && (
+                        {paymentInstrumentRows.length === 0 && (
                           <div className="text-center py-3 text-xs text-muted-foreground">
                             No instrument-level card/QR collection data.
                           </div>
@@ -587,7 +731,88 @@ export default function IncomePage() {
   );
 }
 
-function MetricCard({ label, value, icon, color, bg, href }: any) {
+function SalesToCashReconciliation({
+  netSales,
+  collectionsTotal,
+  creditSales,
+  currentPeriodSalesCollected,
+  priorPeriodPaymentsApplied,
+  postPeriodPaymentsApplied,
+  collectionsForOtherPeriodSales,
+  uncollectedSalesBalance,
+  salesCollectionGap,
+}: {
+  netSales: number;
+  collectionsTotal: number;
+  creditSales: number;
+  currentPeriodSalesCollected: number;
+  priorPeriodPaymentsApplied: number;
+  postPeriodPaymentsApplied: number;
+  collectionsForOtherPeriodSales: number;
+  uncollectedSalesBalance: number;
+  salesCollectionGap: number;
+}) {
+  const fmtMoney = (value: number) =>
+    `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const rows = [
+    { label: "Collected from this period's sales", value: currentPeriodSalesCollected, tone: "text-emerald-600 dark:text-emerald-400" },
+    { label: "Credit sales from this period", value: creditSales, tone: "text-blue-600 dark:text-blue-400" },
+    { label: "Prior-period payments applied", value: priorPeriodPaymentsApplied, tone: "text-amber-600 dark:text-amber-400" },
+    { label: "Later payments applied", value: postPeriodPaymentsApplied, tone: "text-violet-600 dark:text-violet-400" },
+    { label: "Collections for other-period sales", value: collectionsForOtherPeriodSales, tone: "text-indigo-600 dark:text-indigo-400" },
+    { label: "Uncollected sales balance", value: uncollectedSalesBalance, tone: Number(uncollectedSalesBalance || 0) > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground" },
+  ];
+
+  return (
+    <Card className="bg-card border-border shadow-sm">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-foreground">Sales to Cash Reconciliation</h3>
+            <p className="text-xs text-muted-foreground">Net sales and collections use different timing rules. This bridge explains the gap.</p>
+          </div>
+          <div className="text-left sm:text-right">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Net Sales - Collections</p>
+            <p className="text-lg font-black text-foreground">{fmtMoney(salesCollectionGap)}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Net Sales</p>
+            <p className="text-xl font-black text-foreground">{fmtMoney(netSales)}</p>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Collections</p>
+            <p className="text-xl font-black text-foreground">{fmtMoney(collectionsTotal)}</p>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Current Sales Collected</p>
+            <p className="text-xl font-black text-foreground">{fmtMoney(currentPeriodSalesCollected)}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+          {rows.map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-3 rounded-md border border-border/40 px-3 py-2">
+              <span className="text-xs font-semibold text-muted-foreground">{row.label}</span>
+              <span className={cn("text-sm font-black whitespace-nowrap", row.tone)}>{fmtMoney(row.value)}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FinanceMetricSection({ title, children }: { title: string; children: any }) {
+  return (
+    <section className="space-y-3">
+      <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">{title}</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">{children}</div>
+    </section>
+  );
+}
+
+function MetricCard({ label, value, icon, color, bg, href, noCurrency }: any) {
   const content = (
     <Card className={cn(
         "overflow-hidden border-border bg-card transition-colors",
@@ -597,7 +822,9 @@ function MetricCard({ label, value, icon, color, bg, href }: any) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{label}</p>
-            <h3 className="text-2xl font-bold">Rs. {Number(value || 0).toLocaleString()}</h3>
+            <h3 className="text-2xl font-bold">
+              {noCurrency ? Number(value || 0).toLocaleString() : `Rs. ${Number(value || 0).toLocaleString()}`}
+            </h3>
           </div>
           <div className={`p-3 rounded-xl ${bg} ${color}`}>
             {icon}

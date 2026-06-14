@@ -101,7 +101,7 @@ export function ModifierGroupDialog({
             {initialData ? "Edit Modifier Group" : "Create Modifier Group"}
           </DialogTitle>
           <DialogDescription>
-            Define how customers select options (e.g., "Choose 1" or "Choose up to 3").
+            Define how customers select options (e.g., &quot;Choose 1&quot; or &quot;Choose up to 3&quot;).
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
