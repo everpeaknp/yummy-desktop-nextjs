@@ -37,11 +37,29 @@ import {
   type BusinessLine,
 } from "@/types/day-close";
 
+function getApiErrorMessage(err: unknown, fallback: string) {
+  const response = (err as { response?: { data?: unknown } })?.response?.data;
+  if (!response || typeof response !== "object") return fallback;
+  const data = response as {
+    message?: unknown;
+    detail?: unknown;
+  };
+  if (typeof data.message === "string" && data.message.trim()) return data.message;
+  if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+  if (data.detail && typeof data.detail === "object") {
+    const detail = data.detail as { message?: unknown };
+    if (typeof detail.message === "string" && detail.message.trim()) return detail.message;
+  }
+  return fallback;
+}
+
 interface DayCloseModalProps {
   isOpen: boolean;
   onClose: () => void;
   restaurantId: number;
   businessLine?: BusinessLine;
+  targetDayCloseId?: number | null;
+  targetBusinessDate?: string | null;
 }
 
 type Step = "health-check" | "financial-snapshot" | "cash-reconciliation" | "success";
@@ -51,6 +69,8 @@ export function DayCloseModal({
   onClose,
   restaurantId,
   businessLine = "restaurant",
+  targetDayCloseId = null,
+  targetBusinessDate = null,
 }: DayCloseModalProps) {
   const [currentStep, setCurrentStep] = useState<Step>("health-check");
   const [snapshotData, setSnapshotData] = useState<DayCloseSnapshotData | null>(null);
@@ -75,8 +95,34 @@ export function DayCloseModal({
   const loadCurrent = useCallback(async () => {
     setLoadingCurrent(true);
     try {
+      if (targetDayCloseId) {
+        const res = await apiClient.get(DayCloseApis.get(targetDayCloseId));
+        const detail = unwrapApiData(res.data, parseDayCloseDetail);
+        if (!detail) {
+          setCurrentClose(null);
+          return;
+        }
+        setCurrentClose({
+          id: detail.id,
+          business_date: detail.business_date,
+          business_line: detail.business_line,
+          status: detail.status,
+          period_start_at: detail.period_start_at,
+          period_end_at: detail.period_end_at,
+          action_label:
+            String(detail.status || "").toLowerCase() === "reopened"
+              ? "Re-confirm Day Close"
+              : undefined,
+          snapshot_preview: null,
+        });
+        return;
+      }
       const res = await apiClient.get(
-        DayCloseApis.current({ restaurantId, businessLine })
+        DayCloseApis.current({
+          restaurantId,
+          businessLine,
+          businessDate: targetBusinessDate ?? undefined,
+        })
       );
       setCurrentClose(unwrapApiData(res.data, parseDayCloseCurrent));
     } catch {
@@ -84,7 +130,7 @@ export function DayCloseModal({
     } finally {
       setLoadingCurrent(false);
     }
-  }, [restaurantId, businessLine]);
+  }, [restaurantId, businessLine, targetBusinessDate, targetDayCloseId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -193,6 +239,7 @@ export function DayCloseModal({
             <HealthCheckStep
               restaurantId={restaurantId}
               businessLine={businessLine}
+              businessDate={targetBusinessDate}
               onNext={() => setCurrentStep("financial-snapshot")}
             />
           ) : null}
@@ -200,6 +247,8 @@ export function DayCloseModal({
             <FinancialSnapshotStep
               restaurantId={restaurantId}
               businessLine={businessLine}
+              businessDate={targetBusinessDate}
+              targetDayCloseId={targetDayCloseId}
               snapshotPreview={currentClose?.snapshot_preview ?? null}
               onNext={(data, id) => {
                 setSnapshotData(data);
@@ -214,6 +263,7 @@ export function DayCloseModal({
               dayCloseId={dayCloseId}
               restaurantId={restaurantId}
               businessLine={businessLine}
+              businessDate={targetBusinessDate}
               onNext={(data, finalizedSnapshot) => {
                 setConfirmedData(data);
                 setConfirmedSnapshot(finalizedSnapshot);
@@ -238,10 +288,12 @@ function HealthCheckStep({
   onNext,
   restaurantId,
   businessLine,
+  businessDate,
 }: {
   onNext: () => void;
   restaurantId: number;
   businessLine: BusinessLine;
+  businessDate?: string | null;
 }) {
   const [checks, setChecks] = useState<
     Array<{ label: string; status: "pass" | "fail" | "warn"; message?: string }>
@@ -253,7 +305,11 @@ function HealthCheckStep({
     const validate = async () => {
       try {
         const res = await apiClient.get(
-          DayCloseApis.validateClose({ restaurantId, businessLine })
+          DayCloseApis.validateClose({
+            restaurantId,
+            businessLine,
+            businessDate: businessDate ?? undefined,
+          })
         );
         const data = unwrapApiData(res.data, parseDayCloseValidateResult);
         if (!data) {
@@ -320,7 +376,7 @@ function HealthCheckStep({
       }
     };
     void validate();
-  }, [restaurantId, businessLine]);
+  }, [restaurantId, businessLine, businessDate]);
 
   return (
     <div className="space-y-6">
@@ -350,11 +406,15 @@ function FinancialSnapshotStep({
   onNext,
   restaurantId,
   businessLine,
+  businessDate,
+  targetDayCloseId,
   snapshotPreview,
 }: {
   onNext: (data: DayCloseSnapshotData, id: number) => void;
   restaurantId: number;
   businessLine: BusinessLine;
+  businessDate?: string | null;
+  targetDayCloseId?: number | null;
   snapshotPreview: DayCloseSnapshotData | null;
 }) {
   const [snapshot, setSnapshot] = useState<DayCloseSnapshotData | null>(snapshotPreview);
@@ -375,7 +435,11 @@ function FinancialSnapshotStep({
       setError(null);
       try {
         const res = await apiClient.get(
-          DayCloseApis.generateSnapshot({ restaurantId, businessLine })
+          DayCloseApis.generateSnapshot({
+            restaurantId,
+            businessLine,
+            businessDate: businessDate ?? undefined,
+          })
         );
         const parsed = unwrapApiData(res.data, parseDayCloseSnapshotData);
         if (!parsed) {
@@ -395,7 +459,7 @@ function FinancialSnapshotStep({
       }
     };
     void generate();
-  }, [restaurantId, businessLine, snapshotPreview]);
+  }, [restaurantId, businessLine, businessDate, snapshotPreview]);
 
   const handleContinue = async () => {
     if (!snapshot) return;
@@ -404,6 +468,8 @@ function FinancialSnapshotStep({
     try {
       const res = await apiClient.post(DayCloseApis.initiate, {
         restaurant_id: restaurantId,
+        day_close_id: targetDayCloseId ?? undefined,
+        business_date: businessDate ?? undefined,
         business_line: businessLine,
       });
       const detail = unwrapApiData(res.data, parseDayCloseDetail);
@@ -411,7 +477,11 @@ function FinancialSnapshotStep({
         let freshSnapshot = snapshot;
         try {
           const snapRes = await apiClient.get(
-            DayCloseApis.generateSnapshot({ restaurantId, businessLine }),
+            DayCloseApis.generateSnapshot({
+              restaurantId,
+              businessLine,
+              businessDate: businessDate ?? undefined,
+            }),
           );
           const parsed = unwrapApiData(snapRes.data, parseDayCloseSnapshotData);
           if (parsed) freshSnapshot = parsed;
@@ -425,10 +495,7 @@ function FinancialSnapshotStep({
         );
       }
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        "Failed to proceed. Please try again.";
-      setError(message);
+      setError(getApiErrorMessage(err, "Failed to proceed. Please try again."));
     } finally {
       setInitiating(false);
     }
@@ -493,12 +560,14 @@ function CashReconciliationStep({
   dayCloseId,
   restaurantId,
   businessLine,
+  businessDate,
 }: {
   onNext: (data: DayCloseDetail, finalizedSnapshot: DayCloseSnapshotData | null) => void;
   snapshot: DayCloseSnapshotData | null;
   dayCloseId: number | null;
   restaurantId: number;
   businessLine: BusinessLine;
+  businessDate?: string | null;
 }) {
   const [actualCash, setActualCash] = useState("");
   const [confirmationNotes, setConfirmationNotes] = useState("");
@@ -514,7 +583,11 @@ function CashReconciliationStep({
     const refresh = async () => {
       try {
         const res = await apiClient.get(
-          DayCloseApis.generateSnapshot({ restaurantId, businessLine }),
+          DayCloseApis.generateSnapshot({
+            restaurantId,
+            businessLine,
+            businessDate: businessDate ?? undefined,
+          }),
         );
         const parsed = unwrapApiData(res.data, parseDayCloseSnapshotData);
         if (parsed) setLiveSnapshot(parsed);
@@ -523,7 +596,7 @@ function CashReconciliationStep({
       }
     };
     void refresh();
-  }, [restaurantId, businessLine]);
+  }, [restaurantId, businessLine, businessDate]);
 
   const expectedCash = liveSnapshot?.expected_cash;
 
@@ -537,7 +610,11 @@ function CashReconciliationStep({
     try {
       try {
         const snapRes = await apiClient.get(
-          DayCloseApis.generateSnapshot({ restaurantId, businessLine }),
+          DayCloseApis.generateSnapshot({
+            restaurantId,
+            businessLine,
+            businessDate: businessDate ?? undefined,
+          }),
         );
         const parsed = unwrapApiData(snapRes.data, parseDayCloseSnapshotData);
         if (parsed) setLiveSnapshot(parsed);
@@ -569,10 +646,7 @@ function CashReconciliationStep({
         );
       }
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        "Failed to submit day close.";
-      setError(message);
+      setError(getApiErrorMessage(err, "Failed to submit day close."));
     } finally {
       setSubmitting(false);
     }
@@ -696,6 +770,10 @@ function SuccessStep({
           )}
         >
           <div className="grid grid-cols-2 gap-2 text-sm">
+            <span className="text-muted-foreground">Opening Balance:</span>
+            <span className="font-mono text-right font-medium">
+              {formatDayCloseCurrency((data as any).opening_balance)}
+            </span>
             <span className="text-muted-foreground">Expected:</span>
             <span className="font-mono text-right font-medium">
               {formatDayCloseCurrency(data.expected_cash)}

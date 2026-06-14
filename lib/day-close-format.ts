@@ -49,6 +49,21 @@ export function formatDayCloseCloseName(businessLine?: string | null): string {
     : "Restaurant Close";
 }
 
+export function formatDayCloseBusinessDate(
+  businessDate?: string | null,
+  timezone?: string,
+): string {
+  if (!businessDate) return "—";
+  const parsed = new Date(`${businessDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return businessDate;
+  return parsed.toLocaleDateString("en-US", {
+    timeZone: timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 /** Prefer exact close window; never use business_date as the financial boundary label. */
 export function formatDayCloseListHeading(input: {
   id: number;
@@ -56,18 +71,24 @@ export function formatDayCloseListHeading(input: {
   business_line?: string | null;
   period_start_at?: string | null;
   period_end_at?: string | null;
+  timezone?: string | null;
 }): string {
   const closeName = formatDayCloseCloseName(input.business_line);
-  const period = formatDayClosePeriod(input.period_start_at, input.period_end_at);
+  const period = formatDayClosePeriod(
+    input.period_start_at,
+    input.period_end_at,
+    input.timezone ?? undefined,
+  );
   if (period !== "—") return `${closeName} • Covers ${period}`;
   return `${closeName} #${input.id}`;
 }
 
 export function formatDayCloseCoveredRange(
   periodStart?: string | null,
-  periodEnd?: string | null
+  periodEnd?: string | null,
+  timezone?: string,
 ): string | null {
-  const period = formatDayClosePeriod(periodStart, periodEnd);
+  const period = formatDayClosePeriod(periodStart, periodEnd, timezone);
   return period === "—" ? null : `Covers ${period}`;
 }
 
@@ -87,6 +108,7 @@ export function formatDayCloseSessionLabel(session: DayCloseSession): string {
     business_line: session.business_line,
     period_start_at: session.period_start_at,
     period_end_at: session.period_end_at,
+    timezone: session.timezone,
   });
   const confirmed = session.confirmed_at
     ? new Date(session.confirmed_at).toLocaleString(undefined, {

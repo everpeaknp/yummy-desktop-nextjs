@@ -1097,20 +1097,47 @@ export const NotificationApis = {
 };
 
 export const DayCloseApis = {
-  current: ({ restaurantId, businessLine }: { restaurantId: number; businessLine?: string }) => {
+  current: ({
+    restaurantId,
+    businessLine,
+    businessDate,
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+    businessDate?: string;
+  }) => {
     const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
     if (businessLine) params.append('business_line', businessLine);
+    if (businessDate) params.append('business_date', businessDate);
     return `/day-closes/current?${params.toString()}`;
   },
-  validateClose: ({ restaurantId, businessLine }: { restaurantId: number; businessLine?: string }) => {
+  validateClose: ({
+    restaurantId,
+    businessLine,
+    businessDate,
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+    businessDate?: string;
+  }) => {
     const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
     if (businessLine) params.append('business_line', businessLine);
+    if (businessDate) params.append('business_date', businessDate);
     return `/day-closes/validate-close?${params.toString()}`;
   },
   initiate: '/day-closes/initiate',
-  generateSnapshot: ({ restaurantId, businessLine }: { restaurantId: number; businessLine?: string }) => {
+  generateSnapshot: ({
+    restaurantId,
+    businessLine,
+    businessDate,
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+    businessDate?: string;
+  }) => {
     const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
     if (businessLine) params.append('business_line', businessLine);
+    if (businessDate) params.append('business_date', businessDate);
     return `/day-closes/generate-snapshot?${params.toString()}`;
   },
   confirm: (id: number) => `/day-closes/${id}/confirm`,

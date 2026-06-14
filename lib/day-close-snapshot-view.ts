@@ -41,6 +41,7 @@ const FINANCIAL_SUMMARY_SNAPSHOT_TAB: Record<string, DayCloseSnapshotTab> = {
   "Total Income": "payments",
   Refunds: "refunds",
   Expenses: "expenses",
+  "Opening Balance": "payments",
   "Credit Sales": "credit",
   "Credit Collection": "credit",
   "Outstanding Receivables": "receivables",
@@ -66,6 +67,7 @@ export function snapshotMetricRows(snapshot: DayCloseSnapshotData): SnapshotMetr
     { label: "Gross Sales", value: snapshot.gross_sales },
     { label: "Net Sales", value: snapshot.net_sales },
     { label: "Total Income", value: snapshot.total_income },
+    { label: "Opening Balance", value: snapshot.opening_balance },
     { label: "Expected Cash", value: snapshot.expected_cash },
     { label: "Cash Collected", value: snapshot.cash_collected },
     { label: "Manual Income", value: snapshot.manual_income_total },
@@ -108,6 +110,10 @@ export function snapshotFinancialSummaryRows(
     { label: "Total Income", value: totalIncome },
     { label: "Refunds", value: summaryAmount(snapshot.refunds?.total, detail?.refund_total) },
     { label: "Expenses", value: summaryAmount(snapshot.expense_total, detail?.expense_total) },
+    {
+      label: "Opening Balance",
+      value: summaryAmount(snapshot.opening_balance, detail?.opening_balance),
+    },
     {
       label: "Credit Sales",
       value: summaryAmount(snapshot.receivables?.credit_sales, detail?.credit_sales),

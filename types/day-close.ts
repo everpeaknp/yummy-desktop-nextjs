@@ -66,6 +66,7 @@ export interface DayCloseSnapshotData {
   period_end_at?: string;
   business_date?: string;
   business_line?: BusinessLine | string;
+  opening_balance?: number;
   hotel_revenue_split?: HotelRevenueSplit;
   payment_distribution?: Partial<
     Record<"cash" | "card" | "digital" | "fonepay" | "credit", PaymentDistributionBucket | number>
@@ -115,6 +116,7 @@ export interface DayCloseDetail {
   total_orders?: number;
   completed_orders?: number;
   canceled_orders?: number;
+  opening_balance?: number;
   gross_sales?: number;
   discount_total?: number;
   tax_total?: number;
@@ -139,6 +141,7 @@ export interface DayCloseDetail {
   net_cash_position?: number;
   confirmed_at?: string;
   confirmation_notes?: string | null;
+  timezone?: string;
 }
 
 export interface DayCloseListItem {
@@ -152,6 +155,7 @@ export interface DayCloseListItem {
   expected_cash?: number;
   actual_cash?: number;
   total_orders?: number;
+  timezone?: string;
 }
 
 /** Confirmed close window from GET /day-closes/sessions (analytics/history filters). */
@@ -162,6 +166,7 @@ export interface DayCloseSession {
   confirmed_at?: string;
   period_start_at?: string;
   period_end_at?: string;
+  timezone?: string;
 }
 
 export interface DayCloseCurrent {
@@ -173,6 +178,7 @@ export interface DayCloseCurrent {
   period_start_at?: string;
   period_end_at?: string;
   snapshot_preview?: DayCloseSnapshotData | null;
+  timezone?: string;
 }
 
 export interface DayCloseValidateResult {
@@ -333,6 +339,7 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
     period_end_at: data.period_end_at != null ? String(data.period_end_at) : undefined,
     business_date: data.business_date != null ? String(data.business_date) : undefined,
     business_line: data.business_line != null ? String(data.business_line) : undefined,
+    opening_balance: readAmount(data.opening_balance),
     payment_distribution: Object.keys(payment_distribution).length ? payment_distribution : undefined,
     payment_instrument_distribution,
     credit_settlement,
@@ -384,6 +391,7 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
     "total_orders",
     "completed_orders",
     "canceled_orders",
+    "opening_balance",
     "gross_sales",
     "discount_total",
     "tax_total",
@@ -421,6 +429,7 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
       row.confirmation_notes === null || row.confirmation_notes === undefined
         ? row.confirmation_notes
         : String(row.confirmation_notes),
+    timezone: row.timezone != null ? String(row.timezone) : undefined,
   };
 
   for (const key of numericFields) {
@@ -446,6 +455,7 @@ export function parseDayCloseListItem(payload: unknown): DayCloseListItem | null
     business_line: row.business_line != null ? String(row.business_line) : undefined,
     period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
     period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    timezone: row.timezone != null ? String(row.timezone) : undefined,
   };
 
   for (const key of ["net_sales", "expected_cash", "actual_cash", "total_orders"] as const) {
@@ -470,6 +480,7 @@ export function parseDayCloseSession(payload: unknown): DayCloseSession | null {
     confirmed_at: row.confirmed_at != null ? String(row.confirmed_at) : undefined,
     period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
     period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    timezone: row.timezone != null ? String(row.timezone) : undefined,
   };
 }
 
@@ -518,6 +529,7 @@ export function parseDayCloseCurrent(payload: unknown): DayCloseCurrent | null {
     action_label: row.action_label != null ? String(row.action_label) : undefined,
     period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
     period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    timezone: row.timezone != null ? String(row.timezone) : undefined,
     snapshot_preview: parseDayCloseSnapshotData(row.snapshot_preview ?? row.snapshot_data),
   };
 }

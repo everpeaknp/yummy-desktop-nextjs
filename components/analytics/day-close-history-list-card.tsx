@@ -4,8 +4,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  formatDayCloseBusinessDate,
   formatDayCloseCurrency,
-  formatDayCloseListHeading,
+  formatDayCloseCoveredRange,
+  formatDayCloseCloseName,
 } from "@/lib/day-close-format";
 import type { DayCloseListItem } from "@/types/day-close";
 import { Calendar, ChevronRight } from "lucide-react";
@@ -42,20 +44,31 @@ function statusBadge(status: string) {
 
 type DayCloseHistoryListCardProps = {
   item: DayCloseListItem;
+  timezone?: string;
   onOpen: () => void;
   onClose?: () => void;
 };
 
 export function DayCloseHistoryListCard({
   item,
+  timezone,
   onOpen,
   onClose,
 }: DayCloseHistoryListCardProps) {
   const isOpen = String(item.status || "").toLowerCase() === "open";
-  const businessLabel =
-    String(item.business_line ?? "restaurant").toLowerCase() === "hotel"
-      ? "Hotel"
-      : "Restaurant";
+  const closeName = formatDayCloseCloseName(item.business_line);
+  const coveredRange = formatDayCloseCoveredRange(
+    item.period_start_at,
+    item.period_end_at,
+    timezone ?? item.timezone,
+  );
+  const businessDateLabel = formatDayCloseBusinessDate(
+    item.business_date,
+    timezone ?? item.timezone,
+  );
+  const subtitle = coveredRange
+    ? `${coveredRange} • Close #${item.id}`
+    : `${businessDateLabel !== "—" ? `Business date ${businessDateLabel}` : closeName} • Close #${item.id}`;
 
   return (
     <Card
@@ -70,10 +83,10 @@ export function DayCloseHistoryListCard({
             </div>
             <div className="min-w-0">
               <h3 className="text-sm sm:text-base font-semibold text-foreground leading-snug break-words">
-                {formatDayCloseListHeading(item)}
+                {closeName} #{item.id}
               </h3>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                {businessLabel} • Close #{item.id}
+                {subtitle}
               </p>
             </div>
           </div>
