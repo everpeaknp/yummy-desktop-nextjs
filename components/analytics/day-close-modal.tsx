@@ -20,6 +20,8 @@ import {
 import apiClient from "@/lib/api-client";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
+import { DrawerSessionPanel } from "@/components/day-close/drawer-session-panel";
+import { OperationalCloseStatus } from "@/components/day-close/operational-close-status";
 import {
   formatDayCloseCloseName,
   formatDayCloseCurrency,
@@ -239,7 +241,7 @@ export function DayCloseModal({
             <HealthCheckStep
               restaurantId={restaurantId}
               businessLine={businessLine}
-              businessDate={targetBusinessDate}
+              businessDate={targetBusinessDate ?? currentClose?.business_date}
               onNext={() => setCurrentStep("financial-snapshot")}
             />
           ) : null}
@@ -383,8 +385,13 @@ function HealthCheckStep({
       <StepBanner
         icon={<ActivityIcon className="w-5 h-5" />}
         title="System Health Check"
-        subtitle="Verifying pending orders and unpaid bills from the server…"
+        subtitle="Verifying pending orders, unpaid bills, and drawer readiness from the server..."
         tone="blue"
+      />
+      <DrawerSessionPanel
+        restaurantId={restaurantId}
+        businessLine={businessLine}
+        businessDate={businessDate}
       />
       <div className="grid gap-4">
         {loading ? (
@@ -756,10 +763,14 @@ function SuccessStep({
         <p className="text-muted-foreground max-w-xs mx-auto text-sm">
           The frozen financial snapshot is saved on the server. Totals below are display-only.
         </p>
+        <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+          This operational confirmation is separate from accounting review status.
+        </p>
         {coveredRange ? (
           <p className="text-xs font-medium text-foreground">{coveredRange}</p>
         ) : null}
       </div>
+      <OperationalCloseStatus detail={data} />
       {!isMatched && data ? (
         <div
           className={cn(

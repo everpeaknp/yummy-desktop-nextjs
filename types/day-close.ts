@@ -4,6 +4,122 @@ export type BusinessLine = "restaurant" | "hotel";
 
 export type DayCloseStatus = "open" | "pending" | "confirmed" | "reopened" | string;
 
+export type DrawerSessionStatus =
+  | "draft"
+  | "opened"
+  | "closing_count_required"
+  | "closed"
+  | "variance_review_required"
+  | "approved"
+  | "reopened"
+  | string;
+
+export interface DrawerConfiguration {
+  id: number;
+  restaurant_id: number;
+  business_line: BusinessLine | string;
+  station: string;
+  drawer_key: string;
+  name: string;
+  standard_float: number;
+  opening_variance_tolerance: number;
+  closing_variance_tolerance: number;
+  blind_count_enabled: boolean;
+  is_active: boolean;
+}
+
+export interface DrawerOpeningSuggestion {
+  configuration_id: number;
+  amount: number;
+  source: string;
+  opening_variance_tolerance: number;
+}
+
+export interface DrawerClosingPrompt {
+  session_id: number;
+  blind_count_enabled: boolean;
+  expected_closing_cash?: number | null;
+}
+
+export interface DrawerSessionOpenInput {
+  restaurant_id: number;
+  business_line?: BusinessLine | string;
+  station: string;
+  drawer_key: string;
+  business_date: string;
+  counted_opening_cash: number;
+  denominations_json?: Record<string, unknown> | null;
+  reason?: string | null;
+  approved_by_id?: number | null;
+}
+
+export interface DrawerClosingCountInput {
+  counted_closing_cash: number;
+  denominations_json?: Record<string, unknown> | null;
+  reason?: string | null;
+}
+
+export interface DrawerVarianceApprovalInput {
+  reason: string;
+  retained_float: number;
+}
+
+export interface DrawerMovement {
+  id: number;
+  source_key: string;
+  movement_type: string;
+  signed_amount: number;
+  payment_method?: string | null;
+  occurred_at?: string | null;
+  metadata_json?: Record<string, unknown> | null;
+}
+
+export interface DrawerCount {
+  id: number;
+  count_type: string;
+  total_amount: number;
+  denominations_json?: Record<string, unknown> | null;
+  counted_by_id?: number | null;
+  counted_at?: string | null;
+}
+
+export interface DrawerSession {
+  id: number;
+  configuration_id: number;
+  restaurant_id: number;
+  day_close_id?: number | null;
+  business_line: BusinessLine | string;
+  station: string;
+  drawer_key: string;
+  cashier_id?: number | null;
+  business_date: string;
+  status: DrawerSessionStatus;
+  suggested_opening_source?: string | null;
+  suggested_opening_cash?: number | null;
+  counted_opening_cash?: number | null;
+  opening_variance?: number | null;
+  expected_closing_cash?: number | null;
+  counted_closing_cash?: number | null;
+  cash_variance?: number | null;
+  retained_float?: number | null;
+  opened_at?: string | null;
+  closed_at?: string | null;
+  approved_at?: string | null;
+  movements?: DrawerMovement[];
+  counts?: DrawerCount[];
+}
+
+export interface DayCloseAccountingReviewSummary {
+  id?: number;
+  day_close_id?: number;
+  status?: string;
+  blockers?: string[];
+  suspense_amount?: number;
+  unposted_event_count?: number;
+  mapping_exception_count?: number;
+  reviewed_at?: string | null;
+}
+
 export interface PaymentDistributionBucket {
   count?: number;
   amount: number;
@@ -92,6 +208,8 @@ export interface DayCloseSnapshotData {
   paid_purchase_count?: number;
   pending_purchase_total?: number;
   pending_purchase_count?: number;
+  drawer_sessions?: unknown[];
+  drawer_evidence?: unknown[];
   orders?: unknown[];
   sales_by_category?: unknown;
   sales_by_table?: unknown;
@@ -142,6 +260,8 @@ export interface DayCloseDetail {
   confirmed_at?: string;
   confirmation_notes?: string | null;
   timezone?: string;
+  accounting_review?: DayCloseAccountingReviewSummary | null;
+  accounting_status?: Record<string, unknown> | null;
 }
 
 export interface DayCloseListItem {
@@ -430,6 +550,14 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
         ? row.confirmation_notes
         : String(row.confirmation_notes),
     timezone: row.timezone != null ? String(row.timezone) : undefined,
+    accounting_review:
+      row.accounting_review && typeof row.accounting_review === "object"
+        ? (row.accounting_review as DayCloseAccountingReviewSummary)
+        : null,
+    accounting_status:
+      row.accounting_status && typeof row.accounting_status === "object"
+        ? (row.accounting_status as Record<string, unknown>)
+        : null,
   };
 
   for (const key of numericFields) {

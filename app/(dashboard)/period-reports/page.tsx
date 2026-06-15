@@ -669,7 +669,10 @@ export default function PeriodReportsPage() {
     <div className="flex flex-col gap-6 max-w-7xl mx-auto p-6">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Period Close</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Operational Period Reports</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Operational weekly and monthly summaries. Ledger locking is controlled from Accounting Periods.
+          </p>
           <p className="text-muted-foreground mt-1">
             Store #52 • Yummy Restaurant Group
           </p>
@@ -764,7 +767,7 @@ export default function PeriodReportsPage() {
                         onClick={() => handlePreview()}
                         className="bg-orange-600 hover:bg-orange-700 text-white border-none h-12 px-10 font-bold uppercase text-xs tracking-normal shadow-xl shadow-orange-500/20 transition-all rounded-xl transform active:scale-[0.98]"
                       >
-                        Review & Confirm Close
+                        Review operational report
                       </Button>
                    </div>
                 </div>
@@ -1149,7 +1152,7 @@ export default function PeriodReportsPage() {
                   disabled={confirming || !previewData?.can_close}
               >
                 {confirming ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5 mr-3" />}
-                Authorize Final Period Close
+                Confirm operational period report
               </Button>
             ) : (
                 <Button 
@@ -1261,7 +1264,7 @@ export default function PeriodReportsPage() {
           <DialogHeader className="p-6 sm:p-8 pb-5 bg-muted/20 border-b border-border/40">
             <DialogTitle className="text-xl font-bold tracking-tight">Rebuild Close?</DialogTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              This will regenerate the snapshot from confirmed day-closes and re-confirm the period.
+              This will regenerate the operational snapshot from confirmed day-closes. Accounting period locks still happen in Accounting Periods.
             </p>
           </DialogHeader>
           <div className="p-6 sm:p-8 pt-6 space-y-4 overflow-auto flex-1 min-h-0 no-scrollbar">

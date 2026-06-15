@@ -459,6 +459,14 @@ test("accounting period UI exposes preflight, lock, and reopen workflow", () => 
     "AccountingApis.lockPeriod",
     "AccountingApis.reopenPeriod",
     "Period preflight",
+    "Daily review coverage",
+    "required_day_closes",
+    "confirmed_day_closes",
+    "reviewed_day_closes",
+    "unreviewed_day_closes",
+    "missing_operational_days",
+    "invalidated_review_days",
+    "Review day closes",
     "Generate periods",
     "Soft close",
     "Lock period",
@@ -837,6 +845,8 @@ test("accounting day-close review bridges operational close to ledger checks", (
   const types = read("types/accounting.ts");
   for (const token of [
     "AccountingDayClosePostingStatus",
+    "DayCloseAccountingReview",
+    "AccountingDayCloseEvidence",
     "AccountingDayClose",
     "cash_variance",
     "unposted_finance_events",
@@ -853,11 +863,19 @@ test("accounting day-close review bridges operational close to ledger checks", (
     "dayClose",
     "dayClosePostingStatus",
     "postDayCloseMissingEvents",
-    "softCloseDayClose",
+    "dayCloseReview",
+    "evaluateDayClose",
+    "approveDayCloseReview",
+    "dayCloseEvidence",
+    "dayCloseJournalTrace",
     "/accounting/day-closes",
     "/posting-status",
     "/post-missing-events",
-    "/soft-close",
+    "/review",
+    "/evaluate",
+    "/approve",
+    "/evidence",
+    "/journal-trace",
   ]) {
     assert.match(endpoints, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
@@ -887,15 +905,44 @@ test("accounting day-close review bridges operational close to ledger checks", (
   const alias = read("app/(dashboard)/finance/accounting/period-reports/page.tsx");
   assert.match(alias, /period-reports\/page/);
 
+  const periodReports = read("app/(dashboard)/period-reports/page.tsx");
+  for (const token of [
+    "Operational Period Reports",
+    "Ledger locking is controlled from Accounting Periods",
+    "Review operational report",
+    "Confirm operational period report",
+  ]) {
+    assert.match(periodReports, new RegExp(token));
+  }
+
   const client = read("components/finance/accounting/day-close-review-client.tsx");
   for (const token of [
     "Day Close Review",
     "Accounting Checks",
     "AccountingApis.dayCloses",
     "AccountingApis.postDayCloseMissingEvents",
-    "AccountingApis.softCloseDayClose",
-    "Post missing",
-    "Soft-close",
+    "AccountingApis.evaluateDayClose",
+    "AccountingApis.approveDayCloseReview",
+    "AccountingApis.dayCloseEvidence",
+    "AccountingApis.dayCloseJournalTrace",
+    "Evaluate accounting",
+    "Post missing events",
+    "Approve daily review",
+    "Resolve mappings",
+    "Open settlement reconciliation",
+    "Create correction voucher",
+    "Open source trace",
+    "Operational status",
+    "Review status",
+    "Drawer reconciliation",
+    "Sales",
+    "Collections",
+    "Refunds",
+    "Operating expenses",
+    "Inventory outflows",
+    "Receivables",
+    "Instruments",
+    "Audit trail",
     "cash_variance",
     "suspense_amount",
   ]) {

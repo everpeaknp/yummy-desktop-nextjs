@@ -65,6 +65,7 @@ export function DayCloseSnapshotPanel({
     snapshot.accounting_bridge && typeof snapshot.accounting_bridge === "object"
       ? (snapshot.accounting_bridge as Record<string, unknown>)
       : null;
+  const drawerEvidence = snapshotDrawerEvidence(snapshot);
   const coveredRange = formatDayCloseCoveredRange(
     snapshot.period_start_at,
     snapshot.period_end_at,
@@ -147,6 +148,11 @@ export function DayCloseSnapshotPanel({
           <TabsTrigger value="sales-by-table" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Sales by Table
           </TabsTrigger>
+          {drawerEvidence.length > 0 ? (
+            <TabsTrigger value="drawer-evidence" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
+              Drawer Evidence
+            </TabsTrigger>
+          ) : null}
           <TabsTrigger value="accounting-checks" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
             Accounting Checks
           </TabsTrigger>
@@ -272,6 +278,11 @@ export function DayCloseSnapshotPanel({
               <EmptySnapshotNotice message="Sales by table are not available in this snapshot." />
             )}
           </TabsContent>
+          {drawerEvidence.length > 0 ? (
+            <TabsContent value="drawer-evidence" className="m-0">
+              <DrawerEvidenceCard rows={drawerEvidence} />
+            </TabsContent>
+          ) : null}
           <TabsContent value="accounting-checks" className="m-0">
             {accountingBridge ? (
               <AccountingChecksCard bridge={accountingBridge} />
@@ -336,6 +347,77 @@ function AccountingChecksCard({ bridge }: { bridge: Record<string, unknown> }) {
           </ul>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function snapshotDrawerEvidence(snapshot: DayCloseSnapshotData): Array<Record<string, unknown>> {
+  const direct = snapshot.drawer_sessions;
+  if (Array.isArray(direct)) return direct.filter((row) => row && typeof row === "object") as Array<Record<string, unknown>>;
+
+  const ops = snapshot.operational_snapshot;
+  if (ops && typeof ops === "object" && !Array.isArray(ops)) {
+    const rows = (ops as Record<string, unknown>).drawer_sessions;
+    if (Array.isArray(rows)) return rows.filter((row) => row && typeof row === "object") as Array<Record<string, unknown>>;
+  }
+
+  const evidence = snapshot.drawer_evidence;
+  if (Array.isArray(evidence)) return evidence.filter((row) => row && typeof row === "object") as Array<Record<string, unknown>>;
+  return [];
+}
+
+function readEvidenceAmount(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function DrawerEvidenceCard({ rows }: { rows: Array<Record<string, unknown>> }) {
+  return (
+    <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm">
+      <p className="dc-eyebrow px-5 py-3 border-b border-border/40">Drawer Evidence</p>
+      <div className="divide-y divide-border/50">
+        {rows.map((row, index) => {
+          const station = String(row.station ?? "general");
+          const drawerKey = String(row.drawer_key ?? row.drawerKey ?? "drawer");
+          const status = String(row.status ?? "unknown").replace(/_/g, " ");
+          const opening = readEvidenceAmount(row, "counted_opening_cash");
+          const expected = readEvidenceAmount(row, "expected_closing_cash");
+          const closing = readEvidenceAmount(row, "counted_closing_cash");
+          const variance = readEvidenceAmount(row, "cash_variance");
+          const retained = readEvidenceAmount(row, "retained_float");
+          return (
+            <div key={station + "-" + drawerKey + "-" + index} className="grid gap-3 px-5 py-4 md:grid-cols-[1fr_2fr]">
+              <div>
+                <div className="text-sm font-semibold">{station} / {drawerKey}</div>
+                <div className="text-xs capitalize text-muted-foreground">{status}</div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-5">
+                <EvidenceMetric label="opening count" value={opening} />
+                <EvidenceMetric label="expected cash" value={expected} />
+                <EvidenceMetric label="closing count" value={closing} />
+                <EvidenceMetric label="variance" value={variance} />
+                <EvidenceMetric label="retained float" value={retained} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceMetric({ label, value }: { label: string; value: number | undefined }) {
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/10 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-foreground">
+        {value == null ? "-" : formatDayCloseCurrency(value)}
+      </p>
     </div>
   );
 }

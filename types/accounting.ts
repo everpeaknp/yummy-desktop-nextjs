@@ -116,6 +116,33 @@ export type AccountingDayClosePostingStatus = {
   blockers: string[];
 };
 
+export type DayCloseAccountingReview = {
+  id: number;
+  day_close_id: number;
+  status: "review_required" | "ready" | "reviewed" | "invalidated" | string;
+  source_snapshot_hash: string;
+  unposted_event_count: number;
+  journal_count: number;
+  trial_balance_difference: number;
+  suspense_amount: number;
+  mapping_exception_count: number;
+  blockers: string[];
+  cash_variance_event_id?: number | null;
+  cash_variance_journal_id?: number | null;
+  reviewed_by_id?: number | null;
+  reviewed_at?: string | null;
+  invalidated_by_id?: number | null;
+  invalidated_at?: string | null;
+  invalidation_reason?: string | null;
+};
+
+export type AccountingDayCloseEvidence = {
+  day_close: AccountingDayClose;
+  snapshot_data?: Record<string, unknown> | null;
+  drawer_sessions: Array<Record<string, unknown>>;
+  audit_trail: Array<Record<string, unknown>>;
+};
+
 export type AccountingDayClose = {
   id: number;
   restaurant_id: number;
@@ -129,6 +156,7 @@ export type AccountingDayClose = {
   actual_cash: number;
   cash_discrepancy: number;
   accounting_status: AccountingDayClosePostingStatus;
+  accounting_review?: DayCloseAccountingReview | null;
   snapshot_data?: Record<string, unknown> | null;
 };
 
@@ -343,6 +371,12 @@ export type AccountingPeriodPreflight = {
   trial_balance_difference: number;
   missing_mapping_count: number;
   suspense_amount: number;
+  required_day_closes: number;
+  confirmed_day_closes: number;
+  reviewed_day_closes: number;
+  unreviewed_day_closes: number;
+  missing_operational_days: string[];
+  invalidated_review_days: string[];
   blockers: AccountingPeriodPreflightBlocker[];
 };
 

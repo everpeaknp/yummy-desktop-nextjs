@@ -872,6 +872,26 @@ export const AccountingApis = {
     restaurantId
       ? `/accounting/day-closes/${dayCloseId}/posting-status?restaurant_id=${restaurantId}`
       : `/accounting/day-closes/${dayCloseId}/posting-status`,
+  dayCloseReview: (dayCloseId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/day-closes/${dayCloseId}/review?restaurant_id=${restaurantId}`
+      : `/accounting/day-closes/${dayCloseId}/review`,
+  evaluateDayClose: (dayCloseId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/day-closes/${dayCloseId}/evaluate?restaurant_id=${restaurantId}`
+      : `/accounting/day-closes/${dayCloseId}/evaluate`,
+  approveDayCloseReview: (dayCloseId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/day-closes/${dayCloseId}/approve?restaurant_id=${restaurantId}`
+      : `/accounting/day-closes/${dayCloseId}/approve`,
+  dayCloseEvidence: (dayCloseId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/day-closes/${dayCloseId}/evidence?restaurant_id=${restaurantId}`
+      : `/accounting/day-closes/${dayCloseId}/evidence`,
+  dayCloseJournalTrace: (dayCloseId: number, restaurantId?: number) =>
+    restaurantId
+      ? `/accounting/day-closes/${dayCloseId}/journal-trace?restaurant_id=${restaurantId}`
+      : `/accounting/day-closes/${dayCloseId}/journal-trace`,
   postDayCloseMissingEvents: (dayCloseId: number, restaurantId?: number) =>
     restaurantId
       ? `/accounting/day-closes/${dayCloseId}/post-missing-events?restaurant_id=${restaurantId}`
@@ -1201,6 +1221,76 @@ export const DayCloseApis = {
   reopen: (id: number) => `/day-closes/${id}/reopen`,
   exportPdf: (id: number) => `/day-closes/${id}/export/pdf`,
   exportExcel: (id: number) => `/day-closes/${id}/export/excel`,
+};
+
+export const DrawerSessionApis = {
+  configurations: ({
+    restaurantId,
+    businessLine = 'restaurant',
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    return `/drawer-sessions/configurations?${params.toString()}`;
+  },
+  setControls: ({
+    restaurantId,
+    enabled,
+  }: {
+    restaurantId: number;
+    enabled: boolean;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      enabled: String(enabled),
+    });
+    return `/drawer-sessions/controls?${params.toString()}`;
+  },
+  suggestion: ({
+    restaurantId,
+    businessDate,
+    businessLine = 'restaurant',
+    station = 'general',
+    drawerKey,
+  }: {
+    restaurantId: number;
+    businessDate: string;
+    businessLine?: string;
+    station?: string;
+    drawerKey: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_date: businessDate,
+      business_line: businessLine,
+      station,
+      drawer_key: drawerKey,
+    });
+    return `/drawer-sessions/suggestion?${params.toString()}`;
+  },
+  open: '/drawer-sessions/open',
+  active: ({
+    restaurantId,
+    businessLine = 'restaurant',
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    return `/drawer-sessions/active?${params.toString()}`;
+  },
+  movement: (sessionId: number) => `/drawer-sessions/${sessionId}/movements`,
+  closingPrompt: (sessionId: number) => `/drawer-sessions/${sessionId}/closing-prompt`,
+  closingCount: (sessionId: number) => `/drawer-sessions/${sessionId}/closing-count`,
+  approveVariance: (sessionId: number) => `/drawer-sessions/${sessionId}/approve-variance`,
+  reopen: (sessionId: number) => `/drawer-sessions/${sessionId}/reopen`,
 };
 
 export const HistoryApis = {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, CheckCircle2, History, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, History, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
@@ -22,7 +22,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { AccountingDayClose, AccountingDayClosePostingStatus } from "@/types/accounting";
+import type {
+  AccountingDayClose,
+  AccountingDayCloseEvidence,
+  AccountingDayClosePostingStatus,
+  DayCloseAccountingReview,
+} from "@/types/accounting";
 
 type BaseResponse<T> = {
   status?: string;
@@ -60,7 +65,7 @@ function formatDate(value?: string | null) {
 }
 
 function statusClass(status: string) {
-  if (status === "posted" || status === "soft_closed") {
+  if (status === "posted" || status === "soft_closed" || status === "reviewed") {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300";
   }
   if (status === "blocked") return "border-red-500/30 bg-red-500/10 text-red-800 dark:text-red-300";
@@ -68,6 +73,7 @@ function statusClass(status: string) {
 }
 
 function statusLabel(status: string) {
+  if (status === "soft_closed") return "reviewed";
   return status.replace(/_/g, " ");
 }
 
@@ -78,13 +84,14 @@ export function DayCloseReviewClient() {
   const restaurantId = user?.restaurant_id;
   const canView = hasPermission(user, "finance.accounting.view");
   const canPost = hasPermission(user, "finance.ledger.backfill");
-  const canSoftClose = hasPermission(user, "finance.accounting.periods.close");
+  const canApproveReview = hasPermission(user, "finance.accounting.periods.close");
   const [dateFrom, setDateFrom] = useState(monthStart);
   const [dateTo, setDateTo] = useState(() => yyyyMmDd(new Date()));
   const [rows, setRows] = useState<AccountingDayClose[]>([]);
   const [selected, setSelected] = useState<AccountingDayClose | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionId, setActionId] = useState<number | null>(null);
+  const [evidence, setEvidence] = useState<AccountingDayCloseEvidence | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -137,11 +144,11 @@ export function DayCloseReviewClient() {
         acc.suspense += Number(status.suspense_amount || 0);
         acc.unposted += Number(status.unposted_finance_events || 0);
         if (status.status === "blocked") acc.blocked += 1;
-        if (status.status === "soft_closed") acc.softClosed += 1;
+        if (status.status === "soft_closed" || row.accounting_review?.status === "reviewed") acc.reviewed += 1;
         if (status.status === "posted") acc.posted += 1;
         return acc;
       },
-      { posted: 0, blocked: 0, softClosed: 0, unposted: 0, suspense: 0, cashVariance: 0 }
+      { posted: 0, blocked: 0, reviewed: 0, unposted: 0, suspense: 0, cashVariance: 0 }
     );
   }, [rows]);
 
@@ -174,19 +181,73 @@ export function DayCloseReviewClient() {
     }
   };
 
-  const softClose = async (row: AccountingDayClose) => {
+  const evaluateAccounting = async (row: AccountingDayClose) => {
     if (!restaurantId) return;
     setActionId(row.id);
     try {
-      await apiClient.post<BaseResponse<AccountingDayClosePostingStatus>>(
-        AccountingApis.softCloseDayClose(row.id, restaurantId),
+      const res = await apiClient.post<BaseResponse<AccountingDayClose>>(
+        AccountingApis.evaluateDayClose(row.id, restaurantId),
         {}
       );
-      toast.success("Day close soft-closed for accounting");
+      const updated = res.data?.data;
+      if (updated) {
+        setRows((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+        setSelected(updated);
+      }
+      toast.success("Accounting evaluation refreshed.");
+    } catch (error) {
+      console.error("Failed to evaluate accounting day close", error);
+      toast.error("Failed to evaluate accounting day close");
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const approveDailyReview = async (row: AccountingDayClose) => {
+    if (!restaurantId) return;
+    setActionId(row.id);
+    try {
+      await apiClient.post<BaseResponse<DayCloseAccountingReview>>(
+        AccountingApis.approveDayCloseReview(row.id, restaurantId),
+        {}
+      );
+      toast.success("Daily accounting review approved.");
       await refreshOne(row.id);
     } catch (error) {
-      console.error("Failed to soft-close accounting day close", error);
-      toast.error("Cannot soft-close while accounting checks are blocked");
+      console.error("Failed to approve daily accounting review", error);
+      toast.error("Evaluate first and clear blockers before approval.");
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const loadEvidence = async (row: AccountingDayClose) => {
+    if (!restaurantId) return;
+    setActionId(row.id);
+    try {
+      const res = await apiClient.get<BaseResponse<AccountingDayCloseEvidence>>(
+        AccountingApis.dayCloseEvidence(row.id, restaurantId)
+      );
+      setEvidence(res.data?.data ?? null);
+      setSelected(row);
+      toast.success("Source evidence loaded.");
+    } catch (error) {
+      console.error("Failed to load day-close evidence", error);
+      toast.error("Failed to load source evidence");
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const openSourceTrace = async (row: AccountingDayClose) => {
+    if (!restaurantId) return;
+    setActionId(row.id);
+    try {
+      await apiClient.get(AccountingApis.dayCloseJournalTrace(row.id, restaurantId));
+      toast.success("Source trace is available for this day close.");
+    } catch (error) {
+      console.error("Failed to load day-close source trace", error);
+      toast.error("Failed to load source trace");
     } finally {
       setActionId(null);
     }
@@ -244,7 +305,7 @@ export function DayCloseReviewClient() {
             <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
               <Metric label="Posted" value={summary.posted.toLocaleString()} />
               <Metric label="Blocked" value={summary.blocked.toLocaleString()} tone={summary.blocked ? "danger" : "default"} />
-              <Metric label="Soft closed" value={summary.softClosed.toLocaleString()} />
+              <Metric label="Reviewed" value={summary.reviewed.toLocaleString()} />
               <Metric label="Unposted" value={summary.unposted.toLocaleString()} tone={summary.unposted ? "danger" : "default"} />
               <Metric label="Suspense" value={formatMoney(summary.suspense)} tone={summary.suspense ? "danger" : "default"} />
             </div>
@@ -302,6 +363,18 @@ export function DayCloseReviewClient() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={busy}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void evaluateAccounting(row);
+                              }}
+                            >
+                              {busy ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
+                              Evaluate accounting
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
                               disabled={!canPost || busy}
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -309,17 +382,28 @@ export function DayCloseReviewClient() {
                               }}
                             >
                               {busy ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
-                              Post missing
+                              Post missing events
                             </Button>
                             <Button
                               size="sm"
-                              disabled={!canSoftClose || busy || Boolean(status.blockers.length)}
+                              disabled={!canApproveReview || busy || Boolean(status.blockers.length)}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                void softClose(row);
+                                void approveDailyReview(row);
                               }}
                             >
-                              Soft-close
+                              Approve daily review
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={busy}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void loadEvidence(row);
+                              }}
+                            >
+                              Evidence
                             </Button>
                           </div>
                         </TableCell>
@@ -345,6 +429,14 @@ export function DayCloseReviewClient() {
             <CardContent>
               {selected ? (
                 <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Metric label="Operational status" value={selected.status.replace(/_/g, " ")} />
+                    <Metric
+                      label="Review status"
+                      value={(selected.accounting_review?.status ?? selected.accounting_status.status).replace(/_/g, " ")}
+                    />
+                  </div>
+
                   <div className={`rounded-md border p-4 ${statusClass(selected.accounting_status.status)}`}>
                     <div className="flex items-center gap-2 font-semibold capitalize">
                       {selected.accounting_status.blockers.length ? (
@@ -367,6 +459,8 @@ export function DayCloseReviewClient() {
                     <Metric label="Trial balance diff" value={formatMoney(selected.accounting_status.trial_balance_difference)} />
                     <Metric label="Cash variance" value={formatMoney(selected.accounting_status.cash_variance)} />
                   </div>
+
+                  <AccountingEvidenceSections row={selected} evidence={evidence} />
 
                   {selected.accounting_status.blockers.length ? (
                     <div className="rounded-md border border-red-500/30 bg-red-500/10 p-4">
@@ -393,6 +487,33 @@ export function DayCloseReviewClient() {
                     <div className="mt-2 font-medium text-foreground">Cash variance journal</div>
                     <div>{selected.accounting_status.cash_variance_journal_entry_id ?? "No variance journal"}</div>
                   </div>
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button variant="outline" onClick={() => void evaluateAccounting(selected)} disabled={actionId === selected.id}>
+                      Evaluate accounting
+                    </Button>
+                    <Button onClick={() => void approveDailyReview(selected)} disabled={!canApproveReview || actionId === selected.id || Boolean(selected.accounting_status.blockers.length)}>
+                      Approve daily review
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/finance/accounting/ledger-mapping">
+                        Resolve mappings <ExternalLink className="ml-2 h-3 w-3" />
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/finance/accounting/settlements">
+                        Open settlement reconciliation <ExternalLink className="ml-2 h-3 w-3" />
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/finance/accounting/vouchers">
+                        Create correction voucher <ExternalLink className="ml-2 h-3 w-3" />
+                      </Link>
+                    </Button>
+                    <Button variant="outline" onClick={() => void openSourceTrace(selected)} disabled={actionId === selected.id}>
+                      Open source trace
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="py-10 text-center text-muted-foreground">
@@ -412,6 +533,64 @@ function Metric({ label, value, tone = "default" }: { label: string; value: stri
     <div className={`rounded-md border p-3 ${tone === "danger" ? "border-red-500/30 bg-red-500/10" : "bg-muted/30"}`}>
       <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 text-lg font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function readMoney(source: Record<string, unknown> | null | undefined, key: string) {
+  const value = source?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function AccountingEvidenceSections({
+  row,
+  evidence,
+}: {
+  row: AccountingDayClose;
+  evidence: AccountingDayCloseEvidence | null;
+}) {
+  const snapshot = (evidence?.snapshot_data ?? row.snapshot_data ?? {}) as Record<string, unknown>;
+  const receivables = (snapshot.receivables ?? {}) as Record<string, unknown>;
+  const refunds = (snapshot.refunds ?? {}) as Record<string, unknown>;
+  const drawerRows = evidence?.drawer_sessions ?? [];
+  const auditRows = evidence?.audit_trail ?? [];
+  const instrumentCount = Array.isArray(snapshot.payment_instrument_distribution)
+    ? snapshot.payment_instrument_distribution.length
+    : 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Metric label="Drawer reconciliation" value={formatMoney(row.accounting_status.cash_variance)} />
+        <Metric label="Sales" value={formatMoney(readMoney(snapshot, "net_sales"))} />
+        <Metric label="Collections" value={formatMoney(readMoney(snapshot, "cash_collected"))} />
+        <Metric label="Refunds" value={formatMoney(readMoney(refunds, "total"))} />
+        <Metric label="Operating expenses" value={formatMoney(readMoney(snapshot, "expense_total"))} />
+        <Metric label="Inventory outflows" value={formatMoney(readMoney(snapshot, "paid_purchase_total"))} />
+        <Metric label="Receivables" value={formatMoney(readMoney(receivables, "outstanding_receivables"))} />
+        <Metric label="Instruments" value={instrumentCount.toLocaleString()} />
+      </div>
+      <div className="rounded-md border p-3 text-sm">
+        <div className="font-semibold">Corrections and source trace</div>
+        <div className="mt-1 text-muted-foreground">
+          Use correction vouchers for accounting fixes. Use source trace to verify source order, payment, refund, drawer, and journal evidence.
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-md border p-3 text-sm">
+          <div className="font-semibold">Drawer reconciliation</div>
+          <div className="mt-1 text-muted-foreground">{drawerRows.length} drawer evidence row(s)</div>
+        </div>
+        <div className="rounded-md border p-3 text-sm">
+          <div className="font-semibold">Audit trail</div>
+          <div className="mt-1 text-muted-foreground">{auditRows.length} audit event(s)</div>
+        </div>
+      </div>
     </div>
   );
 }

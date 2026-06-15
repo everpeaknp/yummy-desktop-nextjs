@@ -117,7 +117,7 @@ export function AccountingPeriodsClient() {
     } finally {
       setLoading(false);
     }
-  }, [restaurantId, canView]);
+  }, [restaurantId, canView, canClosePeriods]);
 
   useEffect(() => {
     void loadPeriods();
@@ -394,6 +394,15 @@ export function AccountingPeriodsClient() {
                               <div className="text-xs text-muted-foreground">
                                 Unposted: {preflight.unposted_finance_events} | Difference: {formatMoney(preflight.trial_balance_difference)} | Suspense: {formatMoney(preflight.suspense_amount)}
                               </div>
+                              <div className="text-xs text-muted-foreground">
+                                Daily review coverage: Required {preflight.required_day_closes} | Confirmed {preflight.confirmed_day_closes} | Reviewed {preflight.reviewed_day_closes} | Unreviewed {preflight.unreviewed_day_closes}
+                              </div>
+                              {preflight.missing_operational_days.length || preflight.invalidated_review_days.length ? (
+                                <div className="text-xs text-amber-700 dark:text-amber-300">
+                                  Missing operational days: {preflight.missing_operational_days.length} | Invalidated review days: {preflight.invalidated_review_days.length}.{" "}
+                                  <Link className="underline" href="/finance/accounting/day-closes">Review day closes</Link>
+                                </div>
+                              ) : null}
                               {preflight.blockers.length > 0 ? (
                                 <div className="text-xs text-amber-700 dark:text-amber-300">
                                   {preflight.blockers.map((blocker) => blocker.message).join(" ")}

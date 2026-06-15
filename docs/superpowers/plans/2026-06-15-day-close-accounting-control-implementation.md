@@ -49,6 +49,7 @@
 ### Task 1: Add Drawer and Daily Review Persistence
 
 **Files:**
+
 - Create: `C:\yummy_backend\app\models\drawer_session_model.py`
 - Create: `C:\yummy_backend\app\models\day_close_accounting_review_model.py`
 - Modify: `C:\yummy_backend\app\models\business_day_close_model.py`
@@ -171,6 +172,7 @@ git commit -m "feat(day-close): add drawer sessions and daily accounting reviews
 ### Task 2: Implement Drawer Opening Float and Movement Rules
 
 **Files:**
+
 - Create: `C:\yummy_backend\app\schema\drawer_session_schema.py`
 - Create: `C:\yummy_backend\app\repositories\drawer_session_repository.py`
 - Create: `C:\yummy_backend\app\services\drawer_session_service.py`
@@ -246,6 +248,7 @@ git commit -m "feat(day-close): implement drawer opening float controls"
 ### Task 3: Implement Drawer Closing and Cash Reconciliation
 
 **Files:**
+
 - Modify: `C:\yummy_backend\app\services\drawer_session_service.py`
 - Create: `C:\yummy_backend\tests\day_close\test_drawer_closing_flow_spec.py`
 
@@ -291,6 +294,7 @@ git commit -m "feat(day-close): reconcile drawer closing cash"
 ### Task 4: Add Drawer Session APIs and Permissions
 
 **Files:**
+
 - Create: `C:\yummy_backend\app\controller\drawer_session_controller.py`
 - Modify: `C:\yummy_backend\app\main.py`
 - Modify: `C:\yummy_backend\app\utils\permission_catalog.py`
@@ -337,6 +341,7 @@ git commit -m "feat(day-close): expose controlled drawer session APIs"
 ### Task 5: Separate Operational Confirmation from Accounting Review
 
 **Files:**
+
 - Create: `C:\yummy_backend\app\services\day_close_accounting_review_service.py`
 - Modify: `C:\yummy_backend\app\services\day_close_accounting_bridge_service.py`
 - Modify: `C:\yummy_backend\app\services\day_close_service.py`
@@ -406,6 +411,7 @@ git commit -m "refactor(day-close): separate operational close from accounting r
 ### Task 6: Make Cash Corrections and Reopening Atomic
 
 **Files:**
+
 - Modify: `C:\yummy_backend\app\services\day_close_accounting_bridge_service.py`
 - Modify: `C:\yummy_backend\app\services\day_close_accounting_review_service.py`
 - Modify: `C:\yummy_backend\app\services\day_close_service.py`
@@ -466,6 +472,7 @@ git commit -m "fix(accounting): make day-close variance corrections atomic"
 ### Task 7: Add Accounting Review Approval and Drilldown APIs
 
 **Files:**
+
 - Modify: `C:\yummy_backend\app\schema\accounting_schema.py`
 - Modify: `C:\yummy_backend\app\controller\accounting_controller.py`
 - Modify: `C:\yummy_backend\app\services\day_close_accounting_review_service.py`
@@ -508,6 +515,7 @@ git commit -m "feat(accounting): add daily close review approval workflow"
 ### Task 8: Enforce Daily Review Coverage in Accounting Periods
 
 **Files:**
+
 - Modify: `C:\yummy_backend\app\services\accounting_period_service.py`
 - Modify: `C:\yummy_backend\app\schema\accounting_schema.py`
 - Modify: `C:\yummy_backend\app\services\period_close_service.py`
@@ -570,6 +578,7 @@ git commit -m "feat(accounting): gate period locks on reviewed daily closes"
 ### Task 9: Build Drawer Opening and Closing UI
 
 **Files:**
+
 - Create: `components/day-close/drawer-session-panel.tsx`
 - Create: `components/day-close/drawer-count-dialog.tsx`
 - Create: `components/day-close/operational-close-status.tsx`
@@ -644,6 +653,7 @@ git commit -m "feat(day-close): add drawer opening and closing workflow"
 ### Task 10: Expand Accountant Daily Review UI
 
 **Files:**
+
 - Modify: `components/finance/accounting/day-close-review-client.tsx`
 - Modify: `components/finance/accounting/accounting-periods-client.tsx`
 - Modify: `types/accounting.ts`
@@ -690,6 +700,7 @@ git commit -m "feat(accounting): add accountant daily close review workflow"
 ### Task 11: Clarify Operational Period Reports
 
 **Files:**
+
 - Modify: `app/(dashboard)/period-reports/page.tsx`
 - Modify: `app/(dashboard)/finance/accounting/period-reports/page.tsx`
 - Modify: `components/finance/accounting/accounting-nav.tsx`
@@ -717,6 +728,7 @@ git commit -m "refactor(accounting): clarify operational period report authority
 ### Task 12: Migration, Backfill, and End-to-End Verification
 
 **Files:**
+
 - Create: `docs/superpowers/runbooks/day-close-accounting-control-rollout.md`
 - Test: all focused backend and frontend suites.
 
@@ -797,3 +809,4 @@ git commit -m "docs(accounting): document day-close control rollout"
 - Do not allow a failed variance reversal to reopen or correct a close.
 - Do not let operational period reports change accounting-period status.
 - Do not call a period accounting-ready while any included daily review is unresolved.
+  P
