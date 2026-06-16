@@ -6,7 +6,7 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, CustomerApis, PaymentApis } from "@/lib/api/endpoints";
+import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,6 +61,7 @@ import {
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { REFUND_PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
+import type { DrawerConfiguration, DrawerOpeningSuggestion, DrawerSession } from "@/types/day-close";
 
 function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
   if (!input) return null;
@@ -108,6 +109,30 @@ function extractApiErrorMessage(err: any, fallback: string): string {
     err?.message ||
     fallback
   );
+}
+
+type BaseResponse<T> = {
+  status?: string;
+  data?: T;
+  message?: string;
+};
+
+const PAYMENT_READY_DRAWER_STATUSES = new Set(["opened", "closing_count_required", "reopened"]);
+
+function todayIso() {
+  const date = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
+}
+
+function isPaymentReadyDrawer(session: DrawerSession) {
+  return PAYMENT_READY_DRAWER_STATUSES.has(String(session.status || "").toLowerCase());
+}
+
+function userCanApproveDrawerVariance(user: { role?: string | null; permissions?: string[] | null } | null | undefined) {
+  const role = String(user?.role || "").toLowerCase();
+  if (role === "admin" || role === "superadmin") return true;
+  return Array.isArray(user?.permissions) && user.permissions.includes("day_close.drawer.approve");
 }
 
 // ── Types matching backend schema ──────────────────
@@ -438,6 +463,18 @@ export default function CheckoutPage() {
   const [fonepayVerifying, setFonepayVerifying] = useState(false);
   const [selectedStaticQrIndex, setSelectedStaticQrIndex] = useState(0);
   const [selectedCardIndex, setSelectedCardIndex] = useState(0);
+  const drawerBusinessLine = "restaurant";
+  const [drawerBusinessDate] = useState(() => todayIso());
+  const [drawerSessions, setDrawerSessions] = useState<DrawerSession[]>([]);
+  const [drawerConfigs, setDrawerConfigs] = useState<DrawerConfiguration[]>([]);
+  const [drawerStation, setDrawerStation] = useState("general");
+  const [drawerKey, setDrawerKey] = useState("main");
+  const [drawerOpeningCash, setDrawerOpeningCash] = useState("");
+  const [drawerOpeningReason, setDrawerOpeningReason] = useState("");
+  const [drawerSuggestion, setDrawerSuggestion] = useState<DrawerOpeningSuggestion | null>(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [drawerOpening, setDrawerOpening] = useState(false);
+  const [drawerError, setDrawerError] = useState<string | null>(null);
   const [editPaymentOpen, setEditPaymentOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState<BillPayment | null>(null);
   const [editPayMethod, setEditPayMethod] = useState("cash");
@@ -548,6 +585,179 @@ export default function CheckoutPage() {
         .filter((c: any) => c && typeof c.name === "string" && c.name.trim())
         .map((c: any) => ({ name: String(c.name), identifier: c.identifier ? String(c.identifier) : null }))
     : [];
+  const currentCashierDrawerSessions = drawerSessions.filter(
+    (session) => Number(session.cashier_id) === Number(user?.id) && isPaymentReadyDrawer(session)
+  );
+  const currentCashierDrawer =
+    currentCashierDrawerSessions.length === 1 ? currentCashierDrawerSessions[0] : null;
+  const hasCurrentCashierDrawer = Boolean(currentCashierDrawer);
+  const hasCashDrawerConflict = currentCashierDrawerSessions.length > 1;
+  const canApproveDrawerOpeningVariance = userCanApproveDrawerVariance(user);
+  const drawerOpeningAmount = Number(drawerOpeningCash);
+  const drawerOpeningSuggestionAmount = Number(drawerSuggestion?.amount ?? 0);
+  const drawerOpeningTolerance = Number(drawerSuggestion?.opening_variance_tolerance ?? 0);
+  const drawerOpeningVarianceEnforced = Boolean(drawerSuggestion?.opening_variance_enforced);
+  const drawerOpeningIsManualMode = Boolean(drawerSuggestion) && !drawerOpeningVarianceEnforced;
+  const drawerOpeningVariance = Number.isFinite(drawerOpeningAmount)
+    ? drawerOpeningAmount - drawerOpeningSuggestionAmount
+    : 0;
+  const drawerOpeningNeedsApproval =
+    drawerOpeningVarianceEnforced &&
+    Number.isFinite(drawerOpeningAmount) && Math.abs(drawerOpeningVariance) > drawerOpeningTolerance;
+  const selectedDrawerConfigValue = `${drawerStation}::${drawerKey}`;
+  const cashMethodSelected = !isMultiPayment
+    ? payMethod === "cash"
+    : multiPayments.some((row) => row.method === "cash");
+
+  const loadDrawerSuggestion = useCallback(async (station: string, key: string) => {
+    if (!restaurant?.id) return;
+    try {
+      const res = await apiClient.get<BaseResponse<DrawerOpeningSuggestion>>(
+        DrawerSessionApis.suggestion({
+          restaurantId: restaurant.id,
+          businessLine: drawerBusinessLine,
+          businessDate: drawerBusinessDate,
+          station,
+          drawerKey: key,
+        }),
+      );
+      const suggestion = res.data?.data ?? null;
+      setDrawerSuggestion(suggestion);
+      if (suggestion && !drawerOpeningCash) {
+        setDrawerOpeningCash(String(Number(suggestion.amount ?? 0)));
+      }
+    } catch {
+      setDrawerSuggestion(null);
+    }
+  }, [drawerBusinessDate, drawerOpeningCash, restaurant?.id]);
+
+  const loadCashDrawerState = useCallback(async (options?: { silent?: boolean }) => {
+    if (!restaurant?.id) {
+      return { ready: false, message: "Restaurant profile is not loaded." };
+    }
+    if (!user?.id) {
+      return { ready: false, message: "Login session is not loaded." };
+    }
+
+    if (!options?.silent) setDrawerLoading(true);
+    setDrawerError(null);
+    try {
+      const [activeRes, configRes] = await Promise.all([
+        apiClient.get<BaseResponse<DrawerSession[]>>(
+          DrawerSessionApis.active({ restaurantId: restaurant.id, businessLine: drawerBusinessLine }),
+        ),
+        apiClient.get<BaseResponse<DrawerConfiguration[]>>(
+          DrawerSessionApis.configurations({ restaurantId: restaurant.id, businessLine: drawerBusinessLine }),
+        ).catch(() => null),
+      ]);
+      const sessions = activeRes.data?.data ?? [];
+      const configs = (configRes?.data?.data ?? []).filter((config) => config.is_active !== false);
+      setDrawerSessions(sessions);
+      setDrawerConfigs(configs);
+
+      let nextStation = drawerStation;
+      let nextDrawerKey = drawerKey;
+      if (
+        configs.length > 0 &&
+        !configs.some((config) => config.station === drawerStation && config.drawer_key === drawerKey)
+      ) {
+        nextStation = configs[0].station || "general";
+        nextDrawerKey = configs[0].drawer_key || "main";
+        setDrawerStation(nextStation);
+        setDrawerKey(nextDrawerKey);
+      }
+      void loadDrawerSuggestion(nextStation, nextDrawerKey);
+
+      const cashierSessions = sessions.filter(
+        (session) => Number(session.cashier_id) === Number(user.id) && isPaymentReadyDrawer(session)
+      );
+      if (cashierSessions.length === 1) {
+        return { ready: true, message: "" };
+      }
+      if (cashierSessions.length > 1) {
+        return {
+          ready: false,
+          message: "Multiple active cash drawers are assigned to you. Close or reassign one before taking cash.",
+        };
+      }
+      return { ready: false, message: "Open your cash drawer before taking a cash payment." };
+    } catch (err: any) {
+      const message = extractApiErrorMessage(err, "Failed to load cash drawer status.");
+      setDrawerError(message);
+      return { ready: false, message };
+    } finally {
+      if (!options?.silent) setDrawerLoading(false);
+    }
+  }, [drawerKey, drawerStation, loadDrawerSuggestion, restaurant?.id, user?.id]);
+
+  const ensureCashDrawerReady = useCallback(async () => {
+    const result = await loadCashDrawerState({ silent: true });
+    if (!result.ready) {
+      setPayError(result.message);
+      toast.error(result.message);
+      return false;
+    }
+    return true;
+  }, [loadCashDrawerState]);
+
+  const handleOpenCashDrawer = useCallback(async () => {
+    if (!restaurant?.id) {
+      setDrawerError("Restaurant profile is not loaded.");
+      return;
+    }
+    const amount = Number(drawerOpeningCash);
+    if (!Number.isFinite(amount) || amount < 0) {
+      setDrawerError("Enter a valid opening cash count.");
+      return;
+    }
+    if (drawerOpeningNeedsApproval && !drawerOpeningReason.trim()) {
+      setDrawerError("Opening cash differs from the suggested float. Enter a reason for the variance.");
+      return;
+    }
+    if (drawerOpeningNeedsApproval && !canApproveDrawerOpeningVariance) {
+      setDrawerError("Opening cash differs from the suggested float. Ask a manager/admin to approve it, or use the suggested opening amount.");
+      return;
+    }
+    setDrawerOpening(true);
+    setDrawerError(null);
+    try {
+      const res = await apiClient.post<BaseResponse<DrawerSession>>(DrawerSessionApis.open, {
+        restaurant_id: restaurant.id,
+        business_line: drawerBusinessLine,
+        station: drawerStation || "general",
+        drawer_key: drawerKey || "main",
+        business_date: drawerBusinessDate,
+        counted_opening_cash: amount,
+        denominations_json: null,
+        reason: drawerOpeningReason.trim() || null,
+        approved_by_id: drawerOpeningNeedsApproval ? user?.id : null,
+      });
+      const session = res.data?.data;
+      if (session) {
+        setDrawerSessions((current) => [session, ...current.filter((row) => row.id !== session.id)]);
+      }
+      setDrawerOpeningReason("");
+      await loadCashDrawerState({ silent: true });
+      toast.success("Cash drawer opened.");
+    } catch (err: any) {
+      const message = extractApiErrorMessage(err, "Failed to open cash drawer.");
+      setDrawerError(message);
+      toast.error(message);
+    } finally {
+      setDrawerOpening(false);
+    }
+  }, [
+    drawerBusinessDate,
+    drawerKey,
+    drawerOpeningNeedsApproval,
+    drawerOpeningCash,
+    drawerOpeningReason,
+    drawerStation,
+    canApproveDrawerOpeningVariance,
+    loadCashDrawerState,
+    restaurant?.id,
+    user?.id,
+  ]);
 
   // ── Fetch Guest Bills ──────────────────────────────
   const fetchGuestBills = useCallback(async () => {
@@ -677,6 +887,12 @@ export default function CheckoutPage() {
   useEffect(() => {
     fetchBill();
   }, [fetchBill]);
+
+  useEffect(() => {
+    if ((paymentOpen && cashMethodSelected) || (payAllOpen && payAllMethod === "cash")) {
+      void loadCashDrawerState({ silent: true });
+    }
+  }, [cashMethodSelected, loadCashDrawerState, payAllMethod, payAllOpen, paymentOpen]);
 
   // ── Fetch Customers ───────────────────────────────
   const fetchCustomers = useCallback(async (): Promise<CustomerOption[] | null> => {
@@ -1033,6 +1249,11 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (editPayMethod === "cash" && String(editingPayment.method || "").toLowerCase() !== "cash") {
+      setEditPayError("To change a non-cash payment to cash, remove it and add a new cash payment while your drawer is open.");
+      return;
+    }
+
     if (editPayMethod === "digital" && staticPaymentQrs.length === 0) {
       setEditPayError("No static QR configured. Add one in Manage / Settings / Payments & POS.");
       return;
@@ -1156,6 +1377,10 @@ export default function CheckoutPage() {
         }
       }
 
+      if (parsedRows.some((row) => row.method === "cash") && !(await ensureCashDrawerReady())) {
+        return;
+      }
+
       setPaySubmitting(true);
       setPayError(null);
       try {
@@ -1230,6 +1455,10 @@ export default function CheckoutPage() {
 
     if (payMethod === "card" && staticPaymentCards.length === 0) {
       setPayError("No card account configured. Add one in Manage / Settings / Payments & POS.");
+      return;
+    }
+
+    if (payMethod === "cash" && !(await ensureCashDrawerReady())) {
       return;
     }
 
@@ -1351,6 +1580,9 @@ export default function CheckoutPage() {
   };
 
   const handlePayAllGuestBills = async () => {
+    if (payAllMethod === "cash" && !(await ensureCashDrawerReady())) {
+      return;
+    }
     setPayAllSubmitting(true);
     try {
       await apiClient.post(OrderApis.payAllGuestBills(orderId), {
@@ -1537,6 +1769,167 @@ export default function CheckoutPage() {
   }, [editPayMethod, editSelectedCardIndex, staticPaymentCards.length]);
 
   // ── Apply Discount ────────────────────────────────
+  const cashDrawerReadinessPanel = (
+    <div className="rounded-xl border bg-muted/20 p-3 space-y-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Banknote className="h-4 w-4 text-emerald-600" />
+            Cash drawer
+            {drawerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+          </div>
+          {hasCurrentCashierDrawer ? (
+            <p className="text-xs text-muted-foreground">
+              Open: {currentCashierDrawer?.station} / {currentCashierDrawer?.drawer_key}
+              {currentCashierDrawer?.counted_opening_cash != null
+                ? ` - Opening ${formatCurrency(Number(currentCashierDrawer.counted_opening_cash), curr)}`
+                : ""}
+            </p>
+          ) : hasCashDrawerConflict ? (
+            <p className="text-xs text-destructive">
+              Multiple active drawers are assigned to you. Close or reassign one before taking cash.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Open your drawer before accepting physical cash.
+            </p>
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void loadCashDrawerState()}
+          disabled={drawerLoading || drawerOpening}
+          className="h-8 gap-1.5"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", drawerLoading && "animate-spin")} />
+          Refresh
+        </Button>
+      </div>
+
+      {drawerError ? (
+        <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+          {drawerError}
+        </div>
+      ) : null}
+
+      {hasCurrentCashierDrawer ? (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+          <CheckCircle className="h-4 w-4" />
+          Cash payments will be recorded in this drawer.
+        </div>
+      ) : !hasCashDrawerConflict ? (
+        <div className="space-y-3">
+          {drawerConfigs.length > 0 ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Drawer</Label>
+              <Select
+                value={selectedDrawerConfigValue}
+                onValueChange={(value) => {
+                  const [station, key] = value.split("::");
+                  const nextStation = station || "general";
+                  const nextKey = key || "main";
+                  setDrawerStation(nextStation);
+                  setDrawerKey(nextKey);
+                  setDrawerOpeningCash("");
+                  void loadDrawerSuggestion(nextStation, nextKey);
+                }}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {drawerConfigs.map((config) => (
+                    <SelectItem key={config.id} value={`${config.station}::${config.drawer_key}`}>
+                      {config.name || `${config.station} / ${config.drawer_key}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Station</Label>
+                <Input
+                  value={drawerStation}
+                  onChange={(event) => setDrawerStation(event.target.value || "general")}
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Drawer key</Label>
+                <Input
+                  value={drawerKey}
+                  onChange={(event) => setDrawerKey(event.target.value || "main")}
+                  className="h-10"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Opening cash</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={drawerOpeningCash}
+                onChange={(event) => setDrawerOpeningCash(event.target.value)}
+                placeholder={drawerSuggestion ? String(Number(drawerSuggestion.amount ?? 0)) : "0.00"}
+                className="h-10"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                {drawerOpeningVarianceEnforced ? "Reason if different" : "Opening note"}
+              </Label>
+              <Input
+                value={drawerOpeningReason}
+                onChange={(event) => setDrawerOpeningReason(event.target.value)}
+                placeholder={drawerOpeningVarianceEnforced ? "Required if outside tolerance" : "Optional"}
+                className="h-10"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                onClick={handleOpenCashDrawer}
+                disabled={drawerOpening}
+                className="h-10 w-full gap-2"
+              >
+                {drawerOpening ? <Loader2 className="h-4 w-4 animate-spin" /> : <Banknote className="h-4 w-4" />}
+                Open
+              </Button>
+            </div>
+          </div>
+          {drawerOpeningNeedsApproval ? (
+            <div className={cn(
+              "rounded-lg border px-3 py-2 text-xs",
+              canApproveDrawerOpeningVariance
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+                : "border-destructive/30 bg-destructive/10 text-destructive"
+            )}>
+              Opening variance: {formatCurrency(Math.abs(drawerOpeningVariance), curr)}.{" "}
+              {canApproveDrawerOpeningVariance
+                ? "Your approval will be recorded with the reason."
+                : "Manager/admin approval is required."}
+            </div>
+          ) : drawerOpeningIsManualMode ? (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+              Flexible opening mode is active. The amount you count now will be used as today&apos;s opening baseline.
+            </div>
+          ) : null}
+          <p className="text-[11px] text-muted-foreground">
+            Suggested opening: {formatCurrency(drawerOpeningSuggestionAmount, curr)} for {drawerBusinessDate}.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+
   const handleApplyDiscount = async () => {
     if (!canApplyDiscount) {
       setDiscountError("You do not have permission to apply discounts.");
@@ -2477,6 +2870,8 @@ export default function CheckoutPage() {
               <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{payError}</div>
             )}
 
+            {cashMethodSelected ? cashDrawerReadinessPanel : null}
+
             {!isMultiPayment ? (
               <>
                 {/* Payment Method */}
@@ -3211,6 +3606,8 @@ export default function CheckoutPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {payAllMethod === "cash" ? cashDrawerReadinessPanel : null}
 
             <div className="space-y-2">
               <Label htmlFor="pay-all-ref">Reference / Notes (optional)</Label>

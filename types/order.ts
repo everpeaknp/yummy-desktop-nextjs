@@ -33,6 +33,7 @@ export interface OrderItem {
 
 export interface OrderPayment {
   id: number;
+  drawer_session_id?: number | null;
   method: PaymentMethod;
   amount: number;
   reference: string | null;

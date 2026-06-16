@@ -68,6 +68,14 @@ export function DrawerSessionPanel({
   const [countDialogOpen, setCountDialogOpen] = useState(false);
 
   const activeSession = useMemo(() => sessions[0] ?? null, [sessions]);
+  const openingPolicyLoaded = Boolean(suggestion);
+  const openingVarianceEnforced = Boolean(suggestion?.opening_variance_enforced);
+  const openingSuggestionAmount = Number(suggestion?.amount ?? 0);
+  const countedOpeningAmount = Number(countedOpeningCash);
+  const openingNeedsApproval =
+    openingVarianceEnforced &&
+    Number.isFinite(countedOpeningAmount) &&
+    Math.abs(countedOpeningAmount - openingSuggestionAmount) > Number(suggestion?.opening_variance_tolerance ?? 0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -236,31 +244,53 @@ export function DrawerSessionPanel({
         </div>
 
         {canOpen ? (
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-            <label className="grid gap-1 text-sm font-medium">
-              Counted opening cash
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={countedOpeningCash}
-                onChange={(event) => setCountedOpeningCash(event.target.value)}
-                placeholder="0.00"
-              />
-            </label>
-            <label className="grid gap-1 text-sm font-medium">
-              Reason for override
-              <Input
-                value={openingReason}
-                onChange={(event) => setOpeningReason(event.target.value)}
-                placeholder="Only needed when count differs"
-              />
-            </label>
-            <div className="flex items-end">
-              <Button onClick={openDrawer} disabled={opening} className="w-full">
-                {opening ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
-                Open drawer
-              </Button>
+          <div className="space-y-3">
+            {!openingPolicyLoaded ? (
+              <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+                Opening policy is loading or unavailable. Refresh drawer readiness if this remains blank.
+              </div>
+            ) : openingVarianceEnforced ? (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
+                <AlertTriangle className="mr-2 inline h-4 w-4" />
+                Fixed opening float is active. A manager approval is required if the count is outside tolerance.
+              </div>
+            ) : (
+              <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-900">
+                <CheckCircle2 className="mr-2 inline h-4 w-4" />
+                Flexible opening mode is active. Today&apos;s counted amount becomes the drawer opening baseline.
+              </div>
+            )}
+            {openingNeedsApproval ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                This opening count differs from the fixed float beyond tolerance. Use a manager-approved opening flow.
+              </div>
+            ) : null}
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+              <label className="grid gap-1 text-sm font-medium">
+                Counted opening cash
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={countedOpeningCash}
+                  onChange={(event) => setCountedOpeningCash(event.target.value)}
+                  placeholder="0.00"
+                />
+              </label>
+              <label className="grid gap-1 text-sm font-medium">
+                {openingVarianceEnforced ? "Reason for variance" : "Opening note"}
+                <Input
+                  value={openingReason}
+                  onChange={(event) => setOpeningReason(event.target.value)}
+                  placeholder={openingVarianceEnforced ? "Required if outside tolerance" : "Optional"}
+                />
+              </label>
+              <div className="flex items-end">
+                <Button onClick={openDrawer} disabled={opening || openingNeedsApproval} className="w-full">
+                  {opening ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
+                  Open drawer
+                </Button>
+              </div>
             </div>
           </div>
         ) : (

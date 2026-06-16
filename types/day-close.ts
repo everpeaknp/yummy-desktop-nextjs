@@ -33,6 +33,7 @@ export interface DrawerOpeningSuggestion {
   amount: number;
   source: string;
   opening_variance_tolerance: number;
+  opening_variance_enforced: boolean;
 }
 
 export interface DrawerClosingPrompt {
