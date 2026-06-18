@@ -592,6 +592,16 @@ export default function CheckoutPage() {
     currentCashierDrawerSessions.length === 1 ? currentCashierDrawerSessions[0] : null;
   const hasCurrentCashierDrawer = Boolean(currentCashierDrawer);
   const hasCashDrawerConflict = currentCashierDrawerSessions.length > 1;
+  const selectedActiveDrawer = drawerSessions.find(
+    (session) =>
+      session.station === drawerStation &&
+      session.drawer_key === drawerKey &&
+      isPaymentReadyDrawer(session)
+  ) ?? null;
+  const selectedActiveDrawerBelongsToCurrentUser =
+    Boolean(selectedActiveDrawer) && Number(selectedActiveDrawer?.cashier_id) === Number(user?.id);
+  const selectedActiveDrawerBelongsToOtherUser =
+    Boolean(selectedActiveDrawer) && !selectedActiveDrawerBelongsToCurrentUser;
   const canApproveDrawerOpeningVariance = userCanApproveDrawerVariance(user);
   const drawerOpeningAmount = Number(drawerOpeningCash);
   const drawerOpeningSuggestionAmount = Number(drawerSuggestion?.amount ?? 0);
@@ -647,7 +657,7 @@ export default function CheckoutPage() {
           DrawerSessionApis.active({ restaurantId: restaurant.id, businessLine: drawerBusinessLine }),
         ),
         apiClient.get<BaseResponse<DrawerConfiguration[]>>(
-          DrawerSessionApis.configurations({ restaurantId: restaurant.id, businessLine: drawerBusinessLine }),
+          DrawerSessionApis.openableConfigurations({ restaurantId: restaurant.id, businessLine: drawerBusinessLine }),
         ).catch(() => null),
       ]);
       const sessions = activeRes.data?.data ?? [];
@@ -671,6 +681,18 @@ export default function CheckoutPage() {
       const cashierSessions = sessions.filter(
         (session) => Number(session.cashier_id) === Number(user.id) && isPaymentReadyDrawer(session)
       );
+      const activeSelectedSession = sessions.find(
+        (session) =>
+          session.station === nextStation &&
+          session.drawer_key === nextDrawerKey &&
+          isPaymentReadyDrawer(session)
+      );
+      if (activeSelectedSession && Number(activeSelectedSession.cashier_id) !== Number(user.id)) {
+        return {
+          ready: false,
+          message: "This cash drawer is already open by another cashier. Select a different drawer or close that session first.",
+        };
+      }
       if (cashierSessions.length === 1) {
         return { ready: true, message: "" };
       }
@@ -718,6 +740,32 @@ export default function CheckoutPage() {
       setDrawerError("Opening cash differs from the suggested float. Ask a manager/admin to approve it, or use the suggested opening amount.");
       return;
     }
+    const freshState = await loadCashDrawerState({ silent: true });
+    if (freshState.ready) {
+      setDrawerError(null);
+      toast.info("Your cash drawer is already open.");
+      return;
+    }
+    if (freshState.message !== "Open your cash drawer before taking a cash payment.") {
+      setDrawerError(freshState.message);
+      toast.error(freshState.message);
+      return;
+    }
+    const latestSelectedDrawer = drawerSessions.find(
+      (session) =>
+        session.station === drawerStation &&
+        session.drawer_key === drawerKey &&
+        isPaymentReadyDrawer(session)
+    );
+    if (latestSelectedDrawer) {
+      const message =
+        Number(latestSelectedDrawer.cashier_id) === Number(user?.id)
+          ? "Your cash drawer is already open."
+          : "This cash drawer is already open by another cashier. Select a different drawer or close that session first.";
+      setDrawerError(message);
+      toast.error(message);
+      return;
+    }
     setDrawerOpening(true);
     setDrawerError(null);
     try {
@@ -753,6 +801,7 @@ export default function CheckoutPage() {
     drawerOpeningCash,
     drawerOpeningReason,
     drawerStation,
+    drawerSessions,
     canApproveDrawerOpeningVariance,
     loadCashDrawerState,
     restaurant?.id,
@@ -1789,6 +1838,10 @@ export default function CheckoutPage() {
             <p className="text-xs text-destructive">
               Multiple active drawers are assigned to you. Close or reassign one before taking cash.
             </p>
+          ) : selectedActiveDrawerBelongsToOtherUser ? (
+            <p className="text-xs text-destructive">
+              Selected drawer is already open by another cashier.
+            </p>
           ) : (
             <p className="text-xs text-muted-foreground">
               Open your drawer before accepting physical cash.
@@ -1869,6 +1922,12 @@ export default function CheckoutPage() {
             </div>
           )}
 
+          {selectedActiveDrawerBelongsToOtherUser ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+              This drawer already has an active session. Select another drawer or close that session first.
+            </div>
+          ) : null}
+
           <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <div className="space-y-1.5">
               <Label className="text-xs">Opening cash</Label>
@@ -1897,7 +1956,7 @@ export default function CheckoutPage() {
               <Button
                 type="button"
                 onClick={handleOpenCashDrawer}
-                disabled={drawerOpening}
+                disabled={drawerOpening || selectedActiveDrawerBelongsToOtherUser}
                 className="h-10 w-full gap-2"
               >
                 {drawerOpening ? <Loader2 className="h-4 w-4 animate-spin" /> : <Banknote className="h-4 w-4" />}

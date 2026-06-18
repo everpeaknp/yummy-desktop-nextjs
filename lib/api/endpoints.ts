@@ -1237,6 +1237,40 @@ export const DrawerSessionApis = {
     });
     return `/drawer-sessions/configurations?${params.toString()}`;
   },
+  openableConfigurations: ({
+    restaurantId,
+    businessLine = 'restaurant',
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    return `/drawer-sessions/openable-configurations?${params.toString()}`;
+  },
+  saveConfiguration: '/drawer-sessions/configurations',
+  cashiers: ({ restaurantId }: { restaurantId: number }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+    });
+    return `/drawer-sessions/cashiers?${params.toString()}`;
+  },
+  assignments: ({
+    restaurantId,
+    businessLine = 'restaurant',
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    return `/drawer-sessions/assignments?${params.toString()}`;
+  },
+  saveAssignment: '/drawer-sessions/assignments',
   setControls: ({
     restaurantId,
     enabled,

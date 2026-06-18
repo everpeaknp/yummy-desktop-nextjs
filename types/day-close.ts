@@ -28,6 +28,27 @@ export interface DrawerConfiguration {
   is_active: boolean;
 }
 
+export interface DrawerCashier {
+  id: number;
+  name: string;
+  email: string;
+  role?: string | null;
+}
+
+export interface DrawerAssignment {
+  id: number;
+  configuration_id: number;
+  restaurant_id: number;
+  business_line: BusinessLine | string;
+  station: string;
+  drawer_key: string;
+  cashier_id: number;
+  assigned_by_id?: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DrawerOpeningSuggestion {
   configuration_id: number;
   amount: number;
