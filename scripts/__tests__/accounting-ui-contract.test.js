@@ -371,8 +371,13 @@ test("accounting setup UI exposes setup status and repair workflow", () => {
     "AccountingApis.repairSetup",
     "Repair setup",
     "Accounting setup",
+    "Core mappings",
+    "Non-blocking mappings",
+    "Chart of accounts",
     "missing_account_codes",
     "missing_mapping_count",
+    "blocking_core_mapping_keys",
+    "non_blocking_mapping_keys",
   ]) {
     assert.match(source, new RegExp(token));
   }

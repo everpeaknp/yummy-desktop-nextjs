@@ -11,6 +11,7 @@ import { AccountingApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import { AccountingNav } from "./accounting-nav";
@@ -44,6 +45,11 @@ function fiscalStartLabel(status: AccountingSetupStatus | null) {
   const settings = status?.settings;
   if (!settings) return "-";
   return `${settings.fiscal_year_start_month}/${settings.fiscal_year_start_day}`;
+}
+
+function keyList(values?: string[]) {
+  if (!values?.length) return "Ready";
+  return values.map((value) => value.replace(/_/g, " ")).join(", ");
 }
 
 export function AccountingSetupClient() {
@@ -85,7 +91,7 @@ export function AccountingSetupClient() {
     } finally {
       setLoading(false);
     }
-  }, [restaurantId, canView]);
+  }, [restaurantId, canView, canRepairSetup]);
 
   useEffect(() => {
     void loadSetupStatus();
@@ -146,6 +152,69 @@ export function AccountingSetupClient() {
     ],
     [status]
   );
+
+  const checklist = useMemo(() => {
+    const missingAccounts = status?.missing_account_codes ?? [];
+    const missingCoreMappings = status?.blocking_core_mapping_keys ?? [];
+    const missingOptionalMappings = status?.non_blocking_mapping_keys ?? [];
+    return [
+      {
+        title: "Chart of accounts",
+        detail: missingAccounts.length
+          ? `Missing required account codes: ${missingAccounts.join(", ")}`
+          : "Default restaurant account template is available.",
+        href: "/finance/accounting/chart-of-accounts",
+        blocked: missingAccounts.length > 0,
+        badge: missingAccounts.length > 0 ? "Blocked" : "Ready",
+      },
+      {
+        title: "Core mappings",
+        detail: missingCoreMappings.length
+          ? keyList(missingCoreMappings)
+          : "Required accounts for drawer cash, main cash, bank, sales, tax, refunds, variance, and Suspense.",
+        href: "/finance/accounting/ledger-mapping",
+        blocked: missingCoreMappings.length > 0,
+        badge: missingCoreMappings.length > 0 ? "Blocked" : "Ready",
+      },
+      {
+        title: "Non-blocking mappings",
+        detail: missingOptionalMappings.length
+          ? keyList(missingOptionalMappings)
+          : "Card terminals, digital wallets, drawer expense categories, and custom routes can be tuned later.",
+        href: "/finance/accounting/ledger-mapping",
+        blocked: false,
+        badge: missingOptionalMappings.length > 0 ? "Review" : "Ready",
+      },
+      {
+        title: "Opening balances",
+        detail: "Post opening balances before relying on balance sheet and aging reports.",
+        href: "/finance/accounting/opening-balances",
+        blocked: false,
+        badge: "Review",
+      },
+      {
+        title: "Drawer policies",
+        detail: "Use the Daybook to confirm drawer opening cash, transfers, expenses, and closing cash.",
+        href: "/finance/accounting/daybook",
+        blocked: false,
+        badge: "Review",
+      },
+      {
+        title: "Settlement instruments",
+        detail: "Card and digital collections clear through settlement batches before bank posting.",
+        href: "/finance/accounting/settlements",
+        blocked: false,
+        badge: "Review",
+      },
+    ];
+  }, [status]);
+
+  const setupActions = [
+    { label: "Chart of accounts", href: "/finance/accounting/chart-of-accounts" },
+    { label: "Ledger mappings", href: "/finance/accounting/ledger-mapping" },
+    { label: "Daybook", href: "/finance/accounting/daybook" },
+    { label: "Settlements", href: "/finance/accounting/settlements" },
+  ];
 
   if (!user) {
     return (
@@ -248,6 +317,32 @@ export function AccountingSetupClient() {
                       {card.label}
                     </div>
                     <div className="mt-2 text-xl font-bold">{card.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {setupActions.map((action) => (
+                  <Link key={action.href} href={action.href}>
+                    <Button variant="outline" size="sm">
+                      {action.label}
+                    </Button>
+                  </Link>
+                ))}
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                {checklist.map((item) => (
+                  <div key={item.title} className="flex items-start justify-between gap-3 rounded-md border p-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">{item.title}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">{item.detail}</div>
+                    </div>
+                    <Link href={item.href} className="shrink-0">
+                      <Badge variant={item.blocked ? "destructive" : item.badge === "Ready" ? "default" : "outline"}>
+                        {item.badge}
+                      </Badge>
+                    </Link>
                   </div>
                 ))}
               </div>

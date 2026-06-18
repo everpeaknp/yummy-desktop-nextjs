@@ -191,8 +191,8 @@ export type AccountingSetupStatus = {
   mapping_count: number;
   missing_account_codes: string[];
   missing_mapping_count: number;
-  blocking_core_mapping_keys?: string[];
-  non_blocking_mapping_keys?: string[];
+  blocking_core_mapping_keys: string[];
+  non_blocking_mapping_keys: string[];
   accounts_created: number;
   mappings_created: number;
   warnings: string[];
