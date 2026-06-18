@@ -191,11 +191,63 @@ export type AccountingSetupStatus = {
   mapping_count: number;
   missing_account_codes: string[];
   missing_mapping_count: number;
+  blocking_core_mapping_keys?: string[];
+  non_blocking_mapping_keys?: string[];
   accounts_created: number;
   mappings_created: number;
   warnings: string[];
   settings?: AccountingSettings | null;
   latest_run?: AccountingSetupRun | null;
+};
+
+export type DaybookCashTransaction = {
+  source_type: string;
+  source_id?: number | null;
+  label: string;
+  occurred_at?: string | null;
+  amount: number;
+  signed_amount: number;
+  drawer_session_id?: number | null;
+  cashier_id?: number | null;
+  journal_entry_id?: number | null;
+};
+
+export type AccountingDaybook = {
+  restaurant_id: number;
+  business_date: string;
+  business_line: string;
+  cash_control: {
+    opening_balance: number;
+    closing_balance: number;
+    cash_sales: number;
+    cash_refunds: number;
+    drawer_expenses: number;
+    transfers_out: number;
+    transfers_in: number;
+    variance: number;
+    rows: DaybookCashTransaction[];
+  };
+  payment_instruments: Array<{
+    payment_method: string;
+    instrument?: string | null;
+    expected_amount: number;
+    settled_amount: number;
+    clearing_status: string;
+  }>;
+  transfers: DaybookCashTransaction[];
+  ledger_impact: {
+    finance_event_count: number;
+    journal_count: number;
+    total_debit: number;
+    total_credit: number;
+  };
+  exceptions: Array<{
+    kind: string;
+    label: string;
+    amount: number;
+    count: number;
+    blocking: boolean;
+  }>;
 };
 
 export type OpeningBalanceLine = {

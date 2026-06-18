@@ -63,6 +63,7 @@ const accountingNavGroups = [
     eyebrow: "Tax & Settlement",
     items: [
       { href: "/finance/accounting/vouchers", label: "Vouchers", icon: FilePenLine },
+      { href: "/finance/accounting/daybook", label: "Daybook", icon: Banknote },
       { href: "/finance/accounting/day-closes", label: "Day Closes", icon: History },
       { href: "/finance/accounting/period-reports", label: "Period Reports", icon: FileSpreadsheet },
       { href: "/finance/accounting/periods", label: "Periods", icon: CalendarDays },

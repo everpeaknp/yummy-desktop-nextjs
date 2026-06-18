@@ -677,6 +677,10 @@ type AccountingLedgerParams = AccountingCoreParams & {
   asOf?: string;
 };
 
+type AccountingDaybookParams = AccountingCoreParams & {
+  businessDate: string;
+};
+
 type AccountingSettlementParams = Pick<AccountingCoreParams, 'restaurantId' | 'dateFrom' | 'dateTo'> & {
   paymentMethod?: string;
   status?: string;
@@ -858,6 +862,11 @@ export const FinanceReportApis = {
 export const AccountingApis = {
   health: (params: AccountingCoreParams) =>
     `/accounting/health?${buildAccountingQuery(params).toString()}`,
+  daybook: (params: AccountingDaybookParams) => {
+    const query = buildAccountingQuery(params);
+    query.append('business_date', params.businessDate);
+    return `/accounting/daybook?${query.toString()}`;
+  },
   dayCloses: (params: AccountingCoreParams & { skip?: number; limit?: number }) => {
     const query = buildAccountingQuery(params);
     if (params.skip !== undefined) query.append('skip', params.skip.toString());

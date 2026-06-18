@@ -289,6 +289,7 @@ test("accounting route group and planned components exist", () => {
     "app/(dashboard)/finance/accounting/ar-aging/page.tsx",
     "app/(dashboard)/finance/accounting/ap-aging/page.tsx",
     "app/(dashboard)/finance/accounting/cash-flow/page.tsx",
+    "app/(dashboard)/finance/accounting/daybook/page.tsx",
   ]) {
     assert.ok(exists(route), `${route} should exist`);
   }
@@ -310,8 +311,48 @@ test("accounting route group and planned components exist", () => {
     "components/finance/accounting/balance-sheet-statement.tsx",
     "components/finance/accounting/aging-report-client.tsx",
     "components/finance/accounting/mapping-exception-banner.tsx",
+    "components/finance/accounting/daybook-client.tsx",
   ]) {
     assert.ok(exists(component), `${component} should exist`);
+  }
+});
+
+test("accounting daybook UI exposes cash control and ledger sections", () => {
+  const endpoints = read("lib/api/endpoints.ts");
+  assert.match(endpoints, /\bdaybook:/);
+  assert.match(endpoints, /\/accounting\/daybook/);
+
+  const accountingTypes = read("types/accounting.ts");
+  for (const token of [
+    "DaybookCashTransaction",
+    "AccountingDaybook",
+    "cash_control",
+    "payment_instruments",
+    "ledger_impact",
+  ]) {
+    assert.match(accountingTypes, new RegExp(token));
+  }
+
+  const nav = read("components/finance/accounting/accounting-nav.tsx");
+  assert.match(nav, /\/finance\/accounting\/daybook/);
+  assert.match(nav, /Daybook/);
+
+  const page = read("app/(dashboard)/finance/accounting/daybook/page.tsx");
+  assert.match(page, /DaybookClient/);
+
+  const source = read("components/finance/accounting/daybook-client.tsx");
+  for (const token of [
+    "DaybookClient",
+    "AccountingApis.daybook",
+    "Cash Control",
+    "Payment Instruments",
+    "Transfers",
+    "Ledger Impact",
+    "Exceptions",
+    "opening_balance",
+    "closing_balance",
+  ]) {
+    assert.match(source, new RegExp(token));
   }
 });
 
