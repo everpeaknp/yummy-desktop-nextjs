@@ -1083,16 +1083,22 @@ test("ledger mapping UI supports accountant-safe manual mapping edits", () => {
 test("mapping exceptions are presented as an actionable resolver queue", () => {
   const resolver = read("components/finance/accounting/mapping-exception-resolver.tsx");
   const overview = read("components/finance/accounting/accounting-overview-client.tsx");
+  const endpoints = read("lib/api/endpoints.ts");
+  const types = read("types/accounting.ts");
 
   for (const token of [
     "MappingExceptionResolver",
+    "MappingExceptionRepostRequest",
+    "MappingExceptionRepostResult",
+    "AccountingApis.reverseRepostMappingException",
     "Create mapping for future postings",
     "Open source trace",
     "Create correction voucher",
     "Reverse and repost",
+    "This reverses existing suspense journals and reposts them through the active mapping.",
     "does not automatically fix already-posted journals",
   ]) {
-    assert.match(`${resolver}\n${overview}`, new RegExp(token));
+    assert.match(`${resolver}\n${overview}\n${endpoints}\n${types}`, new RegExp(token));
   }
 });
 

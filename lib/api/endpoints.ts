@@ -978,6 +978,7 @@ export const AccountingApis = {
   updateMapping: (mappingId: number, restaurantId: number) =>
     `/accounting/mappings/${mappingId}?restaurant_id=${restaurantId}`,
   resolveMappingException: () => "/accounting/mapping-exceptions/resolve",
+  reverseRepostMappingException: () => "/accounting/mapping-exceptions/reverse-repost",
   mappingAudit: (mappingId: number, restaurantId: number) =>
     `/accounting/mappings/${mappingId}/audit?restaurant_id=${restaurantId}`,
   seedDefaults: (params: Pick<AccountingCoreParams, 'restaurantId' | 'businessLine'>) =>

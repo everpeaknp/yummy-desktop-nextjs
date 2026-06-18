@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
 import { AccountingApis, AccountingReportApis } from "@/lib/api/endpoints";
+import { accountingEventLabel } from "@/lib/accounting-event-labels";
 import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,9 @@ import type {
   ChartAccount,
   LedgerMapping,
   MappingExceptionReportResponse,
+  MappingExceptionRepostRequest,
+  MappingExceptionRepostResult,
+  MappingExceptionRow,
   TrialBalanceResponse,
 } from "@/types/accounting";
 
@@ -49,6 +53,10 @@ function formatMoney(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function mappingExceptionKey(row: MappingExceptionRow) {
+  return `${row.event_type}-${row.payment_method ?? "any"}-${row.business_line}`;
 }
 
 function formatRunTime(value?: string | null) {
@@ -198,6 +206,7 @@ export function AccountingOverviewClient() {
   const [drilldownTitle, setDrilldownTitle] = useState("Accounting trace");
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const [drilldownData, setDrilldownData] = useState<AccountingDrilldownResponse | null>(null);
+  const [repostBusyKey, setRepostBusyKey] = useState<string | null>(null);
 
   const canView = hasPermission(user, "finance.accounting.view");
   const canRunBackfill = hasPermission(user, "finance.ledger.backfill");
@@ -337,6 +346,49 @@ export function AccountingOverviewClient() {
       is_active: true,
     });
     setMappingDialogOpen(true);
+  };
+
+  const openMappingExceptionTrace = (row: MappingExceptionRow) => {
+    const suspenseAccount = mappingAccounts.find((account) => account.is_suspense);
+    if (!suspenseAccount) {
+      toast.error("Suspense account is not available for source trace.");
+      return;
+    }
+    void openAccountDrilldown(
+      suspenseAccount.id,
+      `${accountingEventLabel(row.event_type).label} suspense trace`
+    );
+  };
+
+  const reverseRepostMappingException = async (row: MappingExceptionRow) => {
+    if (!restaurantId) return;
+    const key = mappingExceptionKey(row);
+    setRepostBusyKey(key);
+    try {
+      const payload: MappingExceptionRepostRequest = {
+        restaurant_id: restaurantId,
+        event_type: row.event_type,
+        payment_method: row.payment_method ?? null,
+        business_line: row.business_line || "restaurant",
+        date_from: dateFrom || null,
+        date_to: dateTo || null,
+        reason: "Reverse and repost mapping exception from accounting overview",
+      };
+      const res = await apiClient.post<BaseResponse<MappingExceptionRepostResult>>(
+        AccountingApis.reverseRepostMappingException(),
+        payload
+      );
+      const result = res.data?.data;
+      toast.success(
+        `Reversed ${result?.reversed_count ?? 0} and reposted ${result?.reposted_count ?? 0} journal(s).`
+      );
+      await loadTrialBalance();
+    } catch (error) {
+      console.error("Failed to reverse and repost mapping exception", error);
+      toast.error("Failed to reverse and repost mapping exception");
+    } finally {
+      setRepostBusyKey(null);
+    }
   };
 
   const runBackfillDryRun = async () => {
@@ -565,7 +617,13 @@ export function AccountingOverviewClient() {
         suspenseAmount={mappingExceptions?.suspense_amount ?? 0}
       />
 
-      <MappingExceptionResolver report={mappingExceptions} onCreateMapping={openExceptionMapping} />
+      <MappingExceptionResolver
+        report={mappingExceptions}
+        onCreateMapping={openExceptionMapping}
+        onOpenSourceTrace={openMappingExceptionTrace}
+        onReverseRepost={reverseRepostMappingException}
+        busyKey={repostBusyKey}
+      />
 
       <section className="grid gap-3 md:grid-cols-3">
         <Link href="/finance/accounting/ledger-mapping">

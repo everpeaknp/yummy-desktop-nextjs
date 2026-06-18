@@ -71,6 +71,31 @@ export type MappingExceptionResolvePayload = {
   reason?: string | null;
 };
 
+export type MappingExceptionRepostRequest = {
+  restaurant_id: number;
+  event_type: string;
+  payment_method?: string | null;
+  business_line: string;
+  date_from?: string | null;
+  date_to?: string | null;
+  reversal_date?: string | null;
+  reason: string;
+};
+
+export type MappingExceptionRepostResult = {
+  restaurant_id: number;
+  event_type: string;
+  payment_method?: string | null;
+  business_line: string;
+  reversed_count: number;
+  reposted_count: number;
+  skipped_count: number;
+  suspense_amount_before: number;
+  suspense_amount_after: number;
+  reversed_journal_entry_ids: number[];
+  reposted_journal_entry_ids: number[];
+};
+
 export type AccountingSeedDefaultsResult = {
   accounts_created: number;
   mappings_created: number;
