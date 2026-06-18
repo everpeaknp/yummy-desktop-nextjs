@@ -2,9 +2,9 @@
 
 ## Summary
 
-Yummy will implement phase 1 of the drawer, daybook, and accounting refactor in the Next.js web app first. The web app is the correct control surface for account setup, drawer policy, mapping health, daybook review, settlement review, and manager or accountant approvals. Flutter should consume the finalized runtime rules later for cashier POS workflows.
+Yummy will implement phase 1 of the drawer, daybook, and accounting refactor in the backend and Next.js web app only. The backend must own the accounting engine, posting rules, drawer state, policies, and audit trail. The web app is the control surface for account setup, drawer policy, mapping health, daybook review, settlement review, and manager or accountant approvals. Flutter must wait until the backend and web implementation has been tested end to end.
 
-This phase is the cash-control accounting spine. It is not a full inventory accounting rollout and not a Flutter-first POS refactor.
+This phase is the cash-control accounting spine. It is not a full inventory accounting rollout and not a Flutter implementation phase.
 
 ## Goals
 
@@ -19,8 +19,9 @@ This phase is the cash-control accounting spine. It is not a full inventory acco
 
 ## Non-Goals
 
-- Do not implement this phase first in Flutter.
+- Do not implement any Flutter runtime changes in phase 1.
 - Do not let Flutter calculate ledger truth.
+- Do not add temporary Flutter drawer behavior before the backend and web flows are validated.
 - Do not implement full inventory valuation, recipe consumption, COGS, wastage, or stock variance posting in phase 1.
 - Do not treat card or digital payments as direct bank deposits at sale time.
 - Do not silently rewrite historical journals when account mappings change.
@@ -53,12 +54,14 @@ The Next.js web app owns the admin and accounting workflows:
 - permissions and role preset management;
 - accounting review before period lock.
 
-Flutter comes later as the POS/runtime client:
+Flutter is explicitly out of scope for phase 1. It comes later as the POS/runtime client only after backend and web validation:
 
 - cash payment uses the logged-in cashier's active drawer;
 - manager and admin roles can select from active drawers where permitted;
 - cashier-facing open, count, and close flows can be added after the backend and web contracts are stable;
 - Flutter displays backend balances and does not own ledger calculations.
+
+Phase 1 completion requires backend and Next.js testing of the full accounting flow before Flutter work begins.
 
 ## Core Entities
 
@@ -376,7 +379,7 @@ Phase 1 may show inventory-related accounts and future mapping placeholders, but
 
 ## UI Placement
 
-Web-first screens should extend existing accounting and day-close areas.
+Backend and Next.js phase 1 screens should extend existing accounting and day-close areas.
 
 Recommended placement:
 
@@ -429,8 +432,7 @@ Migration rules:
 
 Use the cash-control spine approach:
 
-1. Complete or adjust backend contracts for drawer sessions, policies, COA template, mappings, journals, daybook, and bank deposits.
-2. Build the web setup and control surfaces first.
-3. Verify accounting behavior through daybook, journal, and exception screens.
-4. Add Flutter runtime changes only after web/backend behavior is stable.
-
+1. Fully implement backend contracts and accounting behavior for drawer sessions, policies, COA template, mappings, journals, daybook, bank deposits, exceptions, and audit flows.
+2. Fully implement the Next.js setup and control surfaces for those backend capabilities.
+3. Test the complete flow in the web app: COA setup, mappings, drawer open/close, cash posting, daybook, transfers, deposits, exceptions, day close, and journal drilldown.
+4. Only after backend and Next.js pass this validation should Flutter runtime changes be planned.
