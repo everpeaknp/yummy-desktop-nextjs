@@ -17,6 +17,40 @@ This phase is the cash-control accounting spine. It is not a full inventory acco
 - Keep confirmed drawer sessions, day closes, and journals auditable through reversals and adjustments.
 - Prepare the accounting model for future inventory valuation and COGS without implementing that phase now.
 
+## UI And UX Principles
+
+The backend and Next.js implementation must be clean, minimal, responsive, modern, and easy to use. This is not cosmetic polish after the accounting work; it is part of the accounting design because confusing finance UI causes wrong operational decisions.
+
+Design principles:
+
+- Use calm, dense, scan-friendly operational layouts instead of marketing-style pages.
+- Prioritize one clear primary action per screen or panel.
+- Keep setup workflows guided, but keep accountant review screens information-dense.
+- Use progressive disclosure: show the daily answer first, then drill into journals, events, and source records.
+- Use tabs for daybook layers instead of one oversized report table.
+- Use stepper or checklist patterns for setup and drawer close flows.
+- Use compact cards only for summaries and repeated records; avoid nested card layouts.
+- Use clear empty, loading, blocked, warning, and success states.
+- Keep mobile and tablet layouts usable, especially for managers reviewing drawers away from a desktop.
+- Preserve keyboard-friendly tables and filters for accountant-heavy screens.
+- Avoid jargon where the user is operational, but keep accounting terms precise where the user is an accountant.
+
+Required UX shape:
+
+- Setup: wizard-style flow for COA seed, core mappings, drawer policies, and bank or clearing accounts.
+- Daybook: tabbed workspace with sticky date/business-line filters and visible opening/closing balances.
+- Drawer close: short guided review with count, variance, settlement decision, and approval state.
+- Exceptions: action queue, not a passive warning banner.
+- Drilldown: every important amount can open source transaction, finance event, journal entry, and account impact.
+
+Responsive behavior:
+
+- Desktop: two-column or split-panel review where summary, table, and drilldown can be seen together.
+- Tablet: stacked sections with sticky actions.
+- Mobile: single-column workflows with concise summaries and bottom actions; large tables collapse into grouped rows.
+
+The UI must not hide accounting exceptions to look clean. Minimal means fewer distractions, not fewer controls.
+
 ## Non-Goals
 
 - Do not implement any Flutter runtime changes in phase 1.
@@ -393,6 +427,50 @@ Recommended placement:
 
 Existing components such as accounting setup, mapping exception resolver, day-close review, settlement reconciliation, and drawer session panels should be reused and extended instead of replaced blindly.
 
+## Current System Transition
+
+The current day close, accounting, and drawer work should not be thrown away. It should be migrated into the new cash-control accounting spine.
+
+Current day close:
+
+- The existing operational day-close pages remain the user entry point while phase 1 is built.
+- Existing confirmed day closes remain valid historical evidence.
+- Day close changes from "cash summary screen" into "operational close plus accounting review handoff."
+- Day close will gain stricter blockers for open drawers and invalid settlement decisions.
+- Existing saved snapshots and exports remain readable.
+- New closes will include drawer-level evidence and accounting status.
+- Old closes without drawer breakdown are shown as historical aggregate closes, not rewritten as fake cashier drawers.
+
+Current accounting:
+
+- Existing accounting routes under `/finance/accounting` remain the home for this work.
+- Chart of accounts, ledger mapping, vouchers, settlements, reports, and review screens are extended rather than replaced wholesale.
+- Existing journals remain untouched.
+- Existing mapping behavior stays forward-only: new mappings affect future postings.
+- Existing Suspense journals remain visible and are corrected through vouchers or reversal/repost where allowed.
+- Accounting setup becomes more guided and stricter about core mappings, but it should not break historical reports.
+
+Current drawers:
+
+- Existing drawer configuration and drawer session components become the foundation for cashier shift drawers.
+- Current restaurant or station drawer concepts are migrated toward cashier accountability.
+- Drawer settings move from simple configuration to policy-driven cash control.
+- Open/close drawer flows gain settlement decisions, variance approval, and journal impact.
+- Existing drawer records remain auditable; missing old opening-float evidence is marked as not recorded.
+
+Current payment instruments:
+
+- Existing card, QR, Fonepay, and digital payment configuration becomes settlement instrument setup.
+- Payment method labels remain operational labels.
+- Accounting maps the actual instrument to clearing accounts.
+- Unmapped instruments post to Suspense and appear in the exception queue.
+
+Current inventory and purchases:
+
+- Existing inventory and purchase screens keep working operationally.
+- Phase 1 does not implement full inventory valuation or COGS.
+- The accounting setup reserves proper accounts so future inventory work does not keep treating stock purchases as normal expenses.
+
 ## Migration
 
 Existing restaurant-level day closes remain valid evidence.
@@ -419,6 +497,8 @@ Migration rules:
 - Confirmed drawers, day closes, and journals are immutable except through audited reversal, correction, or reopening workflows.
 - The layered daybook shows opening balance, transactions, transfers, ledger impact, exceptions, and closing balance.
 - Inventory accounts and future posting rules are represented without implementing full inventory valuation in phase 1.
+- The Next.js UI is minimal, responsive, modern, scan-friendly, and usable on desktop, tablet, and mobile.
+- Existing day close, accounting, drawer, payment instrument, and inventory records remain accessible during and after migration.
 
 ## Risks
 
