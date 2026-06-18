@@ -235,6 +235,7 @@ export function DrawerSessionPanel({
       const others = current.filter((row) => row.id !== session.id);
       return [session, ...others];
     });
+    setCountSession(session);
   };
 
   const openCountDialog = (session: DrawerSession) => {
@@ -312,7 +313,7 @@ export function DrawerSessionPanel({
                   <div className="grid gap-3 md:grid-cols-4">
                     <div className="rounded-md border bg-background p-3">
                       <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Opening source
+                        Opening float source
                       </div>
                       <div className="mt-1 text-sm font-semibold capitalize">
                         {sourceLabel(suggestion?.source ?? session?.suggested_opening_source)}

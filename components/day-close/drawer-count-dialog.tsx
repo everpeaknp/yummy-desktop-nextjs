@@ -22,7 +22,7 @@ import type {
   DrawerClosingCountInput,
   DrawerClosingPrompt,
   DrawerSession,
-  DrawerVarianceApprovalInput,
+  DrawerSettlementDecisionInput,
 } from "@/types/day-close";
 
 type BaseResponse<T> = {
@@ -48,11 +48,28 @@ export function DrawerCountDialog({
   const [countedCash, setCountedCash] = useState("");
   const [reason, setReason] = useState("");
   const [retainedFloat, setRetainedFloat] = useState("");
+  const [settlementMode, setSettlementMode] = useState("safe_transfer");
+  const [settlementAmount, setSettlementAmount] = useState("");
+  const [settlementDestination, setSettlementDestination] = useState("");
+  const [settlementReference, setSettlementReference] = useState("");
   const [denominations, setDenominations] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
+  const needsClosingCount = Boolean(
+    session && ["opened", "closing_count_required", "reopened"].includes(String(session.status)),
+  );
+  const needsSettlement = Boolean(
+    session && ["closed", "variance_review_required"].includes(String(session.status)),
+  );
   const needsApproval = session?.status === "variance_review_required";
+  const countedClosingCash = Number(session?.counted_closing_cash ?? 0);
+  const retainedAmount = Number(retainedFloat || 0);
+  const settlementTotal = Number(settlementAmount || 0);
+  const settlementDifference =
+    Number.isFinite(countedClosingCash) && Number.isFinite(retainedAmount) && Number.isFinite(settlementTotal)
+      ? countedClosingCash - retainedAmount - settlementTotal
+      : null;
 
   useEffect(() => {
     if (!open || !session?.id) return;
@@ -60,6 +77,13 @@ export function DrawerCountDialog({
     setCountedCash("");
     setReason("");
     setRetainedFloat(session.retained_float != null ? String(session.retained_float) : "");
+    setSettlementMode(session.settlement_mode || "safe_transfer");
+    setSettlementDestination(session.settlement_destination || "main_cash_safe");
+    setSettlementReference(session.settlement_reference || "");
+    const counted = Number(session.counted_closing_cash ?? 0);
+    const retained = Number(session.retained_float ?? 0);
+    const existingSettlement = Number(session.settlement_amount ?? counted - retained);
+    setSettlementAmount(Number.isFinite(existingSettlement) && existingSettlement >= 0 ? String(existingSettlement) : "");
     setDenominations("");
     setLoading(true);
     apiClient
@@ -70,7 +94,16 @@ export function DrawerCountDialog({
         toast.error("Failed to load drawer closing prompt");
       })
       .finally(() => setLoading(false));
-  }, [open, session?.id, session?.retained_float]);
+  }, [
+    open,
+    session?.id,
+    session?.retained_float,
+    session?.settlement_amount,
+    session?.settlement_destination,
+    session?.settlement_mode,
+    session?.settlement_reference,
+    session?.counted_closing_cash,
+  ]);
 
   const parsedDenominations = useMemo(() => {
     if (!denominations.trim()) return null;
@@ -98,8 +131,10 @@ export function DrawerCountDialog({
       const updated = res.data?.data;
       if (updated) onUpdated(updated);
       toast.success("Drawer closing count submitted.");
-      if (updated?.status !== "variance_review_required") {
+      if (updated?.status === "approved") {
         onOpenChange(false);
+      } else if (updated?.status === "closed" || updated?.status === "variance_review_required") {
+        toast.message("Add the settlement decision for counted cash.");
       }
     } catch (error) {
       console.error("Failed to submit drawer count", error);
@@ -109,30 +144,49 @@ export function DrawerCountDialog({
     }
   };
 
-  const approveVariance = async () => {
+  const approveSettlement = async () => {
     if (!session?.id) return;
     const retained = Number(retainedFloat || 0);
+    const settlement = Number(settlementAmount || 0);
     if (!reason.trim()) {
-      toast.error("Variance approval requires a reason.");
+      toast.error("Settlement decision requires a reason.");
+      return;
+    }
+    if (!Number.isFinite(retained) || retained < 0 || !Number.isFinite(settlement) || settlement < 0) {
+      toast.error("Enter valid settlement amounts.");
+      return;
+    }
+    const counted = Number(session.counted_closing_cash ?? 0);
+    const difference = counted - retained - settlement;
+    if (Number.isFinite(difference) && Math.abs(difference) > 0.005) {
+      toast.error("Retained float plus settlement amount must match counted cash.");
+      return;
+    }
+    if (settlementMode === "immediate_bank_deposit" && !settlementReference.trim()) {
+      toast.error("Immediate bank deposit requires a reference.");
       return;
     }
     setApproving(true);
     try {
-      const payload: DrawerVarianceApprovalInput = {
+      const payload: DrawerSettlementDecisionInput = {
         reason: reason.trim(),
-        retained_float: Number.isFinite(retained) ? retained : 0,
+        retained_float: retained,
+        settlement_mode: settlementMode,
+        settlement_amount: settlement,
+        settlement_destination: settlementDestination.trim() || null,
+        settlement_reference: settlementReference.trim() || null,
       };
       const res = await apiClient.post<BaseResponse<DrawerSession>>(
-        DrawerSessionApis.approveVariance(session.id),
+        DrawerSessionApis.settlementDecision(session.id),
         payload,
       );
       const updated = res.data?.data;
       if (updated) onUpdated(updated);
-      toast.success("Drawer variance approved.");
+      toast.success("Drawer settlement decision approved.");
       onOpenChange(false);
     } catch (error) {
-      console.error("Failed to approve drawer variance", error);
-      toast.error("Failed to approve drawer variance");
+      console.error("Failed to approve drawer settlement decision", error);
+      toast.error("Failed to approve drawer settlement decision");
     } finally {
       setApproving(false);
     }
@@ -140,9 +194,9 @@ export function DrawerCountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>DrawerCountDialog</DialogTitle>
+          <DialogTitle>Drawer count</DialogTitle>
           <DialogDescription>
             Blind closing count: the expected amount is hidden from the cashier when the drawer is configured for blind counts.
           </DialogDescription>
@@ -169,34 +223,38 @@ export function DrawerCountDialog({
               ) : null}
             </div>
 
-            <label className="grid gap-1 text-sm font-medium">
-              Closing cash count
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={countedCash}
-                onChange={(event) => setCountedCash(event.target.value)}
-                placeholder="0.00"
-              />
-            </label>
+            {needsClosingCount ? (
+              <label className="grid gap-1 text-sm font-medium">
+                Closing cash count
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={countedCash}
+                  onChange={(event) => setCountedCash(event.target.value)}
+                  placeholder="0.00"
+                />
+              </label>
+            ) : null}
 
-            <label className="grid gap-1 text-sm font-medium">
-              denominations
-              <Textarea
-                value={denominations}
-                onChange={(event) => setDenominations(event.target.value)}
-                placeholder="Optional denomination notes, e.g. 1000x3, 500x4"
-                rows={3}
-              />
-            </label>
+            {needsClosingCount ? (
+              <label className="grid gap-1 text-sm font-medium">
+                denominations
+                <Textarea
+                  value={denominations}
+                  onChange={(event) => setDenominations(event.target.value)}
+                  placeholder="Optional denomination notes, e.g. 1000x3, 500x4"
+                  rows={3}
+                />
+              </label>
+            ) : null}
 
             <label className="grid gap-1 text-sm font-medium">
               Reason / note
               <Textarea
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
-                placeholder="Required for variance approval"
+                placeholder={needsSettlement ? "Required for settlement approval" : "Required for variance approval"}
                 rows={3}
               />
             </label>
@@ -208,30 +266,120 @@ export function DrawerCountDialog({
               </div>
             ) : null}
 
-            {needsApproval ? (
-              <label className="grid gap-1 text-sm font-medium">
-                Retained float
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={retainedFloat}
-                  onChange={(event) => setRetainedFloat(event.target.value)}
-                  placeholder="0.00"
-                />
-              </label>
+            {needsSettlement ? (
+              <div className="space-y-3 rounded-md border p-3">
+                <div>
+                  <div className="font-medium">Settlement decision</div>
+                  <div className="text-sm text-muted-foreground">
+                    Allocate counted cash between retained float and transfer or deposit.
+                  </div>
+                </div>
+
+                <div className="grid gap-2 rounded-md bg-muted/30 p-3 text-sm sm:grid-cols-3">
+                  <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Counted cash</div>
+                    <div className="mt-1 font-semibold">{formatDayCloseCurrency(countedClosingCash)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Allocated</div>
+                    <div className="mt-1 font-semibold">
+                      {formatDayCloseCurrency(
+                        Number.isFinite(retainedAmount) && Number.isFinite(settlementTotal)
+                          ? retainedAmount + settlementTotal
+                          : 0,
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Difference</div>
+                    <div className="mt-1 font-semibold">
+                      {formatDayCloseCurrency(settlementDifference ?? countedClosingCash)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[
+                    ["safe_transfer", "Transfer to safe"],
+                    ["pending_bank_deposit", "Pending bank deposit"],
+                    ["immediate_bank_deposit", "Immediate bank deposit"],
+                    ["retain_all", "Retain all"],
+                  ].map(([value, label]) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant={settlementMode === value ? "default" : "outline"}
+                      onClick={() => {
+                        setSettlementMode(value);
+                        if (value === "retain_all") {
+                          const counted = Number(session?.counted_closing_cash ?? 0);
+                          setRetainedFloat(Number.isFinite(counted) ? String(counted) : "0");
+                          setSettlementAmount("0");
+                        }
+                        if (value === "safe_transfer" && !settlementDestination.trim()) {
+                          setSettlementDestination("main_cash_safe");
+                        }
+                      }}
+                      className="justify-start"
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="grid gap-1 text-sm font-medium">
+                    Retained float
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={retainedFloat}
+                      onChange={(event) => setRetainedFloat(event.target.value)}
+                      placeholder="0.00"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm font-medium">
+                    Settlement amount
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={settlementAmount}
+                      onChange={(event) => setSettlementAmount(event.target.value)}
+                      placeholder="0.00"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm font-medium">
+                    Destination
+                    <Input
+                      value={settlementDestination}
+                      onChange={(event) => setSettlementDestination(event.target.value)}
+                      placeholder="Safe, bank account, or deposit owner"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm font-medium">
+                    Reference
+                    <Input
+                      value={settlementReference}
+                      onChange={(event) => setSettlementReference(event.target.value)}
+                      placeholder="Deposit slip or transfer reference"
+                    />
+                  </label>
+                </div>
+              </div>
             ) : null}
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="sticky bottom-0 bg-background pt-3">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          {needsApproval ? (
-            <Button onClick={approveVariance} disabled={approving}>
+          {needsSettlement ? (
+            <Button onClick={approveSettlement} disabled={approving || loading}>
               {approving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-              Request variance approval
+              Submit settlement decision
             </Button>
           ) : (
             <Button onClick={submitCount} disabled={submitting || loading}>

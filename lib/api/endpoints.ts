@@ -1332,6 +1332,7 @@ export const DrawerSessionApis = {
   movement: (sessionId: number) => `/drawer-sessions/${sessionId}/movements`,
   closingPrompt: (sessionId: number) => `/drawer-sessions/${sessionId}/closing-prompt`,
   closingCount: (sessionId: number) => `/drawer-sessions/${sessionId}/closing-count`,
+  settlementDecision: (sessionId: number) => `/drawer-sessions/${sessionId}/settlement-decision`,
   approveVariance: (sessionId: number) => `/drawer-sessions/${sessionId}/approve-variance`,
   reopen: (sessionId: number) => `/drawer-sessions/${sessionId}/reopen`,
 };

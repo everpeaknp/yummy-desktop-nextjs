@@ -86,6 +86,15 @@ export interface DrawerVarianceApprovalInput {
   retained_float: number;
 }
 
+export interface DrawerSettlementDecisionInput {
+  reason: string;
+  retained_float: number;
+  settlement_mode: "safe_transfer" | "pending_bank_deposit" | "immediate_bank_deposit" | "retain_all" | string;
+  settlement_amount: number;
+  settlement_destination?: string | null;
+  settlement_reference?: string | null;
+}
+
 export interface DrawerMovement {
   id: number;
   source_key: string;
@@ -124,6 +133,10 @@ export interface DrawerSession {
   counted_closing_cash?: number | null;
   cash_variance?: number | null;
   retained_float?: number | null;
+  settlement_mode?: string | null;
+  settlement_amount?: number | null;
+  settlement_destination?: string | null;
+  settlement_reference?: string | null;
   opened_at?: string | null;
   closed_at?: string | null;
   approved_at?: string | null;

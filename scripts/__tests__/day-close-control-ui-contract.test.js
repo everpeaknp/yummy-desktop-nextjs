@@ -28,6 +28,7 @@ test("day-close drawer controls expose typed API helpers", () => {
     "export interface DrawerSessionOpenInput",
     "export interface DrawerClosingCountInput",
     "export interface DrawerVarianceApprovalInput",
+    "export interface DrawerSettlementDecisionInput",
   ]) {
     assertIncludes(types, token);
   }
@@ -43,6 +44,7 @@ test("day-close drawer controls expose typed API helpers", () => {
     "movement:",
     "closingPrompt:",
     "closingCount:",
+    "settlementDecision:",
     "approveVariance:",
     "reopen:",
   ]) {
@@ -83,7 +85,11 @@ test("cashier day-close UI has drawer opening closing and operational status com
     "denominations",
     "DrawerSessionApis.closingPrompt",
     "DrawerSessionApis.closingCount",
-    "DrawerSessionApis.approveVariance",
+    "DrawerSessionApis.settlementDecision",
+    "Settlement decision",
+    "Retained float",
+    "Pending bank deposit",
+    "Transfer to safe",
   ]) {
     assertIncludes(countDialog, token);
   }
