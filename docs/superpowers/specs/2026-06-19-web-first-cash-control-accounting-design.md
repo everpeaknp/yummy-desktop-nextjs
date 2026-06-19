@@ -148,6 +148,10 @@ Closing:
   - start a pending bank deposit;
   - post an immediate bank deposit for trusted roles;
   - record and approve variance where required.
+- When counted closing cash is zero, a shortage can still be reconciled. The approver records the variance reason and approves a zero-cash disposition; the system must not require a safe transfer or bank deposit when no physical cash exists.
+- Zero-cash reconciliation remains permission-gated by drawer variance approval and must create the same approval audit evidence as other variances.
+- The web flow should label this disposition as `No cash to settle`; the existing backend `retain_all` representation may be reused with both retained and settlement amounts set to zero.
+- Backend validation errors must be shown to the operator so a rejected settlement explains the exact invalid field or rule.
 
 Confirmed drawer sessions are immutable. Corrections use adjustments, reversals, or audited reopening depending on period state.
 
