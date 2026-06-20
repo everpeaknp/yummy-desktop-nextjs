@@ -152,6 +152,10 @@ Closing:
 - Zero-cash reconciliation remains permission-gated by drawer variance approval and must create the same approval audit evidence as other variances.
 - The web flow should label this disposition as `No cash to settle`; the existing backend `retain_all` representation may be reused with both retained and settlement amounts set to zero.
 - Backend validation errors must be shown to the operator so a rejected settlement explains the exact invalid field or rule.
+- A drawer in `variance_review_required` may be corrected before approval through an audited recount. The original closing count remains immutable evidence; the corrected amount is stored as a new `recount` record with a mandatory correction reason.
+- Recount recalculates expected cash, counted cash, variance, and the next status. A corrected count within tolerance returns to `closed`; an out-of-tolerance count remains `variance_review_required`.
+- Recount clears any unapproved settlement allocation fields so settlement is always rebuilt from the corrected physical count.
+- Once a drawer is `approved`, count correction is not available. The existing permission-gated audited reopen flow must be used instead.
 
 Confirmed drawer sessions are immutable. Corrections use adjustments, reversals, or audited reopening depending on period state.
 
