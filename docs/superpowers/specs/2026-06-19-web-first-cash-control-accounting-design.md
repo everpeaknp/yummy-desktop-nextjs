@@ -130,6 +130,10 @@ Opening:
 - The cashier enters the actual counted amount.
 - If the count exceeds policy tolerance, manager approval is required.
 - Once cash movement starts, opening cash cannot be edited directly; corrections require an adjustment.
+- When the prior approved drawer settlement retained cash, that retained amount is the authoritative opening carry-forward for the next session. Flexible-opening policy must not replace it with an unrelated manual baseline.
+- The next cashier confirms custody by opening with the carried amount; the web form displays it as locked and labels its source as previous retained float.
+- If the physical amount differs from retained cash, only a user with drawer approval permission may enter the actual amount with a mandatory reason. Backend validation must enforce this even if a stale or modified client submits another amount.
+- When no retained cash exists, normal configured or flexible opening behavior remains available.
 
 Runtime cash payments:
 
