@@ -73,6 +73,9 @@ export interface DrawerSessionOpenInput {
   denominations_json?: Record<string, unknown> | null;
   reason?: string | null;
   approved_by_id?: number | null;
+  opening_difference_source?: string | null;
+  opening_difference_destination?: string | null;
+  opening_difference_reference?: string | null;
 }
 
 export interface DrawerClosingCountInput {

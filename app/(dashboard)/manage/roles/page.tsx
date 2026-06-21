@@ -37,10 +37,12 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 interface Permission {
-  id: number;
+  id?: number;
   key: string;
   module: string;
   description: string;
+  title?: string | null;
+  risk_level?: string | null;
 }
 
 interface Role {
@@ -51,10 +53,19 @@ interface Role {
   permissions: string[];
 }
 
+const ROLE_PRESET_LABELS: Record<string, string> = {
+  cashier: "Cashier",
+  manager: "Manager",
+  accountant: "Accountant",
+  accounting_approver: "Accounting approver",
+  admin: "Administrator",
+};
+
 export default function RolesPage() {
   const [loading, setLoading] = useState(true);
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [builtInPresets, setBuiltInPresets] = useState<Record<string, string[]>>({});
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -82,14 +93,15 @@ export default function RolesPage() {
       fetchData();
     };
     init();
-  }, [user]);
+  }, [user, me, router]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [rolesRes, permsRes] = await Promise.all([
+      const [rolesRes, permsRes, presetsRes] = await Promise.all([
         apiClient.get(RoleApis.listRoles),
-        apiClient.get(RoleApis.listPermissions)
+        apiClient.get(RoleApis.listPermissions),
+        apiClient.get(RoleApis.listBuiltInRoles),
       ]);
 
       if (rolesRes.data.status === "success") {
@@ -97,6 +109,9 @@ export default function RolesPage() {
       }
       if (permsRes.data.status === "success") {
         setPermissions(permsRes.data.data || []);
+      }
+      if (presetsRes.data.status === "success") {
+        setBuiltInPresets(presetsRes.data.data || {});
       }
     } catch (err) {
       console.error("Failed to fetch roles/permissions:", err);
@@ -184,6 +199,15 @@ export default function RolesPage() {
       permissions: prev.permissions.includes(key) 
         ? prev.permissions.filter(k => k !== key)
         : [...prev.permissions, key]
+    }));
+  };
+
+  const applyPreset = (presetName: string) => {
+    const presetPermissions = builtInPresets[presetName];
+    if (!presetPermissions) return;
+    setFormData((previous) => ({
+      ...previous,
+      permissions: [...presetPermissions],
     }));
   };
 
@@ -343,6 +367,30 @@ export default function RolesPage() {
                 </p>
               </div>
 
+              <div className="space-y-3">
+                <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">
+                  Start from preset
+                </Label>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {Object.entries(ROLE_PRESET_LABELS).map(([presetName, label]) => (
+                    <Button
+                      key={presetName}
+                      type="button"
+                      variant="outline"
+                      className="h-10 justify-start px-3 text-xs font-semibold"
+                      disabled={!builtInPresets[presetName]}
+                      onClick={() => applyPreset(presetName)}
+                    >
+                      <Shield className="mr-2 h-4 w-4" />
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  A preset replaces the current selection. You can customize it before saving.
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="role-name" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Role Name</Label>
@@ -400,7 +448,7 @@ export default function RolesPage() {
                               )}
                             >
                               <input
-                                id={`perm-${perm.id}`}
+                                id={`perm-${perm.key}`}
                                 type="checkbox"
                                 checked={formData.permissions.includes(perm.key)}
                                 onChange={() => togglePermission(perm.key)}
@@ -408,11 +456,19 @@ export default function RolesPage() {
                               />
                               <div className="space-y-1">
                                 <label 
-                                  htmlFor={`perm-${perm.id}`} 
+                                  htmlFor={`perm-${perm.key}`}
                                   className="text-[13px] font-bold leading-none cursor-pointer group-hover:text-primary transition-colors"
                                 >
-                                  {perm.key.replace(/\./g, ' ')}
+                                  {perm.title || perm.key.replace(/\./g, ' ')}
                                 </label>
+                                {perm.risk_level === "high" || perm.risk_level === "critical" ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="mt-2 h-5 px-1.5 text-[9px] uppercase"
+                                  >
+                                    {perm.risk_level}
+                                  </Badge>
+                                ) : null}
                                 <p className="text-[11px] text-muted-foreground font-medium leading-relaxed">
                                   {perm.description || `Grants access to ${perm.key} features.`}
                                 </p>

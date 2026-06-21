@@ -78,6 +78,11 @@ test("cashier day-close UI has drawer opening closing and operational status com
     "Confirm and open",
     "Report different amount",
     "overrideRetained",
+    "opening_difference_source",
+    "opening_difference_destination",
+    "Difference source",
+    "From safe",
+    "Unexplained",
     "DrawerSessionApis.suggestion",
     "DrawerSessionApis.open",
     "DrawerSessionApis.active",
@@ -112,7 +117,6 @@ test("cashier day-close UI has drawer opening closing and operational status com
     "Correct count",
     "Submit corrected count",
     "recountMode",
-    "day_close.drawer.approve",
     "isZeroCashSettlement",
     "No cash to settle",
     "response?.data?.detail",
@@ -120,6 +124,8 @@ test("cashier day-close UI has drawer opening closing and operational status com
     "DrawerSessionApis.closingPrompt",
     "DrawerSessionApis.closingCount",
     "DrawerSessionApis.settlementDecision",
+    "finance.drawer.close.own",
+    "finance.variance.approve",
     "Settlement decision",
     "Retained float",
     "Pending bank deposit",
@@ -127,6 +133,8 @@ test("cashier day-close UI has drawer opening closing and operational status com
   ]) {
     assertIncludes(countDialog, token);
   }
+
+  assertIncludes(cashDrawersPage, "finance.cash.transfer.to_bank");
 
   const status = read("components/day-close/operational-close-status.tsx");
   for (const token of [

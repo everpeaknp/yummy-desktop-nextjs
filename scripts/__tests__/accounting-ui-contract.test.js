@@ -325,6 +325,42 @@ test("accounting route group and planned components exist", () => {
   }
 });
 
+test("role management exposes granular cash accounting presets", () => {
+  const permissionSource = read("lib/role-permissions.ts");
+  for (const permission of [
+    "finance.drawer.open.own",
+    "finance.drawer.open.any",
+    "finance.drawer.close.own",
+    "finance.drawer.close.any",
+    "finance.drawer.transfer.to_safe",
+    "finance.cash.transfer.to_bank",
+    "finance.bank_deposit.confirm",
+    "finance.variance.approve",
+    "finance.daybook.view",
+    "finance.ledger.view",
+    "finance.coa.manage",
+    "finance.mapping.manage",
+    "finance.accounting.adjust",
+    "finance.payment_instruments.manage",
+    "finance.payment_settlements.manage",
+  ]) {
+    assert.match(permissionSource, new RegExp(permission.replace(/\./g, "\\.")));
+  }
+
+  const rolePage = read("app/(dashboard)/manage/roles/page.tsx");
+  for (const token of [
+    "RoleApis.listBuiltInRoles",
+    "Start from preset",
+    "Cashier",
+    "Manager",
+    "Accountant",
+    "Accounting approver",
+    "risk_level",
+  ]) {
+    assert.match(rolePage, new RegExp(token));
+  }
+});
+
 test("accounting daybook UI exposes cash control and ledger sections", () => {
   const endpoints = read("lib/api/endpoints.ts");
   assert.match(endpoints, /\bdaybook:/);
@@ -864,8 +900,10 @@ test("accounting UI uses production accounting permissions for reports and actio
   }
 
   const settlements = read("components/finance/accounting/settlement-reconciliation-client.tsx");
-  assert.match(settlements, /finance\.accounting\.settlements\.manage/);
+  assert.match(settlements, /finance\.payment_settlements\.manage/);
   assert.match(settlements, /Settlement management requires/);
+
+  assert.match(setup, /finance\.payment_instruments\.manage/);
 
   const vatExport = read("components/finance/accounting/vat-export-client.tsx");
   assert.match(vatExport, /finance\.accounting\.vat\.export/);

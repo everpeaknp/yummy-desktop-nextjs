@@ -182,6 +182,10 @@ function buildFormula(
   const cashExpenseTotal = amount(snapshot.cash_expense_total);
   const expectedCash = amount(snapshot.expected_cash, detail?.expected_cash);
   const actualCash = amount(detail?.actual_cash);
+  const drawerControl =
+    snapshot.drawer_control && typeof snapshot.drawer_control === "object"
+      ? (snapshot.drawer_control as Record<string, unknown>)
+      : null;
 
   switch (label) {
     case "Gross Sales":
@@ -212,6 +216,9 @@ function buildFormula(
     case "Outstanding Receivables":
       return `Outstanding Receivables = ${formulaMoney(outstandingReceivables)}`;
     case "Expected Drawer":
+      if (drawerControl && drawerControl.expected_cash != null) {
+        return `Current drawer sessions expected cash = ${formulaMoney(expectedCash)}`;
+      }
       return `${namedFormula([
         { label: "Opening Balance", value: openingBalance },
         { label: "Cash Sales", value: cashSales, sign: "+" },

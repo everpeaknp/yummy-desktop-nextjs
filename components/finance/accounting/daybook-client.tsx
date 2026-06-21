@@ -142,7 +142,7 @@ export function DaybookClient() {
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  const canView = hasPermission(user, "finance.accounting.view");
+  const canView = hasPermission(user, "finance.daybook.view");
   const restaurantId = user?.restaurant_id;
 
   useEffect(() => {

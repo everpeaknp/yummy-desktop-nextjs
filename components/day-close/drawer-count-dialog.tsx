@@ -71,8 +71,14 @@ export function DrawerCountDialog({
       (session.status === "closed" || (isPendingVariance && !recountMode)),
   );
   const requiresSettlementApproval = needsSettlement;
-  const canCountDrawer = hasPermission(user, "day_close.drawer.count");
-  const canApproveDrawerVariance = hasPermission(user, "day_close.drawer.approve");
+  const canCountDrawer =
+    hasPermission(user, "finance.drawer.close.own") ||
+    hasPermission(user, "finance.drawer.close.any");
+  const canApproveDrawerVariance = hasPermission(user, "finance.variance.approve");
+  const canApproveAnyDrawer = hasPermission(user, "finance.drawer.close.any");
+  const canTransferToSafe = hasPermission(user, "finance.drawer.transfer.to_safe");
+  const canTransferToBank = hasPermission(user, "finance.cash.transfer.to_bank");
+  const canConfirmBankDeposit = hasPermission(user, "finance.bank_deposit.confirm");
   const countedClosingCash = Number(session?.counted_closing_cash ?? 0);
   const isZeroCashSettlement =
     needsSettlement && Number.isFinite(countedClosingCash) && Math.abs(countedClosingCash) <= 0.005;
@@ -96,6 +102,15 @@ export function DrawerCountDialog({
       : displayedVariance > 0
         ? "Over"
         : "Short";
+  const canApproveSelectedSettlement =
+    (!hasDisplayedVariance || canApproveDrawerVariance) &&
+    (settlementMode === "safe_transfer"
+      ? canTransferToSafe
+      : settlementMode === "pending_bank_deposit"
+        ? canTransferToBank
+        : settlementMode === "immediate_bank_deposit"
+          ? canTransferToBank && canConfirmBankDeposit
+          : canApproveAnyDrawer);
   const retainedAmount = Number(retainedFloat || 0);
   const settlementTotal = Number(settlementAmount || 0);
   const settlementDifference =
@@ -197,8 +212,8 @@ export function DrawerCountDialog({
 
   const approveSettlement = async () => {
     if (!session?.id) return;
-    if (requiresSettlementApproval && !canApproveDrawerVariance) {
-      toast.error("You need drawer approval permission to proceed.");
+    if (requiresSettlementApproval && !canApproveSelectedSettlement) {
+      toast.error("You do not have permission for this settlement decision.");
       return;
     }
     const retained = Number(retainedFloat || 0);
@@ -386,10 +401,10 @@ export function DrawerCountDialog({
               </div>
             ) : null}
 
-            {requiresSettlementApproval && !canApproveDrawerVariance ? (
+            {requiresSettlementApproval && !canApproveSelectedSettlement ? (
               <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
                 <AlertTriangle className="mr-2 inline h-4 w-4" />
-                A manager or admin with drawer approval permission must submit the settlement decision.
+                A user with the required variance or transfer permission must submit this settlement decision.
               </div>
             ) : null}
 
@@ -530,13 +545,17 @@ export function DrawerCountDialog({
           {needsSettlement ? (
             <Button
               onClick={approveSettlement}
-              disabled={approving || loading || (requiresSettlementApproval && !canApproveDrawerVariance)}
+              disabled={approving || loading || (requiresSettlementApproval && !canApproveSelectedSettlement)}
             >
               {approving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
               Submit settlement decision
             </Button>
           ) : (
-            <Button onClick={submitCount} disabled={submitting || loading}>
+            <Button
+              onClick={submitCount}
+              disabled={submitting || loading || !canCountDrawer}
+              title={!canCountDrawer ? "Drawer closing permission is required." : undefined}
+            >
               {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
               {recountMode
                 ? "Submit corrected count"

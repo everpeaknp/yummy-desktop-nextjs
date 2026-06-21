@@ -38,13 +38,17 @@ export default function CashDrawersPage() {
   const restaurant = useRestaurant((state) => state.restaurant);
   const restaurantId = user?.restaurant_id ?? restaurant?.id;
   const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
-  const [transferMode, setTransferMode] = useState<CashTransferInput["transfer_mode"]>("immediate_bank_deposit");
+  const [transferMode, setTransferMode] = useState<CashTransferInput["transfer_mode"]>("pending_bank_deposit");
   const [transferDate, setTransferDate] = useState(() => yyyyMmDd(new Date()));
   const [transferAmount, setTransferAmount] = useState("");
   const [transferReference, setTransferReference] = useState("");
   const [transferPosting, setTransferPosting] = useState(false);
   const [lastTransfer, setLastTransfer] = useState<CashTransferResult | null>(null);
-  const canTransferCash = hasPermission(user, "finance.accounting.settlements.manage");
+  const canTransferCash = hasPermission(user, "finance.cash.transfer.to_bank");
+  const canConfirmBankDeposit = hasPermission(user, "finance.bank_deposit.confirm");
+  const canPostSelectedTransfer =
+    canTransferCash &&
+    (transferMode === "pending_bank_deposit" || canConfirmBankDeposit);
   const showBusinessLinePicker = Boolean(
     restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
   );
@@ -172,9 +176,9 @@ export default function CashDrawersPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="immediate_bank_deposit">Safe to bank now</SelectItem>
+                      <SelectItem value="immediate_bank_deposit" disabled={!canConfirmBankDeposit}>Safe to bank now</SelectItem>
                       <SelectItem value="pending_bank_deposit">Safe to cash in transit</SelectItem>
-                      <SelectItem value="confirm_bank_deposit">Cash in transit to bank</SelectItem>
+                      <SelectItem value="confirm_bank_deposit" disabled={!canConfirmBankDeposit}>Cash in transit to bank</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -206,8 +210,14 @@ export default function CashDrawersPage() {
                     type="button"
                     className="w-full gap-2"
                     onClick={submitSafeTransfer}
-                    disabled={!canTransferCash || transferPosting}
-                    title={!canTransferCash ? "Settlement management permission is required." : undefined}
+                    disabled={!canPostSelectedTransfer || transferPosting}
+                    title={
+                      !canTransferCash
+                        ? "Cash-to-bank transfer permission is required."
+                        : !canConfirmBankDeposit && transferMode !== "pending_bank_deposit"
+                          ? "Bank deposit confirmation permission is required."
+                          : undefined
+                    }
                   >
                     {transferPosting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     Post

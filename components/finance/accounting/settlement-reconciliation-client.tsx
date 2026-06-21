@@ -122,7 +122,7 @@ export function SettlementReconciliationClient() {
   const [actionId, setActionId] = useState<number | null>(null);
 
   const canView = hasPermission(user, "finance.accounting.view");
-  const canManageSettlements = hasPermission(user, "finance.accounting.settlements.manage");
+  const canManageSettlements = hasPermission(user, "finance.payment_settlements.manage");
   const restaurantId = user?.restaurant_id;
   const settlementLines = useMemo(() => preview?.lines ?? [], [preview]);
   const bridge = useMemo(() => bridgeRows(preview), [preview]);
@@ -155,7 +155,7 @@ export function SettlementReconciliationClient() {
 
   const loadBatches = useCallback(async () => {
     if (!restaurantId || !canView || !canManageSettlements) {
-      toast.error("Settlement management requires finance.accounting.settlements.manage permission.");
+      toast.error("Settlement management requires finance.payment_settlements.manage permission.");
       return;
     }
     setLoading(true);
@@ -175,7 +175,7 @@ export function SettlementReconciliationClient() {
     } finally {
       setLoading(false);
     }
-  }, [restaurantId, canView, dateFrom, dateTo, paymentMethod]);
+  }, [restaurantId, canView, canManageSettlements, dateFrom, dateTo, paymentMethod]);
 
   const previewSettlement = useCallback(async () => {
     if (!restaurantId || !canView) return;
@@ -197,7 +197,7 @@ export function SettlementReconciliationClient() {
 
   const createSettlement = async () => {
     if (!restaurantId || !canView || !canManageSettlements) {
-      toast.error("Settlement management requires finance.accounting.settlements.manage permission.");
+      toast.error("Settlement management requires finance.payment_settlements.manage permission.");
       return;
     }
     setActionId(-1);
@@ -224,7 +224,7 @@ export function SettlementReconciliationClient() {
     action: "match" | "approve" | "post" | "reverse"
   ) => {
     if (!canManageSettlements) {
-      toast.error("Settlement management requires finance.accounting.settlements.manage permission.");
+      toast.error("Settlement management requires finance.payment_settlements.manage permission.");
       return;
     }
     setActionId(batch.id);
@@ -311,7 +311,7 @@ export function SettlementReconciliationClient() {
 
       {!canManageSettlements ? (
         <div className="border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900">
-          Settlement management requires finance.accounting.settlements.manage permission.
+          Settlement management requires finance.payment_settlements.manage permission.
         </div>
       ) : null}
 
@@ -396,7 +396,7 @@ export function SettlementReconciliationClient() {
             <Button
               onClick={previewSettlement}
               disabled={previewing || loading || !canManageSettlements}
-              title={!canManageSettlements ? "Settlement management requires finance.accounting.settlements.manage permission." : undefined}
+              title={!canManageSettlements ? "Settlement management requires finance.payment_settlements.manage permission." : undefined}
             >
               {previewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
               Preview settlement
@@ -405,7 +405,7 @@ export function SettlementReconciliationClient() {
               variant="outline"
               onClick={createSettlement}
               disabled={!preview || actionId === -1 || !canManageSettlements}
-              title={!canManageSettlements ? "Settlement management requires finance.accounting.settlements.manage permission." : undefined}
+              title={!canManageSettlements ? "Settlement management requires finance.payment_settlements.manage permission." : undefined}
             >
               {actionId === -1 ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
               Create batch

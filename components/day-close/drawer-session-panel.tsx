@@ -42,6 +42,8 @@ type OpeningForm = {
   cash: string;
   reason: string;
   overrideRetained?: boolean;
+  differenceSource?: string;
+  differenceReference?: string;
 };
 
 const COUNTABLE_STATUSES = new Set(["opened", "closing_count_required", "variance_review_required", "reopened"]);
@@ -94,7 +96,7 @@ export function DrawerSessionPanel({
   footerNote = "This operational panel checks drawer readiness only. Accounting review status is handled after the day is closed.",
 }: DrawerSessionPanelProps) {
   const user = useAuth((state) => state.user);
-  const canApproveOpeningDifference = hasPermission(user, "day_close.drawer.approve");
+  const canApproveOpeningDifference = hasPermission(user, "finance.variance.approve");
   const effectiveBusinessDate = businessDate || todayIso();
   const [configs, setConfigs] = useState<DrawerConfiguration[]>([]);
   const [sessions, setSessions] = useState<DrawerSession[]>([]);
@@ -153,6 +155,8 @@ export function DrawerSessionPanel({
             cash: suggestion ? String(Number(suggestion.amount ?? 0)) : "",
             reason: "",
             overrideRetained: false,
+            differenceSource: "",
+            differenceReference: "",
           };
         }
         return next;
@@ -227,6 +231,8 @@ export function DrawerSessionPanel({
         cash: current[key]?.cash ?? "",
         reason: current[key]?.reason ?? "",
         overrideRetained: current[key]?.overrideRetained ?? false,
+        differenceSource: current[key]?.differenceSource ?? "",
+        differenceReference: current[key]?.differenceReference ?? "",
         ...patch,
       },
     }));
@@ -249,12 +255,17 @@ export function DrawerSessionPanel({
     const retainedDifference = retainedCarryForward && Math.abs(amount - suggestedAmount) > 0.005;
     const policyDifference = varianceEnforced && Math.abs(amount - suggestedAmount) > tolerance;
     const needsApproval = retainedDifference || policyDifference;
+    const differenceSource = (form.differenceSource || "").trim();
     const approverId = Number(user?.id);
     if (
       needsApproval &&
       (!canApproveOpeningDifference || !Number.isFinite(approverId) || form.reason.trim().length < 5)
     ) {
       toast.error("A manager-approved reason is required when opening cash differs from the carried amount.");
+      return;
+    }
+    if (needsApproval && !differenceSource) {
+      toast.error("Select where the opening difference came from.");
       return;
     }
 
@@ -270,6 +281,9 @@ export function DrawerSessionPanel({
         denominations_json: null,
         reason: form.reason.trim() || null,
         approved_by_id: needsApproval ? approverId : null,
+        opening_difference_source: needsApproval ? differenceSource : null,
+        opening_difference_destination: differenceSource === "safe_transfer" ? "main_cash_safe" : null,
+        opening_difference_reference: form.differenceReference?.trim() || null,
       };
       const res = await apiClient.post<BaseResponse<DrawerSession>>(DrawerSessionApis.open, payload);
       const session = res.data?.data;
@@ -347,7 +361,9 @@ export function DrawerSessionPanel({
                       Number(suggestion?.opening_variance_tolerance ?? 0)));
               const openingApprovalReady =
                 !openingNeedsApproval ||
-                (canApproveOpeningDifference && openingForm.reason.trim().length >= 5);
+                (canApproveOpeningDifference &&
+                  openingForm.reason.trim().length >= 5 &&
+                  Boolean((openingForm.differenceSource || "").trim()));
               const countable = isCountable(session);
               const ready = Boolean(session && READY_STATUSES.has(String(session.status)));
 
@@ -491,6 +507,8 @@ export function DrawerSessionPanel({
                               updateOpeningForm(key, {
                                 cash: String(suggestedAmount),
                                 reason: "",
+                                differenceSource: "",
+                                differenceReference: "",
                                 overrideRetained: !overrideRetained,
                               })
                             }
@@ -517,7 +535,38 @@ export function DrawerSessionPanel({
                       )}
                       {openingNeedsApproval ? (
                         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                          This opening count differs from the expected amount and requires an approved reason.
+                          This opening count differs from the expected amount. Select a source and enter an approved reason.
+                        </div>
+                      ) : null}
+                      {openingNeedsApproval ? (
+                        <div className="grid gap-3 md:grid-cols-[1fr_1fr]">
+                          <div className="grid gap-2 text-sm font-medium">
+                            Difference source
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                ["safe_transfer", "From safe"],
+                                ["cash_over_short", "Unexplained"],
+                              ].map(([value, label]) => (
+                                <Button
+                                  key={value}
+                                  type="button"
+                                  variant={openingForm.differenceSource === value ? "default" : "outline"}
+                                  onClick={() => updateOpeningForm(key, { differenceSource: value })}
+                                  className="justify-center"
+                                >
+                                  {label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                          <label className="grid gap-1 text-sm font-medium">
+                            Reference
+                            <Input
+                              value={openingForm.differenceReference ?? ""}
+                              onChange={(event) => updateOpeningForm(key, { differenceReference: event.target.value })}
+                              placeholder={openingForm.differenceSource === "safe_transfer" ? "Safe transfer reference" : "Optional"}
+                            />
+                          </label>
                         </div>
                       ) : null}
                       <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">

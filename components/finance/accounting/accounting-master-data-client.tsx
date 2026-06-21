@@ -45,6 +45,10 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
 
   const canView = hasPermission(user, "finance.accounting.view");
   const canSetupAccounting = hasPermission(user, "finance.accounting.setup");
+  const canManageMasterData = hasPermission(
+    user,
+    mode === "accounts" ? "finance.coa.manage" : "finance.mapping.manage",
+  );
   const restaurantId = user?.restaurant_id;
   const title = mode === "accounts" ? "Chart of Accounts" : "Ledger Mapping";
 
@@ -58,8 +62,7 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
   }, [user, me, router]);
 
   const loadData = useCallback(async () => {
-    if (!restaurantId || !canView || !canSetupAccounting) {
-      toast.error("Accounting setup changes require finance.accounting.setup permission.");
+    if (!restaurantId || !canView) {
       return;
     }
     setLoading(true);
@@ -162,7 +165,7 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
           </div>
           <div className="flex flex-wrap gap-2">
             {mode === "mappings" && (
-              <Button variant="outline" onClick={openCreateMapping} disabled={!canSetupAccounting}>
+              <Button variant="outline" onClick={openCreateMapping} disabled={!canManageMasterData}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Mapping
               </Button>
@@ -206,7 +209,11 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
               onAccountTypeChange={setAccountType}
             />
           ) : (
-            <LedgerMappingTable mappings={mappings} loading={loading} onEdit={openEditMapping} />
+            <LedgerMappingTable
+              mappings={mappings}
+              loading={loading}
+              onEdit={canManageMasterData ? openEditMapping : undefined}
+            />
           )}
         </CardContent>
       </Card>

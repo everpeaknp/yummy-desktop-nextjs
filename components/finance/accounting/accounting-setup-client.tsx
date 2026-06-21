@@ -77,7 +77,7 @@ export function AccountingSetupClient() {
 
   const canView = hasPermission(user, "finance.accounting.view");
   const canRepairSetup = hasPermission(user, "finance.accounting.setup");
-  const canManageInstruments = hasPermission(user, "finance.accounting.settlements.manage");
+  const canManageInstruments = hasPermission(user, "finance.payment_instruments.manage");
   const restaurantId = user?.restaurant_id;
 
   useEffect(() => {
@@ -540,7 +540,7 @@ export function AccountingSetupClient() {
                 className="w-full"
                 onClick={createInstrument}
                 disabled={!canManageInstruments || instrumentSaving}
-                title={!canManageInstruments ? "Settlement management permission is required." : undefined}
+                title={!canManageInstruments ? "Payment instrument management permission is required." : undefined}
               >
                 {instrumentSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Add
