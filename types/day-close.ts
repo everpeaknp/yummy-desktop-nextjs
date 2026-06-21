@@ -114,6 +114,30 @@ export interface DrawerCount {
   counted_at?: string | null;
 }
 
+export interface DrawerExpectedBreakdown {
+  session_id: number;
+  opening_float: number;
+  cash_sales: number;
+  manual_income: number;
+  receivable_collections: number;
+  refunds: number;
+  expenses: number;
+  inventory_payments: number;
+  supplier_payments: number;
+  cash_drops: number;
+  transfers_in: number;
+  transfers_out: number;
+  drops_transfers: number;
+  adjustments: number;
+  cash_in: number;
+  cash_out: number;
+  movement_total: number;
+  expected_cash: number;
+  counted_cash?: number | null;
+  variance?: number | null;
+  movements?: DrawerMovement[];
+}
+
 export interface DrawerSession {
   id: number;
   configuration_id: number;

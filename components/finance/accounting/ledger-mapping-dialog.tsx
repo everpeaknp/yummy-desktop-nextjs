@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
 import { AccountingApis } from "@/lib/api/endpoints";
-import { accountingEventLabel } from "@/lib/accounting-event-labels";
+import { ACCOUNTING_EVENT_OPTIONS, accountingEventLabel } from "@/lib/accounting-event-labels";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -56,8 +56,38 @@ type MappingForm = {
   reason: string;
 };
 
+const ANY_PAYMENT_METHOD = "__any__";
+
+const PAYMENT_METHOD_OPTIONS = [
+  { value: ANY_PAYMENT_METHOD, label: "Any method", description: "Generic fallback mapping" },
+  { value: "cash", label: "Cash", description: "Cash drawer or cash account" },
+  { value: "card", label: "Card", description: "Card clearing account" },
+  { value: "digital", label: "Digital / QR", description: "Digital wallet clearing account" },
+  { value: "fonepay", label: "Fonepay", description: "Fonepay clearing account" },
+];
+
+const EVENTS_REQUIRING_EXACT_PAYMENT_METHOD = new Set([
+  "collection_received",
+  "refund_processed",
+  "manual_income_received",
+]);
+
 function accountLabel(account: ChartAccount) {
   return `${account.code} - ${account.name}`;
+}
+
+function normalizeEventType(value?: string | null) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizePaymentMethod(value?: string | null) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized || ANY_PAYMENT_METHOD;
+}
+
+function paymentMethodPayload(value: string) {
+  const normalized = normalizePaymentMethod(value);
+  return normalized === ANY_PAYMENT_METHOD ? null : normalized;
 }
 
 export function LedgerMappingDialog({
@@ -82,13 +112,29 @@ export function LedgerMappingDialog({
   });
 
   const activeAccounts = useMemo(() => accounts.filter((account) => account.is_active), [accounts]);
-  const eventHelp = accountingEventLabel(form.event_type || mapping?.event_type || "");
+  const normalizedEventType = normalizeEventType(form.event_type || mapping?.event_type || "");
+  const paymentMethodValue = normalizePaymentMethod(form.payment_method);
+  const eventHelp = accountingEventLabel(normalizedEventType);
+  const unknownEventSelected =
+    Boolean(normalizedEventType) && !ACCOUNTING_EVENT_OPTIONS.some((option) => option.value === normalizedEventType);
+  const unknownPaymentSelected =
+    paymentMethodValue !== ANY_PAYMENT_METHOD &&
+    !PAYMENT_METHOD_OPTIONS.some((option) => option.value === paymentMethodValue);
+  const genericPaymentMethodBlocked =
+    Boolean(normalizedEventType) &&
+    EVENTS_REQUIRING_EXACT_PAYMENT_METHOD.has(normalizedEventType) &&
+    paymentMethodValue === ANY_PAYMENT_METHOD;
+  const genericPaymentMethodWarning =
+    Boolean(normalizedEventType) &&
+    Boolean(eventHelp.paymentMethodSensitive) &&
+    paymentMethodValue === ANY_PAYMENT_METHOD &&
+    !genericPaymentMethodBlocked;
 
   useEffect(() => {
     if (!open) return;
     setForm({
-      event_type: mapping?.event_type ?? "",
-      payment_method: mapping?.payment_method ?? "",
+      event_type: normalizeEventType(mapping?.event_type),
+      payment_method: normalizePaymentMethod(mapping?.payment_method),
       business_line: mapping?.business_line ?? "restaurant",
       debit_account_id: mapping?.debit_account_id ? String(mapping.debit_account_id) : "",
       credit_account_id: mapping?.credit_account_id ? String(mapping.credit_account_id) : "",
@@ -101,8 +147,14 @@ export function LedgerMappingDialog({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.event_type.trim()) {
+    const eventType = normalizeEventType(form.event_type);
+    const paymentMethod = paymentMethodPayload(form.payment_method);
+    if (!eventType) {
       toast.error("Event type is required.");
+      return;
+    }
+    if (EVENTS_REQUIRING_EXACT_PAYMENT_METHOD.has(eventType) && !paymentMethod) {
+      toast.error("Select a specific payment method for this event.");
       return;
     }
     if (!form.debit_account_id || !form.credit_account_id) {
@@ -112,8 +164,8 @@ export function LedgerMappingDialog({
 
     const payload: LedgerMappingPayload = {
       restaurant_id: restaurantId,
-      event_type: form.event_type.trim(),
-      payment_method: form.payment_method.trim() || null,
+      event_type: eventType,
+      payment_method: paymentMethod,
       business_line: form.business_line.trim() || "restaurant",
       debit_account_id: Number(form.debit_account_id),
       credit_account_id: Number(form.credit_account_id),
@@ -167,26 +219,65 @@ export function LedgerMappingDialog({
               <span>Debit hint: {eventHelp.defaultDebitHint}</span>
               <span>Credit hint: {eventHelp.defaultCreditHint}</span>
             </div>
+            {normalizedEventType ? (
+              <div className="mt-2 text-xs text-muted-foreground">
+                Event key: <code>{normalizedEventType}</code>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label htmlFor="mapping-event-type">Event type</Label>
-              <Input
-                id="mapping-event-type"
+              <Select
                 value={form.event_type}
-                onChange={(event) => setForm((current) => ({ ...current, event_type: event.target.value }))}
-                placeholder="collection_received"
-              />
+                onValueChange={(value) => setForm((current) => ({ ...current, event_type: value }))}
+              >
+                <SelectTrigger id="mapping-event-type">
+                  <SelectValue placeholder="Select finance event" />
+                </SelectTrigger>
+                <SelectContent>
+                  {unknownEventSelected ? (
+                    <SelectItem value={normalizedEventType}>
+                      <span className="font-medium">{normalizedEventType.replace(/_/g, " ")}</span>
+                    </SelectItem>
+                  ) : null}
+                  {ACCOUNTING_EVENT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div className="grid gap-0.5">
+                        <span className="font-medium">{option.label}</span>
+                        <span className="text-xs text-muted-foreground">{option.value}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="mapping-payment-method">Payment method</Label>
-              <Input
-                id="mapping-payment-method"
-                value={form.payment_method}
-                onChange={(event) => setForm((current) => ({ ...current, payment_method: event.target.value }))}
-                placeholder="Any method"
-              />
+              <Select
+                value={paymentMethodValue}
+                onValueChange={(value) => setForm((current) => ({ ...current, payment_method: value }))}
+              >
+                <SelectTrigger id="mapping-payment-method">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {unknownPaymentSelected ? (
+                    <SelectItem value={paymentMethodValue}>
+                      <span className="capitalize">{paymentMethodValue}</span>
+                    </SelectItem>
+                  ) : null}
+                  {PAYMENT_METHOD_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div className="grid gap-0.5">
+                        <span className="font-medium">{option.label}</span>
+                        <span className="text-xs text-muted-foreground">{option.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="mapping-business-line">Business line</Label>
@@ -215,6 +306,20 @@ export function LedgerMappingDialog({
               />
             </div>
           </div>
+
+          {genericPaymentMethodBlocked ? (
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-800 dark:text-red-300">
+              This event must be mapped by exact payment method. Choose Cash, Card, Digital / QR, or Fonepay so
+              collections and refunds post to the correct cash or clearing account.
+            </div>
+          ) : null}
+
+          {genericPaymentMethodWarning ? (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+              This event changes cash or clearing balances. An exact payment-method mapping is safer; Any method uses
+              the generic fallback mapping.
+            </div>
+          ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">

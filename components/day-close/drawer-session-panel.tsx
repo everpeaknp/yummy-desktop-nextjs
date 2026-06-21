@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Banknote, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
+import { useAuth } from "@/hooks/use-auth";
 import apiClient from "@/lib/api-client";
 import { DrawerSessionApis } from "@/lib/api/endpoints";
 import { formatDayCloseCurrency } from "@/lib/day-close-format";
+import { hasPermission } from "@/lib/role-permissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +19,7 @@ import type {
   DrawerConfiguration,
   DrawerOpeningSuggestion,
   DrawerSession,
+  DrawerExpectedBreakdown,
   DrawerSessionOpenInput,
 } from "@/types/day-close";
 
@@ -30,11 +33,15 @@ type DrawerSessionPanelProps = {
   restaurantId: number;
   businessLine: BusinessLine | string;
   businessDate?: string | null;
+  title?: string;
+  description?: string;
+  footerNote?: string;
 };
 
 type OpeningForm = {
   cash: string;
   reason: string;
+  overrideRetained?: boolean;
 };
 
 const COUNTABLE_STATUSES = new Set(["opened", "closing_count_required", "variance_review_required", "reopened"]);
@@ -82,13 +89,19 @@ export function DrawerSessionPanel({
   restaurantId,
   businessLine,
   businessDate,
+  title = "Drawer readiness",
+  description,
+  footerNote = "This operational panel checks drawer readiness only. Accounting review status is handled after the day is closed.",
 }: DrawerSessionPanelProps) {
+  const user = useAuth((state) => state.user);
+  const canApproveOpeningDifference = hasPermission(user, "day_close.drawer.approve");
   const effectiveBusinessDate = businessDate || todayIso();
   const [configs, setConfigs] = useState<DrawerConfiguration[]>([]);
   const [sessions, setSessions] = useState<DrawerSession[]>([]);
   const [suggestions, setSuggestions] = useState<Record<string, DrawerOpeningSuggestion | null>>({});
   const [openingForms, setOpeningForms] = useState<Record<string, OpeningForm>>({});
   const [loading, setLoading] = useState(false);
+  const [breakdowns, setBreakdowns] = useState<Record<number, DrawerExpectedBreakdown | null>>({});
   const [openingKey, setOpeningKey] = useState<string | null>(null);
   const [countSession, setCountSession] = useState<DrawerSession | null>(null);
   const [countDialogOpen, setCountDialogOpen] = useState(false);
@@ -129,18 +142,49 @@ export function DrawerSessionPanel({
         const next = { ...current };
         for (const config of nextConfigs) {
           const key = drawerScopeKey(config.station, config.drawer_key);
-          if (!next[key]) {
-            const suggestion = nextSuggestions[key];
-            next[key] = {
-              cash: suggestion ? String(Number(suggestion.amount ?? 0)) : "",
-              reason: "",
-            };
+          const suggestion = nextSuggestions[key];
+          if (
+            next[key]?.overrideRetained &&
+            suggestion?.source === "previous_retained_float"
+          ) {
+            continue;
           }
+          next[key] = {
+            cash: suggestion ? String(Number(suggestion.amount ?? 0)) : "",
+            reason: "",
+            overrideRetained: false,
+          };
         }
         return next;
       });
     },
     [businessLine, effectiveBusinessDate, restaurantId],
+  );
+
+  const loadBreakdowns = useCallback(
+    async (nextSessions: DrawerSession[], options?: { replace?: boolean }) => {
+      const visibleSessions = nextSessions.filter((session) => session?.id);
+      if (visibleSessions.length === 0) {
+        if (options?.replace) setBreakdowns({});
+        return;
+      }
+      const entries = await Promise.all(
+        visibleSessions.map(async (session) => {
+          try {
+            const res = await apiClient.get<BaseResponse<DrawerExpectedBreakdown>>(
+              DrawerSessionApis.expectedBreakdown(session.id),
+            );
+            return [session.id, res.data?.data ?? null] as const;
+          } catch (error) {
+            console.info("Expected cash breakdown unavailable", { sessionId: session.id, error });
+            return [session.id, null] as const;
+          }
+        }),
+      );
+      const next = Object.fromEntries(entries);
+      setBreakdowns((current) => (options?.replace ? next : { ...current, ...next }));
+    },
+    [],
   );
 
   const load = useCallback(async () => {
@@ -158,7 +202,10 @@ export function DrawerSessionPanel({
       const nextConfigs = configRes.data?.data ?? [];
       setSessions(nextSessions);
       setConfigs(nextConfigs);
-      await loadSuggestions(nextConfigs);
+      await Promise.all([
+        loadSuggestions(nextConfigs),
+        loadBreakdowns(nextSessions, { replace: true }),
+      ]);
     } catch (error) {
       console.error("Failed to load drawer sessions", error);
       setSessions([]);
@@ -167,7 +214,7 @@ export function DrawerSessionPanel({
     } finally {
       setLoading(false);
     }
-  }, [businessLine, loadSuggestions, restaurantId]);
+  }, [businessLine, loadBreakdowns, loadSuggestions, restaurantId]);
 
   useEffect(() => {
     void load();
@@ -179,6 +226,7 @@ export function DrawerSessionPanel({
       [key]: {
         cash: current[key]?.cash ?? "",
         reason: current[key]?.reason ?? "",
+        overrideRetained: current[key]?.overrideRetained ?? false,
         ...patch,
       },
     }));
@@ -197,9 +245,16 @@ export function DrawerSessionPanel({
     const varianceEnforced = Boolean(suggestion?.opening_variance_enforced);
     const tolerance = Number(suggestion?.opening_variance_tolerance ?? 0);
     const suggestedAmount = Number(suggestion?.amount ?? 0);
-    const needsApproval = varianceEnforced && Math.abs(amount - suggestedAmount) > tolerance;
-    if (needsApproval) {
-      toast.error("Opening count is outside tolerance. Use manager approval from checkout/settings flow.");
+    const retainedCarryForward = suggestion?.source === "previous_retained_float";
+    const retainedDifference = retainedCarryForward && Math.abs(amount - suggestedAmount) > 0.005;
+    const policyDifference = varianceEnforced && Math.abs(amount - suggestedAmount) > tolerance;
+    const needsApproval = retainedDifference || policyDifference;
+    const approverId = Number(user?.id);
+    if (
+      needsApproval &&
+      (!canApproveOpeningDifference || !Number.isFinite(approverId) || form.reason.trim().length < 5)
+    ) {
+      toast.error("A manager-approved reason is required when opening cash differs from the carried amount.");
       return;
     }
 
@@ -214,6 +269,7 @@ export function DrawerSessionPanel({
         counted_opening_cash: amount,
         denominations_json: null,
         reason: form.reason.trim() || null,
+        approved_by_id: needsApproval ? approverId : null,
       };
       const res = await apiClient.post<BaseResponse<DrawerSession>>(DrawerSessionApis.open, payload);
       const session = res.data?.data;
@@ -224,7 +280,9 @@ export function DrawerSessionPanel({
       await load();
     } catch (error) {
       console.error("Failed to open drawer", error);
-      toast.error("Failed to open drawer");
+      const apiError = error as { response?: { data?: { detail?: unknown } } };
+      const detail = apiError.response?.data?.detail;
+      toast.error(typeof detail === "string" && detail.trim() ? detail : "Failed to open drawer");
     } finally {
       setOpeningKey(null);
     }
@@ -235,6 +293,7 @@ export function DrawerSessionPanel({
       const others = current.filter((row) => row.id !== session.id);
       return [session, ...others];
     });
+    void loadBreakdowns([session]);
     setCountSession(session);
   };
 
@@ -249,13 +308,16 @@ export function DrawerSessionPanel({
         <CardTitle className="flex items-center justify-between gap-3 text-base">
           <span className="flex items-center gap-2">
             <Banknote className="h-4 w-4" />
-            Drawer readiness
+            {title}
           </span>
           <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Refresh
           </Button>
         </CardTitle>
+        {description ? (
+          <p className="text-sm text-muted-foreground">{description}</p>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
         {activeConfigs.length === 0 ? (
@@ -268,16 +330,24 @@ export function DrawerSessionPanel({
             {activeConfigs.map((config) => {
               const key = drawerScopeKey(config.station, config.drawer_key);
               const session = sessionForConfig(sessions, config);
+              const breakdown = session ? breakdowns[session.id] : null;
               const suggestion = suggestions[key];
-              const openingForm = openingForms[key] ?? { cash: "", reason: "" };
+              const openingForm = openingForms[key] ?? { cash: "", reason: "", overrideRetained: false };
               const varianceEnforced = Boolean(suggestion?.opening_variance_enforced);
+              const retainedCarryForward = suggestion?.source === "previous_retained_float";
+              const overrideRetained = Boolean(openingForm.overrideRetained);
               const suggestedAmount = Number(suggestion?.amount ?? session?.suggested_opening_cash ?? 0);
               const countedOpeningAmount = Number(openingForm.cash);
               const openingNeedsApproval =
                 !session &&
-                varianceEnforced &&
                 Number.isFinite(countedOpeningAmount) &&
-                Math.abs(countedOpeningAmount - suggestedAmount) > Number(suggestion?.opening_variance_tolerance ?? 0);
+                ((retainedCarryForward && Math.abs(countedOpeningAmount - suggestedAmount) > 0.005) ||
+                  (varianceEnforced &&
+                    Math.abs(countedOpeningAmount - suggestedAmount) >
+                      Number(suggestion?.opening_variance_tolerance ?? 0)));
+              const openingApprovalReady =
+                !openingNeedsApproval ||
+                (canApproveOpeningDifference && openingForm.reason.trim().length >= 5);
               const countable = isCountable(session);
               const ready = Boolean(session && READY_STATUSES.has(String(session.status)));
 
@@ -290,7 +360,9 @@ export function DrawerSessionPanel({
                         <Badge variant={session ? "default" : "secondary"} className="text-[10px]">
                           {readyLabel(session)}
                         </Badge>
-                        {varianceEnforced ? (
+                        {retainedCarryForward ? (
+                          <Badge variant="outline" className="text-[10px]">Retained carry-forward</Badge>
+                        ) : varianceEnforced ? (
                           <Badge variant="outline" className="text-[10px]">Fixed float</Badge>
                         ) : (
                           <Badge variant="secondary" className="text-[10px]">Flexible opening</Badge>
@@ -348,11 +420,89 @@ export function DrawerSessionPanel({
                     </div>
                   </div>
 
+                  {session ? (
+                    <div className="grid gap-3 md:grid-cols-5">
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Opening float
+                        </div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {formatDayCloseCurrency(breakdown?.opening_float ?? session.counted_opening_cash ?? 0)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Cash sales
+                        </div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {formatDayCloseCurrency(breakdown?.cash_sales ?? 0)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Refunds
+                        </div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {formatDayCloseCurrency(breakdown?.refunds ?? 0)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Drops/transfers
+                        </div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {formatDayCloseCurrency(breakdown?.drops_transfers ?? 0)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Expected cash
+                        </div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {formatDayCloseCurrency(breakdown?.expected_cash ?? session.expected_closing_cash ?? 0)}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
                   {!session ? (
                     <div className="space-y-3">
                       {!suggestion ? (
                         <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
                           Opening policy is loading or unavailable. Refresh drawer readiness if this remains blank.
+                        </div>
+                      ) : retainedCarryForward ? (
+                        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm ${
+                          overrideRetained
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-900"
+                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-900"
+                        }`}>
+                          <div>
+                            <CheckCircle2 className="mr-2 inline h-4 w-4" />
+                            {overrideRetained
+                              ? "Enter the physical amount and an approval reason."
+                              : `${formatDayCloseCurrency(suggestedAmount)} was retained and will carry into this opening.`}
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              updateOpeningForm(key, {
+                                cash: String(suggestedAmount),
+                                reason: "",
+                                overrideRetained: !overrideRetained,
+                              })
+                            }
+                            disabled={!overrideRetained && !canApproveOpeningDifference}
+                            title={
+                              !overrideRetained && !canApproveOpeningDifference
+                                ? "Drawer approval permission is required."
+                                : undefined
+                            }
+                          >
+                            {overrideRetained ? "Use retained amount" : "Report different amount"}
+                          </Button>
                         </div>
                       ) : varianceEnforced ? (
                         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
@@ -367,12 +517,12 @@ export function DrawerSessionPanel({
                       )}
                       {openingNeedsApproval ? (
                         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                          This opening count differs from the fixed float beyond tolerance.
+                          This opening count differs from the expected amount and requires an approved reason.
                         </div>
                       ) : null}
                       <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                         <label className="grid gap-1 text-sm font-medium">
-                          Counted opening cash
+                          {retainedCarryForward && !overrideRetained ? "Retained opening cash" : "Counted opening cash"}
                           <Input
                             type="number"
                             min="0"
@@ -380,20 +530,22 @@ export function DrawerSessionPanel({
                             value={openingForm.cash}
                             onChange={(event) => updateOpeningForm(key, { cash: event.target.value })}
                             placeholder="0.00"
+                            readOnly={retainedCarryForward && !overrideRetained}
                           />
                         </label>
                         <label className="grid gap-1 text-sm font-medium">
-                          {varianceEnforced ? "Reason for variance" : "Opening note"}
+                          {openingNeedsApproval ? "Reason for difference" : "Opening note"}
                           <Input
                             value={openingForm.reason}
                             onChange={(event) => updateOpeningForm(key, { reason: event.target.value })}
-                            placeholder={varianceEnforced ? "Required if outside tolerance" : "Optional"}
+                            placeholder={openingNeedsApproval ? "Required manager approval reason" : "Optional"}
+                            disabled={retainedCarryForward && !overrideRetained}
                           />
                         </label>
                         <div className="flex items-end">
                           <Button
                             onClick={() => openDrawer(config)}
-                            disabled={openingKey === key || openingNeedsApproval}
+                            disabled={openingKey === key || !openingApprovalReady}
                             className="w-full"
                           >
                             {openingKey === key ? (
@@ -401,7 +553,7 @@ export function DrawerSessionPanel({
                             ) : (
                               <Banknote className="mr-2 h-4 w-4" />
                             )}
-                            Open drawer
+                            {retainedCarryForward && !overrideRetained ? "Confirm and open" : "Open drawer"}
                           </Button>
                         </div>
                       </div>
@@ -433,9 +585,7 @@ export function DrawerSessionPanel({
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground">
-          This operational panel checks drawer readiness only. Accounting review status is handled after the day is closed.
-        </p>
+        <p className="text-xs text-muted-foreground">{footerNote}</p>
 
         <DrawerCountDialog
           session={countSession}

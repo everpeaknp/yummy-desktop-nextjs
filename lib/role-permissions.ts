@@ -167,6 +167,11 @@ export type PermissionKey =
   | "reports.dayclose.audit.view"
   | "reports.dayclose.export"
   | "reports.analytics.view"
+  | "day_close.drawer.open"
+  | "day_close.drawer.count"
+  | "day_close.drawer.approve"
+  | "day_close.drawer.reopen"
+  | "day_close.drawer.configure"
   | "reports.periodic"
   | "reports.periodic.view"
   | "reports.periodic.confirm"
@@ -385,6 +390,12 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     allowedRoles: ADMIN_SHELL_ROLES,
     requiredPermission: "reports.daily.view",
   },
+  {
+    title: "Cash Drawers",
+    href: "/cash-drawers",
+    allowedRoles: ADMIN_SHELL_ROLES,
+    requiredPermission: "day_close.drawer.open",
+  },
   // ── Kitchen stations ──
   {
     title: "Kitchen",
@@ -496,6 +507,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/dashboard": "dashboard.view",
   "/analytics": "reports.analytics.view",
   "/day-close": "reports.daily.view",
+  "/cash-drawers": "day_close.drawer.open",
   "/transactions": "reports.analytics.view",
   "/orders": "pos.view",
   "/kitchen": "station.kitchen.view",
@@ -523,6 +535,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/orders": ORDER_ROLES,
   "/analytics": ADMIN_SHELL_ROLES,
   "/day-close": ADMIN_SHELL_ROLES,
+  "/cash-drawers": ADMIN_SHELL_ROLES,
   "/transactions": ADMIN_SHELL_ROLES,
   "/menu": ADMIN_MANAGER,
   "/kitchen": KITCHEN_ROLES,

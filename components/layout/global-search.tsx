@@ -16,7 +16,8 @@ import {
     Percent, LineChart, Truck, ShoppingCart, Clock, Store, 
     Settings, Shield, QrCode, ShieldCheck, Monitor, Languages,
     Image as ImageIcon, ImagePlus, Printer, FileEdit, Volume2,
-    Bell, Mail, Download, Database, UserCheck, Building2, KeyRound
+    Bell, Mail, Download, Database, UserCheck, Building2, KeyRound,
+    Banknote
 } from "lucide-react";
 
 // Same sections as in manage/page.tsx for a unified search experience
@@ -34,6 +35,7 @@ const MANAGE_ITEMS = [
     { title: "Awaiting Payments", href: "/manage/awaiting-payments", icon: Clock, section: "Manage / Finance & Insights" },
     { title: "Accounting", href: "/finance/accounting", icon: ClipboardList, section: "Manage / Finance & Insights" },
     { title: "Accounting Day Closes", href: "/finance/accounting/day-closes", icon: History, section: "Accounting / Controls" },
+    { title: "Cash Drawers", href: "/cash-drawers", icon: Banknote, section: "Accounting / Controls" },
     { title: "Accounting Period Reports", href: "/finance/accounting/period-reports", icon: ClipboardList, section: "Accounting / Controls" },
     { title: "Staff Management", href: "/staff", icon: Users, section: "Manage / Administration" },
     { title: "Custom Roles", href: "/manage/roles", icon: Shield, section: "Manage / Administration" },

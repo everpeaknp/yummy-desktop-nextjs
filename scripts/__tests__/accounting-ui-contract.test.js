@@ -47,6 +47,10 @@ test("accounting frontend exposes typed endpoint helpers", () => {
     "SupplierLedgerResponse",
     "CashFlowRow",
     "CashFlowResponse",
+    "CashTransferInput",
+    "CashTransferResult",
+    "PaymentInstrument",
+    "PaymentInstrumentInput",
     "TrialBalanceRow",
     "TrialBalanceResponse",
     "ChartAccount",
@@ -101,6 +105,10 @@ test("accounting frontend exposes typed endpoint helpers", () => {
     "customerLedger",
     "supplierLedger",
     "cashFlow",
+    "createCashTransfer",
+    "paymentInstruments",
+    "createPaymentInstrument",
+    "updatePaymentInstrument",
     "mappingExceptions",
   ]) {
     assert.match(endpoints, new RegExp(`\\b${helper}:`));
@@ -369,7 +377,10 @@ test("accounting setup UI exposes setup status and repair workflow", () => {
     "AccountingSetupStatus",
     "AccountingApis.setupStatus",
     "AccountingApis.repairSetup",
+    "AccountingApis.paymentInstruments",
+    "AccountingApis.createPaymentInstrument",
     "Repair setup",
+    "Payment instruments",
     "Accounting setup",
     "Core mappings",
     "Non-blocking mappings",
@@ -1010,12 +1021,20 @@ test("accounting event labels explain system event types in accountant language"
 
   for (const token of [
     "ACCOUNTING_EVENT_LABELS",
+    "ACCOUNTING_EVENT_OPTIONS",
     "inventory_cash_outflow",
     "Inventory purchase paid",
+    "inventory_return_processed",
+    "Inventory return processed",
     "supplier_payable_created",
     "Supplier payable created",
     "collection_received",
     "Payment collected",
+    "credit_sale_created",
+    "Credit sale created",
+    "paymentMethodSensitive",
+    "const normalized = eventType.trim",
+    "Select finance event",
     "mappingPriorityHelp",
   ]) {
     assert.match(source, new RegExp(token));
@@ -1069,7 +1088,13 @@ test("ledger mapping UI supports accountant-safe manual mapping edits", () => {
 
   for (const token of [
     "accountingEventLabel",
+    "ACCOUNTING_EVENT_OPTIONS",
     "Edit Mapping",
+    "Select finance event",
+    "PAYMENT_METHOD_OPTIONS",
+    "Any method",
+    "EVENTS_REQUIRING_EXACT_PAYMENT_METHOD",
+    "Select a specific payment method for this event.",
     "Mapping changes apply to future postings only",
     "reason",
     "debit_account_id",

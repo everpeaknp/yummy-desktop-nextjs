@@ -686,6 +686,11 @@ type AccountingSettlementParams = Pick<AccountingCoreParams, 'restaurantId' | 'd
   status?: string;
 };
 
+type AccountingInstrumentParams = Pick<AccountingCoreParams, 'restaurantId' | 'businessLine'> & {
+  paymentMethod?: string;
+  activeOnly?: boolean;
+};
+
 type AccountingVatExportParams = Pick<AccountingCoreParams, 'restaurantId' | 'dateFrom' | 'dateTo'> & {
   status?: string;
   limit?: number;
@@ -946,6 +951,16 @@ export const AccountingApis = {
     `/accounting/supplier-statement?${buildAccountingQuery(params).toString()}`,
   settlements: (params: AccountingSettlementParams) =>
     `/accounting/settlements?${buildSettlementQuery(params).toString()}`,
+  paymentInstruments: ({ restaurantId, businessLine, paymentMethod, activeOnly }: AccountingInstrumentParams) => {
+    const query = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (businessLine) query.append('business_line', businessLine);
+    if (paymentMethod) query.append('payment_method', paymentMethod);
+    if (activeOnly !== undefined) query.append('active_only', String(activeOnly));
+    return `/accounting/payment-instruments?${query.toString()}`;
+  },
+  createPaymentInstrument: () => '/accounting/payment-instruments',
+  updatePaymentInstrument: (instrumentId: number) => `/accounting/payment-instruments/${instrumentId}`,
+  createCashTransfer: () => '/accounting/cash-transfers',
   previewSettlement: () => '/accounting/settlements/preview',
   createSettlement: () => '/accounting/settlements',
   matchSettlement: (batchId: number) => `/accounting/settlements/${batchId}/match`,
@@ -1332,6 +1347,7 @@ export const DrawerSessionApis = {
   },
   movement: (sessionId: number) => `/drawer-sessions/${sessionId}/movements`,
   closingPrompt: (sessionId: number) => `/drawer-sessions/${sessionId}/closing-prompt`,
+  expectedBreakdown: (sessionId: number) => `/drawer-sessions/${sessionId}/expected-breakdown`,
   closingCount: (sessionId: number) => `/drawer-sessions/${sessionId}/closing-count`,
   settlementDecision: (sessionId: number) => `/drawer-sessions/${sessionId}/settlement-decision`,
   approveVariance: (sessionId: number) => `/drawer-sessions/${sessionId}/approve-variance`,

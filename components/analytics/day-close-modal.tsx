@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,7 @@ import {
   Calculator,
   AlertTriangle,
   Receipt,
+  Banknote,
   Maximize2,
   Minimize2,
 } from "lucide-react";
@@ -20,7 +22,6 @@ import {
 import apiClient from "@/lib/api-client";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
-import { DrawerSessionPanel } from "@/components/day-close/drawer-session-panel";
 import { OperationalCloseStatus } from "@/components/day-close/operational-close-status";
 import {
   formatDayCloseCloseName,
@@ -388,11 +389,24 @@ function HealthCheckStep({
         subtitle="Verifying pending orders, unpaid bills, and drawer readiness from the server..."
         tone="blue"
       />
-      <DrawerSessionPanel
-        restaurantId={restaurantId}
-        businessLine={businessLine}
-        businessDate={businessDate}
-      />
+      <div className="rounded-xl border bg-muted/20 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg border bg-background">
+              <Banknote className="h-5 w-5 text-emerald-600" />
+            </span>
+            <div className="space-y-1">
+              <div className="text-sm font-semibold">Cash drawer verification</div>
+              <p className="text-sm text-muted-foreground">
+                Drawer opening, counting, and settlement are managed from Cash Drawers. This step only checks whether day close can proceed.
+              </p>
+            </div>
+          </div>
+          <Button asChild variant="outline" className="shrink-0">
+            <Link href="/cash-drawers">Open Cash Drawers</Link>
+          </Button>
+        </div>
+      </div>
       <div className="grid gap-4">
         {loading ? (
           <div className="p-4 text-center text-muted-foreground">Running checks…</div>

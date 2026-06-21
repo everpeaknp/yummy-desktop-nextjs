@@ -13,9 +13,18 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import { AccountingNav } from "./accounting-nav";
-import type { AccountingSetupStatus } from "@/types/accounting";
+import type { AccountingSetupStatus, PaymentInstrument, PaymentInstrumentInput } from "@/types/accounting";
 
 type BaseResponse<T> = {
   status?: string;
@@ -57,11 +66,18 @@ export function AccountingSetupClient() {
   const me = useAuth((state) => state.me);
   const router = useRouter();
   const [status, setStatus] = useState<AccountingSetupStatus | null>(null);
+  const [instruments, setInstruments] = useState<PaymentInstrument[]>([]);
   const [loading, setLoading] = useState(false);
   const [repairing, setRepairing] = useState(false);
+  const [instrumentSaving, setInstrumentSaving] = useState(false);
+  const [instrumentMethod, setInstrumentMethod] = useState("card");
+  const [instrumentType, setInstrumentType] = useState("terminal");
+  const [instrumentName, setInstrumentName] = useState("");
+  const [instrumentProvider, setInstrumentProvider] = useState("");
 
   const canView = hasPermission(user, "finance.accounting.view");
   const canRepairSetup = hasPermission(user, "finance.accounting.setup");
+  const canManageInstruments = hasPermission(user, "finance.accounting.settlements.manage");
   const restaurantId = user?.restaurant_id;
 
   useEffect(() => {
@@ -93,9 +109,23 @@ export function AccountingSetupClient() {
     }
   }, [restaurantId, canView, canRepairSetup]);
 
+  const loadInstruments = useCallback(async () => {
+    if (!restaurantId || !canView) return;
+    try {
+      const res = await apiClient.get<BaseResponse<PaymentInstrument[]>>(
+        AccountingApis.paymentInstruments({ restaurantId, businessLine: "restaurant" })
+      );
+      setInstruments(res.data?.data ?? []);
+    } catch (error) {
+      console.error("Failed to load payment instruments", error);
+      setInstruments([]);
+    }
+  }, [restaurantId, canView]);
+
   useEffect(() => {
     void loadSetupStatus();
-  }, [loadSetupStatus]);
+    void loadInstruments();
+  }, [loadSetupStatus, loadInstruments]);
 
   const repairSetup = async () => {
     if (!restaurantId || !canView) return;
@@ -114,6 +144,37 @@ export function AccountingSetupClient() {
       toast.error("Failed to repair accounting setup");
     } finally {
       setRepairing(false);
+    }
+  };
+
+  const createInstrument = async () => {
+    if (!restaurantId || !canManageInstruments) return;
+    if (!instrumentName.trim()) {
+      toast.error("Instrument name is required.");
+      return;
+    }
+    setInstrumentSaving(true);
+    try {
+      const payload: PaymentInstrumentInput = {
+        restaurant_id: restaurantId,
+        business_line: "restaurant",
+        payment_method: instrumentMethod,
+        instrument_type: instrumentType,
+        name: instrumentName.trim(),
+        provider: instrumentProvider.trim() || null,
+        settlement_cycle_days: 1,
+        is_active: true,
+      };
+      await apiClient.post(AccountingApis.createPaymentInstrument(), payload);
+      setInstrumentName("");
+      setInstrumentProvider("");
+      await loadInstruments();
+      toast.success("Payment instrument created.");
+    } catch (error) {
+      console.error("Failed to create payment instrument", error);
+      toast.error("Failed to create payment instrument");
+    } finally {
+      setInstrumentSaving(false);
     }
   };
 
@@ -415,6 +476,104 @@ export function AccountingSetupClient() {
                 </div>
               )}
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="border-b border-border p-4">
+          <CardTitle className="flex items-center justify-between gap-3 text-base">
+            <span>Payment instruments</span>
+            <Badge variant="outline">{instruments.length} configured</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 p-4">
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.4fr_1.2fr_auto]">
+            <div className="space-y-1.5">
+              <Label htmlFor="instrument-method">Method</Label>
+              <Select value={instrumentMethod} onValueChange={setInstrumentMethod}>
+                <SelectTrigger id="instrument-method">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="digital">Digital</SelectItem>
+                  <SelectItem value="fonepay">Fonepay</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="instrument-type">Type</Label>
+              <Select value={instrumentType} onValueChange={setInstrumentType}>
+                <SelectTrigger id="instrument-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="terminal">Terminal</SelectItem>
+                  <SelectItem value="qr">QR</SelectItem>
+                  <SelectItem value="wallet">Wallet</SelectItem>
+                  <SelectItem value="bank_qr">Bank QR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="instrument-name">Instrument name</Label>
+              <Input
+                id="instrument-name"
+                value={instrumentName}
+                onChange={(event) => setInstrumentName(event.target.value)}
+                placeholder="Nabil POS 1"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="instrument-provider">Provider</Label>
+              <Input
+                id="instrument-provider"
+                value={instrumentProvider}
+                onChange={(event) => setInstrumentProvider(event.target.value)}
+                placeholder="Nabil, Fonepay, Esewa"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                className="w-full"
+                onClick={createInstrument}
+                disabled={!canManageInstruments || instrumentSaving}
+                title={!canManageInstruments ? "Settlement management permission is required." : undefined}
+              >
+                {instrumentSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Add
+              </Button>
+            </div>
+          </div>
+
+          {instruments.length === 0 ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              No card, digital, or Fonepay instruments are configured. Once instruments are added, checkout and settlements
+              validate new non-cash payments against this list.
+            </div>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {instruments.map((instrument) => (
+                <div key={instrument.id} className="rounded-md border border-border p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-medium">{instrument.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {instrument.payment_method} / {instrument.instrument_type}
+                      </div>
+                    </div>
+                    <Badge variant={instrument.is_active ? "default" : "outline"}>
+                      {instrument.is_active ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    {instrument.provider || "No provider"} · T+{instrument.settlement_cycle_days}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

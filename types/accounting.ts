@@ -235,6 +235,10 @@ export type DaybookCashTransaction = {
   drawer_session_id?: number | null;
   cashier_id?: number | null;
   journal_entry_id?: number | null;
+  source_account?: string | null;
+  destination_account?: string | null;
+  reference?: string | null;
+  status?: string | null;
 };
 
 export type AccountingDaybook = {
@@ -258,6 +262,7 @@ export type AccountingDaybook = {
     expected_amount: number;
     settled_amount: number;
     clearing_status: string;
+    settlement_batch_id?: number | null;
   }>;
   transfers: DaybookCashTransaction[];
   ledger_impact: {
@@ -273,6 +278,30 @@ export type AccountingDaybook = {
     count: number;
     blocking: boolean;
   }>;
+};
+
+export type CashTransferInput = {
+  restaurant_id: number;
+  business_line?: string;
+  transfer_mode: "pending_bank_deposit" | "confirm_bank_deposit" | "immediate_bank_deposit";
+  transfer_date: string;
+  amount: number;
+  source?: string | null;
+  destination?: string | null;
+  reference?: string | null;
+  note?: string | null;
+};
+
+export type CashTransferResult = {
+  finance_event_id: number;
+  event_type: string;
+  event_key: string;
+  journal_entry_id?: number | null;
+  transfer_mode: string;
+  amount: number;
+  source?: string | null;
+  destination?: string | null;
+  reference?: string | null;
 };
 
 export type OpeningBalanceLine = {
@@ -521,6 +550,39 @@ export type PaymentSettlementStatus =
   | "posted"
   | "reversed"
   | string;
+
+export type PaymentInstrument = {
+  id: number;
+  restaurant_id: number;
+  business_line: string;
+  payment_method: string;
+  instrument_type: string;
+  name: string;
+  provider?: string | null;
+  clearing_account_id?: number | null;
+  bank_account_id?: number | null;
+  fee_account_id?: number | null;
+  settlement_cycle_days: number;
+  is_active: boolean;
+  metadata_json?: Record<string, unknown> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type PaymentInstrumentInput = {
+  restaurant_id: number;
+  business_line?: string;
+  payment_method: string;
+  instrument_type: string;
+  name: string;
+  provider?: string | null;
+  clearing_account_id?: number | null;
+  bank_account_id?: number | null;
+  fee_account_id?: number | null;
+  settlement_cycle_days?: number;
+  is_active?: boolean;
+  metadata_json?: Record<string, unknown> | null;
+};
 
 export type PaymentSettlementLine = {
   id: number;

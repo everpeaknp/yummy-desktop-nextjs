@@ -26,6 +26,7 @@ import {
   Briefcase,
   LucideIcon,
   Layers,
+  Banknote,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -53,6 +54,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/orders/new": Plus,
   "/analytics": Activity,
   "/day-close": Receipt,
+  "/cash-drawers": Banknote,
   "/transactions": ArrowDownUp,
   "/menu/items": UtensilsCrossed,
   "/kitchen": ChefHat,

@@ -81,6 +81,9 @@ function TransactionTable({
             <TableHead className="min-w-[180px]">Type</TableHead>
             <TableHead className="min-w-[140px]">Drawer</TableHead>
             <TableHead className="min-w-[120px]">Cashier</TableHead>
+            <TableHead className="min-w-[180px]">Route</TableHead>
+            <TableHead className="min-w-[140px]">Reference</TableHead>
+            <TableHead className="min-w-[110px]">Status</TableHead>
             <TableHead className="text-right">Amount</TableHead>
             <TableHead className="text-right">Signed</TableHead>
           </TableRow>
@@ -95,6 +98,30 @@ function TransactionTable({
               </TableCell>
               <TableCell>{row.drawer_session_id ?? "-"}</TableCell>
               <TableCell>{row.cashier_id ?? "-"}</TableCell>
+              <TableCell>
+                {row.source_account || row.destination_account ? (
+                  <div className="text-sm">
+                    <span>{row.source_account || "-"}</span>
+                    <span className="px-1 text-muted-foreground">to</span>
+                    <span>{row.destination_account || "-"}</span>
+                  </div>
+                ) : (
+                  "-"
+                )}
+              </TableCell>
+              <TableCell>
+                {row.reference ? (
+                  <div>
+                    <div>{row.reference}</div>
+                    {row.journal_entry_id ? <div className="text-xs text-muted-foreground">Journal #{row.journal_entry_id}</div> : null}
+                  </div>
+                ) : row.journal_entry_id ? (
+                  <span className="text-xs text-muted-foreground">Journal #{row.journal_entry_id}</span>
+                ) : (
+                  "-"
+                )}
+              </TableCell>
+              <TableCell className="capitalize">{row.status || "-"}</TableCell>
               <TableCell className="text-right">{formatMoney(row.amount)}</TableCell>
               <TableCell className="text-right">{formatMoney(row.signed_amount)}</TableCell>
             </TableRow>
@@ -302,6 +329,7 @@ export function DaybookClient() {
                       <TableHead>Payment method</TableHead>
                       <TableHead>Instrument</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Settlement</TableHead>
                       <TableHead className="text-right">Expected</TableHead>
                       <TableHead className="text-right">Settled</TableHead>
                     </TableRow>
@@ -312,6 +340,7 @@ export function DaybookClient() {
                         <TableCell className="capitalize">{row.payment_method}</TableCell>
                         <TableCell>{row.instrument || "-"}</TableCell>
                         <TableCell className="capitalize">{row.clearing_status}</TableCell>
+                        <TableCell>{row.settlement_batch_id ? `Batch #${row.settlement_batch_id}` : "-"}</TableCell>
                         <TableCell className="text-right">{formatMoney(row.expected_amount)}</TableCell>
                         <TableCell className="text-right">{formatMoney(row.settled_amount)}</TableCell>
                       </TableRow>

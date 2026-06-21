@@ -27,6 +27,7 @@ test("day-close drawer controls expose typed API helpers", () => {
     "export interface DrawerConfiguration",
     "export interface DrawerSessionOpenInput",
     "export interface DrawerClosingCountInput",
+    "export interface DrawerExpectedBreakdown",
     "export interface DrawerVarianceApprovalInput",
     "export interface DrawerSettlementDecisionInput",
   ]) {
@@ -43,6 +44,7 @@ test("day-close drawer controls expose typed API helpers", () => {
     "active:",
     "movement:",
     "closingPrompt:",
+    "expectedBreakdown:",
     "closingCount:",
     "settlementDecision:",
     "approveVariance:",
@@ -69,19 +71,51 @@ test("cashier day-close UI has drawer opening closing and operational status com
     "Open drawer",
     "Count drawer",
     "Request variance approval",
-    "Drawer readiness",
+    "Expected cash",
+    "Cash sales",
+    "Drops/transfers",
+    "previous_retained_float",
+    "Confirm and open",
+    "Report different amount",
+    "overrideRetained",
     "DrawerSessionApis.suggestion",
     "DrawerSessionApis.open",
     "DrawerSessionApis.active",
+    "DrawerSessionApis.expectedBreakdown",
   ]) {
     assertIncludes(panel, token);
+  }
+
+  const cashDrawersPage = read("app/(dashboard)/cash-drawers/page.tsx");
+  for (const token of [
+    "Cash Drawers",
+    "DrawerSessionPanel",
+    "Safe to bank transfer",
+    "AccountingApis.createCashTransfer",
+    "immediate_bank_deposit",
+    "pending_bank_deposit",
+    "confirm_bank_deposit",
+    "Checkout automatically uses the logged-in cashier's active drawer",
+    "/finance/accounting/daybook",
+  ]) {
+    assertIncludes(cashDrawersPage, token);
   }
 
   const countDialog = read("components/day-close/drawer-count-dialog.tsx");
   for (const token of [
     "DrawerCountDialog",
-    "Blind closing count",
-    "expected amount is hidden",
+    "Drawer reconciliation",
+    "Expected cash",
+    "Actual cash count",
+    "Short / over",
+    "Submit count with variance",
+    "Correct count",
+    "Submit corrected count",
+    "recountMode",
+    "day_close.drawer.approve",
+    "isZeroCashSettlement",
+    "No cash to settle",
+    "response?.data?.detail",
     "denominations",
     "DrawerSessionApis.closingPrompt",
     "DrawerSessionApis.closingCount",
@@ -109,9 +143,9 @@ test("cashier day-close UI has drawer opening closing and operational status com
 test("day-close modal and snapshot render drawer evidence without client finance recalculation", () => {
   const modal = read("components/analytics/day-close-modal.tsx");
   for (const token of [
-    "DrawerSessionPanel",
     "OperationalCloseStatus",
-    "drawer readiness",
+    "Cash drawer verification",
+    "/cash-drawers",
     "operational confirmation",
     "accounting review status",
   ]) {
