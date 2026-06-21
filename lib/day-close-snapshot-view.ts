@@ -93,6 +93,16 @@ function summaryAmount(...values: Array<number | null | undefined>): number {
   return pickBackendAmount(...values) ?? 0;
 }
 
+function drawerControlAmount(
+  snapshot: DayCloseSnapshotData,
+  key: "opening_cash" | "expected_cash",
+): number | undefined {
+  const drawerControl = snapshot.drawer_control;
+  if (!drawerControl || typeof drawerControl !== "object") return undefined;
+  const value = (drawerControl as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 /** Cards shown in Restaurant Close popup, detail dialog, and snapshot panel. */
 export function snapshotFinancialSummaryRows(
   snapshot: DayCloseSnapshotData,
@@ -100,6 +110,16 @@ export function snapshotFinancialSummaryRows(
 ): SnapshotMetricRow[] {
   const netSales = summaryAmount(snapshot.net_sales, detail?.net_sales);
   const totalIncome = summaryAmount(snapshot.total_income, detail?.total_income);
+  const openingDrawer = summaryAmount(
+    drawerControlAmount(snapshot, "opening_cash"),
+    snapshot.opening_balance,
+    detail?.opening_balance,
+  );
+  const expectedDrawer = summaryAmount(
+    drawerControlAmount(snapshot, "expected_cash"),
+    snapshot.expected_cash,
+    detail?.expected_cash,
+  );
 
   const isConfirmed =
     String(detail?.status ?? "").toLowerCase() === "confirmed" &&
@@ -113,7 +133,7 @@ export function snapshotFinancialSummaryRows(
     { label: "Expenses", value: summaryAmount(snapshot.expense_total, detail?.expense_total) },
     {
       label: "Opening Balance",
-      value: summaryAmount(snapshot.opening_balance, detail?.opening_balance),
+      value: openingDrawer,
     },
     {
       label: "Credit Sales",
@@ -134,8 +154,7 @@ export function snapshotFinancialSummaryRows(
       label: isConfirmed ? "Drawer (Actual)" : "Expected Drawer",
       value: summaryAmount(
         isConfirmed ? detail?.actual_cash : undefined,
-        detail?.expected_cash,
-        snapshot.expected_cash,
+        expectedDrawer,
       ),
     },
   ];

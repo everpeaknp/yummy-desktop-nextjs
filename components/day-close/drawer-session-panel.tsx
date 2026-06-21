@@ -36,6 +36,11 @@ type DrawerSessionPanelProps = {
   title?: string;
   description?: string;
   footerNote?: string;
+  onCashSummaryChange?: (summary: {
+    activeDrawerCash: number;
+    activeSessionCount: number;
+    unopenedRetainedCash: number;
+  }) => void;
 };
 
 type OpeningForm = {
@@ -87,6 +92,26 @@ function isCountable(session: DrawerSession | null) {
   return Boolean(session && COUNTABLE_STATUSES.has(String(session.status)));
 }
 
+function numberAmount(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function expectedCashForSession(session: DrawerSession, breakdown?: DrawerExpectedBreakdown | null) {
+  if (breakdown?.expected_cash != null) return numberAmount(breakdown.expected_cash);
+  if (session.expected_closing_cash != null) return numberAmount(session.expected_closing_cash);
+  const movementTotal = (session.movements ?? []).reduce(
+    (total, movement) => total + numberAmount(movement.signed_amount),
+    0,
+  );
+  return numberAmount(session.counted_opening_cash) + movementTotal;
+}
+
+function countedCashLabel(session: DrawerSession | null, breakdown?: DrawerExpectedBreakdown | null) {
+  const counted = breakdown?.counted_cash ?? session?.counted_closing_cash;
+  return counted == null ? "Not counted" : formatDayCloseCurrency(counted);
+}
+
 export function DrawerSessionPanel({
   restaurantId,
   businessLine,
@@ -94,6 +119,7 @@ export function DrawerSessionPanel({
   title = "Drawer readiness",
   description,
   footerNote = "This operational panel checks drawer readiness only. Accounting review status is handled after the day is closed.",
+  onCashSummaryChange,
 }: DrawerSessionPanelProps) {
   const user = useAuth((state) => state.user);
   const canApproveOpeningDifference = hasPermission(user, "finance.variance.approve");
@@ -223,6 +249,28 @@ export function DrawerSessionPanel({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!onCashSummaryChange) return;
+    let activeDrawerCash = 0;
+    let activeSessionCount = 0;
+    let unopenedRetainedCash = 0;
+
+    for (const config of activeConfigs) {
+      const session = sessionForConfig(sessions, config);
+      if (session) {
+        activeSessionCount += 1;
+        activeDrawerCash += expectedCashForSession(session, breakdowns[session.id]);
+        continue;
+      }
+      const suggestion = suggestions[drawerScopeKey(config.station, config.drawer_key)];
+      if (suggestion?.source === "previous_retained_float") {
+        unopenedRetainedCash += numberAmount(suggestion.amount);
+      }
+    }
+
+    onCashSummaryChange({ activeDrawerCash, activeSessionCount, unopenedRetainedCash });
+  }, [activeConfigs, breakdowns, onCashSummaryChange, sessions, suggestions]);
 
   const updateOpeningForm = (key: string, patch: Partial<OpeningForm>) => {
     setOpeningForms((current) => ({
@@ -366,6 +414,7 @@ export function DrawerSessionPanel({
                   Boolean((openingForm.differenceSource || "").trim()));
               const countable = isCountable(session);
               const ready = Boolean(session && READY_STATUSES.has(String(session.status)));
+              const expectedClosingCash = session ? expectedCashForSession(session, breakdown) : null;
 
               return (
                 <div key={config.id} className="rounded-lg border bg-muted/10 p-4 space-y-3">
@@ -430,8 +479,14 @@ export function DrawerSessionPanel({
                         Closing cash
                       </div>
                       <div className="mt-1 text-sm font-semibold">
-                        Expected {formatDayCloseCurrency(session?.expected_closing_cash ?? 0)} · Counted{" "}
-                        {formatDayCloseCurrency(session?.counted_closing_cash ?? 0)}
+                        {session ? (
+                          <>
+                            Expected {formatDayCloseCurrency(expectedClosingCash ?? 0)} - Counted{" "}
+                            {countedCashLabel(session, breakdown)}
+                          </>
+                        ) : (
+                          "Not opened"
+                        )}
                       </div>
                     </div>
                   </div>
@@ -475,7 +530,7 @@ export function DrawerSessionPanel({
                           Expected cash
                         </div>
                         <div className="mt-1 text-sm font-semibold">
-                          {formatDayCloseCurrency(breakdown?.expected_cash ?? session.expected_closing_cash ?? 0)}
+                          {formatDayCloseCurrency(expectedClosingCash ?? 0)}
                         </div>
                       </div>
                     </div>
@@ -614,9 +669,9 @@ export function DrawerSessionPanel({
                           {session.station} / {session.drawer_key}
                         </div>
                         <div className="text-muted-foreground">
-                          Cashier #{session.cashier_id ?? "unassigned"} · Expected{" "}
-                          {formatDayCloseCurrency(session.expected_closing_cash ?? 0)} · Counted{" "}
-                          {formatDayCloseCurrency(session.counted_closing_cash ?? 0)}
+                          Cashier #{session.cashier_id ?? "unassigned"} - Expected{" "}
+                          {formatDayCloseCurrency(expectedClosingCash ?? 0)} - Counted{" "}
+                          {countedCashLabel(session, breakdown)}
                         </div>
                       </div>
                       <Button

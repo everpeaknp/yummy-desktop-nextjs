@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Banknote, BookOpen, CalendarCheck, Loader2, RefreshCw, Send } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Banknote, BookOpen, CalendarCheck, Loader2, RefreshCw, Send, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
-import { AccountingApis } from "@/lib/api/endpoints";
+import { AccountingApis, AccountingReportApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DrawerSessionPanel } from "@/components/day-close/drawer-session-panel";
-import type { CashTransferInput, CashTransferResult } from "@/types/accounting";
+import type { CashTransferInput, CashTransferResult, TrialBalanceResponse } from "@/types/accounting";
 import type { BusinessLine } from "@/types/day-close";
 
 type BaseResponse<T> = {
@@ -31,6 +31,18 @@ type BaseResponse<T> = {
 
 function yyyyMmDd(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+function formatMoney(value: number) {
+  return `Rs. ${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function accountBalance(report: TrialBalanceResponse | null, code: string) {
+  const row = report?.rows.find((item) => item.account_code === code);
+  return Number(row?.balance ?? 0);
 }
 
 export default function CashDrawersPage() {
@@ -44,6 +56,14 @@ export default function CashDrawersPage() {
   const [transferReference, setTransferReference] = useState("");
   const [transferPosting, setTransferPosting] = useState(false);
   const [lastTransfer, setLastTransfer] = useState<CashTransferResult | null>(null);
+  const [trialBalance, setTrialBalance] = useState<TrialBalanceResponse | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
+  const [drawerSummary, setDrawerSummary] = useState({
+    activeDrawerCash: 0,
+    activeSessionCount: 0,
+    unopenedRetainedCash: 0,
+  });
   const canTransferCash = hasPermission(user, "finance.cash.transfer.to_bank");
   const canConfirmBankDeposit = hasPermission(user, "finance.bank_deposit.confirm");
   const canPostSelectedTransfer =
@@ -52,6 +72,44 @@ export default function CashDrawersPage() {
   const showBusinessLinePicker = Boolean(
     restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
   );
+  const activeDrawerCash = drawerSummary.activeDrawerCash + drawerSummary.unopenedRetainedCash;
+  const safeBalance = useMemo(() => accountBalance(trialBalance, "1005"), [trialBalance]);
+  const cashInTransit = useMemo(() => accountBalance(trialBalance, "1008"), [trialBalance]);
+
+  const loadCashBalances = useCallback(async () => {
+    if (!restaurantId) return;
+    setBalanceLoading(true);
+    try {
+      const response = await apiClient.get<BaseResponse<TrialBalanceResponse>>(
+        AccountingReportApis.trialBalance({ restaurantId }),
+      );
+      setTrialBalance(response.data?.data ?? null);
+    } catch (error) {
+      console.error("Failed to load cash control balances", error);
+      setTrialBalance(null);
+      toast.error("Failed to load cash control balances.");
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, [restaurantId]);
+
+  useEffect(() => {
+    void loadCashBalances();
+  }, [loadCashBalances, balanceRefreshKey]);
+
+  const refreshCashBalances = () => {
+    setBalanceRefreshKey((current) => current + 1);
+  };
+
+  const handleDrawerCashSummary = useCallback((summary: typeof drawerSummary) => {
+    setDrawerSummary((current) =>
+      current.activeDrawerCash === summary.activeDrawerCash &&
+      current.activeSessionCount === summary.activeSessionCount &&
+      current.unopenedRetainedCash === summary.unopenedRetainedCash
+        ? current
+        : summary,
+    );
+  }, []);
 
   const submitSafeTransfer = async () => {
     if (!restaurantId) return;
@@ -83,6 +141,7 @@ export default function CashDrawersPage() {
       setLastTransfer(response.data?.data ?? null);
       setTransferAmount("");
       setTransferReference("");
+      refreshCashBalances();
       toast.success("Cash transfer posted.");
     } catch (error: unknown) {
       const message =
@@ -152,19 +211,73 @@ export default function CashDrawersPage() {
         </Card>
       ) : (
         <>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Card className="border-border/70">
+              <CardContent className="flex items-center justify-between gap-3 p-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Cash in drawers
+                  </div>
+                  <div className="mt-1 text-xl font-semibold">{formatMoney(activeDrawerCash)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {drawerSummary.activeSessionCount} active session(s)
+                    {drawerSummary.unopenedRetainedCash > 0
+                      ? ` + ${formatMoney(drawerSummary.unopenedRetainedCash)} retained unopened`
+                      : ""}
+                  </div>
+                </div>
+                <Banknote className="h-5 w-5 text-emerald-600" />
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="flex items-center justify-between gap-3 p-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Main safe available
+                  </div>
+                  <div className="mt-1 text-xl font-semibold">{formatMoney(safeBalance)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">Account 1005 Main Cash / Safe</div>
+                </div>
+                <ShieldCheck className="h-5 w-5 text-blue-600" />
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="flex items-center justify-between gap-3 p-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Cash in transit
+                  </div>
+                  <div className="mt-1 text-xl font-semibold">{formatMoney(cashInTransit)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">Pending bank deposit account 1008</div>
+                </div>
+                {balanceLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                ) : (
+                  <Send className="h-5 w-5 text-amber-600" />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
           <DrawerSessionPanel
             restaurantId={restaurantId}
             businessLine={businessLine}
             title="Drawer workspace"
             description="Use this page for opening float, drawer count, settlement decision, cash movement review, and expected cash checks."
             footerNote="Checkout automatically uses the logged-in cashier's active drawer. Day close only verifies that drawers are closed and settled."
+            onCashSummaryChange={handleDrawerCashSummary}
           />
 
           <Card className="border-border/70">
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Send className="h-4 w-4" />
-                Safe to bank transfer
+              <CardTitle className="flex flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
+                <span className="flex items-center gap-2">
+                  <Send className="h-4 w-4" />
+                  Safe to bank transfer
+                </span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Safe available {formatMoney(safeBalance)}
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">

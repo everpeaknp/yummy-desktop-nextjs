@@ -171,6 +171,38 @@ export interface DrawerSession {
   counts?: DrawerCount[];
 }
 
+export interface DayCloseDrawerControlRow {
+  session_id?: number | null;
+  configuration_id?: number | null;
+  station?: string | null;
+  drawer_key?: string | null;
+  name?: string | null;
+  cashier_id?: number | null;
+  status?: string | null;
+  suggested_opening_source?: string | null;
+  suggested_opening_cash?: number | null;
+  counted_opening_cash?: number | null;
+  expected_closing_cash?: number | null;
+  counted_closing_cash?: number | null;
+  cash_variance?: number | null;
+  retained_float?: number | null;
+  opened_at?: string | null;
+  closed_at?: string | null;
+  approved_by_id?: number | null;
+  approved_at?: string | null;
+  is_current_session?: boolean;
+}
+
+export interface DayCloseDrawerControl {
+  enabled?: boolean;
+  opening_required?: boolean;
+  opening_cash?: number;
+  expected_cash?: number;
+  counted_cash?: number | null;
+  cash_variance?: number | null;
+  drawers?: DayCloseDrawerControlRow[];
+}
+
 export interface DayCloseAccountingReviewSummary {
   id?: number;
   day_close_id?: number;
@@ -262,6 +294,7 @@ export interface DayCloseSnapshotData {
   net_sales?: number;
   total_income?: number;
   expected_cash?: number;
+  drawer_control?: DayCloseDrawerControl;
   cash_collected?: number;
   operational_snapshot?: Record<string, unknown>;
   receivables?: DayCloseReceivablesSnapshot;

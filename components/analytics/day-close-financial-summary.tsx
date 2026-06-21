@@ -87,7 +87,8 @@ const FINANCIAL_SUMMARY_COPY: Record<
   "Opening Balance": {
     title: "Opening Balance",
     description: "Detailed insights",
-    detail: "This is the drawer cash carried forward from the previous confirmed day close.",
+    detail:
+      "This is the backend drawer opening cash for this close window. With drawer controls enabled, it comes from drawer evidence or the retained-float opening suggestion.",
   },
   "Credit Sales": {
     title: "Credit Sales",
@@ -159,7 +160,15 @@ function buildFormula(
     detail?.manual_cash_income,
   );
   const expenseTotal = amount(snapshot.expense_total, detail?.expense_total);
-  const openingBalance = amount(snapshot.opening_balance, detail?.opening_balance);
+  const drawerControl =
+    snapshot.drawer_control && typeof snapshot.drawer_control === "object"
+      ? (snapshot.drawer_control as Record<string, unknown>)
+      : null;
+  const openingBalance = amount(
+    drawerControl?.opening_cash,
+    snapshot.opening_balance,
+    detail?.opening_balance,
+  );
   const creditSales = amount(
     snapshot.receivables?.credit_sales,
     detail?.credit_sales,
@@ -180,12 +189,12 @@ function buildFormula(
     detail?.manual_cash_income,
   );
   const cashExpenseTotal = amount(snapshot.cash_expense_total);
-  const expectedCash = amount(snapshot.expected_cash, detail?.expected_cash);
+  const expectedCash = amount(
+    drawerControl?.expected_cash,
+    snapshot.expected_cash,
+    detail?.expected_cash,
+  );
   const actualCash = amount(detail?.actual_cash);
-  const drawerControl =
-    snapshot.drawer_control && typeof snapshot.drawer_control === "object"
-      ? (snapshot.drawer_control as Record<string, unknown>)
-      : null;
 
   switch (label) {
     case "Gross Sales":
@@ -208,7 +217,10 @@ function buildFormula(
     case "Expenses":
       return `Expenses = ${formulaMoney(expenseTotal)}`;
     case "Opening Balance":
-      return `Opening Balance = ${formulaMoney(openingBalance)}`;
+      if (drawerControl?.opening_required === true) {
+        return `Suggested drawer opening float = ${formulaMoney(openingBalance)}`;
+      }
+      return `Opening Drawer Cash = ${formulaMoney(openingBalance)}`;
     case "Credit Sales":
       return `Credit Sales = ${formulaMoney(creditSales)}`;
     case "Credit Collection":

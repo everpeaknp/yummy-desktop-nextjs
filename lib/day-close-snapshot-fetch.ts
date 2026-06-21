@@ -27,6 +27,34 @@ export async function fetchDayCloseSnapshotForDetail(
   detail: DayCloseDetail | null,
   options?: { restaurantId?: number; businessLine?: string },
 ): Promise<DayCloseSnapshotResponse | null> {
+  const useLiveSnapshot = usesLiveSnapshot(detail?.status);
+  const restaurantId = detail?.restaurant_id ?? options?.restaurantId;
+  const businessLine = detail?.business_line ?? options?.businessLine ?? "restaurant";
+
+  if (useLiveSnapshot && restaurantId) {
+    const res = await apiClient.get(
+      DayCloseApis.generateSnapshot({
+        restaurantId,
+        businessLine,
+        businessDate: detail?.business_date,
+      }),
+    );
+    if (res.data?.status === "success") {
+      const snapshot_data = parseDayCloseSnapshotData(res.data.data);
+      if (snapshot_data) {
+        return {
+          snapshot_data,
+          generated_at:
+            typeof res.data?.data === "object" &&
+            res.data.data != null &&
+            "generated_at" in (res.data.data as object)
+              ? String((res.data.data as { generated_at?: unknown }).generated_at)
+              : undefined,
+        };
+      }
+    }
+  }
+
   try {
     const res = await apiClient.get(DayCloseApis.snapshot(id));
     if (res.data?.status === "success") {
@@ -36,27 +64,5 @@ export async function fetchDayCloseSnapshotForDetail(
     if (!isMissingSnapshotError(err)) throw err;
   }
 
-  if (!usesLiveSnapshot(detail?.status)) return null;
-
-  const restaurantId = detail?.restaurant_id ?? options?.restaurantId;
-  const businessLine = detail?.business_line ?? options?.businessLine ?? "restaurant";
-  if (!restaurantId) return null;
-
-  const res = await apiClient.get(
-    DayCloseApis.generateSnapshot({ restaurantId, businessLine }),
-  );
-  if (res.data?.status !== "success") return null;
-
-  const snapshot_data = parseDayCloseSnapshotData(res.data.data);
-  if (!snapshot_data) return null;
-
-  return {
-    snapshot_data,
-    generated_at:
-      typeof res.data?.data === "object" &&
-      res.data.data != null &&
-      "generated_at" in (res.data.data as object)
-        ? String((res.data.data as { generated_at?: unknown }).generated_at)
-        : undefined,
-  };
+  return null;
 }
