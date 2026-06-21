@@ -963,6 +963,7 @@ export const AccountingApis = {
   createCashTransfer: () => '/accounting/cash-transfers',
   previewSettlement: () => '/accounting/settlements/preview',
   createSettlement: () => '/accounting/settlements',
+  confirmSettlementBank: (batchId: number) => `/accounting/settlements/${batchId}/confirm-bank`,
   matchSettlement: (batchId: number) => `/accounting/settlements/${batchId}/match`,
   approveSettlementVariance: (batchId: number) => `/accounting/settlements/${batchId}/approve-variance`,
   postSettlement: (batchId: number) => `/accounting/settlements/${batchId}/post`,
@@ -987,6 +988,9 @@ export const AccountingApis = {
   reopenPeriod: (periodId: number) => `/accounting/periods/${periodId}/reopen`,
   accounts: (params: Pick<AccountingCoreParams, 'restaurantId'>) =>
     `/accounting/accounts?${buildAccountingQuery(params).toString()}`,
+  createAccount: () => '/accounting/accounts',
+  updateAccount: (accountId: number, restaurantId: number) =>
+    `/accounting/accounts/${accountId}?restaurant_id=${restaurantId}`,
   mappings: (params: Pick<AccountingCoreParams, 'restaurantId' | 'businessLine'>) =>
     `/accounting/mappings?${buildAccountingQuery(params).toString()}`,
   createMapping: () => '/accounting/mappings',

@@ -13,11 +13,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
+import { AccountDialog, type AccountDialogIntent } from "./account-dialog";
 import { AccountTable } from "./account-table";
+import { AccountingDrilldownDrawer } from "./accounting-drilldown-drawer";
 import { AccountingNav } from "./accounting-nav";
 import { LedgerMappingDialog } from "./ledger-mapping-dialog";
 import { LedgerMappingTable } from "./ledger-mapping-table";
-import type { AccountingSeedDefaultsResult, ChartAccount, LedgerMapping } from "@/types/accounting";
+import type { AccountingDrilldownResponse, AccountingSeedDefaultsResult, ChartAccount, LedgerMapping } from "@/types/accounting";
 
 type BaseResponse<T> = {
   status?: string;
@@ -38,10 +40,16 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState<AccountingSeedDefaultsResult | null>(null);
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [accountIntent, setAccountIntent] = useState<AccountDialogIntent | null>(null);
   const [mappingDialogOpen, setMappingDialogOpen] = useState(false);
   const [selectedMapping, setSelectedMapping] = useState<LedgerMapping | null>(null);
   const [accountSearch, setAccountSearch] = useState("");
   const [accountType, setAccountType] = useState("all");
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [drilldownTitle, setDrilldownTitle] = useState("Ledger");
+  const [drilldownLoading, setDrilldownLoading] = useState(false);
+  const [drilldownData, setDrilldownData] = useState<AccountingDrilldownResponse | null>(null);
 
   const canView = hasPermission(user, "finance.accounting.view");
   const canSetupAccounting = hasPermission(user, "finance.accounting.setup");
@@ -120,10 +128,40 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
     setMappingDialogOpen(true);
   };
 
+  const openCreateAccount = (nodeType: AccountDialogIntent["nodeType"], parentId?: number | null) => {
+    setAccountIntent({ nodeType, parentId: parentId ?? null });
+    setAccountDialogOpen(true);
+  };
+
   const openEditMapping = (mapping: LedgerMapping) => {
     setSelectedMapping(mapping);
     setMappingDialogOpen(true);
   };
+
+  const openAccountLedger = useCallback(
+    async (account: ChartAccount) => {
+      if (!restaurantId || account.node_type === "group") return;
+      setDrilldownTitle(`${account.code} - ${account.name}`);
+      setDrilldownOpen(true);
+      setDrilldownLoading(true);
+      try {
+        const res = await apiClient.get<BaseResponse<AccountingDrilldownResponse>>(
+          AccountingApis.drilldown({
+            restaurantId,
+            accountId: account.id,
+          })
+        );
+        setDrilldownData(res.data?.data ?? null);
+      } catch (error) {
+        console.error("Failed to load account ledger", error);
+        setDrilldownData(null);
+        toast.error("Failed to load ledger");
+      } finally {
+        setDrilldownLoading(false);
+      }
+    },
+    [restaurantId]
+  );
 
   if (!user) {
     return (
@@ -170,6 +208,12 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
                 Create Mapping
               </Button>
             )}
+            {mode === "accounts" && (
+              <Button variant="outline" onClick={() => openCreateAccount("group", null)} disabled={!canManageMasterData}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Group
+              </Button>
+            )}
             <Button variant="outline" onClick={loadData} disabled={loading || seeding}>
               <RefreshCw className={loading ? "mr-2 h-4 w-4 animate-spin" : "mr-2 h-4 w-4"} />
               Refresh
@@ -207,6 +251,9 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
               accountType={accountType}
               onSearchChange={setAccountSearch}
               onAccountTypeChange={setAccountType}
+              canManage={canManageMasterData}
+              onCreateAccount={openCreateAccount}
+              onOpenAccount={openAccountLedger}
             />
           ) : (
             <LedgerMappingTable
@@ -226,6 +273,25 @@ export function AccountingMasterDataClient({ mode }: AccountingMasterDataClientP
           accounts={accounts}
           mapping={selectedMapping}
           onSaved={loadData}
+        />
+      ) : null}
+      {mode === "accounts" && restaurantId ? (
+        <AccountDialog
+          open={accountDialogOpen}
+          onOpenChange={setAccountDialogOpen}
+          restaurantId={restaurantId}
+          accounts={accounts}
+          intent={accountIntent}
+          onSaved={loadData}
+        />
+      ) : null}
+      {mode === "accounts" ? (
+        <AccountingDrilldownDrawer
+          open={drilldownOpen}
+          onOpenChange={setDrilldownOpen}
+          title={drilldownTitle}
+          data={drilldownData}
+          loading={drilldownLoading}
         />
       ) : null}
     </div>

@@ -83,6 +83,10 @@ export function OpeningBalanceClient() {
   const canView = hasPermission(user, "finance.accounting.view");
   const canManageOpeningBalances = hasPermission(user, "finance.accounting.opening_balances.manage");
   const restaurantId = user?.restaurant_id;
+  const postableAccounts = useMemo(
+    () => accounts.filter((account) => account.is_active && account.node_type !== "group"),
+    [accounts]
+  );
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -324,7 +328,7 @@ export function OpeningBalanceClient() {
               </Button>
               <Button
                 onClick={createOpeningBalance}
-                disabled={saving || loading || accounts.length === 0 || !canManageOpeningBalances}
+                disabled={saving || loading || postableAccounts.length === 0 || !canManageOpeningBalances}
                 title={!canManageOpeningBalances ? "Opening balance management requires finance.accounting.opening_balances.manage permission." : undefined}
               >
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
@@ -356,7 +360,7 @@ export function OpeningBalanceClient() {
                           <SelectValue placeholder="Select account" />
                         </SelectTrigger>
                         <SelectContent>
-                          {accounts.map((account) => (
+                          {postableAccounts.map((account) => (
                             <SelectItem key={account.id} value={String(account.id)}>
                               {account.code} - {account.name}
                             </SelectItem>

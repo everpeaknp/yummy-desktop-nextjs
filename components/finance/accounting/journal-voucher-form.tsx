@@ -76,6 +76,10 @@ export function JournalVoucherForm({
   const [externalReference, setExternalReference] = useState("");
   const [memo, setMemo] = useState("");
   const [lines, setLines] = useState<LineDraft[]>(() => [newLine(), newLine()]);
+  const postableAccounts = useMemo(
+    () => accounts.filter((account) => account.is_active && account.node_type !== "group"),
+    [accounts]
+  );
 
   const totals = useMemo(() => {
     const debit = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
@@ -256,7 +260,7 @@ export function JournalVoucherForm({
             <Plus className="mr-2 h-4 w-4" />
             Add line
           </Button>
-          <Button onClick={createVoucher} disabled={saving || accounts.length === 0}>
+          <Button onClick={createVoucher} disabled={saving || postableAccounts.length === 0}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Create voucher
           </Button>
@@ -308,7 +312,7 @@ export function JournalVoucherForm({
                       <SelectValue placeholder="Select account" />
                     </SelectTrigger>
                     <SelectContent>
-                      {accounts.map((account) => (
+                      {postableAccounts.map((account) => (
                         <SelectItem key={account.id} value={String(account.id)}>
                           {account.code} - {account.name}
                         </SelectItem>

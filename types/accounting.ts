@@ -17,6 +17,10 @@ export type AccountType =
 
 export type NormalBalance = "debit" | "credit";
 
+export type AccountNodeType = "group" | "ledger" | "subledger";
+
+export type ProfitLossSection = "gross" | "net";
+
 export type ChartAccount = {
   id: number;
   restaurant_id: number;
@@ -25,8 +29,33 @@ export type ChartAccount = {
   account_type: AccountType;
   normal_balance: NormalBalance;
   parent_id?: number | null;
+  node_type: AccountNodeType;
+  pnl_section?: ProfitLossSection | null;
+  reconciliation_enabled: boolean;
+  ledger_class?: string | null;
+  ledger_type?: string | null;
+  subledger_type?: string | null;
+  reference_entity_id?: number | null;
   is_suspense: boolean;
   is_active: boolean;
+};
+
+export type ChartAccountPayload = {
+  restaurant_id: number;
+  code: string;
+  name: string;
+  account_type: AccountType;
+  normal_balance: NormalBalance;
+  parent_id?: number | null;
+  node_type: AccountNodeType;
+  pnl_section?: ProfitLossSection | null;
+  reconciliation_enabled?: boolean;
+  ledger_class?: string | null;
+  ledger_type?: string | null;
+  subledger_type?: string | null;
+  reference_entity_id?: number | null;
+  is_suspense?: boolean;
+  is_active?: boolean;
 };
 
 export type LedgerMapping = {
@@ -545,6 +574,7 @@ export type AccountingBackfillRun = {
 
 export type PaymentSettlementStatus =
   | "draft"
+  | "bank_confirmed"
   | "matched"
   | "variance_approved"
   | "posted"
@@ -598,6 +628,7 @@ export type PaymentSettlementLine = {
 export type PaymentSettlementBatch = {
   id: number;
   restaurant_id: number;
+  business_line: string;
   payment_method: string;
   instrument?: string | null;
   date_from: string;
@@ -610,11 +641,15 @@ export type PaymentSettlementBatch = {
   status: PaymentSettlementStatus;
   journal_entry_id?: number | null;
   reversed_by_entry_id?: number | null;
+  bank_account_id?: number | null;
+  bank_reference?: string | null;
   created_by_id?: number | null;
+  confirmed_by_id?: number | null;
   approved_by_id?: number | null;
   posted_by_id?: number | null;
   variance_reason?: string | null;
   created_at?: string | null;
+  confirmed_at?: string | null;
   approved_at?: string | null;
   posted_at?: string | null;
   lines: PaymentSettlementLine[];
@@ -660,7 +695,18 @@ export type PaymentSettlementPreviewInput = {
   business_line?: string | null;
 };
 
-export type PaymentSettlementCreateInput = PaymentSettlementPreviewInput;
+export type PaymentSettlementCreateInput = Omit<PaymentSettlementPreviewInput, "actual_amount" | "fee_amount"> & {
+  actual_amount?: number;
+  fee_amount?: number;
+};
+
+export type PaymentSettlementBankConfirmInput = {
+  settlement_date: string;
+  actual_amount: number;
+  fee_amount?: number;
+  bank_account_id?: number | null;
+  bank_reference: string;
+};
 
 export type PaymentSettlementVarianceApprovalInput = {
   reason: string;
@@ -778,6 +824,9 @@ export type FinancialStatementLine = {
   account_code: string;
   account_name: string;
   account_type: AccountType | string;
+  parent_account_id?: number | null;
+  node_type?: AccountNodeType | string;
+  pnl_section?: ProfitLossSection | string | null;
   amount: number;
 };
 

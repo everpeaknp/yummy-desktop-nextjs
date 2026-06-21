@@ -631,6 +631,7 @@ test("accounting aging UI exposes AR/AP aging and statement bridge workflow", ()
     "PaymentSettlementPreviewResponse",
     "PaymentSettlementPreviewInput",
     "PaymentSettlementCreateInput",
+    "PaymentSettlementBankConfirmInput",
     "PaymentSettlementVarianceApprovalInput",
     "bucket_1_7",
     "over_90",
@@ -649,6 +650,7 @@ test("accounting aging UI exposes AR/AP aging and statement bridge workflow", ()
     "settlements",
     "previewSettlement",
     "createSettlement",
+    "confirmSettlementBank",
     "matchSettlement",
     "approveSettlementVariance",
     "postSettlement",
@@ -659,6 +661,7 @@ test("accounting aging UI exposes AR/AP aging and statement bridge workflow", ()
     "/accounting/supplier-statement",
     "/accounting/settlements",
     "/accounting/settlements/preview",
+    "confirm-bank",
     "approve-variance",
   ]) {
     assert.match(endpoints, new RegExp(token));
@@ -723,16 +726,18 @@ test("accounting settlement UI exposes POS-to-bank bridge workflow", () => {
     "AccountingApis.settlements",
     "AccountingApis.previewSettlement",
     "AccountingApis.createSettlement",
-    "AccountingApis.matchSettlement",
+    "AccountingApis.confirmSettlementBank",
     "AccountingApis.approveSettlementVariance",
     "AccountingApis.postSettlement",
     "AccountingApis.reverseSettlement",
     "POS collections",
     "Refunds",
     "Processor fees",
-    "Bank deposit",
+    "Bank received",
+    "Bank reference",
     "Settlement variance",
-    "Create batch",
+    "Create expected batch",
+    "Confirm bank",
     "Approve variance",
     "Post settlement",
     "Reverse",
@@ -1165,17 +1170,45 @@ test("mapping exceptions are presented as an actionable resolver queue", () => {
   }
 });
 
-test("chart of accounts UI supports search filters and account usage warnings", () => {
+test("chart of accounts UI supports hierarchy groups ledgers and subledgers", () => {
   const table = read("components/finance/accounting/account-table.tsx");
   const master = read("components/finance/accounting/accounting-master-data-client.tsx");
+  const dialog = read("components/finance/accounting/account-dialog.tsx");
+  const types = read("types/accounting.ts");
+  const endpoints = read("lib/api/endpoints.ts");
 
   for (const token of [
     "Search accounts",
     "Filter by type",
+    "AccountNodeType",
+    "ProfitLossSection",
+    "node_type",
+    "pnl_section",
+    "reconciliation_enabled",
+    "Create Group",
+    "New Group",
+    "New Ledger",
+    "New Subledger",
+    "onOpenAccount",
+    "AccountingDrilldownDrawer",
+    "AccountingApis.drilldown",
+    "Subledger",
+    "Gross P&L",
+    "Net P&L",
+    "createAccount",
+    "updateAccount",
     "Suspense account",
-    "Used in mappings",
-    "Deactivate",
   ]) {
-    assert.match(`${table}\n${master}`, new RegExp(token));
+    assert.match(`${table}\n${master}\n${dialog}\n${types}\n${endpoints}`, new RegExp(token));
+  }
+});
+
+test("posting account selectors exclude group accounts", () => {
+  const mappingDialog = read("components/finance/accounting/ledger-mapping-dialog.tsx");
+  const voucherForm = read("components/finance/accounting/journal-voucher-form.tsx");
+  const openingBalances = read("components/finance/accounting/opening-balance-client.tsx");
+
+  for (const source of [mappingDialog, voucherForm, openingBalances]) {
+    assert.match(source, /node_type !== "group"/);
   }
 });

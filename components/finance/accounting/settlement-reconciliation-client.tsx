@@ -33,7 +33,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import { AccountingNav } from "./accounting-nav";
 import type {
+  ChartAccount,
+  PaymentInstrument,
   PaymentSettlementBatch,
+  PaymentSettlementBankConfirmInput,
   PaymentSettlementCreateInput,
   PaymentSettlementPreviewInput,
   PaymentSettlementPreviewLine,
@@ -80,8 +83,26 @@ function numberValue(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function errorMessage(error: unknown, fallback: string) {
+  const data = (error as { response?: { data?: { detail?: unknown; message?: unknown } } })?.response?.data;
+  if (typeof data?.detail === "string") return data.detail;
+  if (Array.isArray(data?.detail)) {
+    return data.detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) return String(item.msg);
+        return null;
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (typeof data?.message === "string") return data.message;
+  return fallback;
+}
+
 function statusClass(status: string) {
   if (status === "posted") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300";
+  if (status === "bank_confirmed") return "border-blue-500/30 bg-blue-500/10 text-blue-800 dark:text-blue-300";
   if (status === "variance_approved") return "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300";
   if (status === "reversed") return "border-muted bg-muted text-muted-foreground";
   if (status === "matched") return "border-blue-500/30 bg-blue-500/10 text-blue-800 dark:text-blue-300";
@@ -99,7 +120,7 @@ function bridgeRows(preview: PaymentSettlementPreviewResponse | null) {
     ["Refunds", -preview.refunds],
     ["Processor fees", -preview.fee_amount],
     ["Settlement variance", preview.variance_amount],
-    ["Bank deposit", preview.actual_amount],
+    ["Bank received", preview.actual_amount],
   ] as const;
 }
 
@@ -114,10 +135,15 @@ export function SettlementReconciliationClient() {
   const [settlementDate, setSettlementDate] = useState(todayInputValue);
   const [actualAmount, setActualAmount] = useState("");
   const [feeAmount, setFeeAmount] = useState("0");
+  const [bankReference, setBankReference] = useState("");
+  const [bankAccountId, setBankAccountId] = useState("");
   const [varianceReason, setVarianceReason] = useState("");
   const [preview, setPreview] = useState<PaymentSettlementPreviewResponse | null>(null);
   const [batches, setBatches] = useState<PaymentSettlementBatch[]>([]);
+  const [accounts, setAccounts] = useState<ChartAccount[]>([]);
+  const [paymentInstruments, setPaymentInstruments] = useState<PaymentInstrument[]>([]);
   const [loading, setLoading] = useState(false);
+  const [instrumentLoading, setInstrumentLoading] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [actionId, setActionId] = useState<number | null>(null);
 
@@ -126,6 +152,18 @@ export function SettlementReconciliationClient() {
   const restaurantId = user?.restaurant_id;
   const settlementLines = useMemo(() => preview?.lines ?? [], [preview]);
   const bridge = useMemo(() => bridgeRows(preview), [preview]);
+  const requiresConfiguredInstrument = paymentInstruments.length > 0;
+  const instrumentReady = !requiresConfiguredInstrument || Boolean(instrument.trim());
+  const bankAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (account) =>
+          account.is_active &&
+          account.account_type === "asset" &&
+          (account.code.startsWith("104") || account.name.toLowerCase().includes("bank"))
+      ),
+    [accounts]
+  );
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -171,14 +209,57 @@ export function SettlementReconciliationClient() {
       setBatches(res.data?.data ?? []);
     } catch (error) {
       console.error("Failed to load payment settlements", error);
-      toast.error("Failed to load payment settlements");
+      toast.error(errorMessage(error, "Failed to load payment settlements"));
     } finally {
       setLoading(false);
     }
   }, [restaurantId, canView, canManageSettlements, dateFrom, dateTo, paymentMethod]);
 
+  const loadAccounts = useCallback(async () => {
+    if (!restaurantId || !canView) return;
+    try {
+      const res = await apiClient.get<BaseResponse<ChartAccount[]>>(AccountingApis.accounts({ restaurantId }));
+      setAccounts(res.data?.data ?? []);
+    } catch (error) {
+      console.error("Failed to load settlement bank accounts", error);
+      toast.error(errorMessage(error, "Failed to load settlement bank accounts"));
+    }
+  }, [restaurantId, canView]);
+
+  const loadPaymentInstruments = useCallback(async () => {
+    if (!restaurantId || !canView) return;
+    setInstrumentLoading(true);
+    try {
+      const res = await apiClient.get<BaseResponse<PaymentInstrument[]>>(
+        AccountingApis.paymentInstruments({
+          restaurantId,
+          businessLine: "restaurant",
+          paymentMethod,
+          activeOnly: true,
+        })
+      );
+      const rows = res.data?.data ?? [];
+      setPaymentInstruments(rows);
+      setInstrument((current) => {
+        if (rows.length === 0) return "";
+        return rows.some((row) => row.name === current) ? current : rows[0].name;
+      });
+    } catch (error) {
+      console.error("Failed to load payment instruments", error);
+      setPaymentInstruments([]);
+      setInstrument("");
+      toast.error(errorMessage(error, "Failed to load payment instruments"));
+    } finally {
+      setInstrumentLoading(false);
+    }
+  }, [restaurantId, canView, paymentMethod]);
+
   const previewSettlement = useCallback(async () => {
     if (!restaurantId || !canView) return;
+    if (!instrumentReady) {
+      toast.error(`Select an active ${methodLabels[paymentMethod]} instrument before previewing.`);
+      return;
+    }
     setPreviewing(true);
     try {
       const res = await apiClient.post<BaseResponse<PaymentSettlementPreviewResponse>>(
@@ -188,32 +269,45 @@ export function SettlementReconciliationClient() {
       setPreview(res.data?.data ?? null);
     } catch (error) {
       console.error("Failed to preview payment settlement", error);
-      toast.error("Failed to preview payment settlement");
+      toast.error(errorMessage(error, "Failed to preview payment settlement"));
       setPreview(null);
     } finally {
       setPreviewing(false);
     }
-  }, [restaurantId, canView, payload]);
+  }, [restaurantId, canView, instrumentReady, paymentMethod, payload]);
 
   const createSettlement = async () => {
     if (!restaurantId || !canView || !canManageSettlements) {
       toast.error("Settlement management requires finance.payment_settlements.manage permission.");
       return;
     }
+    if (!instrumentReady) {
+      toast.error(`Select an active ${methodLabels[paymentMethod]} instrument before creating a settlement.`);
+      return;
+    }
     setActionId(-1);
     try {
-      const body: PaymentSettlementCreateInput = payload();
+      const raw = payload();
+      const body: PaymentSettlementCreateInput = {
+        restaurant_id: raw.restaurant_id,
+        payment_method: raw.payment_method,
+        instrument: raw.instrument,
+        date_from: raw.date_from,
+        date_to: raw.date_to,
+        settlement_date: raw.settlement_date,
+        business_line: raw.business_line,
+      };
       const res = await apiClient.post<BaseResponse<PaymentSettlementBatch>>(
         AccountingApis.createSettlement(),
         body
       );
       const batch = res.data?.data;
-      toast.success(`Create batch completed${batch ? `: #${batch.id}` : ""}`);
+      toast.success(`Expected settlement batch created${batch ? `: #${batch.id}` : ""}`);
       setPreview(null);
       await loadBatches();
     } catch (error) {
       console.error("Failed to create payment settlement", error);
-      toast.error("Failed to create settlement batch");
+      toast.error(errorMessage(error, "Failed to create settlement batch"));
     } finally {
       setActionId(null);
     }
@@ -221,7 +315,7 @@ export function SettlementReconciliationClient() {
 
   const runBatchAction = async (
     batch: PaymentSettlementBatch,
-    action: "match" | "approve" | "post" | "reverse"
+    action: "confirm" | "approve" | "post" | "reverse"
   ) => {
     if (!canManageSettlements) {
       toast.error("Settlement management requires finance.payment_settlements.manage permission.");
@@ -229,9 +323,20 @@ export function SettlementReconciliationClient() {
     }
     setActionId(batch.id);
     try {
-      if (action === "match") {
-        await apiClient.post<BaseResponse<PaymentSettlementBatch>>(AccountingApis.matchSettlement(batch.id), {});
-        toast.success("Settlement matched");
+      if (action === "confirm") {
+        if (!bankReference.trim()) {
+          toast.error("Bank reference is required to confirm settlement.");
+          return;
+        }
+        const body: PaymentSettlementBankConfirmInput = {
+          settlement_date: settlementDate,
+          actual_amount: numberValue(actualAmount),
+          fee_amount: numberValue(feeAmount),
+          bank_account_id: bankAccountId ? Number(bankAccountId) : null,
+          bank_reference: bankReference.trim(),
+        };
+        await apiClient.post<BaseResponse<PaymentSettlementBatch>>(AccountingApis.confirmSettlementBank(batch.id), body);
+        toast.success("Bank receipt confirmed");
       } else if (action === "approve") {
         const body: PaymentSettlementVarianceApprovalInput = {
           reason: varianceReason.trim() || "Approved settlement variance from UI",
@@ -254,7 +359,7 @@ export function SettlementReconciliationClient() {
       await loadBatches();
     } catch (error) {
       console.error("Failed to run settlement action", error);
-      toast.error("Settlement action failed");
+      toast.error(errorMessage(error, "Settlement action failed"));
     } finally {
       setActionId(null);
     }
@@ -263,6 +368,14 @@ export function SettlementReconciliationClient() {
   useEffect(() => {
     void loadBatches();
   }, [loadBatches]);
+
+  useEffect(() => {
+    void loadAccounts();
+  }, [loadAccounts]);
+
+  useEffect(() => {
+    void loadPaymentInstruments();
+  }, [loadPaymentInstruments]);
 
   if (!user) {
     return (
@@ -296,7 +409,7 @@ export function SettlementReconciliationClient() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Settlements</h1>
               <p className="text-sm text-muted-foreground">
-                POS collections minus refunds and fees, reconciled to bank deposits.
+                Create expected POS batches, confirm bank receipt, then post exact instrument clearing.
               </p>
             </div>
           </div>
@@ -341,13 +454,29 @@ export function SettlementReconciliationClient() {
               <Label htmlFor="settlement-instrument" className="text-xs text-muted-foreground">
                 Instrument
               </Label>
-              <Input
-                id="settlement-instrument"
-                value={instrument}
-                onChange={(event) => setInstrument(event.target.value)}
-                placeholder="HBL POS"
-                className="h-9"
-              />
+              <Select
+                value={instrument || "no-configured-instrument"}
+                onValueChange={(value) => setInstrument(value === "no-configured-instrument" ? "" : value)}
+                disabled={instrumentLoading}
+              >
+                <SelectTrigger id="settlement-instrument" className="h-9">
+                  <SelectValue placeholder={instrumentLoading ? "Loading instruments..." : "Select instrument"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {paymentInstruments.length === 0 ? (
+                    <SelectItem value="no-configured-instrument">No configured instrument</SelectItem>
+                  ) : (
+                    paymentInstruments.map((item) => (
+                      <SelectItem key={item.id} value={item.name}>
+                        {item.name} - {item.instrument_type}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {requiresConfiguredInstrument && !instrumentReady ? (
+                <p className="text-xs text-destructive">Select an active configured instrument.</p>
+              ) : null}
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="settlement-from" className="text-xs text-muted-foreground">
@@ -363,13 +492,13 @@ export function SettlementReconciliationClient() {
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="settlement-date" className="text-xs text-muted-foreground">
-                Settlement date
+                Bank date
               </Label>
               <Input id="settlement-date" type="date" value={settlementDate} onChange={(event) => setSettlementDate(event.target.value)} className="h-9" />
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="actual-amount" className="text-xs text-muted-foreground">
-                Bank deposit
+                Bank received
               </Label>
               <Input
                 id="actual-amount"
@@ -392,23 +521,55 @@ export function SettlementReconciliationClient() {
               />
             </div>
           </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="bank-account" className="text-xs text-muted-foreground">
+                Bank account
+              </Label>
+              <Select value={bankAccountId || "default"} onValueChange={(value) => setBankAccountId(value === "default" ? "" : value)}>
+                <SelectTrigger id="bank-account" className="h-9">
+                  <SelectValue placeholder="Default bank account" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Default bank account</SelectItem>
+                  {bankAccounts.map((account) => (
+                    <SelectItem key={account.id} value={String(account.id)}>
+                      {account.code} - {account.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="bank-reference" className="text-xs text-muted-foreground">
+                Bank reference
+              </Label>
+              <Input
+                id="bank-reference"
+                value={bankReference}
+                onChange={(event) => setBankReference(event.target.value)}
+                placeholder="Bank transaction ID"
+                className="h-9"
+              />
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button
               onClick={previewSettlement}
-              disabled={previewing || loading || !canManageSettlements}
+              disabled={previewing || loading || instrumentLoading || !instrumentReady || !canManageSettlements}
               title={!canManageSettlements ? "Settlement management requires finance.payment_settlements.manage permission." : undefined}
             >
               {previewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-              Preview settlement
+              Preview expected batch
             </Button>
             <Button
               variant="outline"
               onClick={createSettlement}
-              disabled={!preview || actionId === -1 || !canManageSettlements}
+              disabled={!preview || actionId === -1 || instrumentLoading || !instrumentReady || !canManageSettlements}
               title={!canManageSettlements ? "Settlement management requires finance.payment_settlements.manage permission." : undefined}
             >
               {actionId === -1 ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Create batch
+              Create expected batch
             </Button>
           </div>
         </CardContent>
@@ -433,7 +594,7 @@ export function SettlementReconciliationClient() {
                     Formula
                   </div>
                   <div className="mt-2 text-sm">
-                    POS collections - Refunds - Processor fees +/- Settlement variance = Bank deposit
+                    POS collections - Refunds - Processor fees +/- Settlement variance = Bank received
                   </div>
                 </div>
               </>
@@ -513,9 +674,10 @@ export function SettlementReconciliationClient() {
                     <TableHead>Method</TableHead>
                     <TableHead>Settlement date</TableHead>
                     <TableHead className="text-right">Expected</TableHead>
-                    <TableHead className="text-right">Bank deposit</TableHead>
+                    <TableHead className="text-right">Bank received</TableHead>
                     <TableHead className="text-right">Fees</TableHead>
                     <TableHead className="text-right">Variance</TableHead>
+                    <TableHead>Bank reference</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -534,24 +696,27 @@ export function SettlementReconciliationClient() {
                       <TableCell className="text-right font-mono">{formatMoney(batch.fee_amount)}</TableCell>
                       <TableCell className="text-right font-mono">{formatMoney(batch.variance_amount)}</TableCell>
                       <TableCell>
+                        <div className="max-w-[180px] truncate text-sm">{batch.bank_reference || "-"}</div>
+                      </TableCell>
+                      <TableCell>
                         <span className={`rounded-full border px-2 py-1 text-xs font-semibold uppercase tracking-wide ${statusClass(batch.status)}`}>
                           {batch.status.replace(/_/g, " ")}
                         </span>
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-2">
-                          {batch.status === "draft" && Number(batch.variance_amount || 0) === 0 ? (
+                          {batch.status === "draft" ? (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => runBatchAction(batch, "match")}
+                              onClick={() => runBatchAction(batch, "confirm")}
                               disabled={actionId === batch.id || !canManageSettlements}
                             >
                               {actionId === batch.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                              Match
+                              Confirm bank
                             </Button>
                           ) : null}
-                          {batch.status === "draft" && Number(batch.variance_amount || 0) !== 0 ? (
+                          {batch.status === "bank_confirmed" && Number(batch.variance_amount || 0) !== 0 ? (
                             <Button
                               size="sm"
                               variant="outline"
@@ -562,7 +727,9 @@ export function SettlementReconciliationClient() {
                               Approve variance
                             </Button>
                           ) : null}
-                          {(batch.status === "matched" || batch.status === "variance_approved") ? (
+                          {((batch.status === "bank_confirmed" && Number(batch.variance_amount || 0) === 0) ||
+                            batch.status === "matched" ||
+                            batch.status === "variance_approved") ? (
                             <Button size="sm" onClick={() => runBatchAction(batch, "post")} disabled={actionId === batch.id || !canManageSettlements}>
                               {actionId === batch.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                               Post settlement

@@ -111,7 +111,10 @@ export function LedgerMappingDialog({
     reason: "",
   });
 
-  const activeAccounts = useMemo(() => accounts.filter((account) => account.is_active), [accounts]);
+  const activeAccounts = useMemo(
+    () => accounts.filter((account) => account.is_active && account.node_type !== "group"),
+    [accounts]
+  );
   const normalizedEventType = normalizeEventType(form.event_type || mapping?.event_type || "");
   const paymentMethodValue = normalizePaymentMethod(form.payment_method);
   const eventHelp = accountingEventLabel(normalizedEventType);
