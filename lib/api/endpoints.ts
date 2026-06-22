@@ -1407,6 +1407,21 @@ export const StaffProfileApis = {
 };
 
 export const AttendanceApis = {
+  settings: "/attendance/settings",
+  overview: "/attendance/overview",
+  entries: "/attendance/entries",
+  submitEntry: (id: number) => "/attendance/entries/" + id + "/submit",
+  approveEntry: (id: number) => "/attendance/entries/" + id + "/approve",
+  rejectEntry: (id: number) => "/attendance/entries/" + id + "/reject",
+  reopenEntry: (id: number) => "/attendance/entries/" + id + "/reopen",
+  audit: (id: number) => "/attendance/entries/" + id + "/audit",
+  exportCsv: "/attendance/export.csv",
+  shiftTemplates: "/attendance/shift-templates",
+  shiftTemplate: (id: number) => "/attendance/shift-templates/" + id,
+  schedules: (staffId?: number) =>
+    staffId ? "/attendance/schedules?staff_id=" + staffId : "/attendance/schedules",
+  createSchedule: "/attendance/schedules",
+  schedule: (id: number) => "/attendance/schedules/" + id,
   createQrSession: "/attendance/qr-sessions",
   listDevices: "/attendance/devices",
   createDevice: "/attendance/devices",
@@ -1414,6 +1429,14 @@ export const AttendanceApis = {
   listDeviceMappings: (deviceId?: number) =>
     deviceId ? `/attendance/device-mappings?device_id=${deviceId}` : "/attendance/device-mappings",
   upsertDeviceMapping: "/attendance/device-mappings",
+  mobileDevices: "/attendance/mobile-devices",
+  mobileDeviceDecision: (id: number, action: "approve" | "reject" | "revoke") =>
+    "/attendance/mobile-devices/" + id + "/" + action,
+  connectorPairingCodes: "/attendance/connectors/pairing-codes",
+  connectorPair: "/attendance/connectors/pair",
+  connectorHeartbeat: "/attendance/connectors/heartbeat",
+  connectorPunches: "/attendance/connectors/punches",
+  revokeConnector: (credentialId: string) => "/attendance/connectors/" + credentialId + "/revoke",
 };
 
 export const PayrollApis = {
