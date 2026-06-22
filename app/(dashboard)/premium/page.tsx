@@ -84,6 +84,11 @@ export default function PremiumPage() {
   const isPaid = (effectivePlan === "paid" || effectivePlan === "trial_paid") && (planState === "paid" || planState === "trialing");
   const isTrialing = planState === "trialing";
   const isExpired = planState === "trial_expired" || planState === "paid_expired";
+  const attendanceEnabled = Boolean((restaurant as any)?.attendance_enabled);
+  const attendanceMobileEnabled = Boolean((restaurant as any)?.attendance_mobile_enabled);
+  const attendanceBiometricEnabled = Boolean((restaurant as any)?.attendance_biometric_enabled);
+  const attendanceDeviceLimit = Number((restaurant as any)?.attendance_device_limit || 0);
+  const attendanceExpiry = (restaurant as any)?.attendance_ends_at || (restaurant as any)?.attendance_trial_ends_at;
 
   const getTrialDaysRemaining = () => {
     if (!restaurant?.trial_ends_at) return 0;
@@ -140,6 +145,45 @@ export default function PremiumPage() {
           {getPlanSubtitle()}
         </p>
       </div>
+
+      <Card className="border-border/70">
+        <CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className={cn(
+              "mt-0.5 rounded-xl border p-2",
+              attendanceEnabled ? "border-emerald-500/20 bg-emerald-500/10" : "border-muted bg-muted/40"
+            )}>
+              <ShieldCheck className={cn("h-5 w-5", attendanceEnabled ? "text-emerald-600" : "text-muted-foreground")} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-black">Attendance add-on</h2>
+              <p className="mt-1 text-xs font-medium text-muted-foreground">
+                {attendanceEnabled
+                  ? "Enabled for this restaurant. Channels and device limits are managed by platform admin."
+                  : "Not enabled for this restaurant. Attendance is billed separately from Premium."}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-2 text-xs font-semibold sm:grid-cols-4 md:min-w-[440px]">
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="text-muted-foreground">Mobile</div>
+              <div>{attendanceMobileEnabled ? "Enabled" : "Disabled"}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="text-muted-foreground">Biometric</div>
+              <div>{attendanceBiometricEnabled ? "Enabled" : "Disabled"}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="text-muted-foreground">Devices</div>
+              <div>{attendanceDeviceLimit}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="text-muted-foreground">Expiry</div>
+              <div>{attendanceExpiry ? format(new Date(attendanceExpiry), "MMM d") : "None"}</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Pricing Comparison */}
       <div className="grid md:grid-cols-2 gap-6">

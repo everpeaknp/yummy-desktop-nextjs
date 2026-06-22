@@ -221,6 +221,7 @@ export type PermissionKey =
   | "attendance.view"
   | "attendance.manage"
   | "attendance.device.manage"
+  | "attendance.payroll.export"
   // Admin & Settings
   | "admin.staff.view"
   | "admin.staff.manage"
