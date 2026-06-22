@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
 import { ArrowLeft, Banknote, ClipboardList, FileText, Loader2, ReceiptText, Truck, Users } from "lucide-react";
+import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
@@ -25,6 +27,7 @@ import { AccountingNav } from "./accounting-nav";
 import { AccountingDrilldownDrawer } from "./accounting-drilldown-drawer";
 import { BalanceSheetStatement } from "./balance-sheet-statement";
 import { FinancialReportFilters } from "./financial-report-filters";
+import type { DatePreset } from "./financial-report-filters";
 import { ProfitLossStatement } from "./profit-loss-statement";
 import type {
   BalanceSheetResponse,
@@ -107,6 +110,18 @@ function defaultStartDate() {
   const date = new Date();
   date.setDate(date.getDate() - 30);
   return yyyyMmDd(date);
+}
+
+function presetToRange(preset: DatePreset): DateRange {
+  const now = new Date();
+  if (preset === "today") return { from: startOfDay(now), to: endOfDay(now) };
+  if (preset === "yesterday") {
+    const day = subDays(now, 1);
+    return { from: startOfDay(day), to: endOfDay(day) };
+  }
+  if (preset === "last7") return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) };
+  if (preset === "last30") return { from: startOfDay(subDays(now, 30)), to: endOfDay(now) };
+  return { from: startOfMonth(now), to: endOfMonth(now) };
 }
 
 function formatMoney(value: number) {
@@ -493,6 +508,8 @@ export function AccountingReportClient({ mode }: AccountingReportClientProps) {
   const router = useRouter();
   const [dateFrom, setDateFrom] = useState(defaultStartDate);
   const [dateTo, setDateTo] = useState(() => yyyyMmDd(new Date()));
+  const [datePreset, setDatePreset] = useState<DatePreset>("last30");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => presetToRange("last30"));
   const [station, setStation] = useState("");
   const [loading, setLoading] = useState(false);
   const [reports, setReports] = useState<ReportState>({
@@ -521,6 +538,21 @@ export function AccountingReportClient({ mode }: AccountingReportClientProps) {
     };
     void checkAuth();
   }, [user, me, router]);
+
+  useEffect(() => {
+    if (datePreset === "custom") return;
+    const nextRange = presetToRange(datePreset);
+    setDateRange(nextRange);
+    if (nextRange.from) setDateFrom(format(nextRange.from, "yyyy-MM-dd"));
+    if (nextRange.to) setDateTo(format(nextRange.to, "yyyy-MM-dd"));
+  }, [datePreset]);
+
+  useEffect(() => {
+    if (datePreset !== "custom") return;
+    if (!dateRange?.from) return;
+    setDateFrom(format(dateRange.from, "yyyy-MM-dd"));
+    setDateTo(format(dateRange.to ?? dateRange.from, "yyyy-MM-dd"));
+  }, [datePreset, dateRange]);
 
   const reportParams = useMemo(
     () => ({
@@ -802,7 +834,14 @@ export function AccountingReportClient({ mode }: AccountingReportClientProps) {
       <FinancialReportFilters
         dateFrom={dateFrom}
         dateTo={dateTo}
+        dateRange={dateRange}
+        datePreset={datePreset}
         station={station}
+        onDateRangeChange={(value) => {
+          setDatePreset("custom");
+          setDateRange(value);
+        }}
+        onDatePresetChange={setDatePreset}
         onDateFromChange={setDateFrom}
         onDateToChange={setDateTo}
         onStationChange={setStation}

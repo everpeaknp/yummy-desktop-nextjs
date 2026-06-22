@@ -78,12 +78,33 @@ export function AccountingNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Accounting navigation" className="grid gap-3 xl:grid-cols-[1fr_0.75fr_2.3fr_1fr]">
+    <nav
+      aria-label="Accounting navigation"
+      className="rounded-2xl border border-border/60 bg-card/70 p-4 shadow-sm backdrop-blur-sm"
+    >
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+            Accounting Map
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Jump straight to setup, controls, and reports.
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
       {accountingNavGroups.map((group) => (
-        <section key={group.title} className="rounded-md border border-border bg-background p-3">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {group.title}
-            {group.eyebrow ? <span className="ml-2 normal-case tracking-normal opacity-70">{group.eyebrow}</span> : null}
+        <section
+          key={group.title}
+          className="rounded-xl border border-border/50 bg-background/60 p-3"
+        >
+          <div className="mb-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {group.title}
+            </div>
+            {group.eyebrow ? (
+              <div className="mt-1 text-xs text-muted-foreground">{group.eyebrow}</div>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             {group.items.map((link) => {
@@ -96,10 +117,10 @@ export function AccountingNav() {
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    "inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors",
+                    "inline-flex h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors",
                     active
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      ? "border-primary/80 bg-primary text-primary-foreground shadow-sm"
+                      : "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                   )}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
@@ -110,6 +131,7 @@ export function AccountingNav() {
           </div>
         </section>
       ))}
+      </div>
     </nav>
   );
 }

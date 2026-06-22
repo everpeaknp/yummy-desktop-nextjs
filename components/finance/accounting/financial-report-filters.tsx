@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import { Download, RefreshCw } from "lucide-react";
+import type { DateRange } from "react-day-picker";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,28 +14,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DateRangeDropdown,
+  type DateRangePreset,
+} from "@/components/ui/date-range-dropdown";
 
-export type DatePreset = "today" | "yesterday" | "this_week" | "this_month" | "last_month" | "custom";
+export type DatePreset = DateRangePreset;
 export type AccountingReportBasis = "posted_journals" | "finance_events" | "both";
-
-export const DATE_PRESETS: Array<{ value: DatePreset; label: string }> = [
-  { value: "today", label: "Today" },
-  { value: "yesterday", label: "Yesterday" },
-  { value: "this_week", label: "This Week" },
-  { value: "this_month", label: "This Month" },
-  { value: "last_month", label: "Last Month" },
-  { value: "custom", label: "Custom" },
-];
 
 type FinancialReportFiltersProps = {
   dateFrom: string;
   dateTo: string;
+  dateRange?: DateRange | undefined;
   station?: string;
   businessLine?: string;
   reportBasis?: AccountingReportBasis;
   datePreset?: DatePreset;
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
+  onDateRangeChange?: (value: DateRange | undefined) => void;
   onStationChange?: (value: string) => void;
   onBusinessLineChange?: (value: string) => void;
   onReportBasisChange?: (value: AccountingReportBasis) => void;
@@ -50,12 +48,14 @@ type FinancialReportFiltersProps = {
 export function FinancialReportFilters({
   dateFrom,
   dateTo,
+  dateRange,
   station = "",
   businessLine = "restaurant",
   reportBasis = "posted_journals",
   datePreset = "custom",
   onDateFromChange,
   onDateToChange,
+  onDateRangeChange,
   onStationChange,
   onBusinessLineChange,
   onReportBasisChange,
@@ -89,42 +89,33 @@ export function FinancialReportFilters({
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="flex flex-wrap items-end gap-3">
           <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">Preset</Label>
-            <Select value={datePreset} onValueChange={(value) => onDatePresetChange?.(value as DatePreset)}>
-              <SelectTrigger className="h-9 w-[150px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {DATE_PRESETS.map((preset) => (
-                  <SelectItem key={preset.value} value={preset.value}>
-                    {preset.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="accounting-date-from" className="text-xs text-muted-foreground">
-              From
-            </Label>
-            <Input
-              id="accounting-date-from"
-              type="date"
-              value={dateFrom}
-              onChange={(event) => onDateFromChange(event.target.value)}
-              className="h-9 w-[150px]"
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="accounting-date-to" className="text-xs text-muted-foreground">
-              To
-            </Label>
-            <Input
-              id="accounting-date-to"
-              type="date"
-              value={dateTo}
-              onChange={(event) => onDateToChange(event.target.value)}
-              className="h-9 w-[150px]"
+            <Label className="text-xs text-muted-foreground">Date range</Label>
+            <DateRangeDropdown
+              activeRange={datePreset}
+              setActiveRange={(value) => onDatePresetChange?.(value)}
+              date={dateRange}
+              setDate={(value) => {
+                onDateRangeChange?.(value);
+                const from = value?.from;
+                const to = value?.to;
+                if (from) {
+                  const year = from.getFullYear();
+                  const month = String(from.getMonth() + 1).padStart(2, "0");
+                  const day = String(from.getDate()).padStart(2, "0");
+                  onDateFromChange(`${year}-${month}-${day}`);
+                }
+                if (to) {
+                  const year = to.getFullYear();
+                  const month = String(to.getMonth() + 1).padStart(2, "0");
+                  const day = String(to.getDate()).padStart(2, "0");
+                  onDateToChange(`${year}-${month}-${day}`);
+                } else if (from) {
+                  const year = from.getFullYear();
+                  const month = String(from.getMonth() + 1).padStart(2, "0");
+                  const day = String(from.getDate()).padStart(2, "0");
+                  onDateToChange(`${year}-${month}-${day}`);
+                }
+              }}
             />
           </div>
           {onBusinessLineChange && (
@@ -167,14 +158,13 @@ export function FinancialReportFilters({
               <Input
                 id="accounting-station"
                 value={station}
-                onChange={(event) => onStationChange(event.target.value)}
-                placeholder="All stations"
+                onChange={(event: React.ChangeEvent<HTMLInputElement>) => onStationChange(event.target.value)}
+                placeholder="Leave blank for all stations"
                 className="h-9 w-[180px]"
-                list="accounting-station-options"
               />
-              <datalist id="accounting-station-options">
-                <option value="__unassigned__">Unassigned / mixed station</option>
-              </datalist>
+              <p className="text-[11px] text-muted-foreground">
+                Optional source station filter, like `bar` or `frontdesk`.
+              </p>
             </div>
           )}
         </div>

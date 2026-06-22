@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
 import {
   BadgeDollarSign,
   FileText,
@@ -12,6 +13,7 @@ import {
   RotateCcw,
   Search,
 } from "lucide-react";
+import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
@@ -21,6 +23,10 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DateRangeDropdown,
+  type DateRangePreset,
+} from "@/components/ui/date-range-dropdown";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -105,6 +111,18 @@ function defaultStartDate() {
   const date = new Date();
   date.setDate(date.getDate() - 30);
   return yyyyMmDd(date);
+}
+
+function presetToRange(preset: DateRangePreset): DateRange {
+  const now = new Date();
+  if (preset === "today") return { from: startOfDay(now), to: endOfDay(now) };
+  if (preset === "yesterday") {
+    const day = subDays(now, 1);
+    return { from: startOfDay(day), to: endOfDay(day) };
+  }
+  if (preset === "last7") return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) };
+  if (preset === "last30") return { from: startOfDay(subDays(now, 30)), to: endOfDay(now) };
+  return { from: startOfMonth(now), to: endOfMonth(now) };
 }
 
 function formatMoney(value: number | null | undefined) {
@@ -313,6 +331,8 @@ export function OperationalFinanceReportClient({ mode }: OperationalFinanceRepor
   const pathname = usePathname();
   const [dateFrom, setDateFrom] = useState(defaultStartDate);
   const [dateTo, setDateTo] = useState(() => yyyyMmDd(new Date()));
+  const [datePreset, setDatePreset] = useState<DateRangePreset>("last30");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => presetToRange("last30"));
   const [billNumber, setBillNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [loading, setLoading] = useState(false);
@@ -330,6 +350,21 @@ export function OperationalFinanceReportClient({ mode }: OperationalFinanceRepor
     };
     void checkAuth();
   }, [user, me, router]);
+
+  useEffect(() => {
+    if (datePreset === "custom") return;
+    const nextRange = presetToRange(datePreset);
+    setDateRange(nextRange);
+    if (nextRange.from) setDateFrom(format(nextRange.from, "yyyy-MM-dd"));
+    if (nextRange.to) setDateTo(format(nextRange.to, "yyyy-MM-dd"));
+  }, [datePreset]);
+
+  useEffect(() => {
+    if (datePreset !== "custom") return;
+    if (!dateRange?.from) return;
+    setDateFrom(format(dateRange.from, "yyyy-MM-dd"));
+    setDateTo(format(dateRange.to ?? dateRange.from, "yyyy-MM-dd"));
+  }, [datePreset, dateRange]);
 
   const reportParams = useMemo(
     () => ({
@@ -455,27 +490,27 @@ export function OperationalFinanceReportClient({ mode }: OperationalFinanceRepor
       <div className="flex flex-col gap-3 border-y border-border bg-muted/20 px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex flex-wrap items-end gap-3">
           <div className="grid gap-1.5">
-            <Label htmlFor="report-date-from" className="text-xs text-muted-foreground">
-              From
+            <Label className="text-xs text-muted-foreground">
+              Date range
             </Label>
-            <Input
-              id="report-date-from"
-              type="date"
-              value={dateFrom}
-              onChange={(event) => setDateFrom(event.target.value)}
-              className="h-9 w-[150px]"
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="report-date-to" className="text-xs text-muted-foreground">
-              To
-            </Label>
-            <Input
-              id="report-date-to"
-              type="date"
-              value={dateTo}
-              onChange={(event) => setDateTo(event.target.value)}
-              className="h-9 w-[150px]"
+            <DateRangeDropdown
+              activeRange={datePreset}
+              setActiveRange={setDatePreset}
+              date={dateRange}
+              setDate={(value) => {
+                setDatePreset("custom");
+                setDateRange(value);
+                const from = value?.from;
+                const to = value?.to;
+                if (from) {
+                  setDateFrom(format(from, "yyyy-MM-dd"));
+                }
+                if (to) {
+                  setDateTo(format(to, "yyyy-MM-dd"));
+                } else if (from) {
+                  setDateTo(format(from, "yyyy-MM-dd"));
+                }
+              }}
             />
           </div>
           <div className="grid gap-1.5">

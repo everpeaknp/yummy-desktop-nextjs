@@ -3,7 +3,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, BookOpen, CheckCircle2, Database, History, Loader2, PlayCircle, Scale } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Database,
+  History,
+  Loader2,
+  PlayCircle,
+  Scale,
+} from "lucide-react";
+import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
@@ -36,6 +51,7 @@ import type {
   MappingExceptionRow,
   TrialBalanceResponse,
 } from "@/types/accounting";
+import type { DatePreset } from "./financial-report-filters";
 
 function yyyyMmDd(date: Date) {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -46,6 +62,18 @@ function defaultStartDate() {
   const date = new Date();
   date.setDate(date.getDate() - 30);
   return yyyyMmDd(date);
+}
+
+function presetToRange(preset: DatePreset): DateRange {
+  const now = new Date();
+  if (preset === "today") return { from: startOfDay(now), to: endOfDay(now) };
+  if (preset === "yesterday") {
+    const day = subDays(now, 1);
+    return { from: startOfDay(day), to: endOfDay(day) };
+  }
+  if (preset === "last7") return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) };
+  if (preset === "last30") return { from: startOfDay(subDays(now, 30)), to: endOfDay(now) };
+  return { from: startOfMonth(now), to: endOfMonth(now) };
 }
 
 function formatMoney(value: number) {
@@ -100,7 +128,7 @@ function formatHealthValue(item: AccountingHealthItem) {
 
 const accountingShortcutGroups = [
   {
-    title: "Daily controls",
+    title: "Reports",
     items: [
       {
         label: "Trial Balance",
@@ -113,16 +141,6 @@ const accountingShortcutGroups = [
         description: "Review journal lines by account.",
       },
       {
-        label: "Cash Flow",
-        href: "/finance/accounting/cash-flow",
-        description: "Track cash inflows and outflows.",
-      },
-    ],
-  },
-  {
-    title: "Financial statements",
-    items: [
-      {
         label: "Profit & Loss",
         href: "/finance/accounting/profit-loss",
         description: "Revenue, costs, and profit.",
@@ -133,49 +151,39 @@ const accountingShortcutGroups = [
         description: "Assets, liabilities, and equity.",
       },
       {
-        label: "VAT Summary",
-        href: "/finance/accounting/vat-summary",
-        description: "Taxable sales and tax payable.",
-      },
-    ],
-  },
-  {
-    title: "People ledgers",
-    items: [
-      {
         label: "Customer Ledger",
         href: "/finance/accounting/customer-ledger",
         description: "Customer receivables activity.",
       },
       {
-        label: "Supplier Ledger",
-        href: "/finance/accounting/supplier-ledger",
-        description: "Supplier payable activity.",
-      },
-      {
-        label: "AR/AP Aging",
-        href: "/finance/accounting/ar-aging",
-        description: "Outstanding balances by age.",
+        label: "Cash Flow",
+        href: "/finance/accounting/cash-flow",
+        description: "Track cash inflows and outflows.",
       },
     ],
   },
   {
-    title: "Setup",
+    title: "Operations",
     items: [
-      {
-        label: "Chart of Accounts",
-        href: "/finance/accounting/chart-of-accounts",
-        description: "Manage account structure.",
-      },
       {
         label: "Ledger Mappings",
         href: "/finance/accounting/ledger-mapping",
-        description: "Map finance events to accounts.",
+        description: "Fix suspense postings and map finance events.",
       },
       {
         label: "Opening Balances",
         href: "/finance/accounting/opening-balances",
-        description: "Set starting balances.",
+        description: "Set the starting balances needed for clean reports.",
+      },
+      {
+        label: "Day Closes",
+        href: "/finance/accounting/day-closes",
+        description: "Review daily close evidence and posting status.",
+      },
+      {
+        label: "Settlements",
+        href: "/finance/accounting/settlements",
+        description: "Reconcile card, QR, and bank settlement batches.",
       },
     ],
   },
@@ -187,6 +195,8 @@ export function AccountingOverviewClient() {
   const router = useRouter();
   const [dateFrom, setDateFrom] = useState(defaultStartDate);
   const [dateTo, setDateTo] = useState(() => yyyyMmDd(new Date()));
+  const [datePreset, setDatePreset] = useState<DatePreset>("last30");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => presetToRange("last30"));
   const [station, setStation] = useState("");
   const [trialBalance, setTrialBalance] = useState<TrialBalanceResponse | null>(null);
   const [mappingExceptions, setMappingExceptions] = useState<MappingExceptionReportResponse | null>(null);
@@ -207,6 +217,8 @@ export function AccountingOverviewClient() {
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const [drilldownData, setDrilldownData] = useState<AccountingDrilldownResponse | null>(null);
   const [repostBusyKey, setRepostBusyKey] = useState<string | null>(null);
+  const [showHealthyChecks, setShowHealthyChecks] = useState(false);
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false);
 
   const canView = hasPermission(user, "finance.accounting.view");
   const canRunBackfill = hasPermission(user, "finance.ledger.backfill");
@@ -220,6 +232,21 @@ export function AccountingOverviewClient() {
     };
     void checkAuth();
   }, [user, me, router]);
+
+  useEffect(() => {
+    if (datePreset === "custom") return;
+    const nextRange = presetToRange(datePreset);
+    setDateRange(nextRange);
+    if (nextRange.from) setDateFrom(format(nextRange.from, "yyyy-MM-dd"));
+    if (nextRange.to) setDateTo(format(nextRange.to, "yyyy-MM-dd"));
+  }, [datePreset]);
+
+  useEffect(() => {
+    if (datePreset !== "custom") return;
+    if (!dateRange?.from) return;
+    setDateFrom(format(dateRange.from, "yyyy-MM-dd"));
+    setDateTo(format(dateRange.to ?? dateRange.from, "yyyy-MM-dd"));
+  }, [datePreset, dateRange]);
 
   const loadTrialBalance = useCallback(async () => {
     if (!restaurantId || !canView) return;
@@ -492,6 +519,36 @@ export function AccountingOverviewClient() {
     ];
   }, [accountingHealth]);
 
+  const issueItems = useMemo(
+    () => healthItems.filter((item) => item.status && item.status !== "ok"),
+    [healthItems]
+  );
+
+  const healthyItems = useMemo(
+    () => healthItems.filter((item) => item.status === "ok"),
+    [healthItems]
+  );
+
+  const priorityActions = useMemo(() => {
+    return [
+      {
+        title: "Resolve Exceptions",
+        href: "/finance/accounting/ledger-mapping",
+        description: "Fix suspense postings and missing mappings first.",
+      },
+      {
+        title: "Opening Balances",
+        href: "/finance/accounting/opening-balances",
+        description: "Post starting balances if the balance sheet is incomplete.",
+      },
+      {
+        title: "Open Reports",
+        href: "/finance/accounting/trial-balance",
+        description: "Jump into trial balance, ledgers, and statements.",
+      },
+    ];
+  }, []);
+
   if (!user) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -542,7 +599,14 @@ export function AccountingOverviewClient() {
       <FinancialReportFilters
         dateFrom={dateFrom}
         dateTo={dateTo}
+        dateRange={dateRange}
+        datePreset={datePreset}
         station={station}
+        onDateRangeChange={(value) => {
+          setDatePreset("custom");
+          setDateRange(value);
+        }}
+        onDatePresetChange={setDatePreset}
         onDateFromChange={setDateFrom}
         onDateToChange={setDateTo}
         onStationChange={setStation}
@@ -552,48 +616,182 @@ export function AccountingOverviewClient() {
         exportDisabled={!trialBalance?.rows.length}
       />
 
-      <Card>
-        <CardHeader className="border-b border-border p-4">
-          <CardTitle className="flex items-center justify-between gap-3 text-base">
-            <span className="flex items-center gap-2">
-              {accountingHealth?.status === "ok" ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-amber-600" />
-              )}
-              {ACCOUNTING_HEALTH_LABEL}
-            </span>
-            <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${healthStatusClasses(accountingHealth?.status)}`}>
-              {accountingHealth?.status ?? "loading"}
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4">
-          {loading && healthItems.length === 0 ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading accounting health...
-            </div>
-          ) : healthItems.length === 0 ? (
-            <div className="text-sm text-muted-foreground">Accounting health is not available.</div>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {healthItems.map((item) => (
-                <div key={item.key} className={`border p-3 ${healthStatusClasses(item.status)}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide opacity-80">{item.label}</div>
-                      <div className="mt-1 text-xl font-bold">{formatHealthValue(item)}</div>
+      <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
+        <Card className="overflow-hidden border-border/60">
+          <CardHeader className="border-b border-border p-4">
+            <CardTitle className="flex flex-wrap items-center justify-between gap-3 text-base">
+              <span className="flex items-center gap-2">
+                {accountingHealth?.status === "ok" ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                )}
+                {ACCOUNTING_HEALTH_LABEL}
+              </span>
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${healthStatusClasses(
+                  accountingHealth?.status
+                )}`}
+              >
+                {accountingHealth?.status ?? "loading"}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 p-4">
+            {loading && healthItems.length === 0 ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading accounting health...
+              </div>
+            ) : healthItems.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Accounting health is not available.</div>
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Needs attention
                     </div>
-                    <span className="text-xs font-semibold uppercase">{item.status}</span>
+                    <div className="mt-2 text-3xl font-bold">{issueItems.length}</div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      Warnings, blockers, or unknown checks in the current scope.
+                    </p>
                   </div>
-                  <p className="mt-2 text-xs leading-5 opacity-90">{item.message}</p>
+                  <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Healthy checks
+                    </div>
+                    <div className="mt-2 text-3xl font-bold">{healthyItems.length}</div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      Checks already passing for this period and station scope.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Current priority
+                    </div>
+                    <div className="mt-2 text-base font-semibold">
+                      {issueItems[0]?.label ?? "No urgent accounting issues"}
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {issueItems[0]?.message ?? "You can move straight into reports or daily review."}
+                    </p>
+                  </div>
                 </div>
+
+                {issueItems.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold">Issues to work through first</div>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {issueItems.map((item) => (
+                        <div
+                          key={item.key}
+                          className={`rounded-xl border p-3 ${healthStatusClasses(item.status)}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-xs font-semibold uppercase tracking-wide opacity-80">
+                                {item.label}
+                              </div>
+                              <div className="mt-1 text-xl font-bold">{formatHealthValue(item)}</div>
+                            </div>
+                            <span className="text-xs font-semibold uppercase">{item.status}</span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 opacity-90">{item.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-300">
+                    All accounting health checks in this scope are currently clear.
+                  </div>
+                )}
+
+                {healthyItems.length > 0 ? (
+                  <div className="rounded-xl border border-border/60 bg-background/50">
+                    <button
+                      type="button"
+                      onClick={() => setShowHealthyChecks((value) => !value)}
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold">Healthy checks</div>
+                        <div className="text-xs text-muted-foreground">
+                          {healthyItems.length} checks are already OK.
+                        </div>
+                      </div>
+                      {showHealthyChecks ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </button>
+                    {showHealthyChecks ? (
+                      <div className="grid gap-3 border-t border-border/60 p-4 md:grid-cols-2 xl:grid-cols-3">
+                        {healthyItems.map((item) => (
+                          <div
+                            key={item.key}
+                            className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                                  {item.label}
+                                </div>
+                                <div className="mt-1 text-xl font-bold text-foreground">
+                                  {formatHealthValue(item)}
+                                </div>
+                              </div>
+                              <span className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-300">
+                                ok
+                              </span>
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                              {item.message}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
+          <Card className="border-border/60">
+            <CardHeader className="border-b border-border p-4">
+              <CardTitle className="text-base">Next actions</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 p-4">
+              {priorityActions.map((action) => (
+                <Link
+                  key={action.href}
+                  href={action.href}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/10 px-4 py-3 transition-colors hover:bg-muted/40"
+                >
+                  <div>
+                    <div className="text-sm font-semibold">{action.title}</div>
+                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {action.description}
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </Link>
               ))}
+            </CardContent>
+          </Card>
+
+          {postResult && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
+              Posted {postResult.posted_count} journal entries and skipped {postResult.skipped_count}.
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <div className="grid gap-4 md:grid-cols-4">
         {summary.map((item) => (
@@ -605,12 +803,6 @@ export function AccountingOverviewClient() {
           </Card>
         ))}
       </div>
-
-      {postResult && (
-        <div className="border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
-          Posted {postResult.posted_count} journal entries and skipped {postResult.skipped_count}.
-        </div>
-      )}
 
       <MappingExceptionBanner
         missingCount={mappingExceptions?.missing_mapping_count ?? 0}
@@ -625,40 +817,7 @@ export function AccountingOverviewClient() {
         busyKey={repostBusyKey}
       />
 
-      <section className="grid gap-3 md:grid-cols-3">
-        <Link href="/finance/accounting/ledger-mapping">
-          <Button variant="outline" className="h-auto w-full justify-start p-4 text-left">
-            <div>
-              <div className="font-semibold">Resolve Exceptions</div>
-              <div className="text-xs font-normal text-muted-foreground">
-                Fix suspense postings by adding or updating mappings.
-              </div>
-            </div>
-          </Button>
-        </Link>
-        <Link href="/finance/accounting/vouchers">
-          <Button variant="outline" className="h-auto w-full justify-start p-4 text-left">
-            <div>
-              <div className="font-semibold">Create Voucher</div>
-              <div className="text-xs font-normal text-muted-foreground">
-                Post manual adjustments through approval.
-              </div>
-            </div>
-          </Button>
-        </Link>
-        <Link href="/finance/accounting/trial-balance">
-          <Button variant="outline" className="h-auto w-full justify-start p-4 text-left">
-            <div>
-              <div className="font-semibold">Open Reports</div>
-              <div className="text-xs font-normal text-muted-foreground">
-                Start with trial balance, ledger, P&L, and balance sheet.
-              </div>
-            </div>
-          </Button>
-        </Link>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-4">
+      <section className="grid gap-4 lg:grid-cols-2">
         {accountingShortcutGroups.map((group) => (
           <Card key={group.title}>
             <CardHeader className="border-b border-border p-4">
@@ -697,110 +856,10 @@ export function AccountingOverviewClient() {
           <Card>
             <CardHeader className="p-4 pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
-                <Database className="h-4 w-4" />
-                Historical Backfill
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 p-4 text-sm">
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  onClick={runBackfillDryRun}
-                  disabled={backfillLoading || commitLoading || !canRunBackfill}
-                  title={!canRunBackfill ? "Accounting backfill requires finance.ledger.backfill permission." : undefined}
-                >
-                  {backfillLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <PlayCircle className="mr-2 h-4 w-4" />
-                  )}
-                  Dry Run Backfill
-                </Button>
-                <Button
-                  onClick={commitBackfill}
-                  disabled={!dryRunResult || backfillLoading || commitLoading || !canRunBackfill}
-                  title={!canRunBackfill ? "Accounting backfill requires finance.ledger.backfill permission." : undefined}
-                >
-                  {commitLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                  )}
-                  Commit Backfill
-                </Button>
-              </div>
-
-              <div className="grid gap-2 border-y border-border py-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Expected journals</span>
-                  <span className="font-semibold">{dryRunResult?.expected_journal_count ?? 0}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Missing mappings</span>
-                  <span className="font-semibold">{dryRunResult?.missing_mapping_count ?? 0}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Suspense amount</span>
-                  <span className="font-semibold">{formatMoney(dryRunResult?.suspense_amount ?? 0)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Journals posted</span>
-                  <span className="font-semibold">{commitResult?.journals_posted ?? 0}</span>
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-2 flex items-center gap-2 font-semibold">
-                  <History className="h-4 w-4" />
-                  Backfill Runs
-                </div>
-                {backfillRuns.length === 0 ? (
-                  <div className="text-muted-foreground">No backfill runs recorded.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {backfillRuns.map((run) => (
-                      <div key={run.id} className="border border-border px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium capitalize">{run.mode.replace(/_/g, " ")}</span>
-                          <span className="text-xs text-muted-foreground">{formatRunTime(run.created_at)}</span>
-                        </div>
-                        <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                          <span>Status: {run.status}</span>
-                          <span>Posted: {run.journals_posted}</span>
-                          <span>Missing: {run.missing_mapping_count}</span>
-                          <span>Skipped: {run.journals_skipped}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="p-4 pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
                 <BookOpen className="h-4 w-4" />
-                Accounting Flow
+                Overview shortcuts
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 p-4 text-sm">
-              <div className="flex items-center justify-between border-b border-border pb-2">
-                <span className="text-muted-foreground">Finance events</span>
-                <span className="font-semibold">Source</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-border pb-2">
-                <span className="text-muted-foreground">Journal entries</span>
-                <span className="font-semibold">Posted</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Trial balance</span>
-                <span className="font-semibold">Report</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
             <CardContent className="grid gap-2 p-4">
               <Link href="/finance/accounting/chart-of-accounts">
                 <Button variant="outline" className="w-full justify-start">
@@ -817,7 +876,112 @@ export function AccountingOverviewClient() {
                   Trial Balance Report
                 </Button>
               </Link>
+              <Link href="/finance/accounting/vouchers">
+                <Button variant="outline" className="w-full justify-start">
+                  Create Voucher
+                </Button>
+              </Link>
             </CardContent>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowAdvancedTools((value) => !value)}
+              className="flex w-full items-center justify-between gap-3 p-4 text-left"
+            >
+              <div>
+                <div className="flex items-center gap-2 text-base font-semibold">
+                  <Database className="h-4 w-4" />
+                  Advanced tools
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Backfill and recovery tools for accounting repair work.
+                </div>
+              </div>
+              {showAdvancedTools ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+            {showAdvancedTools ? (
+              <CardContent className="space-y-4 border-t border-border p-4 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={runBackfillDryRun}
+                    disabled={backfillLoading || commitLoading || !canRunBackfill}
+                    title={!canRunBackfill ? "Accounting backfill requires finance.ledger.backfill permission." : undefined}
+                  >
+                    {backfillLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <PlayCircle className="mr-2 h-4 w-4" />
+                    )}
+                    Dry Run
+                  </Button>
+                  <Button
+                    onClick={commitBackfill}
+                    disabled={!dryRunResult || backfillLoading || commitLoading || !canRunBackfill}
+                    title={!canRunBackfill ? "Accounting backfill requires finance.ledger.backfill permission." : undefined}
+                  >
+                    {commitLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                    )}
+                    Commit
+                  </Button>
+                </div>
+
+                <div className="grid gap-2 border-y border-border py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Expected journals</span>
+                    <span className="font-semibold">{dryRunResult?.expected_journal_count ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Missing mappings</span>
+                    <span className="font-semibold">{dryRunResult?.missing_mapping_count ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Suspense amount</span>
+                    <span className="font-semibold">{formatMoney(dryRunResult?.suspense_amount ?? 0)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Journals posted</span>
+                    <span className="font-semibold">{commitResult?.journals_posted ?? 0}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center gap-2 font-semibold">
+                    <History className="h-4 w-4" />
+                    Backfill Runs
+                  </div>
+                  {backfillRuns.length === 0 ? (
+                    <div className="text-muted-foreground">No backfill runs recorded.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {backfillRuns.map((run) => (
+                        <div key={run.id} className="rounded-lg border border-border px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium capitalize">{run.mode.replace(/_/g, " ")}</span>
+                            <span className="text-xs text-muted-foreground">{formatRunTime(run.created_at)}</span>
+                          </div>
+                          <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                            <span>Status: {run.status}</span>
+                            <span>Posted: {run.journals_posted}</span>
+                            <span>Missing: {run.missing_mapping_count}</span>
+                            <span>Skipped: {run.journals_skipped}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            ) : null}
           </Card>
         </div>
       </div>
