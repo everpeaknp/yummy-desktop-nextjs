@@ -4,111 +4,52 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
 import {
+  CalendarDays,
+  Check,
   Copy,
+  Download,
   Fingerprint,
   Loader2,
   Plus,
   QrCode,
   RefreshCw,
   Smartphone,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
-import { AttendanceApis, StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
+import { StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
+import { attendanceApi } from "@/lib/attendance/api";
+import type {
+  AttendanceDevice,
+  AttendanceEntry,
+  AttendanceMobileDevice,
+  AttendanceOverview,
+  AttendanceQrSession,
+  AttendanceSchedule,
+  AttendanceShiftTemplate,
+  StaffDeviceMapping,
+} from "@/lib/attendance/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-type BaseResponse<T> = {
-  status: string;
-  message?: string;
-  data: T;
-};
+type StaffProfile = { id: number; user_id: number; account_number?: string };
+type StaffUser = { id: number; name?: string; full_name?: string; email?: string };
 
-type AttendanceQrSession = {
-  id: number;
-  token: string;
-  station_label?: string | null;
-  expires_at: string;
-  is_active: boolean;
-};
-
-type AttendanceDevice = {
-  id: number;
-  name: string;
-  device_type: "zkteco_lan" | "zkteco_cloud" | "generic_import";
-  serial_number: string;
-  ip_address?: string | null;
-  port?: number | null;
-  timezone: string;
-  is_active: boolean;
-  last_sync_at?: string | null;
-};
-
-type StaffDeviceMapping = {
-  id: number;
-  device_id: number;
-  staff_id: number;
-  device_user_id: string;
-  is_active: boolean;
-};
-
-type StaffProfile = {
-  id: number;
-  user_id: number;
-  account_number?: string;
-};
-
-type StaffUser = {
-  id: number;
-  name?: string;
-  full_name?: string;
-  email?: string;
-};
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const deviceTypeLabels: Record<AttendanceDevice["device_type"], string> = {
   zkteco_lan: "ZKTeco LAN",
   zkteco_cloud: "ZKTeco cloud",
   generic_import: "Generic import",
 };
-
-function errorMessage(error: unknown, fallback: string) {
-  const candidate = error as {
-    response?: { data?: { message?: string; detail?: string } };
-    message?: string;
-  };
-  return (
-    candidate.response?.data?.message ||
-    candidate.response?.data?.detail ||
-    candidate.message ||
-    fallback
-  );
-}
 
 function formatDateTime(value?: string | null) {
   if (!value) return "Never";
@@ -122,604 +63,503 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
-function staffLabel(profile: StaffProfile, usersById: Map<number, StaffUser>) {
+function minutesLabel(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return String(hours) + "h " + String(rest).padStart(2, "0") + "m";
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  const candidate = error as { response?: { data?: { message?: string; detail?: string | { message?: string } } }; message?: string };
+  const detail = candidate.response?.data?.detail;
+  return (
+    candidate.response?.data?.message ||
+    (typeof detail === "string" ? detail : detail?.message) ||
+    candidate.message ||
+    fallback
+  );
+}
+
+function staffLabel(profile: StaffProfile | undefined, usersById: Map<number, StaffUser>) {
+  if (!profile) return "Unknown staff";
   const user = usersById.get(profile.user_id);
-  return user?.name || user?.full_name || user?.email || `Staff #${profile.id}`;
+  return user?.name || user?.full_name || user?.email || profile.account_number || "Staff #" + profile.id;
 }
 
 export function AttendanceAdminClient() {
-  const [qrSession, setQrSession] = useState<AttendanceQrSession | null>(null);
-  const [qrDataUrl, setQrDataUrl] = useState("");
-  const [qrLoading, setQrLoading] = useState(false);
-  const [stationLabel, setStationLabel] = useState("Restaurant attendance");
-  const [ttlSeconds, setTtlSeconds] = useState("60");
-
+  const [activeTab, setActiveTab] = useState("overview");
+  const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState(todayIso());
+  const [dateTo, setDateTo] = useState(todayIso());
+  const [overview, setOverview] = useState<AttendanceOverview | null>(null);
+  const [entries, setEntries] = useState<AttendanceEntry[]>([]);
+  const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
+  const [schedules, setSchedules] = useState<AttendanceSchedule[]>([]);
   const [devices, setDevices] = useState<AttendanceDevice[]>([]);
   const [mappings, setMappings] = useState<StaffDeviceMapping[]>([]);
+  const [mobileDevices, setMobileDevices] = useState<AttendanceMobileDevice[]>([]);
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
-  const [devicesLoading, setDevicesLoading] = useState(true);
-  const [deviceSubmitting, setDeviceSubmitting] = useState(false);
-  const [mappingSubmitting, setMappingSubmitting] = useState(false);
+  const [qrSession, setQrSession] = useState<AttendanceQrSession | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [stationLabel, setStationLabel] = useState("Restaurant attendance");
+  const [ttlSeconds, setTtlSeconds] = useState("60");
+  const [pairingCode, setPairingCode] = useState<{ code: string; expires_at: string } | null>(null);
+  const [deviceForm, setDeviceForm] = useState({ name: "", serial_number: "", ip_address: "", port: "4370", timezone: "Asia/Kathmandu" });
+  const [mappingForm, setMappingForm] = useState({ device_id: "", staff_id: "", device_user_id: "" });
+  const [templateForm, setTemplateForm] = useState({ name: "", start_local_time: "09:00", end_local_time: "17:00", unpaid_break_minutes: "30" });
+  const [scheduleForm, setScheduleForm] = useState({ staff_id: "default", shift_template_id: "", weekday: "1", effective_from: todayIso() });
+  const [busy, setBusy] = useState(false);
 
-  const [deviceForm, setDeviceForm] = useState({
-    name: "",
-    serial_number: "",
-    ip_address: "",
-    port: "4370",
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-  });
-
-  const [mappingForm, setMappingForm] = useState({
-    device_id: "",
-    staff_id: "",
-    device_user_id: "",
-  });
+  const usersById = useMemo(() => new Map(staffUsers.map((user) => [user.id, user])), [staffUsers]);
+  const devicesById = useMemo(() => new Map(devices.map((device) => [device.id, device])), [devices]);
 
   const qrPayload = useMemo(() => {
     if (!qrSession?.token) return "";
-    return `yummy-attendance://clock?token=${encodeURIComponent(qrSession.token)}`;
+    return "yummy-attendance://clock?token=" + encodeURIComponent(qrSession.token);
   }, [qrSession?.token]);
 
-  async function copyQrPayload() {
-    if (!qrPayload) return;
+  const loadAll = useCallback(async () => {
+    setLoading(true);
     try {
-      await navigator.clipboard.writeText(qrPayload);
-      toast.success("QR payload copied");
-    } catch {
-      toast.error("Could not copy QR payload");
+      const [overviewData, entryData, templateData, scheduleData, deviceData, mappingData, mobileData, profilesRes, usersRes] = await Promise.all([
+        attendanceApi.overview(dateFrom, dateTo),
+        attendanceApi.listEntries({ dateFrom, dateTo, limit: 300 }),
+        attendanceApi.listShiftTemplates(),
+        attendanceApi.listSchedules(),
+        attendanceApi.listDevices(),
+        attendanceApi.listDeviceMappings(),
+        attendanceApi.listMobileDevices(),
+        apiClient.get(StaffProfileApis.list({ limit: 500 })),
+        apiClient.get(StaffApis.list()),
+      ]);
+      setOverview(overviewData);
+      setEntries(entryData);
+      setTemplates(templateData);
+      setSchedules(scheduleData);
+      setDevices(deviceData);
+      setMappings(mappingData);
+      setMobileDevices(mobileData);
+      setStaffProfiles(profilesRes.data?.data || []);
+      setStaffUsers(usersRes.data?.data || []);
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to load attendance"));
+    } finally {
+      setLoading(false);
     }
-  }
+  }, [dateFrom, dateTo]);
 
-  const usersById = useMemo(() => {
-    return new Map(staffUsers.map((user) => [user.id, user]));
-  }, [staffUsers]);
-
-  const devicesById = useMemo(() => {
-    return new Map(devices.map((device) => [device.id, device]));
-  }, [devices]);
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
 
   useEffect(() => {
     if (!qrPayload) {
       setQrDataUrl("");
       return;
     }
-
-    let cancelled = false;
-    QRCode.toDataURL(qrPayload, {
-      width: 360,
-      margin: 1,
-      errorCorrectionLevel: "M",
-      color: { dark: "#111827", light: "#ffffff" },
-    })
-      .then((dataUrl) => {
-        if (!cancelled) setQrDataUrl(dataUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setQrDataUrl("");
-        toast.error("Failed to render attendance QR");
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    QRCode.toDataURL(qrPayload, { margin: 2, width: 520, color: { dark: "#111827", light: "#ffffff" } })
+      .then(setQrDataUrl)
+      .catch(() => toast.error("Failed to render attendance QR"));
   }, [qrPayload]);
 
-  const loadDeviceAdminData = useCallback(async () => {
-    setDevicesLoading(true);
-    try {
-      const [devicesRes, mappingsRes, profilesRes, usersRes] = await Promise.all([
-        apiClient.get<BaseResponse<AttendanceDevice[]>>(AttendanceApis.listDevices),
-        apiClient.get<BaseResponse<StaffDeviceMapping[]>>(AttendanceApis.listDeviceMappings()),
-        apiClient.get<BaseResponse<StaffProfile[]>>(StaffProfileApis.list({ skip: 0, limit: 500 })),
-        apiClient.get<BaseResponse<StaffUser[]>>(StaffApis.list()),
-      ]);
-      const nextDevices = devicesRes.data.data || [];
-      setDevices(nextDevices);
-      setMappings(mappingsRes.data.data || []);
-      setStaffProfiles(profilesRes.data.data || []);
-      setStaffUsers(usersRes.data.data || []);
-      if (nextDevices[0]) {
-        setMappingForm((current) =>
-          current.device_id ? current : { ...current, device_id: String(nextDevices[0].id) }
-        );
-      }
-    } catch (error) {
-      toast.error(errorMessage(error, "Failed to load attendance devices"));
-    } finally {
-      setDevicesLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadDeviceAdminData();
-  }, [loadDeviceAdminData]);
-
   async function createQrSession() {
-    const ttl = Math.max(15, Math.min(300, Number.parseInt(ttlSeconds, 10) || 60));
-    setQrLoading(true);
+    setBusy(true);
     try {
-      const response = await apiClient.post<BaseResponse<AttendanceQrSession>>(
-        AttendanceApis.createQrSession,
-        {
-          station_label: stationLabel.trim() || "Restaurant attendance",
-          ttl_seconds: ttl,
-        }
-      );
-      setQrSession(response.data.data);
+      const ttl = Math.min(300, Math.max(15, Number.parseInt(ttlSeconds, 10) || 60));
+      const session = await attendanceApi.createQrSession({ station_label: stationLabel.trim(), ttl_seconds: ttl });
+      setQrSession(session);
       toast.success("Attendance QR generated");
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to generate attendance QR"));
+      toast.error(errorMessage(error, "Failed to generate QR"));
     } finally {
-      setQrLoading(false);
+      setBusy(false);
+    }
+  }
+
+  async function copy(text: string, message: string) {
+    await navigator.clipboard.writeText(text);
+    toast.success(message);
+  }
+
+  async function submitEntry(entry: AttendanceEntry) {
+    setBusy(true);
+    try {
+      await attendanceApi.submitEntry(entry.id, "Submitted from web");
+      await loadAll();
+      toast.success("Attendance submitted");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to submit attendance"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveEntry(entry: AttendanceEntry) {
+    const approved = Number.parseInt(window.prompt("Approved overtime minutes", String(entry.overtime_minutes || 0)) || "", 10);
+    if (Number.isNaN(approved) || approved < 0 || approved > entry.overtime_minutes) return;
+    const rejected = entry.overtime_minutes - approved;
+    setBusy(true);
+    try {
+      await attendanceApi.approveEntry(entry.id, { approved_overtime_minutes: approved, rejected_overtime_minutes: rejected, reason: "Approved from web" });
+      await loadAll();
+      toast.success("Attendance approved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to approve attendance"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rejectEntry(entry: AttendanceEntry) {
+    const reason = window.prompt("Rejection reason");
+    if (!reason) return;
+    setBusy(true);
+    try {
+      await attendanceApi.rejectEntry(entry.id, reason);
+      await loadAll();
+      toast.success("Attendance rejected");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to reject attendance"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createTemplate() {
+    if (!templateForm.name.trim()) return toast.error("Shift name is required");
+    setBusy(true);
+    try {
+      await attendanceApi.createShiftTemplate({
+        name: templateForm.name.trim(),
+        start_local_time: templateForm.start_local_time,
+        end_local_time: templateForm.end_local_time,
+        unpaid_break_minutes: Number.parseInt(templateForm.unpaid_break_minutes, 10) || 0,
+        is_active: true,
+      });
+      setTemplateForm((current) => ({ ...current, name: "" }));
+      await loadAll();
+      toast.success("Shift template created");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to create shift"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createSchedule() {
+    if (!scheduleForm.shift_template_id) return toast.error("Select a shift template");
+    setBusy(true);
+    try {
+      await attendanceApi.createSchedule({
+        staff_id: scheduleForm.staff_id === "default" ? null : Number(scheduleForm.staff_id),
+        shift_template_id: Number(scheduleForm.shift_template_id),
+        weekday: Number(scheduleForm.weekday),
+        effective_from: scheduleForm.effective_from,
+        is_day_off: false,
+      });
+      await loadAll();
+      toast.success("Schedule saved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to save schedule"));
+    } finally {
+      setBusy(false);
     }
   }
 
   async function createDevice() {
-    const name = deviceForm.name.trim();
-    const serialNumber = deviceForm.serial_number.trim();
-    if (!name || !serialNumber) {
-      toast.error("Device name and serial number are required");
-      return;
-    }
-
-    setDeviceSubmitting(true);
+    if (!deviceForm.name.trim() || !deviceForm.serial_number.trim()) return toast.error("Device name and serial are required");
+    setBusy(true);
     try {
-      await apiClient.post<BaseResponse<AttendanceDevice>>(AttendanceApis.createDevice, {
-        name,
+      await attendanceApi.createDevice({
+        name: deviceForm.name.trim(),
         device_type: "zkteco_lan",
-        serial_number: serialNumber,
+        serial_number: deviceForm.serial_number.trim(),
         ip_address: deviceForm.ip_address.trim() || null,
         port: Number.parseInt(deviceForm.port, 10) || 4370,
         timezone: deviceForm.timezone.trim() || "UTC",
         is_active: true,
       });
-      setDeviceForm((current) => ({ ...current, name: "", serial_number: "", ip_address: "" }));
-      toast.success("Attendance device registered");
-      await loadDeviceAdminData();
+      setDeviceForm((current) => ({ ...current, name: "", serial_number: "" }));
+      await loadAll();
+      toast.success("Device registered");
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to register attendance device"));
+      toast.error(errorMessage(error, "Failed to register device"));
     } finally {
-      setDeviceSubmitting(false);
+      setBusy(false);
     }
   }
 
-  async function updateDeviceActive(device: AttendanceDevice, isActive: boolean) {
-    setDevices((current) =>
-      current.map((item) => (item.id === device.id ? { ...item, is_active: isActive } : item))
-    );
+  async function toggleDevice(device: AttendanceDevice, checked: boolean) {
+    setDevices((current) => current.map((item) => (item.id === device.id ? { ...item, is_active: checked } : item)));
     try {
-      await apiClient.patch<BaseResponse<AttendanceDevice>>(AttendanceApis.updateDevice(device.id), {
-        is_active: isActive,
-      });
-      toast.success(isActive ? "Device enabled" : "Device disabled");
+      await attendanceApi.updateDevice(device.id, { is_active: checked });
+      toast.success("Device updated");
     } catch (error) {
-      setDevices((current) =>
-        current.map((item) => (item.id === device.id ? { ...item, is_active: device.is_active } : item))
-      );
+      setDevices((current) => current.map((item) => (item.id === device.id ? { ...item, is_active: device.is_active } : item)));
       toast.error(errorMessage(error, "Failed to update device"));
     }
   }
 
   async function saveMapping() {
-    const deviceId = Number.parseInt(mappingForm.device_id, 10);
-    const staffId = Number.parseInt(mappingForm.staff_id, 10);
-    const deviceUserId = mappingForm.device_user_id.trim();
-    if (!deviceId || !staffId || !deviceUserId) {
-      toast.error("Select a device, staff member, and device user ID");
-      return;
-    }
-
-    setMappingSubmitting(true);
+    const deviceId = Number(mappingForm.device_id);
+    const staffId = Number(mappingForm.staff_id);
+    if (!deviceId || !staffId || !mappingForm.device_user_id.trim()) return toast.error("Device, staff, and device user ID are required");
+    setBusy(true);
     try {
-      await apiClient.post<BaseResponse<StaffDeviceMapping>>(AttendanceApis.upsertDeviceMapping, {
-        device_id: deviceId,
-        staff_id: staffId,
-        device_user_id: deviceUserId,
-        is_active: true,
-      });
+      await attendanceApi.upsertDeviceMapping({ device_id: deviceId, staff_id: staffId, device_user_id: mappingForm.device_user_id.trim(), is_active: true });
       setMappingForm((current) => ({ ...current, staff_id: "", device_user_id: "" }));
-      toast.success("Staff device mapping saved");
-      await loadDeviceAdminData();
+      await loadAll();
+      toast.success("Mapping saved");
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to save staff device mapping"));
+      toast.error(errorMessage(error, "Failed to save mapping"));
     } finally {
-      setMappingSubmitting(false);
+      setBusy(false);
     }
   }
 
+  async function createPairingCode(deviceId: number) {
+    setBusy(true);
+    try {
+      const result = await attendanceApi.createConnectorPairingCode({ device_id: deviceId, ttl_seconds: 600 });
+      setPairingCode({ code: result.code, expires_at: result.expires_at });
+      toast.success("Connector pairing code created");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to create pairing code"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function decideMobile(device: AttendanceMobileDevice, action: "approve" | "reject" | "revoke") {
+    const reason = action === "approve" ? undefined : window.prompt("Reason") || undefined;
+    if (action !== "approve" && !reason) return;
+    setBusy(true);
+    try {
+      await attendanceApi.decideMobileDevice(device.id, action, reason);
+      await loadAll();
+      toast.success("Mobile device updated");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to update mobile device"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const metricCards = [
+    ["Total entries", overview?.total_entries || 0],
+    ["Pending", overview?.pending_entries || 0],
+    ["Approved", overview?.approved_entries || 0],
+    ["Regular", minutesLabel(overview?.regular_minutes || 0)],
+    ["Overtime", minutesLabel(overview?.overtime_minutes || 0)],
+    ["Breaks", minutesLabel(overview?.break_minutes || 0)],
+  ];
+
   return (
-    <div className="mx-auto w-full max-w-[1320px] space-y-6 overflow-x-hidden p-4 pb-24 md:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-1">
+    <div className="mx-auto w-full max-w-[1440px] space-y-5 overflow-x-hidden p-4 pb-24 md:p-6 lg:p-8">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
           <h1 className="text-3xl font-black tracking-tight text-foreground">Attendance</h1>
-          <p className="text-muted-foreground font-medium">
-            Generate restaurant QR sessions and manage biometric attendance devices.
+          <p className="mt-1 max-w-3xl text-sm font-medium text-muted-foreground">
+            Review timesheets, generate restaurant QR sessions, and manage biometric attendance devices.
           </p>
         </div>
-        <Badge variant="outline" className="w-fit gap-2 px-3 py-1.5">
-          <Smartphone className="h-3.5 w-3.5" />
-          Clock-in stays on mobile
-        </Badge>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 sm:w-[160px]" />
+          <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 sm:w-[160px]" />
+          <Button variant="outline" onClick={loadAll} disabled={loading || busy}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Refresh
+          </Button>
+        </div>
       </div>
 
-      <Tabs defaultValue="qr" className="min-w-0 space-y-5">
-        <TabsList className="grid w-full grid-cols-2 sm:max-w-md">
-          <TabsTrigger value="qr" className="gap-2">
-            <QrCode className="h-4 w-4" />
-            QR kiosk
-          </TabsTrigger>
-          <TabsTrigger value="devices" className="gap-2">
-            <Fingerprint className="h-4 w-4" />
-            Devices
-          </TabsTrigger>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
+          <TabsTrigger value="overview" className="gap-2"><CalendarDays className="h-4 w-4" />Overview</TabsTrigger>
+          <TabsTrigger value="timesheets" className="gap-2"><Check className="h-4 w-4" />Timesheets</TabsTrigger>
+          <TabsTrigger value="schedules" className="gap-2"><CalendarDays className="h-4 w-4" />Schedules</TabsTrigger>
+          <TabsTrigger value="qr" className="gap-2"><QrCode className="h-4 w-4" />QR Kiosk</TabsTrigger>
+          <TabsTrigger value="devices" className="gap-2"><Fingerprint className="h-4 w-4" />Devices</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="qr" className="space-y-5">
-          <div className="grid min-w-0 gap-5 2xl:grid-cols-[360px_minmax(0,1fr)]">
-            <Card className="min-w-0">
+        <TabsContent value="overview" className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+            {metricCards.map(([label, value]) => (
+              <Card key={String(label)}>
+                <CardContent className="p-4">
+                  <p className="text-xs font-bold uppercase text-muted-foreground">{label}</p>
+                  <p className="mt-2 text-2xl font-black">{value}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Exceptions</CardTitle>
+              <CardDescription>Entries that need manager attention before payroll.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TimesheetTable entries={entries.filter((entry) => entry.exception_code || entry.approval_status === "pending" || entry.approval_status === "needs_correction")} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="timesheets">
+          <Card>
+            <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <CardTitle>Timesheets</CardTitle>
+                <CardDescription>Approve payable hours before payroll snapshot.</CardDescription>
+              </div>
+              <Button variant="outline" onClick={() => window.open(attendanceApi.exportCsvUrl(dateFrom, dateTo), "_blank")}>
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <TimesheetTable entries={entries} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="schedules" className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+          <div className="space-y-5">
+            <Card>
               <CardHeader>
-                <CardTitle className="text-xl">Generate QR session</CardTitle>
-                <CardDescription>
-                  Staff scan this code from the mobile app, then confirm device biometrics there.
-                </CardDescription>
+                <CardTitle>Shift Template</CardTitle>
+                <CardDescription>Reusable shift hours for staff schedules.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="station-label">Station label</Label>
-                  <Input
-                    id="station-label"
-                    value={stationLabel}
-                    onChange={(event) => setStationLabel(event.target.value)}
-                    placeholder="Front counter"
-                  />
+                <Field label="Name"><Input value={templateForm.name} onChange={(event) => setTemplateForm((current) => ({ ...current, name: event.target.value }))} placeholder="Morning shift" /></Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Start"><Input type="time" value={templateForm.start_local_time} onChange={(event) => setTemplateForm((current) => ({ ...current, start_local_time: event.target.value }))} /></Field>
+                  <Field label="End"><Input type="time" value={templateForm.end_local_time} onChange={(event) => setTemplateForm((current) => ({ ...current, end_local_time: event.target.value }))} /></Field>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ttl-seconds">Expiry seconds</Label>
-                  <Input
-                    id="ttl-seconds"
-                    type="number"
-                    min={15}
-                    max={300}
-                    value={ttlSeconds}
-                    onChange={(event) => setTtlSeconds(event.target.value)}
-                  />
-                </div>
-                <Button onClick={createQrSession} disabled={qrLoading} className="w-full">
-                  {qrLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                  )}
-                  {qrSession ? "Refresh QR" : "Generate QR"}
-                </Button>
+                <Field label="Unpaid break minutes"><Input type="number" value={templateForm.unpaid_break_minutes} onChange={(event) => setTemplateForm((current) => ({ ...current, unpaid_break_minutes: event.target.value }))} /></Field>
+                <Button onClick={createTemplate} disabled={busy} className="w-full"><Plus className="mr-2 h-4 w-4" />Create template</Button>
               </CardContent>
             </Card>
-
-            <Card className="min-w-0">
+            <Card>
               <CardHeader>
-                <CardTitle className="text-xl">Restaurant attendance QR</CardTitle>
-                <CardDescription>
-                  Keep this screen open at the restaurant. Use short expiry and refresh it as needed.
-                </CardDescription>
+                <CardTitle>Schedule Rule</CardTitle>
+                <CardDescription>Assign default weekly shifts or staff overrides.</CardDescription>
               </CardHeader>
-              <CardContent className="min-w-0 space-y-5">
-                <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-dashed bg-muted/20 p-4 sm:min-h-[380px]">
-                    {qrDataUrl ? (
-                      <Image
-                        src={qrDataUrl}
-                        width={360}
-                        height={360}
-                        alt="Attendance QR code"
-                        unoptimized
-                        className="h-[min(360px,72vw)] w-[min(360px,72vw)] rounded bg-white p-2"
-                      />
-                    ) : (
-                      <div className="text-center text-muted-foreground">
-                        <QrCode className="mx-auto mb-3 h-12 w-12" />
-                        <p className="text-sm font-medium">Generate a QR session to display it here.</p>
-                      </div>
-                    )}
-                  </div>
-                <div className="grid min-w-0 gap-3 md:grid-cols-2">
-                  <InfoLine label="Station" value={qrSession?.station_label || stationLabel} />
-                  <InfoLine label="Expires" value={formatDateTime(qrSession?.expires_at)} />
-                  <div className="min-w-0 rounded-md border bg-muted/40 p-3 md:col-span-2">
-                      <div className="flex min-w-0 items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                            QR payload
-                          </p>
-                          <p className="truncate font-mono text-xs text-muted-foreground">
-                            {qrPayload || "Not generated"}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={copyQrPayload}
-                          disabled={!qrPayload}
-                          className="shrink-0"
-                        >
-                          <Copy className="mr-2 h-4 w-4" />
-                          Copy
-                        </Button>
-                      </div>
-                    </div>
-                  <div className="rounded-md border bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/30 dark:text-amber-200 md:col-span-2">
-                    Web does not record attendance. Staff must scan this QR from the mobile app so
-                    the backend receives QR plus biometric confirmation.
-                  </div>
+              <CardContent className="space-y-4">
+                <Field label="Staff">
+                  <Select value={scheduleForm.staff_id} onValueChange={(value) => setScheduleForm((current) => ({ ...current, staff_id: value }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Restaurant default</SelectItem>
+                      {staffProfiles.map((profile) => <SelectItem key={profile.id} value={String(profile.id)}>{staffLabel(profile, usersById)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Template">
+                  <Select value={scheduleForm.shift_template_id} onValueChange={(value) => setScheduleForm((current) => ({ ...current, shift_template_id: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
+                    <SelectContent>{templates.map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Weekday"><Input type="number" min={0} max={6} value={scheduleForm.weekday} onChange={(event) => setScheduleForm((current) => ({ ...current, weekday: event.target.value }))} /></Field>
+                  <Field label="Effective from"><Input type="date" value={scheduleForm.effective_from} onChange={(event) => setScheduleForm((current) => ({ ...current, effective_from: event.target.value }))} /></Field>
                 </div>
+                <Button onClick={createSchedule} disabled={busy || templates.length === 0} className="w-full"><Plus className="mr-2 h-4 w-4" />Save schedule</Button>
               </CardContent>
             </Card>
           </div>
+          <ScheduleTable schedules={schedules} templates={templates} staffProfiles={staffProfiles} usersById={usersById} />
         </TabsContent>
 
-        <TabsContent value="devices" className="space-y-5">
-          <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-            <div className="space-y-5">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-xl">Register ZKTeco device</CardTitle>
-                  <CardDescription>
-                    Add the device identity used by the LAN sync worker.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="device-name">Device name</Label>
-                    <Input
-                      id="device-name"
-                      value={deviceForm.name}
-                      onChange={(event) =>
-                        setDeviceForm((current) => ({ ...current, name: event.target.value }))
-                      }
-                      placeholder="Main entrance scanner"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="serial-number">Serial number</Label>
-                    <Input
-                      id="serial-number"
-                      value={deviceForm.serial_number}
-                      onChange={(event) =>
-                        setDeviceForm((current) => ({ ...current, serial_number: event.target.value }))
-                      }
-                      placeholder="ZK serial number"
-                    />
-                  </div>
-                  <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="ip-address">IP address</Label>
-                      <Input
-                        id="ip-address"
-                        value={deviceForm.ip_address}
-                        onChange={(event) =>
-                          setDeviceForm((current) => ({ ...current, ip_address: event.target.value }))
-                        }
-                        placeholder="192.168.1.50"
-                      />
+        <TabsContent value="qr" className="grid min-w-0 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <Card>
+            <CardHeader>
+              <CardTitle>Generate QR Session</CardTitle>
+              <CardDescription>Staff scan this QR from the mobile app.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Field label="Station label"><Input value={stationLabel} onChange={(event) => setStationLabel(event.target.value)} /></Field>
+              <Field label="Expiry seconds"><Input type="number" min={15} max={300} value={ttlSeconds} onChange={(event) => setTtlSeconds(event.target.value)} /></Field>
+              <Button onClick={createQrSession} disabled={busy} className="w-full"><RefreshCw className="mr-2 h-4 w-4" />{qrSession ? "Refresh QR" : "Generate QR"}</Button>
+            </CardContent>
+          </Card>
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle>Restaurant Attendance QR</CardTitle>
+              <CardDescription>Web only displays the QR. Clock-in stays on approved mobile devices.</CardDescription>
+            </CardHeader>
+            <CardContent className="min-w-0 space-y-5">
+              <div className="flex min-h-[320px] items-center justify-center rounded-md border border-dashed bg-muted/20 p-3 sm:min-h-[430px]">
+                {qrDataUrl ? <Image src={qrDataUrl} width={420} height={420} alt="Attendance QR code" unoptimized className="h-[min(420px,78vw)] w-[min(420px,78vw)] rounded bg-white p-2" /> : <div className="text-center text-muted-foreground"><QrCode className="mx-auto mb-3 h-12 w-12" /><p className="text-sm font-medium">Generate a QR session to display it here.</p></div>}
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <InfoLine label="Station" value={qrSession?.station_label || stationLabel} />
+                <InfoLine label="Expires" value={formatDateTime(qrSession?.expires_at)} />
+                <div className="min-w-0 rounded-md border bg-muted/40 p-3 lg:col-span-2">
+                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase text-muted-foreground">QR payload</p>
+                      <p className="max-h-20 overflow-auto break-all font-mono text-xs text-muted-foreground">{qrPayload || "Not generated"}</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="device-port">Port</Label>
-                      <Input
-                        id="device-port"
-                        type="number"
-                        value={deviceForm.port}
-                        onChange={(event) =>
-                          setDeviceForm((current) => ({ ...current, port: event.target.value }))
-                        }
-                      />
-                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => copy(qrPayload, "QR payload copied")} disabled={!qrPayload} className="shrink-0"><Copy className="mr-2 h-4 w-4" />Copy</Button>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <Input
-                      id="timezone"
-                      value={deviceForm.timezone}
-                      onChange={(event) =>
-                        setDeviceForm((current) => ({ ...current, timezone: event.target.value }))
-                      }
-                    />
-                  </div>
-                  <Button onClick={createDevice} disabled={deviceSubmitting} className="w-full">
-                    {deviceSubmitting ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Plus className="mr-2 h-4 w-4" />
-                    )}
-                    Register device
-                  </Button>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-xl">Map staff to device user</CardTitle>
-                  <CardDescription>
-                    Match the biometric device user ID to a Yummy staff profile.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Device</Label>
-                    <Select
-                      value={mappingForm.device_id}
-                      onValueChange={(value) =>
-                        setMappingForm((current) => ({ ...current, device_id: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select device" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {devices.map((device) => (
-                          <SelectItem key={device.id} value={String(device.id)}>
-                            {device.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Staff profile</Label>
-                    <Select
-                      value={mappingForm.staff_id}
-                      onValueChange={(value) =>
-                        setMappingForm((current) => ({ ...current, staff_id: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select staff profile" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {staffProfiles.map((profile) => (
-                          <SelectItem key={profile.id} value={String(profile.id)}>
-                            {staffLabel(profile, usersById)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="device-user-id">Device user ID</Label>
-                    <Input
-                      id="device-user-id"
-                      value={mappingForm.device_user_id}
-                      onChange={(event) =>
-                        setMappingForm((current) => ({ ...current, device_user_id: event.target.value }))
-                      }
-                      placeholder="Employee number in device"
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={saveMapping}
-                    disabled={mappingSubmitting || devices.length === 0 || staffProfiles.length === 0}
-                    className="w-full"
-                  >
-                    {mappingSubmitting ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Fingerprint className="mr-2 h-4 w-4" />
-                    )}
-                    Save mapping
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-
+        <TabsContent value="devices" className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+          <div className="space-y-5">
             <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-4">
-                <div>
-                  <CardTitle className="text-xl">Registered devices</CardTitle>
-                  <CardDescription>
-                    Devices are synced by the backend worker; web only manages configuration.
-                  </CardDescription>
+              <CardHeader><CardTitle>Register ZKTeco Device</CardTitle><CardDescription>Add the physical device identity.</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                <Field label="Device name"><Input value={deviceForm.name} onChange={(event) => setDeviceForm((current) => ({ ...current, name: event.target.value }))} placeholder="Main entrance scanner" /></Field>
+                <Field label="Serial number"><Input value={deviceForm.serial_number} onChange={(event) => setDeviceForm((current) => ({ ...current, serial_number: event.target.value }))} /></Field>
+                <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
+                  <Field label="IP address"><Input value={deviceForm.ip_address} onChange={(event) => setDeviceForm((current) => ({ ...current, ip_address: event.target.value }))} placeholder="192.168.1.50" /></Field>
+                  <Field label="Port"><Input type="number" value={deviceForm.port} onChange={(event) => setDeviceForm((current) => ({ ...current, port: event.target.value }))} /></Field>
                 </div>
-                <Button variant="outline" size="sm" onClick={loadDeviceAdminData} disabled={devicesLoading}>
-                  {devicesLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                  )}
-                  Refresh
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="overflow-x-auto rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Device</TableHead>
-                        <TableHead>Connection</TableHead>
-                        <TableHead>Last sync</TableHead>
-                        <TableHead className="text-right">Active</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {devices.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                            No attendance devices registered.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        devices.map((device) => (
-                          <TableRow key={device.id}>
-                            <TableCell>
-                              <div className="font-semibold">{device.name}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {deviceTypeLabels[device.device_type]} / {device.serial_number}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {device.ip_address || "No IP"}:{device.port || 4370}
-                            </TableCell>
-                            <TableCell>{formatDateTime(device.last_sync_at)}</TableCell>
-                            <TableCell className="text-right">
-                              <Switch
-                                checked={device.is_active}
-                                onCheckedChange={(checked) => updateDeviceActive(device, checked)}
-                                aria-label={`Toggle ${device.name}`}
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-sm font-bold">Staff mappings</h2>
-                    <Badge variant="outline">{mappings.length} mapped</Badge>
-                  </div>
-                  <div className="overflow-x-auto rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Device</TableHead>
-                          <TableHead>Staff</TableHead>
-                          <TableHead>Device user ID</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {mappings.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
-                              No staff mappings saved yet.
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          mappings.map((mapping) => {
-                            const profile = staffProfiles.find((item) => item.id === mapping.staff_id);
-                            return (
-                              <TableRow key={mapping.id}>
-                                <TableCell>{devicesById.get(mapping.device_id)?.name || `Device #${mapping.device_id}`}</TableCell>
-                                <TableCell>
-                                  {profile ? staffLabel(profile, usersById) : `Staff #${mapping.staff_id}`}
-                                </TableCell>
-                                <TableCell>{mapping.device_user_id}</TableCell>
-                                <TableCell>
-                                  <Badge variant={mapping.is_active ? "default" : "secondary"}>
-                                    {mapping.is_active ? "Active" : "Inactive"}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
+                <Field label="Timezone"><Input value={deviceForm.timezone} onChange={(event) => setDeviceForm((current) => ({ ...current, timezone: event.target.value }))} /></Field>
+                <Button onClick={createDevice} disabled={busy} className="w-full"><Plus className="mr-2 h-4 w-4" />Register device</Button>
               </CardContent>
             </Card>
+            <Card>
+              <CardHeader><CardTitle>Map Staff User</CardTitle><CardDescription>Link biometric device users to staff profiles.</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                <Field label="Device">
+                  <Select value={mappingForm.device_id} onValueChange={(value) => setMappingForm((current) => ({ ...current, device_id: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Select device" /></SelectTrigger>
+                    <SelectContent>{devices.map((device) => <SelectItem key={device.id} value={String(device.id)}>{device.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Staff">
+                  <Select value={mappingForm.staff_id} onValueChange={(value) => setMappingForm((current) => ({ ...current, staff_id: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Select staff" /></SelectTrigger>
+                    <SelectContent>{staffProfiles.map((profile) => <SelectItem key={profile.id} value={String(profile.id)}>{staffLabel(profile, usersById)}</SelectItem>)}</SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Device user ID"><Input value={mappingForm.device_user_id} onChange={(event) => setMappingForm((current) => ({ ...current, device_user_id: event.target.value }))} /></Field>
+                <Button variant="outline" onClick={saveMapping} disabled={busy || !devices.length || !staffProfiles.length} className="w-full"><Fingerprint className="mr-2 h-4 w-4" />Save mapping</Button>
+              </CardContent>
+            </Card>
+            {pairingCode ? (
+              <Card>
+                <CardHeader><CardTitle>Connector Pairing Code</CardTitle><CardDescription>Shown once. Use it on the restaurant LAN connector.</CardDescription></CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="break-all rounded-md border bg-muted p-3 font-mono text-sm">{pairingCode.code}</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs text-muted-foreground">Expires {formatDateTime(pairingCode.expires_at)}</span>
+                    <Button size="sm" variant="outline" onClick={() => copy(pairingCode.code, "Pairing code copied")}><Copy className="mr-2 h-4 w-4" />Copy</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+          </div>
+          <div className="space-y-5">
+            <DeviceTable devices={devices} mappings={mappings} devicesById={devicesById} staffProfiles={staffProfiles} usersById={usersById} onToggle={toggleDevice} onPair={createPairingCode} />
+            <MobileDeviceTable devices={mobileDevices} staffProfiles={staffProfiles} usersById={usersById} onDecide={decideMobile} />
           </div>
         </TabsContent>
       </Tabs>
@@ -727,13 +567,52 @@ export function AttendanceAdminClient() {
   );
 }
 
-function InfoLine({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="space-y-2"><Label>{label}</Label>{children}</div>;
+}
+
+function InfoLine({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-md border bg-muted/30 p-3"><p className="text-xs font-bold uppercase text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>;
+}
+
+function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove, onReject }: { entries: AttendanceEntry[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onSubmit: (entry: AttendanceEntry) => void; onApprove: (entry: AttendanceEntry) => void; onReject: (entry: AttendanceEntry) => void }) {
   return (
-    <div className="space-y-1">
-      <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={mono ? "break-all rounded-md bg-muted p-2 font-mono text-xs" : "text-sm font-semibold"}>
-        {value}
-      </p>
+    <div className="overflow-x-auto rounded-md border">
+      <Table>
+        <TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Clock</TableHead><TableHead>Minutes</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {entries.length === 0 ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No attendance entries in this range.</TableCell></TableRow> : entries.map((entry) => {
+            const profile = staffProfiles.find((item) => item.id === entry.staff_id);
+            return (
+              <TableRow key={entry.id}>
+                <TableCell className="min-w-[180px] font-medium">{staffLabel(profile, usersById)}</TableCell>
+                <TableCell className="min-w-[220px] text-sm">{formatDateTime(entry.clock_in_at)} to {formatDateTime(entry.clock_out_at)}</TableCell>
+                <TableCell className="min-w-[180px] text-sm">Regular {minutesLabel(entry.regular_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</TableCell>
+                <TableCell className="min-w-[180px]"><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status}</Badge>{entry.exception_code ? <div className="mt-1 text-xs text-destructive">{entry.exception_code}</div> : null}</TableCell>
+                <TableCell className="min-w-[220px] text-right">
+                  <div className="flex justify-end gap-2">
+                    {entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}
+                    {entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}
+                    {entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
     </div>
   );
+}
+
+function ScheduleTable({ schedules, templates, staffProfiles, usersById }: { schedules: AttendanceSchedule[]; templates: AttendanceShiftTemplate[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser> }) {
+  return <Card><CardHeader><CardTitle>Schedule Rules</CardTitle><CardDescription>Restaurant default rules and staff overrides.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Weekday</TableHead><TableHead>Shift</TableHead><TableHead>Effective</TableHead></TableRow></TableHeader><TableBody>{schedules.length === 0 ? <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">No schedule rules yet.</TableCell></TableRow> : schedules.map((item) => { const template = templates.find((t) => t.id === item.shift_template_id); const profile = staffProfiles.find((staff) => staff.id === item.staff_id); return <TableRow key={item.id}><TableCell>{item.staff_id ? staffLabel(profile, usersById) : "Restaurant default"}</TableCell><TableCell>{item.weekday}</TableCell><TableCell>{item.is_day_off ? "Day off" : template?.name || "Shift #" + item.shift_template_id}</TableCell><TableCell>{item.effective_from} to {item.effective_to || "open"}</TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>;
+}
+
+function DeviceTable({ devices, mappings, devicesById, staffProfiles, usersById, onToggle, onPair }: { devices: AttendanceDevice[]; mappings: StaffDeviceMapping[]; devicesById: Map<number, AttendanceDevice>; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onToggle: (device: AttendanceDevice, checked: boolean) => void; onPair: (deviceId: number) => void }) {
+  return <Card><CardHeader><CardTitle>Physical Devices</CardTitle><CardDescription>Registered biometric devices and staff mappings.</CardDescription></CardHeader><CardContent className="space-y-5"><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Device</TableHead><TableHead>Connection</TableHead><TableHead>Last sync</TableHead><TableHead>Active</TableHead><TableHead className="text-right">Connector</TableHead></TableRow></TableHeader><TableBody>{devices.length === 0 ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No attendance devices registered.</TableCell></TableRow> : devices.map((device) => <TableRow key={device.id}><TableCell className="min-w-[180px]"><div className="font-medium">{device.name}</div><div className="text-xs text-muted-foreground">{deviceTypeLabels[device.device_type]} / {device.serial_number}</div></TableCell><TableCell className="min-w-[150px]">{device.ip_address || "No IP"}:{device.port || 4370}</TableCell><TableCell>{formatDateTime(device.last_sync_at)}</TableCell><TableCell><Switch checked={device.is_active} onCheckedChange={(checked) => onToggle(device, checked)} /></TableCell><TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => onPair(device.id)}>Pair</Button></TableCell></TableRow>)}</TableBody></Table></div><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Device</TableHead><TableHead>Staff</TableHead><TableHead>Device user</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{mappings.length === 0 ? <TableRow><TableCell colSpan={4} className="h-20 text-center text-muted-foreground">No staff mappings saved.</TableCell></TableRow> : mappings.map((mapping) => { const profile = staffProfiles.find((item) => item.id === mapping.staff_id); return <TableRow key={mapping.id}><TableCell>{devicesById.get(mapping.device_id)?.name || "Device #" + mapping.device_id}</TableCell><TableCell>{staffLabel(profile, usersById)}</TableCell><TableCell>{mapping.device_user_id}</TableCell><TableCell><Badge variant={mapping.is_active ? "default" : "secondary"}>{mapping.is_active ? "Active" : "Inactive"}</Badge></TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>;
+}
+
+function MobileDeviceTable({ devices, staffProfiles, usersById, onDecide }: { devices: AttendanceMobileDevice[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onDecide: (device: AttendanceMobileDevice, action: "approve" | "reject" | "revoke") => void }) {
+  return <Card><CardHeader><CardTitle>Mobile Approvals</CardTitle><CardDescription>Approve staff phones for QR attendance scanning.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Device</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{devices.length === 0 ? <TableRow><TableCell colSpan={4} className="h-20 text-center text-muted-foreground">No mobile attendance devices.</TableCell></TableRow> : devices.map((device) => { const profile = staffProfiles.find((item) => item.id === device.staff_id); return <TableRow key={device.id}><TableCell>{staffLabel(profile, usersById)}</TableCell><TableCell>{device.device_label || device.platform || "Mobile device"}<div className="text-xs text-muted-foreground">Last seen {formatDateTime(device.last_seen_at)}</div></TableCell><TableCell><Badge variant={device.status === "approved" ? "default" : "secondary"}>{device.status}</Badge></TableCell><TableCell className="text-right"><div className="flex justify-end gap-2">{device.status !== "approved" ? <Button size="sm" onClick={() => onDecide(device, "approve")}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}<Button size="sm" variant="outline" onClick={() => onDecide(device, device.status === "approved" ? "revoke" : "reject")}>{device.status === "approved" ? "Revoke" : "Reject"}</Button></div></TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>;
 }
