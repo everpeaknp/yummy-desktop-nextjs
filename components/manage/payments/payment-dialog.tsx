@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
-import { AwaitingPaymentApis } from "@/lib/api/endpoints";
+import { AccountingApis, AwaitingPaymentApis } from "@/lib/api/endpoints";
 import { Loader2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
@@ -30,6 +30,13 @@ import {
     extractPaymentInstruments,
     paymentMethodNeedsInstrument,
 } from "@/lib/payment-instruments";
+import type { PaymentInstrument } from "@/types/accounting";
+
+type BaseResponse<T> = {
+    status?: string;
+    data?: T;
+    message?: string;
+};
 
 interface PaymentDialogProps {
     open: boolean;
@@ -44,16 +51,97 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
     const [loading, setLoading] = useState(false);
     const [selectedStaticQrIndex, setSelectedStaticQrIndex] = useState(0);
     const [selectedCardIndex, setSelectedCardIndex] = useState(0);
+    const [activePaymentInstruments, setActivePaymentInstruments] = useState<PaymentInstrument[]>([]);
     const [formData, setFormData] = useState({
         paid_amount: "",
         payment_method: "cash",
         reference: "",
         note: "",
     });
-    const { staticPaymentQrs, staticPaymentCards } = useMemo(
+    const { staticPaymentQrs: legacyPaymentQrs, staticPaymentCards: legacyPaymentCards } = useMemo(
         () => extractPaymentInstruments(restaurant),
         [restaurant],
     );
+    const staticPaymentQrs = useMemo(
+        () => {
+            const activeDigital = activePaymentInstruments.filter((instrument) => (
+                instrument.is_active &&
+                String(instrument.payment_method || "").toLowerCase() === "digital"
+            ));
+            if (activeDigital.length === 0) {
+                return legacyPaymentQrs;
+            }
+            return activeDigital
+                .map((instrument) => {
+                    const legacyMatch = legacyPaymentQrs.find((qr) => qr.name === instrument.name);
+                    const metadataPayload = typeof instrument.metadata_json?.payload === "string"
+                        ? instrument.metadata_json.payload
+                        : null;
+                    const payload = legacyMatch?.payload || metadataPayload || "";
+                    if (!payload.trim()) return null;
+                    return {
+                        name: instrument.name,
+                        payload,
+                        instrumentType: instrument.instrument_type || "static_qr",
+                    };
+                })
+                .filter((instrument): instrument is NonNullable<typeof instrument> => Boolean(instrument));
+        },
+        [activePaymentInstruments, legacyPaymentQrs],
+    );
+    const staticPaymentCards = useMemo(
+        () => {
+            const activeCards = activePaymentInstruments.filter((instrument) => (
+                instrument.is_active &&
+                String(instrument.payment_method || "").toLowerCase() === "card"
+            ));
+            if (activeCards.length === 0) {
+                return legacyPaymentCards;
+            }
+            return activeCards.map((instrument) => {
+                const legacyMatch = legacyPaymentCards.find((card) => card.name === instrument.name);
+                return {
+                    name: instrument.name,
+                    identifier: legacyMatch?.identifier || null,
+                    instrumentType: instrument.instrument_type || "card",
+                };
+            });
+        },
+        [activePaymentInstruments, legacyPaymentCards],
+    );
+    const cardConfigHelpText = activePaymentInstruments.some((instrument) => (
+        instrument.is_active && String(instrument.payment_method || "").toLowerCase() === "card"
+    ))
+        ? "No active card instrument available for this payment. Align Finance / Accounting / Setup with card settings."
+        : "No card instruments configured.";
+    const qrConfigHelpText = activePaymentInstruments.some((instrument) => (
+        instrument.is_active && String(instrument.payment_method || "").toLowerCase() === "digital"
+    ))
+        ? "No active QR instrument with payload is available for this payment. Align Finance / Accounting / Setup with QR settings."
+        : "No QR instruments configured.";
+
+    useEffect(() => {
+        const loadInstruments = async () => {
+            if (!record?.restaurant_id) {
+                setActivePaymentInstruments([]);
+                return;
+            }
+            try {
+                const res = await apiClient.get<BaseResponse<PaymentInstrument[]>>(
+                    AccountingApis.paymentInstruments({
+                        restaurantId: Number(record.restaurant_id),
+                        businessLine: "restaurant",
+                        activeOnly: true,
+                    }),
+                );
+                setActivePaymentInstruments(res.data?.data ?? []);
+            } catch (error) {
+                console.error("Failed to load active payment instruments", error);
+                setActivePaymentInstruments([]);
+            }
+        };
+        void loadInstruments();
+    }, [record?.restaurant_id]);
 
     useEffect(() => {
         if (record && mode === 'pay') {
@@ -190,7 +278,7 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                                             </div>
                                         ) : (
                                             <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
-                                                No card instruments configured.
+                                                {cardConfigHelpText}
                                             </p>
                                         )
                                     ) : staticPaymentQrs.length > 0 ? (
@@ -213,7 +301,7 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                                         </div>
                                     ) : (
                                         <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
-                                            No QR instruments configured.
+                                            {qrConfigHelpText}
                                         </p>
                                     )}
                                 </div>

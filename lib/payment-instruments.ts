@@ -1,11 +1,13 @@
 export type PaymentQrInstrument = {
   name: string;
   payload: string;
+  instrumentType?: string;
 };
 
 export type PaymentCardInstrument = {
   name: string;
   identifier?: string | null;
+  instrumentType?: string;
 };
 
 export type PaymentInstrumentPayload = {
@@ -50,7 +52,7 @@ export function buildPaymentInstrument(
     const selected = staticPaymentQrs[qrIndex];
     if (!selected) return null;
     return {
-      type: "static_qr",
+      type: selected.instrumentType || "static_qr",
       name: selected.name,
       meta: {
         payload: selected.payload,
@@ -63,7 +65,7 @@ export function buildPaymentInstrument(
     const selected = staticPaymentCards[cardIndex];
     if (!selected) return null;
     return {
-      type: "card",
+      type: selected.instrumentType || "card",
       name: selected.name,
       meta: {
         identifier: selected.identifier || null,

@@ -33,7 +33,7 @@ export type DayCloseSnapshotTab =
   | "day-orders"
   | "sales-by-category"
   | "sales-by-table"
-  | "drawer-evidence"
+  | "drawer-and-safe"
   | "accounting-checks";
 
 const FINANCIAL_SUMMARY_SNAPSHOT_TAB: Record<string, DayCloseSnapshotTab> = {
@@ -42,12 +42,12 @@ const FINANCIAL_SUMMARY_SNAPSHOT_TAB: Record<string, DayCloseSnapshotTab> = {
   "Total Income": "payments",
   Refunds: "refunds",
   Expenses: "expenses",
-  "Opening Balance": "payments",
+  "Opening Balance": "drawer-and-safe",
   "Credit Sales": "credit",
   "Credit Collection": "credit",
   "Outstanding Receivables": "receivables",
-  "Expected Drawer": "payments",
-  "Drawer (Actual)": "payments",
+  "Expected Drawer": "drawer-and-safe",
+  "Drawer (Actual)": "drawer-and-safe",
 };
 
 export function financialSummarySnapshotTab(label: string): DayCloseSnapshotTab | null {
@@ -182,7 +182,7 @@ export function snapshotInstrumentRows(
   method: "card" | "digital"
 ): SnapshotListRow[] {
   const fromList = (snapshot.payment_instrument_distribution ?? []).filter(
-    (row) => String(row.method).toLowerCase() === method
+    (row) => String(row.method).toLowerCase() === method && !String(row.instrument).toLowerCase().includes("fonepay")
   );
   if (fromList.length > 0) {
     return fromList.map((row: PaymentInstrumentRow) => ({
@@ -200,6 +200,46 @@ export function snapshotInstrumentRows(
     label: instrument,
     amount: typeof amount === "number" ? amount : typeof amount === "string" ? Number(amount) : undefined,
   }));
+}
+
+export function snapshotBankRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
+  const fromList = (snapshot.payment_instrument_distribution ?? []).filter(
+    (row) => String(row.instrument).toLowerCase().includes("bank")
+  );
+  if (fromList.length === 0) return [];
+
+  const bankTotals: Record<string, { amount: number, count: number }> = {};
+  for (const row of fromList) {
+    let bankName = row.instrument;
+    const cleanStr = bankName.replace(/(card clearing|digital clearing|qr clearing|clearing)/i, "").trim();
+    if (cleanStr) bankName = cleanStr;
+    
+    if (!bankTotals[bankName]) {
+      bankTotals[bankName] = { amount: 0, count: 0 };
+    }
+    bankTotals[bankName].amount += row.amount;
+    bankTotals[bankName].count += (row.count ?? 0);
+  }
+
+  const rows: SnapshotListRow[] = Object.entries(bankTotals).map(([name, data]) => ({
+    label: name,
+    amount: data.amount,
+    secondary: data.count > 0 ? `${data.count} payments` : undefined,
+  }));
+  return rows.sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0));
+}
+
+export function snapshotFonepayRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
+  const fromList = (snapshot.payment_instrument_distribution ?? []).filter(
+    (row) => String(row.method).toLowerCase() === "fonepay" || String(row.instrument).toLowerCase().includes("fonepay")
+  );
+  if (fromList.length === 0) return [];
+
+  return fromList.map((row) => ({
+    label: row.instrument || "Fonepay",
+    amount: row.amount,
+    secondary: row.count != null ? `${row.count} payments` : undefined,
+  })).sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0));
 }
 
 export function snapshotExpenseRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {

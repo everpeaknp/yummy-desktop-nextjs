@@ -383,7 +383,7 @@ export function DrawerSessionPanel({
       </CardHeader>
       <CardContent className="space-y-4">
         {activeConfigs.length === 0 ? (
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-400">
             <AlertTriangle className="mr-2 inline h-4 w-4" />
             Drawer controls may be disabled or no active drawers are configured for this restaurant.
           </div>
@@ -545,8 +545,8 @@ export function DrawerSessionPanel({
                       ) : retainedCarryForward ? (
                         <div className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm ${
                           overrideRetained
-                            ? "border-amber-500/30 bg-amber-500/10 text-amber-900"
-                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-900"
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-400"
+                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-400"
                         }`}>
                           <div>
                             <CheckCircle2 className="mr-2 inline h-4 w-4" />
@@ -578,12 +578,12 @@ export function DrawerSessionPanel({
                           </Button>
                         </div>
                       ) : varianceEnforced ? (
-                        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
+                        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-400">
                           <AlertTriangle className="mr-2 inline h-4 w-4" />
                           Fixed opening float is active. A manager approval is required if the count is outside tolerance.
                         </div>
                       ) : (
-                        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-900">
+                        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-400">
                           <CheckCircle2 className="mr-2 inline h-4 w-4" />
                           Flexible opening mode is active. Today&apos;s counted amount becomes this drawer&apos;s opening baseline.
                         </div>

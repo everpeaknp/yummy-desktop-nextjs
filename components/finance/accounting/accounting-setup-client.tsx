@@ -10,6 +10,7 @@ import apiClient from "@/lib/api-client";
 import { AccountingApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import { AccountingNav } from "./accounting-nav";
-import type { AccountingSetupStatus, PaymentInstrument, PaymentInstrumentInput } from "@/types/accounting";
+import type { AccountingSetupStatus, PaymentInstrument, PaymentInstrumentInput, PaymentBank, PaymentBankInput } from "@/types/accounting";
 
 type BaseResponse<T> = {
   status?: string;
@@ -61,19 +62,34 @@ function keyList(values?: string[]) {
   return values.map((value) => value.replace(/_/g, " ")).join(", ");
 }
 
+function errorMessage(error: any, fallback: string) {
+  return (
+    error?.response?.data?.detail ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback
+  );
+}
+
 export function AccountingSetupClient() {
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
+  const restaurant = useRestaurant((state) => state.restaurant);
+  const fetchRestaurant = useRestaurant((state) => state.fetchRestaurant);
   const router = useRouter();
   const [status, setStatus] = useState<AccountingSetupStatus | null>(null);
   const [instruments, setInstruments] = useState<PaymentInstrument[]>([]);
   const [loading, setLoading] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [instrumentSaving, setInstrumentSaving] = useState(false);
+  const [instrumentUpdatingId, setInstrumentUpdatingId] = useState<number | null>(null);
   const [instrumentMethod, setInstrumentMethod] = useState("card");
   const [instrumentType, setInstrumentType] = useState("terminal");
   const [instrumentName, setInstrumentName] = useState("");
   const [instrumentProvider, setInstrumentProvider] = useState("");
+  const [instrumentBankId, setInstrumentBankId] = useState<string>("none");
+
+  const [banks, setBanks] = useState<PaymentBank[]>([]);
 
   const canView = hasPermission(user, "finance.accounting.view");
   const canRepairSetup = hasPermission(user, "finance.accounting.setup");
@@ -88,6 +104,10 @@ export function AccountingSetupClient() {
     };
     void checkAuth();
   }, [user, me, router]);
+
+  useEffect(() => {
+    void fetchRestaurant();
+  }, [fetchRestaurant]);
 
   const loadSetupStatus = useCallback(async () => {
     if (!restaurantId || !canView || !canRepairSetup) {
@@ -122,10 +142,24 @@ export function AccountingSetupClient() {
     }
   }, [restaurantId, canView]);
 
+  const loadBanks = useCallback(async () => {
+    if (!restaurantId || !canView) return;
+    try {
+      const res = await apiClient.get<BaseResponse<PaymentBank[]>>(
+        AccountingApis.paymentBanks(restaurantId)
+      );
+      setBanks(res.data?.data ?? []);
+    } catch (error) {
+      console.error("Failed to load payment banks", error);
+      setBanks([]);
+    }
+  }, [restaurantId, canView]);
+
   useEffect(() => {
     void loadSetupStatus();
+    void loadBanks();
     void loadInstruments();
-  }, [loadSetupStatus, loadInstruments]);
+  }, [loadSetupStatus, loadBanks, loadInstruments]);
 
   const repairSetup = async () => {
     if (!restaurantId || !canView) return;
@@ -147,10 +181,53 @@ export function AccountingSetupClient() {
     }
   };
 
+  const instrumentNameOptions = useMemo(() => {
+    if (instrumentMethod === "card") {
+      return Array.isArray(restaurant?.payment_cards)
+        ? restaurant.payment_cards
+            .filter((card) => card && typeof card.name === "string" && card.name.trim())
+            .map((card) => ({
+              value: String(card.name).trim(),
+              label: String(card.name).trim(),
+              hint: card.identifier ? String(card.identifier) : null,
+            }))
+        : [];
+    }
+
+    if (instrumentMethod === "digital") {
+      return Array.isArray(restaurant?.payment_qrs)
+        ? restaurant.payment_qrs
+            .filter((qr) => qr && typeof qr.name === "string" && qr.name.trim())
+            .map((qr) => ({
+              value: String(qr.name).trim(),
+              label: String(qr.name).trim(),
+              hint: null,
+            }))
+        : [];
+    }
+
+    return [];
+  }, [instrumentMethod, restaurant]);
+
+  const matchingInstrument = useMemo(() => {
+    const normalizedName = instrumentName.trim().toLowerCase();
+    if (!normalizedName) return null;
+    return instruments.find((instrument) => (
+      String(instrument.payment_method || "").toLowerCase() === instrumentMethod &&
+      String(instrument.name || "").trim().toLowerCase() === normalizedName
+    )) || null;
+  }, [instrumentMethod, instrumentName, instruments]);
+  const duplicateInstrumentIsActive = Boolean(matchingInstrument?.is_active);
+  const duplicateInstrumentIsInactive = Boolean(matchingInstrument && !matchingInstrument.is_active);
+
   const createInstrument = async () => {
     if (!restaurantId || !canManageInstruments) return;
     if (!instrumentName.trim()) {
       toast.error("Instrument name is required.");
+      return;
+    }
+    if (duplicateInstrumentIsActive) {
+      toast.error(`${instrumentName.trim()} is already active for ${instrumentMethod}.`);
       return;
     }
     setInstrumentSaving(true);
@@ -162,21 +239,45 @@ export function AccountingSetupClient() {
         instrument_type: instrumentType,
         name: instrumentName.trim(),
         provider: instrumentProvider.trim() || null,
+        bank_id: instrumentBankId !== "none" ? Number(instrumentBankId) : null,
         settlement_cycle_days: 1,
         is_active: true,
       };
       await apiClient.post(AccountingApis.createPaymentInstrument(), payload);
       setInstrumentName("");
       setInstrumentProvider("");
+      setInstrumentBankId("none");
       await loadInstruments();
       toast.success("Payment instrument created.");
     } catch (error) {
       console.error("Failed to create payment instrument", error);
-      toast.error("Failed to create payment instrument");
+      toast.error(errorMessage(error, "Failed to create payment instrument"));
     } finally {
       setInstrumentSaving(false);
     }
   };
+
+  const deactivateInstrument = async (instrument: PaymentInstrument) => {
+    if (!canManageInstruments) return;
+    const confirmed = window.confirm(
+      `Deactivate payment instrument "${instrument.name}"?\n\nIt will stop appearing as an active checkout or settlement option.`
+    );
+    if (!confirmed) return;
+
+    setInstrumentUpdatingId(instrument.id);
+    try {
+      await apiClient.post(AccountingApis.deactivatePaymentInstrument(instrument.id));
+      await loadInstruments();
+      toast.success(`Deactivated ${instrument.name}.`);
+    } catch (error) {
+      console.error("Failed to deactivate payment instrument", error);
+      toast.error(errorMessage(error, "Failed to deactivate payment instrument"));
+    } finally {
+      setInstrumentUpdatingId(null);
+    }
+  };
+
+
 
   const cards = useMemo(
     () => [
@@ -480,6 +581,8 @@ export function AccountingSetupClient() {
         </CardContent>
       </Card>
 
+
+
       <Card>
         <CardHeader className="border-b border-border p-4">
           <CardTitle className="flex items-center justify-between gap-3 text-base">
@@ -518,12 +621,42 @@ export function AccountingSetupClient() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="instrument-name">Instrument name</Label>
-              <Input
-                id="instrument-name"
-                value={instrumentName}
-                onChange={(event) => setInstrumentName(event.target.value)}
-                placeholder="Nabil POS 1"
-              />
+              {instrumentNameOptions.length > 0 ? (
+                <Select value={instrumentName} onValueChange={setInstrumentName}>
+                  <SelectTrigger id="instrument-name">
+                    <SelectValue placeholder="Select from Settings" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {instrumentNameOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.hint ? `${option.label} (${option.hint})` : option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="instrument-name"
+                  value={instrumentName}
+                  onChange={(event) => setInstrumentName(event.target.value)}
+                  placeholder="Nabil POS 1"
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                {instrumentNameOptions.length > 0
+                  ? "Options come from Manage / Settings / Payments & POS so names stay aligned with checkout."
+                  : "No matching Settings entries found for this method, so manual name entry is enabled."}
+              </p>
+              {duplicateInstrumentIsActive ? (
+                <p className="text-xs font-medium text-amber-600">
+                  This instrument is already active for {instrumentMethod}.
+                </p>
+              ) : null}
+              {duplicateInstrumentIsInactive ? (
+                <p className="text-xs font-medium text-muted-foreground">
+                  This name already exists but is inactive. Adding will fail until it is reactivated or renamed.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="instrument-provider">Provider</Label>
@@ -534,12 +667,26 @@ export function AccountingSetupClient() {
                 placeholder="Nabil, Fonepay, Esewa"
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="instrument-bank">Bank Assignment</Label>
+              <Select value={instrumentBankId} onValueChange={setInstrumentBankId}>
+                <SelectTrigger id="instrument-bank">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {banks.map((b) => (
+                    <SelectItem key={b.id} value={b.id.toString()}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-end">
               <Button
                 type="button"
                 className="w-full"
                 onClick={createInstrument}
-                disabled={!canManageInstruments || instrumentSaving}
+                disabled={!canManageInstruments || instrumentSaving || duplicateInstrumentIsActive}
                 title={!canManageInstruments ? "Payment instrument management permission is required." : undefined}
               >
                 {instrumentSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -568,8 +715,30 @@ export function AccountingSetupClient() {
                       {instrument.is_active ? "Active" : "Inactive"}
                     </Badge>
                   </div>
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    {instrument.provider || "No provider"} · T+{instrument.settlement_cycle_days}
+                  <div className="mt-2 text-sm text-muted-foreground flex gap-2">
+                    <span>{instrument.provider || "No provider"} · T+{instrument.settlement_cycle_days}</span>
+                    {instrument.bank_id ? (
+                      <Badge variant="outline" className="text-xs ml-auto">
+                        {banks.find((b) => b.id === instrument.bank_id)?.name || `Bank #${instrument.bank_id}`}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    {instrument.is_active ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => deactivateInstrument(instrument)}
+                        disabled={!canManageInstruments || instrumentUpdatingId === instrument.id}
+                        title={!canManageInstruments ? "Payment instrument management permission is required." : undefined}
+                      >
+                        {instrumentUpdatingId === instrument.id ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Deactivate
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ))}

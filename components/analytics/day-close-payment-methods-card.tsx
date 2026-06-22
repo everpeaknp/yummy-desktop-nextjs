@@ -5,7 +5,9 @@ import {
   Activity,
   CreditCard,
   DollarSign,
+  Landmark,
   ReceiptText,
+  Smartphone,
   Wallet,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,10 +35,15 @@ function methodStyle(label: string) {
   if (key.includes("card")) {
     return { bar: "bg-blue-500", icon: "text-blue-500", glow: "shadow-blue-500/20" };
   }
+  if (key.includes("fonepay")) {
+    return { bar: "bg-[#0A9D58]", icon: "text-[#0A9D58]", glow: "shadow-[#0A9D58]/20" };
+  }
+  if (key.includes("bank")) {
+    return { bar: "bg-slate-500", icon: "text-slate-500", glow: "shadow-slate-500/20" };
+  }
   if (
     key.includes("digital") ||
     key.includes("qr") ||
-    key.includes("fonepay") ||
     key.includes("esewa") ||
     key.includes("khalti")
   ) {
@@ -53,6 +60,8 @@ function MethodIcon({ label }: { label: string }) {
   const className = "w-4 h-4";
   if (key.includes("cash")) return <Wallet className={className} />;
   if (key.includes("card")) return <CreditCard className={className} />;
+  if (key.includes("fonepay")) return <Smartphone className={className} />;
+  if (key.includes("bank")) return <Landmark className={className} />;
   if (key.includes("digital") || key.includes("qr")) return <Activity className={className} />;
   if (key.includes("credit")) return <ReceiptText className={className} />;
   return <DollarSign className={className} />;

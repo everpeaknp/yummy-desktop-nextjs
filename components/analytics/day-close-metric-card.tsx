@@ -28,6 +28,7 @@ export const DC_METRIC_ICON_DESTRUCTIVE = DC_METRIC_ICON_OUT;
 type DayCloseMetricCardProps = {
   label: string;
   value: string;
+  helperText?: string;
   icon?: ReactNode;
   iconClassName?: string;
   iconPosition?: "inline" | "top-right";
@@ -42,6 +43,7 @@ type DayCloseMetricCardProps = {
 export function DayCloseMetricCard({
   label,
   value,
+  helperText,
   icon,
   iconClassName,
   iconPosition = "inline",
@@ -142,6 +144,11 @@ export function DayCloseMetricCard({
         >
           {value}
         </p>
+        {helperText ? (
+          <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
+            {helperText}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );

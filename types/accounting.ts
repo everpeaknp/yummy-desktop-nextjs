@@ -581,6 +581,21 @@ export type PaymentSettlementStatus =
   | "reversed"
   | string;
 
+export type PaymentBank = {
+  id: number;
+  restaurant_id: number;
+  name: string;
+  description?: string | null;
+  is_active: boolean;
+};
+
+export type PaymentBankInput = {
+  restaurant_id: number;
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+};
+
 export type PaymentInstrument = {
   id: number;
   restaurant_id: number;
@@ -589,6 +604,7 @@ export type PaymentInstrument = {
   instrument_type: string;
   name: string;
   provider?: string | null;
+  bank_id?: number | null;
   clearing_account_id?: number | null;
   bank_account_id?: number | null;
   fee_account_id?: number | null;
@@ -606,6 +622,7 @@ export type PaymentInstrumentInput = {
   instrument_type: string;
   name: string;
   provider?: string | null;
+  bank_id?: number | null;
   clearing_account_id?: number | null;
   bank_account_id?: number | null;
   fee_account_id?: number | null;
