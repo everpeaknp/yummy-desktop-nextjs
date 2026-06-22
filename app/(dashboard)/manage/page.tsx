@@ -25,7 +25,8 @@ import {
     Clock,
     Store,
     Settings,
-    Shield
+    Shield,
+    Fingerprint
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -163,6 +164,14 @@ const sections = [
                 icon: UserCircle,
                 iconColor: "text-purple-600",
                 iconBg: "bg-purple-50 dark:bg-purple-900/20",
+            },
+            {
+                title: "Attendance",
+                description: "QR & devices",
+                href: "/attendance",
+                icon: Fingerprint,
+                iconColor: "text-teal-600",
+                iconBg: "bg-teal-50 dark:bg-teal-900/20",
             },
             {
                 title: "Period Reports",

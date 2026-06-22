@@ -27,6 +27,7 @@ import {
   LucideIcon,
   Layers,
   Banknote,
+  Fingerprint,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -61,6 +62,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/inventory": Package,
   "/finance/income": CreditCard,
   "/customers": Users,
+  "/attendance": Fingerprint,
   "/tables": Armchair,
   "/reservations": Calendar,
   "/discounts": Percent,

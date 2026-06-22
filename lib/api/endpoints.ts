@@ -1406,6 +1406,16 @@ export const StaffProfileApis = {
   create: "/staff",
 };
 
+export const AttendanceApis = {
+  createQrSession: "/attendance/qr-sessions",
+  listDevices: "/attendance/devices",
+  createDevice: "/attendance/devices",
+  updateDevice: (id: number) => `/attendance/devices/${id}`,
+  listDeviceMappings: (deviceId?: number) =>
+    deviceId ? `/attendance/device-mappings?device_id=${deviceId}` : "/attendance/device-mappings",
+  upsertDeviceMapping: "/attendance/device-mappings",
+};
+
 export const PayrollApis = {
   listRuns: (statuses?: string[]) => {
     const params = new URLSearchParams();

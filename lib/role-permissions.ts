@@ -217,6 +217,10 @@ export type PermissionKey =
   | "finance.expenses.approve"
   | "finance.payroll.view"
   | "finance.payroll.manage"
+  // Attendance
+  | "attendance.view"
+  | "attendance.manage"
+  | "attendance.device.manage"
   // Admin & Settings
   | "admin.staff.view"
   | "admin.staff.manage"
@@ -482,6 +486,12 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "admin.staff.view",
   },
   {
+    title: "Attendance",
+    href: "/attendance",
+    allowedRoles: ADMIN_SHELL_ROLES,
+    requiredPermission: "attendance.manage",
+  },
+  {
     title: "Feedback",
     href: "/feedback",
     allowedRoles: ALL_DASHBOARD_ROLES,
@@ -539,6 +549,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   // Finance
   "/finance/accounting": "finance.accounting.view",
   "/finance": "finance.income.view",
+  "/attendance": "attendance.manage",
   // Admin
   "/staff": "admin.staff.view",
   "/manage": "admin.staff.view",
@@ -568,6 +579,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/manage/additional-settings": ADMIN_MANAGER,
   "/staff": ADMIN_MANAGER,
   "/payroll": ["admin", "cashier"],
+  "/attendance": ADMIN_MANAGER,
   "/period-reports": ADMIN_MANAGER,
   "/settings": ALL_DASHBOARD_ROLES,
   "/feedback": ALL_DASHBOARD_ROLES,
