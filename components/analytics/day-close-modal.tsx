@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Calculator,
   AlertTriangle,
-  Receipt,
   Banknote,
   Maximize2,
   Minimize2,
@@ -65,7 +64,7 @@ interface DayCloseModalProps {
   targetBusinessDate?: string | null;
 }
 
-type Step = "health-check" | "financial-snapshot" | "cash-reconciliation" | "success";
+type Step = "health-check" | "financial-snapshot" | "drawer-cash-result" | "success";
 
 export function DayCloseModal({
   isOpen,
@@ -154,7 +153,7 @@ export function DayCloseModal({
   const steps = [
     { id: "health-check", label: "Health Check" },
     { id: "financial-snapshot", label: "Snapshot" },
-    { id: "cash-reconciliation", label: "Reconciliation" },
+    { id: "drawer-cash-result", label: "Drawer Cash" },
     { id: "success", label: "Complete" },
   ] as const;
 
@@ -256,12 +255,12 @@ export function DayCloseModal({
               onNext={(data, id) => {
                 setSnapshotData(data);
                 setDayCloseId(id);
-                setCurrentStep("cash-reconciliation");
+                setCurrentStep("drawer-cash-result");
               }}
             />
           ) : null}
-          {currentStep === "cash-reconciliation" ? (
-            <CashReconciliationStep
+          {currentStep === "drawer-cash-result" ? (
+            <DrawerCashResultStep
               snapshot={snapshotData}
               dayCloseId={dayCloseId}
               restaurantId={restaurantId}
@@ -568,14 +567,14 @@ function FinancialSnapshotStep({
       ) : null}
       <div className="pt-4 flex justify-end">
         <Button onClick={handleContinue} disabled={initiating} className="gap-2">
-          {initiating ? "Starting…" : "Confirm & Reconcile"} <ChevronRight className="w-4 h-4" />
+          {initiating ? "Starting…" : "Review Drawer Cash"} <ChevronRight className="w-4 h-4" />
         </Button>
       </div>
     </div>
   );
 }
 
-function CashReconciliationStep({
+function DrawerCashResultStep({
   onNext,
   snapshot,
   dayCloseId,
@@ -590,8 +589,6 @@ function CashReconciliationStep({
   businessLine: BusinessLine;
   businessDate?: string | null;
 }) {
-  const [actualCash, setActualCash] = useState("");
-  const [confirmationNotes, setConfirmationNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [liveSnapshot, setLiveSnapshot] = useState<DayCloseSnapshotData | null>(snapshot);
@@ -620,6 +617,11 @@ function CashReconciliationStep({
   }, [restaurantId, businessLine, businessDate]);
 
   const expectedCash = liveSnapshot?.expected_cash;
+  const countedCash = liveSnapshot?.drawer_control?.counted_cash;
+  const actualCashForSubmit =
+    typeof countedCash === "number" && Number.isFinite(countedCash)
+      ? countedCash
+      : expectedCash;
 
   const handleSubmit = async () => {
     if (!dayCloseId) {
@@ -629,6 +631,7 @@ function CashReconciliationStep({
     setSubmitting(true);
     setError(null);
     try {
+      let latestSnapshot = liveSnapshot;
       try {
         const snapRes = await apiClient.get(
           DayCloseApis.generateSnapshot({
@@ -638,18 +641,31 @@ function CashReconciliationStep({
           }),
         );
         const parsed = unwrapApiData(snapRes.data, parseDayCloseSnapshotData);
-        if (parsed) setLiveSnapshot(parsed);
+        if (parsed) {
+          latestSnapshot = parsed;
+          setLiveSnapshot(parsed);
+        }
       } catch {
         // Proceed with last known expected cash.
       }
 
+      const latestCountedCash = latestSnapshot?.drawer_control?.counted_cash;
+      const latestExpectedCash = latestSnapshot?.expected_cash;
+      const drawerActualCash =
+        typeof latestCountedCash === "number" && Number.isFinite(latestCountedCash)
+          ? latestCountedCash
+          : latestExpectedCash;
+      if (typeof drawerActualCash !== "number" || !Number.isFinite(drawerActualCash)) {
+        setError("Drawer cash result is not available. Refresh the snapshot and try again.");
+        return;
+      }
+
       const res = await apiClient.post(DayCloseApis.confirm(dayCloseId), {
-        actual_cash: Number(actualCash),
-        confirmation_notes: confirmationNotes || undefined,
+        actual_cash: drawerActualCash,
       });
       const detail = unwrapApiData(res.data, parseDayCloseDetail);
       if (detail) {
-        let finalizedSnapshot: DayCloseSnapshotData | null = liveSnapshot ?? snapshot;
+        let finalizedSnapshot: DayCloseSnapshotData | null = latestSnapshot ?? snapshot;
         try {
           const snapRes = await apiClient.get(DayCloseApis.snapshot(detail.id));
           const snapPayload = unwrapApiData(snapRes.data, parseDayCloseSnapshotResponse);
@@ -676,42 +692,26 @@ function CashReconciliationStep({
   return (
     <div className="space-y-6">
       <StepBanner
-        icon={<Receipt className="w-5 h-5" />}
-        title="Cash Reconciliation"
-        subtitle="Verify physical cash on hand against the backend expected cash."
+        icon={<Banknote className="w-5 h-5" />}
+        title="Drawer Cash Result"
+        subtitle="Cash is controlled by drawer counts. Day close records the drawer result without a separate manual reconciliation."
         tone="emerald"
       />
       <div className="space-y-4">
         <div className="p-4 border rounded-xl bg-slate-50 dark:bg-slate-900">
-          <p className="text-sm font-medium mb-2">Expected Cash (from snapshot)</p>
+          <p className="text-sm font-medium mb-2">Expected Drawer Cash</p>
           <p className="text-2xl font-semibold text-slate-700 dark:text-slate-200">
             {formatDayCloseCurrency(expectedCash)}
           </p>
         </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Actual Cash Count</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-medium text-muted-foreground">
-              Rs.
-            </span>
-            <input
-              type="number"
-              className="w-full text-2xl p-4 pl-12 rounded-xl border bg-background"
-              placeholder="0.00"
-              value={actualCash}
-              onChange={(e) => setActualCash(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Notes (Optional)</label>
-          <textarea
-            className="w-full p-3 rounded-xl border bg-background text-sm"
-            placeholder="Any discrepancies or comments…"
-            rows={3}
-            value={confirmationNotes}
-            onChange={(e) => setConfirmationNotes(e.target.value)}
-          />
+        <div className="p-4 border rounded-xl bg-emerald-50 dark:bg-emerald-950/30">
+          <p className="text-sm font-medium mb-2">Drawer Counted Cash</p>
+          <p className="text-2xl font-semibold text-emerald-700 dark:text-emerald-300">
+            {formatDayCloseCurrency(actualCashForSubmit)}
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">
+            If this value is wrong, correct the drawer count before closing the day.
+          </p>
         </div>
         {error ? (
           <div className="p-3 bg-red-100 text-red-600 text-sm rounded-lg flex items-center gap-2">
@@ -723,7 +723,7 @@ function CashReconciliationStep({
       <div className="pt-4 flex justify-end">
         <Button
           onClick={handleSubmit}
-          disabled={submitting || !actualCash || expectedCash == null}
+          disabled={submitting || expectedCash == null || actualCashForSubmit == null}
           className="gap-2 bg-green-600 hover:bg-green-700"
         >
           {submitting ? "Closing…" : "Submit Day Close"} <CheckCircle2 className="w-4 h-4" />

@@ -113,7 +113,7 @@ const FINANCIAL_SUMMARY_COPY: Record<
   "Drawer (Actual)": {
     title: "Drawer (Actual)",
     description: "Detailed insights",
-    detail: "This is the final counted cash entered during cash reconciliation or close confirmation.",
+    detail: "This is the final drawer-counted cash recorded by the drawer workflow.",
   },
 };
 

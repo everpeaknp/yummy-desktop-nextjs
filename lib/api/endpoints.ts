@@ -1191,7 +1191,6 @@ export const DayCloseApis = {
   },
   confirm: (id: number) => `/day-closes/${id}/confirm`,
   cancel: (id: number) => `/day-closes/${id}/cancel`,
-  adjustCashReconciliation: (id: number) => `/day-closes/${id}/adjust-cash-reconciliation`,
   listAdjustments: (id: number) => `/day-closes/${id}/adjustments`,
   addExpenseAdjustment: (id: number) => `/day-closes/${id}/adjustments/expense`,
   addIncomeAdjustment: (id: number) => `/day-closes/${id}/adjustments/income`,

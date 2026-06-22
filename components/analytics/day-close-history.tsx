@@ -108,10 +108,10 @@ function getFilenameFromContentDisposition(v: string | undefined | null) {
 function getDayCloseActionErrorMessage(err: any, fallback: string) {
   const detail = err?.response?.data?.detail;
   if (typeof detail === "string" && detail.trim()) return detail;
-  if (detail && typeof detail === "object") {
+    if (detail && typeof detail === "object") {
     if (detail.error_code === "DAY_CLOSED_LOCKED") {
       const businessDate = detail.business_date ? ` ${detail.business_date}` : "";
-      return `Day close${businessDate} is already finalized. You cannot reopen older confirmed days. Use Adjust Cash Reconciliation or Add Adjustment instead.`;
+      return `Day close${businessDate} is already finalized. You cannot reopen older confirmed days. Use Add Adjustment instead.`;
     }
     if (typeof detail.message === "string" && detail.message.trim()) {
       return detail.message;
@@ -162,12 +162,10 @@ function PresetButton({ label, onClick, active, className }: any) {
 
 function ConfirmedDayCloseActionButtons({
   compact = false,
-  onAdjustCash,
   onAddAdjustment,
   onReopen,
 }: {
   compact?: boolean;
-  onAdjustCash: () => void;
   onAddAdjustment: () => void;
   onReopen: () => void;
 }) {
@@ -185,14 +183,6 @@ function ConfirmedDayCloseActionButtons({
         compact ? "flex-row items-stretch w-full" : "flex-nowrap items-center shrink-0",
       )}
     >
-      <Button
-        variant="secondary"
-        size="sm"
-        className={cn("dc-action-secondary", buttonClass)}
-        onClick={onAdjustCash}
-      >
-        Adjust Cash Reconciliation
-      </Button>
       <Button
         variant="outline"
         size="sm"
@@ -380,13 +370,10 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
   const [wizardDayCloseId, setWizardDayCloseId] = useState<number | null>(null);
   const [wizardBusinessDate, setWizardBusinessDate] = useState<string | null>(null);
 
-  const [actionOpen, setActionOpen] = useState<null | "reopen" | "adjustCash" | "addAdjustment" | "cancel">(null);
+  const [actionOpen, setActionOpen] = useState<null | "reopen" | "addAdjustment" | "cancel">(null);
   const [actionSaving, setActionSaving] = useState(false);
 
   const [reopenReason, setReopenReason] = useState("");
-  const [cashActual, setCashActual] = useState<string>("");
-  const [cashReason, setCashReason] = useState("");
-  const [cashNotes, setCashNotes] = useState("");
 
   const [adjType, setAdjType] = useState<"income" | "expense">("expense");
   const [adjAmount, setAdjAmount] = useState<string>("");
@@ -523,9 +510,6 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
     setActionOpen(null);
     setActionSaving(false);
     setReopenReason("");
-    setCashActual("");
-    setCashReason("");
-    setCashNotes("");
     setAdjType("expense");
     setAdjAmount("");
     setAdjMethod("cash");
@@ -630,43 +614,6 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
       }
     } catch (err: any) {
       toast.error(getDayCloseActionErrorMessage(err, "Failed to reopen day"));
-    } finally {
-      setActionSaving(false);
-    }
-  };
-
-  const adjustCash = async () => {
-    if (!activeId) return;
-    const actual = Number(cashActual);
-    if (!Number.isFinite(actual) || actual < 0) {
-      toast.error("Enter a valid actual cash amount.");
-      return;
-    }
-    const reason = cashReason.trim();
-    if (reason.length < 5) {
-      toast.error("Please write a clear reason (at least 5 characters).");
-      return;
-    }
-    setActionSaving(true);
-    try {
-      const payload: any = {
-        actual_cash: actual,
-        adjustment_reason: reason,
-      };
-      const notes = cashNotes.trim();
-      if (notes) payload.adjustment_notes = notes;
-      const res = await apiClient.post(DayCloseApis.adjustCashReconciliation(activeId), payload);
-      if (res.data?.status === "success") {
-        toast.success("Cash reconciliation updated with audit trail");
-        setActionOpen(null);
-        await refreshAfterMutation();
-      } else {
-        toast.error(res.data?.message || "Failed to update cash reconciliation");
-      }
-    } catch (err: any) {
-      toast.error(
-        getDayCloseActionErrorMessage(err, "Failed to update cash reconciliation"),
-      );
     } finally {
       setActionSaving(false);
     }
@@ -1133,10 +1080,6 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
               ) : showConfirmedActionsInHeader ? (
                 <>
                   <ConfirmedDayCloseActionButtons
-                    onAdjustCash={() => {
-                      setCashActual(String(detail?.actual_cash ?? detail?.expected_cash ?? ""));
-                      setActionOpen("adjustCash");
-                    }}
                     onAddAdjustment={() => setActionOpen("addAdjustment")}
                     onReopen={() => setActionOpen("reopen")}
                   />
@@ -1209,10 +1152,6 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
                     {showConfirmedActions && !showConfirmedActionsInHeader ? (
                       <ConfirmedDayCloseActionButtons
                         compact
-                        onAdjustCash={() => {
-                          setCashActual(String(detail.actual_cash ?? detail.expected_cash ?? ""));
-                          setActionOpen("adjustCash");
-                        }}
                         onAddAdjustment={() => setActionOpen("addAdjustment")}
                         onReopen={() => setActionOpen("reopen")}
                       />
@@ -1436,41 +1375,6 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
             </Button>
             <Button onClick={reopenDay} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-medium">
               {actionSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Reopen"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={actionOpen === "adjustCash"} onOpenChange={(o) => !o && setActionOpen(null)}>
-        <DialogContent className="day-close-ui w-[calc(100vw-1.5rem)] sm:max-w-[640px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
-          <DialogHeader className="p-6 sm:p-8 pb-5 bg-muted/20 border-b border-border/40">
-            <DialogTitle className="text-xl font-medium tracking-tight">Adjust Cash Reconciliation</DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground mt-1">
-              This updates the confirmed close with a required reason and optional notes.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="p-6 sm:p-8 pt-6 space-y-4 overflow-auto flex-1 min-h-0 no-scrollbar">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <p className="dc-eyebrow">Actual Cash</p>
-                <Input value={cashActual} onChange={(e) => setCashActual(e.target.value)} inputMode="decimal" className="h-11 rounded-2xl" placeholder="0" />
-              </div>
-              <div className="space-y-1">
-                <p className="dc-eyebrow">Reason</p>
-                <Input value={cashReason} onChange={(e) => setCashReason(e.target.value)} className="h-11 rounded-2xl" placeholder="Short reason" />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <p className="dc-eyebrow">Notes (optional)</p>
-              <Textarea value={cashNotes} onChange={(e) => setCashNotes(e.target.value)} className="min-h-[110px] rounded-2xl" placeholder="Add context for the audit trail…" />
-            </div>
-          </div>
-          <DialogFooter className="p-6 sm:p-8 pt-4 flex gap-3 bg-muted/30 border-t border-border/40">
-            <Button variant="outline" onClick={() => setActionOpen(null)} disabled={actionSaving} className="dc-btn-outline flex-1 h-12 rounded-2xl">
-              Back
-            </Button>
-            <Button onClick={adjustCash} disabled={actionSaving} className="flex-1 h-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-medium">
-              {actionSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
