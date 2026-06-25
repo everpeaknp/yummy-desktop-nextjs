@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
 import { AccountingApis } from "@/lib/api/endpoints";
+import { getPaymentBankDescription, getPaymentBankLabel, isReviewBank } from "@/lib/payment-banks";
 import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -219,6 +220,8 @@ export function AccountingSetupClient() {
   }, [instrumentMethod, instrumentName, instruments]);
   const duplicateInstrumentIsActive = Boolean(matchingInstrument?.is_active);
   const duplicateInstrumentIsInactive = Boolean(matchingInstrument && !matchingInstrument.is_active);
+  const selectedInstrumentBank =
+    instrumentBankId !== "none" ? banks.find((bank) => bank.id.toString() === instrumentBankId) ?? null : null;
 
   const createInstrument = async () => {
     if (!restaurantId || !canManageInstruments) return;
@@ -657,6 +660,11 @@ export function AccountingSetupClient() {
                   This name already exists but is inactive. Adding will fail until it is reactivated or renamed.
                 </p>
               ) : null}
+              {selectedInstrumentBank && isReviewBank(selectedInstrumentBank) ? (
+                <p className="text-xs font-medium text-amber-600">
+                  This will use the fallback review bank until you replace it with the real settlement bank.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="instrument-provider">Provider</Label>
@@ -676,7 +684,9 @@ export function AccountingSetupClient() {
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
                   {banks.map((b) => (
-                    <SelectItem key={b.id} value={b.id.toString()}>{b.name}</SelectItem>
+                    <SelectItem key={b.id} value={b.id.toString()}>
+                      {getPaymentBankLabel(b)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -718,11 +728,19 @@ export function AccountingSetupClient() {
                   <div className="mt-2 text-sm text-muted-foreground flex gap-2">
                     <span>{instrument.provider || "No provider"} · T+{instrument.settlement_cycle_days}</span>
                     {instrument.bank_id ? (
-                      <Badge variant="outline" className="text-xs ml-auto">
-                        {banks.find((b) => b.id === instrument.bank_id)?.name || `Bank #${instrument.bank_id}`}
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ml-auto ${isReviewBank(banks.find((b) => b.id === instrument.bank_id)) ? "border-amber-500/40 text-amber-600" : ""}`}
+                      >
+                        {getPaymentBankLabel(banks.find((b) => b.id === instrument.bank_id))}
                       </Badge>
                     ) : null}
                   </div>
+                  {instrument.bank_id && isReviewBank(banks.find((b) => b.id === instrument.bank_id)) ? (
+                    <div className="mt-2 text-xs text-amber-600">
+                      This instrument is parked on the fallback bank. Review and assign the real bank when ready.
+                    </div>
+                  ) : null}
                   <div className="mt-3 flex justify-end">
                     {instrument.is_active ? (
                       <Button
@@ -744,6 +762,11 @@ export function AccountingSetupClient() {
               ))}
             </div>
           )}
+          {banks.some((bank) => isReviewBank(bank)) ? (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+              {getPaymentBankDescription(banks.find((bank) => isReviewBank(bank)))}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

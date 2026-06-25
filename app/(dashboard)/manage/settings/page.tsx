@@ -32,6 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { DrawerSessionApis, RestaurantApis, AccountingApis } from "@/lib/api/endpoints";
+import { getPaymentBankDescription, getPaymentBankLabel, isReviewBank } from "@/lib/payment-banks";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import type { DrawerAssignment, DrawerCashier, DrawerConfiguration } from "@/types/day-close";
@@ -642,14 +643,19 @@ export default function RestaurantSettingsPage() {
                                     {banks.map((bank) => (
                                         <div key={bank.id} className="rounded-md border border-border p-3">
                                             <div className="flex items-start justify-between gap-2">
-                                                <div className="font-medium">{bank.name}</div>
+                                                <div className="font-medium">{getPaymentBankLabel(bank)}</div>
                                                 <Badge variant={bank.is_active ? "default" : "outline"}>
                                                     {bank.is_active ? "Active" : "Inactive"}
                                                 </Badge>
                                             </div>
                                             <div className="mt-1 text-sm text-muted-foreground">
-                                                {bank.description || "No description"}
+                                                {getPaymentBankDescription(bank)}
                                             </div>
+                                            {isReviewBank(bank) ? (
+                                                <div className="mt-2 text-xs text-amber-600">
+                                                    Review this fallback bank and reassign instruments to the real bank when ready.
+                                                </div>
+                                            ) : null}
                                         </div>
                                     ))}
                                 </div>
@@ -1294,7 +1300,7 @@ export default function RestaurantSettingsPage() {
                                 <SelectContent>
                                     <SelectItem value="none">None</SelectItem>
                                     {banks.map((b) => (
-                                        <SelectItem key={b.id} value={b.id.toString()}>{b.name}</SelectItem>
+                                        <SelectItem key={b.id} value={b.id.toString()}>{getPaymentBankLabel(b)}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
@@ -1344,7 +1350,7 @@ export default function RestaurantSettingsPage() {
                                 <SelectContent>
                                     <SelectItem value="none">None</SelectItem>
                                     {banks.map((b) => (
-                                        <SelectItem key={b.id} value={b.id.toString()}>{b.name}</SelectItem>
+                                        <SelectItem key={b.id} value={b.id.toString()}>{getPaymentBankLabel(b)}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
