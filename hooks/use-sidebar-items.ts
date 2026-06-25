@@ -36,6 +36,7 @@ import {
   filterSidebarLinksByAccess,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
 export interface SidebarItem {
   title: string;
   href: string;
@@ -222,7 +223,10 @@ export function useSidebarItems(): SidebarItem[] {
           isNestedChild: true,
         });
       }
-      if (!subItems.some((item) => item.href === "/finance/accounting")) {
+      if (
+        isFinanceFeatureEnabled(restaurant, "accounting") &&
+        !subItems.some((item) => item.href === "/finance/accounting")
+      ) {
         subItems.push({
           title: "Accounting",
           href: "/finance/accounting",
@@ -238,5 +242,5 @@ export function useSidebarItems(): SidebarItem[] {
       ...r,
       subItems: r.subItems?.length ? r.subItems : undefined
     }));
-  }, [user?.roles, user?.role, user?.primary_role, user?.permissions, restaurant?.hotel_enabled, restaurant?.restaurant_enabled, selectedModule]);
+  }, [restaurant, user, selectedModule]);
 }

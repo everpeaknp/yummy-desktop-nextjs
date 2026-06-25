@@ -24,6 +24,8 @@ interface Restaurant {
   paid_ends_at: string | null;
   hotel_enabled: boolean;
   restaurant_enabled: boolean;
+  finance_reports_enabled: boolean;
+  finance_accounting_enabled: boolean;
 }
 
 interface RestaurantState {
