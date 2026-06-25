@@ -27,6 +27,7 @@ import {
   LucideIcon,
   Layers,
   Banknote,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -163,7 +164,7 @@ export function useSidebarItems(): SidebarItem[] {
         return true;
       })
       .map((item) => ({
-        title: item.title,
+        title: item.href === "/finance/income" ? "Income" : item.title,
         href: item.href,
         icon: RESTAURANT_ICON_MAP[item.href] ?? LayoutDashboard,
         externalUrl: item.externalUrl,
@@ -220,6 +221,17 @@ export function useSidebarItems(): SidebarItem[] {
           title: "Expenses",
           href: "/finance/expenses",
           icon: CreditCard,
+          isNestedChild: true,
+        });
+      }
+      if (
+        isFinanceFeatureEnabled(restaurant, "reports") &&
+        !subItems.some((item) => item.href === "/finance/reports")
+      ) {
+        subItems.push({
+          title: "Reports",
+          href: "/finance/reports",
+          icon: FileText,
           isNestedChild: true,
         });
       }
