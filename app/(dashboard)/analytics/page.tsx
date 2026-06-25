@@ -1104,6 +1104,11 @@ export default function AnalyticsPage() {
                             <TabsTrigger value="nc" className="rounded-lg font-semibold shrink-0">NC</TabsTrigger>
                         </TabsList>
                         <div className="flex flex-wrap items-center gap-2">
+                            <Link href="/analytics/menu">
+                                <Button variant="outline" className="rounded-full gap-2 h-8 text-xs font-semibold">
+                                    <ReceiptText className="w-3.5 h-3.5" /> Menu Drilldown
+                                </Button>
+                            </Link>
                             <Link href="/analytics/kitchen">
                                 <Button variant="outline" className="rounded-full gap-2 h-8 text-xs font-semibold">
                                     <ChefHat className="w-3.5 h-3.5" /> Kitchen Details
@@ -1943,14 +1948,22 @@ export default function AnalyticsPage() {
                         {menuSnapshotTopItem && (
                             <Card className="bg-card border-border shadow-sm overflow-hidden">
                                 <div className="bg-gradient-to-r from-orange-500/10 to-transparent p-5">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center">
-                                            <Utensils className="w-5 h-5 text-orange-500" />
+                                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center">
+                                                <Utensils className="w-5 h-5 text-orange-500" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-lg">Menu Performance</h3>
+                                                <p className="text-sm text-muted-foreground">Sales ranking and item movement</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h3 className="font-bold text-lg">Menu Performance</h3>
-                                            <p className="text-sm text-muted-foreground">Sales ranking and item movement</p>
-                                        </div>
+                                        <Link href="/analytics/menu">
+                                            <Button className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl">
+                                                <ReceiptText className="mr-2 h-4 w-4" />
+                                                Open Station Drilldown
+                                            </Button>
+                                        </Link>
                                     </div>
                                     <div className="bg-background/60 border border-border/40 rounded-xl p-4 mb-4">
                                         <p className="text-xs font-bold text-orange-500 uppercase tracking-wider mb-2">Best Seller</p>
@@ -2051,7 +2064,9 @@ export default function AnalyticsPage() {
                                             <SelectTrigger className="h-8 rounded-lg text-xs w-[110px]"><SelectValue /></SelectTrigger>
                                             <SelectContent className="rounded-xl">
                                                 <SelectItem value="revenue">By Revenue</SelectItem>
-                                                <SelectItem value="quantity">By Qty Sold</SelectItem>
+                                                <SelectItem value="quantity_sold">By Qty Sold</SelectItem>
+                                                <SelectItem value="category">By Category</SelectItem>
+                                                <SelectItem value="avg_price">By Avg Price</SelectItem>
                                                 <SelectItem value="name">By Name</SelectItem>
                                             </SelectContent>
                                         </Select>

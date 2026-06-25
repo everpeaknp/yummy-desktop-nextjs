@@ -99,14 +99,14 @@ export default function RestaurantSettingsPage() {
         open: false,
         index: null
     });
-    const [qrForm, setQrForm] = useState({ name: "", payload: "", bank_id: "none" });
+    const [qrForm, setQrForm] = useState({ config_id: "", name: "", payload: "", bank_id: "none" });
     const qrInputRef = useRef<HTMLInputElement>(null);
     const [isExtracting, setIsExtracting] = useState(false);
     const [cardDialog, setCardDialog] = useState<{ open: boolean; index: number | null }>({
         open: false,
         index: null,
     });
-    const [cardForm, setCardForm] = useState({ name: "", identifier: "", bank_id: "none" });
+    const [cardForm, setCardForm] = useState({ config_id: "", name: "", identifier: "", bank_id: "none" });
 
     // Payment Banks State
     const [banks, setBanks] = useState<PaymentBank[]>([]);
@@ -118,6 +118,8 @@ export default function RestaurantSettingsPage() {
     const [drawerCashiers, setDrawerCashiers] = useState<DrawerCashier[]>([]);
     const [drawerAssignSelection, setDrawerAssignSelection] = useState<Record<string, string>>({});
     const [drawerLoading, setDrawerLoading] = useState(false);
+    const [drawerControlsEnabled, setDrawerControlsEnabled] = useState(false);
+    const [drawerControlsSaving, setDrawerControlsSaving] = useState(false);
     const [drawerDialog, setDrawerDialog] = useState<{ open: boolean; id: number | null }>({
         open: false,
         id: null,
@@ -134,7 +136,7 @@ export default function RestaurantSettingsPage() {
         if (!user?.restaurant_id) return;
         setDrawerLoading(true);
         try {
-            const [configRes, assignmentRes, cashierRes] = await Promise.all([
+            const [configRes, assignmentRes, cashierRes, controlsRes] = await Promise.all([
                 apiClient.get(DrawerSessionApis.configurations({
                     restaurantId: user.restaurant_id,
                     businessLine: "restaurant",
@@ -144,10 +146,12 @@ export default function RestaurantSettingsPage() {
                     businessLine: "restaurant",
                 })),
                 apiClient.get(DrawerSessionApis.cashiers({ restaurantId: user.restaurant_id })),
+                apiClient.get(DrawerSessionApis.controls({ restaurantId: user.restaurant_id })),
             ]);
             setDrawerConfigs(Array.isArray(configRes.data?.data) ? configRes.data.data : []);
             setDrawerAssignments(Array.isArray(assignmentRes.data?.data) ? assignmentRes.data.data : []);
             setDrawerCashiers(Array.isArray(cashierRes.data?.data) ? cashierRes.data.data : []);
+            setDrawerControlsEnabled(Boolean(controlsRes.data?.data?.enabled));
         } catch (err: any) {
             const status = err?.response?.status;
             if (status !== 403) {
@@ -156,6 +160,7 @@ export default function RestaurantSettingsPage() {
             setDrawerConfigs([]);
             setDrawerAssignments([]);
             setDrawerCashiers([]);
+            setDrawerControlsEnabled(false);
         } finally {
             setDrawerLoading(false);
         }
@@ -297,6 +302,25 @@ export default function RestaurantSettingsPage() {
         }
     };
 
+    const handleDrawerControlsToggle = async (enabled: boolean) => {
+        if (!user?.restaurant_id) return;
+        setDrawerControlsSaving(true);
+        try {
+            await apiClient.post(DrawerSessionApis.setControls({
+                restaurantId: user.restaurant_id,
+                enabled,
+            }));
+            setDrawerControlsEnabled(enabled);
+            toast.success(enabled ? "Drawer controls enabled" : "Drawer controls disabled");
+            await loadDrawerConfigurations();
+        } catch (err) {
+            console.error("Failed to update drawer controls", err);
+            toast.error("Failed to update drawer controls");
+        } finally {
+            setDrawerControlsSaving(false);
+        }
+    };
+
     const handleRemoveDrawerAssignment = async (assignment: DrawerAssignment) => {
         if (!user?.restaurant_id) return;
         try {
@@ -375,6 +399,7 @@ export default function RestaurantSettingsPage() {
         
         const currentQrs = restaurant?.payment_qrs ? [...restaurant.payment_qrs] : [];
         const payloadQr = {
+            config_id: qrForm.config_id || undefined,
             name: qrForm.name.trim(),
             payload: qrForm.payload.trim(),
             bank_id: qrForm.bank_id !== "none" ? Number(qrForm.bank_id) : null,
@@ -400,7 +425,7 @@ export default function RestaurantSettingsPage() {
                 setGlobalRestaurant(res.data.data);
                 toast.success("QR configurations updated");
                 setQrDialog({ open: false, index: null });
-                setQrForm({ name: "", payload: "", bank_id: "none" });
+                setQrForm({ config_id: "", name: "", payload: "", bank_id: "none" });
             }
         } catch (err) {
             toast.error("Failed to update QR configurations");
@@ -475,6 +500,7 @@ export default function RestaurantSettingsPage() {
             ? [...restaurant.payment_cards]
             : [];
         const payloadCard = {
+            config_id: cardForm.config_id || undefined,
             name: cardForm.name.trim(),
             identifier: cardForm.identifier.trim() || null,
             bank_id: cardForm.bank_id !== "none" ? Number(cardForm.bank_id) : null,
@@ -500,7 +526,7 @@ export default function RestaurantSettingsPage() {
                 setGlobalRestaurant(res.data.data);
                 toast.success("Card configurations updated");
                 setCardDialog({ open: false, index: null });
-                setCardForm({ name: "", identifier: "", bank_id: "none" });
+                setCardForm({ config_id: "", name: "", identifier: "", bank_id: "none" });
             }
         } catch (err) {
             toast.error("Failed to update card configurations");
@@ -756,7 +782,7 @@ export default function RestaurantSettingsPage() {
                                 className="h-8"
                                 disabled={restaurant?.payment_qrs?.length >= 4}
                                 onClick={() => {
-                                    setQrForm({ name: "", payload: "", bank_id: "none" });
+                                    setQrForm({ config_id: "", name: "", payload: "", bank_id: "none" });
                                     setQrDialog({ open: true, index: null });
                                 }}
                             >
@@ -790,6 +816,7 @@ export default function RestaurantSettingsPage() {
                                                     className="h-8 w-8 text-primary"
                                                     onClick={() => {
                                                         setQrForm({
+                                                            config_id: String(qr?.config_id || ""),
                                                             name: String(qr?.name || ""),
                                                             payload: String(qr?.payload || ""),
                                                             bank_id: qr?.bank_id ? String(qr.bank_id) : "none"
@@ -831,7 +858,7 @@ export default function RestaurantSettingsPage() {
                                 className="h-8"
                                 disabled={(restaurant?.payment_cards?.length || 0) >= 20}
                                 onClick={() => {
-                                    setCardForm({ name: "", identifier: "", bank_id: "none" });
+                                    setCardForm({ config_id: "", name: "", identifier: "", bank_id: "none" });
                                     setCardDialog({ open: true, index: null });
                                 }}
                             >
@@ -867,6 +894,7 @@ export default function RestaurantSettingsPage() {
                                                     className="h-8 w-8 text-primary"
                                                     onClick={() => {
                                                         setCardForm({
+                                                            config_id: String(card?.config_id || ""),
                                                             name: String(card?.name || ""),
                                                             identifier: String(card?.identifier || ""),
                                                             bank_id: card?.bank_id ? String(card.bank_id) : "none",
@@ -892,7 +920,7 @@ export default function RestaurantSettingsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card id="cash-drawers">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
                             <div className="space-y-1">
                                 <CardTitle className="flex items-center gap-2">
@@ -904,6 +932,22 @@ export default function RestaurantSettingsPage() {
                                 </CardDescription>
                             </div>
                             <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 rounded-md border px-3 py-1.5">
+                                    <div className="text-right">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                            Drawer Controls
+                                        </p>
+                                        <p className="text-[11px] text-muted-foreground">
+                                            {drawerControlsEnabled ? "Enabled" : "Disabled"}
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        checked={drawerControlsEnabled}
+                                        disabled={drawerLoading || drawerControlsSaving || !canManageDrawers}
+                                        onCheckedChange={handleDrawerControlsToggle}
+                                        aria-label="Toggle drawer controls"
+                                    />
+                                </div>
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -929,6 +973,10 @@ export default function RestaurantSettingsPage() {
                             {!canManageDrawers ? (
                                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
                                     You need drawer approval or accounting setup permission to manage cash drawers.
+                                </div>
+                            ) : !drawerControlsEnabled ? (
+                                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
+                                    Drawer controls are off. Enable them above before cashiers can open drawers, count cash, or submit settlement evidence.
                                 </div>
                             ) : drawerLoading ? (
                                 <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">

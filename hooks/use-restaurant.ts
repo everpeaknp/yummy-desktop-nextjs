@@ -9,8 +9,8 @@ interface Restaurant {
   phone: string;
   timezone?: string;
   business_day_start_time?: string;
-  payment_qrs?: Array<{ name: string; payload: string }>;
-  payment_cards?: Array<{ name: string; identifier?: string | null }>;
+  payment_qrs?: Array<{ config_id?: string; name: string; payload: string; bank_id?: number | null }>;
+  payment_cards?: Array<{ config_id?: string; name: string; identifier?: string | null; bank_id?: number | null }>;
   profile_picture: string | null;
   cover_photo: string | null;
   currency: string;
