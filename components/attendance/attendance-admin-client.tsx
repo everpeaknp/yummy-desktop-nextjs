@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import QRCode from "qrcode";
 import {
   CalendarDays,
   Check,
+  Clock,
   Copy,
   Download,
   Fingerprint,
   Loader2,
+  MapPin,
   Plus,
   QrCode,
   RefreshCw,
@@ -27,6 +30,7 @@ import type {
   AttendanceOverview,
   AttendanceQrSession,
   AttendanceSchedule,
+  AttendanceSettings,
   AttendanceShiftTemplate,
   StaffDeviceMapping,
 } from "@/lib/attendance/types";
@@ -37,13 +41,56 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AttendancePolicyMap } from "./attendance-policy-map";
+import { attendanceRadiusLabel } from "./attendance-policy";
 
 type StaffProfile = { id: number; user_id: number; account_number?: string };
 type StaffUser = { id: number; name?: string; full_name?: string; email?: string };
+type AttendanceSettingsForm = {
+  timezone: string;
+  geofence_radius_meters: string;
+  required_location_accuracy_meters: string;
+  mobile_clocking_enabled: boolean;
+  device_clocking_enabled: boolean;
+};
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+function isOpenEntry(entry: AttendanceEntry) {
+  return entry.status === "open" || !entry.clock_out_at;
+}
+
+function mergeEntriesWithOpenCarryover(selectedEntries: AttendanceEntry[], recentEntries: AttendanceEntry[]) {
+  const merged = new Map<number, AttendanceEntry>();
+  for (const entry of selectedEntries) merged.set(entry.id, entry);
+  for (const entry of recentEntries) {
+    if (isOpenEntry(entry)) merged.set(entry.id, entry);
+  }
+  return Array.from(merged.values()).sort((a, b) => {
+    const left = new Date(a.clock_in_at).getTime();
+    const right = new Date(b.clock_in_at).getTime();
+    return right - left;
+  });
+}
+
+function settingsToForm(settings: AttendanceSettings): AttendanceSettingsForm {
+  return {
+    timezone: settings.timezone || "Asia/Kathmandu",
+    geofence_radius_meters: String(settings.geofence_radius_meters || 150),
+    required_location_accuracy_meters: String(settings.required_location_accuracy_meters || 100),
+    mobile_clocking_enabled: settings.mobile_clocking_enabled,
+    device_clocking_enabled: settings.device_clocking_enabled,
+  };
+}
 
 const deviceTypeLabels: Record<AttendanceDevice["device_type"], string> = {
   zkteco_lan: "ZKTeco LAN",
@@ -80,6 +127,15 @@ function errorMessage(error: unknown, fallback: string) {
   );
 }
 
+function isBiometricAddonError(error: unknown) {
+  const candidate = error as { response?: { data?: { message?: string; errors?: Array<{ code?: string; message?: string }> } } };
+  const data = candidate.response?.data;
+  return Boolean(
+    data?.errors?.some((item) => item.code === "ATTENDANCE_BIOMETRIC_REQUIRED") ||
+      data?.message?.includes("Biometric-device attendance is not enabled"),
+  );
+}
+
 function staffLabel(profile: StaffProfile | undefined, usersById: Map<number, StaffUser>) {
   if (!profile) return "Unknown staff";
   const user = usersById.get(profile.user_id);
@@ -91,6 +147,7 @@ export function AttendanceAdminClient() {
   const [loading, setLoading] = useState(true);
   const [dateFrom, setDateFrom] = useState(todayIso());
   const [dateTo, setDateTo] = useState(todayIso());
+  const [settings, setSettings] = useState<AttendanceSettings | null>(null);
   const [overview, setOverview] = useState<AttendanceOverview | null>(null);
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
@@ -100,6 +157,7 @@ export function AttendanceAdminClient() {
   const [mobileDevices, setMobileDevices] = useState<AttendanceMobileDevice[]>([]);
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
+  const [biometricUnavailable, setBiometricUnavailable] = useState(false);
   const [qrSession, setQrSession] = useState<AttendanceQrSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [stationLabel, setStationLabel] = useState("Restaurant attendance");
@@ -110,9 +168,17 @@ export function AttendanceAdminClient() {
   const [templateForm, setTemplateForm] = useState({ name: "", start_local_time: "09:00", end_local_time: "17:00", unpaid_break_minutes: "30" });
   const [scheduleForm, setScheduleForm] = useState({ staff_id: "default", shift_template_id: "", weekday: "1", effective_from: todayIso() });
   const [busy, setBusy] = useState(false);
+  const [settingsForm, setSettingsForm] = useState<AttendanceSettingsForm>({
+    timezone: "Asia/Kathmandu",
+    geofence_radius_meters: "150",
+    required_location_accuracy_meters: "100",
+    mobile_clocking_enabled: true,
+    device_clocking_enabled: true,
+  });
 
   const usersById = useMemo(() => new Map(staffUsers.map((user) => [user.id, user])), [staffUsers]);
   const devicesById = useMemo(() => new Map(devices.map((device) => [device.id, device])), [devices]);
+  const activeEntries = useMemo(() => entries.filter(isOpenEntry), [entries]);
 
   const qrPayload = useMemo(() => {
     if (!qrSession?.token) return "";
@@ -122,23 +188,39 @@ export function AttendanceAdminClient() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [overviewData, entryData, templateData, scheduleData, deviceData, mappingData, mobileData, profilesRes, usersRes] = await Promise.all([
-        attendanceApi.overview(dateFrom, dateTo),
-        attendanceApi.listEntries({ dateFrom, dateTo, limit: 300 }),
-        attendanceApi.listShiftTemplates(),
-        attendanceApi.listSchedules(),
+      const biometricData = Promise.all([
         attendanceApi.listDevices(),
         attendanceApi.listDeviceMappings(),
+      ])
+        .then(([deviceData, mappingData]) => ({ deviceData, mappingData, unavailable: false }))
+        .catch((error) => {
+          if (isBiometricAddonError(error)) {
+            return { deviceData: [] as AttendanceDevice[], mappingData: [] as StaffDeviceMapping[], unavailable: true };
+          }
+          throw error;
+        });
+
+      const [settingsData, overviewData, selectedEntryData, recentEntryData, templateData, scheduleData, biometric, mobileData, profilesRes, usersRes] = await Promise.all([
+        attendanceApi.getSettings(),
+        attendanceApi.overview(dateFrom, dateTo),
+        attendanceApi.listEntries({ dateFrom, dateTo, limit: 300 }),
+        attendanceApi.listEntries({ limit: 300 }),
+        attendanceApi.listShiftTemplates(),
+        attendanceApi.listSchedules(),
+        biometricData,
         attendanceApi.listMobileDevices(),
         apiClient.get(StaffProfileApis.list({ limit: 500 })),
         apiClient.get(StaffApis.list()),
       ]);
+      setSettings(settingsData);
+      setSettingsForm(settingsToForm(settingsData));
       setOverview(overviewData);
-      setEntries(entryData);
+      setEntries(mergeEntriesWithOpenCarryover(selectedEntryData, recentEntryData));
       setTemplates(templateData);
       setSchedules(scheduleData);
-      setDevices(deviceData);
-      setMappings(mappingData);
+      setDevices(biometric.deviceData);
+      setMappings(biometric.mappingData);
+      setBiometricUnavailable(biometric.unavailable);
       setMobileDevices(mobileData);
       setStaffProfiles(profilesRes.data?.data || []);
       setStaffUsers(usersRes.data?.data || []);
@@ -172,6 +254,26 @@ export function AttendanceAdminClient() {
       toast.success("Attendance QR generated");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to generate QR"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveSettings() {
+    setBusy(true);
+    try {
+      const updated = await attendanceApi.updateSettings({
+        timezone: settingsForm.timezone.trim() || "Asia/Kathmandu",
+        geofence_radius_meters: Number.parseInt(settingsForm.geofence_radius_meters, 10) || 150,
+        required_location_accuracy_meters: Number.parseInt(settingsForm.required_location_accuracy_meters, 10) || 100,
+        mobile_clocking_enabled: settingsForm.mobile_clocking_enabled,
+        device_clocking_enabled: settingsForm.device_clocking_enabled,
+      });
+      setSettings(updated);
+      setSettingsForm(settingsToForm(updated));
+      toast.success("Attendance settings saved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to save attendance settings"));
     } finally {
       setBusy(false);
     }
@@ -348,25 +450,33 @@ export function AttendanceAdminClient() {
 
   const metricCards = [
     ["Total entries", overview?.total_entries || 0],
+    ["Active now", activeEntries.length],
     ["Pending", overview?.pending_entries || 0],
     ["Approved", overview?.approved_entries || 0],
     ["Regular", minutesLabel(overview?.regular_minutes || 0)],
     ["Overtime", minutesLabel(overview?.overtime_minutes || 0)],
     ["Breaks", minutesLabel(overview?.break_minutes || 0)],
   ];
+  const radiusMeters = Math.min(
+    5000,
+    Math.max(10, Number.parseInt(settingsForm.geofence_radius_meters, 10) || 150),
+  );
+  const showDateFilters = activeTab === "overview" || activeTab === "timesheets";
 
   return (
-    <div className="mx-auto w-full max-w-[1440px] space-y-5 overflow-x-hidden p-4 pb-24 md:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <div className="mx-auto w-full max-w-[1560px] space-y-5 overflow-x-hidden p-4 pb-24 md:p-6 lg:p-8">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <h1 className="text-3xl font-black tracking-tight text-foreground">Attendance</h1>
-          <p className="mt-1 max-w-3xl text-sm font-medium text-muted-foreground">
-            Review timesheets, generate restaurant QR sessions, and manage biometric attendance devices.
+          <h1 className="text-2xl font-semibold text-foreground">Attendance</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Staff presence, payable time, schedules, kiosk, and attendance devices.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 sm:w-[160px]" />
-          <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 sm:w-[160px]" />
+          {showDateFilters ? <>
+            <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 sm:w-[160px]" />
+            <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 sm:w-[160px]" />
+          </> : null}
           <Button variant="outline" onClick={loadAll} disabled={loading || busy}>
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Refresh
@@ -375,16 +485,17 @@ export function AttendanceAdminClient() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
-          <TabsTrigger value="overview" className="gap-2"><CalendarDays className="h-4 w-4" />Overview</TabsTrigger>
-          <TabsTrigger value="timesheets" className="gap-2"><Check className="h-4 w-4" />Timesheets</TabsTrigger>
-          <TabsTrigger value="schedules" className="gap-2"><CalendarDays className="h-4 w-4" />Schedules</TabsTrigger>
-          <TabsTrigger value="qr" className="gap-2"><QrCode className="h-4 w-4" />QR Kiosk</TabsTrigger>
-          <TabsTrigger value="devices" className="gap-2"><Fingerprint className="h-4 w-4" />Devices</TabsTrigger>
+        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto p-1">
+          <TabsTrigger value="overview" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Overview</TabsTrigger>
+          <TabsTrigger value="timesheets" className="min-w-max gap-2"><Check className="h-4 w-4" />Timesheets</TabsTrigger>
+          <TabsTrigger value="schedules" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Schedule</TabsTrigger>
+          <TabsTrigger value="qr" className="min-w-max gap-2"><QrCode className="h-4 w-4" />QR Kiosk</TabsTrigger>
+          <TabsTrigger value="devices" className="min-w-max gap-2"><Fingerprint className="h-4 w-4" />Devices</TabsTrigger>
+          <TabsTrigger value="settings" className="min-w-max gap-2"><MapPin className="h-4 w-4" />Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
             {metricCards.map(([label, value]) => (
               <Card key={String(label)}>
                 <CardContent className="p-4">
@@ -394,6 +505,15 @@ export function AttendanceAdminClient() {
               </Card>
             ))}
           </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Clock className="h-5 w-5" />Active Now</CardTitle>
+              <CardDescription>Staff currently clocked in, including entries that started before this date range.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TimesheetTable entries={activeEntries} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} />
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle>Exceptions</CardTitle>
@@ -410,7 +530,7 @@ export function AttendanceAdminClient() {
             <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <CardTitle>Timesheets</CardTitle>
-                <CardDescription>Approve payable hours before payroll snapshot.</CardDescription>
+                <CardDescription>Approve payable hours before payroll snapshot. Open entries stay visible even when they started earlier.</CardDescription>
               </div>
               <Button variant="outline" onClick={() => window.open(attendanceApi.exportCsvUrl(dateFrom, dateTo), "_blank")}>
                 <Download className="mr-2 h-4 w-4" />
@@ -419,6 +539,84 @@ export function AttendanceAdminClient() {
             </CardHeader>
             <CardContent>
               <TimesheetTable entries={entries} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="settings" className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle>Restaurant Geofence</CardTitle>
+              <CardDescription>The restaurant profile owns the location. Attendance controls only the allowed range.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <AttendancePolicyMap
+                latitude={settings?.latitude ?? null}
+                longitude={settings?.longitude ?? null}
+                radiusMeters={radiusMeters}
+                onEditRestaurantLocation={() => window.location.assign("/manage/profile")}
+              />
+              {settings?.latitude != null && settings?.longitude != null ? (
+                <div className="flex justify-end">
+                  <Button asChild type="button" variant="ghost" size="sm">
+                    <Link href="/manage/profile"><MapPin className="mr-2 h-4 w-4" />Edit restaurant location</Link>
+                  </Button>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Attendance Policy</CardTitle>
+              <CardDescription>Validation rules for mobile and physical attendance.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <Label>Attendance radius</Label>
+                  <span className="text-sm font-semibold">{radiusMeters} m</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{attendanceRadiusLabel(radiusMeters)}</p>
+                <Slider
+                  className="mt-4"
+                  min={10}
+                  max={5000}
+                  step={10}
+                  value={[radiusMeters]}
+                  onValueChange={([value]) => setSettingsForm((current) => ({ ...current, geofence_radius_meters: String(value) }))}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <Field label="Radius meters">
+                  <Input type="number" min={10} max={5000} value={settingsForm.geofence_radius_meters} onChange={(event) => setSettingsForm((current) => ({ ...current, geofence_radius_meters: event.target.value }))} />
+                </Field>
+                <Field label="Required GPS accuracy">
+                  <Input type="number" min={1} max={1000} value={settingsForm.required_location_accuracy_meters} onChange={(event) => setSettingsForm((current) => ({ ...current, required_location_accuracy_meters: event.target.value }))} />
+                </Field>
+              </div>
+              <div className="divide-y rounded-lg border">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="p-3">
+                    <Label>Mobile clocking</Label>
+                    <p className="text-xs text-muted-foreground">Approved phones inside the attendance radius.</p>
+                  </div>
+                  <Switch className="mr-3" checked={settingsForm.mobile_clocking_enabled} onCheckedChange={(checked) => setSettingsForm((current) => ({ ...current, mobile_clocking_enabled: checked }))} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="p-3">
+                    <Label>Biometric devices</Label>
+                    <p className="text-xs text-muted-foreground">Registered physical attendance devices.</p>
+                  </div>
+                  <Switch className="mr-3" checked={settingsForm.device_clocking_enabled} onCheckedChange={(checked) => setSettingsForm((current) => ({ ...current, device_clocking_enabled: checked }))} />
+                </div>
+              </div>
+              <Field label="Timezone">
+                <Input value={settingsForm.timezone} onChange={(event) => setSettingsForm((current) => ({ ...current, timezone: event.target.value }))} />
+              </Field>
+              <Button onClick={saveSettings} disabled={busy} className="w-full">
+                {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                Save attendance policy
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -510,8 +708,10 @@ export function AttendanceAdminClient() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="devices" className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-          <div className="space-y-5">
+        <TabsContent value="devices" className="space-y-5">
+          <MobileDeviceTable devices={mobileDevices} staffProfiles={staffProfiles} usersById={usersById} onDecide={decideMobile} />
+          <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+            <div className="space-y-5">
             <Card>
               <CardHeader><CardTitle>Register ZKTeco Device</CardTitle><CardDescription>Add the physical device identity.</CardDescription></CardHeader>
               <CardContent className="space-y-4">
@@ -556,10 +756,20 @@ export function AttendanceAdminClient() {
                 </CardContent>
               </Card>
             ) : null}
-          </div>
-          <div className="space-y-5">
-            <DeviceTable devices={devices} mappings={mappings} devicesById={devicesById} staffProfiles={staffProfiles} usersById={usersById} onToggle={toggleDevice} onPair={createPairingCode} />
-            <MobileDeviceTable devices={mobileDevices} staffProfiles={staffProfiles} usersById={usersById} onDecide={decideMobile} />
+            </div>
+            <div className="space-y-5">
+              {biometricUnavailable ? (
+                <Card className="border-amber-500/30 bg-amber-500/10">
+                  <CardHeader>
+                    <CardTitle>Biometric Devices Not Enabled</CardTitle>
+                    <CardDescription>
+                      QR/mobile attendance is available. Enable the biometric attendance add-on before registering ZKTeco devices.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              ) : null}
+              <DeviceTable devices={devices} mappings={mappings} devicesById={devicesById} staffProfiles={staffProfiles} usersById={usersById} onToggle={toggleDevice} onPair={createPairingCode} />
+            </div>
           </div>
         </TabsContent>
       </Tabs>
@@ -577,31 +787,45 @@ function InfoLine({ label, value }: { label: string; value: string }) {
 
 function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove, onReject }: { entries: AttendanceEntry[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onSubmit: (entry: AttendanceEntry) => void; onApprove: (entry: AttendanceEntry) => void; onReject: (entry: AttendanceEntry) => void }) {
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <Table>
-        <TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Clock</TableHead><TableHead>Minutes</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-        <TableBody>
-          {entries.length === 0 ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No attendance entries in this range.</TableCell></TableRow> : entries.map((entry) => {
-            const profile = staffProfiles.find((item) => item.id === entry.staff_id);
-            return (
-              <TableRow key={entry.id}>
-                <TableCell className="min-w-[180px] font-medium">{staffLabel(profile, usersById)}</TableCell>
-                <TableCell className="min-w-[220px] text-sm">{formatDateTime(entry.clock_in_at)} to {formatDateTime(entry.clock_out_at)}</TableCell>
-                <TableCell className="min-w-[180px] text-sm">Regular {minutesLabel(entry.regular_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</TableCell>
-                <TableCell className="min-w-[180px]"><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status}</Badge>{entry.exception_code ? <div className="mt-1 text-xs text-destructive">{entry.exception_code}</div> : null}</TableCell>
-                <TableCell className="min-w-[220px] text-right">
-                  <div className="flex justify-end gap-2">
-                    {entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}
-                    {entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}
-                    {entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
+    <>
+      <div className="space-y-2 md:hidden">
+        {entries.length === 0 ? <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">No attendance entries in this range.</div> : entries.map((entry) => {
+          const profile = staffProfiles.find((item) => item.id === entry.staff_id);
+          return <div key={entry.id} className="rounded-lg border p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><p className="truncate font-medium">{staffLabel(profile, usersById)}</p><p className="mt-1 text-xs text-muted-foreground">{formatDateTime(entry.clock_in_at)} to {formatDateTime(entry.clock_out_at)}</p></div>
+              <Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status}</Badge>
+            </div>
+            <p className="mt-3 text-sm">Regular {minutesLabel(entry.regular_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</p>
+            {entry.exception_code ? <p className="mt-1 text-xs text-destructive">{entry.exception_code}</p> : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}
+              {entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}
+              {entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}
+            </div>
+          </div>;
+        })}
+      </div>
+      <div className="hidden overflow-x-auto rounded-md border md:block">
+        <Table>
+          <TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Clock</TableHead><TableHead>Minutes</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {entries.length === 0 ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No attendance entries in this range.</TableCell></TableRow> : entries.map((entry) => {
+              const profile = staffProfiles.find((item) => item.id === entry.staff_id);
+              return (
+                <TableRow key={entry.id}>
+                  <TableCell className="min-w-[180px] font-medium">{staffLabel(profile, usersById)}</TableCell>
+                  <TableCell className="min-w-[220px] text-sm">{formatDateTime(entry.clock_in_at)} to {formatDateTime(entry.clock_out_at)}</TableCell>
+                  <TableCell className="min-w-[180px] text-sm">Regular {minutesLabel(entry.regular_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</TableCell>
+                  <TableCell className="min-w-[180px]"><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status}</Badge>{entry.exception_code ? <div className="mt-1 text-xs text-destructive">{entry.exception_code}</div> : null}</TableCell>
+                  <TableCell className="min-w-[220px] text-right"><div className="flex justify-end gap-2">{entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}</div></TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }
 
