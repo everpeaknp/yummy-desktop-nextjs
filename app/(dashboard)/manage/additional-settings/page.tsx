@@ -28,6 +28,7 @@ import {
     X,
     Loader2,
     Settings2,
+    ArrowLeft,
     ArrowRight,
     ChevronRight,
     Clock,
@@ -913,7 +914,16 @@ export default function AdditionalSettingsPage() {
     return (
         <div className="p-8 max-w-[1600px] mx-auto space-y-12 pb-24">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div className="space-y-1">
+                <div className="space-y-3">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => router.push("/manage")}
+                        className="w-fit gap-2 px-0 text-muted-foreground hover:text-foreground"
+                    >
+                        <ArrowLeft className="h-4 w-4" />
+                        Back to Manage
+                    </Button>
                     <h1 className="text-3xl font-black tracking-tight text-foreground">Additional Settings</h1>
                     <p className="text-muted-foreground font-medium">
                         Advanced configuration hub • System management • Legal & Support
