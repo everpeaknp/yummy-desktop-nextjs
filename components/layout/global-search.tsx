@@ -7,6 +7,8 @@ import { Search, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useSidebarItems } from "@/hooks/use-sidebar-items";
 import { useAuth } from "@/hooks/use-auth";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
 import { isPathAccessible } from "@/lib/role-permissions";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
@@ -87,6 +89,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
     const [query, setQuery] = useState("");
     const router = useRouter();
     const user = useAuth((s) => s.user);
+    const restaurant = useRestaurant((s) => s.restaurant);
     const sidebarItems = useSidebarItems();
 
     // Reset query when closed
@@ -115,13 +118,14 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 
         MANAGE_ITEMS.forEach((item) => {
             if (!isPathAccessible(item.href, user)) return;
+            if (item.href.startsWith("/finance/accounting") && !isFinanceFeatureEnabled(restaurant, "accounting")) return;
             if (!items.has(item.href)) {
                 items.set(item.href, item);
             }
         });
 
         return Array.from(items.values());
-    }, [sidebarItems, user?.permissions, user?.role, user?.roles, user?.primary_role]);
+    }, [sidebarItems, restaurant, user]);
 
     const filteredItems = useMemo(() => {
         if (!query.trim()) return allItems;

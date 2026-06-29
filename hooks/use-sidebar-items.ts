@@ -28,6 +28,7 @@ import {
   Layers,
   Banknote,
   Fingerprint,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -37,6 +38,7 @@ import {
   filterSidebarLinksByAccess,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
 export interface SidebarItem {
   title: string;
   href: string;
@@ -164,7 +166,7 @@ export function useSidebarItems(): SidebarItem[] {
         return true;
       })
       .map((item) => ({
-        title: item.title,
+        title: item.href === "/finance/income" ? "Income" : item.title,
         href: item.href,
         icon: RESTAURANT_ICON_MAP[item.href] ?? LayoutDashboard,
         externalUrl: item.externalUrl,
@@ -224,7 +226,21 @@ export function useSidebarItems(): SidebarItem[] {
           isNestedChild: true,
         });
       }
-      if (!subItems.some((item) => item.href === "/finance/accounting")) {
+      if (
+        isFinanceFeatureEnabled(restaurant, "reports") &&
+        !subItems.some((item) => item.href === "/finance/reports")
+      ) {
+        subItems.push({
+          title: "Reports",
+          href: "/finance/reports",
+          icon: FileText,
+          isNestedChild: true,
+        });
+      }
+      if (
+        isFinanceFeatureEnabled(restaurant, "accounting") &&
+        !subItems.some((item) => item.href === "/finance/accounting")
+      ) {
         subItems.push({
           title: "Accounting",
           href: "/finance/accounting",
@@ -240,5 +256,5 @@ export function useSidebarItems(): SidebarItem[] {
       ...r,
       subItems: r.subItems?.length ? r.subItems : undefined
     }));
-  }, [user?.roles, user?.role, user?.primary_role, user?.permissions, restaurant?.hotel_enabled, restaurant?.restaurant_enabled, selectedModule]);
+  }, [restaurant, user, selectedModule]);
 }

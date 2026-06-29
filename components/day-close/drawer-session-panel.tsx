@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Banknote, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -129,6 +130,7 @@ export function DrawerSessionPanel({
   const [suggestions, setSuggestions] = useState<Record<string, DrawerOpeningSuggestion | null>>({});
   const [openingForms, setOpeningForms] = useState<Record<string, OpeningForm>>({});
   const [loading, setLoading] = useState(false);
+  const [controlsDisabled, setControlsDisabled] = useState(false);
   const [breakdowns, setBreakdowns] = useState<Record<number, DrawerExpectedBreakdown | null>>({});
   const [openingKey, setOpeningKey] = useState<string | null>(null);
   const [countSession, setCountSession] = useState<DrawerSession | null>(null);
@@ -158,6 +160,11 @@ export function DrawerSessionPanel({
               );
               return [key, res.data?.data ?? null] as const;
             } catch (error) {
+              const apiError = error as { response?: { data?: { detail?: unknown } } };
+              const detail = apiError.response?.data?.detail;
+              if (typeof detail === "string" && detail.includes("Drawer controls are not enabled")) {
+                setControlsDisabled(true);
+              }
               console.info("Opening float suggestion unavailable", { config, error });
               return [key, null] as const;
             }
@@ -228,18 +235,29 @@ export function DrawerSessionPanel({
           DrawerSessionApis.configurations({ restaurantId, businessLine: String(businessLine) }),
         ).catch(() => ({ data: { data: [] as DrawerConfiguration[] } })),
       ]);
+      const disabledByMessage = String(activeRes.data?.message ?? "")
+        .toLowerCase()
+        .includes("drawer controls are disabled");
       const nextSessions = activeRes.data?.data ?? [];
       const nextConfigs = configRes.data?.data ?? [];
+      setControlsDisabled(disabledByMessage);
       setSessions(nextSessions);
       setConfigs(nextConfigs);
-      await Promise.all([
-        loadSuggestions(nextConfigs),
-        loadBreakdowns(nextSessions, { replace: true }),
-      ]);
+      if (disabledByMessage) {
+        setSuggestions({});
+        setOpeningForms({});
+        setBreakdowns({});
+      } else {
+        await Promise.all([
+          loadSuggestions(nextConfigs),
+          loadBreakdowns(nextSessions, { replace: true }),
+        ]);
+      }
     } catch (error) {
       console.error("Failed to load drawer sessions", error);
       setSessions([]);
       setConfigs([]);
+      setControlsDisabled(false);
       toast.error("Failed to load drawer readiness");
     } finally {
       setLoading(false);
@@ -382,8 +400,20 @@ export function DrawerSessionPanel({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
-        {activeConfigs.length === 0 ? (
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
+        {controlsDisabled ? (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-400">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <AlertTriangle className="mr-2 inline h-4 w-4" />
+                Drawer controls are disabled for this restaurant. Enable them in Cash Drawers settings first, then return here to open drawers, count cash, and submit settlement evidence.
+              </div>
+              <Button asChild size="sm" variant="outline" className="self-start">
+                <Link href="/manage/settings?tab=payments#cash-drawers">Open Cash Drawer Settings</Link>
+              </Button>
+            </div>
+          </div>
+        ) : activeConfigs.length === 0 ? (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-400">
             <AlertTriangle className="mr-2 inline h-4 w-4" />
             Drawer controls may be disabled or no active drawers are configured for this restaurant.
           </div>
@@ -545,8 +575,8 @@ export function DrawerSessionPanel({
                       ) : retainedCarryForward ? (
                         <div className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm ${
                           overrideRetained
-                            ? "border-amber-500/30 bg-amber-500/10 text-amber-900"
-                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-900"
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-400"
+                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-400"
                         }`}>
                           <div>
                             <CheckCircle2 className="mr-2 inline h-4 w-4" />
@@ -578,12 +608,12 @@ export function DrawerSessionPanel({
                           </Button>
                         </div>
                       ) : varianceEnforced ? (
-                        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
+                        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-400">
                           <AlertTriangle className="mr-2 inline h-4 w-4" />
                           Fixed opening float is active. A manager approval is required if the count is outside tolerance.
                         </div>
                       ) : (
-                        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-900">
+                        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-400">
                           <CheckCircle2 className="mr-2 inline h-4 w-4" />
                           Flexible opening mode is active. Today&apos;s counted amount becomes this drawer&apos;s opening baseline.
                         </div>

@@ -37,6 +37,7 @@ import {
   type DayCloseDetail,
   type DayCloseSnapshotData,
   type BusinessLine,
+  type DayCloseDrawerControlRow,
 } from "@/types/day-close";
 
 function getApiErrorMessage(err: unknown, fallback: string) {
@@ -622,6 +623,13 @@ function DrawerCashResultStep({
     typeof countedCash === "number" && Number.isFinite(countedCash)
       ? countedCash
       : expectedCash;
+  const drawerRows = Array.isArray(liveSnapshot?.drawer_control?.drawers)
+    ? liveSnapshot?.drawer_control?.drawers ?? []
+    : [];
+  const currentDrawerRows = drawerRows.filter((row) => row?.is_current_session !== false);
+  const expectedDrawerRows = (currentDrawerRows.length > 0 ? currentDrawerRows : drawerRows)
+    .filter((row): row is DayCloseDrawerControlRow => Boolean(row))
+    .filter((row) => row.expected_closing_cash != null);
 
   const handleSubmit = async () => {
     if (!dayCloseId) {
@@ -703,6 +711,36 @@ function DrawerCashResultStep({
           <p className="text-2xl font-semibold text-slate-700 dark:text-slate-200">
             {formatDayCloseCurrency(expectedCash)}
           </p>
+          {expectedDrawerRows.length > 0 ? (
+            <div className="mt-4 rounded-xl border border-border/60 bg-background/80 p-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Drawer-wise expected cash
+              </div>
+              <div className="space-y-2">
+                {expectedDrawerRows.map((row, index) => {
+                  const label = row.name?.trim()
+                    || [row.station, row.drawer_key].filter(Boolean).join(" / ")
+                    || `Drawer ${index + 1}`;
+                  return (
+                    <div
+                      key={`${row.session_id ?? row.configuration_id ?? label}-${index}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border/50 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{label}</div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {String(row.status || "active").replace(/_/g, " ")}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-sm font-semibold text-foreground">
+                        {formatDayCloseCurrency(row.expected_closing_cash)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
         <div className="p-4 border rounded-xl bg-emerald-50 dark:bg-emerald-950/30">
           <p className="text-sm font-medium mb-2">Drawer Counted Cash</p>

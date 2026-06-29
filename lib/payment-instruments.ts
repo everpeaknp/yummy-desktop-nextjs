@@ -1,11 +1,15 @@
 export type PaymentQrInstrument = {
+  configId?: string;
   name: string;
   payload: string;
+  instrumentType?: string;
 };
 
 export type PaymentCardInstrument = {
+  configId?: string;
   name: string;
   identifier?: string | null;
+  instrumentType?: string;
 };
 
 export type PaymentInstrumentPayload = {
@@ -23,6 +27,7 @@ export function extractPaymentInstruments(restaurant: unknown): {
     ? source.payment_qrs
         .filter((q: any) => q && typeof q.payload === "string" && q.payload.trim())
         .map((q: any) => ({
+          configId: q.config_id ? String(q.config_id) : undefined,
           name: String(q.name || "QR"),
           payload: String(q.payload),
         }))
@@ -31,6 +36,7 @@ export function extractPaymentInstruments(restaurant: unknown): {
     ? source.payment_cards
         .filter((c: any) => c && typeof c.name === "string" && c.name.trim())
         .map((c: any) => ({
+          configId: c.config_id ? String(c.config_id) : undefined,
           name: String(c.name),
           identifier: c.identifier ? String(c.identifier) : null,
         }))
@@ -50,9 +56,10 @@ export function buildPaymentInstrument(
     const selected = staticPaymentQrs[qrIndex];
     if (!selected) return null;
     return {
-      type: "static_qr",
+      type: selected.instrumentType || "static_qr",
       name: selected.name,
       meta: {
+        config_id: selected.configId,
         payload: selected.payload,
         index: qrIndex,
       },
@@ -63,9 +70,10 @@ export function buildPaymentInstrument(
     const selected = staticPaymentCards[cardIndex];
     if (!selected) return null;
     return {
-      type: "card",
+      type: selected.instrumentType || "card",
       name: selected.name,
       meta: {
+        config_id: selected.configId,
         identifier: selected.identifier || null,
         index: cardIndex,
       },

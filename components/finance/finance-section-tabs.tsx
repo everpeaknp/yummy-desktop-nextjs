@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BookOpen, DollarSign, FileText, TrendingDown } from "lucide-react";
 
+import { useRestaurant } from "@/hooks/use-restaurant";
+import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
 import { cn } from "@/lib/utils";
 
 const tabs = [
@@ -15,11 +17,21 @@ const tabs = [
 
 export function FinanceSectionTabs() {
   const pathname = usePathname();
+  const restaurant = useRestaurant((state) => state.restaurant);
+  const visibleTabs = tabs.filter((tab) => {
+    if (tab.href === "/finance/reports") {
+      return isFinanceFeatureEnabled(restaurant, "reports");
+    }
+    if (tab.href === "/finance/accounting") {
+      return isFinanceFeatureEnabled(restaurant, "accounting");
+    }
+    return true;
+  });
 
   return (
     <div className="flex w-full overflow-x-auto border-b border-border">
       <div className="flex min-w-max gap-1 px-1">
-        {tabs.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
           return (

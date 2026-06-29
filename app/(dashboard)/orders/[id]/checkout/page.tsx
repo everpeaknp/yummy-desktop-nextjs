@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis } from "@/lib/api/endpoints";
+import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis, AccountingApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,6 +63,7 @@ import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { REFUND_PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
 import type { DrawerSession } from "@/types/day-close";
+import type { PaymentInstrument } from "@/types/accounting";
 
 function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
   if (!input) return null;
@@ -116,6 +117,20 @@ type BaseResponse<T> = {
   status?: string;
   data?: T;
   message?: string;
+};
+
+type CheckoutQrInstrument = {
+  name: string;
+  payload: string;
+  instrumentType: string;
+  isSelectable: boolean;
+};
+
+type CheckoutCardInstrument = {
+  name: string;
+  identifier?: string | null;
+  instrumentType: string;
+  isSelectable: boolean;
 };
 
 const PAYMENT_READY_DRAWER_STATUSES = new Set(["opened", "closing_count_required", "reopened"]);
@@ -464,6 +479,7 @@ export default function CheckoutPage() {
   const [editPayError, setEditPayError] = useState<string | null>(null);
   const [editSelectedStaticQrIndex, setEditSelectedStaticQrIndex] = useState(0);
   const [editSelectedCardIndex, setEditSelectedCardIndex] = useState(0);
+  const [activePaymentInstruments, setActivePaymentInstruments] = useState<PaymentInstrument[]>([]);
   const [removingPaymentId, setRemovingPaymentId] = useState<number | null>(null);
   const [shouldAutoRedirectAfterPayment, setShouldAutoRedirectAfterPayment] = useState(false);
   const [editingItem, setEditingItem] = useState<BillItem | null>(null);
@@ -556,16 +572,119 @@ export default function CheckoutPage() {
   const [loyaltyPoints, setLoyaltyPoints] = useState("");
   const [loyaltySubmitting, setLoyaltySubmitting] = useState(false);
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
-  const staticPaymentQrs: Array<{ name: string; payload: string }> = Array.isArray((restaurant as any)?.payment_qrs)
-    ? (restaurant as any).payment_qrs
-        .filter((q: any) => q && typeof q.payload === "string" && q.payload.trim())
-        .map((q: any) => ({ name: String(q.name || "QR"), payload: String(q.payload) }))
-    : [];
-  const staticPaymentCards: Array<{ name: string; identifier?: string | null }> = Array.isArray((restaurant as any)?.payment_cards)
-    ? (restaurant as any).payment_cards
-        .filter((c: any) => c && typeof c.name === "string" && c.name.trim())
-        .map((c: any) => ({ name: String(c.name), identifier: c.identifier ? String(c.identifier) : null }))
-    : [];
+  const legacyPaymentQrs = useMemo<Array<{ name: string; payload: string }>>(
+    () => Array.isArray((restaurant as any)?.payment_qrs)
+      ? (restaurant as any).payment_qrs
+          .filter((q: any) => q && typeof q.payload === "string" && q.payload.trim())
+          .map((q: any) => ({ name: String(q.name || "QR"), payload: String(q.payload) }))
+      : [],
+    [restaurant],
+  );
+  const legacyPaymentCards = useMemo<Array<{ name: string; identifier?: string | null }>>(
+    () => Array.isArray((restaurant as any)?.payment_cards)
+      ? (restaurant as any).payment_cards
+          .filter((c: any) => c && typeof c.name === "string" && c.name.trim())
+          .map((c: any) => ({ name: String(c.name), identifier: c.identifier ? String(c.identifier) : null }))
+      : [],
+    [restaurant],
+  );
+  const activeCardInstruments = useMemo(
+    () => activePaymentInstruments.filter((instrument) => (
+      instrument.is_active &&
+      String(instrument.payment_method || "").toLowerCase() === "card"
+    )),
+    [activePaymentInstruments],
+  );
+  const activeStaticQrInstruments = useMemo(
+    () => activePaymentInstruments.filter((instrument) => (
+      instrument.is_active &&
+      String(instrument.payment_method || "").toLowerCase() === "digital"
+    )),
+    [activePaymentInstruments],
+  );
+  const staticPaymentQrs = useMemo<CheckoutQrInstrument[]>(() => {
+    const activeByName = new Map(
+      activeStaticQrInstruments.map((instrument) => [instrument.name, instrument]),
+    );
+
+    const mergedLegacy = legacyPaymentQrs.map((qr) => {
+      const active = activeByName.get(qr.name);
+      if (active) {
+        return {
+          name: qr.name,
+          payload: qr.payload,
+          instrumentType: active.instrument_type || "static_qr",
+          isSelectable: true,
+        };
+      }
+      return {
+        name: qr.name,
+        payload: qr.payload,
+        instrumentType: "static_qr",
+        isSelectable: activeStaticQrInstruments.length === 0,
+      };
+    });
+
+    const activeOnly = activeStaticQrInstruments
+      .filter((instrument) => !legacyPaymentQrs.some((qr) => qr.name === instrument.name))
+      .map((instrument) => {
+        const metadataPayload = typeof instrument.metadata_json?.payload === "string"
+          ? instrument.metadata_json.payload
+          : "";
+        if (!metadataPayload.trim()) return null;
+        return {
+          name: instrument.name,
+          payload: metadataPayload,
+          instrumentType: instrument.instrument_type || "static_qr",
+          isSelectable: true,
+        };
+      })
+      .filter((instrument): instrument is CheckoutQrInstrument => Boolean(instrument));
+
+    return [...mergedLegacy, ...activeOnly];
+  }, [activeStaticQrInstruments, legacyPaymentQrs]);
+  const staticPaymentCards = useMemo<CheckoutCardInstrument[]>(() => {
+    const activeByName = new Map(
+      activeCardInstruments.map((instrument) => [instrument.name, instrument]),
+    );
+
+    const mergedLegacy = legacyPaymentCards.map((card) => {
+      const active = activeByName.get(card.name);
+      if (active) {
+        return {
+          name: card.name,
+          identifier: card.identifier || null,
+          instrumentType: active.instrument_type || "card",
+          isSelectable: true,
+        };
+      }
+      return {
+        name: card.name,
+        identifier: card.identifier || null,
+        instrumentType: "card",
+        isSelectable: activeCardInstruments.length === 0,
+      };
+    });
+
+    const activeOnly = activeCardInstruments
+      .filter((instrument) => !legacyPaymentCards.some((card) => card.name === instrument.name))
+      .map((instrument) => ({
+        name: instrument.name,
+        identifier: null,
+        instrumentType: instrument.instrument_type || "card",
+        isSelectable: true,
+      }));
+
+    return [...mergedLegacy, ...activeOnly];
+  }, [activeCardInstruments, legacyPaymentCards]);
+  const cardConfigHelpText = activeCardInstruments.length > 0
+    ? "No active card instrument available for checkout. Align Finance / Accounting / Setup with this restaurant's card settings."
+    : "No card account configured. Add one in Manage / Settings / Payments & POS.";
+  const qrConfigHelpText = activeStaticQrInstruments.length > 0
+    ? "No active static QR instrument with payload is available for checkout. Align Finance / Accounting / Setup with Manage / Settings / Payments & POS."
+    : "No static QR configured. Add one in Manage / Settings / Payments & POS.";
+  const hasUnsyncedLegacyCards = staticPaymentCards.some((card) => !card.isSelectable);
+  const hasUnsyncedLegacyQrs = staticPaymentQrs.some((qr) => !qr.isSelectable);
   const currentCashierDrawerSessions = drawerSessions.filter(
     (session) => Number(session.cashier_id) === Number(user?.id) && isPaymentReadyDrawer(session)
   );
@@ -624,6 +743,26 @@ export default function CheckoutPage() {
     }
     return true;
   }, [loadCashDrawerState]);
+
+  const loadActivePaymentInstruments = useCallback(async () => {
+    if (!restaurant?.id) {
+      setActivePaymentInstruments([]);
+      return;
+    }
+    try {
+      const response = await apiClient.get<BaseResponse<PaymentInstrument[]>>(
+        AccountingApis.paymentInstruments({
+          restaurantId: restaurant.id,
+          businessLine: "restaurant",
+          activeOnly: true,
+        }),
+      );
+      setActivePaymentInstruments(response.data?.data ?? []);
+    } catch (err) {
+      console.error("Failed to load active payment instruments for checkout", err);
+      setActivePaymentInstruments([]);
+    }
+  }, [restaurant?.id]);
 
   const fetchGuestBills = useCallback(async () => {
     if (!orderId) return;
@@ -752,6 +891,10 @@ export default function CheckoutPage() {
   useEffect(() => {
     fetchBill();
   }, [fetchBill]);
+
+  useEffect(() => {
+    void loadActivePaymentInstruments();
+  }, [loadActivePaymentInstruments]);
 
   useEffect(() => {
     if ((paymentOpen && cashMethodSelected) || (payAllOpen && payAllMethod === "cash")) {
@@ -1054,9 +1197,9 @@ export default function CheckoutPage() {
     ): { type: string; name: string; meta?: Record<string, any> } | null => {
       if (method === "digital") {
         const selected = staticPaymentQrs[qrIndex];
-        if (!selected) return null;
+        if (!selected || !selected.isSelectable) return null;
         return {
-          type: "static_qr",
+          type: selected.instrumentType || "static_qr",
           name: selected.name,
           meta: {
             payload: selected.payload,
@@ -1066,9 +1209,9 @@ export default function CheckoutPage() {
       }
       if (method === "card") {
         const selected = staticPaymentCards[cardIndex];
-        if (!selected) return null;
+        if (!selected || !selected.isSelectable) return null;
         return {
-          type: "card",
+          type: selected.instrumentType || "card",
           name: selected.name,
           meta: {
             identifier: selected.identifier || null,
@@ -1120,11 +1263,19 @@ export default function CheckoutPage() {
     }
 
     if (editPayMethod === "digital" && staticPaymentQrs.length === 0) {
-      setEditPayError("No static QR configured. Add one in Manage / Settings / Payments & POS.");
+      setEditPayError(qrConfigHelpText);
       return;
     }
     if (editPayMethod === "card" && staticPaymentCards.length === 0) {
-      setEditPayError("No card account configured. Add one in Manage / Settings / Payments & POS.");
+      setEditPayError(cardConfigHelpText);
+      return;
+    }
+    if (editPayMethod === "digital" && !staticPaymentQrs[editSelectedStaticQrIndex]?.isSelectable) {
+      setEditPayError("This QR is saved in settings but not synced as an active accounting instrument yet.");
+      return;
+    }
+    if (editPayMethod === "card" && !staticPaymentCards[editSelectedCardIndex]?.isSelectable) {
+      setEditPayError("This card is saved in settings but not synced as an active accounting instrument yet.");
       return;
     }
 
@@ -1160,6 +1311,8 @@ export default function CheckoutPage() {
     orderId,
     staticPaymentCards.length,
     staticPaymentQrs.length,
+    cardConfigHelpText,
+    qrConfigHelpText,
     canEditPayment,
   ]);
 
@@ -1233,11 +1386,19 @@ export default function CheckoutPage() {
           return;
         }
         if (row.method === "digital" && staticPaymentQrs.length === 0) {
-          setPayError("No static QR configured for digital payment");
+          setPayError(qrConfigHelpText);
           return;
         }
         if (row.method === "card" && staticPaymentCards.length === 0) {
-          setPayError("No card account configured for card payment");
+          setPayError(cardConfigHelpText);
+          return;
+        }
+        if (row.method === "digital" && !staticPaymentQrs[row.selectedStaticQrIndex]?.isSelectable) {
+          setPayError("One selected QR is saved in settings but not synced as an active accounting instrument yet.");
+          return;
+        }
+        if (row.method === "card" && !staticPaymentCards[row.selectedCardIndex]?.isSelectable) {
+          setPayError("One selected card is saved in settings but not synced as an active accounting instrument yet.");
           return;
         }
       }
@@ -1314,12 +1475,20 @@ export default function CheckoutPage() {
     }
 
     if (payMethod === "digital" && staticPaymentQrs.length === 0) {
-      setPayError("No static QR configured. Add one in Manage / Settings / Payments & POS.");
+      setPayError(qrConfigHelpText);
       return;
     }
 
     if (payMethod === "card" && staticPaymentCards.length === 0) {
-      setPayError("No card account configured. Add one in Manage / Settings / Payments & POS.");
+      setPayError(cardConfigHelpText);
+      return;
+    }
+    if (payMethod === "digital" && !staticPaymentQrs[selectedStaticQrIndex]?.isSelectable) {
+      setPayError("This QR is saved in settings but not synced as an active accounting instrument yet.");
+      return;
+    }
+    if (payMethod === "card" && !staticPaymentCards[selectedCardIndex]?.isSelectable) {
+      setPayError("This card is saved in settings but not synced as an active accounting instrument yet.");
       return;
     }
 
@@ -2429,7 +2598,7 @@ export default function CheckoutPage() {
                 </p>
               )}
 
-              {canProcessRefund && bill.total_paid > 0 && (
+              {canProcessRefund && bill.total_paid > 0 && !displayIsFullyPaid && (
                 <Button
                   variant="destructive"
                   className="w-full h-12 text-base font-semibold shadow-lg gap-2 mt-3"
@@ -2697,7 +2866,7 @@ export default function CheckoutPage() {
                     </div>
                     {staticPaymentQrs.length === 0 ? (
                       <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                        No static QR configured in settings. Add one in Manage / Settings / Payments & POS.
+                        {qrConfigHelpText}
                       </div>
                     ) : (
                       <>
@@ -2745,17 +2914,23 @@ export default function CheckoutPage() {
                     </div>
                     {staticPaymentCards.length === 0 ? (
                       <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                        No card account configured in settings. Add one in Manage / Settings / Payments & POS.
+                        {cardConfigHelpText}
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {staticPaymentCards.map((card, idx) => (
                           <button
                             key={`${card.name}-${idx}`}
                             type="button"
-                            onClick={() => setSelectedCardIndex(idx)}
+                            onClick={() => {
+                              if (!card.isSelectable) return;
+                              setSelectedCardIndex(idx);
+                            }}
+                            disabled={!card.isSelectable}
                             className={cn(
                               "rounded-lg border px-3 py-2 text-left text-sm",
+                              !card.isSelectable && "opacity-60 cursor-not-allowed",
                               selectedCardIndex === idx
                                 ? "border-primary bg-primary/5 text-primary"
                                 : "border-border/50 text-muted-foreground hover:text-foreground"
@@ -2765,8 +2940,19 @@ export default function CheckoutPage() {
                             <div className="text-[11px] text-muted-foreground truncate">
                               {card.identifier || "No identifier"}
                             </div>
+                            {!card.isSelectable && (
+                              <div className="text-[11px] text-amber-600 mt-1">
+                                Saved in settings only. Sync it in Accounting Setup to use it here.
+                              </div>
+                            )}
                           </button>
                         ))}
+                        </div>
+                        {hasUnsyncedLegacyCards && (
+                          <p className="text-xs text-amber-600">
+                            Some cards are visible from settings but disabled because they are not active accounting instruments yet.
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2912,29 +3098,44 @@ export default function CheckoutPage() {
                           </div>
                           {staticPaymentCards.length === 0 ? (
                             <div className="rounded-lg border border-dashed p-2 text-xs text-muted-foreground">
-                              No card account configured.
+                              {cardConfigHelpText}
                             </div>
                           ) : (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                               {staticPaymentCards.map((card, cIdx) => (
                                 <button
                                   key={`${card.name}-${cIdx}`}
                                   type="button"
                                   onClick={() => {
+                                    if (!card.isSelectable) return;
                                     const newRows = [...multiPayments];
                                     newRows[idx].selectedCardIndex = cIdx;
                                     setMultiPayments(newRows);
                                   }}
+                                  disabled={!card.isSelectable}
                                   className={cn(
                                     "rounded-lg border px-2 py-1.5 text-left text-xs",
+                                    !card.isSelectable && "opacity-60 cursor-not-allowed",
                                     row.selectedCardIndex === cIdx
                                       ? "border-primary bg-primary/5 text-primary"
                                       : "border-border/50 text-muted-foreground hover:text-foreground"
                                   )}
                                 >
                                   <div className="font-medium truncate">{card.name}</div>
+                                  {!card.isSelectable && (
+                                    <div className="text-[10px] text-amber-600 mt-1 truncate">
+                                      Not synced
+                                    </div>
+                                  )}
                                 </button>
                               ))}
+                              </div>
+                              {hasUnsyncedLegacyCards && (
+                                <p className="text-[11px] text-amber-600">
+                                  Unsynced cards are shown but disabled.
+                                </p>
+                              )}
                             </div>
                           )}
                         </div>
@@ -2947,7 +3148,7 @@ export default function CheckoutPage() {
                           </div>
                           {staticPaymentQrs.length === 0 ? (
                             <div className="rounded-lg border border-dashed p-2 text-xs text-muted-foreground">
-                              No static QR configured.
+                              {qrConfigHelpText}
                             </div>
                           ) : (
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -3110,7 +3311,7 @@ export default function CheckoutPage() {
                 </div>
                 {staticPaymentQrs.length === 0 ? (
                   <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                    No static QR configured in settings. Add one in Manage / Settings / Payments & POS.
+                    {qrConfigHelpText}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
@@ -3146,17 +3347,23 @@ export default function CheckoutPage() {
                 </div>
                 {staticPaymentCards.length === 0 ? (
                   <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                    No card account configured in settings. Add one in Manage / Settings / Payments & POS.
+                    {cardConfigHelpText}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {staticPaymentCards.map((card, idx) => (
                       <button
                         key={`edit-card-${card.name}-${idx}`}
                         type="button"
-                        onClick={() => setEditSelectedCardIndex(idx)}
+                        onClick={() => {
+                          if (!card.isSelectable) return;
+                          setEditSelectedCardIndex(idx);
+                        }}
+                        disabled={!card.isSelectable}
                         className={cn(
                           "rounded-lg border px-3 py-2 text-left text-sm",
+                          !card.isSelectable && "opacity-60 cursor-not-allowed",
                           editSelectedCardIndex === idx
                             ? "border-primary bg-primary/5 text-primary"
                             : "border-border/50 text-muted-foreground hover:text-foreground"
@@ -3166,8 +3373,19 @@ export default function CheckoutPage() {
                         <div className="text-[11px] text-muted-foreground truncate">
                           {card.identifier || "No identifier"}
                         </div>
+                        {!card.isSelectable && (
+                          <div className="text-[11px] text-amber-600 mt-1">
+                            Saved in settings only. Sync it in Accounting Setup to use it here.
+                          </div>
+                        )}
                       </button>
                     ))}
+                    </div>
+                    {hasUnsyncedLegacyCards && (
+                      <p className="text-xs text-amber-600">
+                        Unsynced cards are shown but disabled.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

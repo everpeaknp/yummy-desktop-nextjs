@@ -246,6 +246,19 @@ function buildFormula(
   }
 }
 
+function drawerSummaryHelper(label: string, snapshot: DayCloseSnapshotData) {
+  const rows = Array.isArray(snapshot.drawer_control?.drawers)
+    ? snapshot.drawer_control?.drawers ?? []
+    : [];
+  if (rows.length <= 1) return undefined;
+  if (!["Opening Balance", "Expected Drawer", "Drawer (Actual)"].includes(label)) {
+    return undefined;
+  }
+  const currentRows = rows.filter((row) => row?.is_current_session !== false);
+  const drawerCount = currentRows.length > 0 ? currentRows.length : rows.length;
+  return `${drawerCount} drawers combined`;
+}
+
 const FINANCIAL_SUMMARY_PRIMARY = new Set([
   "Gross Sales",
   "Net Sales",
@@ -290,6 +303,7 @@ function FinancialSummaryCard({
       dense={dense}
       label={label}
       value={formatDayCloseCurrency(value)}
+      helperText={drawerSummaryHelper(label, snapshot)}
       icon={Icon ? <Icon className={dense ? "h-3.5 w-3.5" : "h-4 w-4"} /> : undefined}
       iconPosition="top-right"
       iconClassName={isOut ? DC_METRIC_ICON_OUT : DC_METRIC_ICON_IN}

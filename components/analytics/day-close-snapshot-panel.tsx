@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { Calendar } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { DayCloseDetail, DayCloseSnapshotData } from "@/types/day-close";
+import type {
+  DayCloseDetail,
+  DayCloseDrawerControlRow,
+  DayCloseSnapshotData,
+} from "@/types/day-close";
 import { formatDayCloseCurrency } from "@/lib/day-close-format";
 import {
   formatDayCloseCoveredRange,
@@ -22,6 +26,8 @@ import {
   snapshotRefundRows,
   snapshotSalesByCategoryRows,
   snapshotSalesByTableRows,
+  snapshotBankRows,
+  snapshotFonepayRows,
   type DayCloseSnapshotTab,
 } from "@/lib/day-close-snapshot-view";
 import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
@@ -52,6 +58,8 @@ export function DayCloseSnapshotPanel({
   const paymentMethods = snapshotPaymentMethodRows(snapshot);
   const cardInstruments = snapshotInstrumentRows(snapshot, "card");
   const digitalInstruments = snapshotInstrumentRows(snapshot, "digital");
+  const fonepayInstruments = snapshotFonepayRows(snapshot);
+  const bankInstruments = snapshotBankRows(snapshot);
   const expenses = snapshotExpenseRows(snapshot);
   const hotelSplit = isHotelDayClose(snapshot) ? snapshotHotelSplitRows(snapshot) : [];
   const credit = snapshot.credit_settlement;
@@ -66,6 +74,7 @@ export function DayCloseSnapshotPanel({
       ? (snapshot.accounting_bridge as Record<string, unknown>)
       : null;
   const drawerEvidence = snapshotDrawerEvidence(snapshot);
+  const expectedDrawerRows = snapshotExpectedDrawerRows(snapshot);
   const coveredRange = formatDayCloseCoveredRange(
     snapshot.period_start_at,
     snapshot.period_end_at,
@@ -104,6 +113,10 @@ export function DayCloseSnapshotPanel({
           compact={compact}
           onMetricNavigate={onTabChange}
         />
+      ) : null}
+
+      {expectedDrawerRows.length > 0 ? (
+        <ExpectedDrawerBreakdownCard rows={expectedDrawerRows} />
       ) : null}
 
       <Tabs
@@ -149,8 +162,8 @@ export function DayCloseSnapshotPanel({
             Sales by Table
           </TabsTrigger>
           {drawerEvidence.length > 0 ? (
-            <TabsTrigger value="drawer-evidence" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
-              Drawer Evidence
+            <TabsTrigger value="drawer-and-safe" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
+              Drawer & Safe
             </TabsTrigger>
           ) : null}
           <TabsTrigger value="accounting-checks" className={cn("dc-tab-trigger", compact && "dc-tab-trigger-compact")}>
@@ -160,9 +173,23 @@ export function DayCloseSnapshotPanel({
         <div className="mt-4 space-y-4">
           <TabsContent value="payments" className="m-0 space-y-4">
             <DayClosePaymentMethodsCard title="Payment Methods" rows={paymentMethods} />
+            {bankInstruments.length > 0 ? (
+              <DayClosePaymentMethodsCard
+                title="Banks Breakdown"
+                rows={bankInstruments}
+                nested
+              />
+            ) : null}
+            {fonepayInstruments.length > 0 ? (
+              <DayClosePaymentMethodsCard
+                title="Fonepay"
+                rows={fonepayInstruments}
+                nested
+              />
+            ) : null}
             {cardInstruments.length > 0 ? (
               <DayClosePaymentMethodsCard
-                title="Card by Instrument"
+                title="Card Sales by Instrument"
                 rows={cardInstruments}
                 nested
               />
@@ -176,7 +203,9 @@ export function DayCloseSnapshotPanel({
             ) : null}
             {paymentMethods.length === 0 &&
             cardInstruments.length === 0 &&
-            digitalInstruments.length === 0 ? (
+            digitalInstruments.length === 0 &&
+            bankInstruments.length === 0 &&
+            fonepayInstruments.length === 0 ? (
               <EmptySnapshotNotice message="Payment breakdown is not available in this snapshot." />
             ) : null}
           </TabsContent>
@@ -279,7 +308,7 @@ export function DayCloseSnapshotPanel({
             )}
           </TabsContent>
           {drawerEvidence.length > 0 ? (
-            <TabsContent value="drawer-evidence" className="m-0">
+            <TabsContent value="drawer-and-safe" className="m-0">
               <DrawerEvidenceCard rows={drawerEvidence} />
             </TabsContent>
           ) : null}
@@ -366,6 +395,65 @@ function snapshotDrawerEvidence(snapshot: DayCloseSnapshotData): Array<Record<st
   return [];
 }
 
+function snapshotExpectedDrawerRows(snapshot: DayCloseSnapshotData): DayCloseDrawerControlRow[] {
+  const rows = Array.isArray(snapshot.drawer_control?.drawers)
+    ? snapshot.drawer_control?.drawers ?? []
+    : [];
+  const currentRows = rows.filter((row) => row?.is_current_session !== false);
+  return (currentRows.length > 0 ? currentRows : rows)
+    .filter((row): row is DayCloseDrawerControlRow => Boolean(row))
+    .filter((row) => row.expected_closing_cash != null);
+}
+
+function ExpectedDrawerBreakdownCard({ rows }: { rows: DayCloseDrawerControlRow[] }) {
+  return (
+    <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-border/40 px-5 py-3">
+        <div>
+          <p className="dc-eyebrow">Expected Cash by Drawer</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This is the drawer-wise split behind the combined Expected Drawer total.
+          </p>
+        </div>
+        <div className="rounded-full border border-border/50 bg-muted/20 px-3 py-1 text-xs font-semibold text-muted-foreground">
+          {rows.length} {rows.length === 1 ? "drawer" : "drawers"}
+        </div>
+      </div>
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+        {rows.map((row, index) => {
+          const label = row.name?.trim()
+            || [row.station, row.drawer_key].filter(Boolean).join(" / ")
+            || `Drawer ${index + 1}`;
+          const status = String(row.status || "active").replace(/_/g, " ");
+          return (
+            <div
+              key={`${row.session_id ?? row.configuration_id ?? label}-${index}`}
+              className="rounded-xl border border-border/50 bg-muted/10 px-4 py-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{label}</p>
+                  <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-muted-foreground">
+                    {status}
+                  </p>
+                </div>
+                <div className="shrink-0 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                  {formatDayCloseCurrency(row.expected_closing_cash)}
+                </div>
+              </div>
+              {row.counted_opening_cash != null ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Opening: {formatDayCloseCurrency(row.counted_opening_cash)}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function readEvidenceAmount(row: Record<string, unknown>, key: string) {
   const value = row[key];
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -379,7 +467,7 @@ function readEvidenceAmount(row: Record<string, unknown>, key: string) {
 function DrawerEvidenceCard({ rows }: { rows: Array<Record<string, unknown>> }) {
   return (
     <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm">
-      <p className="dc-eyebrow px-5 py-3 border-b border-border/40">Drawer Evidence</p>
+      <p className="dc-eyebrow px-5 py-3 border-b border-border/40">Drawer & Safe History</p>
       <div className="divide-y divide-border/50">
         {rows.map((row, index) => {
           const station = String(row.station ?? "general");
@@ -390,8 +478,13 @@ function DrawerEvidenceCard({ rows }: { rows: Array<Record<string, unknown>> }) 
           const closing = readEvidenceAmount(row, "counted_closing_cash");
           const variance = readEvidenceAmount(row, "cash_variance");
           const retained = readEvidenceAmount(row, "retained_float");
+
+          const settlementAmount = readEvidenceAmount(row, "settlement_amount");
+          const settlementMode = String(row.settlement_mode ?? "").replace(/_/g, " ");
+          const settlementDest = String(row.settlement_destination ?? "");
+
           return (
-            <div key={station + "-" + drawerKey + "-" + index} className="grid gap-3 px-5 py-4 md:grid-cols-[1fr_2fr]">
+            <div key={station + "-" + drawerKey + "-" + index} className="grid gap-3 px-5 py-4 md:grid-cols-[1fr_2.5fr]">
               <div>
                 <div className="text-sm font-semibold">{station} / {drawerKey}</div>
                 <div className="text-xs capitalize text-muted-foreground">{status}</div>
@@ -403,6 +496,18 @@ function DrawerEvidenceCard({ rows }: { rows: Array<Record<string, unknown>> }) 
                 <EvidenceMetric label="variance" value={variance} />
                 <EvidenceMetric label="retained float" value={retained} />
               </div>
+              {settlementAmount != null && settlementAmount > 0 ? (
+                <div className="col-span-1 md:col-span-2 mt-2 p-3 bg-muted/20 border border-border/40 rounded-xl flex items-center justify-between">
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground uppercase tracking-wide">Safe Settlement</span>
+                    {settlementMode ? ` · ${settlementMode}` : ""}
+                    {settlementDest ? ` to ${settlementDest}` : ""}
+                  </div>
+                  <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                    {formatDayCloseCurrency(settlementAmount)}
+                  </div>
+                </div>
+              ) : null}
             </div>
           );
         })}

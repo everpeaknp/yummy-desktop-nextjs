@@ -404,7 +404,7 @@ export const AnalyticsApis = {
     timezone?: string;
     page?: number;
     pageSize?: number;
-    sortBy?: 'revenue' | 'quantity_sold' | 'name' | 'avg_price' | string;
+    sortBy?: 'revenue' | 'quantity_sold' | 'name' | 'avg_price' | 'category' | string;
     sortDir?: 'asc' | 'desc' | string;
     search?: string;
     category?: string;
@@ -424,6 +424,77 @@ export const AnalyticsApis = {
     if (category) params.append('category', category);
     if (businessLine) params.append('business_line', businessLine);
     return `/analytics/menu/details?${params.toString()}`;
+  },
+  menuStationBreakdown: ({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    timezone,
+    station,
+    category,
+    search,
+    businessLine,
+  }: {
+    restaurantId: number;
+    dateFrom: string;
+    dateTo: string;
+    timezone?: string;
+    station?: string;
+    category?: string;
+    search?: string;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      date_from: dateFrom,
+      date_to: dateTo,
+    });
+    if (timezone) params.append('timezone', timezone);
+    if (station) params.append('station', station);
+    if (category) params.append('category', category);
+    if (search) params.append('search', search);
+    if (businessLine) params.append('business_line', businessLine);
+    return `/analytics/menu/station-breakdown?${params.toString()}`;
+  },
+  menuStationBreakdownOrders: ({
+    restaurantId,
+    menuItemId,
+    dateFrom,
+    dateTo,
+    timezone,
+    station,
+    category,
+    search,
+    page = 1,
+    pageSize = 20,
+    businessLine,
+  }: {
+    restaurantId: number;
+    menuItemId: number;
+    dateFrom: string;
+    dateTo: string;
+    timezone?: string;
+    station?: string;
+    category?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      menu_item_id: menuItemId.toString(),
+      date_from: dateFrom,
+      date_to: dateTo,
+      page: page.toString(),
+      page_size: pageSize.toString(),
+    });
+    if (timezone) params.append('timezone', timezone);
+    if (station) params.append('station', station);
+    if (category) params.append('category', category);
+    if (search) params.append('search', search);
+    if (businessLine) params.append('business_line', businessLine);
+    return `/analytics/menu/station-breakdown/orders?${params.toString()}`;
   },
   staffDetails: ({
     restaurantId,
@@ -960,6 +1031,10 @@ export const AccountingApis = {
   },
   createPaymentInstrument: () => '/accounting/payment-instruments',
   updatePaymentInstrument: (instrumentId: number) => `/accounting/payment-instruments/${instrumentId}`,
+  deactivatePaymentInstrument: (instrumentId: number) => `/accounting/payment-instruments/${instrumentId}/deactivate`,
+  paymentBanks: (restaurantId: number) => `/accounting/payment-banks?restaurant_id=${restaurantId}`,
+  createPaymentBank: () => '/accounting/payment-banks',
+  updatePaymentBank: (bankId: number) => `/accounting/payment-banks/${bankId}`,
   createCashTransfer: () => '/accounting/cash-transfers',
   previewSettlement: () => '/accounting/settlements/preview',
   createSettlement: () => '/accounting/settlements',
@@ -1309,6 +1384,16 @@ export const DrawerSessionApis = {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
       enabled: String(enabled),
+    });
+    return `/drawer-sessions/controls?${params.toString()}`;
+  },
+  controls: ({
+    restaurantId,
+  }: {
+    restaurantId: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
     });
     return `/drawer-sessions/controls?${params.toString()}`;
   },

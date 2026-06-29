@@ -31,10 +31,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
-import { DrawerSessionApis, RestaurantApis } from "@/lib/api/endpoints";
+import { DrawerSessionApis, RestaurantApis, AccountingApis } from "@/lib/api/endpoints";
+import { getPaymentBankDescription, getPaymentBankLabel, isReviewBank } from "@/lib/payment-banks";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import type { DrawerAssignment, DrawerCashier, DrawerConfiguration } from "@/types/day-close";
+import type { PaymentBank, PaymentBankInput } from "@/types/accounting";
 import { 
     Dialog, 
     DialogContent, 
@@ -97,19 +99,27 @@ export default function RestaurantSettingsPage() {
         open: false,
         index: null
     });
-    const [qrForm, setQrForm] = useState({ name: "", payload: "" });
+    const [qrForm, setQrForm] = useState({ config_id: "", name: "", payload: "", bank_id: "none" });
     const qrInputRef = useRef<HTMLInputElement>(null);
     const [isExtracting, setIsExtracting] = useState(false);
     const [cardDialog, setCardDialog] = useState<{ open: boolean; index: number | null }>({
         open: false,
         index: null,
     });
-    const [cardForm, setCardForm] = useState({ name: "", identifier: "" });
+    const [cardForm, setCardForm] = useState({ config_id: "", name: "", identifier: "", bank_id: "none" });
+
+    // Payment Banks State
+    const [banks, setBanks] = useState<PaymentBank[]>([]);
+    const [bankSaving, setBankSaving] = useState(false);
+    const [bankName, setBankName] = useState("");
+    const [bankDescription, setBankDescription] = useState("");
     const [drawerConfigs, setDrawerConfigs] = useState<DrawerConfiguration[]>([]);
     const [drawerAssignments, setDrawerAssignments] = useState<DrawerAssignment[]>([]);
     const [drawerCashiers, setDrawerCashiers] = useState<DrawerCashier[]>([]);
     const [drawerAssignSelection, setDrawerAssignSelection] = useState<Record<string, string>>({});
     const [drawerLoading, setDrawerLoading] = useState(false);
+    const [drawerControlsEnabled, setDrawerControlsEnabled] = useState(false);
+    const [drawerControlsSaving, setDrawerControlsSaving] = useState(false);
     const [drawerDialog, setDrawerDialog] = useState<{ open: boolean; id: number | null }>({
         open: false,
         id: null,
@@ -126,7 +136,7 @@ export default function RestaurantSettingsPage() {
         if (!user?.restaurant_id) return;
         setDrawerLoading(true);
         try {
-            const [configRes, assignmentRes, cashierRes] = await Promise.all([
+            const [configRes, assignmentRes, cashierRes, controlsRes] = await Promise.all([
                 apiClient.get(DrawerSessionApis.configurations({
                     restaurantId: user.restaurant_id,
                     businessLine: "restaurant",
@@ -136,10 +146,12 @@ export default function RestaurantSettingsPage() {
                     businessLine: "restaurant",
                 })),
                 apiClient.get(DrawerSessionApis.cashiers({ restaurantId: user.restaurant_id })),
+                apiClient.get(DrawerSessionApis.controls({ restaurantId: user.restaurant_id })),
             ]);
             setDrawerConfigs(Array.isArray(configRes.data?.data) ? configRes.data.data : []);
             setDrawerAssignments(Array.isArray(assignmentRes.data?.data) ? assignmentRes.data.data : []);
             setDrawerCashiers(Array.isArray(cashierRes.data?.data) ? cashierRes.data.data : []);
+            setDrawerControlsEnabled(Boolean(controlsRes.data?.data?.enabled));
         } catch (err: any) {
             const status = err?.response?.status;
             if (status !== 403) {
@@ -148,8 +160,19 @@ export default function RestaurantSettingsPage() {
             setDrawerConfigs([]);
             setDrawerAssignments([]);
             setDrawerCashiers([]);
+            setDrawerControlsEnabled(false);
         } finally {
             setDrawerLoading(false);
+        }
+    }, [user?.restaurant_id]);
+
+    const loadBanks = useCallback(async () => {
+        if (!user?.restaurant_id) return;
+        try {
+            const res = await apiClient.get(AccountingApis.paymentBanks(user.restaurant_id));
+            setBanks(res.data?.data ?? []);
+        } catch (error) {
+            console.error("Failed to load payment banks", error);
         }
     }, [user?.restaurant_id]);
 
@@ -279,6 +302,25 @@ export default function RestaurantSettingsPage() {
         }
     };
 
+    const handleDrawerControlsToggle = async (enabled: boolean) => {
+        if (!user?.restaurant_id) return;
+        setDrawerControlsSaving(true);
+        try {
+            await apiClient.post(DrawerSessionApis.setControls({
+                restaurantId: user.restaurant_id,
+                enabled,
+            }));
+            setDrawerControlsEnabled(enabled);
+            toast.success(enabled ? "Drawer controls enabled" : "Drawer controls disabled");
+            await loadDrawerConfigurations();
+        } catch (err) {
+            console.error("Failed to update drawer controls", err);
+            toast.error("Failed to update drawer controls");
+        } finally {
+            setDrawerControlsSaving(false);
+        }
+    };
+
     const handleRemoveDrawerAssignment = async (assignment: DrawerAssignment) => {
         if (!user?.restaurant_id) return;
         try {
@@ -320,6 +362,7 @@ export default function RestaurantSettingsPage() {
                 if (canManageDrawers) {
                     await loadDrawerConfigurations();
                 }
+                await loadBanks();
             } catch (err) {
                 console.error("Failed to fetch settings", err);
             } finally {
@@ -327,7 +370,7 @@ export default function RestaurantSettingsPage() {
             }
         };
         fetchData();
-    }, [user?.restaurant_id, canManageDrawers, loadDrawerConfigurations, setGlobalRestaurant]);
+    }, [user?.restaurant_id, canManageDrawers, loadDrawerConfigurations, loadBanks, setGlobalRestaurant]);
 
     useEffect(() => {
         const tabParam = searchParams?.get("tab");
@@ -355,14 +398,21 @@ export default function RestaurantSettingsPage() {
         if (!user?.restaurant_id || !qrForm.name || !qrForm.payload) return;
         
         const currentQrs = restaurant?.payment_qrs ? [...restaurant.payment_qrs] : [];
+        const payloadQr = {
+            config_id: qrForm.config_id || undefined,
+            name: qrForm.name.trim(),
+            payload: qrForm.payload.trim(),
+            bank_id: qrForm.bank_id !== "none" ? Number(qrForm.bank_id) : null,
+        };
+
         if (qrDialog.index !== null) {
-            currentQrs[qrDialog.index] = qrForm;
+            currentQrs[qrDialog.index] = payloadQr;
         } else {
             if (currentQrs.length >= 4) {
                 toast.error("Maximum 4 QRs allowed");
                 return;
             }
-            currentQrs.push(qrForm);
+            currentQrs.push(payloadQr);
         }
 
         try {
@@ -375,7 +425,7 @@ export default function RestaurantSettingsPage() {
                 setGlobalRestaurant(res.data.data);
                 toast.success("QR configurations updated");
                 setQrDialog({ open: false, index: null });
-                setQrForm({ name: "", payload: "" });
+                setQrForm({ config_id: "", name: "", payload: "", bank_id: "none" });
             }
         } catch (err) {
             toast.error("Failed to update QR configurations");
@@ -450,8 +500,10 @@ export default function RestaurantSettingsPage() {
             ? [...restaurant.payment_cards]
             : [];
         const payloadCard = {
+            config_id: cardForm.config_id || undefined,
             name: cardForm.name.trim(),
             identifier: cardForm.identifier.trim() || null,
+            bank_id: cardForm.bank_id !== "none" ? Number(cardForm.bank_id) : null,
         };
 
         if (cardDialog.index !== null) {
@@ -474,12 +526,39 @@ export default function RestaurantSettingsPage() {
                 setGlobalRestaurant(res.data.data);
                 toast.success("Card configurations updated");
                 setCardDialog({ open: false, index: null });
-                setCardForm({ name: "", identifier: "" });
+                setCardForm({ config_id: "", name: "", identifier: "", bank_id: "none" });
             }
         } catch (err) {
             toast.error("Failed to update card configurations");
         } finally {
             setSaving(false);
+        }
+    };
+
+    const createBank = async () => {
+        if (!user?.restaurant_id) return;
+        if (!bankName.trim()) {
+            toast.error("Bank name is required.");
+            return;
+        }
+        setBankSaving(true);
+        try {
+            const payload: PaymentBankInput = {
+                restaurant_id: user.restaurant_id,
+                name: bankName.trim(),
+                description: bankDescription.trim() || null,
+                is_active: true,
+            };
+            await apiClient.post(AccountingApis.createPaymentBank(), payload);
+            setBankName("");
+            setBankDescription("");
+            await loadBanks();
+            toast.success("Payment bank created.");
+        } catch (error) {
+            console.error("Failed to create payment bank", error);
+            toast.error("Failed to create payment bank");
+        } finally {
+            setBankSaving(false);
         }
     };
 
@@ -545,6 +624,71 @@ export default function RestaurantSettingsPage() {
 
                 {/* Payments Content */}
                 <TabsContent value="payments" className="space-y-6">
+                    <Card>
+                        <CardHeader className="border-b border-border p-4">
+                            <CardTitle className="flex items-center justify-between gap-3 text-base">
+                                <span>Payment banks</span>
+                                <Badge variant="outline">{banks.length} configured</Badge>
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4 p-4">
+                            <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="bank-name">Bank name</Label>
+                                    <Input
+                                        id="bank-name"
+                                        value={bankName}
+                                        onChange={(event) => setBankName(event.target.value)}
+                                        placeholder="Sunrise Bank"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="bank-description">Description</Label>
+                                    <Input
+                                        id="bank-description"
+                                        value={bankDescription}
+                                        onChange={(event) => setBankDescription(event.target.value)}
+                                        placeholder="Optional"
+                                    />
+                                </div>
+                                <div className="flex items-end">
+                                    <Button
+                                        type="button"
+                                        className="w-full"
+                                        onClick={createBank}
+                                        disabled={bankSaving}
+                                    >
+                                        {bankSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                        Add Bank
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {banks.length > 0 && (
+                                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                    {banks.map((bank) => (
+                                        <div key={bank.id} className="rounded-md border border-border p-3">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="font-medium">{getPaymentBankLabel(bank)}</div>
+                                                <Badge variant={bank.is_active ? "default" : "outline"}>
+                                                    {bank.is_active ? "Active" : "Inactive"}
+                                                </Badge>
+                                            </div>
+                                            <div className="mt-1 text-sm text-muted-foreground">
+                                                {getPaymentBankDescription(bank)}
+                                            </div>
+                                            {isReviewBank(bank) ? (
+                                                <div className="mt-2 text-xs text-amber-600">
+                                                    Review this fallback bank and reassign instruments to the real bank when ready.
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
@@ -638,7 +782,7 @@ export default function RestaurantSettingsPage() {
                                 className="h-8"
                                 disabled={restaurant?.payment_qrs?.length >= 4}
                                 onClick={() => {
-                                    setQrForm({ name: "", payload: "" });
+                                    setQrForm({ config_id: "", name: "", payload: "", bank_id: "none" });
                                     setQrDialog({ open: true, index: null });
                                 }}
                             >
@@ -671,7 +815,12 @@ export default function RestaurantSettingsPage() {
                                                     size="icon" 
                                                     className="h-8 w-8 text-primary"
                                                     onClick={() => {
-                                                        setQrForm(qr);
+                                                        setQrForm({
+                                                            config_id: String(qr?.config_id || ""),
+                                                            name: String(qr?.name || ""),
+                                                            payload: String(qr?.payload || ""),
+                                                            bank_id: qr?.bank_id ? String(qr.bank_id) : "none"
+                                                        });
                                                         setQrDialog({ open: true, index: idx });
                                                     }}
                                                 >
@@ -709,7 +858,7 @@ export default function RestaurantSettingsPage() {
                                 className="h-8"
                                 disabled={(restaurant?.payment_cards?.length || 0) >= 20}
                                 onClick={() => {
-                                    setCardForm({ name: "", identifier: "" });
+                                    setCardForm({ config_id: "", name: "", identifier: "", bank_id: "none" });
                                     setCardDialog({ open: true, index: null });
                                 }}
                             >
@@ -745,8 +894,10 @@ export default function RestaurantSettingsPage() {
                                                     className="h-8 w-8 text-primary"
                                                     onClick={() => {
                                                         setCardForm({
+                                                            config_id: String(card?.config_id || ""),
                                                             name: String(card?.name || ""),
                                                             identifier: String(card?.identifier || ""),
+                                                            bank_id: card?.bank_id ? String(card.bank_id) : "none",
                                                         });
                                                         setCardDialog({ open: true, index: idx });
                                                     }}
@@ -769,7 +920,7 @@ export default function RestaurantSettingsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card id="cash-drawers">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
                             <div className="space-y-1">
                                 <CardTitle className="flex items-center gap-2">
@@ -781,6 +932,22 @@ export default function RestaurantSettingsPage() {
                                 </CardDescription>
                             </div>
                             <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 rounded-md border px-3 py-1.5">
+                                    <div className="text-right">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                            Drawer Controls
+                                        </p>
+                                        <p className="text-[11px] text-muted-foreground">
+                                            {drawerControlsEnabled ? "Enabled" : "Disabled"}
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        checked={drawerControlsEnabled}
+                                        disabled={drawerLoading || drawerControlsSaving || !canManageDrawers}
+                                        onCheckedChange={handleDrawerControlsToggle}
+                                        aria-label="Toggle drawer controls"
+                                    />
+                                </div>
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -806,6 +973,10 @@ export default function RestaurantSettingsPage() {
                             {!canManageDrawers ? (
                                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
                                     You need drawer approval or accounting setup permission to manage cash drawers.
+                                </div>
+                            ) : !drawerControlsEnabled ? (
+                                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
+                                    Drawer controls are off. Enable them above before cashiers can open drawers, count cash, or submit settlement evidence.
                                 </div>
                             ) : drawerLoading ? (
                                 <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
@@ -1168,6 +1339,20 @@ export default function RestaurantSettingsPage() {
                                 className="min-h-[100px] font-mono text-xs"
                             />
                         </div>
+                        <div className="space-y-2">
+                            <Label>Bank Assignment (Optional)</Label>
+                            <Select value={String(qrForm.bank_id || "none")} onValueChange={(val) => setQrForm({ ...qrForm, bank_id: val })}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a bank" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    {banks.map((b) => (
+                                        <SelectItem key={b.id} value={b.id.toString()}>{getPaymentBankLabel(b)}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setQrDialog({ open: false, index: null })}>Cancel</Button>
@@ -1203,6 +1388,20 @@ export default function RestaurantSettingsPage() {
                                 onChange={(e) => setCardForm({ ...cardForm, identifier: e.target.value })}
                                 placeholder="e.g. **** 4921 / Terminal-02"
                             />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Bank Assignment (Optional)</Label>
+                            <Select value={String(cardForm.bank_id || "none")} onValueChange={(val) => setCardForm({ ...cardForm, bank_id: val })}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a bank" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    {banks.map((b) => (
+                                        <SelectItem key={b.id} value={b.id.toString()}>{getPaymentBankLabel(b)}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
                     </div>
                     <DialogFooter>
