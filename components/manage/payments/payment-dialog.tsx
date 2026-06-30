@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
-import { AccountingApis, AwaitingPaymentApis } from "@/lib/api/endpoints";
+import { AccountingApis, AwaitingPaymentApis, DrawerSessionApis } from "@/lib/api/endpoints";
 import { Loader2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
@@ -52,6 +52,9 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
     const [selectedStaticQrIndex, setSelectedStaticQrIndex] = useState(0);
     const [selectedCardIndex, setSelectedCardIndex] = useState(0);
     const [activePaymentInstruments, setActivePaymentInstruments] = useState<PaymentInstrument[]>([]);
+    const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] = useState(false);
+    const [cashDrawerSessions, setCashDrawerSessions] = useState<any[]>([]);
+    const [selectedCashDrawerSessionId, setSelectedCashDrawerSessionId] = useState("");
     const [formData, setFormData] = useState({
         paid_amount: "",
         payment_method: "cash",
@@ -144,6 +147,55 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
     }, [record?.restaurant_id]);
 
     useEffect(() => {
+        const loadCashDrawers = async () => {
+            if (!record?.restaurant_id) {
+                setCashDrawerControlsEnabled(false);
+                setCashDrawerSessions([]);
+                setSelectedCashDrawerSessionId("");
+                return;
+            }
+            try {
+                const res = await apiClient.get(DrawerSessionApis.active({
+                    restaurantId: Number(record.restaurant_id),
+                    businessLine: "restaurant",
+                }));
+                const message = String(res.data?.message || "").toLowerCase();
+                if (message.includes("controls are disabled")) {
+                    setCashDrawerControlsEnabled(false);
+                    setCashDrawerSessions([]);
+                    setSelectedCashDrawerSessionId("");
+                    return;
+                }
+                const sessions = (Array.isArray(res.data?.data) ? res.data.data : []).filter((session: any) =>
+                    ["opened", "closing_count_required", "reopened"].includes(String(session.status || "").toLowerCase())
+                );
+                setCashDrawerControlsEnabled(true);
+                setCashDrawerSessions(sessions);
+                setSelectedCashDrawerSessionId((current) => {
+                    if (current && sessions.some((session: any) => String(session.id) === current)) return current;
+                    return sessions[0]?.id ? String(sessions[0].id) : "";
+                });
+            } catch (error) {
+                console.error("Failed to load active cash drawers", error);
+                setCashDrawerControlsEnabled(true);
+                setCashDrawerSessions([]);
+                setSelectedCashDrawerSessionId("");
+            }
+        };
+        void loadCashDrawers();
+    }, [record?.restaurant_id]);
+
+    const isInventoryRecord = ["opening_stock", "inventory_adjustment"].includes(String(record?.source_type || ""));
+    const selectedDrawerPayload = () => {
+        if (!isInventoryRecord || formData.payment_method !== "cash" || !cashDrawerControlsEnabled) return {};
+        if (!selectedCashDrawerSessionId) {
+            toast.error("Select an open cash drawer before recording this cash inventory payment.");
+            return null;
+        }
+        return { drawer_session_id: Number(selectedCashDrawerSessionId) };
+    };
+
+    useEffect(() => {
         if (record && mode === 'pay') {
             const remaining = (record.amount || 0) - (record.paid_amount || 0);
             setFormData({
@@ -171,6 +223,8 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                     selectedStaticQrIndex,
                     selectedCardIndex,
                 );
+                const drawerPayload = selectedDrawerPayload();
+                if (drawerPayload === null) return;
                 const res = await apiClient.post(
                     AwaitingPaymentApis.markPaid(record.id, record.restaurant_id), 
                     {
@@ -178,6 +232,7 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                         payment_method: formData.payment_method,
                         reference: formData.reference,
                         instrument: instrument,
+                        ...drawerPayload,
                     }
                 );
                 if (res.data.status === "success") {
@@ -249,6 +304,34 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                                     </SelectContent>
                                 </Select>
                             </div>
+
+                            {isInventoryRecord && formData.payment_method === "cash" && cashDrawerControlsEnabled && (
+                                <div className="space-y-2">
+                                    <Label htmlFor="cash_drawer">Cash Drawer</Label>
+                                    <Select
+                                        value={selectedCashDrawerSessionId}
+                                        onValueChange={setSelectedCashDrawerSessionId}
+                                    >
+                                        <SelectTrigger id="cash_drawer">
+                                            <SelectValue placeholder="Select open cash drawer" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {cashDrawerSessions.length === 0 ? (
+                                                <SelectItem value="none" disabled>No open cash drawers</SelectItem>
+                                            ) : cashDrawerSessions.map((session) => (
+                                                <SelectItem key={session.id} value={String(session.id)}>
+                                                    {`${session.name || session.drawer_key || "Drawer"} · ${session.station || "general"} · ${session.business_date || ""}`}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {cashDrawerSessions.length === 0 && (
+                                        <p className="text-xs text-destructive">
+                                            Open a cash drawer before recording cash inventory payments.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
 
                             {paymentMethodNeedsInstrument(formData.payment_method) && (
                                 <div className="space-y-2">

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { AwaitingPaymentApis, InventoryApis, SupplierApis } from "@/lib/api/endpoints";
+import { AwaitingPaymentApis, DrawerSessionApis, InventoryApis, SupplierApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,6 +83,9 @@ export default function InventoryPage() {
   });
   const [itemSubmitting, setItemSubmitting] = useState(false);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] = useState(false);
+  const [cashDrawerSessions, setCashDrawerSessions] = useState<any[]>([]);
+  const [selectedCashDrawerSessionId, setSelectedCashDrawerSessionId] = useState<string>("");
 
 
   const { toast } = useToast();
@@ -140,13 +143,94 @@ export default function InventoryPage() {
     }
   };
 
+  const fetchCashDrawers = async () => {
+    if (!user?.restaurant_id) return;
+    try {
+      const res = await apiClient.get(DrawerSessionApis.active({
+        restaurantId: user.restaurant_id,
+        businessLine: "restaurant",
+      }));
+      const message = String(res.data?.message || "").toLowerCase();
+      if (message.includes("controls are disabled")) {
+        setCashDrawerControlsEnabled(false);
+        setCashDrawerSessions([]);
+        setSelectedCashDrawerSessionId("");
+        return;
+      }
+      const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+      const paymentReady = rows.filter((session: any) =>
+        ["opened", "closing_count_required", "reopened"].includes(String(session.status || "").toLowerCase())
+      );
+      setCashDrawerControlsEnabled(true);
+      setCashDrawerSessions(paymentReady);
+      setSelectedCashDrawerSessionId((current) => {
+        if (current && paymentReady.some((session: any) => String(session.id) === current)) return current;
+        return paymentReady[0]?.id ? String(paymentReady[0].id) : "";
+      });
+    } catch (err) {
+      console.error("Failed to fetch cash drawers:", err);
+      setCashDrawerControlsEnabled(true);
+      setCashDrawerSessions([]);
+      setSelectedCashDrawerSessionId("");
+    }
+  };
+
 
   useEffect(() => {
     if (user?.restaurant_id) {
       fetchInventory();
       fetchSuppliers();
+      fetchCashDrawers();
     }
   }, [user, activeTab]);
+
+  const cashDrawerLabel = (session: any) =>
+    `${session.name || session.drawer_key || "Drawer"} · ${session.station || "general"} · ${session.business_date || ""}`.trim();
+
+  const drawerSessionIdForCashPayment = () => {
+    if (!cashDrawerControlsEnabled) return undefined;
+    if (!selectedCashDrawerSessionId) {
+      toast({
+        title: "Cash Drawer Required",
+        description: "Select an open cash drawer before recording a cash inventory payment.",
+        variant: "destructive",
+      });
+      return null;
+    }
+    return Number(selectedCashDrawerSessionId);
+  };
+
+  const renderCashDrawerSelect = (id: string) => {
+    if (!cashDrawerControlsEnabled) return null;
+    return (
+      <div className="grid gap-2">
+        <Label htmlFor={id}>Cash Drawer</Label>
+        <Select value={selectedCashDrawerSessionId} onValueChange={setSelectedCashDrawerSessionId}>
+          <SelectTrigger id={id}>
+            <SelectValue placeholder="Select open cash drawer" />
+          </SelectTrigger>
+          <SelectContent>
+            {cashDrawerSessions.length === 0 ? (
+              <SelectItem value="none" disabled>
+                No open cash drawers
+              </SelectItem>
+            ) : (
+              cashDrawerSessions.map((session) => (
+                <SelectItem key={session.id} value={String(session.id)}>
+                  {cashDrawerLabel(session)}
+                </SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+        {cashDrawerSessions.length === 0 && (
+          <p className="text-xs text-destructive">
+            Open a cash drawer before recording cash inventory payments.
+          </p>
+        )}
+      </div>
+    );
+  };
 
   const timezone = typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
 
@@ -276,10 +360,16 @@ export default function InventoryPage() {
       const amount = Number(awaiting.amount || 0);
       const paid = Number(awaiting.paid_amount || 0);
       const remaining = Math.max(0, amount - paid);
+      const drawerSessionId = drawerSessionIdForCashPayment();
+      if (drawerSessionId === null) return;
 
       const res = await apiClient.post(
         AwaitingPaymentApis.markPaid(Number(awaiting.id), restaurantId),
-        { paid_amount: remaining || undefined, payment_method: "cash" }
+        {
+          paid_amount: remaining || undefined,
+          payment_method: "cash",
+          ...(drawerSessionId ? { drawer_session_id: drawerSessionId } : {}),
+        }
       );
 
       if (res.data?.status === "success") {
@@ -419,6 +509,11 @@ export default function InventoryPage() {
         payload.payment_status = (adjustForm as any).payment_status || 'pending';
         if (payload.payment_status === "paid") {
           payload.payment_method = (adjustForm as any).payment_method || "cash";
+          if (payload.payment_method === "cash") {
+            const drawerSessionId = drawerSessionIdForCashPayment();
+            if (drawerSessionId === null) return;
+            if (drawerSessionId) payload.drawer_session_id = drawerSessionId;
+          }
         }
         if ((adjustForm as any).supplier_id && (adjustForm as any).supplier_id !== "none") {
           payload.supplier_id = Number((adjustForm as any).supplier_id);
@@ -503,6 +598,15 @@ export default function InventoryPage() {
         };
         await apiClient.patch(InventoryApis.updateInventoryItem(editingItem.id), updatePayload);
       } else {
+        let openingDrawerSessionId: number | undefined;
+        if (
+          itemForm.opening_stock_payment_status === "paid" &&
+          itemForm.opening_stock_payment_method === "cash"
+        ) {
+          const drawerSessionId = drawerSessionIdForCashPayment();
+          if (drawerSessionId === null) return;
+          if (drawerSessionId) openingDrawerSessionId = drawerSessionId;
+        }
         const createPayload = {
           restaurant_id: user.restaurant_id,
           name: itemForm.name,
@@ -516,6 +620,7 @@ export default function InventoryPage() {
           opening_stock_payment_method: itemForm.opening_stock_payment_status === "paid"
             ? itemForm.opening_stock_payment_method
             : null,
+          opening_stock_drawer_session_id: openingDrawerSessionId,
           supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
           location: itemForm.location || null,
           is_active: itemForm.is_active,
@@ -872,6 +977,11 @@ export default function InventoryPage() {
                       </Select>
                     </div>
                   )}
+                  {adjustForm.payment_status === "paid" && adjustForm.payment_method === "cash" && (
+                    <div className="md:col-span-2">
+                      {renderCashDrawerSelect("adjust_cash_drawer")}
+                    </div>
+                  )}
                 </>
               )}
               <div className="grid gap-2">
@@ -1017,6 +1127,12 @@ export default function InventoryPage() {
                       </Select>
                     </div>
                   )}
+                  {itemForm.opening_stock_payment_status === "paid" &&
+                    itemForm.opening_stock_payment_method === "cash" && (
+                      <div className="md:col-span-2">
+                        {renderCashDrawerSelect("opening_cash_drawer")}
+                      </div>
+                    )}
                 </>
               )}
               <div className="grid gap-2">
@@ -1219,6 +1335,11 @@ export default function InventoryPage() {
               </TabsContent>
 
               <TabsContent value="adjustments" className="mt-5">
+                {cashDrawerControlsEnabled && adjustments.some((a) => awaitingByAdjustmentId.get(Number(a.id))?.id) && (
+                  <div className="mb-4 max-w-md rounded-2xl border border-border/60 bg-muted/20 p-4">
+                    {renderCashDrawerSelect("history_cash_drawer")}
+                  </div>
+                )}
                 {adjustmentsLoading ? (
                   <div className="h-48 flex items-center justify-center text-muted-foreground">
                     <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading adjustments…
