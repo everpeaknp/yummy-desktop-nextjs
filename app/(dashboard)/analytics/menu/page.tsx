@@ -44,7 +44,6 @@ import {
 } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { DateRange } from "react-day-picker";
-import * as XLSX from "xlsx";
 
 type MenuDetailItem = {
   id: number;
@@ -135,6 +134,7 @@ type OrderTraceResponse = {
 };
 
 type ViewMode = "flat" | "station";
+type ExportMode = "summary" | "details" | "both";
 
 const STATIONS = ["kitchen", "bar", "cafe"] as const;
 
@@ -186,6 +186,7 @@ export default function AnalyticsMenuPage() {
   const [orderTraceData, setOrderTraceData] = useState<OrderTraceResponse | null>(null);
   const [orderTracePage, setOrderTracePage] = useState(1);
   const [exportingFormat, setExportingFormat] = useState<"xlsx" | "pdf" | null>(null);
+  const [exportMode, setExportMode] = useState<ExportMode>("both");
 
   const money = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }), []);
   const dateTime = useMemo(
@@ -438,9 +439,56 @@ export default function AnalyticsMenuPage() {
 
   const stationCards = breakdownData?.stations || [];
 
-  const exportActiveView = async (format: "xlsx" | "pdf") => {
+  const downloadMenuWorkbook = async () => {
+    if (!restaurantId) {
+      toast.error("Restaurant not set");
+      return;
+    }
+
     try {
-      setExportingFormat(format);
+      setExportingFormat("xlsx");
+      const url = AnalyticsApis.menuExportXlsx({
+        restaurantId,
+        dateFrom,
+        dateTo,
+        timezone,
+        station: station || undefined,
+        category: category.trim() || undefined,
+        search: search.trim() || undefined,
+        exportMode,
+      });
+      const response = await apiClient.get(url, { responseType: "blob" });
+      const blob = new Blob([response.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const contentDisposition = String(response.headers?.["content-disposition"] || "");
+      const matched = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+      const fallbackName = `menu_analytics_${exportMode}_${dateFrom}_to_${dateTo}.xlsx`;
+      const filename = matched?.[1] || fallbackName;
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(objectUrl);
+      toast.success(`Workbook exported: ${exportMode}.`);
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail ||
+          e?.response?.data?.message ||
+          e?.message ||
+          "Failed to export workbook",
+      );
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
+  const exportActiveViewPdf = async () => {
+    try {
+      setExportingFormat("pdf");
       if (viewMode === "flat") {
         const rows = (data?.items || []).map((item) => ({
           Item: item.name,
@@ -455,40 +503,33 @@ export default function AnalyticsMenuPage() {
           toast.error("No flat view rows to export.");
           return;
         }
-        if (format === "xlsx") {
-          const ws = XLSX.utils.json_to_sheet(rows);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Menu Flat View");
-          XLSX.writeFile(wb, `menu-flat-view-${dateFrom}-to-${dateTo}.xlsx`);
-        } else {
-          const { jsPDF } = await import("jspdf");
-          const pdf = new jsPDF({ unit: "pt", format: "a4" });
-          let y = 40;
-          pdf.setFontSize(16);
-          pdf.text("Menu Analytics - Flat View", 40, y);
+        const { jsPDF } = await import("jspdf");
+        const pdf = new jsPDF({ unit: "pt", format: "a4" });
+        let y = 40;
+        pdf.setFontSize(16);
+        pdf.text("Menu Analytics - Flat View", 40, y);
+        y += 18;
+        pdf.setFontSize(10);
+        pdf.text(`Range: ${dateFrom} to ${dateTo}`, 40, y);
+        y += 24;
+        rows.forEach((row, index) => {
+          if (y > 760) {
+            pdf.addPage();
+            y = 40;
+          }
+          pdf.setFontSize(11);
+          pdf.text(`${index + 1}. ${row.Item}`, 40, y);
+          y += 14;
+          pdf.setFontSize(9);
+          pdf.text(
+            `Category: ${row.Category || "-"} | Qty: ${row["Qty Sold"]} | Avg: Rs. ${money.format(Number(row["Avg Price"] || 0))} | Revenue: Rs. ${money.format(Number(row.Revenue || 0))}`,
+            52,
+            y,
+          );
           y += 18;
-          pdf.setFontSize(10);
-          pdf.text(`Range: ${dateFrom} to ${dateTo}`, 40, y);
-          y += 24;
-          rows.forEach((row, index) => {
-            if (y > 760) {
-              pdf.addPage();
-              y = 40;
-            }
-            pdf.setFontSize(11);
-            pdf.text(`${index + 1}. ${row.Item}`, 40, y);
-            y += 14;
-            pdf.setFontSize(9);
-            pdf.text(
-              `Category: ${row.Category || "-"} | Qty: ${row["Qty Sold"]} | Avg: Rs. ${money.format(Number(row["Avg Price"] || 0))} | Revenue: Rs. ${money.format(Number(row.Revenue || 0))}`,
-              52,
-              y,
-            );
-            y += 18;
-          });
-          pdf.save(`menu-flat-view-${dateFrom}-to-${dateTo}.pdf`);
-        }
-        toast.success(`Flat view exported as ${format.toUpperCase()}.`);
+        });
+        pdf.save(`menu-flat-view-${dateFrom}-to-${dateTo}.pdf`);
+        toast.success("Flat view exported as PDF.");
         return;
       }
 
@@ -515,43 +556,36 @@ export default function AnalyticsMenuPage() {
         toast.error("No station breakdown rows to export.");
         return;
       }
-      if (format === "xlsx") {
-        const ws = XLSX.utils.json_to_sheet(rows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Menu Station Breakdown");
-        XLSX.writeFile(wb, `menu-station-breakdown-${dateFrom}-to-${dateTo}.xlsx`);
-      } else {
-        const { jsPDF } = await import("jspdf");
-        const pdf = new jsPDF({ unit: "pt", format: "a4" });
-        let y = 40;
-        pdf.setFontSize(16);
-        pdf.text("Menu Analytics - Station Breakdown", 40, y);
+      const { jsPDF } = await import("jspdf");
+      const pdf = new jsPDF({ unit: "pt", format: "a4" });
+      let y = 40;
+      pdf.setFontSize(16);
+      pdf.text("Menu Analytics - Station Breakdown", 40, y);
+      y += 18;
+      pdf.setFontSize(10);
+      pdf.text(`Range: ${dateFrom} to ${dateTo}`, 40, y);
+      y += 24;
+      rows.forEach((row, index) => {
+        if (y > 760) {
+          pdf.addPage();
+          y = 40;
+        }
+        pdf.setFontSize(11);
+        pdf.text(`${index + 1}. ${row.Item}`, 40, y);
+        y += 14;
+        pdf.setFontSize(9);
+        pdf.text(
+          `Station: ${row.Station} | Category: ${row.Category} | Qty: ${row["Qty Sold"]} | Revenue: Rs. ${money.format(Number(row.Revenue || 0))} | Orders: ${row.Orders}`,
+          52,
+          y,
+        );
+        y += 12;
+        const modifierText = row.Modifiers ? `Modifiers: ${row.Modifiers}` : "Modifiers: -";
+        pdf.text(modifierText, 52, y);
         y += 18;
-        pdf.setFontSize(10);
-        pdf.text(`Range: ${dateFrom} to ${dateTo}`, 40, y);
-        y += 24;
-        rows.forEach((row, index) => {
-          if (y > 760) {
-            pdf.addPage();
-            y = 40;
-          }
-          pdf.setFontSize(11);
-          pdf.text(`${index + 1}. ${row.Item}`, 40, y);
-          y += 14;
-          pdf.setFontSize(9);
-          pdf.text(
-            `Station: ${row.Station} | Category: ${row.Category} | Qty: ${row["Qty Sold"]} | Revenue: Rs. ${money.format(Number(row.Revenue || 0))} | Orders: ${row.Orders}`,
-            52,
-            y,
-          );
-          y += 12;
-          const modifierText = row.Modifiers ? `Modifiers: ${row.Modifiers}` : "Modifiers: -";
-          pdf.text(modifierText, 52, y);
-          y += 18;
-        });
-        pdf.save(`menu-station-breakdown-${dateFrom}-to-${dateTo}.pdf`);
-      }
-      toast.success(`Station breakdown exported as ${format.toUpperCase()}.`);
+      });
+      pdf.save(`menu-station-breakdown-${dateFrom}-to-${dateTo}.pdf`);
+      toast.success("Station breakdown exported as PDF.");
     } finally {
       setExportingFormat(null);
     }
@@ -584,14 +618,24 @@ export default function AnalyticsMenuPage() {
           {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
           Refresh
         </Button>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => exportActiveView("xlsx")} disabled={!!exportingFormat || loading}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={exportMode} onValueChange={(value) => setExportMode(value as ExportMode)}>
+            <SelectTrigger className="w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="summary">Summary Only</SelectItem>
+              <SelectItem value="details">Detailed Tables</SelectItem>
+              <SelectItem value="both">Both</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={downloadMenuWorkbook} disabled={!!exportingFormat || loading}>
             {exportingFormat === "xlsx" ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />}
-            Export XLSX
+            Export Workbook
           </Button>
-          <Button variant="outline" onClick={() => exportActiveView("pdf")} disabled={!!exportingFormat || loading}>
+          <Button variant="outline" onClick={exportActiveViewPdf} disabled={!!exportingFormat || loading}>
             {exportingFormat === "pdf" ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FileText className="w-4 h-4 mr-2" />}
-            Export PDF
+            Quick PDF
           </Button>
         </div>
       </div>
