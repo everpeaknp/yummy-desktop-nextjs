@@ -496,6 +496,40 @@ export const AnalyticsApis = {
     if (businessLine) params.append('business_line', businessLine);
     return `/analytics/menu/station-breakdown/orders?${params.toString()}`;
   },
+  menuExportXlsx: ({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    timezone,
+    station,
+    category,
+    search,
+    businessLine,
+    exportMode = 'both',
+  }: {
+    restaurantId: number;
+    dateFrom: string;
+    dateTo: string;
+    timezone?: string;
+    station?: string;
+    category?: string;
+    search?: string;
+    businessLine?: string;
+    exportMode?: 'summary' | 'details' | 'both' | string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      date_from: dateFrom,
+      date_to: dateTo,
+      export_mode: exportMode,
+    });
+    if (timezone) params.append('timezone', timezone);
+    if (station) params.append('station', station);
+    if (category) params.append('category', category);
+    if (search) params.append('search', search);
+    if (businessLine) params.append('business_line', businessLine);
+    return `/analytics/menu/export/xlsx?${params.toString()}`;
+  },
   staffDetails: ({
     restaurantId,
     dateFrom,
