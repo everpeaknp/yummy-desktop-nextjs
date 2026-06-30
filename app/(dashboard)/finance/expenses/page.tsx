@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { ExpenseApis, FinanceApis } from "@/lib/api/endpoints";
+import { DrawerSessionApis, ExpenseApis, FinanceApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,11 @@ import Link from "next/link";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import type { FinanceExpensesResponse } from "@/types/finance";
 import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
+import {
+  buildCashExpenseDrawerPayload,
+  parseActiveCashDrawers,
+  type ActiveCashDrawerSession,
+} from "@/lib/cash-expense-drawer-selection";
 
 function hasFinanceActivity(metrics: FinanceExpensesResponse["metrics"] | undefined): boolean {
   if (!metrics) return false;
@@ -111,6 +116,12 @@ export default function ExpensesPage() {
     category_id: "",
     payment_method: "cash",
   });
+  const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] = useState(false);
+  const [cashDrawerSessions, setCashDrawerSessions] = useState<ActiveCashDrawerSession[]>([]);
+  const [selectedCashDrawerSessionId, setSelectedCashDrawerSessionId] = useState("");
+  const [cashDrawerLoading, setCashDrawerLoading] = useState(false);
+  const [cashDrawerResolved, setCashDrawerResolved] = useState(false);
+  const [cashDrawerError, setCashDrawerError] = useState<string | null>(null);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [customStartTime, setCustomStartTime] = useState("00:00");
@@ -141,6 +152,64 @@ export default function ExpensesPage() {
     }
     return "restaurant";
   }, [businessLine, selectedModule, restaurant?.hotel_enabled, restaurant?.restaurant_enabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resetDrawerState = () => {
+      setCashDrawerControlsEnabled(false);
+      setCashDrawerSessions([]);
+      setSelectedCashDrawerSessionId("");
+      setCashDrawerResolved(false);
+      setCashDrawerError(null);
+    };
+
+    const loadCashDrawers = async () => {
+      if (!isAddDialogOpen || editingExpense || !user?.restaurant_id) {
+        resetDrawerState();
+        return;
+      }
+
+      setCashDrawerLoading(true);
+      setCashDrawerResolved(false);
+      setCashDrawerError(null);
+      try {
+        const response = await apiClient.get(
+          DrawerSessionApis.active({
+            restaurantId: Number(user.restaurant_id),
+            businessLine: createBusinessLine,
+          }),
+        );
+        if (cancelled) return;
+
+        const result = parseActiveCashDrawers(response.data);
+        setCashDrawerControlsEnabled(result.controlsEnabled);
+        setCashDrawerSessions(result.sessions);
+        setCashDrawerResolved(true);
+        setSelectedCashDrawerSessionId((current) => {
+          if (current && result.sessions.some((session) => String(session.id) === current)) {
+            return current;
+          }
+          return result.sessions[0]?.id ? String(result.sessions[0].id) : "";
+        });
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Failed to load active cash drawers", error);
+        setCashDrawerControlsEnabled(true);
+        setCashDrawerSessions([]);
+        setSelectedCashDrawerSessionId("");
+        setCashDrawerResolved(false);
+        setCashDrawerError("Unable to load open cash drawers. Refresh and try again.");
+      } finally {
+        if (!cancelled) setCashDrawerLoading(false);
+      }
+    };
+
+    void loadCashDrawers();
+    return () => {
+      cancelled = true;
+    };
+  }, [createBusinessLine, editingExpense, isAddDialogOpen, user?.restaurant_id]);
 
   useEffect(() => {
     if (!dualBusinessLines) {
@@ -319,6 +388,22 @@ export default function ExpensesPage() {
 
     setSaving(true);
     try {
+      if (
+        !editingExpense &&
+        newExpense.payment_method === "cash" &&
+        !cashDrawerResolved
+      ) {
+        throw new Error(
+          cashDrawerError || "Wait for open cash drawers to finish loading.",
+        );
+      }
+      const drawerPayload = editingExpense
+        ? {}
+        : buildCashExpenseDrawerPayload({
+            paymentMethod: newExpense.payment_method,
+            controlsEnabled: cashDrawerControlsEnabled,
+            selectedDrawerSessionId: selectedCashDrawerSessionId,
+          });
       const payload = {
         restaurant_id: user.restaurant_id,
         amount: parseFloat(newExpense.amount),
@@ -327,6 +412,7 @@ export default function ExpensesPage() {
         payment_method: newExpense.payment_method,
         station: newExpense.station,
         business_line: createBusinessLine,
+        ...drawerPayload,
       };
 
       const res = editingExpense
@@ -345,8 +431,15 @@ export default function ExpensesPage() {
         resetExpenseForm();
         void fetchData();
       }
-    } catch {
-      toast.error("Failed to record expense");
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      const responseMessage = error?.response?.data?.message;
+      const message =
+        (typeof detail === "string" && detail.trim()) ||
+        (typeof responseMessage === "string" && responseMessage.trim()) ||
+        (error instanceof Error && error.message) ||
+        "Failed to record expense";
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -418,6 +511,12 @@ export default function ExpensesPage() {
       category_id: "",
       payment_method: "cash",
     });
+    setCashDrawerControlsEnabled(false);
+    setCashDrawerSessions([]);
+    setSelectedCashDrawerSessionId("");
+    setCashDrawerLoading(false);
+    setCashDrawerResolved(false);
+    setCashDrawerError(null);
   };
 
   const handleEditExpense = (expense: any) => {
@@ -780,6 +879,7 @@ export default function ExpensesPage() {
               <Select
                 value={newExpense.payment_method}
                 onValueChange={(val) => setNewExpense({ ...newExpense, payment_method: val })}
+                disabled={Boolean(editingExpense)}
               >
                 <SelectTrigger className="col-span-3">
                   <SelectValue placeholder="Method" />
@@ -793,6 +893,55 @@ export default function ExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
+            {editingExpense && (
+              <p className="col-start-2 col-span-3 -mt-2 text-xs text-muted-foreground">
+                Payment method is locked after posting. Use an audited correction workflow to reclassify it.
+              </p>
+            )}
+            {!editingExpense && newExpense.payment_method === "cash" && cashDrawerControlsEnabled && (
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="cash-drawer" className="pt-2 text-right">
+                  Cash Drawer*
+                </Label>
+                <div className="col-span-3 space-y-1.5">
+                  <Select
+                    value={selectedCashDrawerSessionId}
+                    onValueChange={setSelectedCashDrawerSessionId}
+                    disabled={cashDrawerLoading || cashDrawerSessions.length === 0}
+                  >
+                    <SelectTrigger id="cash-drawer">
+                      <SelectValue
+                        placeholder={cashDrawerLoading ? "Loading open drawers..." : "Select open cash drawer"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cashDrawerSessions.length === 0 ? (
+                        <SelectItem value="none" disabled>
+                          No open cash drawers
+                        </SelectItem>
+                      ) : (
+                        cashDrawerSessions.map((session) => (
+                          <SelectItem key={session.id} value={String(session.id)}>
+                            {`${session.name || session.drawer_key || "Drawer"} · ${session.station || "general"}${session.business_date ? ` · ${session.business_date}` : ""}`}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {cashDrawerError ? (
+                    <p className="text-xs text-destructive">{cashDrawerError}</p>
+                  ) : cashDrawerSessions.length === 0 && !cashDrawerLoading ? (
+                    <p className="text-xs text-destructive">
+                      Open a cash drawer before recording a cash expense.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      This expense will reduce the selected drawer&apos;s expected cash.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="desc" className="text-right">
                 Notes
@@ -813,7 +962,14 @@ export default function ExpensesPage() {
             <Button
               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
               onClick={handleAddExpense}
-              disabled={saving}
+              disabled={
+                saving ||
+                (!editingExpense &&
+                  newExpense.payment_method === "cash" &&
+                  (!cashDrawerResolved ||
+                    (cashDrawerControlsEnabled &&
+                      (cashDrawerLoading || !selectedCashDrawerSessionId))))
+              }
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
               {editingExpense ? "Update Expense" : "Record Expense"}
