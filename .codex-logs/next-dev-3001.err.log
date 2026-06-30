@@ -1,2 +1,0 @@
-[clean-next] Refusing to remove .next while Next dev/build is running for this project.
-[clean-next] Active PID 58344: "node"   "C:\Users\PREDATOR\OneDrive\Desktop\yummy-desktop-nextjs\node_modules\.bin\\..\next\dist\bin\next" dev
