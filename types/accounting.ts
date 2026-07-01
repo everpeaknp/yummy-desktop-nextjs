@@ -572,6 +572,17 @@ export type AccountingBackfillRun = {
   completed_at?: string | null;
 };
 
+export type FinanceEventBackfillStatus = {
+  restaurant_id: number;
+  business_line?: string | null;
+  total_expected: number;
+  existing_count: number;
+  missing_count: number;
+  source_counts_json?: Record<string, number> | null;
+  latest_backfill_run_id?: number | null;
+  latest_backfill_created_at?: string | null;
+};
+
 export type PaymentSettlementStatus =
   | "draft"
   | "bank_confirmed"

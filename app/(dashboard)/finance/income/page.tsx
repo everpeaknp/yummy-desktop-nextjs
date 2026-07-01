@@ -20,7 +20,9 @@ import { RevenueChart } from "@/components/analytics/revenue-chart";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import type { FinanceOverviewResponse } from "@/types/finance";
 
-function hasFinanceActivity(metrics: FinanceOverviewResponse["metrics"] | undefined): boolean {
+function hasAuthoritativeFinanceActivity(finance: FinanceOverviewResponse | null | undefined): boolean {
+  if (!finance?.meta?.ledger_complete) return false;
+  const metrics = finance.metrics;
   if (!metrics) return false;
   return [
     metrics.sales_total,
@@ -266,7 +268,7 @@ export default function IncomePage() {
     value: point.income,
     revenue: point.income
   }));
-  const financeMetrics = hasFinanceActivity(financeOverview?.metrics) ? financeOverview?.metrics : null;
+  const financeMetrics = hasAuthoritativeFinanceActivity(financeOverview) ? financeOverview?.metrics : null;
   const netSales = financeMetrics
     ? financeMetrics.net_sales
     : incomeData?.summary?.total_net_income || 0;
@@ -290,10 +292,10 @@ export default function IncomePage() {
     ? financeMetrics.manual_operating_expense + financeMetrics.inventory_cogs
     : expenseSummary?.total_amount || 0;
   const operatingProfit = financeMetrics?.operating_profit ?? netSales - operatingExpenses;
-  const paymentMethodRows = financeOverview?.payment_method_breakdown?.length
+  const paymentMethodRows = financeMetrics && financeOverview?.payment_method_breakdown?.length
     ? financeOverview.payment_method_breakdown
     : incomeData?.by_payment_method || [];
-  const paymentInstrumentRows = financeOverview?.payment_instrument_breakdown?.length
+  const paymentInstrumentRows = financeMetrics && financeOverview?.payment_instrument_breakdown?.length
     ? financeOverview.payment_instrument_breakdown
     : incomeData?.by_payment_instrument || [];
 

@@ -44,6 +44,7 @@ import type {
   AccountingHealthResponse,
   AccountingPostResult,
   ChartAccount,
+  FinanceEventBackfillStatus,
   LedgerMapping,
   MappingExceptionReportResponse,
   MappingExceptionRepostRequest,
@@ -208,8 +209,10 @@ export function AccountingOverviewClient() {
   const [posting, setPosting] = useState(false);
   const [postResult, setPostResult] = useState<AccountingPostResult | null>(null);
   const [backfillRuns, setBackfillRuns] = useState<AccountingBackfillRun[]>([]);
+  const [financeEventStatus, setFinanceEventStatus] = useState<FinanceEventBackfillStatus | null>(null);
   const [dryRunResult, setDryRunResult] = useState<AccountingBackfillRun | null>(null);
   const [commitResult, setCommitResult] = useState<AccountingBackfillRun | null>(null);
+  const [financeEventBackfillLoading, setFinanceEventBackfillLoading] = useState(false);
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [commitLoading, setCommitLoading] = useState(false);
   const [drilldownOpen, setDrilldownOpen] = useState(false);
@@ -304,6 +307,26 @@ export function AccountingOverviewClient() {
   useEffect(() => {
     void loadBackfillRuns();
   }, [loadBackfillRuns]);
+
+  const loadFinanceEventStatus = useCallback(async () => {
+    if (!restaurantId || !canView) return;
+    try {
+      const res = await apiClient.get<BaseResponse<FinanceEventBackfillStatus>>(
+        AccountingApis.financeEventBackfillStatus({
+          restaurantId,
+          businessLine: "restaurant",
+        })
+      );
+      setFinanceEventStatus(res.data?.data ?? null);
+    } catch (error) {
+      console.error("Failed to load finance event backfill status", error);
+      setFinanceEventStatus(null);
+    }
+  }, [restaurantId, canView]);
+
+  useEffect(() => {
+    void loadFinanceEventStatus();
+  }, [loadFinanceEventStatus]);
 
   const openAccountDrilldown = useCallback(
     async (accountId: number, title: string) => {
@@ -445,6 +468,30 @@ export function AccountingOverviewClient() {
       toast.error("Failed to dry-run accounting backfill");
     } finally {
       setBackfillLoading(false);
+    }
+  };
+
+  const runFinanceEventBackfillAll = async () => {
+    if (!restaurantId || !canView || !canRunBackfill) {
+      toast.error("Financial event backfill requires finance.ledger.backfill permission.");
+      return;
+    }
+    setFinanceEventBackfillLoading(true);
+    try {
+      const res = await apiClient.post<BaseResponse<AccountingBackfillRun>>(
+        AccountingApis.backfillFinanceEventsAll({
+          restaurantId,
+          businessLine: "restaurant",
+        })
+      );
+      const result = res.data?.data ?? null;
+      toast.success(`Backfilled ${result?.finance_events_created ?? 0} missing financial events.`);
+      await Promise.all([loadFinanceEventStatus(), loadBackfillRuns(), loadTrialBalance()]);
+    } catch (error) {
+      console.error("Failed to backfill financial events", error);
+      toast.error("Failed to backfill financial events");
+    } finally {
+      setFinanceEventBackfillLoading(false);
     }
   };
 
@@ -615,6 +662,35 @@ export function AccountingOverviewClient() {
         onExport={exportTrialBalance}
         exportDisabled={!trialBalance?.rows.length}
       />
+
+      {financeEventStatus && financeEventStatus.missing_count > 0 ? (
+        <div className="flex flex-col gap-3 border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <div className="font-semibold">Financial events are incomplete</div>
+              <p className="mt-1 leading-5">
+                {financeEventStatus.missing_count.toLocaleString()} historical financial event
+                {financeEventStatus.missing_count === 1 ? "" : "s"} need to be created before accounting reports can be trusted.
+                This repair runs across all history and ignores the selected date range.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={runFinanceEventBackfillAll}
+            disabled={financeEventBackfillLoading || !canRunBackfill}
+            title={!canRunBackfill ? "Financial event backfill requires finance.ledger.backfill permission." : undefined}
+            className="shrink-0"
+          >
+            {financeEventBackfillLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Database className="mr-2 h-4 w-4" />
+            )}
+            Backfill All Financial Events
+          </Button>
+        </div>
+      ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
         <Card className="overflow-hidden border-border/60">
@@ -896,7 +972,7 @@ export function AccountingOverviewClient() {
                   Advanced tools
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Backfill and recovery tools for accounting repair work.
+                  Journal posting and recovery tools for accounting repair work.
                 </div>
               </div>
               {showAdvancedTools ? (
@@ -919,7 +995,7 @@ export function AccountingOverviewClient() {
                     ) : (
                       <PlayCircle className="mr-2 h-4 w-4" />
                     )}
-                    Dry Run
+                    Dry Run Journals
                   </Button>
                   <Button
                     onClick={commitBackfill}
@@ -931,7 +1007,7 @@ export function AccountingOverviewClient() {
                     ) : (
                       <CheckCircle2 className="mr-2 h-4 w-4" />
                     )}
-                    Commit
+                    Commit Journals
                   </Button>
                 </div>
 

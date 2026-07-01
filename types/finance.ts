@@ -8,6 +8,11 @@ export type FinanceMeta = {
   date_from: string;
   date_to: string;
   contract_version: string;
+  finance_accounting_enabled?: boolean;
+  accounting_v2_enabled?: boolean;
+  accounting_v2_backfill_run_id?: number | null;
+  ledger_complete?: boolean;
+  ledger_source?: string;
 };
 
 export type FinanceOverviewMetrics = {

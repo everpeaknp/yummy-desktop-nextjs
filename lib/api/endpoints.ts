@@ -1116,6 +1116,10 @@ export const AccountingApis = {
     `/accounting/post-finance-events?${buildAccountingQuery(params).toString()}`,
   backfillDryRun: () => '/accounting/backfill/dry-run',
   backfillCommit: (dryRunId: number) => `/accounting/backfill/commit?dry_run_id=${dryRunId}`,
+  financeEventBackfillStatus: (params: Pick<AccountingCoreParams, 'restaurantId' | 'businessLine'>) =>
+    `/accounting/backfill/finance-events/status?${buildAccountingQuery(params).toString()}`,
+  backfillFinanceEventsAll: (params: Pick<AccountingCoreParams, 'restaurantId' | 'businessLine'>) =>
+    `/accounting/backfill/finance-events/all?${buildAccountingQuery(params).toString()}`,
   backfillRuns: ({ restaurantId, limit = 50 }: { restaurantId: number; limit?: number }) =>
     `/accounting/backfill/runs?restaurant_id=${restaurantId}&limit=${limit}`,
 };

@@ -36,7 +36,9 @@ import {
   type ActiveCashDrawerSession,
 } from "@/lib/cash-expense-drawer-selection";
 
-function hasFinanceActivity(metrics: FinanceExpensesResponse["metrics"] | undefined): boolean {
+function hasAuthoritativeFinanceActivity(finance: FinanceExpensesResponse | null | undefined): boolean {
+  if (!finance?.meta?.ledger_complete) return false;
+  const metrics = finance.metrics;
   if (!metrics) return false;
   return [
     metrics.sales_total,
@@ -496,7 +498,7 @@ export default function ExpensesPage() {
     () => buildExpensePaymentMethodBreakdown(filteredExpenses),
     [filteredExpenses],
   );
-  const financeExpenseMetrics = hasFinanceActivity(financeExpenses?.metrics) ? financeExpenses?.metrics : null;
+  const financeExpenseMetrics = hasAuthoritativeFinanceActivity(financeExpenses) ? financeExpenses?.metrics : null;
   const operatingExpenseTotal =
     financeExpenseMetrics?.manual_operating_expense ??
     filteredExpenses.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
