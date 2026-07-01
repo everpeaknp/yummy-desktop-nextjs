@@ -461,7 +461,7 @@ export function AccountingOverviewClient() {
       );
       const result = res.data?.data ?? null;
       setDryRunResult(result);
-      toast.success(`Dry run found ${result?.expected_journal_count ?? 0} expected journals.`);
+      toast.success(`Dry run found ${result?.expected_journal_count ?? 0} unposted journals.`);
       await loadBackfillRuns();
     } catch (error) {
       console.error("Failed to dry-run accounting backfill", error);
@@ -511,7 +511,9 @@ export function AccountingOverviewClient() {
       );
       const result = res.data?.data ?? null;
       setCommitResult(result);
-      toast.success(`Committed backfill: ${result?.journals_posted ?? 0} journals posted.`);
+      toast.success(
+        `Journal posting complete: ${result?.journals_posted ?? 0} posted, ${result?.journals_skipped ?? 0} skipped.`
+      );
       await Promise.all([loadTrialBalance(), loadBackfillRuns()]);
     } catch (error) {
       console.error("Failed to commit accounting backfill", error);
@@ -1013,7 +1015,7 @@ export function AccountingOverviewClient() {
 
                 <div className="grid gap-2 border-y border-border py-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Expected journals</span>
+                    <span className="text-muted-foreground">Unposted journals</span>
                     <span className="font-semibold">{dryRunResult?.expected_journal_count ?? 0}</span>
                   </div>
                   <div className="flex items-center justify-between">
