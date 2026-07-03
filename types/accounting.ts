@@ -8,12 +8,7 @@ export type AccountingReportParams = {
 };
 
 export type AccountType =
-  | "asset"
-  | "liability"
-  | "equity"
-  | "revenue"
-  | "contra_revenue"
-  | "expense";
+  "asset" | "liability" | "equity" | "revenue" | "contra_revenue" | "expense";
 
 export type NormalBalance = "debit" | "credit";
 
@@ -312,7 +307,8 @@ export type AccountingDaybook = {
 export type CashTransferInput = {
   restaurant_id: number;
   business_line?: string;
-  transfer_mode: "pending_bank_deposit" | "confirm_bank_deposit" | "immediate_bank_deposit";
+  transfer_mode:
+    "pending_bank_deposit" | "confirm_bank_deposit" | "immediate_bank_deposit";
   transfer_date: string;
   amount: number;
   source?: string | null;
@@ -331,6 +327,22 @@ export type CashTransferResult = {
   source?: string | null;
   destination?: string | null;
   reference?: string | null;
+};
+
+export type DrawerCashControlSummary = {
+  restaurant_id: number;
+  business_line: string;
+  finance_accounting_enabled: boolean;
+  accounting_v2_enabled: boolean;
+  ledger_complete: boolean;
+  active_session_count: number;
+  active_drawer_cash: number;
+  retained_drawer_cash: number;
+  drawer_cash: number;
+  safe_cash: number;
+  cash_in_transit: number;
+  total_controlled_cash: number;
+  source_accounts: Record<string, string>;
 };
 
 export type OpeningBalanceLine = {
@@ -376,7 +388,14 @@ export type OpeningBalanceBatchInput = {
   lines: OpeningBalanceLineInput[];
 };
 
-export type JournalVoucherStatus = "draft" | "submitted" | "approved" | "rejected" | "posted" | "reversed" | string;
+export type JournalVoucherStatus =
+  | "draft"
+  | "submitted"
+  | "approved"
+  | "rejected"
+  | "posted"
+  | "reversed"
+  | string;
 
 export type JournalVoucherType =
   | "journal"
@@ -454,7 +473,9 @@ export type JournalVoucherInput = {
   lines: JournalVoucherLineInput[];
 };
 
-export type JournalVoucherUpdateInput = Partial<Omit<JournalVoucherInput, "restaurant_id">>;
+export type JournalVoucherUpdateInput = Partial<
+  Omit<JournalVoucherInput, "restaurant_id">
+>;
 
 export type JournalEntryReverseInput = {
   reversal_date?: string | null;
@@ -462,7 +483,8 @@ export type JournalEntryReverseInput = {
   allow_system_override?: boolean;
 };
 
-export type AccountingPeriodStatus = "open" | "soft_closed" | "locked" | "reopened" | string;
+export type AccountingPeriodStatus =
+  "open" | "soft_closed" | "locked" | "reopened" | string;
 
 export type AccountingPeriod = {
   id: number;
@@ -515,7 +537,8 @@ export type AccountingPeriodPreflight = {
   blockers: AccountingPeriodPreflightBlocker[];
 };
 
-export type AccountingHealthStatus = "ok" | "warning" | "blocked" | "unknown" | string;
+export type AccountingHealthStatus =
+  "ok" | "warning" | "blocked" | "unknown" | string;
 
 export type AccountingHealthItem = {
   key: string;
@@ -723,7 +746,10 @@ export type PaymentSettlementPreviewInput = {
   business_line?: string | null;
 };
 
-export type PaymentSettlementCreateInput = Omit<PaymentSettlementPreviewInput, "actual_amount" | "fee_amount"> & {
+export type PaymentSettlementCreateInput = Omit<
+  PaymentSettlementPreviewInput,
+  "actual_amount" | "fee_amount"
+> & {
   actual_amount?: number;
   fee_amount?: number;
 };
@@ -1075,4 +1101,72 @@ export type MappingExceptionReportResponse = {
   rows: MappingExceptionRow[];
   missing_mapping_count: number;
   suspense_amount: number;
+};
+
+export type InventoryAccountingTreatment = "inventory_asset" | "direct_expense";
+
+export type InventoryAccountingProfile = {
+  id: number;
+  restaurant_id: number;
+  name: string;
+  treatment: InventoryAccountingTreatment;
+  inventory_asset_account_id?: number | null;
+  cogs_account_id?: number | null;
+  direct_expense_account_id?: number | null;
+  wastage_account_id?: number | null;
+  variance_account_id?: number | null;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InventoryAdoptionLine = {
+  id: number;
+  inventory_item_id: number;
+  item_name: string;
+  unit: string;
+  accounting_profile_id?: number | null;
+  profile_name?: string | null;
+  treatment?: InventoryAccountingTreatment | null;
+  quantity_snapshot: number;
+  unit_book_value: number;
+  total_book_value: number;
+  legacy_status: string;
+  note?: string | null;
+};
+
+export type InventoryAdoption = {
+  id: number;
+  restaurant_id: number;
+  activation_at: string;
+  status: "draft" | "ready" | "posted" | "cancelled";
+  total_book_value: number;
+  journal_entry_id?: number | null;
+  created_at: string;
+  posted_at?: string | null;
+  lines: InventoryAdoptionLine[];
+};
+
+export type InventoryLegacyAuditLine = {
+  adjustment_id: number;
+  inventory_item_id: number;
+  item_name: string;
+  cost?: number | null;
+  classification:
+    | "already_accounted"
+    | "reliable_unposted"
+    | "duplicate_risk"
+    | "legacy_unclassified";
+  reason: string;
+};
+
+export type InventoryLegacyAudit = {
+  restaurant_id: number;
+  total: number;
+  already_accounted: number;
+  reliable_unposted: number;
+  duplicate_risk: number;
+  legacy_unclassified: number;
+  lines: InventoryLegacyAuditLine[];
 };

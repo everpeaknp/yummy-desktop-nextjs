@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
+import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays, subMonths } from "date-fns";
 import { ArrowLeft, Banknote, ClipboardList, FileText, Loader2, ReceiptText, Truck, Users } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
@@ -121,6 +121,10 @@ function presetToRange(preset: DatePreset): DateRange {
   }
   if (preset === "last7") return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) };
   if (preset === "last30") return { from: startOfDay(subDays(now, 30)), to: endOfDay(now) };
+  if (preset === "lastMonth") {
+    const previousMonth = subMonths(now, 1);
+    return { from: startOfMonth(previousMonth), to: endOfMonth(previousMonth) };
+  }
   return { from: startOfMonth(now), to: endOfMonth(now) };
 }
 

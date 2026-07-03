@@ -163,7 +163,7 @@ export function FinancialReportFilters({
                 className="h-9 w-[180px]"
               />
               <p className="text-[11px] text-muted-foreground">
-                Optional source station filter, like `bar` or `frontdesk`.
+                Optional source station filter, like `bar` or `frontdesk`. Enter `mixed` for Unassigned / mixed station.
               </p>
             </div>
           )}

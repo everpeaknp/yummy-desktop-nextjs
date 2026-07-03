@@ -25,9 +25,12 @@ export type FinanceOverviewMetrics = {
   refund_total: number;
   manual_income_total: number;
   manual_operating_expense: number;
+  inventory_direct_expense: number;
   inventory_cash_outflow: number;
   inventory_asset_acquired: number;
   inventory_cogs: number;
+  inventory_wastage: number;
+  inventory_variance: number;
   operating_profit: number;
   cash_expected: number;
   outstanding_receivables: number;

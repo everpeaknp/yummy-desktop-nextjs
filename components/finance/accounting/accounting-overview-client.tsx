@@ -17,7 +17,7 @@ import {
   PlayCircle,
   Scale,
 } from "lucide-react";
-import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
+import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays, subMonths } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 
@@ -74,6 +74,10 @@ function presetToRange(preset: DatePreset): DateRange {
   }
   if (preset === "last7") return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) };
   if (preset === "last30") return { from: startOfDay(subDays(now, 30)), to: endOfDay(now) };
+  if (preset === "lastMonth") {
+    const previousMonth = subMonths(now, 1);
+    return { from: startOfMonth(previousMonth), to: endOfMonth(previousMonth) };
+  }
   return { from: startOfMonth(now), to: endOfMonth(now) };
 }
 
@@ -129,7 +133,22 @@ function formatHealthValue(item: AccountingHealthItem) {
 
 const accountingShortcutGroups = [
   {
-    title: "Reports",
+    title: "Daily controls",
+    items: [
+      {
+        label: "Day Closes",
+        href: "/finance/accounting/day-closes",
+        description: "Review daily close evidence and posting status.",
+      },
+      {
+        label: "Settlements",
+        href: "/finance/accounting/settlements",
+        description: "Reconcile card, QR, and bank settlement batches.",
+      },
+    ],
+  },
+  {
+    title: "Financial statements",
     items: [
       {
         label: "Trial Balance",
@@ -152,11 +171,6 @@ const accountingShortcutGroups = [
         description: "Assets, liabilities, and equity.",
       },
       {
-        label: "Customer Ledger",
-        href: "/finance/accounting/customer-ledger",
-        description: "Customer receivables activity.",
-      },
-      {
         label: "Cash Flow",
         href: "/finance/accounting/cash-flow",
         description: "Track cash inflows and outflows.",
@@ -164,7 +178,22 @@ const accountingShortcutGroups = [
     ],
   },
   {
-    title: "Operations",
+    title: "People ledgers",
+    items: [
+      {
+        label: "Customer Ledger",
+        href: "/finance/accounting/customer-ledger",
+        description: "Customer receivables activity.",
+      },
+      {
+        label: "Supplier Ledger",
+        href: "/finance/accounting/supplier-ledger",
+        description: "Supplier payables and payment activity.",
+      },
+    ],
+  },
+  {
+    title: "Setup",
     items: [
       {
         label: "Ledger Mappings",
@@ -175,16 +204,6 @@ const accountingShortcutGroups = [
         label: "Opening Balances",
         href: "/finance/accounting/opening-balances",
         description: "Set the starting balances needed for clean reports.",
-      },
-      {
-        label: "Day Closes",
-        href: "/finance/accounting/day-closes",
-        description: "Review daily close evidence and posting status.",
-      },
-      {
-        label: "Settlements",
-        href: "/finance/accounting/settlements",
-        description: "Reconcile card, QR, and bank settlement batches.",
       },
     ],
   },

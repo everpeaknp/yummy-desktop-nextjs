@@ -150,6 +150,10 @@ export type PermissionKey =
   | "inventory.manage"
   | "inventory.suppliers.manage"
   | "inventory.recipes.manage"
+  | "inventory.consume"
+  | "inventory.negative_stock.override"
+  | "inventory.accounting.view"
+  | "inventory.accounting.manage"
   // Customers
   | "customers.view"
   | "customers.manage"
@@ -548,6 +552,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/customers": "customers.view",
   "/rooms": "hotel.manage",
   // Finance
+  "/finance/accounting/inventory": "inventory.accounting.view",
   "/finance/accounting": "finance.accounting.view",
   "/finance": "finance.income.view",
   "/attendance": "attendance.manage",

@@ -1,4 +1,4 @@
-import { endOfDay, startOfDay, subDays } from "date-fns";
+import { endOfDay, endOfMonth, startOfDay, startOfMonth, subDays, subMonths } from "date-fns";
 import type { DateRange } from "react-day-picker";
 
 import {
@@ -70,6 +70,7 @@ export type AnalyticsPreset =
   | "last7"
   | "last30"
   | "month"
+  | "lastMonth"
   | "custom";
 
 export function getAnalyticsPresetRange(
@@ -93,6 +94,10 @@ export function getAnalyticsPresetRange(
         from: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)),
         to: endOfDay(now),
       };
+    case "lastMonth": {
+      const previousMonth = subMonths(now, 1);
+      return { from: startOfMonth(previousMonth), to: endOfMonth(previousMonth) };
+    }
     case "custom":
       return customRange;
     default:

@@ -143,14 +143,19 @@ test("accounting reports expose source drilldown and trace workflow", () => {
     "/accounting/journal-entries/",
     "/accounting/source-trace",
   ]) {
-    assert.match(endpoints, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(
+      endpoints,
+      new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
   }
 
   assert.ok(
     exists("components/finance/accounting/accounting-drilldown-drawer.tsx"),
-    "accounting-drilldown-drawer.tsx should exist"
+    "accounting-drilldown-drawer.tsx should exist",
   );
-  const drawer = read("components/finance/accounting/accounting-drilldown-drawer.tsx");
+  const drawer = read(
+    "components/finance/accounting/accounting-drilldown-drawer.tsx",
+  );
   for (const token of [
     "AccountingDrilldownDrawer",
     "Trace path",
@@ -164,7 +169,9 @@ test("accounting reports expose source drilldown and trace workflow", () => {
     assert.match(drawer, new RegExp(token));
   }
 
-  const reportClient = read("components/finance/accounting/accounting-report-client.tsx");
+  const reportClient = read(
+    "components/finance/accounting/accounting-report-client.tsx",
+  );
   for (const token of [
     "AccountingDrilldownDrawer",
     "AccountingApis.drilldown",
@@ -192,9 +199,11 @@ test("accounting report filters expose station scoped reports", () => {
 
   const endpoints = read("lib/api/endpoints.ts");
   assert.match(endpoints, /station/);
-  assert.match(endpoints, /params\.append\('station', station\)/);
+  assert.match(endpoints, /params\.append\(["']station["'], station\)/);
 
-  const filters = read("components/finance/accounting/financial-report-filters.tsx");
+  const filters = read(
+    "components/finance/accounting/financial-report-filters.tsx",
+  );
   for (const token of [
     "station",
     "onStationChange",
@@ -236,7 +245,9 @@ test("accounting overview exposes accounting health checks before detailed repor
   assert.match(endpoints, /\bhealth:/);
   assert.match(endpoints, /\/accounting\/health\?/);
 
-  const source = read("components/finance/accounting/accounting-overview-client.tsx");
+  const source = read(
+    "components/finance/accounting/accounting-overview-client.tsx",
+  );
   for (const token of [
     "AccountingHealthResponse",
     "Accounting Health",
@@ -252,7 +263,10 @@ test("accounting overview exposes accounting health checks before detailed repor
 });
 
 test("operational finance report frontend exposes typed endpoint helpers", () => {
-  assert.ok(exists("types/finance-reports.ts"), "types/finance-reports.ts should exist");
+  assert.ok(
+    exists("types/finance-reports.ts"),
+    "types/finance-reports.ts should exist",
+  );
   const financeReportTypes = read("types/finance-reports.ts");
   for (const token of [
     "FinanceReportParams",
@@ -347,7 +361,10 @@ test("role management exposes granular cash accounting presets", () => {
     "finance.payment_instruments.manage",
     "finance.payment_settlements.manage",
   ]) {
-    assert.match(permissionSource, new RegExp(permission.replace(/\./g, "\\.")));
+    assert.match(
+      permissionSource,
+      new RegExp(permission.replace(/\./g, "\\.")),
+    );
   }
 
   const rolePage = read("app/(dashboard)/manage/roles/page.tsx");
@@ -411,7 +428,9 @@ test("accounting setup UI exposes setup status and repair workflow", () => {
   const page = read("app/(dashboard)/finance/accounting/setup/page.tsx");
   assert.match(page, /AccountingSetupClient/);
 
-  const source = read("components/finance/accounting/accounting-setup-client.tsx");
+  const source = read(
+    "components/finance/accounting/accounting-setup-client.tsx",
+  );
   for (const token of [
     "AccountingSetupStatus",
     "AccountingApis.setupStatus",
@@ -438,10 +457,14 @@ test("accounting opening balance UI exposes draft, post, and reverse workflow", 
   assert.match(nav, /\/finance\/accounting\/opening-balances/);
   assert.match(nav, /Opening Balances/);
 
-  const page = read("app/(dashboard)/finance/accounting/opening-balances/page.tsx");
+  const page = read(
+    "app/(dashboard)/finance/accounting/opening-balances/page.tsx",
+  );
   assert.match(page, /OpeningBalanceClient/);
 
-  const source = read("components/finance/accounting/opening-balance-client.tsx");
+  const source = read(
+    "components/finance/accounting/opening-balance-client.tsx",
+  );
   for (const token of [
     "OpeningBalanceBatch",
     "OpeningBalanceBatchInput",
@@ -480,7 +503,9 @@ test("accounting journal voucher UI exposes manual voucher approval workflow", (
     assert.match(form, new RegExp(token));
   }
 
-  const source = read("components/finance/accounting/journal-voucher-client.tsx");
+  const source = read(
+    "components/finance/accounting/journal-voucher-client.tsx",
+  );
   for (const token of [
     "JournalVoucher",
     "JournalVoucherInput",
@@ -507,7 +532,9 @@ test("accounting journal voucher UI exposes manual voucher approval workflow", (
     assert.match(source, new RegExp(token));
   }
 
-  const detailSource = read("components/finance/accounting/journal-voucher-detail-client.tsx");
+  const detailSource = read(
+    "components/finance/accounting/journal-voucher-detail-client.tsx",
+  );
   for (const token of [
     "JournalVoucherDetailClient",
     "AccountingApis.journalVouchers",
@@ -523,7 +550,9 @@ test("accounting journal voucher UI exposes manual voucher approval workflow", (
     assert.match(detailSource, new RegExp(token));
   }
 
-  const reverseDialog = read("components/finance/accounting/reverse-journal-dialog.tsx");
+  const reverseDialog = read(
+    "components/finance/accounting/reverse-journal-dialog.tsx",
+  );
   for (const token of [
     "ReverseJournalDialog",
     "JournalEntryReverseInput",
@@ -543,7 +572,9 @@ test("accounting period UI exposes preflight, lock, and reopen workflow", () => 
   const page = read("app/(dashboard)/finance/accounting/periods/page.tsx");
   assert.match(page, /AccountingPeriodsClient/);
 
-  const source = read("components/finance/accounting/accounting-periods-client.tsx");
+  const source = read(
+    "components/finance/accounting/accounting-periods-client.tsx",
+  );
   for (const token of [
     "AccountingPeriod",
     "AccountingPeriodGenerateInput",
@@ -603,7 +634,9 @@ test("accounting report client exposes customer ledger, supplier ledger, and cas
     assert.match(nav, new RegExp(token));
   }
 
-  const source = read("components/finance/accounting/accounting-report-client.tsx");
+  const source = read(
+    "components/finance/accounting/accounting-report-client.tsx",
+  );
   for (const token of [
     "customer-ledger",
     "supplier-ledger",
@@ -713,17 +746,21 @@ test("accounting aging UI exposes AR/AP aging and statement bridge workflow", ()
 test("accounting settlement UI exposes POS-to-bank bridge workflow", () => {
   assert.ok(
     exists("app/(dashboard)/finance/accounting/settlements/page.tsx"),
-    "settlement route should exist"
+    "settlement route should exist",
   );
   assert.ok(
-    exists("components/finance/accounting/settlement-reconciliation-client.tsx"),
-    "settlement reconciliation client should exist"
+    exists(
+      "components/finance/accounting/settlement-reconciliation-client.tsx",
+    ),
+    "settlement reconciliation client should exist",
   );
 
   const page = read("app/(dashboard)/finance/accounting/settlements/page.tsx");
   assert.match(page, /SettlementReconciliationClient/);
 
-  const source = read("components/finance/accounting/settlement-reconciliation-client.tsx");
+  const source = read(
+    "components/finance/accounting/settlement-reconciliation-client.tsx",
+  );
   for (const token of [
     "SettlementReconciliationClient",
     "AccountingApis.settlements",
@@ -752,11 +789,11 @@ test("accounting settlement UI exposes POS-to-bank bridge workflow", () => {
 test("accounting VAT export UI exposes validation and materialized export workflow", () => {
   assert.ok(
     exists("app/(dashboard)/finance/accounting/vat-export/page.tsx"),
-    "VAT export route should exist"
+    "VAT export route should exist",
   );
   assert.ok(
     exists("components/finance/accounting/vat-export-client.tsx"),
-    "VAT export client should exist"
+    "VAT export client should exist",
   );
 
   const accountingTypes = read("types/accounting.ts");
@@ -812,7 +849,9 @@ test("accounting VAT export UI exposes validation and materialized export workfl
 });
 
 test("general ledger rows expose journal drilldown links for reversal workflows", () => {
-  const source = read("components/finance/accounting/accounting-report-client.tsx");
+  const source = read(
+    "components/finance/accounting/accounting-report-client.tsx",
+  );
   for (const token of [
     "journal_entry_id",
     "/finance/accounting/vouchers/",
@@ -823,7 +862,9 @@ test("general ledger rows expose journal drilldown links for reversal workflows"
 });
 
 test("accounting overview exposes backfill dry-run and commit controls", () => {
-  const source = read("components/finance/accounting/accounting-overview-client.tsx");
+  const source = read(
+    "components/finance/accounting/accounting-overview-client.tsx",
+  );
 
   for (const token of [
     "AccountingBackfillRun",
@@ -863,7 +904,10 @@ test("accounting UI uses production accounting permissions for reports and actio
     "finance.accounting.override_locked_period",
     '"/finance/accounting": "finance.accounting.view"',
   ]) {
-    assert.match(permissions, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(
+      permissions,
+      new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
   }
 
   for (const componentPath of [
@@ -880,18 +924,31 @@ test("accounting UI uses production accounting permissions for reports and actio
     "components/finance/accounting/aging-report-client.tsx",
   ]) {
     const source = read(componentPath);
-    assert.match(source, /finance\.accounting\.view/, `${componentPath} should require accounting view permission`);
+    assert.match(
+      source,
+      /finance\.accounting\.view/,
+      `${componentPath} should require accounting view permission`,
+    );
   }
 
-  const setup = read("components/finance/accounting/accounting-setup-client.tsx");
+  const setup = read(
+    "components/finance/accounting/accounting-setup-client.tsx",
+  );
   assert.match(setup, /finance\.accounting\.setup/);
   assert.match(setup, /Setup repair requires/);
 
-  const openingBalances = read("components/finance/accounting/opening-balance-client.tsx");
-  assert.match(openingBalances, /finance\.accounting\.opening_balances\.manage/);
+  const openingBalances = read(
+    "components/finance/accounting/opening-balance-client.tsx",
+  );
+  assert.match(
+    openingBalances,
+    /finance\.accounting\.opening_balances\.manage/,
+  );
   assert.match(openingBalances, /Opening balance management requires/);
 
-  const vouchers = read("components/finance/accounting/journal-voucher-client.tsx");
+  const vouchers = read(
+    "components/finance/accounting/journal-voucher-client.tsx",
+  );
   for (const token of [
     "finance.accounting.vouchers.create",
     "finance.accounting.vouchers.approve",
@@ -899,20 +956,30 @@ test("accounting UI uses production accounting permissions for reports and actio
     "finance.accounting.vouchers.reverse",
     "Voucher creation requires",
   ]) {
-    assert.match(vouchers, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(
+      vouchers,
+      new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
   }
 
-  const periods = read("components/finance/accounting/accounting-periods-client.tsx");
+  const periods = read(
+    "components/finance/accounting/accounting-periods-client.tsx",
+  );
   for (const token of [
     "finance.accounting.periods.close",
     "finance.accounting.periods.lock",
     "finance.accounting.periods.reopen",
     "Period generation and soft close require",
   ]) {
-    assert.match(periods, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(
+      periods,
+      new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
   }
 
-  const settlements = read("components/finance/accounting/settlement-reconciliation-client.tsx");
+  const settlements = read(
+    "components/finance/accounting/settlement-reconciliation-client.tsx",
+  );
   assert.match(settlements, /finance\.payment_settlements\.manage/);
   assert.match(settlements, /Settlement management requires/);
 
@@ -932,7 +999,7 @@ test("accounting navigation groups workflows for owner and accountant use", () =
     "Controls",
     "Ledgers & Reports",
     "Tax & Settlement",
-    "aria-label=\"Accounting navigation\"",
+    'aria-label="Accounting navigation"',
     "Health",
     "Setup",
     "Opening Balances",
@@ -985,7 +1052,10 @@ test("accounting day-close review bridges operational close to ledger checks", (
     "/evidence",
     "/journal-trace",
   ]) {
-    assert.match(endpoints, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(
+      endpoints,
+      new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
   }
 
   const nav = read("components/finance/accounting/accounting-nav.tsx");
@@ -1010,7 +1080,9 @@ test("accounting day-close review bridges operational close to ledger checks", (
 
   const page = read("app/(dashboard)/finance/accounting/day-closes/page.tsx");
   assert.match(page, /DayCloseReviewClient/);
-  const alias = read("app/(dashboard)/finance/accounting/period-reports/page.tsx");
+  const alias = read(
+    "app/(dashboard)/finance/accounting/period-reports/page.tsx",
+  );
   assert.match(alias, /period-reports\/page/);
 
   const periodReports = read("app/(dashboard)/period-reports/page.tsx");
@@ -1023,7 +1095,9 @@ test("accounting day-close review bridges operational close to ledger checks", (
     assert.match(periodReports, new RegExp(token));
   }
 
-  const client = read("components/finance/accounting/day-close-review-client.tsx");
+  const client = read(
+    "components/finance/accounting/day-close-review-client.tsx",
+  );
   for (const token of [
     "Day Close Review",
     "Accounting Checks",
@@ -1057,7 +1131,9 @@ test("accounting day-close review bridges operational close to ledger checks", (
     assert.match(client, new RegExp(token));
   }
 
-  const snapshotView = read("components/analytics/day-close-snapshot-panel.tsx");
+  const snapshotView = read(
+    "components/analytics/day-close-snapshot-panel.tsx",
+  );
   for (const token of [
     "Accounting Checks",
     "accounting_bridge",
@@ -1093,7 +1169,9 @@ test("accounting event labels explain system event types in accountant language"
 });
 
 test("accounting report filters expose presets reset scope and report basis", () => {
-  const source = read("components/finance/accounting/financial-report-filters.tsx");
+  const source = `${read("components/finance/accounting/financial-report-filters.tsx")}\n${read(
+    "components/ui/date-range-dropdown.tsx",
+  )}`;
 
   for (const token of [
     "DATE_PRESETS",
@@ -1111,7 +1189,9 @@ test("accounting report filters expose presets reset scope and report basis", ()
 });
 
 test("accounting overview groups accountant workflows by purpose", () => {
-  const overview = read("components/finance/accounting/accounting-overview-client.tsx");
+  const overview = read(
+    "components/finance/accounting/accounting-overview-client.tsx",
+  );
   const nav = read("components/finance/accounting/accounting-nav.tsx");
 
   for (const token of [
@@ -1134,8 +1214,12 @@ test("accounting overview groups accountant workflows by purpose", () => {
 
 test("ledger mapping UI supports accountant-safe manual mapping edits", () => {
   const table = read("components/finance/accounting/ledger-mapping-table.tsx");
-  const dialog = read("components/finance/accounting/ledger-mapping-dialog.tsx");
-  const master = read("components/finance/accounting/accounting-master-data-client.tsx");
+  const dialog = read(
+    "components/finance/accounting/ledger-mapping-dialog.tsx",
+  );
+  const master = read(
+    "components/finance/accounting/accounting-master-data-client.tsx",
+  );
 
   for (const token of [
     "accountingEventLabel",
@@ -1157,8 +1241,12 @@ test("ledger mapping UI supports accountant-safe manual mapping edits", () => {
 });
 
 test("mapping exceptions are presented as an actionable resolver queue", () => {
-  const resolver = read("components/finance/accounting/mapping-exception-resolver.tsx");
-  const overview = read("components/finance/accounting/accounting-overview-client.tsx");
+  const resolver = read(
+    "components/finance/accounting/mapping-exception-resolver.tsx",
+  );
+  const overview = read(
+    "components/finance/accounting/accounting-overview-client.tsx",
+  );
   const endpoints = read("lib/api/endpoints.ts");
   const types = read("types/accounting.ts");
 
@@ -1174,13 +1262,18 @@ test("mapping exceptions are presented as an actionable resolver queue", () => {
     "This reverses existing suspense journals and reposts them through the active mapping.",
     "does not automatically fix already-posted journals",
   ]) {
-    assert.match(`${resolver}\n${overview}\n${endpoints}\n${types}`, new RegExp(token));
+    assert.match(
+      `${resolver}\n${overview}\n${endpoints}\n${types}`,
+      new RegExp(token),
+    );
   }
 });
 
 test("chart of accounts UI supports hierarchy groups ledgers and subledgers", () => {
   const table = read("components/finance/accounting/account-table.tsx");
-  const master = read("components/finance/accounting/accounting-master-data-client.tsx");
+  const master = read(
+    "components/finance/accounting/accounting-master-data-client.tsx",
+  );
   const dialog = read("components/finance/accounting/account-dialog.tsx");
   const types = read("types/accounting.ts");
   const endpoints = read("lib/api/endpoints.ts");
@@ -1207,16 +1300,90 @@ test("chart of accounts UI supports hierarchy groups ledgers and subledgers", ()
     "updateAccount",
     "Suspense account",
   ]) {
-    assert.match(`${table}\n${master}\n${dialog}\n${types}\n${endpoints}`, new RegExp(token));
+    assert.match(
+      `${table}\n${master}\n${dialog}\n${types}\n${endpoints}`,
+      new RegExp(token),
+    );
   }
 });
 
 test("posting account selectors exclude group accounts", () => {
-  const mappingDialog = read("components/finance/accounting/ledger-mapping-dialog.tsx");
-  const voucherForm = read("components/finance/accounting/journal-voucher-form.tsx");
-  const openingBalances = read("components/finance/accounting/opening-balance-client.tsx");
+  const mappingDialog = read(
+    "components/finance/accounting/ledger-mapping-dialog.tsx",
+  );
+  const voucherForm = read(
+    "components/finance/accounting/journal-voucher-form.tsx",
+  );
+  const openingBalances = read(
+    "components/finance/accounting/opening-balance-client.tsx",
+  );
 
   for (const source of [mappingDialog, voucherForm, openingBalances]) {
     assert.match(source, /node_type !== "group"/);
   }
+});
+
+test("inventory accounting workspace exposes profiles adoption and legacy review", () => {
+  assert.ok(
+    exists("app/(dashboard)/finance/accounting/inventory/page.tsx"),
+    "inventory accounting route should exist",
+  );
+  assert.ok(
+    exists("components/finance/accounting/inventory-accounting-client.tsx"),
+    "inventory accounting client should exist",
+  );
+
+  const page = read("app/(dashboard)/finance/accounting/inventory/page.tsx");
+  const client = read(
+    "components/finance/accounting/inventory-accounting-client.tsx",
+  );
+  const nav = read("components/finance/accounting/accounting-nav.tsx");
+  const endpoints = read("lib/api/endpoints.ts");
+  const types = read("types/accounting.ts");
+  const permissions = read("lib/role-permissions.ts");
+
+  assert.match(page, /InventoryAccountingClient/);
+  for (const token of [
+    "Inventory accounting",
+    "Accounting profiles",
+    "Item assignments",
+    "Opening inventory valuation",
+    "Legacy inventory review",
+    "Start adoption",
+    "Post opening valuation",
+    "inventory.accounting.view",
+    "inventory.accounting.manage",
+  ]) {
+    assert.match(
+      client,
+      new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+  }
+
+  for (const helper of [
+    "inventoryProfiles",
+    "createInventoryProfile",
+    "updateInventoryProfile",
+    "assignInventoryProfile",
+    "inventoryAdoptions",
+    "createInventoryAdoption",
+    "updateInventoryAdoptionLine",
+    "postInventoryAdoption",
+    "inventoryLegacyAudit",
+  ]) {
+    assert.match(endpoints, new RegExp(`\\b${helper}:`));
+  }
+
+  for (const token of [
+    "InventoryAccountingProfile",
+    "InventoryAdoption",
+    "InventoryLegacyAudit",
+  ]) {
+    assert.match(types, new RegExp(`export type ${token}\\b`));
+  }
+
+  assert.match(nav, /\/finance\/accounting\/inventory/);
+  assert.match(nav, /inventory\.accounting\.view/);
+  assert.match(permissions, /"inventory\.accounting\.view"/);
+  assert.match(permissions, /"inventory\.accounting\.manage"/);
 });

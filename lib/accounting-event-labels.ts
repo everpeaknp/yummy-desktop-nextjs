@@ -53,6 +53,19 @@ export const ACCOUNTING_EVENT_LABELS: Record<string, AccountingEventLabel> = {
     defaultCreditHint: "Cash or Payment Clearing",
     paymentMethodSensitive: true,
   },
+  inventory_purchase_expensed: {
+    label: "Inventory purchase expensed",
+    meaning: "Inventory-like purchase recorded as an expense immediately instead of inventory value.",
+    defaultDebitHint: "Direct Food Purchases",
+    defaultCreditHint: "Cash or Payment Clearing",
+    paymentMethodSensitive: true,
+  },
+  inventory_expense_payable_created: {
+    label: "Inventory expense payable created",
+    meaning: "Unpaid inventory-like purchase recorded as an expense and supplier payable immediately.",
+    defaultDebitHint: "Direct Food Purchases",
+    defaultCreditHint: "Supplier Payables",
+  },
   inventory_asset_acquired: {
     label: "Inventory asset acquired",
     meaning: "Inventory value added to stock before it becomes COGS.",
