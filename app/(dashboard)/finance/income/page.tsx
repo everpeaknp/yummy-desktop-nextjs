@@ -32,6 +32,7 @@ function hasAuthoritativeFinanceActivity(finance: FinanceOverviewResponse | null
     metrics.refund_total,
     metrics.manual_income_total,
     metrics.manual_operating_expense,
+    metrics.inventory_direct_expense,
     metrics.inventory_cash_outflow,
     metrics.inventory_asset_acquired,
     metrics.inventory_cogs,
@@ -289,7 +290,7 @@ export default function IncomePage() {
   const paidOpenOrdersCount = financeMetrics?.paid_open_orders_count ?? 0;
   const paidOpenOrdersAmount = financeMetrics?.paid_open_orders_amount ?? 0;
   const operatingExpenses = financeMetrics
-    ? financeMetrics.manual_operating_expense + financeMetrics.inventory_cogs
+    ? financeMetrics.manual_operating_expense + financeMetrics.inventory_direct_expense + financeMetrics.inventory_cogs
     : expenseSummary?.total_amount || 0;
   const operatingProfit = financeMetrics?.operating_profit ?? netSales - operatingExpenses;
   const paymentMethodRows = financeMetrics && financeOverview?.payment_method_breakdown?.length

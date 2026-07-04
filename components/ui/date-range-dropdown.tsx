@@ -14,7 +14,16 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-export type DateRangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'custom'
+export type DateRangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'lastMonth' | 'custom'
+
+export const DATE_PRESETS: ReadonlyArray<{ label: string; value: Exclude<DateRangePreset, 'custom'> }> = [
+  { label: "Today", value: "today" },
+  { label: "Yesterday", value: "yesterday" },
+  { label: "Last 7 Days", value: "last7" },
+  { label: "Last 30 Days", value: "last30" },
+  { label: "This Month", value: "month" },
+  { label: "Last Month", value: "lastMonth" },
+]
 
 interface DateRangeDropdownProps {
   activeRange: DateRangePreset
@@ -53,14 +62,6 @@ export function DateRangeDropdown({
     }
   }
 
-  const presets = [
-    { label: "Today", value: "today" },
-    { label: "Yesterday", value: "yesterday" },
-    { label: "Last 7 Days", value: "last7" },
-    { label: "Last 30 Days", value: "last30" },
-    { label: "This Month", value: "month" },
-  ]
-
   const getActiveLabel = () => {
     if (activeRange === 'custom') {
       if (date?.from) {
@@ -72,7 +73,7 @@ export function DateRangeDropdown({
       }
       return "Custom Range"
     }
-    const preset = presets.find((p) => p.value === activeRange)
+    const preset = DATE_PRESETS.find((p) => p.value === activeRange)
     return preset?.label || "Select Date"
   }
 
@@ -96,7 +97,7 @@ export function DateRangeDropdown({
       <PopoverContent className="w-auto p-0 rounded-2xl" align="end">
         <div className="flex flex-col sm:flex-row divide-y sm:divide-y-0 sm:divide-x divide-border">
           <div className="p-2 w-full sm:w-[160px] flex flex-col gap-1">
-            {presets.map((preset) => (
+            {DATE_PRESETS.map((preset) => (
               <button
                 key={preset.value}
                 onClick={() => {

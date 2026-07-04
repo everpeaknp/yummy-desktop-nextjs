@@ -34,6 +34,7 @@ export type DateRangePreset =
   | "last7"
   | "last30"
   | "month"
+  | "lastMonth"
   | "custom"
 
 export function resolveDateRange(
@@ -60,6 +61,11 @@ export function resolveDateRange(
   } else if (activeRange === "month") {
     const m = new Date(now.getFullYear(), now.getMonth(), 1)
     dateFrom = formatDateYmd(m)
+  } else if (activeRange === "lastMonth") {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const end = new Date(now.getFullYear(), now.getMonth(), 0)
+    dateFrom = formatDateYmd(start)
+    dateTo = formatDateYmd(end)
   } else if (activeRange === "custom" && customRange?.from) {
     dateFrom = formatDateYmd(customRange.from)
     dateTo = customRange.to ? formatDateYmd(customRange.to) : dateFrom
@@ -89,6 +95,8 @@ export function getPeriodLabel(activeRange: DateRangePreset): string {
       return "Last 30 days"
     case "month":
       return "This month"
+    case "lastMonth":
+      return "Last month"
     case "custom":
       return "Custom range"
     default:
@@ -102,6 +110,7 @@ export function getCompareLabel(activeRange: DateRangePreset): string {
   if (activeRange === "last7") return "the previous 7 days"
   if (activeRange === "last30") return "the previous 30 days"
   if (activeRange === "month") return "the previous month"
+  if (activeRange === "lastMonth") return "the month before last"
   return "previous period"
 }
 

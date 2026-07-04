@@ -467,7 +467,7 @@ function readEvidenceAmount(row: Record<string, unknown>, key: string) {
 function DrawerEvidenceCard({ rows }: { rows: Array<Record<string, unknown>> }) {
   return (
     <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm">
-      <p className="dc-eyebrow px-5 py-3 border-b border-border/40">Drawer & Safe History</p>
+      <p className="dc-eyebrow px-5 py-3 border-b border-border/40">Drawer Evidence</p>
       <div className="divide-y divide-border/50">
         {rows.map((row, index) => {
           const station = String(row.station ?? "general");

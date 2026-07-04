@@ -223,6 +223,11 @@ export function useDashboardData(
         const yEnd = new Date(yStart.getFullYear(), yStart.getMonth() + 1, 0)
         prevDateFrom = formatDateYmd(yStart)
         prevDateTo = formatDateYmd(yEnd)
+      } else if (activeRange === "lastMonth") {
+        const previousStart = new Date(dFrom.getFullYear(), dFrom.getMonth() - 1, 1)
+        const previousEnd = new Date(dFrom.getFullYear(), dFrom.getMonth(), 0)
+        prevDateFrom = formatDateYmd(previousStart)
+        prevDateTo = formatDateYmd(previousEnd)
       }
 
       const prevAnalyticsRes = await apiClient

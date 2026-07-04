@@ -16,6 +16,7 @@ import {
   ListChecks,
   Map,
   NotebookPen,
+  PackageOpen,
   ReceiptText,
   Scale,
   Settings,
@@ -24,6 +25,8 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission, type PermissionKey } from "@/lib/role-permissions";
 
 const accountingNavGroups = [
   {
@@ -53,6 +56,7 @@ const accountingNavGroups = [
     eyebrow: "Accounting setup",
     items: [
       { href: "/finance/accounting/setup", label: "Setup", icon: Settings },
+      { href: "/finance/accounting/inventory", label: "Inventory", icon: PackageOpen, permission: "inventory.accounting.view" as PermissionKey },
       { href: "/finance/accounting/opening-balances", label: "Opening Balances", icon: NotebookPen },
       { href: "/finance/accounting/chart-of-accounts", label: "Accounts", icon: Landmark },
       { href: "/finance/accounting/ledger-mapping", label: "Mappings", icon: Map },
@@ -76,6 +80,7 @@ const accountingNavGroups = [
 
 export function AccountingNav() {
   const pathname = usePathname();
+  const user = useAuth((state) => state.user);
 
   return (
     <nav
@@ -107,7 +112,7 @@ export function AccountingNav() {
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
-            {group.items.map((link) => {
+            {group.items.filter((link) => !("permission" in link) || hasPermission(user, link.permission as PermissionKey)).map((link) => {
               const Icon = link.icon;
               const active =
                 pathname === link.href ||

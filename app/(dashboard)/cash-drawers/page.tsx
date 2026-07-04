@@ -1,12 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Banknote, BookOpen, CalendarCheck, Loader2, RefreshCw, Send, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  Banknote,
+  BookOpen,
+  CalendarCheck,
+  Loader2,
+  RefreshCw,
+  Send,
+  ShieldCheck,
+  Wallet,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
-import { AccountingApis, AccountingReportApis } from "@/lib/api/endpoints";
+import { AccountingApis, DrawerSessionApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -22,7 +31,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DrawerSessionPanel } from "@/components/day-close/drawer-session-panel";
-import type { CashTransferInput, CashTransferResult, TrialBalanceResponse } from "@/types/accounting";
+import type {
+  CashTransferInput,
+  CashTransferResult,
+  DrawerCashControlSummary,
+} from "@/types/accounting";
 import type { BusinessLine } from "@/types/day-close";
 
 type BaseResponse<T> = {
@@ -40,23 +53,23 @@ function formatMoney(value: number) {
   })}`;
 }
 
-function accountBalance(report: TrialBalanceResponse | null, code: string) {
-  const row = report?.rows.find((item) => item.account_code === code);
-  return Number(row?.balance ?? 0);
-}
-
 export default function CashDrawersPage() {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((state) => state.restaurant);
   const restaurantId = user?.restaurant_id ?? restaurant?.id;
   const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
-  const [transferMode, setTransferMode] = useState<CashTransferInput["transfer_mode"]>("pending_bank_deposit");
+  const [transferMode, setTransferMode] = useState<
+    CashTransferInput["transfer_mode"]
+  >("pending_bank_deposit");
   const [transferDate, setTransferDate] = useState(() => yyyyMmDd(new Date()));
   const [transferAmount, setTransferAmount] = useState("");
   const [transferReference, setTransferReference] = useState("");
   const [transferPosting, setTransferPosting] = useState(false);
-  const [lastTransfer, setLastTransfer] = useState<CashTransferResult | null>(null);
-  const [trialBalance, setTrialBalance] = useState<TrialBalanceResponse | null>(null);
+  const [lastTransfer, setLastTransfer] = useState<CashTransferResult | null>(
+    null,
+  );
+  const [cashSummary, setCashSummary] =
+    useState<DrawerCashControlSummary | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   const [drawerSummary, setDrawerSummary] = useState({
@@ -65,33 +78,45 @@ export default function CashDrawersPage() {
     unopenedRetainedCash: 0,
   });
   const canTransferCash = hasPermission(user, "finance.cash.transfer.to_bank");
-  const canConfirmBankDeposit = hasPermission(user, "finance.bank_deposit.confirm");
+  const canConfirmBankDeposit = hasPermission(
+    user,
+    "finance.bank_deposit.confirm",
+  );
   const canPostSelectedTransfer =
     canTransferCash &&
     (transferMode === "pending_bank_deposit" || canConfirmBankDeposit);
   const showBusinessLinePicker = Boolean(
     restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
   );
-  const activeDrawerCash = drawerSummary.activeDrawerCash + drawerSummary.unopenedRetainedCash;
-  const safeBalance = useMemo(() => accountBalance(trialBalance, "1005"), [trialBalance]);
-  const cashInTransit = useMemo(() => accountBalance(trialBalance, "1008"), [trialBalance]);
+  const activeDrawerCash =
+    cashSummary?.drawer_cash ??
+    drawerSummary.activeDrawerCash + drawerSummary.unopenedRetainedCash;
+  const safeBalance = Number(cashSummary?.safe_cash ?? 0);
+  const cashInTransit = Number(cashSummary?.cash_in_transit ?? 0);
+  const totalControlledCash = Number(
+    cashSummary?.total_controlled_cash ??
+      activeDrawerCash + safeBalance + cashInTransit,
+  );
+  const summaryModeLabel = cashSummary?.finance_accounting_enabled
+    ? "Accounting cash balances"
+    : "Operational cash view";
 
   const loadCashBalances = useCallback(async () => {
     if (!restaurantId) return;
     setBalanceLoading(true);
     try {
-      const response = await apiClient.get<BaseResponse<TrialBalanceResponse>>(
-        AccountingReportApis.trialBalance({ restaurantId }),
-      );
-      setTrialBalance(response.data?.data ?? null);
+      const response = await apiClient.get<
+        BaseResponse<DrawerCashControlSummary>
+      >(DrawerSessionApis.cashControlSummary({ restaurantId, businessLine }));
+      setCashSummary(response.data?.data ?? null);
     } catch (error) {
       console.error("Failed to load cash control balances", error);
-      setTrialBalance(null);
+      setCashSummary(null);
       toast.error("Failed to load cash control balances.");
     } finally {
       setBalanceLoading(false);
     }
-  }, [restaurantId]);
+  }, [businessLine, restaurantId]);
 
   useEffect(() => {
     void loadCashBalances();
@@ -101,15 +126,34 @@ export default function CashDrawersPage() {
     setBalanceRefreshKey((current) => current + 1);
   };
 
-  const handleDrawerCashSummary = useCallback((summary: typeof drawerSummary) => {
-    setDrawerSummary((current) =>
-      current.activeDrawerCash === summary.activeDrawerCash &&
-      current.activeSessionCount === summary.activeSessionCount &&
-      current.unopenedRetainedCash === summary.unopenedRetainedCash
-        ? current
-        : summary,
-    );
-  }, []);
+  const handleDrawerCashSummary = useCallback(
+    (summary: typeof drawerSummary) => {
+      setDrawerSummary((current) =>
+        current.activeDrawerCash === summary.activeDrawerCash &&
+        current.activeSessionCount === summary.activeSessionCount &&
+        current.unopenedRetainedCash === summary.unopenedRetainedCash
+          ? current
+          : summary,
+      );
+      setCashSummary((current) => {
+        if (!current) return current;
+        const drawerCash =
+          summary.activeDrawerCash + summary.unopenedRetainedCash;
+        return {
+          ...current,
+          active_session_count: summary.activeSessionCount,
+          active_drawer_cash: summary.activeDrawerCash,
+          retained_drawer_cash: summary.unopenedRetainedCash,
+          drawer_cash: drawerCash,
+          total_controlled_cash:
+            drawerCash +
+            Number(current.safe_cash || 0) +
+            Number(current.cash_in_transit || 0),
+        };
+      });
+    },
+    [],
+  );
 
   const submitSafeTransfer = async () => {
     if (!restaurantId) return;
@@ -130,8 +174,12 @@ export default function CashDrawersPage() {
         transfer_mode: transferMode,
         transfer_date: transferDate,
         amount,
-        source: transferMode === "confirm_bank_deposit" ? "cash_in_transit" : "main_cash_safe",
-        destination: transferMode === "pending_bank_deposit" ? "cash_in_transit" : "bank",
+        source:
+          transferMode === "confirm_bank_deposit"
+            ? "cash_in_transit"
+            : "main_cash_safe",
+        destination:
+          transferMode === "pending_bank_deposit" ? "cash_in_transit" : "bank",
         reference: transferReference.trim() || null,
       };
       const response = await apiClient.post<BaseResponse<CashTransferResult>>(
@@ -146,7 +194,8 @@ export default function CashDrawersPage() {
     } catch (error: unknown) {
       const message =
         typeof error === "object" && error && "response" in error
-          ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          ? (error as { response?: { data?: { detail?: string } } }).response
+              ?.data?.detail
           : null;
       toast.error(message || "Failed to post cash transfer.");
     } finally {
@@ -167,7 +216,8 @@ export default function CashDrawersPage() {
                 Cash Drawers
               </h1>
               <p className="text-sm text-muted-foreground">
-                Open, count, close, settle, and review drawer cash outside checkout and day close.
+                Open, count, close, settle, and review drawer cash outside
+                checkout and day close.
               </p>
             </div>
           </div>
@@ -211,18 +261,23 @@ export default function CashDrawersPage() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Card className="border-border/70">
               <CardContent className="flex items-center justify-between gap-3 p-4">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Cash in drawers
                   </div>
-                  <div className="mt-1 text-xl font-semibold">{formatMoney(activeDrawerCash)}</div>
+                  <div className="mt-1 text-xl font-semibold">
+                    {formatMoney(activeDrawerCash)}
+                  </div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {drawerSummary.activeSessionCount} active session(s)
-                    {drawerSummary.unopenedRetainedCash > 0
-                      ? ` + ${formatMoney(drawerSummary.unopenedRetainedCash)} retained unopened`
+                    {cashSummary?.active_session_count ??
+                      drawerSummary.activeSessionCount}{" "}
+                    active session(s)
+                    {(cashSummary?.retained_drawer_cash ??
+                      drawerSummary.unopenedRetainedCash) > 0
+                      ? ` + ${formatMoney(cashSummary?.retained_drawer_cash ?? drawerSummary.unopenedRetainedCash)} retained unopened`
                       : ""}
                   </div>
                 </div>
@@ -235,8 +290,13 @@ export default function CashDrawersPage() {
                   <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Main safe available
                   </div>
-                  <div className="mt-1 text-xl font-semibold">{formatMoney(safeBalance)}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">Account 1005 Main Cash / Safe</div>
+                  <div className="mt-1 text-xl font-semibold">
+                    {formatMoney(safeBalance)}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {cashSummary?.source_accounts?.safe_cash ??
+                      "Account 1005 Main Cash / Safe"}
+                  </div>
                 </div>
                 <ShieldCheck className="h-5 w-5 text-blue-600" />
               </CardContent>
@@ -247,14 +307,35 @@ export default function CashDrawersPage() {
                   <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Cash in transit
                   </div>
-                  <div className="mt-1 text-xl font-semibold">{formatMoney(cashInTransit)}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">Pending bank deposit account 1008</div>
+                  <div className="mt-1 text-xl font-semibold">
+                    {formatMoney(cashInTransit)}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {cashSummary?.source_accounts?.cash_in_transit ??
+                      "Pending bank deposit account 1008"}
+                  </div>
                 </div>
                 {balanceLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 ) : (
                   <Send className="h-5 w-5 text-amber-600" />
                 )}
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="flex items-center justify-between gap-3 p-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Total controlled cash
+                  </div>
+                  <div className="mt-1 text-xl font-semibold">
+                    {formatMoney(totalControlledCash)}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {summaryModeLabel}
+                  </div>
+                </div>
+                <Wallet className="h-5 w-5 text-cyan-600" />
               </CardContent>
             </Card>
           </div>
@@ -284,20 +365,44 @@ export default function CashDrawersPage() {
               <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_1fr_1.2fr_auto]">
                 <div className="space-y-1.5">
                   <Label htmlFor="cash-transfer-mode">Mode</Label>
-                  <Select value={transferMode} onValueChange={(value) => setTransferMode(value as CashTransferInput["transfer_mode"])}>
+                  <Select
+                    value={transferMode}
+                    onValueChange={(value) =>
+                      setTransferMode(
+                        value as CashTransferInput["transfer_mode"],
+                      )
+                    }
+                  >
                     <SelectTrigger id="cash-transfer-mode">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="immediate_bank_deposit" disabled={!canConfirmBankDeposit}>Safe to bank now</SelectItem>
-                      <SelectItem value="pending_bank_deposit">Safe to cash in transit</SelectItem>
-                      <SelectItem value="confirm_bank_deposit" disabled={!canConfirmBankDeposit}>Cash in transit to bank</SelectItem>
+                      <SelectItem
+                        value="immediate_bank_deposit"
+                        disabled={!canConfirmBankDeposit}
+                      >
+                        Safe to bank now
+                      </SelectItem>
+                      <SelectItem value="pending_bank_deposit">
+                        Safe to cash in transit
+                      </SelectItem>
+                      <SelectItem
+                        value="confirm_bank_deposit"
+                        disabled={!canConfirmBankDeposit}
+                      >
+                        Cash in transit to bank
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="cash-transfer-date">Date</Label>
-                  <Input id="cash-transfer-date" type="date" value={transferDate} onChange={(event) => setTransferDate(event.target.value)} />
+                  <Input
+                    id="cash-transfer-date"
+                    type="date"
+                    value={transferDate}
+                    onChange={(event) => setTransferDate(event.target.value)}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="cash-transfer-amount">Amount</Label>
@@ -314,8 +419,14 @@ export default function CashDrawersPage() {
                   <Input
                     id="cash-transfer-reference"
                     value={transferReference}
-                    onChange={(event) => setTransferReference(event.target.value)}
-                    placeholder={transferMode === "pending_bank_deposit" ? "Optional" : "Required"}
+                    onChange={(event) =>
+                      setTransferReference(event.target.value)
+                    }
+                    placeholder={
+                      transferMode === "pending_bank_deposit"
+                        ? "Optional"
+                        : "Required"
+                    }
                   />
                 </div>
                 <div className="flex items-end">
@@ -327,20 +438,28 @@ export default function CashDrawersPage() {
                     title={
                       !canTransferCash
                         ? "Cash-to-bank transfer permission is required."
-                        : !canConfirmBankDeposit && transferMode !== "pending_bank_deposit"
+                        : !canConfirmBankDeposit &&
+                            transferMode !== "pending_bank_deposit"
                           ? "Bank deposit confirmation permission is required."
                           : undefined
                     }
                   >
-                    {transferPosting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    {transferPosting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
                     Post
                   </Button>
                 </div>
               </div>
               {lastTransfer ? (
                 <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-                  Posted {lastTransfer.event_type.replace(/_/g, " ")} for Rs. {lastTransfer.amount.toFixed(2)}
-                  {lastTransfer.journal_entry_id ? ` · Journal #${lastTransfer.journal_entry_id}` : ""}
+                  Posted {lastTransfer.event_type.replace(/_/g, " ")} for Rs.{" "}
+                  {lastTransfer.amount.toFixed(2)}
+                  {lastTransfer.journal_entry_id
+                    ? ` · Journal #${lastTransfer.journal_entry_id}`
+                    : ""}
                 </div>
               ) : null}
             </CardContent>

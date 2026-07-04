@@ -8,7 +8,7 @@ import { AwaitingPaymentApis, DrawerSessionApis, InventoryApis, SupplierApis } f
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Plus, Package, AlertTriangle, ArrowUpDown, Loader2, Filter, History, CheckCircle2, XCircle } from "lucide-react";
+import { Search, Plus, Package, AlertTriangle, ArrowUpDown, Loader2, Filter, History, CheckCircle2, XCircle, Utensils } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -32,12 +32,14 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
+import { InventoryConsumptionDialog } from "@/components/inventory/inventory-consumption-dialog";
 
 export default function InventoryPage() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [valuation, setValuation] = useState<any | null>(null);
 
   // Advanced ops: ledger + adjustments
   const [opsOpen, setOpsOpen] = useState(false);
@@ -86,6 +88,7 @@ export default function InventoryPage() {
   const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] = useState(false);
   const [cashDrawerSessions, setCashDrawerSessions] = useState<any[]>([]);
   const [selectedCashDrawerSessionId, setSelectedCashDrawerSessionId] = useState<string>("");
+  const [consumeOpen, setConsumeOpen] = useState(false);
 
 
   const { toast } = useToast();
@@ -93,6 +96,15 @@ export default function InventoryPage() {
   const user = useAuth(state => state.user);
   const me = useAuth(state => state.me);
   const router = useRouter();
+  const permissionKeys = new Set(user?.permissions || []);
+  const normalizedRole = String(user?.role || user?.primary_role || "").toLowerCase();
+  const isInventoryAdmin = normalizedRole === "admin" || normalizedRole === "superadmin";
+  const canConsumeInventory =
+    isInventoryAdmin ||
+    permissionKeys.has("inventory.consume") ||
+    permissionKeys.has("inventory.manage");
+  const canOverrideNegativeStock =
+    isInventoryAdmin || permissionKeys.has("inventory.negative_stock.override");
 
   // 1. Session Restoration & Auth Guard
   useEffect(() => {
@@ -118,9 +130,19 @@ export default function InventoryPage() {
         lowStockOnly: activeTab === 'low_stock'
       });
 
-      const response = await apiClient.get(url);
-      if (response.data.status === "success") {
-        setItems(response.data.data.items || response.data.data || []);
+      const [inventoryResult, valuationResult] = await Promise.allSettled([
+        apiClient.get(url),
+        apiClient.get(InventoryApis.valuation(user.restaurant_id)),
+      ]);
+      if (inventoryResult.status === "fulfilled" && inventoryResult.value.data.status === "success") {
+        setItems(inventoryResult.value.data.data.items || inventoryResult.value.data.data || []);
+      } else if (inventoryResult.status === "rejected") {
+        throw inventoryResult.reason;
+      }
+      if (valuationResult.status === "fulfilled" && valuationResult.value.data.status === "success") {
+        setValuation(valuationResult.value.data.data || null);
+      } else {
+        setValuation(null);
       }
     } catch (err) {
       console.error("Failed to fetch inventory:", err);
@@ -538,17 +560,7 @@ export default function InventoryPage() {
         payment_method: "cash",
       });
       
-      // Refresh inventory
-      if (user?.restaurant_id) {
-        const url = InventoryApis.listInventoryWithQuery({
-          restaurantId: user.restaurant_id,
-          lowStockOnly: activeTab === 'low_stock'
-        });
-        const response = await apiClient.get(url);
-        if (response.data.status === "success") {
-          setItems(response.data.data.items || response.data.data || []);
-        }
-      }
+      await fetchInventory();
     } catch (err: any) {
       toast({
         title: "Adjustment Failed",
@@ -700,7 +712,9 @@ export default function InventoryPage() {
     setIsAddDialogOpen(true);
   };
 
-
+  const valuationByItemId = new Map<number, any>(
+    (valuation?.items || []).map((row: any) => [Number(row.inventory_item_id), row]),
+  );
 
   return (
     <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
@@ -709,13 +723,56 @@ export default function InventoryPage() {
           <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
           <p className="text-muted-foreground">Track stock levels and manage supplies.</p>
         </div>
-        <Button 
-          className="bg-orange-600 hover:bg-orange-700 text-white"
-          onClick={openAdd}
-        >
-          <Plus className="w-4 h-4 mr-2" /> Add Item
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {canConsumeInventory ? (
+            <Button variant="outline" onClick={() => setConsumeOpen(true)}>
+              <Utensils className="mr-2 h-4 w-4" /> Consume
+            </Button>
+          ) : null}
+          <Button
+            className="bg-orange-600 hover:bg-orange-700 text-white"
+            onClick={openAdd}
+          >
+            <Plus className="w-4 h-4 mr-2" /> Add Item
+          </Button>
+        </div>
 
+      </div>
+
+      {user?.restaurant_id ? (
+        <InventoryConsumptionDialog
+          open={consumeOpen}
+          onOpenChange={setConsumeOpen}
+          restaurantId={user.restaurant_id}
+          items={items}
+          canOverrideNegative={canOverrideNegativeStock}
+          onCompleted={fetchInventory}
+        />
+      ) : null}
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card className="rounded-lg">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-muted-foreground">Inventory asset value</p>
+            <p className="mt-1 text-xl font-semibold">
+              Rs. {Number(valuation?.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="rounded-lg">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-muted-foreground">Valued stock items</p>
+            <p className="mt-1 text-xl font-semibold">{Number(valuation?.valued_items || 0)}</p>
+          </CardContent>
+        </Card>
+        <Card className="rounded-lg">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-muted-foreground">Missing cost valuation</p>
+            <p className={cn("mt-1 text-xl font-semibold", Number(valuation?.unvalued_items || 0) > 0 && "text-amber-600") }>
+              {Number(valuation?.unvalued_items || 0)}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="flex flex-col md:flex-row items-center gap-4 justify-between">
@@ -745,7 +802,7 @@ export default function InventoryPage() {
           <p>No inventory items found.</p>
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
+        <div className="bg-card border border-border rounded-lg overflow-x-auto shadow-sm">
           <table className="w-full text-sm text-left">
             <thead className="bg-muted text-muted-foreground font-medium border-b border-border">
               <tr>
@@ -754,6 +811,7 @@ export default function InventoryPage() {
                 <th className="px-6 py-4">Unit</th>
                 <th className="px-6 py-4">Stock Level</th>
                 <th className="px-6 py-4">Cost</th>
+                <th className="px-6 py-4">Value</th>
                 <th className="px-6 py-4 text-right">Actions</th>
 
               </tr>
@@ -798,6 +856,9 @@ export default function InventoryPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-muted-foreground">Rs. {item.cost_per_unit || 0}</td>
+                  <td className="px-6 py-4 font-medium">
+                    Rs. {Number(valuationByItemId.get(Number(item.id))?.inventory_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </td>
                   <td className="px-6 py-4 text-right space-x-2">
                     <Button
                       variant="ghost"

@@ -53,7 +53,8 @@ type OpeningForm = {
 };
 
 const COUNTABLE_STATUSES = new Set(["opened", "closing_count_required", "variance_review_required", "reopened"]);
-const READY_STATUSES = new Set(["closed", "approved"]);
+const SETTLEMENT_PENDING_STATUSES = new Set(["closed"]);
+const READY_STATUSES = new Set(["approved"]);
 
 function todayIso() {
   const date = new Date();
@@ -72,7 +73,8 @@ function sourceLabel(value?: string | null) {
 
 function readyLabel(session: DrawerSession | null) {
   if (!session) return "Not opened";
-  if (READY_STATUSES.has(String(session.status))) return "Ready";
+  if (SETTLEMENT_PENDING_STATUSES.has(String(session.status))) return "Settlement pending";
+  if (READY_STATUSES.has(String(session.status))) return "Settled";
   if (session.status === "variance_review_required") return "Variance approval required";
   if (COUNTABLE_STATUSES.has(String(session.status))) return "Count required";
   return String(session.status).replace(/_/g, " ");
@@ -91,6 +93,10 @@ function sessionForConfig(sessions: DrawerSession[], config: DrawerConfiguration
 
 function isCountable(session: DrawerSession | null) {
   return Boolean(session && COUNTABLE_STATUSES.has(String(session.status)));
+}
+
+function isSettlementPending(session: DrawerSession | null) {
+  return Boolean(session && SETTLEMENT_PENDING_STATUSES.has(String(session.status)));
 }
 
 function numberAmount(value: unknown) {
@@ -443,6 +449,7 @@ export function DrawerSessionPanel({
                   openingForm.reason.trim().length >= 5 &&
                   Boolean((openingForm.differenceSource || "").trim()));
               const countable = isCountable(session);
+              const settlementPending = isSettlementPending(session);
               const ready = Boolean(session && READY_STATUSES.has(String(session.status)));
               const expectedClosingCash = session ? expectedCashForSession(session, breakdown) : null;
 
@@ -705,11 +712,15 @@ export function DrawerSessionPanel({
                         </div>
                       </div>
                       <Button
-                        variant={countable ? "default" : "outline"}
+                        variant={countable || settlementPending ? "default" : "outline"}
                         onClick={() => openCountDialog(session)}
-                        disabled={!countable}
+                        disabled={!countable && !settlementPending}
                       >
-                        {session.status === "variance_review_required" ? "Request variance approval" : "Count drawer"}
+                        {settlementPending
+                          ? "Settle drawer"
+                          : session.status === "variance_review_required"
+                            ? "Request variance approval"
+                            : "Count drawer"}
                       </Button>
                     </div>
                   )}
