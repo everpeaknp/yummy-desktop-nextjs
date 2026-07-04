@@ -62,6 +62,11 @@ import {
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { REFUND_PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
+import {
+  CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE,
+  CHECKOUT_OPEN_CASH_DRAWER_MESSAGE,
+  resolveCheckoutCashDrawerReadiness,
+} from "@/lib/checkout-cash-drawer-readiness";
 import type { DrawerSession } from "@/types/day-close";
 import type { PaymentInstrument } from "@/types/accounting";
 
@@ -132,12 +137,6 @@ type CheckoutCardInstrument = {
   instrumentType: string;
   isSelectable: boolean;
 };
-
-const PAYMENT_READY_DRAWER_STATUSES = new Set(["opened", "closing_count_required", "reopened"]);
-
-function isPaymentReadyDrawer(session: DrawerSession) {
-  return PAYMENT_READY_DRAWER_STATUSES.has(String(session.status || "").toLowerCase());
-}
 
 // ── Types matching backend schema ──────────────────
 interface BillItemModifier {
@@ -469,6 +468,7 @@ export default function CheckoutPage() {
   const [selectedCardIndex, setSelectedCardIndex] = useState(0);
   const drawerBusinessLine = "restaurant";
   const [drawerSessions, setDrawerSessions] = useState<DrawerSession[]>([]);
+  const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] = useState(true);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const [editPaymentOpen, setEditPaymentOpen] = useState(false);
@@ -685,13 +685,11 @@ export default function CheckoutPage() {
     : "No static QR configured. Add one in Manage / Settings / Payments & POS.";
   const hasUnsyncedLegacyCards = staticPaymentCards.some((card) => !card.isSelectable);
   const hasUnsyncedLegacyQrs = staticPaymentQrs.some((qr) => !qr.isSelectable);
-  const currentCashierDrawerSessions = drawerSessions.filter(
-    (session) => Number(session.cashier_id) === Number(user?.id) && isPaymentReadyDrawer(session)
-  );
+  const availableCashDrawerSessions = drawerSessions;
   const currentCashierDrawer =
-    currentCashierDrawerSessions.length === 1 ? currentCashierDrawerSessions[0] : null;
+    cashDrawerControlsEnabled && availableCashDrawerSessions.length === 1 ? availableCashDrawerSessions[0] : null;
   const hasCurrentCashierDrawer = Boolean(currentCashierDrawer);
-  const hasCashDrawerConflict = currentCashierDrawerSessions.length > 1;
+  const hasCashDrawerConflict = cashDrawerControlsEnabled && availableCashDrawerSessions.length > 1;
   const cashMethodSelected = !isMultiPayment
     ? payMethod === "cash"
     : multiPayments.some((row) => row.method === "cash");
@@ -710,30 +708,20 @@ export default function CheckoutPage() {
       const activeRes = await apiClient.get<BaseResponse<DrawerSession[]>>(
         DrawerSessionApis.active({ restaurantId: restaurant.id, businessLine: drawerBusinessLine }),
       );
-      const sessions = activeRes.data?.data ?? [];
-      setDrawerSessions(sessions);
-
-      const cashierSessions = sessions.filter(
-        (session) => Number(session.cashier_id) === Number(user.id) && isPaymentReadyDrawer(session)
-      );
-      if (cashierSessions.length === 1) {
-        return { ready: true, message: "" };
-      }
-      if (cashierSessions.length > 1) {
-        return {
-          ready: false,
-          message: "Multiple active cash drawers are assigned to you. Close or reassign one before taking cash.",
-        };
-      }
-      return { ready: false, message: "Open your cash drawer from Cash Drawers before taking a cash payment." };
+      const readiness = resolveCheckoutCashDrawerReadiness(activeRes.data);
+      setCashDrawerControlsEnabled(readiness.controlsEnabled);
+      setDrawerSessions(readiness.paymentReadySessions);
+      return { ready: readiness.ready, message: readiness.message };
     } catch (err: any) {
       const message = extractApiErrorMessage(err, "Failed to load cash drawer status.");
+      setCashDrawerControlsEnabled(true);
+      setDrawerSessions([]);
       setDrawerError(message);
       return { ready: false, message };
     } finally {
       if (!options?.silent) setDrawerLoading(false);
     }
-  }, [restaurant?.id, user?.id]);
+  }, [drawerBusinessLine, restaurant?.id, user?.id]);
   const ensureCashDrawerReady = useCallback(async () => {
     const result = await loadCashDrawerState({ silent: true });
     if (!result.ready) {
@@ -1812,7 +1800,11 @@ export default function CheckoutPage() {
             Cash drawer
             {drawerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
           </div>
-          {hasCurrentCashierDrawer ? (
+          {!cashDrawerControlsEnabled ? (
+            <p className="text-xs text-muted-foreground">
+              Drawer controls are disabled for this restaurant.
+            </p>
+          ) : hasCurrentCashierDrawer ? (
             <p className="text-xs text-muted-foreground">
               Open: {currentCashierDrawer?.station} / {currentCashierDrawer?.drawer_key}
               {currentCashierDrawer?.counted_opening_cash != null
@@ -1821,11 +1813,11 @@ export default function CheckoutPage() {
             </p>
           ) : hasCashDrawerConflict ? (
             <p className="text-xs text-destructive">
-              Multiple active drawers are assigned to you. Close or reassign one before taking cash.
+              {CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE}
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Open your cash drawer from Cash Drawers before accepting physical cash.
+              {CHECKOUT_OPEN_CASH_DRAWER_MESSAGE}
             </p>
           )}
         </div>
@@ -1853,14 +1845,23 @@ export default function CheckoutPage() {
         </div>
       ) : null}
 
-      {hasCurrentCashierDrawer ? (
+      {!cashDrawerControlsEnabled ? (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+          <CheckCircle className="h-4 w-4" />
+          Cash payments will post without drawer attribution.
+        </div>
+      ) : hasCurrentCashierDrawer ? (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
           <CheckCircle className="h-4 w-4" />
           Cash payments will be recorded in this drawer.
         </div>
+      ) : hasCashDrawerConflict ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+          {CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE}
+        </div>
       ) : !hasCashDrawerConflict ? (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-          No active drawer is assigned to you. Open one in Cash Drawers, then return here to take cash.
+          No active cash drawer is available to you. Open one in Cash Drawers, then return here to take cash.
         </div>
       ) : null}
     </div>
