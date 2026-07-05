@@ -160,6 +160,10 @@ function buildFinanceExpensePaymentMethodBreakdown(
     .sort((a, b) => b.amount - a.amount);
 }
 
+function isFinanceEventExpense(expense: any): boolean {
+  return String(expense?.source_type || "").startsWith("finance_event:");
+}
+
 export default function ExpensesPage() {
   const [loading, setLoading] = useState(false);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -1294,62 +1298,74 @@ export default function ExpensesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {filteredExpenses.map((expense: any) => (
-                        <tr
-                          key={expense.id}
-                          className="hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="px-6 py-4 font-medium">
-                            {expense.description || "Untitled"}
-                          </td>
-                          <td className="px-6 py-4 text-muted-foreground">
-                            {expense.category?.name || "General"}
-                          </td>
-                          <td className="px-6 py-4 font-bold text-red-600 dark:text-red-500">
-                            - Rs. {Number(expense.amount).toLocaleString()}
-                          </td>
-                          <td className="px-6 py-4 text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <Calendar className="w-3.5 h-3.5" />
-                              {new Date(
-                                expense.expense_date || expense.paid_on,
-                              ).toLocaleDateString()}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <Badge
-                              variant="outline"
-                              className="border-border text-muted-foreground capitalize"
-                            >
-                              {expense.status || "Completed"}
-                            </Badge>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8"
-                                onClick={() => handleEditExpense(expense)}
-                                aria-label="Edit expense"
+                      {filteredExpenses.map((expense: any) => {
+                        const readOnlyFinanceRow =
+                          isFinanceEventExpense(expense);
+                        return (
+                          <tr
+                            key={`${expense.source_type || "expense"}-${expense.id}`}
+                            className="hover:bg-muted/30 transition-colors"
+                          >
+                            <td className="px-6 py-4 font-medium">
+                              {expense.description || "Untitled"}
+                            </td>
+                            <td className="px-6 py-4 text-muted-foreground">
+                              {expense.category?.name || "General"}
+                            </td>
+                            <td className="px-6 py-4 font-bold text-red-600 dark:text-red-500">
+                              - Rs. {Number(expense.amount).toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 text-muted-foreground">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-3.5 h-3.5" />
+                                {new Date(
+                                  expense.expense_date || expense.paid_on,
+                                ).toLocaleDateString()}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <Badge
+                                variant="outline"
+                                className="border-border text-muted-foreground capitalize"
                               >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                                onClick={() => handleDeleteExpense(expense)}
-                                aria-label="Delete expense"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                {readOnlyFinanceRow
+                                  ? "Recorded"
+                                  : expense.status || "Completed"}
+                              </Badge>
+                            </td>
+                            <td className="px-6 py-4">
+                              {readOnlyFinanceRow ? (
+                                <div className="flex justify-end">
+                                  <Badge variant="secondary">Finance event</Badge>
+                                </div>
+                              ) : (
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    onClick={() => handleEditExpense(expense)}
+                                    aria-label="Edit expense"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    onClick={() => handleDeleteExpense(expense)}
+                                    aria-label="Delete expense"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
