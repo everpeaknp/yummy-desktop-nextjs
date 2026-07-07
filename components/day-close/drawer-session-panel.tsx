@@ -452,6 +452,8 @@ export function DrawerSessionPanel({
               const settlementPending = isSettlementPending(session);
               const ready = Boolean(session && READY_STATUSES.has(String(session.status)));
               const expectedClosingCash = session ? expectedCashForSession(session, breakdown) : null;
+              const countedOpeningCash =
+                session ? breakdown?.opening_float ?? session.counted_opening_cash ?? null : null;
 
               return (
                 <div key={config.id} className="rounded-lg border bg-muted/10 p-4 space-y-3">
@@ -506,8 +508,8 @@ export function DrawerSessionPanel({
                         Counted opening
                       </div>
                       <div className="mt-1 text-sm font-semibold">
-                        {session?.counted_opening_cash != null
-                          ? formatDayCloseCurrency(session.counted_opening_cash)
+                        {countedOpeningCash != null
+                          ? formatDayCloseCurrency(countedOpeningCash)
                           : "Not opened"}
                       </div>
                     </div>
@@ -529,13 +531,13 @@ export function DrawerSessionPanel({
                   </div>
 
                   {session ? (
-                    <div className="grid gap-3 md:grid-cols-5">
+                    <div className="grid gap-3 md:grid-cols-6">
                       <div className="rounded-md border bg-background p-3">
                         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           Opening float
                         </div>
                         <div className="mt-1 text-sm font-semibold">
-                          {formatDayCloseCurrency(breakdown?.opening_float ?? session.counted_opening_cash ?? 0)}
+                          {formatDayCloseCurrency(breakdown?.opening_float ?? countedOpeningCash ?? 0)}
                         </div>
                       </div>
                       <div className="rounded-md border bg-background p-3">
@@ -552,6 +554,14 @@ export function DrawerSessionPanel({
                         </div>
                         <div className="mt-1 text-sm font-semibold">
                           {formatDayCloseCurrency(breakdown?.refunds ?? 0)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Expenses
+                        </div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {formatDayCloseCurrency(breakdown?.expenses ?? 0)}
                         </div>
                       </div>
                       <div className="rounded-md border bg-background p-3">
