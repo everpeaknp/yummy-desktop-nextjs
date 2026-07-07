@@ -55,6 +55,7 @@ type OpeningForm = {
 const COUNTABLE_STATUSES = new Set(["opened", "closing_count_required", "variance_review_required", "reopened"]);
 const SETTLEMENT_PENDING_STATUSES = new Set(["closed"]);
 const READY_STATUSES = new Set(["approved"]);
+const EXPENSE_OUTFLOW_TYPES = new Set(["expense", "inventory_payment", "supplier_payment"]);
 
 function todayIso() {
   const date = new Date();
@@ -112,6 +113,20 @@ function expectedCashForSession(session: DrawerSession, breakdown?: DrawerExpect
     0,
   );
   return numberAmount(session.counted_opening_cash) + movementTotal;
+}
+
+function drawerExpenseCashOut(session: DrawerSession, breakdown?: DrawerExpectedBreakdown | null) {
+  if (breakdown) {
+    return (
+      numberAmount(breakdown.expenses) +
+      numberAmount(breakdown.inventory_payments) +
+      numberAmount(breakdown.supplier_payments)
+    );
+  }
+  return (session.movements ?? []).reduce((total, movement) => {
+    if (!EXPENSE_OUTFLOW_TYPES.has(String(movement.movement_type))) return total;
+    return total + Math.abs(numberAmount(movement.signed_amount));
+  }, 0);
 }
 
 function countedCashLabel(session: DrawerSession | null, breakdown?: DrawerExpectedBreakdown | null) {
@@ -452,6 +467,7 @@ export function DrawerSessionPanel({
               const settlementPending = isSettlementPending(session);
               const ready = Boolean(session && READY_STATUSES.has(String(session.status)));
               const expectedClosingCash = session ? expectedCashForSession(session, breakdown) : null;
+              const expenseCashOut = session ? drawerExpenseCashOut(session, breakdown) : 0;
               const countedOpeningCash =
                 session ? breakdown?.opening_float ?? session.counted_opening_cash ?? null : null;
 
@@ -561,7 +577,7 @@ export function DrawerSessionPanel({
                           Expenses
                         </div>
                         <div className="mt-1 text-sm font-semibold">
-                          {formatDayCloseCurrency(breakdown?.expenses ?? 0)}
+                          {formatDayCloseCurrency(expenseCashOut)}
                         </div>
                       </div>
                       <div className="rounded-md border bg-background p-3">
