@@ -2,17 +2,28 @@
 
 import type { DayCloseDetail, DayCloseListItem, DayCloseSession } from "@/types/day-close";
 
-export function formatDayCloseCurrency(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return `Rs. ${value.toLocaleString(undefined, {
+type BackendNumeric = number | string | null | undefined;
+
+function parseBackendNumber(value: BackendNumeric): number | undefined {
+  if (value == null) return undefined;
+  if (typeof value === "string" && value.trim() === "") return undefined;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function formatDayCloseCurrency(value: BackendNumeric): string {
+  const amount = parseBackendNumber(value);
+  if (amount == null) return "—";
+  return `Rs. ${amount.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 }
 
-export function formatDayCloseNumber(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+export function formatDayCloseNumber(value: BackendNumeric): string {
+  const amount = parseBackendNumber(value);
+  if (amount == null) return "—";
+  return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 export function formatDayClosePeriod(
@@ -93,10 +104,11 @@ export function formatDayCloseCoveredRange(
 }
 
 export function pickBackendAmount(
-  ...values: Array<number | null | undefined>
+  ...values: BackendNumeric[]
 ): number | undefined {
   for (const value of values) {
-    if (value != null && Number.isFinite(value)) return value;
+    const parsed = parseBackendNumber(value);
+    if (parsed != null) return parsed;
   }
   return undefined;
 }
