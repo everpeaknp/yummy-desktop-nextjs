@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { DrawerSessionApis, RestaurantApis, AccountingApis } from "@/lib/api/endpoints";
 import { getPaymentBankDescription, getPaymentBankLabel, isReviewBank } from "@/lib/payment-banks";
+import { hasPermission } from "@/lib/role-permissions";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import type { DrawerAssignment, DrawerCashier, DrawerConfiguration } from "@/types/day-close";
@@ -126,11 +127,14 @@ export default function RestaurantSettingsPage() {
     });
     const [drawerForm, setDrawerForm] = useState<DrawerConfigForm>(() => emptyDrawerForm());
 
-    const canManageDrawers =
+    const isDrawerAdmin =
         user?.role === "admin" ||
-        user?.role === "superadmin" ||
-        user?.permissions?.includes("day_close.drawer.approve") ||
-        user?.permissions?.includes("finance.accounting.setup");
+        user?.role === "superadmin";
+    const canConfigureDrawers =
+        isDrawerAdmin || hasPermission(user, "finance.accounting.setup");
+    const canAssignDrawers =
+        isDrawerAdmin || hasPermission(user, "finance.drawer.assign");
+    const canManageDrawers = canAssignDrawers || canConfigureDrawers;
 
     const loadDrawerConfigurations = useCallback(async () => {
         if (!user?.restaurant_id) return;
@@ -192,6 +196,10 @@ export default function RestaurantSettingsPage() {
     };
 
     function openDrawerDialog(config?: DrawerConfiguration) {
+        if (!canConfigureDrawers) {
+            toast.error("Drawer configuration requires accounting setup permission");
+            return;
+        }
         if (!config) {
             setDrawerForm(emptyDrawerForm());
             setDrawerDialog({ open: true, id: null });
@@ -213,6 +221,10 @@ export default function RestaurantSettingsPage() {
 
     const handleDrawerSave = async () => {
         if (!user?.restaurant_id) return;
+        if (!canConfigureDrawers) {
+            toast.error("Drawer configuration requires accounting setup permission");
+            return;
+        }
         const station = drawerForm.station.trim().toLowerCase();
         const drawerKey = drawerForm.drawer_key.trim().toLowerCase();
         const name = drawerForm.name.trim();
@@ -249,6 +261,10 @@ export default function RestaurantSettingsPage() {
 
     const handleDrawerDeactivate = async (config: DrawerConfiguration) => {
         if (!user?.restaurant_id) return;
+        if (!canConfigureDrawers) {
+            toast.error("Drawer configuration requires accounting setup permission");
+            return;
+        }
         try {
             setSaving(true);
             await apiClient.put(DrawerSessionApis.saveConfiguration, {
@@ -275,6 +291,10 @@ export default function RestaurantSettingsPage() {
 
     const handleAssignCashier = async (drawer: DrawerConfiguration) => {
         if (!user?.restaurant_id) return;
+        if (!canAssignDrawers) {
+            toast.error("Cash drawer assignment permission is required");
+            return;
+        }
         const key = drawerScopeKey(drawer.station, drawer.drawer_key);
         const cashierId = Number(drawerAssignSelection[key]);
         if (!cashierId) {
@@ -304,6 +324,10 @@ export default function RestaurantSettingsPage() {
 
     const handleDrawerControlsToggle = async (enabled: boolean) => {
         if (!user?.restaurant_id) return;
+        if (!canConfigureDrawers) {
+            toast.error("Drawer controls require accounting setup permission");
+            return;
+        }
         setDrawerControlsSaving(true);
         try {
             await apiClient.post(DrawerSessionApis.setControls({
@@ -323,6 +347,10 @@ export default function RestaurantSettingsPage() {
 
     const handleRemoveDrawerAssignment = async (assignment: DrawerAssignment) => {
         if (!user?.restaurant_id) return;
+        if (!canAssignDrawers) {
+            toast.error("Cash drawer assignment permission is required");
+            return;
+        }
         try {
             setSaving(true);
             await apiClient.put(DrawerSessionApis.saveAssignment, {
@@ -943,7 +971,7 @@ export default function RestaurantSettingsPage() {
                                     </div>
                                     <Switch
                                         checked={drawerControlsEnabled}
-                                        disabled={drawerLoading || drawerControlsSaving || !canManageDrawers}
+                                        disabled={drawerLoading || drawerControlsSaving || !canConfigureDrawers}
                                         onCheckedChange={handleDrawerControlsToggle}
                                         aria-label="Toggle drawer controls"
                                     />
@@ -958,25 +986,28 @@ export default function RestaurantSettingsPage() {
                                     {drawerLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <RefreshCw className="w-4 h-4 mr-1" />}
                                     Refresh
                                 </Button>
-                                <Button
-                                    size="sm"
-                                    className="h-8"
-                                    disabled={!canManageDrawers}
-                                    onClick={() => openDrawerDialog()}
-                                >
-                                    <Plus className="w-4 h-4 mr-1" />
-                                    Add Drawer
-                                </Button>
+                                {canConfigureDrawers ? (
+                                    <Button
+                                        size="sm"
+                                        className="h-8"
+                                        onClick={() => openDrawerDialog()}
+                                    >
+                                        <Plus className="w-4 h-4 mr-1" />
+                                        Add Drawer
+                                    </Button>
+                                ) : null}
                             </div>
                         </CardHeader>
                         <CardContent>
                             {!canManageDrawers ? (
                                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
-                                    You need drawer approval or accounting setup permission to manage cash drawers.
+                                    Cash drawer assignment or accounting setup permission is required.
                                 </div>
                             ) : !drawerControlsEnabled ? (
                                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
-                                    Drawer controls are off. Enable them above before cashiers can open drawers, count cash, or submit settlement evidence.
+                                    {canConfigureDrawers
+                                        ? "Drawer controls are off. Enable them above before cashiers can open drawers, count cash, or submit settlement evidence."
+                                        : "Drawer controls are off. Ask a setup user to enable them before assigning cashiers."}
                                 </div>
                             ) : drawerLoading ? (
                                 <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
@@ -1019,27 +1050,29 @@ export default function RestaurantSettingsPage() {
                                                     {drawer.blind_count_enabled ? "Blind closing count enabled" : "Expected closing shown to cashier"}
                                                 </p>
                                             </div>
-                                            <div className="flex items-center gap-1">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-primary"
-                                                    onClick={() => openDrawerDialog(drawer)}
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </Button>
-                                                {drawer.is_active ? (
+                                            {canConfigureDrawers ? (
+                                                <div className="flex items-center gap-1">
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        className="h-8 w-8 text-destructive"
-                                                        disabled={saving}
-                                                        onClick={() => handleDrawerDeactivate(drawer)}
+                                                        className="h-8 w-8 text-primary"
+                                                        onClick={() => openDrawerDialog(drawer)}
                                                     >
-                                                        <Trash2 className="w-4 h-4" />
+                                                        <Edit2 className="w-4 h-4" />
                                                     </Button>
-                                                ) : null}
-                                            </div>
+                                                    {drawer.is_active ? (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 text-destructive"
+                                                            disabled={saving}
+                                                            onClick={() => handleDrawerDeactivate(drawer)}
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </Button>
+                                                    ) : null}
+                                                </div>
+                                            ) : null}
                                         </div>
                                             <div className="space-y-2 rounded-md border bg-background/70 p-2">
                                                 <div className="flex flex-wrap gap-2">
@@ -1051,48 +1084,52 @@ export default function RestaurantSettingsPage() {
                                                         assignments.map((assignment) => (
                                                             <Badge key={assignment.id} variant="secondary" className="gap-1 pr-1">
                                                                 {cashierLabel(assignment.cashier_id)}
-                                                                <button
-                                                                    type="button"
-                                                                    className="ml-1 rounded px-1 text-muted-foreground hover:text-destructive"
-                                                                    disabled={saving}
-                                                                    onClick={() => handleRemoveDrawerAssignment(assignment)}
-                                                                    aria-label="Remove cashier assignment"
-                                                                >
-                                                                    x
-                                                                </button>
+                                                                {canAssignDrawers ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="ml-1 rounded px-1 text-muted-foreground hover:text-destructive"
+                                                                        disabled={saving}
+                                                                        onClick={() => handleRemoveDrawerAssignment(assignment)}
+                                                                        aria-label="Remove cashier assignment"
+                                                                    >
+                                                                        x
+                                                                    </button>
+                                                                ) : null}
                                                             </Badge>
                                                         ))
                                                     )}
                                                 </div>
-                                                <div className="flex flex-col gap-2 sm:flex-row">
-                                                    <Select
-                                                        value={selectedCashier}
-                                                        onValueChange={(value) =>
-                                                            setDrawerAssignSelection((current) => ({ ...current, [key]: value }))
-                                                        }
-                                                    >
-                                                        <SelectTrigger className="h-9">
-                                                            <SelectValue placeholder="Assign cashier" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {drawerCashiers.map((cashier) => (
-                                                                <SelectItem key={cashier.id} value={String(cashier.id)}>
-                                                                    {cashier.name} ({cashier.email})
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-9"
-                                                        disabled={saving || !selectedCashier}
-                                                        onClick={() => handleAssignCashier(drawer)}
-                                                    >
-                                                        Assign
-                                                    </Button>
-                                                </div>
+                                                {canAssignDrawers ? (
+                                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                                        <Select
+                                                            value={selectedCashier}
+                                                            onValueChange={(value) =>
+                                                                setDrawerAssignSelection((current) => ({ ...current, [key]: value }))
+                                                            }
+                                                        >
+                                                            <SelectTrigger className="h-9">
+                                                                <SelectValue placeholder="Assign cashier" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {drawerCashiers.map((cashier) => (
+                                                                    <SelectItem key={cashier.id} value={String(cashier.id)}>
+                                                                        {cashier.name} ({cashier.email})
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-9"
+                                                            disabled={saving || !selectedCashier}
+                                                            onClick={() => handleAssignCashier(drawer)}
+                                                        >
+                                                            Assign
+                                                        </Button>
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         </div>
                                         );

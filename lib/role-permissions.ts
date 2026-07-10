@@ -187,6 +187,7 @@ export type PermissionKey =
   | "finance.income.view"
   | "finance.drawer.open.own"
   | "finance.drawer.open.any"
+  | "finance.drawer.assign"
   | "finance.drawer.close.own"
   | "finance.drawer.close.any"
   | "finance.drawer.expense.create"
