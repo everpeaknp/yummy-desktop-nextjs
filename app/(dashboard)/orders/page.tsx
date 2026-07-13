@@ -50,7 +50,10 @@ import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { DateRange } from "react-day-picker";
 
 function getOrderTimeMs(order: any): number {
-    const raw = order?.started_at || order?.created_at || order?.updated_at;
+    const status = String(order?.status || "").toLowerCase();
+    const raw = ["completed", "canceled"].includes(status)
+        ? order?.completed_at || order?.canceled_at || order?.updated_at || order?.created_at || order?.started_at
+        : order?.started_at || order?.created_at || order?.updated_at;
     const ms = raw ? new Date(raw).getTime() : 0;
     return Number.isFinite(ms) ? ms : 0;
 }
@@ -357,7 +360,7 @@ export default function OrdersPage() {
         const groups: Record<string, any[]> = {};
         
         historyOrders.forEach(order => {
-            const date = new Date(order.created_at || order.started_at);
+            const date = new Date(getOrderTimeMs(order));
             let label = "";
             if (isToday(date)) label = "Today";
             else if (isYesterday(date)) label = "Yesterday";

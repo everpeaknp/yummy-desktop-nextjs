@@ -53,6 +53,7 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
   const statusClass = getStatusColor(order.status);
   const badgeClass = getStatusBadgeColor(order.status);
   const ChannelIcon = getChannelIcon(order.channel);
+  const s = order.status.toLowerCase();
   
   // Format Title
   let title = `Order #${order.restaurant_order_id || order.id}`;
@@ -69,11 +70,18 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
   
   const customerInfo = order.customer_name || (order.channel === 'table' ? 'Guest' : 'Walk-in');
 
-  // Time (prefer started_at when available; fallback to created/updated)
+  // Time (terminal orders use completion/cancellation time; active orders use start/create time)
+  const terminalStatus = ['completed', 'canceled'].includes(s);
   const orderTimeRaw =
-    (order as any).started_at ||
-    order.created_at ||
-    order.updated_at;
+    terminalStatus
+      ? (order as any).completed_at ||
+        (order as any).canceled_at ||
+        order.updated_at ||
+        order.created_at ||
+        (order as any).started_at
+      : (order as any).started_at ||
+        order.created_at ||
+        order.updated_at;
   const orderTime = new Date(orderTimeRaw);
   const timeLabel = Number.isNaN(orderTime.getTime())
     ? "--:--"
@@ -81,7 +89,6 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
   const itemsCount = order.items.reduce((acc, item) => acc + item.qty, 0);
 
   // Extract just the left border color for the card container style
-  const s = order.status.toLowerCase();
   const leftBorderColor = 
       s === 'pending' ? 'border-l-blue-500' :
       s === 'confirmed' ? 'border-l-blue-600' :

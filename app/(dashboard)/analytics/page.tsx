@@ -156,6 +156,8 @@ export default function AnalyticsPage() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [dayCloseAlignedToday, setDayCloseAlignedToday] = useState(false);
+  const [dayCloseAlignedTodaySession, setDayCloseAlignedTodaySession] =
+    useState<any | null>(null);
   const [dayCloseNetSalesOverride, setDayCloseNetSalesOverride] = useState<
     number | undefined
   >(undefined);
@@ -265,6 +267,10 @@ export default function AnalyticsPage() {
       startTime = selectedDayCloseSession.period_start_at;
       endTime = selectedDayCloseSession.period_end_at;
       queryBusinessLine = selectedDayCloseSession.business_line;
+    } else if (activeRange === "today" && dayCloseAlignedTodaySession) {
+      startTime = dayCloseAlignedTodaySession.period_start_at;
+      endTime = dayCloseAlignedTodaySession.period_end_at;
+      queryBusinessLine = dayCloseAlignedTodaySession.business_line ?? businessLine;
     } else if (activeRange === "custom" && date?.from) {
       startTime = date.from.toISOString();
       endTime = date.to ? date.to.toISOString() : date.from.toISOString();
@@ -277,7 +283,13 @@ export default function AnalyticsPage() {
       endTime,
       businessLine: queryBusinessLine,
     };
-  }, [activeRange, date, selectedDayCloseSession, businessLine]);
+  }, [
+    activeRange,
+    date,
+    selectedDayCloseSession,
+    dayCloseAlignedTodaySession,
+    businessLine,
+  ]);
 
   // Fetch Menu Categories
   useEffect(() => {
@@ -482,7 +494,7 @@ export default function AnalyticsPage() {
     }
   };
 
-  const getSessionRangeLabel = (session: any) => {
+  const getSessionRangeLabel = useCallback((session: any) => {
     if (!session) return "";
     try {
       const start = new Date(session.period_start_at);
@@ -519,12 +531,12 @@ export default function AnalyticsPage() {
     } catch (e) {
       return "";
     }
-  };
+  }, []);
 
-  const formatSessionCoveredRange = (session: any) => {
+  const formatSessionCoveredRange = useCallback((session: any) => {
     if (!session) return "";
     return `Covers ${getSessionRangeLabel(session)}`;
-  };
+  }, [getSessionRangeLabel]);
 
   const financeSummaryScopeLabel = useMemo(() => {
     const dates = getActiveDates();
@@ -533,6 +545,9 @@ export default function AnalyticsPage() {
     if (selectedDayCloseSession) {
       const sessionLabel = formatSessionCoveredRange(selectedDayCloseSession);
       parts.push(sessionLabel || "Selected day-close session");
+    } else if (dayCloseAlignedToday && dayCloseAlignedTodaySession) {
+      const sessionLabel = formatSessionCoveredRange(dayCloseAlignedTodaySession);
+      parts.push(sessionLabel || "Current day-close window");
     } else {
       const dateLabel =
         dates.dateFrom === dates.dateTo
@@ -545,7 +560,14 @@ export default function AnalyticsPage() {
     parts.push(`Station: ${station ? station : "All stations"}`);
 
     return parts.join(" | ");
-  }, [getActiveDates, selectedDayCloseSession, station]);
+  }, [
+    getActiveDates,
+    selectedDayCloseSession,
+    dayCloseAlignedToday,
+    dayCloseAlignedTodaySession,
+    formatSessionCoveredRange,
+    station,
+  ]);
 
   const applyAllowedAnalyticsRange = useCallback(() => {
     setActiveRange("last30");
@@ -562,10 +584,18 @@ export default function AnalyticsPage() {
         setCashControlSummary(null);
         setTrendsData([]);
         setCategoryData([]);
+        setDayCloseAlignedToday(false);
+        setDayCloseAlignedTodaySession(null);
+        setDayCloseNetSalesOverride(undefined);
         setLoading(false);
         return;
       }
-      if (activeRange === "custom" && (!date?.from || !date?.to)) return;
+      if (activeRange === "custom" && (!date?.from || !date?.to)) {
+        setDayCloseAlignedToday(false);
+        setDayCloseAlignedTodaySession(null);
+        setDayCloseNetSalesOverride(undefined);
+        return;
+      }
 
       const presetRange = getAnalyticsPresetRange(activeRange, date);
       const validation = validateAnalyticsDateRange(presetRange, {
@@ -579,6 +609,9 @@ export default function AnalyticsPage() {
         setCashControlSummary(null);
         setTrendsData([]);
         setCategoryData([]);
+        setDayCloseAlignedToday(false);
+        setDayCloseAlignedTodaySession(null);
+        setDayCloseNetSalesOverride(undefined);
         setLoading(false);
         return;
       }
@@ -626,6 +659,7 @@ export default function AnalyticsPage() {
         let endTime: string | undefined = undefined;
         let queryBusinessLine = businessLine;
         let dayCloseAlignedTodayLocal = false;
+        let dayCloseAlignedTodaySessionLocal: any | null = null;
         let dayCloseNetSalesOverrideLocal: number | undefined = undefined;
 
         if (selectedDayCloseSession) {
@@ -633,11 +667,13 @@ export default function AnalyticsPage() {
           endTime = selectedDayCloseSession.period_end_at;
           queryBusinessLine = selectedDayCloseSession.business_line;
           dayCloseAlignedTodayLocal = false;
+          dayCloseAlignedTodaySessionLocal = null;
           dayCloseNetSalesOverrideLocal = undefined;
         } else if (activeRange === "custom" && date?.from) {
           startTime = date.from.toISOString();
           endTime = date.to ? date.to.toISOString() : date.from.toISOString();
           dayCloseAlignedTodayLocal = false;
+          dayCloseAlignedTodaySessionLocal = null;
           dayCloseNetSalesOverrideLocal = undefined;
         } else if (
           activeRange === "today" &&
@@ -645,6 +681,7 @@ export default function AnalyticsPage() {
           (businessLine === "restaurant" || businessLine === "hotel")
         ) {
           dayCloseAlignedTodayLocal = false;
+          dayCloseAlignedTodaySessionLocal = null;
           dayCloseNetSalesOverrideLocal = undefined;
           try {
             const [currentRes, snapshotRes] = await Promise.all([
@@ -670,22 +707,38 @@ export default function AnalyticsPage() {
               snapshotRes.data,
               parseDayCloseSnapshotData,
             );
-            if (currentClose?.period_start_at && currentClose?.period_end_at) {
-              startTime = currentClose.period_start_at;
-              endTime = currentClose.period_end_at;
-              queryBusinessLine = currentClose.business_line ?? businessLine;
+            const alignedStart =
+              currentClose?.period_start_at ?? snapshotData?.period_start_at;
+            const alignedEnd =
+              currentClose?.period_end_at ?? snapshotData?.period_end_at;
+            if (alignedStart && alignedEnd) {
+              startTime = alignedStart;
+              endTime = alignedEnd;
+              queryBusinessLine =
+                currentClose?.business_line ??
+                snapshotData?.business_line?.toString() ??
+                businessLine;
               dayCloseAlignedTodayLocal = true;
+              dayCloseAlignedTodaySessionLocal = {
+                period_start_at: alignedStart,
+                period_end_at: alignedEnd,
+                business_date:
+                  currentClose?.business_date ?? snapshotData?.business_date,
+                business_line: queryBusinessLine,
+              };
               dayCloseNetSalesOverrideLocal =
                 snapshotData?.net_sales ?? undefined;
             }
           } catch {
             dayCloseAlignedTodayLocal = false;
+            dayCloseAlignedTodaySessionLocal = null;
             dayCloseNetSalesOverrideLocal = undefined;
           }
         }
 
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         setDayCloseAlignedToday(dayCloseAlignedTodayLocal);
+        setDayCloseAlignedTodaySession(dayCloseAlignedTodaySessionLocal);
         setDayCloseNetSalesOverride(dayCloseNetSalesOverrideLocal);
 
         const dashboardUrl = AnalyticsApis.dashboard({

@@ -1731,6 +1731,26 @@ export const DrawerSessionApis = {
     });
     return `/drawer-sessions/active?${params.toString()}`;
   },
+  history: ({
+    restaurantId,
+    businessLine = "restaurant",
+    skip = 0,
+    limit = 20,
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+    return `/drawer-sessions/history?${params.toString()}`;
+  },
+  activity: (sessionId: number) => `/drawer-sessions/${sessionId}/activity`,
   movement: (sessionId: number) => `/drawer-sessions/${sessionId}/movements`,
   closingPrompt: (sessionId: number) =>
     `/drawer-sessions/${sessionId}/closing-prompt`,

@@ -105,6 +105,7 @@ export interface DrawerMovement {
   signed_amount: number;
   payment_method?: string | null;
   occurred_at?: string | null;
+  recorded_by_id?: number | null;
   metadata_json?: Record<string, unknown> | null;
 }
 
@@ -150,6 +151,7 @@ export interface DrawerSession {
   station: string;
   drawer_key: string;
   cashier_id?: number | null;
+  cashier_name?: string | null;
   business_date: string;
   status: DrawerSessionStatus;
   suggested_opening_source?: string | null;
@@ -169,6 +171,25 @@ export interface DrawerSession {
   approved_at?: string | null;
   movements?: DrawerMovement[];
   counts?: DrawerCount[];
+}
+
+export interface DrawerActivityLog {
+  id: string;
+  activity_type: string;
+  title: string;
+  description?: string | null;
+  amount?: number | null;
+  occurred_at: string;
+  actor_id?: number | null;
+  actor_name?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface DrawerSessionHistoryPage {
+  items: DrawerSession[];
+  total: number;
+  skip: number;
+  limit: number;
 }
 
 export interface DayCloseDrawerControlRow {

@@ -6,6 +6,8 @@ import {
   Banknote,
   BookOpen,
   CalendarCheck,
+  Activity,
+  History,
   Loader2,
   RefreshCw,
   Send,
@@ -36,7 +38,12 @@ import type {
   CashTransferResult,
   DrawerCashControlSummary,
 } from "@/types/accounting";
-import type { BusinessLine } from "@/types/day-close";
+import type {
+  BusinessLine,
+  DrawerActivityLog,
+  DrawerSession,
+  DrawerSessionHistoryPage,
+} from "@/types/day-close";
 
 type BaseResponse<T> = {
   data?: T;
@@ -349,6 +356,11 @@ export default function CashDrawersPage() {
             onCashSummaryChange={handleDrawerCashSummary}
           />
 
+          <DrawerHistoryCard
+            restaurantId={restaurantId}
+            businessLine={businessLine}
+          />
+
           <Card className="border-border/70">
             <CardHeader className="pb-3">
               <CardTitle className="flex flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
@@ -468,4 +480,213 @@ export default function CashDrawersPage() {
       )}
     </div>
   );
+}
+
+function DrawerHistoryCard({
+  restaurantId,
+  businessLine,
+}: {
+  restaurantId: number;
+  businessLine: BusinessLine;
+}) {
+  const [history, setHistory] = useState<DrawerSessionHistoryPage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expandedSessionId, setExpandedSessionId] = useState<number | null>(null);
+  const [activityBySession, setActivityBySession] = useState<Record<number, DrawerActivityLog[]>>({});
+  const [activityLoadingId, setActivityLoadingId] = useState<number | null>(null);
+
+  const loadHistory = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.get<BaseResponse<DrawerSessionHistoryPage>>(
+        DrawerSessionApis.history({ restaurantId, businessLine, limit: 20 }),
+      );
+      setHistory(response.data?.data ?? { items: [], total: 0, skip: 0, limit: 20 });
+    } catch (error) {
+      console.error("Failed to load drawer history", error);
+      setHistory(null);
+      toast.error("Failed to load drawer history.");
+    } finally {
+      setLoading(false);
+    }
+  }, [businessLine, restaurantId]);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
+
+  const toggleActivity = async (sessionId: number) => {
+    if (expandedSessionId === sessionId) {
+      setExpandedSessionId(null);
+      return;
+    }
+    setExpandedSessionId(sessionId);
+    if (activityBySession[sessionId]) return;
+    setActivityLoadingId(sessionId);
+    try {
+      const response = await apiClient.get<BaseResponse<DrawerActivityLog[]>>(
+        DrawerSessionApis.activity(sessionId),
+      );
+      setActivityBySession((current) => ({
+        ...current,
+        [sessionId]: response.data?.data ?? [],
+      }));
+    } catch (error) {
+      console.error("Failed to load drawer activity", error);
+      toast.error("Failed to load drawer activity.");
+    } finally {
+      setActivityLoadingId(null);
+    }
+  };
+
+  const items = history?.items ?? [];
+  return (
+    <Card className="border-border/70">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center justify-between gap-3 text-base">
+          <span className="flex items-center gap-2">
+            <History className="h-4 w-4" />
+            Drawer history
+          </span>
+          <Button type="button" variant="ghost" size="sm" className="gap-2" onClick={loadHistory} disabled={loading}>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Refresh
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading && items.length === 0 ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading drawer history...
+          </div>
+        ) : items.length === 0 ? (
+          <div className="text-sm text-muted-foreground">No drawer sessions recorded yet.</div>
+        ) : (
+          <>
+            <div className="divide-y rounded-md border">
+              {items.map((session) => {
+                const activity = activityBySession[session.id] ?? [];
+                const expanded = expandedSessionId === session.id;
+                return (
+                  <div key={session.id} className="px-4 py-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className="font-medium">
+                          {session.station} / {session.drawer_key}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {session.business_date} · {statusLabel(session.status)}
+                          {session.cashier_name
+                            ? ` · Cashier ${session.cashier_name}`
+                            : session.cashier_id
+                              ? ` · Cashier #${session.cashier_id}`
+                              : ""}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="font-semibold">
+                          {formatMoney(Number(session.counted_closing_cash ?? session.counted_opening_cash ?? 0))}
+                        </span>
+                        {session.cash_variance != null && Number(session.cash_variance) !== 0 ? (
+                          <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+                            Variance {formatMoney(Number(session.cash_variance))}
+                          </span>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => void toggleActivity(session.id)}
+                        >
+                          {activityLoadingId === session.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Activity className="h-4 w-4" />
+                          )}
+                          Activity
+                        </Button>
+                      </div>
+                    </div>
+                    {expanded ? (
+                      <DrawerActivityRows
+                        rows={activity}
+                        loading={activityLoadingId === session.id}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+            {history && history.total > items.length ? (
+              <div className="text-xs text-muted-foreground">
+                Showing latest {items.length} of {history.total} drawer sessions.
+              </div>
+            ) : null}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DrawerActivityRows({
+  rows,
+  loading,
+}: {
+  rows: DrawerActivityLog[];
+  loading: boolean;
+}) {
+  if (loading && rows.length === 0) {
+    return (
+      <div className="mt-3 flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading activity...
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return <div className="mt-3 text-sm text-muted-foreground">No activity logs for this drawer.</div>;
+  }
+  return (
+    <div className="mt-3 space-y-2 rounded-md bg-muted/30 p-3">
+      {rows.map((row) => (
+        <div key={row.id} className="grid gap-1 text-sm md:grid-cols-[1.2fr_1fr_auto] md:items-center">
+          <div className="font-medium">{row.title}</div>
+          <div className="text-muted-foreground">
+            {formatDateTime(row.occurred_at)}
+            {row.actor_name
+              ? ` · ${row.actor_name}`
+              : row.actor_id
+                ? ` · User #${row.actor_id}`
+                : ""}
+          </div>
+          {row.amount == null ? null : (
+            <div className={Number(row.amount) < 0 ? "font-semibold text-red-700" : "font-semibold"}>
+              {formatMoney(Number(row.amount))}
+            </div>
+          )}
+          {row.description ? (
+            <div className="text-xs text-muted-foreground md:col-span-3">{row.description}</div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function statusLabel(value: string) {
+  return String(value || "unknown").replace(/_/g, " ");
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
