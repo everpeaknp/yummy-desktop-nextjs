@@ -50,6 +50,22 @@ type PayrollItem = {
   base_salary: number;
   period_days: number;
   daily_rate: number;
+  regular_minutes: number;
+  overtime_minutes: number;
+  break_minutes: number;
+  scheduled_days: number;
+  payable_days: number;
+  absent_days: number;
+  regular_pay: number;
+  overtime_pay: number;
+  absence_deduction: number;
+  paid_leave_days: number;
+  unpaid_leave_days: number;
+  paid_holiday_days: number;
+  holiday_premium_pay: number;
+  salary_history_id?: number | null;
+  salary_effective_from?: string | null;
+  policy_evidence?: Array<Record<string, unknown>>;
   earned_amount: number;
   bonus: number;
   deduction: number;
@@ -65,6 +81,7 @@ type PayrollRunDetail = {
   period_days: number;
   status: PayrollStatus;
   tax_percentage: number;
+  use_approved_attendance: boolean;
   total_payroll_amount: number;
   payment_method?: string | null;
   payment_reference?: string | null;
@@ -497,6 +514,9 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
             <p className="text-muted-foreground">
               {new Date(run.date_from).toLocaleDateString()} – {new Date(run.date_to).toLocaleDateString()} • {run.period_days} days
             </p>
+            <p className="text-xs text-muted-foreground">
+              {run.use_approved_attendance ? "Calculated from approved attendance" : "Attendance calculation disabled"}
+            </p>
           </div>
         </div>
 
@@ -548,6 +568,7 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
               <TableRow>
                 <TableHead>Staff</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Attendance</TableHead>
                 <TableHead className="text-right">Earned</TableHead>
                 <TableHead className="text-right">Bonus</TableHead>
                 <TableHead className="text-right">Deduction</TableHead>
@@ -573,9 +594,23 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
                     <TableCell>
                       <Badge variant="outline" className="capitalize">{item.salary_type}</Badge>
                     </TableCell>
-                    <TableCell className="text-right">{formatMoney(item.earned_amount)}</TableCell>
+                    <TableCell>
+                      <p>{Number(item.payable_days || 0).toFixed(2)} / {Number(item.scheduled_days || 0).toFixed(2)} days</p>
+                      <p className="text-xs text-muted-foreground">
+                        {Math.floor(Number(item.regular_minutes || 0) / 60)}h {Number(item.regular_minutes || 0) % 60}m regular • {Math.floor(Number(item.overtime_minutes || 0) / 60)}h {Number(item.overtime_minutes || 0) % 60}m OT
+                      </p>
+                      <p className="text-xs text-muted-foreground">{Number(item.paid_leave_days || 0).toFixed(2)} paid leave • {Number(item.unpaid_leave_days || 0).toFixed(2)} unpaid leave • {Number(item.paid_holiday_days || 0).toFixed(2)} paid holidays</p>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <p>{formatMoney(item.earned_amount)}</p>
+                      <p className="text-xs text-muted-foreground">Regular {formatMoney(item.regular_pay)} • OT {formatMoney(item.overtime_pay)} • holiday premium {formatMoney(item.holiday_premium_pay)}</p>
+                      {item.salary_effective_from ? <p className="text-xs text-muted-foreground">Salary effective {item.salary_effective_from}</p> : null}
+                    </TableCell>
                     <TableCell className="text-right">{formatMoney(item.bonus)}</TableCell>
-                    <TableCell className="text-right">{formatMoney(item.deduction)}</TableCell>
+                    <TableCell className="text-right">
+                      <p>{formatMoney(item.deduction)}</p>
+                      {Number(item.absence_deduction || 0) > 0 ? <p className="text-xs text-muted-foreground">Absence {formatMoney(item.absence_deduction)}</p> : null}
+                    </TableCell>
                     <TableCell className="text-right">{formatMoney(item.tax_amount)}</TableCell>
                     <TableCell className="text-right font-semibold text-emerald-700 dark:text-emerald-400">
                       {formatMoney(item.net_pay)}

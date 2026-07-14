@@ -7,6 +7,8 @@ import type {
   AttendanceDevice,
   AttendanceEntry,
   AttendanceMobileDevice,
+  AttendanceHoliday,
+  AttendanceLeave,
   AttendanceOverview,
   AttendanceQrSession,
   AttendanceSchedule,
@@ -54,6 +56,24 @@ export const attendanceApi = {
   },
   async createSchedule(payload: Partial<AttendanceSchedule>) {
     return unwrap<AttendanceSchedule>(await apiClient.post(AttendanceApis.createSchedule, payload));
+  },
+  async listLeaves() {
+    return unwrap<AttendanceLeave[]>(await apiClient.get(AttendanceApis.leaves));
+  },
+  async createLeave(payload: Pick<AttendanceLeave, "staff_id" | "date_from" | "date_to" | "leave_type" | "day_fraction" | "reason">) {
+    return unwrap<AttendanceLeave>(await apiClient.post(AttendanceApis.leaves, payload));
+  },
+  async decideLeave(id: number, action: "approve" | "reject" | "cancel", decisionNote?: string) {
+    return unwrap<AttendanceLeave>(await apiClient.post(AttendanceApis.leaveDecision(id, action), { decision_note: decisionNote }));
+  },
+  async listHolidays() {
+    return unwrap<AttendanceHoliday[]>(await apiClient.get(AttendanceApis.holidays));
+  },
+  async createHoliday(payload: Pick<AttendanceHoliday, "holiday_date" | "name" | "is_paid" | "worked_rate_multiplier" | "notes">) {
+    return unwrap<AttendanceHoliday>(await apiClient.post(AttendanceApis.holidays, payload));
+  },
+  async deleteHoliday(id: number) {
+    await apiClient.delete(AttendanceApis.holiday(id));
   },
   async updateSchedule(id: number, payload: Partial<AttendanceSchedule>) {
     return unwrap<AttendanceSchedule>(await apiClient.patch(AttendanceApis.schedule(id), payload));

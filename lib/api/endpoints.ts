@@ -1826,6 +1826,8 @@ export const StaffProfileApis = {
   },
   get: (staffId: number) => `/staff/${staffId}`,
   create: "/staff",
+  update: (staffId: number) => `/staff/${staffId}`,
+  salaryHistory: (staffId: number) => `/staff/${staffId}/salary-history`,
 };
 
 export const AttendanceApis = {
@@ -1846,6 +1848,11 @@ export const AttendanceApis = {
       : "/attendance/schedules",
   createSchedule: "/attendance/schedules",
   schedule: (id: number) => "/attendance/schedules/" + id,
+  leaves: "/attendance/leaves",
+  leaveDecision: (id: number, action: "approve" | "reject" | "cancel") =>
+    `/attendance/leaves/${id}/${action}`,
+  holidays: "/attendance/holidays",
+  holiday: (id: number) => `/attendance/holidays/${id}`,
   createQrSession: "/attendance/qr-sessions",
   listDevices: "/attendance/devices",
   createDevice: "/attendance/devices",
@@ -1875,6 +1882,7 @@ export const PayrollApis = {
   },
   getRun: (id: number) => `/payroll/runs/${id}`,
   createRun: "/payroll/runs",
+  previewRun: "/payroll/runs/preview",
   approveRun: (id: number) => `/payroll/runs/${id}/approve`,
   markPaid: (id: number) => `/payroll/runs/${id}/paid`,
   cancelRun: (id: number) => `/payroll/runs/${id}/cancel`,

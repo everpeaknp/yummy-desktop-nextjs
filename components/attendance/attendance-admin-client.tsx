@@ -26,6 +26,8 @@ import { attendanceApi } from "@/lib/attendance/api";
 import type {
   AttendanceDevice,
   AttendanceEntry,
+  AttendanceHoliday,
+  AttendanceLeave,
   AttendanceMobileDevice,
   AttendanceOverview,
   AttendanceQrSession,
@@ -53,6 +55,15 @@ type AttendanceSettingsForm = {
   timezone: string;
   geofence_radius_meters: string;
   required_location_accuracy_meters: string;
+  early_clock_in_tolerance_minutes: string;
+  late_clock_out_tolerance_minutes: string;
+  rapid_repeat_window_seconds: string;
+  automatic_break_after_minutes: string;
+  automatic_break_duration_minutes: string;
+  missing_checkout_review_after_minutes: string;
+  overtime_rate_multiplier: string;
+  full_day_minimum_percent: string;
+  half_day_minimum_percent: string;
   mobile_clocking_enabled: boolean;
   device_clocking_enabled: boolean;
 };
@@ -87,6 +98,15 @@ function settingsToForm(settings: AttendanceSettings): AttendanceSettingsForm {
     timezone: settings.timezone || "Asia/Kathmandu",
     geofence_radius_meters: String(settings.geofence_radius_meters || 150),
     required_location_accuracy_meters: String(settings.required_location_accuracy_meters || 100),
+    early_clock_in_tolerance_minutes: String(settings.early_clock_in_tolerance_minutes ?? 15),
+    late_clock_out_tolerance_minutes: String(settings.late_clock_out_tolerance_minutes ?? 15),
+    rapid_repeat_window_seconds: String(settings.rapid_repeat_window_seconds ?? 30),
+    automatic_break_after_minutes: String(settings.automatic_break_after_minutes ?? 360),
+    automatic_break_duration_minutes: String(settings.automatic_break_duration_minutes ?? 30),
+    missing_checkout_review_after_minutes: String(settings.missing_checkout_review_after_minutes ?? 240),
+    overtime_rate_multiplier: String(settings.overtime_rate_multiplier ?? 1),
+    full_day_minimum_percent: String(settings.full_day_minimum_percent ?? 75),
+    half_day_minimum_percent: String(settings.half_day_minimum_percent ?? 50),
     mobile_clocking_enabled: settings.mobile_clocking_enabled,
     device_clocking_enabled: settings.device_clocking_enabled,
   };
@@ -152,6 +172,8 @@ export function AttendanceAdminClient() {
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
   const [schedules, setSchedules] = useState<AttendanceSchedule[]>([]);
+  const [leaves, setLeaves] = useState<AttendanceLeave[]>([]);
+  const [holidays, setHolidays] = useState<AttendanceHoliday[]>([]);
   const [devices, setDevices] = useState<AttendanceDevice[]>([]);
   const [mappings, setMappings] = useState<StaffDeviceMapping[]>([]);
   const [mobileDevices, setMobileDevices] = useState<AttendanceMobileDevice[]>([]);
@@ -167,11 +189,22 @@ export function AttendanceAdminClient() {
   const [mappingForm, setMappingForm] = useState({ device_id: "", staff_id: "", device_user_id: "" });
   const [templateForm, setTemplateForm] = useState({ name: "", start_local_time: "09:00", end_local_time: "17:00", unpaid_break_minutes: "30" });
   const [scheduleForm, setScheduleForm] = useState({ staff_id: "default", shift_template_id: "", weekday: "1", effective_from: todayIso() });
+  const [leaveForm, setLeaveForm] = useState({ staff_id: "", date_from: todayIso(), date_to: todayIso(), leave_type: "paid" as "paid" | "unpaid", day_fraction: "1", reason: "" });
+  const [holidayForm, setHolidayForm] = useState({ holiday_date: todayIso(), name: "", is_paid: true, worked_rate_multiplier: "1", notes: "" });
   const [busy, setBusy] = useState(false);
   const [settingsForm, setSettingsForm] = useState<AttendanceSettingsForm>({
     timezone: "Asia/Kathmandu",
     geofence_radius_meters: "150",
     required_location_accuracy_meters: "100",
+    early_clock_in_tolerance_minutes: "15",
+    late_clock_out_tolerance_minutes: "15",
+    rapid_repeat_window_seconds: "30",
+    automatic_break_after_minutes: "360",
+    automatic_break_duration_minutes: "30",
+    missing_checkout_review_after_minutes: "240",
+    overtime_rate_multiplier: "1",
+    full_day_minimum_percent: "75",
+    half_day_minimum_percent: "50",
     mobile_clocking_enabled: true,
     device_clocking_enabled: true,
   });
@@ -200,13 +233,15 @@ export function AttendanceAdminClient() {
           throw error;
         });
 
-      const [settingsData, overviewData, selectedEntryData, recentEntryData, templateData, scheduleData, biometric, mobileData, profilesRes, usersRes] = await Promise.all([
+      const [settingsData, overviewData, selectedEntryData, recentEntryData, templateData, scheduleData, leaveData, holidayData, biometric, mobileData, profilesRes, usersRes] = await Promise.all([
         attendanceApi.getSettings(),
         attendanceApi.overview(dateFrom, dateTo),
         attendanceApi.listEntries({ dateFrom, dateTo, limit: 300 }),
         attendanceApi.listEntries({ limit: 300 }),
         attendanceApi.listShiftTemplates(),
         attendanceApi.listSchedules(),
+        attendanceApi.listLeaves(),
+        attendanceApi.listHolidays(),
         biometricData,
         attendanceApi.listMobileDevices(),
         apiClient.get(StaffProfileApis.list({ limit: 500 })),
@@ -218,6 +253,8 @@ export function AttendanceAdminClient() {
       setEntries(mergeEntriesWithOpenCarryover(selectedEntryData, recentEntryData));
       setTemplates(templateData);
       setSchedules(scheduleData);
+      setLeaves(leaveData);
+      setHolidays(holidayData);
       setDevices(biometric.deviceData);
       setMappings(biometric.mappingData);
       setBiometricUnavailable(biometric.unavailable);
@@ -260,12 +297,26 @@ export function AttendanceAdminClient() {
   }
 
   async function saveSettings() {
+    const fullDay = Number(settingsForm.full_day_minimum_percent);
+    const halfDay = Number(settingsForm.half_day_minimum_percent);
+    if (!Number.isFinite(fullDay) || !Number.isFinite(halfDay) || halfDay >= fullDay || fullDay > 100 || halfDay <= 0) {
+      return toast.error("Half-day threshold must be above 0 and below the full-day threshold");
+    }
     setBusy(true);
     try {
       const updated = await attendanceApi.updateSettings({
         timezone: settingsForm.timezone.trim() || "Asia/Kathmandu",
         geofence_radius_meters: Number.parseInt(settingsForm.geofence_radius_meters, 10) || 150,
         required_location_accuracy_meters: Number.parseInt(settingsForm.required_location_accuracy_meters, 10) || 100,
+        early_clock_in_tolerance_minutes: Number.parseInt(settingsForm.early_clock_in_tolerance_minutes, 10) || 0,
+        late_clock_out_tolerance_minutes: Number.parseInt(settingsForm.late_clock_out_tolerance_minutes, 10) || 0,
+        rapid_repeat_window_seconds: Number.parseInt(settingsForm.rapid_repeat_window_seconds, 10) || 30,
+        automatic_break_after_minutes: Number.parseInt(settingsForm.automatic_break_after_minutes, 10) || 0,
+        automatic_break_duration_minutes: Number.parseInt(settingsForm.automatic_break_duration_minutes, 10) || 0,
+        missing_checkout_review_after_minutes: Number.parseInt(settingsForm.missing_checkout_review_after_minutes, 10) || 0,
+        overtime_rate_multiplier: Number.parseFloat(settingsForm.overtime_rate_multiplier) || 1,
+        full_day_minimum_percent: Number.parseFloat(settingsForm.full_day_minimum_percent) || 75,
+        half_day_minimum_percent: Number.parseFloat(settingsForm.half_day_minimum_percent) || 50,
         mobile_clocking_enabled: settingsForm.mobile_clocking_enabled,
         device_clocking_enabled: settingsForm.device_clocking_enabled,
       });
@@ -364,6 +415,81 @@ export function AttendanceAdminClient() {
       toast.success("Schedule saved");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to save schedule"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createLeave() {
+    const staffId = Number(leaveForm.staff_id);
+    if (!staffId || leaveForm.reason.trim().length < 3) {
+      return toast.error("Select staff and enter a leave reason");
+    }
+    setBusy(true);
+    try {
+      await attendanceApi.createLeave({
+        staff_id: staffId,
+        date_from: leaveForm.date_from,
+        date_to: leaveForm.date_to,
+        leave_type: leaveForm.leave_type,
+        day_fraction: Number(leaveForm.day_fraction),
+        reason: leaveForm.reason.trim(),
+      });
+      setLeaves(await attendanceApi.listLeaves());
+      setLeaveForm((current) => ({ ...current, reason: "" }));
+      toast.success("Leave request created");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to create leave request"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function decideLeave(id: number, action: "approve" | "reject" | "cancel") {
+    setBusy(true);
+    try {
+      await attendanceApi.decideLeave(id, action);
+      setLeaves(await attendanceApi.listLeaves());
+      toast.success("Leave request updated");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to update leave request"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createHoliday() {
+    const multiplier = Number(holidayForm.worked_rate_multiplier);
+    if (!holidayForm.name.trim() || !Number.isFinite(multiplier) || multiplier < 1) {
+      return toast.error("Enter a holiday name and a worked rate of at least 1x");
+    }
+    setBusy(true);
+    try {
+      await attendanceApi.createHoliday({
+        holiday_date: holidayForm.holiday_date,
+        name: holidayForm.name.trim(),
+        is_paid: holidayForm.is_paid,
+        worked_rate_multiplier: multiplier,
+        notes: holidayForm.notes.trim() || null,
+      });
+      setHolidays(await attendanceApi.listHolidays());
+      setHolidayForm((current) => ({ ...current, name: "", notes: "" }));
+      toast.success("Holiday created");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to create holiday"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteHoliday(id: number) {
+    setBusy(true);
+    try {
+      await attendanceApi.deleteHoliday(id);
+      setHolidays(await attendanceApi.listHolidays());
+      toast.success("Holiday deleted");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to delete holiday"));
     } finally {
       setBusy(false);
     }
@@ -489,6 +615,7 @@ export function AttendanceAdminClient() {
           <TabsTrigger value="overview" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Overview</TabsTrigger>
           <TabsTrigger value="timesheets" className="min-w-max gap-2"><Check className="h-4 w-4" />Timesheets</TabsTrigger>
           <TabsTrigger value="schedules" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Schedule</TabsTrigger>
+          <TabsTrigger value="leave" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Leave & holidays</TabsTrigger>
           <TabsTrigger value="qr" className="min-w-max gap-2"><QrCode className="h-4 w-4" />QR Kiosk</TabsTrigger>
           <TabsTrigger value="devices" className="min-w-max gap-2"><Fingerprint className="h-4 w-4" />Devices</TabsTrigger>
           <TabsTrigger value="settings" className="min-w-max gap-2"><MapPin className="h-4 w-4" />Settings</TabsTrigger>
@@ -613,6 +740,21 @@ export function AttendanceAdminClient() {
               <Field label="Timezone">
                 <Input value={settingsForm.timezone} onChange={(event) => setSettingsForm((current) => ({ ...current, timezone: event.target.value }))} />
               </Field>
+              <div className="border-t pt-4">
+                <p className="text-sm font-semibold">Time and payroll rules</p>
+                <p className="text-xs text-muted-foreground">These rules determine exceptions, breaks, and overtime sent to payroll.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <Field label="Early clock-in tolerance (minutes)"><Input type="number" min={0} max={240} value={settingsForm.early_clock_in_tolerance_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, early_clock_in_tolerance_minutes: event.target.value }))} /></Field>
+                <Field label="Late clock-out tolerance (minutes)"><Input type="number" min={0} max={240} value={settingsForm.late_clock_out_tolerance_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, late_clock_out_tolerance_minutes: event.target.value }))} /></Field>
+                <Field label="Duplicate punch window (seconds)"><Input type="number" min={1} max={600} value={settingsForm.rapid_repeat_window_seconds} onChange={(event) => setSettingsForm((current) => ({ ...current, rapid_repeat_window_seconds: event.target.value }))} /></Field>
+                <Field label="Automatic break after (minutes)"><Input type="number" min={0} max={1440} value={settingsForm.automatic_break_after_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, automatic_break_after_minutes: event.target.value }))} /></Field>
+                <Field label="Automatic break duration (minutes)"><Input type="number" min={0} max={240} value={settingsForm.automatic_break_duration_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, automatic_break_duration_minutes: event.target.value }))} /></Field>
+                <Field label="Missing checkout review after (minutes)"><Input type="number" min={0} max={2880} value={settingsForm.missing_checkout_review_after_minutes} onChange={(event) => setSettingsForm((current) => ({ ...current, missing_checkout_review_after_minutes: event.target.value }))} /></Field>
+                <Field label="Overtime pay multiplier"><Input type="number" min={1} max={10} step={0.01} value={settingsForm.overtime_rate_multiplier} onChange={(event) => setSettingsForm((current) => ({ ...current, overtime_rate_multiplier: event.target.value }))} /></Field>
+                <Field label="Full-day threshold (%)"><Input type="number" min={1} max={100} step={0.01} value={settingsForm.full_day_minimum_percent} onChange={(event) => setSettingsForm((current) => ({ ...current, full_day_minimum_percent: event.target.value }))} /></Field>
+                <Field label="Half-day threshold (%)"><Input type="number" min={1} max={100} step={0.01} value={settingsForm.half_day_minimum_percent} onChange={(event) => setSettingsForm((current) => ({ ...current, half_day_minimum_percent: event.target.value }))} /></Field>
+              </div>
               <Button onClick={saveSettings} disabled={busy} className="w-full">
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
                 Save attendance policy
@@ -668,6 +810,37 @@ export function AttendanceAdminClient() {
             </Card>
           </div>
           <ScheduleTable schedules={schedules} templates={templates} staffProfiles={staffProfiles} usersById={usersById} />
+        </TabsContent>
+
+        <TabsContent value="leave" className="space-y-5">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Leave and holiday policy</h2>
+            <p className="text-sm text-muted-foreground">Approved paid time contributes to payroll. Pending or conflicting records block payroll readiness.</p>
+          </div>
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Card>
+              <CardHeader><CardTitle>New Leave Request</CardTitle><CardDescription>Record full-day or half-day paid or unpaid leave.</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                <Field label="Staff"><Select value={leaveForm.staff_id} onValueChange={(value) => setLeaveForm((current) => ({ ...current, staff_id: value }))}><SelectTrigger><SelectValue placeholder="Select staff" /></SelectTrigger><SelectContent>{staffProfiles.map((profile) => <SelectItem key={profile.id} value={String(profile.id)}>{staffLabel(profile, usersById)}</SelectItem>)}</SelectContent></Select></Field>
+                <div className="grid gap-3 sm:grid-cols-2"><Field label="From"><Input type="date" value={leaveForm.date_from} onChange={(event) => setLeaveForm((current) => ({ ...current, date_from: event.target.value }))} /></Field><Field label="To"><Input type="date" value={leaveForm.date_to} onChange={(event) => setLeaveForm((current) => ({ ...current, date_to: event.target.value }))} /></Field></div>
+                <div className="grid gap-3 sm:grid-cols-2"><Field label="Leave type"><Select value={leaveForm.leave_type} onValueChange={(value: "paid" | "unpaid") => setLeaveForm((current) => ({ ...current, leave_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="paid">Paid</SelectItem><SelectItem value="unpaid">Unpaid</SelectItem></SelectContent></Select></Field><Field label="Day value"><Select value={leaveForm.day_fraction} onValueChange={(value) => setLeaveForm((current) => ({ ...current, day_fraction: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">Full day</SelectItem><SelectItem value="0.5">Half day</SelectItem></SelectContent></Select></Field></div>
+                <Field label="Reason"><Input value={leaveForm.reason} onChange={(event) => setLeaveForm((current) => ({ ...current, reason: event.target.value }))} /></Field>
+                <Button onClick={createLeave} disabled={busy} className="w-full"><Plus className="mr-2 h-4 w-4" />Create leave request</Button>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle>New Holiday</CardTitle><CardDescription>Configure paid status and premium rate when staff work.</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                <Field label="Holiday name"><Input value={holidayForm.name} onChange={(event) => setHolidayForm((current) => ({ ...current, name: event.target.value }))} /></Field>
+                <Field label="Date"><Input type="date" value={holidayForm.holiday_date} onChange={(event) => setHolidayForm((current) => ({ ...current, holiday_date: event.target.value }))} /></Field>
+                <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">Paid holiday</p><p className="text-xs text-muted-foreground">Scheduled time is payable when attendance is absent.</p></div><Switch checked={holidayForm.is_paid} onCheckedChange={(checked) => setHolidayForm((current) => ({ ...current, is_paid: checked }))} /></div>
+                <Field label="Worked holiday rate"><Input type="number" min={1} max={10} step={0.01} value={holidayForm.worked_rate_multiplier} onChange={(event) => setHolidayForm((current) => ({ ...current, worked_rate_multiplier: event.target.value }))} /></Field>
+                <Field label="Notes"><Input value={holidayForm.notes} onChange={(event) => setHolidayForm((current) => ({ ...current, notes: event.target.value }))} /></Field>
+                <Button onClick={createHoliday} disabled={busy} className="w-full"><Plus className="mr-2 h-4 w-4" />Create holiday</Button>
+              </CardContent>
+            </Card>
+          </div>
+          <LeaveHolidayTables leaves={leaves} holidays={holidays} staffProfiles={staffProfiles} usersById={usersById} busy={busy} onDecideLeave={decideLeave} onDeleteHoliday={deleteHoliday} />
         </TabsContent>
 
         <TabsContent value="qr" className="grid min-w-0 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -785,6 +958,13 @@ function InfoLine({ label, value }: { label: string; value: string }) {
   return <div className="rounded-md border bg-muted/30 p-3"><p className="text-xs font-bold uppercase text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>;
 }
 
+function LeaveHolidayTables({ leaves, holidays, staffProfiles, usersById, busy, onDecideLeave, onDeleteHoliday }: { leaves: AttendanceLeave[]; holidays: AttendanceHoliday[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; busy: boolean; onDecideLeave: (id: number, action: "approve" | "reject" | "cancel") => void; onDeleteHoliday: (id: number) => void }) {
+  return <div className="grid gap-5 xl:grid-cols-2">
+    <Card><CardHeader><CardTitle>Leave Requests</CardTitle><CardDescription>Payroll uses approved records only.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Period</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{leaves.length === 0 ? <TableRow><TableCell colSpan={4} className="h-20 text-center text-muted-foreground">No leave requests.</TableCell></TableRow> : leaves.map((leave) => { const profile = staffProfiles.find((item) => item.id === leave.staff_id); return <TableRow key={leave.id}><TableCell><p className="font-medium">{staffLabel(profile, usersById)}</p><p className="text-xs text-muted-foreground">{leave.leave_type} · {leave.day_fraction === 0.5 ? "half day" : "full day"}</p></TableCell><TableCell><p>{leave.date_from} to {leave.date_to}</p><p className="max-w-52 truncate text-xs text-muted-foreground">{leave.reason}</p></TableCell><TableCell><Badge variant={leave.status === "approved" ? "default" : "secondary"}>{leave.status}</Badge></TableCell><TableCell className="text-right"><div className="flex justify-end gap-1">{leave.status === "pending" ? <><Button size="sm" disabled={busy} onClick={() => onDecideLeave(leave.id, "approve")}>Approve</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => onDecideLeave(leave.id, "reject")}>Reject</Button></> : null}{leave.status === "pending" || leave.status === "approved" ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDecideLeave(leave.id, "cancel")}>Cancel</Button> : null}</div></TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>
+    <Card><CardHeader><CardTitle>Restaurant Holidays</CardTitle><CardDescription>Paid days and worked-day multipliers.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Holiday</TableHead><TableHead>Pay rule</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{holidays.length === 0 ? <TableRow><TableCell colSpan={3} className="h-20 text-center text-muted-foreground">No holidays configured.</TableCell></TableRow> : holidays.map((holiday) => <TableRow key={holiday.id}><TableCell><p className="font-medium">{holiday.name}</p><p className="text-xs text-muted-foreground">{holiday.holiday_date}</p></TableCell><TableCell>{holiday.is_paid ? "Paid" : "Unpaid"} · {holiday.worked_rate_multiplier}x worked rate</TableCell><TableCell className="text-right"><Button size="sm" variant="outline" disabled={busy} onClick={() => onDeleteHoliday(holiday.id)}>Delete</Button></TableCell></TableRow>)}</TableBody></Table></div></CardContent></Card>
+  </div>;
+}
+
 function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove, onReject }: { entries: AttendanceEntry[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onSubmit: (entry: AttendanceEntry) => void; onApprove: (entry: AttendanceEntry) => void; onReject: (entry: AttendanceEntry) => void }) {
   return (
     <>
@@ -796,7 +976,9 @@ function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove
               <div className="min-w-0"><p className="truncate font-medium">{staffLabel(profile, usersById)}</p><p className="mt-1 text-xs text-muted-foreground">{formatDateTime(entry.clock_in_at)} to {formatDateTime(entry.clock_out_at)}</p></div>
               <Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status}</Badge>
             </div>
-            <p className="mt-3 text-sm">Regular {minutesLabel(entry.regular_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</p>
+            <p className="mt-3 text-sm">Regular {minutesLabel(entry.regular_minutes)} / break {minutesLabel(entry.break_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Late {minutesLabel(entry.late_arrival_minutes)} / early departure {minutesLabel(entry.early_departure_minutes)} / rejected OT {minutesLabel(entry.rejected_excess_minutes)}</p>
+            {entry.scheduled_start_at ? <p className="mt-1 text-xs text-muted-foreground">Scheduled {formatDateTime(entry.scheduled_start_at)} to {formatDateTime(entry.scheduled_end_at)} • policy v{entry.policy_version} • approval v{entry.approval_version}</p> : null}
             {entry.exception_code ? <p className="mt-1 text-xs text-destructive">{entry.exception_code}</p> : null}
             <div className="mt-3 flex flex-wrap gap-2">
               {entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}
@@ -816,7 +998,7 @@ function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove
                 <TableRow key={entry.id}>
                   <TableCell className="min-w-[180px] font-medium">{staffLabel(profile, usersById)}</TableCell>
                   <TableCell className="min-w-[220px] text-sm">{formatDateTime(entry.clock_in_at)} to {formatDateTime(entry.clock_out_at)}</TableCell>
-                  <TableCell className="min-w-[180px] text-sm">Regular {minutesLabel(entry.regular_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</TableCell>
+                  <TableCell className="min-w-[220px] text-sm"><div>Regular {minutesLabel(entry.regular_minutes)} / break {minutesLabel(entry.break_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</div><div className="mt-1 text-xs text-muted-foreground">Late {minutesLabel(entry.late_arrival_minutes)} / early {minutesLabel(entry.early_departure_minutes)} / rejected OT {minutesLabel(entry.rejected_excess_minutes)}</div></TableCell>
                   <TableCell className="min-w-[180px]"><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status}</Badge>{entry.exception_code ? <div className="mt-1 text-xs text-destructive">{entry.exception_code}</div> : null}</TableCell>
                   <TableCell className="min-w-[220px] text-right"><div className="flex justify-end gap-2">{entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}</div></TableCell>
                 </TableRow>
@@ -830,7 +1012,8 @@ function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove
 }
 
 function ScheduleTable({ schedules, templates, staffProfiles, usersById }: { schedules: AttendanceSchedule[]; templates: AttendanceShiftTemplate[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser> }) {
-  return <Card><CardHeader><CardTitle>Schedule Rules</CardTitle><CardDescription>Restaurant default rules and staff overrides.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Weekday</TableHead><TableHead>Shift</TableHead><TableHead>Effective</TableHead></TableRow></TableHeader><TableBody>{schedules.length === 0 ? <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">No schedule rules yet.</TableCell></TableRow> : schedules.map((item) => { const template = templates.find((t) => t.id === item.shift_template_id); const profile = staffProfiles.find((staff) => staff.id === item.staff_id); return <TableRow key={item.id}><TableCell>{item.staff_id ? staffLabel(profile, usersById) : "Restaurant default"}</TableCell><TableCell>{item.weekday}</TableCell><TableCell>{item.is_day_off ? "Day off" : template?.name || "Shift #" + item.shift_template_id}</TableCell><TableCell>{item.effective_from} to {item.effective_to || "open"}</TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>;
+  const weekdayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  return <Card><CardHeader><CardTitle>Schedule Rules</CardTitle><CardDescription>Restaurant default rules and staff overrides.</CardDescription></CardHeader><CardContent><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Staff</TableHead><TableHead>Weekday</TableHead><TableHead>Shift</TableHead><TableHead>Effective</TableHead></TableRow></TableHeader><TableBody>{schedules.length === 0 ? <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">No schedule rules yet.</TableCell></TableRow> : schedules.map((item) => { const template = templates.find((t) => t.id === item.shift_template_id); const profile = staffProfiles.find((staff) => staff.id === item.staff_id); return <TableRow key={item.id}><TableCell>{item.staff_id ? staffLabel(profile, usersById) : "Restaurant default"}</TableCell><TableCell>{weekdayNames[item.weekday] || "Weekday " + item.weekday}</TableCell><TableCell>{item.is_day_off ? "Day off" : template?.name || "Shift #" + item.shift_template_id}</TableCell><TableCell>{item.effective_from} to {item.effective_to || "open"}</TableCell></TableRow>; })}</TableBody></Table></div></CardContent></Card>;
 }
 
 function DeviceTable({ devices, mappings, devicesById, staffProfiles, usersById, onToggle, onPair }: { devices: AttendanceDevice[]; mappings: StaffDeviceMapping[]; devicesById: Map<number, AttendanceDevice>; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onToggle: (device: AttendanceDevice, checked: boolean) => void; onPair: (deviceId: number) => void }) {

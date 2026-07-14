@@ -30,6 +30,8 @@ type StaffProfile = {
   account_number: string;
   salary_type: string;
   salary_amount: number;
+  weekly_hours?: number | null;
+  daily_hours?: number | null;
 };
 
 export default function StaffPage() {
@@ -65,6 +67,8 @@ export default function StaffPage() {
     age: "",
     weekly_hours: "",
     daily_hours: "",
+    salary_effective_from: new Date().toISOString().slice(0, 10),
+    salary_change_reason: "",
   });
 
   const user = useAuth(state => state.user);
@@ -235,8 +239,10 @@ export default function StaffPage() {
       phone: "",
       address: "",
       age: "",
-      weekly_hours: "",
-      daily_hours: "",
+      weekly_hours: existing?.weekly_hours != null ? String(existing.weekly_hours) : "",
+      daily_hours: existing?.daily_hours != null ? String(existing.daily_hours) : "",
+      salary_effective_from: new Date().toISOString().slice(0, 10),
+      salary_change_reason: "",
     });
     setIsPayrollDialogOpen(true);
   };
@@ -246,8 +252,15 @@ export default function StaffPage() {
     const amount = Number(payrollForm.salary_amount);
     if (!payrollForm.account_number.trim()) return toast.error("Account number is required");
     if (!amount || Number.isNaN(amount) || amount < 0) return toast.error("Salary amount must be valid");
-    if (payrollForm.salary_type !== "monthly" && payrollForm.salary_type !== "daily") {
-      return toast.error("Payroll supports monthly or daily salary type only");
+    if (!["monthly", "weekly", "daily", "hourly"].includes(payrollForm.salary_type)) {
+      return toast.error("Select a supported salary type");
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(payrollForm.salary_effective_from)) {
+      return toast.error("Enter a valid salary effective date");
+    }
+    const existing = staffProfilesByUserId.get(payrollTarget.id);
+    if (existing && payrollForm.salary_change_reason.trim().length < 3) {
+      return toast.error("Enter a reason for the salary change");
     }
 
     setPayrollSubmitting(true);
@@ -272,6 +285,8 @@ export default function StaffPage() {
         account_number: payrollForm.account_number.trim(),
         salary_type: payrollForm.salary_type,
         salary_amount: amount,
+        salary_effective_from: payrollForm.salary_effective_from,
+        salary_change_reason: payrollForm.salary_change_reason.trim() || "Initial salary",
       };
       if (payrollForm.phone.trim()) payload.phone = payrollForm.phone.trim();
       if (payrollForm.address.trim()) payload.address = payrollForm.address.trim();
@@ -300,9 +315,11 @@ export default function StaffPage() {
         payload.daily_hours = daily;
       }
 
-      const res = await apiClient.post(StaffProfileApis.create, payload);
+      const res = existing
+        ? await apiClient.patch(StaffProfileApis.update(existing.id), payload)
+        : await apiClient.post(StaffProfileApis.create, payload);
       if (res.data?.status === "success") {
-        toast.success("Payroll profile created");
+        toast.success(existing ? "Payroll profile updated" : "Payroll profile created");
         setIsPayrollDialogOpen(false);
         await fetchStaffProfiles();
         return;
@@ -599,7 +616,7 @@ export default function StaffPage() {
       <Dialog open={isPayrollDialogOpen} onOpenChange={setIsPayrollDialogOpen}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>Setup Payroll Profile</DialogTitle>
+            <DialogTitle>{staffProfilesByUserId.has(payrollTarget?.id) ? "Update Payroll Profile" : "Setup Payroll Profile"}</DialogTitle>
             <DialogDescription>
               Payroll requires salary and account details. This creates a Staff Profile used by payroll runs.
             </DialogDescription>
@@ -628,7 +645,9 @@ export default function StaffPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
                     <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="hourly">Hourly</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -645,11 +664,22 @@ export default function StaffPage() {
                 placeholder="0.00"
               />
               <p className="text-xs text-muted-foreground">
-                Use monthly or daily salary; weekly/hourly payroll is not supported by current payroll calculations.
+                Monthly, weekly, and daily salaries are prorated from approved attendance. Hourly salary uses approved regular and overtime minutes.
               </p>
             </div>
 
             <div className="pt-2 border-t border-border/60" />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Salary Effective Date</Label>
+                <Input type="date" value={payrollForm.salary_effective_from} onChange={(e) => setPayrollForm({ ...payrollForm, salary_effective_from: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Change Reason</Label>
+                <Input value={payrollForm.salary_change_reason} onChange={(e) => setPayrollForm({ ...payrollForm, salary_change_reason: e.target.value })} placeholder="Promotion, annual review, correction" />
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
