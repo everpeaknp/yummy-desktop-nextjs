@@ -57,8 +57,18 @@ export const attendanceApi = {
   async createSchedule(payload: Partial<AttendanceSchedule>) {
     return unwrap<AttendanceSchedule>(await apiClient.post(AttendanceApis.createSchedule, payload));
   },
-  async listLeaves() {
-    return unwrap<AttendanceLeave[]>(await apiClient.get(AttendanceApis.leaves));
+  async listLeaves(params: { staffId?: number; dateFrom?: string; dateTo?: string; status?: string } = {}) {
+    return unwrap<AttendanceLeave[]>(
+      await apiClient.get(
+        AttendanceApis.leaves +
+          query({
+            staff_id: params.staffId,
+            date_from: params.dateFrom,
+            date_to: params.dateTo,
+            status: params.status,
+          }),
+      ),
+    );
   },
   async createLeave(payload: Pick<AttendanceLeave, "staff_id" | "date_from" | "date_to" | "leave_type" | "day_fraction" | "reason">) {
     return unwrap<AttendanceLeave>(await apiClient.post(AttendanceApis.leaves, payload));

@@ -25,11 +25,13 @@ describe("attendanceApi", () => {
     await attendanceApi.getSettings();
     await attendanceApi.updateSettings({ timezone: "Asia/Kathmandu" });
     await attendanceApi.listSchedules(12);
+    await attendanceApi.listLeaves({ staffId: 12, dateFrom: "2026-07-01", dateTo: "2026-07-31" });
     await attendanceApi.createSchedule({ staff_id: 12, weekday: 1 });
 
     expect(mocked.get).toHaveBeenCalledWith("/attendance/settings");
     expect(mocked.patch).toHaveBeenCalledWith("/attendance/settings", { timezone: "Asia/Kathmandu" });
     expect(mocked.get).toHaveBeenCalledWith("/attendance/schedules?staff_id=12");
+    expect(mocked.get).toHaveBeenCalledWith("/attendance/leaves?staff_id=12&date_from=2026-07-01&date_to=2026-07-31");
     expect(mocked.post).toHaveBeenCalledWith("/attendance/schedules", { staff_id: 12, weekday: 1 });
   });
 

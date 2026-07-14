@@ -1890,6 +1890,7 @@ export const PayrollApis = {
   deleteAdjustment: (adjustmentId: number) =>
     `/payroll/adjustments/${adjustmentId}`,
   runPdf: (id: number) => `/payroll/runs/${id}/pdf`,
+  staffHistory: (staffId: number) => `/payroll/staff/${staffId}/history`,
 };
 
 export const PeriodCloseApis = {

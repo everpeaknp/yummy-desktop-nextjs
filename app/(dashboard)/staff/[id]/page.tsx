@@ -1,26 +1,67 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/use-auth";
-import apiClient from "@/lib/api-client";
-import { StaffApis, UserAccessScopeApis } from "@/lib/api/endpoints";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Loader2, ArrowLeft, Mail, Phone, MapPin, Calendar, Briefcase, Wallet, Clock, Shield, Trash2, Edit } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { format } from "date-fns";
+import { useParams, useRouter } from "next/navigation";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Banknote,
+  BriefcaseBusiness,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  Clock3,
+  Edit3,
+  FileClock,
+  History,
+  Loader2,
+  Mail,
+  MapPin,
+  MoreHorizontal,
+  Phone,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  UserRound,
+  WalletCards,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
-import { AuthApis, RoleApis } from "@/lib/api/endpoints";
+
+import apiClient from "@/lib/api-client";
+import {
+  AuthApis,
+  RoleApis,
+  StaffApis,
+  StaffProfileApis,
+  UserAccessScopeApis,
+} from "@/lib/api/endpoints";
+import { attendanceApi } from "@/lib/attendance/api";
+import type {
+  AttendanceEntry,
+  AttendanceLeave,
+  AttendanceSchedule,
+  AttendanceShiftTemplate,
+} from "@/lib/attendance/types";
+import {
+  staffWorkforceApi,
+  type PayrollHistoryRecord,
+  type SalaryHistoryRecord,
+  type StaffProfile,
+} from "@/lib/staff/workforce";
+import { useAuth } from "@/hooks/use-auth";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type ScopeKey = "analytics" | "orders" | "receipts";
 type AccessScopeRow = {
@@ -30,580 +71,596 @@ type AccessScopeRow = {
   window_end?: string | null;
 };
 
-function DateInputWithPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  const selected = value ? new Date(`${value}T00:00:00`) : undefined;
+type StaffUser = {
+  id: number;
+  name: string;
+  email?: string | null;
+  role?: string;
+  primary_role?: string;
+  roles?: string[];
+  permissions?: string[];
+  created_at?: string;
+  status?: string;
+};
 
-  const setSelected = (d?: Date) => {
-    if (!d) return onChange("");
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const yyyyMmDd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    onChange(yyyyMmDd);
-  };
+type ProfileForm = {
+  account_number: string;
+  salary_type: string;
+  salary_amount: string;
+  phone: string;
+  address: string;
+  age: string;
+  weekly_hours: string;
+  daily_hours: string;
+  salary_effective_from: string;
+  salary_change_reason: string;
+};
 
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-left text-sm ring-offset-background",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            !selected && "text-muted-foreground"
-          )}
-          aria-label="Pick date"
-        >
-          <span>{selected ? format(selected, "PPP") : "mm/dd/yyyy"}</span>
-          <Calendar className="h-4 w-4 opacity-70" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <CalendarComponent
-          mode="single"
-          selected={selected}
-          onSelect={setSelected}
-          initialFocus
-        />
-      </PopoverContent>
-    </Popover>
-  );
+const scopeKeys: ScopeKey[] = ["analytics", "orders", "receipts"];
+const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+function isoDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-export default function StaffDetailPage() {
-  const params = useParams() as { id?: string | string[] } | null;
-  const id = Array.isArray(params?.id) ? params?.id[0] : params?.id;
-  const [loading, setLoading] = useState(true);
-  const [staff, setStaff] = useState<any>(null);
-  const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
-  const [permissionsLoading, setPermissionsLoading] = useState(false);
-  const [isPermDialogOpen, setIsPermDialogOpen] = useState(false);
-  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
-  const [submittingPerms, setSubmittingPerms] = useState(false);
+function currentMonthRange() {
+  const now = new Date();
+  return {
+    from: isoDate(new Date(now.getFullYear(), now.getMonth(), 1)),
+    to: isoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+  };
+}
 
-  const [scopesLoading, setScopesLoading] = useState(false);
+function money(value: number | string | null | undefined) {
+  return `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+function minutes(value: number) {
+  const hours = Math.floor(value / 60);
+  const remainder = value % 60;
+  return hours ? `${hours}h ${remainder}m` : `${remainder}m`;
+}
+
+function dateTime(value?: string | null) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
+function dateOnly(value?: string | null) {
+  if (!value) return "—";
+  const parsed = new Date(`${value.slice(0, 10)}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString();
+}
+
+function emptyProfileForm(): ProfileForm {
+  return {
+    account_number: "",
+    salary_type: "monthly",
+    salary_amount: "",
+    phone: "",
+    address: "",
+    age: "",
+    weekly_hours: "",
+    daily_hours: "",
+    salary_effective_from: isoDate(new Date()),
+    salary_change_reason: "",
+  };
+}
+
+export default function StaffWorkspacePage() {
+  const params = useParams() as { id?: string | string[] } | null;
+  const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
+  const userId = Number(rawId);
+  const router = useRouter();
+  const currentUser = useAuth((state) => state.user) as any;
+
+  const initialRange = useMemo(currentMonthRange, []);
+  const [dateFrom, setDateFrom] = useState(initialRange.from);
+  const [dateTo, setDateTo] = useState(initialRange.to);
+  const [staff, setStaff] = useState<StaffUser | null>(null);
+  const [profile, setProfile] = useState<StaffProfile | null>(null);
+  const [entries, setEntries] = useState<AttendanceEntry[]>([]);
+  const [schedules, setSchedules] = useState<AttendanceSchedule[]>([]);
+  const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
+  const [leaves, setLeaves] = useState<AttendanceLeave[]>([]);
+  const [salaryHistory, setSalaryHistory] = useState<SalaryHistoryRecord[]>([]);
+  const [payrollHistory, setPayrollHistory] = useState<PayrollHistoryRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [workspaceWarnings, setWorkspaceWarnings] = useState<string[]>([]);
+
+  const [availablePermissions, setAvailablePermissions] = useState<any[]>([]);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [permissionsSaving, setPermissionsSaving] = useState(false);
+
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [accountForm, setAccountForm] = useState({ name: "", email: "" });
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileForm, setProfileForm] = useState<ProfileForm>(emptyProfileForm);
+
   const [scopesByKey, setScopesByKey] = useState<Partial<Record<ScopeKey, AccessScopeRow>>>({});
   const [scopeDrafts, setScopeDrafts] = useState<Record<ScopeKey, { max_lookback_days: string; window_start: string; window_end: string }>>({
     analytics: { max_lookback_days: "", window_start: "", window_end: "" },
     orders: { max_lookback_days: "", window_start: "", window_end: "" },
     receipts: { max_lookback_days: "", window_start: "", window_end: "" },
   });
-  const [scopeSavingKey, setScopeSavingKey] = useState<ScopeKey | null>(null);
-  const [scopeDeletingKey, setScopeDeletingKey] = useState<ScopeKey | null>(null);
+  const [scopeBusy, setScopeBusy] = useState<ScopeKey | null>(null);
 
-  const user = useAuth(state => state.user);
-  const router = useRouter();
+  const currentRole = String(currentUser?.primary_role || currentUser?.role || "").toLowerCase();
+  const currentPermissions = useMemo(
+    () => new Set<string>((currentUser?.permissions || []).map((item: unknown) => String(item).toLowerCase())),
+    [currentUser?.permissions],
+  );
+  const can = useCallback(
+    (permission: string) =>
+      currentRole === "admin" || currentRole === "superadmin" || currentPermissions.has(permission),
+    [currentPermissions, currentRole],
+  );
+  const canViewAttendance = can("attendance.view") || can("attendance.manage");
+  const canManageAttendance = can("attendance.manage");
+  const canViewPayroll = can("finance.payroll.view") || can("finance.payroll.manage");
+  const canManageStaff = can("admin.staff.manage");
 
-  const coerceDate = (raw: string) => {
-    const v = String(raw || "").trim();
-    return v ? v : null;
-  };
-
-  const hydrateScopeDrafts = (rows: AccessScopeRow[]) => {
-    const next: any = {
+  const hydrateScopes = useCallback((rows: AccessScopeRow[]) => {
+    const next: Record<ScopeKey, { max_lookback_days: string; window_start: string; window_end: string }> = {
       analytics: { max_lookback_days: "", window_start: "", window_end: "" },
       orders: { max_lookback_days: "", window_start: "", window_end: "" },
       receipts: { max_lookback_days: "", window_start: "", window_end: "" },
     };
-    for (const r of rows) {
-      const k = r.scope_key;
-      if (!next[k]) continue;
-      next[k] = {
-        max_lookback_days: r.max_lookback_days != null ? String(r.max_lookback_days) : "",
-        window_start: r.window_start ? String(r.window_start).slice(0, 10) : "",
-        window_end: r.window_end ? String(r.window_end).slice(0, 10) : "",
+    const map: Partial<Record<ScopeKey, AccessScopeRow>> = {};
+    rows.forEach((row) => {
+      map[row.scope_key] = row;
+      next[row.scope_key] = {
+        max_lookback_days: row.max_lookback_days == null ? "" : String(row.max_lookback_days),
+        window_start: row.window_start?.slice(0, 10) || "",
+        window_end: row.window_end?.slice(0, 10) || "",
       };
-    }
+    });
+    setScopesByKey(map);
     setScopeDrafts(next);
-  };
+  }, []);
 
-  const fetchScopes = async (userId: string | number) => {
-    setScopesLoading(true);
+  const loadScopes = useCallback(async () => {
+    if (!Number.isFinite(userId)) return;
     try {
-      const res = await apiClient.get(UserAccessScopeApis.list(userId));
-      if (res.data?.status === "success") {
-        const rows = (res.data.data || []) as AccessScopeRow[];
-        const map: Partial<Record<ScopeKey, AccessScopeRow>> = {};
-        for (const r of rows) map[r.scope_key] = r;
-        setScopesByKey(map);
-        hydrateScopeDrafts(rows);
-      } else {
-        setScopesByKey({});
-        hydrateScopeDrafts([]);
-      }
-    } catch (err: any) {
-      setScopesByKey({});
-      hydrateScopeDrafts([]);
-      toast.error(err?.response?.data?.detail || "Failed to load access scopes");
-    } finally {
-      setScopesLoading(false);
+      const response = await apiClient.get(UserAccessScopeApis.list(userId));
+      hydrateScopes((response.data?.data || []) as AccessScopeRow[]);
+    } catch {
+      hydrateScopes([]);
     }
-  };
+  }, [hydrateScopes, userId]);
 
-  const saveScope = async (scopeKey: ScopeKey) => {
-    if (!id) return;
-    const draft = scopeDrafts[scopeKey];
-    const maxDaysRaw = String(draft.max_lookback_days || "").trim();
-    const maxDays = maxDaysRaw ? Number(maxDaysRaw) : null;
-    const windowStart = coerceDate(draft.window_start);
-    const windowEnd = coerceDate(draft.window_end);
-
-    if (!maxDays && !windowStart && !windowEnd) {
-      toast.error("Set at least one constraint: max lookback days or a date window.");
+  const loadWorkspace = useCallback(async (quiet = false) => {
+    if (!Number.isFinite(userId) || userId <= 0) {
+      setLoading(false);
       return;
     }
-    if (maxDaysRaw && (!Number.isFinite(maxDays) || (maxDays as number) < 1 || (maxDays as number) > 3650)) {
-      toast.error("Max lookback days must be between 1 and 3650.");
-      return;
-    }
-    if (windowStart && windowEnd && windowStart > windowEnd) {
-      toast.error("Start date cannot be after end date.");
-      return;
-    }
-
-    setScopeSavingKey(scopeKey);
+    quiet ? setRefreshing(true) : setLoading(true);
+    const warnings: string[] = [];
     try {
-      const payload: any = {};
-      if (maxDays) payload.max_lookback_days = maxDays;
-      if (windowStart) payload.window_start = windowStart;
-      if (windowEnd) payload.window_end = windowEnd;
+      const [userResponse, permissionResponse] = await Promise.all([
+        apiClient.get(StaffApis.getStaff(userId)),
+        apiClient.get(RoleApis.listPermissions).catch(() => null),
+      ]);
+      const loadedStaff = userResponse.data?.data as StaffUser;
+      setStaff(loadedStaff);
+      setSelectedPermissions(loadedStaff.permissions || []);
+      setAvailablePermissions(permissionResponse?.data?.data || []);
+      setAccountForm({ name: loadedStaff.name || "", email: loadedStaff.email || "" });
 
-      const res = await apiClient.put(UserAccessScopeApis.upsert(id as string, scopeKey), payload);
-      if (res.data?.status === "success") {
-        toast.success("Access scope saved");
-        await fetchScopes(id as string);
+      const loadedProfile = await staffWorkforceApi.profileByUserId(userId);
+      setProfile(loadedProfile);
+      if (!loadedProfile) {
+        setEntries([]);
+        setSchedules([]);
+        setLeaves([]);
+        setSalaryHistory([]);
+        setPayrollHistory([]);
+        warnings.push("Create the payroll profile to connect attendance, schedules, and payroll history for this staff member.");
       } else {
-        toast.error(res.data?.message || "Failed to save access scope");
+        const results = await Promise.allSettled([
+          canViewAttendance
+            ? attendanceApi.listEntries({ dateFrom, dateTo, staffId: loadedProfile.id, limit: 500 })
+            : Promise.resolve([] as AttendanceEntry[]),
+          canViewAttendance
+            ? attendanceApi.listSchedules(loadedProfile.id)
+            : Promise.resolve([] as AttendanceSchedule[]),
+          canViewAttendance
+            ? attendanceApi.listShiftTemplates()
+            : Promise.resolve([] as AttendanceShiftTemplate[]),
+          canViewAttendance
+            ? attendanceApi.listLeaves({ staffId: loadedProfile.id, dateFrom, dateTo })
+            : Promise.resolve([] as AttendanceLeave[]),
+          staffWorkforceApi.salaryHistory(loadedProfile.id),
+          canViewPayroll
+            ? staffWorkforceApi.payrollHistory(loadedProfile.id)
+            : Promise.resolve([] as PayrollHistoryRecord[]),
+        ]);
+        const [entryResult, scheduleResult, templateResult, leaveResult, salaryResult, payrollResult] = results;
+        setEntries(entryResult.status === "fulfilled" ? entryResult.value : []);
+        setSchedules(scheduleResult.status === "fulfilled" ? scheduleResult.value : []);
+        setTemplates(templateResult.status === "fulfilled" ? templateResult.value : []);
+        setLeaves(leaveResult.status === "fulfilled" ? leaveResult.value : []);
+        setSalaryHistory(salaryResult.status === "fulfilled" ? salaryResult.value : []);
+        setPayrollHistory(payrollResult.status === "fulfilled" ? payrollResult.value : []);
+        if (entryResult.status === "rejected" || scheduleResult.status === "rejected") {
+          warnings.push("Some attendance details are unavailable for your current permission level.");
+        }
+        if (payrollResult.status === "rejected") {
+          warnings.push("Payroll history is unavailable for your current permission level or plan.");
+        }
       }
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Failed to save access scope");
+      await loadScopes();
+      setWorkspaceWarnings(warnings);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || "Failed to load staff workspace");
+      setStaff(null);
     } finally {
-      setScopeSavingKey(null);
+      setLoading(false);
+      setRefreshing(false);
     }
-  };
-
-  const deleteScope = async (scopeKey: ScopeKey) => {
-    if (!id) return;
-    setScopeDeletingKey(scopeKey);
-    try {
-      const res = await apiClient.delete(UserAccessScopeApis.remove(id as string, scopeKey));
-      if (res.data?.status === "success") {
-        toast.success("Access scope removed");
-        await fetchScopes(id as string);
-      } else {
-        toast.error(res.data?.message || "Failed to remove access scope");
-      }
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Failed to remove access scope");
-    } finally {
-      setScopeDeletingKey(null);
-    }
-  };
+  }, [canViewAttendance, canViewPayroll, dateFrom, dateTo, loadScopes, userId]);
 
   useEffect(() => {
-    const fetchStaffDetail = async () => {
-      if (!id) return;
-      setLoading(true);
-      try {
-        const response = await apiClient.get(StaffApis.getStaff(id as string));
-        if (response.data.status === "success") {
-          const staffDetail = response.data.data;
-          setStaff(staffDetail);
-          setSelectedPermissions(staffDetail.permissions || []);
-          fetchScopes(id as string);
-        }
-      } catch (err) {
-        console.error("Failed to fetch staff detail:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    void loadWorkspace();
+  }, [loadWorkspace]);
 
-    const fetchPermissions = async () => {
-      setPermissionsLoading(true);
-      try {
-        // Align with staff list page: permission catalog is served by /roles/permissions.
-        const response = await apiClient.get(RoleApis.listPermissions);
-        if (response.data?.status === "success") setAvailablePermissions(response.data.data || []);
-        else setAvailablePermissions([]);
-      } catch (err) {
-        console.error("Failed to fetch permissions:", err);
-        setAvailablePermissions([]);
-      } finally {
-        setPermissionsLoading(false);
-      }
-    };
+  const totals = useMemo(() => {
+    const regular = entries.reduce((sum, item) => sum + Number(item.regular_minutes || 0), 0);
+    const overtime = entries.reduce((sum, item) => sum + Number(item.overtime_minutes || 0), 0);
+    const pending = entries.filter((item) => ["draft", "pending", "needs_correction"].includes(item.approval_status)).length;
+    const exceptions = entries.filter((item) => Boolean(item.exception_code)).length;
+    return { regular, overtime, pending, exceptions };
+  }, [entries]);
 
-    fetchStaffDetail();
-    fetchPermissions();
-  }, [id]);
+  const todayEntry = useMemo(() => {
+    const today = isoDate(new Date());
+    return entries.find((entry) => entry.clock_in_at.slice(0, 10) === today && entry.status === "open")
+      || entries.find((entry) => entry.clock_in_at.slice(0, 10) === today)
+      || null;
+  }, [entries]);
+  const latestPayroll = payrollHistory[0] || null;
+  const pendingLeaveCount = leaves.filter((leave) => leave.status === "pending").length;
 
-  const handleDelete = async () => {
-    if (!confirm("Are you sure you want to deactivate this staff member?")) return;
+  const openProfileEditor = () => {
+    const next = emptyProfileForm();
+    if (profile) {
+      next.account_number = profile.account_number || "";
+      next.salary_type = profile.salary_type || "monthly";
+      next.salary_amount = String(profile.salary_amount ?? "");
+      next.phone = profile.phone || "";
+      next.address = profile.address || "";
+      next.age = profile.age == null ? "" : String(profile.age);
+      next.weekly_hours = profile.weekly_hours == null ? "" : String(profile.weekly_hours);
+      next.daily_hours = profile.daily_hours == null ? "" : String(profile.daily_hours);
+    }
+    setProfileForm(next);
+    setProfileOpen(true);
+  };
+
+  const saveAccount = async () => {
+    if (!accountForm.name.trim() || !accountForm.email.trim()) {
+      toast.error("Name and email are required");
+      return;
+    }
+    setAccountSaving(true);
     try {
-      await apiClient.delete(StaffApis.delete(id as string));
-      toast.success("Staff member deactivated");
-      router.push('/staff');
-    } catch (err: any) {
-      console.error("Failed to delete staff:", err);
-      const errMsg = err.response?.data?.message || err.response?.data?.detail || "Failed to deactivate staff member";
-      toast.error(errMsg);
+      await apiClient.patch(StaffApis.update(userId), {
+        name: accountForm.name.trim(),
+        email: accountForm.email.trim(),
+      });
+      toast.success("Staff account updated");
+      setAccountOpen(false);
+      await loadWorkspace(true);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || "Failed to update staff account");
+    } finally {
+      setAccountSaving(false);
     }
   };
 
-  const handleUpdatePermissions = async () => {
-    setSubmittingPerms(true);
-    try {
-      await apiClient.post(AuthApis.updateUserPermissions(id as string), {
-        permission_keys: selectedPermissions
+  const saveProfile = async () => {
+    const amount = Number(profileForm.salary_amount);
+    if (!profileForm.account_number.trim() || !Number.isFinite(amount) || amount < 0) {
+      toast.error("Account number and a valid salary amount are required");
+      return;
+    }
+    const salaryChanged = !profile
+      || profile.salary_type !== profileForm.salary_type
+      || Number(profile.salary_amount) !== amount
+      || Number(profile.weekly_hours || 0) !== Number(profileForm.weekly_hours || 0)
+      || Number(profile.daily_hours || 0) !== Number(profileForm.daily_hours || 0);
+    if (profile && salaryChanged && profileForm.salary_change_reason.trim().length < 3) {
+      toast.error("Explain the salary change so payroll keeps a useful audit history");
+      return;
+    }
+    const payload: Record<string, unknown> = {
+      account_number: profileForm.account_number.trim(),
+      phone: profileForm.phone.trim() || undefined,
+      address: profileForm.address.trim() || undefined,
+      age: profileForm.age ? Number(profileForm.age) : undefined,
+    };
+    if (!profile || salaryChanged) {
+      Object.assign(payload, {
+        salary_type: profileForm.salary_type,
+        salary_amount: amount,
+        weekly_hours: profileForm.weekly_hours ? Number(profileForm.weekly_hours) : undefined,
+        daily_hours: profileForm.daily_hours ? Number(profileForm.daily_hours) : undefined,
+        salary_effective_from: profileForm.salary_effective_from,
+        salary_change_reason: profileForm.salary_change_reason.trim() || "Initial salary",
       });
-      toast.success("Permissions updated successfully");
-      setIsPermDialogOpen(false);
-      
-      // Refresh staff data to get updated permissions
-      const response = await apiClient.get(StaffApis.getStaff(id as string));
-      if (response.data.status === "success") {
-        setStaff(response.data.data);
-      }
+    }
+    if (!profile) payload.user_id = userId;
+    setProfileSaving(true);
+    try {
+      if (profile) await apiClient.patch(StaffProfileApis.update(profile.id), payload);
+      else await apiClient.post(StaffProfileApis.create, payload);
+      toast.success(profile ? "Employment and pay profile updated" : "Employment and pay profile created");
+      setProfileOpen(false);
+      await loadWorkspace(true);
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Failed to save employment profile");
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
-      if (user && String(user.id) === String(id)) {
-        await useAuth.getState().syncUserProfile();
+  const updateAttendance = async (entry: AttendanceEntry, action: "submit" | "approve" | "reject" | "reopen") => {
+    try {
+      if (action === "submit") await attendanceApi.submitEntry(entry.id, "Submitted from staff workspace");
+      if (action === "approve") {
+        await attendanceApi.approveEntry(entry.id, {
+          approved_overtime_minutes: entry.overtime_minutes,
+          rejected_overtime_minutes: 0,
+          reason: "Approved from staff workspace",
+        });
       }
-    } catch (err) {
-      console.error("Failed to update permissions:", err);
+      if (action === "reject") {
+        const reason = window.prompt("Reason for rejection?")?.trim();
+        if (!reason) return;
+        await attendanceApi.rejectEntry(entry.id, reason);
+      }
+      if (action === "reopen") {
+        const reason = window.prompt("Reason for reopening?")?.trim();
+        if (!reason) return;
+        await attendanceApi.reopenEntry(entry.id, reason);
+      }
+      toast.success("Attendance updated");
+      await loadWorkspace(true);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || "Failed to update attendance");
+    }
+  };
+
+  const savePermissions = async () => {
+    setPermissionsSaving(true);
+    try {
+      await apiClient.post(AuthApis.updateUserPermissions(userId), { permission_keys: selectedPermissions });
+      toast.success("Permissions updated");
+      setPermissionsOpen(false);
+      await loadWorkspace(true);
+    } catch {
       toast.error("Failed to update permissions");
     } finally {
-      setSubmittingPerms(false);
+      setPermissionsSaving(false);
+    }
+  };
+
+  const saveScope = async (key: ScopeKey) => {
+    const draft = scopeDrafts[key];
+    const maxDays = draft.max_lookback_days ? Number(draft.max_lookback_days) : null;
+    if (maxDays != null && (!Number.isFinite(maxDays) || maxDays < 1 || maxDays > 3650)) {
+      toast.error("Lookback must be between 1 and 3650 days");
+      return;
+    }
+    if (draft.window_start && draft.window_end && draft.window_start > draft.window_end) {
+      toast.error("Scope start cannot be after its end");
+      return;
+    }
+    if (!maxDays && !draft.window_start && !draft.window_end) {
+      toast.error("Set a lookback or date window");
+      return;
+    }
+    setScopeBusy(key);
+    try {
+      await apiClient.put(UserAccessScopeApis.upsert(userId, key), {
+        max_lookback_days: maxDays || undefined,
+        window_start: draft.window_start || undefined,
+        window_end: draft.window_end || undefined,
+      });
+      toast.success(`${key} scope saved`);
+      await loadScopes();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || "Failed to save access scope");
+    } finally {
+      setScopeBusy(null);
+    }
+  };
+
+  const removeScope = async (key: ScopeKey) => {
+    setScopeBusy(key);
+    try {
+      await apiClient.delete(UserAccessScopeApis.remove(userId, key));
+      toast.success(`${key} scope removed`);
+      await loadScopes();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || "Failed to remove access scope");
+    } finally {
+      setScopeBusy(null);
+    }
+  };
+
+  const removeStaff = async () => {
+    if (!window.confirm(`Remove ${staff?.name || "this staff member"}? This cannot be undone.`)) return;
+    try {
+      await apiClient.delete(StaffApis.delete(userId));
+      toast.success("Staff account removed");
+      router.push("/staff");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || "Failed to remove staff account");
     }
   };
 
   if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
+    return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
-
   if (!staff) {
     return (
-      <div className="p-6">
-        <Link href="/staff">
-          <Button variant="ghost" className="mb-4">
-            <ArrowLeft className="w-4 h-4 mr-2" /> Back to Staff
-          </Button>
-        </Link>
-        <Card>
-          <CardContent className="p-12 text-center">
-            <h2 className="text-xl font-semibold mb-2">Staff Member Not Found</h2>
-            <p className="text-muted-foreground">The staff record you are looking for does not exist or you don&apos;t have permission to view it.</p>
-          </CardContent>
-        </Card>
+      <div className="mx-auto max-w-4xl p-6">
+        <Button asChild variant="ghost"><Link href="/staff"><ArrowLeft className="mr-2 h-4 w-4" />Back to staff</Link></Button>
+        <Card className="mt-6"><CardContent className="p-12 text-center"><h1 className="text-xl font-semibold">Staff member not found</h1><p className="mt-2 text-sm text-muted-foreground">The record is unavailable or outside your restaurant.</p></CardContent></Card>
       </div>
     );
   }
 
+  const activeRoles = staff.roles?.filter((role) => !role.startsWith("__user_")) || [staff.primary_role || staff.role || "staff"];
+
   return (
-    <div className="flex flex-col gap-6 max-w-[1200px] mx-auto p-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/staff">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{staff.name}</h1>
-            <p className="text-muted-foreground text-sm flex items-center gap-2">
-              <Shield className="w-4 h-4" /> {staff.primary_role || staff.role} • ID: #STF-{staff.id}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="destructive" onClick={handleDelete}>
-            <Trash2 className="w-4 h-4 mr-2" /> Deactivate
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Personal Information</CardTitle>
-            <CardDescription>Basic contact and profile details.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={staff.email || "N/A"} />
-            <InfoItem icon={<Calendar className="w-4 h-4" />} label="Joined Date" value={staff.created_at ? format(new Date(staff.created_at), 'MMMM dd, yyyy') : "N/A"} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Employment Details</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            <InfoItem icon={<Briefcase className="w-4 h-4" />} label="Primary Role" value={<Badge variant="outline" className="capitalize">{staff.primary_role || staff.role}</Badge>} />
-            <InfoItem 
-              icon={<Shield className="w-4 h-4" />} 
-              label="All Roles" 
-              value={
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {(staff.roles && staff.roles.length > 0 ? staff.roles : [staff.role || "Staff"]).map((r: string) => (
-                    <Badge key={r} variant="secondary" className="capitalize text-[10px] py-0">{r}</Badge>
-                  ))}
-                </div>
-              } 
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Security & Permissions</CardTitle>
-              <CardDescription>Granular access control settings.</CardDescription>
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
+      <section className="overflow-hidden rounded-3xl border bg-gradient-to-br from-primary/10 via-background to-amber-500/10 shadow-sm">
+        <div className="flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            <Button asChild size="icon" variant="outline" className="shrink-0 rounded-full bg-background/80"><Link href="/staff"><ArrowLeft className="h-4 w-4" /></Link></Button>
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-foreground shadow-lg shadow-primary/20">{staff.name?.charAt(0).toUpperCase() || "?"}</div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{staff.name}</h1><Badge className="capitalize">{staff.status || "Active"}</Badge></div>
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><BriefcaseBusiness className="h-4 w-4" />{staff.primary_role || staff.role || "Staff"}<span>•</span><span>User #{staff.id}</span>{profile ? <><span>•</span><span>Staff #{profile.id}</span></> : null}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">{activeRoles.map((role) => <Badge key={role} variant="secondary" className="capitalize">{role}</Badge>)}</div>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setIsPermDialogOpen(true)}>
-              <Shield className="w-4 h-4 mr-2" /> Manage
-            </Button>
-          </CardHeader>
-          <CardContent>
-             <div className="flex flex-wrap gap-2">
-               {staff.permissions && staff.permissions.length > 0 ? (
-                 staff.permissions.map((p: string) => (
-                   <Badge key={p} variant="secondary" className="font-mono text-[10px]">
-                     {p}
-                   </Badge>
-                 ))
-               ) : (
-                 <p className="text-sm text-muted-foreground italic">No customized permissions. User has default role-based access.</p>
-               )}
-             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Scopes</CardTitle>
-            <CardDescription>
-              Limit how far back this staff can view analytics/orders/receipts (time window or lookback days).
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {scopesLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading scopes…
-              </div>
-            ) : (
-              (["analytics", "orders", "receipts"] as ScopeKey[]).map((k) => {
-                const exists = Boolean(scopesByKey[k]);
-                const draft = scopeDrafts[k];
-                return (
-                  <div key={k} className="p-4 rounded-2xl border border-border/60 bg-muted/10">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold capitalize">{k}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {exists
-                            ? "Scope is active (restrictions apply)."
-                            : "No scope set (full access allowed)."}
-                        </p>
-                      </div>
-                      <Badge variant={exists ? "secondary" : "outline"} className="uppercase text-[10px] font-bold">
-                        {exists ? "Scoped" : "Unscoped"}
-                      </Badge>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-                      <div className="space-y-1.5">
-                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Max Lookback Days</Label>
-                        <Input
-                          inputMode="numeric"
-                          placeholder="e.g. 30"
-                          value={draft.max_lookback_days}
-                          onChange={(e) =>
-                            setScopeDrafts((prev) => ({
-                              ...prev,
-                              [k]: { ...prev[k], max_lookback_days: e.target.value },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Window Start</Label>
-                        <DateInputWithPicker
-                          value={draft.window_start}
-                          onChange={(next) =>
-                            setScopeDrafts((prev) => ({
-                              ...prev,
-                              [k]: { ...prev[k], window_start: next },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Window End</Label>
-                        <DateInputWithPicker
-                          value={draft.window_end}
-                          onChange={(next) =>
-                            setScopeDrafts((prev) => ({
-                              ...prev,
-                              [k]: { ...prev[k], window_end: next },
-                            }))
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-2 mt-4">
-                      <Button
-                        className="sm:w-auto"
-                        onClick={() => saveScope(k)}
-                        disabled={scopeSavingKey === k || scopeDeletingKey === k}
-                      >
-                        {scopeSavingKey === k ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                        Save Scope
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => deleteScope(k)}
-                        disabled={!exists || scopeSavingKey === k || scopeDeletingKey === k}
-                      >
-                        {scopeDeletingKey === k ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                        Remove Scope
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Activity Logs</CardTitle>
-            <CardDescription>Recent actions performed by this staff member.</CardDescription>
-          </CardHeader>
-          <CardContent>
-             <div className="text-center py-8 text-muted-foreground">
-               No recent activity logs found.
-             </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Dialog open={isPermDialogOpen} onOpenChange={setIsPermDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Manage Granular Permissions</DialogTitle>
-            <DialogDescription>
-              Select specific permissions to grant or override defaults for {staff.name}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <ScrollArea className="h-[350px] pr-4">
-              {permissionsLoading ? (
-                <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  Loading permissions…
-                </div>
-              ) : availablePermissions.length === 0 ? (
-                <div className="h-[300px] flex flex-col items-center justify-center text-sm text-muted-foreground gap-3">
-                  <p>No permission catalog returned.</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        setPermissionsLoading(true);
-                        const response = await apiClient.get(RoleApis.listPermissions);
-                        if (response.data?.status === "success") setAvailablePermissions(response.data.data || []);
-                      } catch {
-                        // ignore
-                      } finally {
-                        setPermissionsLoading(false);
-                      }
-                    }}
-                  >
-                    Retry
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-4">
-                  {Object.entries(
-                    availablePermissions.reduce((acc: any, curr: any) => {
-                      if (!acc[curr.module]) acc[curr.module] = [];
-                      acc[curr.module].push(curr);
-                      return acc;
-                    }, {})
-                  ).map(([module, perms]: [string, any]) => (
-                    <div key={module} className="space-y-2">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
-                        {module}
-                      </h4>
-                      <div className="grid grid-cols-1 gap-3">
-                        {perms.map((p: any) => (
-                          <div key={p.key} className="flex items-start space-x-3">
-                            <Checkbox
-                              id={`perm-detail-${p.key}`}
-                              checked={selectedPermissions.includes(p.key)}
-                              onCheckedChange={(checked) => {
-                                setSelectedPermissions((prev) =>
-                                  checked ? [...prev, p.key] : prev.filter((k) => k !== p.key)
-                                );
-                              }}
-                            />
-                            <div className="grid gap-1.5 leading-none">
-                              <label
-                                htmlFor={`perm-detail-${p.key}`}
-                                className="text-sm font-medium leading-none cursor-pointer"
-                              >
-                                {p.key}
-                              </label>
-                              {p.description && (
-                                <p className="text-xs text-muted-foreground">
-                                  {p.description}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPermDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleUpdatePermissions} disabled={submittingPerms}>
-              {submittingPerms && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Save Permissions
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-wrap gap-2 lg:justify-end">
+            <Button variant="outline" onClick={() => void loadWorkspace(true)} disabled={refreshing}>{refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Refresh</Button>
+            {canManageStaff ? <Button onClick={() => setAccountOpen(true)}><Edit3 className="mr-2 h-4 w-4" />Edit staff</Button> : null}
+          </div>
+        </div>
+        <div className="grid border-t bg-background/70 sm:grid-cols-2 lg:grid-cols-4">
+          <HeroMetric icon={Clock3} label="Attendance today" value={todayEntry ? (todayEntry.status === "open" ? "Clocked in" : "Completed") : "No attendance"} tone={todayEntry ? "good" : "neutral"} />
+          <HeroMetric icon={FileClock} label="Attendance review" value={totals.pending ? `${totals.pending} unresolved` : "Ready"} tone={totals.pending ? "warn" : "good"} />
+          <HeroMetric icon={CalendarDays} label="Pending leave" value={pendingLeaveCount ? String(pendingLeaveCount) : "None"} tone={pendingLeaveCount ? "warn" : "neutral"} />
+          <HeroMetric icon={Banknote} label="Latest net pay" value={latestPayroll ? money(latestPayroll.item.net_pay) : "No payroll"} tone="neutral" />
+        </div>
+      </section>
+
+      {workspaceWarnings.length ? <div className="space-y-2">{workspaceWarnings.map((warning) => <div key={warning} className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /><span>{warning}</span></div>)}</div> : null}
+
+      <Tabs defaultValue="overview" className="space-y-5">
+        <div className="overflow-x-auto pb-1"><TabsList className="h-auto min-w-max justify-start rounded-xl bg-muted/70 p-1"><TabsTrigger value="overview">Overview</TabsTrigger>{canViewAttendance ? <TabsTrigger value="attendance">Attendance</TabsTrigger> : null}{canViewPayroll ? <TabsTrigger value="payroll">Payroll</TabsTrigger> : null}<TabsTrigger value="employment">Employment</TabsTrigger><TabsTrigger value="access">Access</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList></div>
+
+        <TabsContent value="overview" className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard icon={Clock3} label="Regular time" value={minutes(totals.regular)} helper={`${dateFrom} to ${dateTo}`} />
+            <SummaryCard icon={History} label="Overtime" value={minutes(totals.overtime)} helper={`${entries.length} attendance records`} />
+            <SummaryCard icon={AlertTriangle} label="Exceptions" value={String(totals.exceptions)} helper={totals.exceptions ? "Needs manager attention" : "No recorded exceptions"} />
+            <SummaryCard icon={WalletCards} label="Compensation" value={profile ? money(profile.salary_amount) : "Not configured"} helper={profile ? `${profile.salary_type} • effective salary history enabled` : "Create a payroll profile"} />
+          </div>
+          <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
+            <Card><CardHeader><CardTitle className="text-base">Recent attendance</CardTitle><CardDescription>Latest staff-specific records and approval state.</CardDescription></CardHeader><CardContent><AttendanceList entries={entries.slice(0, 5)} canManage={canManageAttendance} onAction={updateAttendance} compact /></CardContent></Card>
+            <div className="space-y-5">
+              <Card><CardHeader><CardTitle className="text-base">Current employment</CardTitle></CardHeader><CardContent className="space-y-3"><InfoLine icon={Mail} label="Email" value={staff.email || "Not set"} /><InfoLine icon={Phone} label="Phone" value={profile?.phone || "Not set"} /><InfoLine icon={MapPin} label="Address" value={profile?.address || "Not set"} /><InfoLine icon={WalletCards} label="Account" value={profile?.account_number || "Not configured"} /></CardContent></Card>
+              <Card><CardHeader><CardTitle className="text-base">Payroll readiness</CardTitle><CardDescription>Quick signal; payroll preview remains the authoritative check.</CardDescription></CardHeader><CardContent><div className={`rounded-xl border p-4 ${profile && totals.pending === 0 && schedules.length > 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="flex items-center gap-2 font-semibold">{profile && totals.pending === 0 && schedules.length > 0 ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-amber-600" />}{profile && totals.pending === 0 && schedules.length > 0 ? "No obvious staff blockers" : "Setup or review required"}</div><p className="mt-2 text-sm text-muted-foreground">{!profile ? "Create a compensation profile." : totals.pending ? "Resolve draft, pending, or correction-required attendance." : schedules.length === 0 && profile.salary_type !== "hourly" ? "Assign an effective work schedule." : "Run payroll preview to validate salary dates, leave, holidays, and period overlap."}</p></div></CardContent></Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        {canViewAttendance ? <TabsContent value="attendance" className="space-y-5">
+          <Card><CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="font-semibold">Attendance period</h2><p className="text-sm text-muted-foreground">View and manage only {staff.name}&apos;s time records.</p></div><div className="grid grid-cols-2 gap-2"><div><Label className="text-xs">From</Label><Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></div><div><Label className="text-xs">To</Label><Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></div></div></CardContent></Card>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><SummaryCard icon={Clock3} label="Regular" value={minutes(totals.regular)} /><SummaryCard icon={History} label="Overtime" value={minutes(totals.overtime)} /><SummaryCard icon={FileClock} label="Needs review" value={String(totals.pending)} /><SummaryCard icon={AlertTriangle} label="Exceptions" value={String(totals.exceptions)} /></div>
+          <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
+            <Card><CardHeader><CardTitle>Timesheet</CardTitle><CardDescription>Corrections remain auditable and exported records stay locked to payroll snapshots.</CardDescription></CardHeader><CardContent><AttendanceList entries={entries} canManage={canManageAttendance} onAction={updateAttendance} /></CardContent></Card>
+            <div className="space-y-5"><ScheduleCard schedules={schedules} templates={templates} /><LeaveCard leaves={leaves} /></div>
+          </div>
+        </TabsContent> : null}
+
+        {canViewPayroll ? <TabsContent value="payroll" className="space-y-5">
+          <div className="grid gap-5 lg:grid-cols-[.75fr_1.25fr]">
+            <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Current compensation</CardTitle><CardDescription>Effective salary used for new payroll periods.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent>{profile ? <div className="space-y-3"><div className="rounded-2xl bg-primary/10 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{profile.salary_type}</p><p className="mt-1 text-2xl font-bold">{money(profile.salary_amount)}</p></div><InfoRow label="Weekly hours" value={profile.weekly_hours == null ? "—" : String(profile.weekly_hours)} /><InfoRow label="Daily hours" value={profile.daily_hours == null ? "—" : String(profile.daily_hours)} /><InfoRow label="Salary records" value={String(salaryHistory.length)} /></div> : <EmptyState title="No compensation profile" description="Create a payroll profile before this employee can be included in payroll." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
+            <Card><CardHeader><CardTitle>Salary history</CardTitle><CardDescription>Effective-dated compensation changes; periods crossing a change must be split.</CardDescription></CardHeader><CardContent><div className="space-y-3">{salaryHistory.length ? salaryHistory.map((record) => <div key={record.id} className="flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold capitalize">{record.salary_type} • {money(record.salary_amount)}</p><p className="text-sm text-muted-foreground">{dateOnly(record.effective_from)} to {record.effective_to ? dateOnly(record.effective_to) : "Current"}</p></div><div className="sm:text-right"><Badge variant={record.effective_to ? "outline" : "default"}>{record.effective_to ? "Historical" : "Current"}</Badge><p className="mt-1 text-xs text-muted-foreground">{record.reason || "No change reason"}</p></div></div>) : <EmptyState title="No salary history" description="A salary record will appear after the profile is created." />}</div></CardContent></Card>
+          </div>
+          <Card><CardHeader><CardTitle>Payroll history</CardTitle><CardDescription>Run-level status with the staff member&apos;s complete calculation evidence.</CardDescription></CardHeader><CardContent><PayrollHistoryTable records={payrollHistory} /></CardContent></Card>
+        </TabsContent> : null}
+
+        <TabsContent value="employment" className="space-y-5">
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Account details</CardTitle><CardDescription>Identity and restaurant login information.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={() => setAccountOpen(true)}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent className="space-y-4"><InfoLine icon={UserRound} label="Full name" value={staff.name} /><InfoLine icon={Mail} label="Email" value={staff.email || "Not set"} /><InfoLine icon={BriefcaseBusiness} label="Primary role" value={staff.primary_role || staff.role || "Staff"} /><InfoLine icon={CalendarDays} label="Joined" value={staff.created_at ? dateOnly(staff.created_at) : "—"} /></CardContent></Card>
+            <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Employment and pay profile</CardTitle><CardDescription>Contact, account, salary, and expected hours.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />{profile ? "Edit" : "Create"}</Button> : null}</CardHeader><CardContent>{profile ? <div className="grid gap-4 sm:grid-cols-2"><InfoLine icon={WalletCards} label="Account number" value={profile.account_number} /><InfoLine icon={Banknote} label="Salary" value={`${money(profile.salary_amount)} / ${profile.salary_type}`} /><InfoLine icon={Phone} label="Phone" value={profile.phone || "Not set"} /><InfoLine icon={MapPin} label="Address" value={profile.address || "Not set"} /><InfoLine icon={Clock3} label="Weekly hours" value={profile.weekly_hours == null ? "Not set" : String(profile.weekly_hours)} /><InfoLine icon={Clock3} label="Daily hours" value={profile.daily_hours == null ? "Not set" : String(profile.daily_hours)} /></div> : <EmptyState title="No employment profile" description="Attendance and payroll need a linked staff profile." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
+          </div>
+          {canManageStaff ? <Card className="border-destructive/30"><CardHeader><CardTitle className="text-base text-destructive">Danger zone</CardTitle><CardDescription>Removing the account is destructive and may be restricted by linked operational records.</CardDescription></CardHeader><CardContent><Button variant="destructive" onClick={removeStaff}><Trash2 className="mr-2 h-4 w-4" />Remove staff account</Button></CardContent></Card> : null}
+        </TabsContent>
+
+        <TabsContent value="access" className="space-y-5">
+          <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Roles and permissions</CardTitle><CardDescription>Role access stays separate from sensitive attendance and payroll data.</CardDescription></div>{canManageStaff ? <Button size="sm" onClick={() => setPermissionsOpen(true)}><ShieldCheck className="mr-2 h-4 w-4" />Manage</Button> : null}</CardHeader><CardContent><div className="flex flex-wrap gap-2">{staff.permissions?.length ? staff.permissions.map((permission) => <Badge key={permission} variant="secondary" className="font-mono text-[11px]">{permission}</Badge>) : <p className="text-sm text-muted-foreground">No direct overrides; role defaults apply.</p>}</div></CardContent></Card>
+          <div className="grid gap-5 lg:grid-cols-3">{scopeKeys.map((key) => { const draft = scopeDrafts[key]; const active = Boolean(scopesByKey[key]); return <Card key={key}><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-base capitalize">{key}</CardTitle><Badge variant={active ? "default" : "outline"}>{active ? "Scoped" : "Full access"}</Badge></div><CardDescription>Limit historical visibility for this module.</CardDescription></CardHeader><CardContent className="space-y-3"><div><Label>Maximum lookback days</Label><Input inputMode="numeric" placeholder="Example: 30" value={draft.max_lookback_days} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], max_lookback_days: event.target.value } }))} /></div><div className="grid grid-cols-2 gap-2"><div><Label>Start</Label><Input type="date" value={draft.window_start} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], window_start: event.target.value } }))} /></div><div><Label>End</Label><Input type="date" value={draft.window_end} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], window_end: event.target.value } }))} /></div></div>{canManageStaff ? <div className="flex gap-2"><Button className="flex-1" disabled={scopeBusy === key} onClick={() => void saveScope(key)}>{scopeBusy === key ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save</Button><Button variant="outline" disabled={!active || scopeBusy === key} onClick={() => void removeScope(key)}>Remove</Button></div> : null}</CardContent></Card>; })}</div>
+        </TabsContent>
+
+        <TabsContent value="activity"><Card><CardHeader><CardTitle>Workforce activity</CardTitle><CardDescription>Real staff-specific events from attendance, salary history, and payroll.</CardDescription></CardHeader><CardContent><ActivityTimeline entries={entries} salaryHistory={salaryHistory} payrollHistory={payrollHistory} /></CardContent></Card></TabsContent>
+      </Tabs>
+
+      <Dialog open={accountOpen} onOpenChange={setAccountOpen}><DialogContent><DialogHeader><DialogTitle>Edit staff account</DialogTitle><DialogDescription>Update the employee&apos;s identity and login email. Roles and permissions are managed from Access.</DialogDescription></DialogHeader><div className="space-y-4 py-2"><div><Label>Full name</Label><Input value={accountForm.name} onChange={(event) => setAccountForm((current) => ({ ...current, name: event.target.value }))} /></div><div><Label>Email</Label><Input type="email" value={accountForm.email} onChange={(event) => setAccountForm((current) => ({ ...current, email: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setAccountOpen(false)}>Cancel</Button><Button onClick={saveAccount} disabled={accountSaving}>{accountSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save account</Button></DialogFooter></DialogContent></Dialog>
+
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>{profile ? "Edit employment and pay profile" : "Create employment and pay profile"}</DialogTitle><DialogDescription>Salary changes create effective-dated history and can require payroll periods to be split.</DialogDescription></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2"><FormField label="Account number"><Input value={profileForm.account_number} onChange={(event) => setProfileForm((current) => ({ ...current, account_number: event.target.value }))} /></FormField><FormField label="Salary type"><Select value={profileForm.salary_type} onValueChange={(value) => setProfileForm((current) => ({ ...current, salary_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="daily">Daily</SelectItem><SelectItem value="hourly">Hourly</SelectItem></SelectContent></Select></FormField><FormField label="Salary amount"><Input type="number" min="0" step="0.01" value={profileForm.salary_amount} onChange={(event) => setProfileForm((current) => ({ ...current, salary_amount: event.target.value }))} /></FormField><FormField label="Effective from"><Input type="date" value={profileForm.salary_effective_from} onChange={(event) => setProfileForm((current) => ({ ...current, salary_effective_from: event.target.value }))} /></FormField><FormField label="Weekly hours"><Input type="number" min="0" step="0.25" value={profileForm.weekly_hours} onChange={(event) => setProfileForm((current) => ({ ...current, weekly_hours: event.target.value }))} /></FormField><FormField label="Daily hours"><Input type="number" min="0" step="0.25" value={profileForm.daily_hours} onChange={(event) => setProfileForm((current) => ({ ...current, daily_hours: event.target.value }))} /></FormField><FormField label="Phone"><Input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></FormField><FormField label="Age"><Input type="number" min="0" value={profileForm.age} onChange={(event) => setProfileForm((current) => ({ ...current, age: event.target.value }))} /></FormField><div className="sm:col-span-2"><FormField label="Address"><Input value={profileForm.address} onChange={(event) => setProfileForm((current) => ({ ...current, address: event.target.value }))} /></FormField></div><div className="sm:col-span-2"><FormField label="Salary change reason"><Input placeholder={profile ? "Promotion, review, correction…" : "Initial salary"} value={profileForm.salary_change_reason} onChange={(event) => setProfileForm((current) => ({ ...current, salary_change_reason: event.target.value }))} /></FormField></div></div><DialogFooter><Button variant="outline" onClick={() => setProfileOpen(false)}>Cancel</Button><Button onClick={saveProfile} disabled={profileSaving}>{profileSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save profile</Button></DialogFooter></DialogContent></Dialog>
+
+      <Dialog open={permissionsOpen} onOpenChange={setPermissionsOpen}><DialogContent className="max-w-xl"><DialogHeader><DialogTitle>Manage permissions</DialogTitle><DialogDescription>Direct overrides for {staff.name}. Role defaults still apply.</DialogDescription></DialogHeader><ScrollArea className="h-[420px] pr-4"><div className="space-y-5">{Object.entries(availablePermissions.reduce((grouped: Record<string, any[]>, permission: any) => { const groupName = permission.module || "Other"; (grouped[groupName] ||= []).push(permission); return grouped; }, {})).map(([groupName, permissions]) => <section key={groupName}><h3 className="mb-2 border-b pb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">{groupName}</h3><div className="space-y-3">{permissions.map((permission: any) => <label key={permission.key} className="flex cursor-pointer items-start gap-3"><Checkbox checked={selectedPermissions.includes(permission.key)} onCheckedChange={(checked) => setSelectedPermissions((current) => checked ? Array.from(new Set([...current, permission.key])) : current.filter((item) => item !== permission.key))} /><span><span className="block text-sm font-medium">{permission.key}</span>{permission.description ? <span className="block text-xs text-muted-foreground">{permission.description}</span> : null}</span></label>)}</div></section>)}</div></ScrollArea><DialogFooter><Button variant="outline" onClick={() => setPermissionsOpen(false)}>Cancel</Button><Button onClick={savePermissions} disabled={permissionsSaving}>{permissionsSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save permissions</Button></DialogFooter></DialogContent></Dialog>
     </div>
   );
 }
 
-function InfoItem({ icon, label, value }: { icon: any, label: string, value: any }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="mt-1 text-muted-foreground">{icon}</div>
-      <div>
-        <p className="text-xs font-medium text-muted-foreground uppercase">{label}</p>
-        <div className="text-sm font-semibold">{value}</div>
-      </div>
-    </div>
-  );
+function HeroMetric({ icon: Icon, label, value, tone }: { icon: any; label: string; value: string; tone: "good" | "warn" | "neutral" }) {
+  const toneClass = tone === "good" ? "text-emerald-600" : tone === "warn" ? "text-amber-600" : "text-primary";
+  return <div className="flex items-center gap-3 border-b p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"><div className={`rounded-xl bg-background p-2 shadow-sm ${toneClass}`}><Icon className="h-5 w-5" /></div><div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="truncate font-semibold">{value}</p></div></div>;
+}
+
+function SummaryCard({ icon: Icon, label, value, helper }: { icon: any; label: string; value: string; helper?: string }) {
+  return <Card><CardContent className="flex items-start gap-3 p-4"><div className="rounded-xl bg-primary/10 p-2 text-primary"><Icon className="h-5 w-5" /></div><div><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-0.5 text-xl font-bold">{value}</p>{helper ? <p className="mt-1 text-xs text-muted-foreground">{helper}</p> : null}</div></CardContent></Card>;
+}
+
+function InfoLine({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+  return <div className="flex items-start gap-3"><div className="rounded-lg bg-muted p-2 text-muted-foreground"><Icon className="h-4 w-4" /></div><div className="min-w-0"><p className="text-xs text-muted-foreground">{label}</p><p className="break-words text-sm font-semibold">{value}</p></div></div>;
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center justify-between gap-4 border-b pb-2 text-sm last:border-0 last:pb-0"><span className="text-muted-foreground">{label}</span><span className="font-semibold">{value}</span></div>;
+}
+
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>;
+}
+
+function EmptyState({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
+  return <div className="rounded-2xl border border-dashed p-7 text-center"><MoreHorizontal className="mx-auto h-7 w-7 text-muted-foreground" /><p className="mt-2 font-semibold">{title}</p><p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>{action ? <div className="mt-4">{action}</div> : null}</div>;
+}
+
+function AttendanceList({ entries, canManage, onAction, compact = false }: { entries: AttendanceEntry[]; canManage: boolean; onAction: (entry: AttendanceEntry, action: "submit" | "approve" | "reject" | "reopen") => void; compact?: boolean }) {
+  if (!entries.length) return <EmptyState title="No attendance records" description="No entries were found for the selected period." />;
+  return <div className="space-y-3">{entries.map((entry) => <div key={entry.id} className="rounded-xl border p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{dateTime(entry.clock_in_at)}</p><Badge variant={entry.status === "complete" || entry.status === "adjusted" ? "outline" : "secondary"}>{entry.status}</Badge><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status.replaceAll("_", " ")}</Badge></div><p className="mt-1 text-xs text-muted-foreground">Out {dateTime(entry.clock_out_at)} • {minutes(entry.regular_minutes)} regular • {minutes(entry.overtime_minutes)} overtime{entry.exception_code ? ` • ${entry.exception_code}` : ""}</p></div>{canManage && !compact ? <div className="flex shrink-0 gap-1">{entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onAction(entry, "submit")}><FileClock className="mr-1 h-3.5 w-3.5" />Submit</Button> : null}{entry.approval_status === "pending" ? <><Button size="sm" onClick={() => onAction(entry, "approve")}><Check className="mr-1 h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" onClick={() => onAction(entry, "reject")}><X className="mr-1 h-3.5 w-3.5" />Reject</Button></> : null}{["rejected", "needs_correction"].includes(entry.approval_status) ? <Button size="sm" variant="outline" onClick={() => onAction(entry, "reopen")}>Reopen</Button> : null}</div> : null}</div></div>)}</div>;
+}
+
+function ScheduleCard({ schedules, templates }: { schedules: AttendanceSchedule[]; templates: AttendanceShiftTemplate[] }) {
+  return <Card><CardHeader><CardTitle className="text-base">Assigned schedule</CardTitle><CardDescription>Staff overrides and effective dates.</CardDescription></CardHeader><CardContent className="space-y-2">{schedules.length ? schedules.map((schedule) => { const template = templates.find((item) => item.id === schedule.shift_template_id); return <div key={schedule.id} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"><div><p className="font-medium">{weekdays[schedule.weekday] || `Day ${schedule.weekday}`}</p><p className="text-xs text-muted-foreground">{schedule.is_day_off ? "Day off" : template ? `${template.name} • ${template.start_local_time.slice(0, 5)}–${template.end_local_time.slice(0, 5)}` : `Shift #${schedule.shift_template_id || "—"}`}</p></div><Badge variant="outline">{dateOnly(schedule.effective_from)}</Badge></div>; }) : <EmptyState title="No staff schedule" description="Restaurant defaults may still apply, but staff-specific rules are not configured." />}</CardContent></Card>;
+}
+
+function LeaveCard({ leaves }: { leaves: AttendanceLeave[] }) {
+  return <Card><CardHeader><CardTitle className="text-base">Leave</CardTitle><CardDescription>Paid and unpaid requests in this period.</CardDescription></CardHeader><CardContent className="space-y-2">{leaves.length ? leaves.map((leave) => <div key={leave.id} className="rounded-lg border p-3"><div className="flex items-center justify-between gap-3"><p className="font-medium capitalize">{leave.leave_type} leave</p><Badge variant={leave.status === "approved" ? "default" : "secondary"}>{leave.status}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{dateOnly(leave.date_from)} to {dateOnly(leave.date_to)} • {leave.day_fraction === 0.5 ? "Half day" : "Full day"}</p><p className="mt-1 text-sm">{leave.reason}</p></div>) : <EmptyState title="No leave records" description="No leave overlaps the selected period." />}</CardContent></Card>;
+}
+
+function PayrollHistoryTable({ records }: { records: PayrollHistoryRecord[] }) {
+  if (!records.length) return <EmptyState title="No payroll history" description="This staff member has not been included in a payroll run yet." />;
+  return <div className="overflow-x-auto rounded-xl border"><Table><TableHeader><TableRow><TableHead>Period</TableHead><TableHead>Status</TableHead><TableHead>Attendance</TableHead><TableHead>Pay breakdown</TableHead><TableHead className="text-right">Net pay</TableHead></TableRow></TableHeader><TableBody>{records.map(({ run, item }) => <TableRow key={item.id}><TableCell className="min-w-[170px]"><Link href={`/payroll/${run.id}`} className="font-semibold text-primary hover:underline">{dateOnly(run.date_from)} – {dateOnly(run.date_to)}</Link><p className="text-xs text-muted-foreground">Run #{run.id}</p></TableCell><TableCell><Badge variant={run.status === "paid" ? "default" : "secondary"}>{run.status}</Badge>{run.paid_at ? <p className="mt-1 text-xs text-muted-foreground">{dateOnly(run.paid_at)}</p> : null}</TableCell><TableCell className="min-w-[180px]"><p>{item.payable_days} payable / {item.scheduled_days} scheduled</p><p className="text-xs text-muted-foreground">{minutes(item.regular_minutes)} regular • {minutes(item.overtime_minutes)} OT</p></TableCell><TableCell className="min-w-[190px]"><p>{money(item.regular_pay)} regular</p><p className="text-xs text-muted-foreground">+ {money(item.overtime_pay + item.holiday_premium_pay + item.bonus)} extras • − {money(item.deduction + item.tax_amount)} deductions/tax</p></TableCell><TableCell className="text-right text-base font-bold">{money(item.net_pay)}</TableCell></TableRow>)}</TableBody></Table></div>;
+}
+
+function ActivityTimeline({ entries, salaryHistory, payrollHistory }: { entries: AttendanceEntry[]; salaryHistory: SalaryHistoryRecord[]; payrollHistory: PayrollHistoryRecord[] }) {
+  const events = [
+    ...entries.map((entry) => ({ key: `attendance-${entry.id}`, at: entry.updated_at || entry.clock_in_at, icon: Clock3, title: `Attendance ${entry.approval_status.replaceAll("_", " ")}`, detail: `${dateTime(entry.clock_in_at)} • ${minutes(entry.regular_minutes)} regular` })),
+    ...salaryHistory.map((record) => ({ key: `salary-${record.id}`, at: record.created_at || record.effective_from, icon: WalletCards, title: `Salary ${money(record.salary_amount)} / ${record.salary_type}`, detail: `Effective ${dateOnly(record.effective_from)}${record.reason ? ` • ${record.reason}` : ""}` })),
+    ...payrollHistory.map(({ run, item }) => ({ key: `payroll-${item.id}`, at: run.paid_at || run.created_at || run.date_to, icon: Banknote, title: `Payroll ${run.status}`, detail: `${dateOnly(run.date_from)}–${dateOnly(run.date_to)} • ${money(item.net_pay)} net` })),
+  ].sort((left, right) => new Date(right.at || 0).getTime() - new Date(left.at || 0).getTime()).slice(0, 30);
+  if (!events.length) return <EmptyState title="No workforce activity" description="Attendance, salary, and payroll events will appear here." />;
+  return <div className="space-y-1">{events.map((event, index) => { const Icon = event.icon; return <div key={event.key} className="relative flex gap-4 pb-5 last:pb-0">{index < events.length - 1 ? <div className="absolute left-5 top-10 h-[calc(100%-1.5rem)] w-px bg-border" /> : null}<div className="z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-background text-primary"><Icon className="h-4 w-4" /></div><div className="pt-1"><p className="font-semibold capitalize">{event.title}</p><p className="text-sm text-muted-foreground">{event.detail}</p><p className="mt-1 text-xs text-muted-foreground">{dateTime(event.at)}</p></div></div>; })}</div>;
 }
