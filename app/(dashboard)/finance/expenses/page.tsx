@@ -911,6 +911,7 @@ export default function ExpensesPage() {
         <MetricCard
           label="Expense Entries"
           value={expenseTotalCount || filteredExpenses.length}
+          isStringValue
           icon={<Receipt className="w-5 h-5" />}
           color="text-amber-500"
           bg="bg-amber-50 dark:bg-amber-950/20"
