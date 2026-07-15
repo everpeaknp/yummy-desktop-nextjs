@@ -5,6 +5,7 @@ export type PayrollReadinessBlocker = {
   code: string;
   message: string;
   staff_id?: number | null;
+  action?: string | null;
   entry_ids?: number[];
   record_type?: string | null;
   record_ids?: number[];
@@ -59,6 +60,45 @@ export type PayrollDueSummary = {
   staff: PayrollStaffBalance[];
 };
 
+export type PayrollStaffSetup = {
+  staff_id: number;
+  user_id: number;
+  staff_name: string;
+  salary_type: "monthly" | "weekly" | "daily" | "hourly";
+  compensation_ready: boolean;
+  attendance_schedule_ready: boolean;
+  ready: boolean;
+  paid_through?: string | null;
+  blockers: PayrollReadinessBlocker[];
+};
+
+export type PayrollSetupReadiness = {
+  as_of: string;
+  payroll_schedule_configured: boolean;
+  staff_total: number;
+  staff_ready: number;
+  blocking_staff_count: number;
+  all_ready: boolean;
+  tracking_presets: {
+    after_last_paid_period: string;
+    current_month_start: string;
+  };
+  staff: PayrollStaffSetup[];
+};
+
+export type PayrollBulkPrepareResult = {
+  created_runs: Array<{ id: number; date_from: string; date_to: string }>;
+  created_run_count: number;
+  prepared_staff_count: number;
+  prepared_period_count: number;
+  skipped_periods: Array<{
+    date_from: string;
+    date_to: string;
+    staff_ids: number[];
+    blockers: PayrollReadinessBlocker[];
+  }>;
+};
+
 export type PayrollSchedule = {
   id: number;
   restaurant_id: number;
@@ -106,6 +146,18 @@ export const payrollPayablesApi = {
   async staffBalance(staffId: number, asOf?: string) {
     return unwrap<PayrollStaffBalance>(
       await apiClient.get(PayrollApis.staffBalance(staffId, asOf)),
+    );
+  },
+
+  async setupReadiness(asOf?: string) {
+    return unwrap<PayrollSetupReadiness>(
+      await apiClient.get(PayrollApis.setupReadiness(asOf)),
+    );
+  },
+
+  async bulkPrepare(payload: { as_of?: string; tax_percentage?: number } = {}) {
+    return unwrap<PayrollBulkPrepareResult>(
+      await apiClient.post(PayrollApis.bulkPrepare, payload),
     );
   },
 

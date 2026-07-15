@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -167,6 +167,7 @@ export default function StaffWorkspacePage() {
   const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
   const userId = Number(rawId);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const currentUser = useAuth((state) => state.user) as any;
 
   const initialRange = useMemo(currentMonthRange, []);
@@ -615,7 +616,7 @@ export default function StaffWorkspacePage() {
 
       {workspaceWarnings.length ? <div className="space-y-2">{workspaceWarnings.map((warning) => <div key={warning} className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /><span>{warning}</span></div>)}</div> : null}
 
-      <Tabs defaultValue="overview" className="space-y-5">
+      <Tabs defaultValue={["overview", "attendance", "payroll", "employment", "access", "activity"].includes(searchParams.get("tab") || "") ? searchParams.get("tab")! : "overview"} className="space-y-5">
         <div className="overflow-x-auto pb-1"><TabsList className="h-auto min-w-max justify-start rounded-xl bg-muted/70 p-1"><TabsTrigger value="overview">Overview</TabsTrigger>{canViewAttendance ? <TabsTrigger value="attendance">Attendance</TabsTrigger> : null}{canViewPayroll ? <TabsTrigger value="payroll">Payroll</TabsTrigger> : null}<TabsTrigger value="employment">Employment</TabsTrigger><TabsTrigger value="access">Access</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList></div>
 
         <TabsContent value="overview" className="space-y-5">

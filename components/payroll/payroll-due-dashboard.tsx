@@ -45,10 +45,12 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/hooks/use-auth";
 import { hasPermission } from "@/lib/role-permissions";
+import { PayrollSetupWizard } from "@/components/payroll/payroll-setup-wizard";
 import {
   payrollPayablesApi,
   type PayrollDueSummary,
   type PayrollSchedule,
+  type PayrollSetupReadiness,
   type PayrollStaffBalance,
 } from "@/lib/payroll/payables";
 
@@ -75,30 +77,30 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
   const user = useAuth((state) => state.user);
   const canManage = hasPermission(user, "finance.payroll.manage");
   const [summary, setSummary] = useState<PayrollDueSummary | null>(null);
+  const [readiness, setReadiness] = useState<PayrollSetupReadiness | null>(null);
   const [schedules, setSchedules] = useState<PayrollSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState<PayrollStaffBalance | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [paidAt, setPaidAt] = useState("");
-  const [frequency, setFrequency] = useState<"monthly" | "weekly">("monthly");
-  const [periodStartDay, setPeriodStartDay] = useState("1");
-  const [paymentDelayDays, setPaymentDelayDays] = useState("0");
-  const [trackingStart, setTrackingStart] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextSummary, nextSchedules] = await Promise.all([
+      const [nextSummary, nextSchedules, nextReadiness] = await Promise.all([
         payrollPayablesApi.dueSummary(),
         payrollPayablesApi.schedules(),
+        payrollPayablesApi.setupReadiness(),
       ]);
       setSummary(nextSummary);
       setSchedules(nextSchedules);
+      setReadiness(nextReadiness);
     } catch (error) {
       toast.error(apiError(error));
     } finally {
@@ -116,40 +118,20 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
   );
 
   const openSettings = () => {
-    setFrequency(defaultSchedule?.frequency || "monthly");
-    setPeriodStartDay(String(defaultSchedule?.period_start_day ?? 1));
-    setPaymentDelayDays(String(defaultSchedule?.payment_delay_days ?? 0));
-    setTrackingStart(defaultSchedule?.effective_from || "");
-    setSettingsOpen(true);
+    setSetupOpen(true);
   };
 
-  const saveSettings = async () => {
-    const startDay = Number(periodStartDay);
-    const delay = Number(paymentDelayDays);
-    if (!Number.isInteger(startDay) || startDay < (frequency === "monthly" ? 1 : 0) || startDay > (frequency === "monthly" ? 31 : 6)) {
-      toast.error(frequency === "monthly" ? "Monthly start day must be 1–31" : "Weekly start day must be 0–6");
-      return;
-    }
-    if (!Number.isInteger(delay) || delay < 0 || delay > 90) {
-      toast.error("Payment delay must be between 0 and 90 days");
-      return;
-    }
-    setSaving(true);
+  const bulkPrepare = async () => {
+    setBulkBusy(true);
     try {
-      await payrollPayablesApi.saveSchedule({
-        frequency,
-        period_start_day: startDay,
-        payment_delay_days: delay,
-        effective_from: trackingStart || undefined,
-        is_active: true,
-      });
-      toast.success("Automatic payroll schedule saved");
-      setSettingsOpen(false);
+      const result = await payrollPayablesApi.bulkPrepare();
+      toast.success(`${result.created_run_count} payroll run${result.created_run_count === 1 ? "" : "s"} prepared for ${result.prepared_staff_count} employees`);
       await load();
+      onChanged?.();
     } catch (error) {
       toast.error(apiError(error));
     } finally {
-      setSaving(false);
+      setBulkBusy(false);
     }
   };
 
@@ -226,6 +208,7 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
   if (!summary) return null;
 
   const overdueStaff = summary.staff.filter((row) => row.overdue_period_count > 0).length;
+  const readyPeriods = summary.staff.reduce((total, staff) => total + staff.suggested_periods.filter((period) => period.ready).length, 0);
 
   return (
     <div className="space-y-5">
@@ -234,8 +217,10 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
           <h2 className="text-lg font-semibold">Salary due now</h2>
           <p className="text-sm text-muted-foreground">Completed periods and approved balances are calculated automatically. Current-period accrual is shown separately.</p>
         </div>
-        {canManage ? <Button variant="outline" onClick={openSettings}><Settings2 className="mr-2 h-4 w-4" />Pay schedule</Button> : null}
+        {canManage ? <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={openSettings}><Settings2 className="mr-2 h-4 w-4" />Set up payroll</Button><Button onClick={bulkPrepare} disabled={bulkBusy || readyPeriods === 0}>{bulkBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}Prepare all ready ({readyPeriods})</Button></div> : null}
       </div>
+
+      {readiness ? <Card className={readiness.all_ready ? "border-emerald-500/30" : "border-amber-500/30"}><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2 font-semibold">{readiness.all_ready ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-amber-600" />}Payroll setup: {readiness.staff_ready} of {readiness.staff_total} employees ready</div><p className="mt-1 text-sm text-muted-foreground">{readiness.all_ready ? "Automatic payroll is configured and staff checks pass." : `${readiness.blocking_staff_count} employees or the pay cycle still need attention.`}</p></div>{canManage ? <Button variant="outline" onClick={() => setSetupOpen(true)}>{readiness.all_ready ? "Review setup" : "Continue setup"}</Button> : null}</CardContent></Card> : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Outstanding" value={money(summary.total_outstanding)} icon={WalletCards} tone="text-red-600" />
@@ -254,14 +239,14 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
                 {summary.staff.length === 0 ? <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Create staff employment profiles to start automatic payroll.</TableCell></TableRow> : summary.staff.map((staff) => {
                   const approvedOutstanding = staff.outstanding_items.reduce((total, item) => total + Number(item.outstanding_amount || 0), 0);
                   const nextReady = staff.suggested_periods.find((row) => row.ready);
-                  const blocked = staff.suggested_periods.find((row) => !row.ready);
+                  const blocked = staff.suggested_periods.find((row) => !row.ready) || (staff.current_period && !staff.current_period.ready ? staff.current_period : undefined);
                   return <TableRow key={staff.staff_id}>
                     <TableCell><Link href={`/staff/${staff.user_id}`} className="font-semibold hover:underline">{staff.staff_name}</Link><p className="text-xs capitalize text-muted-foreground">{staff.salary_type} salary</p></TableCell>
                     <TableCell>{dateOnly(staff.paid_through)}</TableCell>
                     <TableCell><div className="flex flex-wrap gap-1">{staff.overdue_period_count > 0 ? <Badge variant="destructive">{staff.overdue_period_count} overdue</Badge> : <Badge variant="outline">Up to date</Badge>}{staff.suggested_periods.length ? <Badge variant="outline">{staff.suggested_periods.length} calculated</Badge> : null}{blocked ? <Badge variant="secondary">Needs review</Badge> : null}</div></TableCell>
                     <TableCell className="text-right font-semibold">{money(staff.total_outstanding)}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{money(staff.current_accrual)}</TableCell>
-                    <TableCell className="text-right"><div className="flex justify-end gap-2">{canManage && approvedOutstanding > 0 ? <Button size="sm" onClick={() => openPayment(staff)}><Banknote className="mr-1.5 h-4 w-4" />Pay</Button> : null}{canManage && nextReady ? <Button size="sm" variant="outline" onClick={() => preparePeriod(staff)}><Clock3 className="mr-1.5 h-4 w-4" />Prepare {dateOnly(nextReady.date_to)}</Button> : null}{blocked && !nextReady ? <Button asChild size="sm" variant="outline"><Link href={blocked.blockers.some((row) => row.code.includes("SALARY") || row.code.includes("WORK_HOURS")) ? `/staff/${staff.user_id}` : "/attendance"}>Resolve blocker</Link></Button> : null}</div></TableCell>
+                    <TableCell className="text-right"><div className="flex justify-end gap-2">{canManage && approvedOutstanding > 0 ? <Button size="sm" onClick={() => openPayment(staff)}><Banknote className="mr-1.5 h-4 w-4" />Pay</Button> : null}{canManage && nextReady ? <Button size="sm" variant="outline" onClick={() => preparePeriod(staff)}><Clock3 className="mr-1.5 h-4 w-4" />Prepare {dateOnly(nextReady.date_to)}</Button> : null}{blocked && !nextReady ? <Button asChild size="sm" variant="outline"><Link href={blocked.blockers[0]?.action === "staff_profile" ? `/staff/${staff.user_id}?tab=employment` : blocked.blockers[0]?.action === "attendance_timesheets" ? `/attendance?tab=timesheets&staff_id=${staff.staff_id}` : `/attendance?tab=schedules&staff_id=${staff.staff_id}`}>Fix {blocked.blockers[0]?.action === "attendance_schedule" ? "schedule" : "blocker"}</Link></Button> : null}</div></TableCell>
                   </TableRow>;
                 })}
               </TableBody>
@@ -278,13 +263,7 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Automatic payroll schedule</DialogTitle><DialogDescription>Set this once. Payroll will calculate completed unpaid periods from the tracking date; the manual date picker remains available for off-cycle payroll.</DialogDescription></DialogHeader>
-          <div className="space-y-4"><div className="space-y-2"><Label>Pay cycle</Label><Select value={frequency} onValueChange={(value: "monthly" | "weekly") => { setFrequency(value); setPeriodStartDay(value === "monthly" ? "1" : "0"); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="weekly">Weekly</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>{frequency === "monthly" ? "Period starts on day" : "Week starts on (0 Monday – 6 Sunday)"}</Label><Input type="number" value={periodStartDay} onChange={(event) => setPeriodStartDay(event.target.value)} /></div><div className="space-y-2"><Label>Track unpaid payroll from</Label><Input type="date" value={trackingStart} onChange={(event) => setTrackingStart(event.target.value)} /><p className="text-xs text-muted-foreground">For existing businesses, use the first unpaid date. This avoids treating salaries already paid outside Yummy as outstanding.</p></div><div className="space-y-2"><Label>Payment due after period ends (days)</Label><Input type="number" min="0" max="90" value={paymentDelayDays} onChange={(event) => setPaymentDelayDays(event.target.value)} /></div></div>
-          <DialogFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}>Cancel</Button><Button onClick={saveSettings} disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save schedule</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {readiness ? <PayrollSetupWizard open={setupOpen} onOpenChange={setSetupOpen} readiness={readiness} schedule={defaultSchedule} onReload={load} onBulkPrepare={bulkPrepare} bulkBusy={bulkBusy} /> : null}
     </div>
   );
 }

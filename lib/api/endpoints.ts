@@ -1898,6 +1898,9 @@ export const PayrollApis = {
     asOf
       ? `/payroll/staff/${staffId}/balance?as_of=${encodeURIComponent(asOf)}`
       : `/payroll/staff/${staffId}/balance`,
+  setupReadiness: (asOf?: string) =>
+    asOf ? `/payroll/setup-readiness?as_of=${encodeURIComponent(asOf)}` : "/payroll/setup-readiness",
+  bulkPrepare: "/payroll/runs/bulk-prepare",
   schedules: "/payroll/schedules",
   payments: (staffId?: number) =>
     staffId ? `/payroll/payments?staff_id=${staffId}` : "/payroll/payments",

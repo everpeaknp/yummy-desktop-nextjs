@@ -79,4 +79,39 @@ describe("payrollPayablesApi", () => {
       is_active: true,
     });
   });
+
+  it("loads setup readiness and bulk prepares all ready periods", async () => {
+    mocked.get.mockResolvedValueOnce({
+      data: { data: { staff_total: 6, staff_ready: 5, staff: [] } },
+    });
+    mocked.post.mockResolvedValueOnce({
+      data: { data: { created_run_count: 2, prepared_staff_count: 5 } },
+    });
+
+    const readiness = await payrollPayablesApi.setupReadiness("2026-07-15");
+    const result = await payrollPayablesApi.bulkPrepare({
+      as_of: "2026-07-15",
+    });
+
+    expect(mocked.get).toHaveBeenCalledWith(
+      "/payroll/setup-readiness?as_of=2026-07-15",
+    );
+    expect(mocked.post).toHaveBeenCalledWith("/payroll/runs/bulk-prepare", {
+      as_of: "2026-07-15",
+    });
+    expect(readiness.staff_ready).toBe(5);
+    expect(result.prepared_staff_count).toBe(5);
+  });
+
+  it("reverses a posted payment with an audit reason", async () => {
+    mocked.post.mockResolvedValueOnce({
+      data: { data: { id: 7, status: "reversed" } },
+    });
+
+    await payrollPayablesApi.reversePayment(7, "Duplicate payment");
+
+    expect(mocked.post).toHaveBeenCalledWith("/payroll/payments/7/reverse", {
+      reason: "Duplicate payment",
+    });
+  });
 });

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import QRCode from "qrcode";
 import {
   CalendarDays,
@@ -173,6 +174,7 @@ function staffLabel(profile: StaffProfile | undefined, usersById: Map<number, St
 }
 
 export function AttendanceAdminClient() {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [dateFrom, setDateFrom] = useState(todayIso());
@@ -220,6 +222,17 @@ export function AttendanceAdminClient() {
     mobile_clocking_enabled: true,
     device_clocking_enabled: true,
   });
+
+  useEffect(() => {
+    const requestedTab = searchParams.get("tab");
+    const validTabs = new Set(["overview", "timesheets", "schedules", "leave", "qr", "devices", "settings"]);
+    if (requestedTab && validTabs.has(requestedTab)) setActiveTab(requestedTab);
+
+    const requestedStaffId = searchParams.get("staff_id");
+    if (requestedStaffId && /^\d+$/.test(requestedStaffId)) {
+      setScheduleForm((current) => ({ ...current, staff_id: requestedStaffId }));
+    }
+  }, [searchParams]);
 
   const usersById = useMemo(() => new Map(staffUsers.map((user) => [user.id, user])), [staffUsers]);
   const devicesById = useMemo(() => new Map(devices.map((device) => [device.id, device])), [devices]);
