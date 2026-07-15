@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, UserPlus, Search, Filter, Mail, Phone, MoreVertical, Edit, Trash2, Shield, User as UserIcon, ArrowLeft, Wallet } from "lucide-react";
+import { Loader2, UserPlus, Search, Filter, Mail, Phone, MoreVertical, Edit, UserX, Shield, User as UserIcon, ArrowLeft, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -421,16 +421,26 @@ export default function StaffPage() {
     }
   };
 
-  const handleDeleteStaff = async (id: number) => {
-    if (!confirm("Are you sure you want to PERMANENTLY delete this staff member? This action cannot be undone.")) return;
+  const handleDeactivateStaff = async (id: number) => {
+    if (!confirm("Deactivate this employee? They will lose access, but attendance and payroll history will be preserved.")) return;
     try {
       await apiClient.delete(StaffApis.delete(id));
-      toast.success("Staff member deleted successfully");
+      toast.success("Employee deactivated; history was preserved");
       fetchStaff();
     } catch (err: any) {
-      console.error("Failed to delete staff:", err);
-      const errMsg = err.response?.data?.message || err.response?.data?.detail || "Failed to delete staff member";
+      console.error("Failed to deactivate staff:", err);
+      const errMsg = err.response?.data?.message || err.response?.data?.detail || "Failed to deactivate employee";
       toast.error(errMsg);
+    }
+  };
+
+  const handleReactivateStaff = async (id: number) => {
+    try {
+      await apiClient.patch(StaffApis.update(id), { is_active: true });
+      toast.success("Employee reactivated");
+      fetchStaff();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.response?.data?.detail || "Failed to reactivate employee");
     }
   };
 
@@ -578,9 +588,7 @@ export default function StaffPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="success" className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30">
-                        Active
-                      </Badge>
+                      {member.is_active === false ? <Badge variant="secondary">Inactive</Badge> : <Badge variant="success" className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30">Active</Badge>}
                     </TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
@@ -599,9 +607,10 @@ export default function StaffPage() {
                           <DropdownMenuItem onClick={() => handleOpenDialog(member)}>
                             <Edit className="w-4 h-4 mr-2" /> Edit Profile
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeleteStaff(member.id)}>
-                            <Trash2 className="w-4 h-4 mr-2" /> Delete
+                          {member.is_active === false ? <DropdownMenuItem onClick={() => handleReactivateStaff(member.id)}><UserPlus className="w-4 h-4 mr-2" /> Reactivate</DropdownMenuItem> : <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeactivateStaff(member.id)}>
+                            <UserX className="w-4 h-4 mr-2" /> Deactivate
                           </DropdownMenuItem>
+                          }
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

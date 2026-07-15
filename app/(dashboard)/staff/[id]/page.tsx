@@ -22,7 +22,8 @@ import {
   Phone,
   RefreshCw,
   ShieldCheck,
-  Trash2,
+  UserCheck,
+  UserX,
   UserRound,
   WalletCards,
   X,
@@ -62,6 +63,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { StaffPayrollBalanceCard } from "@/components/payroll/staff-payroll-balance-card";
 
 type ScopeKey = "analytics" | "orders" | "receipts";
 type AccessScopeRow = {
@@ -81,6 +84,7 @@ type StaffUser = {
   permissions?: string[];
   created_at?: string;
   status?: string;
+  is_active?: boolean;
 };
 
 type ProfileForm = {
@@ -128,6 +132,13 @@ function dateTime(value?: string | null) {
   if (!value) return "—";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
+function toDateTimeLocal(value?: string | null) {
+  const parsed = value ? new Date(value) : new Date();
+  if (Number.isNaN(parsed.getTime())) return "";
+  const offset = parsed.getTimezoneOffset() * 60_000;
+  return new Date(parsed.getTime() - offset).toISOString().slice(0, 16);
 }
 
 function dateOnly(value?: string | null) {
@@ -184,6 +195,9 @@ export default function StaffWorkspacePage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileForm, setProfileForm] = useState<ProfileForm>(emptyProfileForm);
+  const [correctionEntry, setCorrectionEntry] = useState<AttendanceEntry | null>(null);
+  const [correctionSaving, setCorrectionSaving] = useState(false);
+  const [correctionForm, setCorrectionForm] = useState({ clockIn: "", clockOut: "", reason: "" });
 
   const [scopesByKey, setScopesByKey] = useState<Partial<Record<ScopeKey, AccessScopeRow>>>({});
   const [scopeDrafts, setScopeDrafts] = useState<Record<ScopeKey, { max_lookback_days: string; window_start: string; window_end: string }>>({
@@ -205,6 +219,7 @@ export default function StaffWorkspacePage() {
   );
   const canViewAttendance = can("attendance.view") || can("attendance.manage");
   const canManageAttendance = can("attendance.manage");
+  const canManagePayroll = can("finance.payroll.manage");
   const canViewPayroll = can("finance.payroll.view") || can("finance.payroll.manage");
   const canManageStaff = can("admin.staff.manage");
 
@@ -440,6 +455,45 @@ export default function StaffWorkspacePage() {
     }
   };
 
+  const openAttendanceCorrection = (entry: AttendanceEntry) => {
+    setCorrectionEntry(entry);
+    setCorrectionForm({
+      clockIn: toDateTimeLocal(entry.clock_in_at),
+      clockOut: toDateTimeLocal(entry.clock_out_at),
+      reason: "",
+    });
+  };
+
+  const saveAttendanceCorrection = async () => {
+    if (!correctionEntry) return;
+    const clockIn = new Date(correctionForm.clockIn);
+    const clockOut = new Date(correctionForm.clockOut);
+    const reason = correctionForm.reason.trim();
+    if (Number.isNaN(clockIn.getTime()) || Number.isNaN(clockOut.getTime())) return toast.error("Enter valid times");
+    if (clockOut <= clockIn) return toast.error("Clock out must be after clock in");
+    if (reason.length < 3) return toast.error("Add a short correction reason");
+
+    setCorrectionSaving(true);
+    try {
+      if (["approved", "rejected"].includes(correctionEntry.approval_status)) {
+        await attendanceApi.reopenEntry(correctionEntry.id, reason);
+      }
+      await attendanceApi.correctEntry(correctionEntry.id, {
+        clock_in_at: clockIn.toISOString(),
+        clock_out_at: clockOut.toISOString(),
+        reason,
+      });
+      toast.success("Attendance corrected and returned to draft");
+      setCorrectionEntry(null);
+      await loadWorkspace(true);
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : detail?.message || "Failed to correct attendance");
+    } finally {
+      setCorrectionSaving(false);
+    }
+  };
+
   const savePermissions = async () => {
     setPermissionsSaving(true);
     try {
@@ -498,14 +552,24 @@ export default function StaffWorkspacePage() {
     }
   };
 
-  const removeStaff = async () => {
-    if (!window.confirm(`Remove ${staff?.name || "this staff member"}? This cannot be undone.`)) return;
+  const deactivateStaff = async () => {
+    if (!window.confirm(`Deactivate ${staff?.name || "this employee"}? Login and attendance access will stop, while payroll history is preserved.`)) return;
     try {
       await apiClient.delete(StaffApis.delete(userId));
-      toast.success("Staff account removed");
-      router.push("/staff");
+      toast.success("Employee deactivated; history was preserved");
+      await loadWorkspace(true);
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to remove staff account");
+      toast.error(error?.response?.data?.detail || "Failed to deactivate employee");
+    }
+  };
+
+  const reactivateStaff = async () => {
+    try {
+      await apiClient.patch(StaffApis.update(userId), { is_active: true });
+      toast.success("Employee reactivated");
+      await loadWorkspace(true);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || "Failed to reactivate employee");
     }
   };
 
@@ -531,7 +595,7 @@ export default function StaffWorkspacePage() {
             <Button asChild size="icon" variant="outline" className="shrink-0 rounded-full bg-background/80"><Link href="/staff"><ArrowLeft className="h-4 w-4" /></Link></Button>
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-foreground shadow-lg shadow-primary/20">{staff.name?.charAt(0).toUpperCase() || "?"}</div>
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{staff.name}</h1><Badge className="capitalize">{staff.status || "Active"}</Badge></div>
+              <div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{staff.name}</h1><Badge variant={staff.is_active === false ? "secondary" : "default"}>{staff.is_active === false ? "Inactive" : "Active"}</Badge></div>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><BriefcaseBusiness className="h-4 w-4" />{staff.primary_role || staff.role || "Staff"}<span>•</span><span>User #{staff.id}</span>{profile ? <><span>•</span><span>Staff #{profile.id}</span></> : null}</p>
               <div className="mt-2 flex flex-wrap gap-1.5">{activeRoles.map((role) => <Badge key={role} variant="secondary" className="capitalize">{role}</Badge>)}</div>
             </div>
@@ -562,7 +626,7 @@ export default function StaffWorkspacePage() {
             <SummaryCard icon={WalletCards} label="Compensation" value={profile ? money(profile.salary_amount) : "Not configured"} helper={profile ? `${profile.salary_type} • effective salary history enabled` : "Create a payroll profile"} />
           </div>
           <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-            <Card><CardHeader><CardTitle className="text-base">Recent attendance</CardTitle><CardDescription>Latest staff-specific records and approval state.</CardDescription></CardHeader><CardContent><AttendanceList entries={entries.slice(0, 5)} canManage={canManageAttendance} onAction={updateAttendance} compact /></CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-base">Recent attendance</CardTitle><CardDescription>Latest staff-specific records and approval state.</CardDescription></CardHeader><CardContent><AttendanceList entries={entries.slice(0, 5)} canManage={canManageAttendance} onAction={updateAttendance} onCorrect={openAttendanceCorrection} compact /></CardContent></Card>
             <div className="space-y-5">
               <Card><CardHeader><CardTitle className="text-base">Current employment</CardTitle></CardHeader><CardContent className="space-y-3"><InfoLine icon={Mail} label="Email" value={staff.email || "Not set"} /><InfoLine icon={Phone} label="Phone" value={profile?.phone || "Not set"} /><InfoLine icon={MapPin} label="Address" value={profile?.address || "Not set"} /><InfoLine icon={WalletCards} label="Account" value={profile?.account_number || "Not configured"} /></CardContent></Card>
               <Card><CardHeader><CardTitle className="text-base">Payroll readiness</CardTitle><CardDescription>Quick signal; payroll preview remains the authoritative check.</CardDescription></CardHeader><CardContent><div className={`rounded-xl border p-4 ${profile && totals.pending === 0 && schedules.length > 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="flex items-center gap-2 font-semibold">{profile && totals.pending === 0 && schedules.length > 0 ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-amber-600" />}{profile && totals.pending === 0 && schedules.length > 0 ? "No obvious staff blockers" : "Setup or review required"}</div><p className="mt-2 text-sm text-muted-foreground">{!profile ? "Create a compensation profile." : totals.pending ? "Resolve draft, pending, or correction-required attendance." : schedules.length === 0 && profile.salary_type !== "hourly" ? "Assign an effective work schedule." : "Run payroll preview to validate salary dates, leave, holidays, and period overlap."}</p></div></CardContent></Card>
@@ -574,12 +638,13 @@ export default function StaffWorkspacePage() {
           <Card><CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="font-semibold">Attendance period</h2><p className="text-sm text-muted-foreground">View and manage only {staff.name}&apos;s time records.</p></div><div className="grid grid-cols-2 gap-2"><div><Label className="text-xs">From</Label><Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></div><div><Label className="text-xs">To</Label><Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></div></div></CardContent></Card>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><SummaryCard icon={Clock3} label="Regular" value={minutes(totals.regular)} /><SummaryCard icon={History} label="Overtime" value={minutes(totals.overtime)} /><SummaryCard icon={FileClock} label="Needs review" value={String(totals.pending)} /><SummaryCard icon={AlertTriangle} label="Exceptions" value={String(totals.exceptions)} /></div>
           <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
-            <Card><CardHeader><CardTitle>Timesheet</CardTitle><CardDescription>Corrections remain auditable and exported records stay locked to payroll snapshots.</CardDescription></CardHeader><CardContent><AttendanceList entries={entries} canManage={canManageAttendance} onAction={updateAttendance} /></CardContent></Card>
+            <Card><CardHeader><CardTitle>Timesheet</CardTitle><CardDescription>Corrections remain auditable and exported records stay locked to payroll snapshots.</CardDescription></CardHeader><CardContent><AttendanceList entries={entries} canManage={canManageAttendance} onAction={updateAttendance} onCorrect={openAttendanceCorrection} /></CardContent></Card>
             <div className="space-y-5"><ScheduleCard schedules={schedules} templates={templates} /><LeaveCard leaves={leaves} /></div>
           </div>
         </TabsContent> : null}
 
         {canViewPayroll ? <TabsContent value="payroll" className="space-y-5">
+          {profile ? <StaffPayrollBalanceCard staffId={profile.id} canManage={canManagePayroll} /> : null}
           <div className="grid gap-5 lg:grid-cols-[.75fr_1.25fr]">
             <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Current compensation</CardTitle><CardDescription>Effective salary used for new payroll periods.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent>{profile ? <div className="space-y-3"><div className="rounded-2xl bg-primary/10 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{profile.salary_type}</p><p className="mt-1 text-2xl font-bold">{money(profile.salary_amount)}</p></div><InfoRow label="Weekly hours" value={profile.weekly_hours == null ? "—" : String(profile.weekly_hours)} /><InfoRow label="Daily hours" value={profile.daily_hours == null ? "—" : String(profile.daily_hours)} /><InfoRow label="Salary records" value={String(salaryHistory.length)} /></div> : <EmptyState title="No compensation profile" description="Create a payroll profile before this employee can be included in payroll." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
             <Card><CardHeader><CardTitle>Salary history</CardTitle><CardDescription>Effective-dated compensation changes; periods crossing a change must be split.</CardDescription></CardHeader><CardContent><div className="space-y-3">{salaryHistory.length ? salaryHistory.map((record) => <div key={record.id} className="flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold capitalize">{record.salary_type} • {money(record.salary_amount)}</p><p className="text-sm text-muted-foreground">{dateOnly(record.effective_from)} to {record.effective_to ? dateOnly(record.effective_to) : "Current"}</p></div><div className="sm:text-right"><Badge variant={record.effective_to ? "outline" : "default"}>{record.effective_to ? "Historical" : "Current"}</Badge><p className="mt-1 text-xs text-muted-foreground">{record.reason || "No change reason"}</p></div></div>) : <EmptyState title="No salary history" description="A salary record will appear after the profile is created." />}</div></CardContent></Card>
@@ -592,7 +657,7 @@ export default function StaffWorkspacePage() {
             <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Account details</CardTitle><CardDescription>Identity and restaurant login information.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={() => setAccountOpen(true)}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent className="space-y-4"><InfoLine icon={UserRound} label="Full name" value={staff.name} /><InfoLine icon={Mail} label="Email" value={staff.email || "Not set"} /><InfoLine icon={BriefcaseBusiness} label="Primary role" value={staff.primary_role || staff.role || "Staff"} /><InfoLine icon={CalendarDays} label="Joined" value={staff.created_at ? dateOnly(staff.created_at) : "—"} /></CardContent></Card>
             <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Employment and pay profile</CardTitle><CardDescription>Contact, account, salary, and expected hours.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />{profile ? "Edit" : "Create"}</Button> : null}</CardHeader><CardContent>{profile ? <div className="grid gap-4 sm:grid-cols-2"><InfoLine icon={WalletCards} label="Account number" value={profile.account_number} /><InfoLine icon={Banknote} label="Salary" value={`${money(profile.salary_amount)} / ${profile.salary_type}`} /><InfoLine icon={Phone} label="Phone" value={profile.phone || "Not set"} /><InfoLine icon={MapPin} label="Address" value={profile.address || "Not set"} /><InfoLine icon={Clock3} label="Weekly hours" value={profile.weekly_hours == null ? "Not set" : String(profile.weekly_hours)} /><InfoLine icon={Clock3} label="Daily hours" value={profile.daily_hours == null ? "Not set" : String(profile.daily_hours)} /></div> : <EmptyState title="No employment profile" description="Attendance and payroll need a linked staff profile." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
           </div>
-          {canManageStaff ? <Card className="border-destructive/30"><CardHeader><CardTitle className="text-base text-destructive">Danger zone</CardTitle><CardDescription>Removing the account is destructive and may be restricted by linked operational records.</CardDescription></CardHeader><CardContent><Button variant="destructive" onClick={removeStaff}><Trash2 className="mr-2 h-4 w-4" />Remove staff account</Button></CardContent></Card> : null}
+          {canManageStaff ? <Card><CardHeader><CardTitle className="text-base">Employment access</CardTitle><CardDescription>Deactivate access without deleting attendance, payroll, or audit history.</CardDescription></CardHeader><CardContent>{staff.is_active === false ? <Button onClick={reactivateStaff}><UserCheck className="mr-2 h-4 w-4" />Reactivate employee</Button> : <Button variant="outline" onClick={deactivateStaff}><UserX className="mr-2 h-4 w-4" />Deactivate employee</Button>}</CardContent></Card> : null}
         </TabsContent>
 
         <TabsContent value="access" className="space-y-5">
@@ -602,6 +667,8 @@ export default function StaffWorkspacePage() {
 
         <TabsContent value="activity"><Card><CardHeader><CardTitle>Workforce activity</CardTitle><CardDescription>Real staff-specific events from attendance, salary history, and payroll.</CardDescription></CardHeader><CardContent><ActivityTimeline entries={entries} salaryHistory={salaryHistory} payrollHistory={payrollHistory} /></CardContent></Card></TabsContent>
       </Tabs>
+
+      <Dialog open={Boolean(correctionEntry)} onOpenChange={(open) => { if (!open && !correctionSaving) setCorrectionEntry(null); }}><DialogContent><DialogHeader><DialogTitle>Correct attendance time</DialogTitle><DialogDescription>The record will return to draft and must be reviewed again before payroll.</DialogDescription></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2"><FormField label="Clock in"><Input type="datetime-local" value={correctionForm.clockIn} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockIn: event.target.value }))} /></FormField><FormField label="Clock out"><Input type="datetime-local" value={correctionForm.clockOut} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockOut: event.target.value }))} /></FormField><div className="sm:col-span-2"><FormField label="Correction reason"><Textarea value={correctionForm.reason} onChange={(event) => setCorrectionForm((current) => ({ ...current, reason: event.target.value }))} placeholder="For example: employee forgot to clock out" /></FormField></div></div><DialogFooter><Button variant="outline" disabled={correctionSaving} onClick={() => setCorrectionEntry(null)}>Cancel</Button><Button disabled={correctionSaving} onClick={saveAttendanceCorrection}>{correctionSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save correction</Button></DialogFooter></DialogContent></Dialog>
 
       <Dialog open={accountOpen} onOpenChange={setAccountOpen}><DialogContent><DialogHeader><DialogTitle>Edit staff account</DialogTitle><DialogDescription>Update the employee&apos;s identity and login email. Roles and permissions are managed from Access.</DialogDescription></DialogHeader><div className="space-y-4 py-2"><div><Label>Full name</Label><Input value={accountForm.name} onChange={(event) => setAccountForm((current) => ({ ...current, name: event.target.value }))} /></div><div><Label>Email</Label><Input type="email" value={accountForm.email} onChange={(event) => setAccountForm((current) => ({ ...current, email: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setAccountOpen(false)}>Cancel</Button><Button onClick={saveAccount} disabled={accountSaving}>{accountSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save account</Button></DialogFooter></DialogContent></Dialog>
 
@@ -637,9 +704,9 @@ function EmptyState({ title, description, action }: { title: string; description
   return <div className="rounded-2xl border border-dashed p-7 text-center"><MoreHorizontal className="mx-auto h-7 w-7 text-muted-foreground" /><p className="mt-2 font-semibold">{title}</p><p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>{action ? <div className="mt-4">{action}</div> : null}</div>;
 }
 
-function AttendanceList({ entries, canManage, onAction, compact = false }: { entries: AttendanceEntry[]; canManage: boolean; onAction: (entry: AttendanceEntry, action: "submit" | "approve" | "reject" | "reopen") => void; compact?: boolean }) {
+function AttendanceList({ entries, canManage, onAction, onCorrect, compact = false }: { entries: AttendanceEntry[]; canManage: boolean; onAction: (entry: AttendanceEntry, action: "submit" | "approve" | "reject" | "reopen") => void; onCorrect: (entry: AttendanceEntry) => void; compact?: boolean }) {
   if (!entries.length) return <EmptyState title="No attendance records" description="No entries were found for the selected period." />;
-  return <div className="space-y-3">{entries.map((entry) => <div key={entry.id} className="rounded-xl border p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{dateTime(entry.clock_in_at)}</p><Badge variant={entry.status === "complete" || entry.status === "adjusted" ? "outline" : "secondary"}>{entry.status}</Badge><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status.replaceAll("_", " ")}</Badge></div><p className="mt-1 text-xs text-muted-foreground">Out {dateTime(entry.clock_out_at)} • {minutes(entry.regular_minutes)} regular • {minutes(entry.overtime_minutes)} overtime{entry.exception_code ? ` • ${entry.exception_code}` : ""}</p></div>{canManage && !compact ? <div className="flex shrink-0 gap-1">{entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onAction(entry, "submit")}><FileClock className="mr-1 h-3.5 w-3.5" />Submit</Button> : null}{entry.approval_status === "pending" ? <><Button size="sm" onClick={() => onAction(entry, "approve")}><Check className="mr-1 h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" onClick={() => onAction(entry, "reject")}><X className="mr-1 h-3.5 w-3.5" />Reject</Button></> : null}{["rejected", "needs_correction"].includes(entry.approval_status) ? <Button size="sm" variant="outline" onClick={() => onAction(entry, "reopen")}>Reopen</Button> : null}</div> : null}</div></div>)}</div>;
+  return <div className="space-y-3">{entries.map((entry) => <div key={entry.id} className="rounded-xl border p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{dateTime(entry.clock_in_at)}</p><Badge variant={entry.status === "complete" || entry.status === "adjusted" ? "outline" : "secondary"}>{entry.status}</Badge><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status.replaceAll("_", " ")}</Badge></div><p className="mt-1 text-xs text-muted-foreground">Out {dateTime(entry.clock_out_at)} • {minutes(entry.regular_minutes)} regular • {minutes(entry.overtime_minutes)} overtime{entry.exception_code ? ` • ${entry.exception_code}` : ""}</p></div>{canManage && !compact ? <div className="flex shrink-0 flex-wrap gap-1">{entry.approval_status !== "payroll_exported" ? <Button size="sm" variant="outline" onClick={() => onCorrect(entry)}><Edit3 className="mr-1 h-3.5 w-3.5" />Correct</Button> : null}{entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onAction(entry, "submit")}><FileClock className="mr-1 h-3.5 w-3.5" />Submit</Button> : null}{entry.approval_status === "pending" ? <><Button size="sm" onClick={() => onAction(entry, "approve")}><Check className="mr-1 h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" onClick={() => onAction(entry, "reject")}><X className="mr-1 h-3.5 w-3.5" />Reject</Button></> : null}{["rejected", "needs_correction"].includes(entry.approval_status) ? <Button size="sm" variant="ghost" onClick={() => onAction(entry, "reopen")}>Reopen only</Button> : null}</div> : null}</div></div>)}</div>;
 }
 
 function ScheduleCard({ schedules, templates }: { schedules: AttendanceSchedule[]; templates: AttendanceShiftTemplate[] }) {

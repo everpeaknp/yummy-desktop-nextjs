@@ -116,6 +116,17 @@ export const attendanceApi = {
   async reopenEntry(id: number, reason: string) {
     return unwrap<AttendanceEntry>(await apiClient.post(AttendanceApis.reopenEntry(id), { reason }));
   },
+  async correctEntry(
+    id: number,
+    payload: { clock_in_at: string; clock_out_at: string; reason: string },
+  ) {
+    return unwrap<AttendanceEntry>(
+      await apiClient.patch(AttendanceApis.correctEntry(id), {
+        ...payload,
+        status: "adjusted",
+      }),
+    );
+  },
   async audit(id: number) {
     return unwrap<AttendanceAudit[]>(await apiClient.get(AttendanceApis.audit(id)));
   },

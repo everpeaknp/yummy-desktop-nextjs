@@ -491,9 +491,9 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
   }
 
   const canApprove = run.status === "draft";
-  const canMarkPaid = run.status === "approved";
+  const canMarkPaid = run.status === "approved" || run.status === "partially_paid";
   const canCancel = run.status === "draft" || run.status === "approved";
-  const canAdjust = run.status === "draft" || run.status === "approved";
+  const canAdjust = run.status === "draft";
   const canPrint = run.status === "paid";
 
   return (
@@ -534,7 +534,7 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
           </Button>
           <Button variant="outline" onClick={() => setPaidOpen(true)} disabled={!canMarkPaid || actionLoading}>
             <FileText className="w-4 h-4 mr-2" />
-            Mark Paid
+            {run.status === "partially_paid" ? "Pay remaining" : "Mark Paid"}
           </Button>
           <Button variant="outline" onClick={() => setCancelOpen(true)} disabled={!canCancel || actionLoading}>
             <XCircle className="w-4 h-4 mr-2" />

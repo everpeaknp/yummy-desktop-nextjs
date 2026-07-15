@@ -39,6 +39,11 @@ describe("attendanceApi", () => {
     await attendanceApi.overview("2026-06-23", "2026-06-24");
     await attendanceApi.listEntries({ dateFrom: "2026-06-23", staffId: 4, limit: 50 });
     await attendanceApi.approveEntry(9, { approved_overtime_minutes: 30, rejected_overtime_minutes: 0, reason: "ok" });
+    await attendanceApi.correctEntry(9, {
+      clock_in_at: "2026-06-23T03:00:00.000Z",
+      clock_out_at: "2026-06-23T11:00:00.000Z",
+      reason: "Forgot checkout",
+    });
     await attendanceApi.audit(9);
 
     expect(mocked.get).toHaveBeenCalledWith("/attendance/overview?date_from=2026-06-23&date_to=2026-06-24");
@@ -47,6 +52,12 @@ describe("attendanceApi", () => {
       approved_overtime_minutes: 30,
       rejected_overtime_minutes: 0,
       reason: "ok",
+    });
+    expect(mocked.patch).toHaveBeenCalledWith("/attendance/entries/9/correction", {
+      clock_in_at: "2026-06-23T03:00:00.000Z",
+      clock_out_at: "2026-06-23T11:00:00.000Z",
+      reason: "Forgot checkout",
+      status: "adjusted",
     });
     expect(mocked.get).toHaveBeenCalledWith("/attendance/entries/9/audit");
     expect(attendanceApi.exportCsvUrl("2026-06-23", "2026-06-24")).toBe("/attendance/export.csv?date_from=2026-06-23&date_to=2026-06-24");

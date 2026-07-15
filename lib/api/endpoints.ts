@@ -1838,6 +1838,7 @@ export const AttendanceApis = {
   approveEntry: (id: number) => "/attendance/entries/" + id + "/approve",
   rejectEntry: (id: number) => "/attendance/entries/" + id + "/reject",
   reopenEntry: (id: number) => "/attendance/entries/" + id + "/reopen",
+  correctEntry: (id: number) => "/attendance/entries/" + id + "/correction",
   audit: (id: number) => "/attendance/entries/" + id + "/audit",
   exportCsv: "/attendance/export.csv",
   shiftTemplates: "/attendance/shift-templates",
@@ -1891,6 +1892,17 @@ export const PayrollApis = {
     `/payroll/adjustments/${adjustmentId}`,
   runPdf: (id: number) => `/payroll/runs/${id}/pdf`,
   staffHistory: (staffId: number) => `/payroll/staff/${staffId}/history`,
+  dueSummary: (asOf?: string) =>
+    asOf ? `/payroll/due-summary?as_of=${encodeURIComponent(asOf)}` : "/payroll/due-summary",
+  staffBalance: (staffId: number, asOf?: string) =>
+    asOf
+      ? `/payroll/staff/${staffId}/balance?as_of=${encodeURIComponent(asOf)}`
+      : `/payroll/staff/${staffId}/balance`,
+  schedules: "/payroll/schedules",
+  payments: (staffId?: number) =>
+    staffId ? `/payroll/payments?staff_id=${staffId}` : "/payroll/payments",
+  recordPayment: "/payroll/payments",
+  reversePayment: (paymentId: number) => `/payroll/payments/${paymentId}/reverse`,
 };
 
 export const PeriodCloseApis = {

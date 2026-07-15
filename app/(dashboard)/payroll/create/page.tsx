@@ -120,12 +120,27 @@ export default function PayrollCreatePage() {
   const [selectedStaffIds, setSelectedStaffIds] = useState<Set<number>>(new Set()); // staff_id
   const [preview, setPreview] = useState<PayrollPreview | null>(null);
   const [reviewedSignature, setReviewedSignature] = useState("");
+  const [automaticSource, setAutomaticSource] = useState(false);
 
   const selectionSignature = includeAllStaff
     ? "all"
     : Array.from(selectedStaffIds).sort((a, b) => a - b).join(",");
   const previewSignature = `${dateFrom}|${dateTo}|${taxPercentage}|${selectionSignature}`;
   const previewIsCurrent = reviewedSignature === previewSignature;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const suggestedFrom = params.get("date_from");
+    const suggestedTo = params.get("date_to");
+    const suggestedStaffId = Number(params.get("staff_id"));
+    if (suggestedFrom && suggestedTo && Number.isInteger(suggestedStaffId) && suggestedStaffId > 0) {
+      setDateFrom(suggestedFrom);
+      setDateTo(suggestedTo);
+      setIncludeAllStaff(false);
+      setSelectedStaffIds(new Set([suggestedStaffId]));
+      setAutomaticSource(params.get("automatic") === "1");
+    }
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -299,14 +314,14 @@ export default function PayrollCreatePage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Create Payroll Run</h1>
-          <p className="text-muted-foreground">Select a period, tax, and which staff to include.</p>
+          <h1 className="text-2xl font-bold tracking-tight">{automaticSource ? "Review Suggested Payroll" : "Create Off-cycle Payroll"}</h1>
+          <p className="text-muted-foreground">{automaticSource ? "The system selected the oldest completed unpaid period. Review attendance before creating the draft." : "Use a custom period for corrections, advances, or exceptional payroll. Normal payroll is prepared from the due dashboard."}</p>
         </div>
       </div>
 
       <Card className="border-border">
         <CardHeader>
-          <CardTitle className="text-base">Payroll Period</CardTitle>
+          <CardTitle className="text-base">{automaticSource ? "Suggested payroll period" : "Custom payroll period"}</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
@@ -425,13 +440,24 @@ export default function PayrollCreatePage() {
           <CardContent className="space-y-4">
             {preview.blockers.length > 0 ? (
               <div className="space-y-2">
-                {preview.blockers.map((blocker, index) => (
-                  <div key={`${blocker.code}-${blocker.staff_id || "all"}-${index}`} className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
-                    <p className="font-medium">{blocker.message}</p>
-                    {blocker.entry_ids?.length ? <p className="mt-1 text-xs">Attendance entries: {blocker.entry_ids.join(", ")}</p> : null}
-                    {blocker.record_ids?.length ? <p className="mt-1 text-xs">{blocker.record_type || "Policy"} records: {blocker.record_ids.join(", ")}</p> : null}
-                  </div>
-                ))}
+                {preview.blockers.map((blocker, index) => {
+                  const option = staff.find((candidate) => candidate.staff_id === blocker.staff_id);
+                  const staffIssue = Boolean(option) && (blocker.code.includes("SALARY") || blocker.code.includes("SCHEDULE") || blocker.code.includes("WORK_HOURS"));
+                  const payrollIssue = blocker.code.includes("OVERLAP");
+                  const fixHref = staffIssue ? `/staff/${option?.user_id}` : payrollIssue ? "/payroll" : "/attendance";
+                  return (
+                    <div key={`${blocker.code}-${blocker.staff_id || "all"}-${index}`} className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-medium">{option?.label ? `${option.label}: ${blocker.message}` : blocker.message}</p>
+                        {blocker.entry_ids?.length ? <p className="mt-1 text-xs">Attendance entries: {blocker.entry_ids.join(", ")}</p> : null}
+                        {blocker.record_ids?.length ? <p className="mt-1 text-xs">{blocker.record_type || "Policy"} records: {blocker.record_ids.join(", ")}</p> : null}
+                      </div>
+                      <Button asChild size="sm" variant="outline" className="shrink-0 bg-background text-foreground">
+                        <Link href={fixHref}>{staffIssue ? "Open staff" : payrollIssue ? "View payroll runs" : "Fix attendance"}</Link>
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
             {preview.items.length > 0 ? (

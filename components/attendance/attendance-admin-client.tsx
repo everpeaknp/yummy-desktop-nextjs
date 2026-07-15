@@ -13,6 +13,7 @@ import {
   Fingerprint,
   Loader2,
   MapPin,
+  Pencil,
   Plus,
   QrCode,
   RefreshCw,
@@ -46,6 +47,8 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { AttendancePolicyMap } from "./attendance-policy-map";
 import { attendanceRadiusLabel } from "./attendance-policy";
 
@@ -130,6 +133,13 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
+function toDateTimeLocal(value?: string | null) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
 function minutesLabel(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
@@ -180,6 +190,8 @@ export function AttendanceAdminClient() {
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [biometricUnavailable, setBiometricUnavailable] = useState(false);
+  const [correctionEntry, setCorrectionEntry] = useState<AttendanceEntry | null>(null);
+  const [correctionForm, setCorrectionForm] = useState({ clockIn: "", clockOut: "", reason: "" });
   const [qrSession, setQrSession] = useState<AttendanceQrSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [stationLabel, setStationLabel] = useState("Restaurant attendance");
@@ -374,6 +386,53 @@ export function AttendanceAdminClient() {
       toast.success("Attendance rejected");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to reject attendance"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openCorrection(entry: AttendanceEntry) {
+    setCorrectionEntry(entry);
+    setCorrectionForm({
+      clockIn: toDateTimeLocal(entry.clock_in_at),
+      clockOut: toDateTimeLocal(entry.clock_out_at),
+      reason: "",
+    });
+  }
+
+  async function saveCorrection() {
+    if (!correctionEntry) return;
+    const clockIn = new Date(correctionForm.clockIn);
+    const clockOut = new Date(correctionForm.clockOut);
+    const reason = correctionForm.reason.trim();
+    if (Number.isNaN(clockIn.getTime()) || Number.isNaN(clockOut.getTime())) {
+      toast.error("Enter valid clock-in and clock-out times");
+      return;
+    }
+    if (clockOut <= clockIn) {
+      toast.error("Clock out must be after clock in");
+      return;
+    }
+    if (reason.length < 3) {
+      toast.error("Add a short correction reason");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      if (["approved", "rejected"].includes(correctionEntry.approval_status)) {
+        await attendanceApi.reopenEntry(correctionEntry.id, reason);
+      }
+      await attendanceApi.correctEntry(correctionEntry.id, {
+        clock_in_at: clockIn.toISOString(),
+        clock_out_at: clockOut.toISOString(),
+        reason,
+      });
+      setCorrectionEntry(null);
+      await loadAll();
+      toast.success("Attendance corrected and returned to draft");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to correct attendance"));
     } finally {
       setBusy(false);
     }
@@ -638,7 +697,7 @@ export function AttendanceAdminClient() {
               <CardDescription>Staff currently clocked in, including entries that started before this date range.</CardDescription>
             </CardHeader>
             <CardContent>
-              <TimesheetTable entries={activeEntries} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} />
+              <TimesheetTable entries={activeEntries} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} onCorrect={openCorrection} />
             </CardContent>
           </Card>
           <Card>
@@ -647,7 +706,7 @@ export function AttendanceAdminClient() {
               <CardDescription>Entries that need manager attention before payroll.</CardDescription>
             </CardHeader>
             <CardContent>
-              <TimesheetTable entries={entries.filter((entry) => entry.exception_code || entry.approval_status === "pending" || entry.approval_status === "needs_correction")} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} />
+              <TimesheetTable entries={entries.filter((entry) => entry.exception_code || entry.approval_status === "pending" || entry.approval_status === "needs_correction")} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} onCorrect={openCorrection} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -665,7 +724,7 @@ export function AttendanceAdminClient() {
               </Button>
             </CardHeader>
             <CardContent>
-              <TimesheetTable entries={entries} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} />
+              <TimesheetTable entries={entries} staffProfiles={staffProfiles} usersById={usersById} onSubmit={submitEntry} onApprove={approveEntry} onReject={rejectEntry} onCorrect={openCorrection} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -946,6 +1005,32 @@ export function AttendanceAdminClient() {
           </div>
         </TabsContent>
       </Tabs>
+      <Dialog open={Boolean(correctionEntry)} onOpenChange={(open) => { if (!open && !busy) setCorrectionEntry(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Correct attendance time</DialogTitle>
+            <DialogDescription>The record will return to draft and must be reviewed before payroll.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Clock in</Label>
+              <Input type="datetime-local" value={correctionForm.clockIn} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockIn: event.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Clock out</Label>
+              <Input type="datetime-local" value={correctionForm.clockOut} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockOut: event.target.value }))} />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Correction reason</Label>
+              <Textarea value={correctionForm.reason} onChange={(event) => setCorrectionForm((current) => ({ ...current, reason: event.target.value }))} placeholder="For example: employee forgot to clock out" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setCorrectionEntry(null)}>Cancel</Button>
+            <Button disabled={busy} onClick={saveCorrection}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save correction</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -965,7 +1050,7 @@ function LeaveHolidayTables({ leaves, holidays, staffProfiles, usersById, busy, 
   </div>;
 }
 
-function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove, onReject }: { entries: AttendanceEntry[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onSubmit: (entry: AttendanceEntry) => void; onApprove: (entry: AttendanceEntry) => void; onReject: (entry: AttendanceEntry) => void }) {
+function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove, onReject, onCorrect }: { entries: AttendanceEntry[]; staffProfiles: StaffProfile[]; usersById: Map<number, StaffUser>; onSubmit: (entry: AttendanceEntry) => void; onApprove: (entry: AttendanceEntry) => void; onReject: (entry: AttendanceEntry) => void; onCorrect: (entry: AttendanceEntry) => void }) {
   return (
     <>
       <div className="space-y-2 md:hidden">
@@ -978,9 +1063,10 @@ function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove
             </div>
             <p className="mt-3 text-sm">Regular {minutesLabel(entry.regular_minutes)} / break {minutesLabel(entry.break_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</p>
             <p className="mt-1 text-xs text-muted-foreground">Late {minutesLabel(entry.late_arrival_minutes)} / early departure {minutesLabel(entry.early_departure_minutes)} / rejected OT {minutesLabel(entry.rejected_excess_minutes)}</p>
-            {entry.scheduled_start_at ? <p className="mt-1 text-xs text-muted-foreground">Scheduled {formatDateTime(entry.scheduled_start_at)} to {formatDateTime(entry.scheduled_end_at)} • policy v{entry.policy_version} • approval v{entry.approval_version}</p> : null}
+            {entry.scheduled_start_at ? <p className="mt-1 text-xs text-muted-foreground">Scheduled {formatDateTime(entry.scheduled_start_at)} to {formatDateTime(entry.scheduled_end_at)}</p> : null}
             {entry.exception_code ? <p className="mt-1 text-xs text-destructive">{entry.exception_code}</p> : null}
             <div className="mt-3 flex flex-wrap gap-2">
+              {entry.approval_status !== "payroll_exported" ? <Button size="sm" variant="outline" onClick={() => onCorrect(entry)}><Pencil className="mr-1 h-3 w-3" />Correct</Button> : null}
               {entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}
               {entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}
               {entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}
@@ -1000,7 +1086,7 @@ function TimesheetTable({ entries, staffProfiles, usersById, onSubmit, onApprove
                   <TableCell className="min-w-[220px] text-sm">{formatDateTime(entry.clock_in_at)} to {formatDateTime(entry.clock_out_at)}</TableCell>
                   <TableCell className="min-w-[220px] text-sm"><div>Regular {minutesLabel(entry.regular_minutes)} / break {minutesLabel(entry.break_minutes)} / OT {minutesLabel(entry.overtime_minutes)}</div><div className="mt-1 text-xs text-muted-foreground">Late {minutesLabel(entry.late_arrival_minutes)} / early {minutesLabel(entry.early_departure_minutes)} / rejected OT {minutesLabel(entry.rejected_excess_minutes)}</div></TableCell>
                   <TableCell className="min-w-[180px]"><Badge variant={entry.approval_status === "approved" || entry.approval_status === "payroll_exported" ? "default" : "secondary"}>{entry.approval_status}</Badge>{entry.exception_code ? <div className="mt-1 text-xs text-destructive">{entry.exception_code}</div> : null}</TableCell>
-                  <TableCell className="min-w-[220px] text-right"><div className="flex justify-end gap-2">{entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}</div></TableCell>
+                  <TableCell className="min-w-[260px] text-right"><div className="flex justify-end gap-2">{entry.approval_status !== "payroll_exported" ? <Button size="sm" variant="outline" onClick={() => onCorrect(entry)}><Pencil className="mr-1 h-3 w-3" />Correct</Button> : null}{entry.approval_status === "draft" ? <Button size="sm" variant="outline" onClick={() => onSubmit(entry)}>Submit</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" onClick={() => onApprove(entry)}><Check className="mr-1 h-3 w-3" />Approve</Button> : null}{entry.approval_status === "pending" ? <Button size="sm" variant="outline" onClick={() => onReject(entry)}><X className="mr-1 h-3 w-3" />Reject</Button> : null}</div></TableCell>
                 </TableRow>
               );
             })}
