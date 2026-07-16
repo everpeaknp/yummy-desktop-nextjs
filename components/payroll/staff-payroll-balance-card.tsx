@@ -1,51 +1,114 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Banknote, CalendarClock, Loader2, RotateCcw } from "lucide-react";
+import {
+  AlertTriangle,
+  Banknote,
+  CalendarClock,
+  CheckCircle2,
+  Loader2,
+  ReceiptText,
+  RotateCcw,
+  WalletCards,
+} from "lucide-react";
 import { toast } from "sonner";
 
+import apiClient from "@/lib/api-client";
+import { DrawerSessionApis } from "@/lib/api/endpoints";
+import {
+  parseActiveCashDrawers,
+  type ActiveCashDrawerSession,
+} from "@/lib/cash-expense-drawer-selection";
+import { PayrollPaymentDialog } from "@/components/payroll/payroll-payment-dialog";
+import { PayrollPaymentHistory } from "@/components/payroll/payroll-payment-history";
+import { SalaryCalculationBreakdown } from "@/components/payroll/salary-calculation-breakdown";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import { useAuth } from "@/hooks/use-auth";
 import {
   payrollPayablesApi,
   type PayrollPayment,
   type PayrollPeriodSuggestion,
   type PayrollStaffBalance,
 } from "@/lib/payroll/payables";
+import type { PayrollHistoryRecord } from "@/lib/staff/workforce";
 
 function money(value: number) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `Rs. ${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function displayDate(value?: string | null) {
-  if (!value) return "—";
-  return new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleDateString();
+  if (!value) return "-";
+  const parsed = new Date(value.length === 10 ? `${value}T00:00:00` : value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString();
 }
 
 function message(error: any) {
   const detail = error?.response?.data?.detail;
-  return (typeof detail === "string" ? detail : detail?.message) || error?.response?.data?.message || error?.message || "Request failed";
+  return (
+    (typeof detail === "string" ? detail : detail?.message) ||
+    error?.response?.data?.message ||
+    error?.message ||
+    "Request failed"
+  );
 }
 
-export function StaffPayrollBalanceCard({ staffId, canManage }: { staffId: number; canManage: boolean }) {
+export function StaffPayrollBalanceCard({
+  staffId,
+  canManage,
+  payrollHistory = [],
+}: {
+  staffId: number;
+  canManage: boolean;
+  payrollHistory?: PayrollHistoryRecord[];
+}) {
   const router = useRouter();
+  const storedRestaurantId = useRestaurant((state) => state.restaurant?.id);
+  const authRestaurantId = useAuth((state) => state.user?.restaurant_id);
+  const restaurantId = storedRestaurantId ?? authRestaurantId;
   const [balance, setBalance] = useState<PayrollStaffBalance | null>(null);
   const [payments, setPayments] = useState<PayrollPayment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("cash");
-  const [reference, setReference] = useState("");
-  const [notes, setNotes] = useState("");
+  const [paying, setPaying] = useState<PayrollStaffBalance | null>(null);
   const [reversing, setReversing] = useState<PayrollPayment | null>(null);
   const [reversalReason, setReversalReason] = useState("");
+  const [reversalDrawers, setReversalDrawers] = useState<ActiveCashDrawerSession[]>([]);
+  const [reversalDrawerId, setReversalDrawerId] = useState("");
+  const [reversalDrawerControlsEnabled, setReversalDrawerControlsEnabled] = useState(false);
+  const [reversalDrawersLoading, setReversalDrawersLoading] = useState(false);
+  const [reversalDrawerError, setReversalDrawerError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,45 +126,96 @@ export function StaffPayrollBalanceCard({ staffId, canManage }: { staffId: numbe
     }
   }, [staffId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (
+      !reversing ||
+      reversing.payment_method.trim().toLowerCase() !== "cash" ||
+      !restaurantId
+    ) {
+      setReversalDrawers([]);
+      setReversalDrawerId("");
+      setReversalDrawerControlsEnabled(false);
+      setReversalDrawerError(null);
+      return;
+    }
+
+    const loadDrawers = async () => {
+      setReversalDrawersLoading(true);
+      setReversalDrawerError(null);
+      try {
+        const response = await apiClient.get(
+          DrawerSessionApis.active({
+            restaurantId,
+            businessLine: "restaurant",
+          }),
+        );
+        if (cancelled) return;
+        const parsed = parseActiveCashDrawers(response.data);
+        setReversalDrawers(parsed.sessions);
+        setReversalDrawerControlsEnabled(parsed.controlsEnabled);
+        const original = parsed.sessions.find(
+          (drawer) => drawer.id === reversing.drawer_session_id,
+        );
+        setReversalDrawerId(
+          original?.id
+            ? String(original.id)
+            : parsed.sessions[0]?.id
+              ? String(parsed.sessions[0].id)
+              : "",
+        );
+      } catch {
+        if (cancelled) return;
+        // The backend can reuse the original active drawer or resolve a single
+        // assigned drawer even when this role cannot list sessions.
+        setReversalDrawers([]);
+        setReversalDrawerControlsEnabled(false);
+        setReversalDrawerError(
+          "Cash drawers could not be listed. The server will try the original or your single assigned drawer.",
+        );
+      } finally {
+        if (!cancelled) setReversalDrawersLoading(false);
+      }
+    };
+
+    void loadDrawers();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId, reversing]);
 
   const approvedOutstanding = useMemo(
-    () => balance?.outstanding_items.reduce((sum, row) => sum + Number(row.outstanding_amount || 0), 0) || 0,
+    () =>
+      balance?.outstanding_items.reduce(
+        (sum, row) => sum + Number(row.outstanding_amount || 0),
+        0,
+      ) || 0,
     [balance],
   );
 
+  const historyByItemId = useMemo(
+    () =>
+      new Map(
+        payrollHistory.map((record) => [record.item.id, record] as const),
+      ),
+    [payrollHistory],
+  );
+
   const prepare = (period?: PayrollPeriodSuggestion) => {
-    const selectedPeriod = period ?? balance?.suggested_periods.find((row) => row.ready);
+    const selectedPeriod =
+      period ?? balance?.suggested_periods.find((row) => row.ready);
     if (!selectedPeriod) return;
-    const params = new URLSearchParams({ date_from: selectedPeriod.date_from, date_to: selectedPeriod.date_to, staff_id: String(staffId), automatic: "1" });
+    const params = new URLSearchParams({
+      date_from: selectedPeriod.date_from,
+      date_to: selectedPeriod.date_to,
+      staff_id: String(staffId),
+      automatic: "1",
+    });
     router.push(`/payroll/create?${params.toString()}`);
-  };
-
-  const openPayment = () => {
-    setAmount(approvedOutstanding.toFixed(2));
-    setMethod("cash");
-    setReference("");
-    setNotes("");
-    setDialogOpen(true);
-  };
-
-  const savePayment = async () => {
-    const numeric = Number(amount);
-    if (!Number.isFinite(numeric) || numeric <= 0 || numeric > approvedOutstanding + 0.001) {
-      toast.error(`Enter an amount between Rs. 0.01 and ${money(approvedOutstanding)}`);
-      return;
-    }
-    setSaving(true);
-    try {
-      await payrollPayablesApi.recordPayment({ staff_id: staffId, amount: numeric, payment_method: method, payment_reference: reference.trim() || undefined, notes: notes.trim() || undefined });
-      toast.success(numeric < approvedOutstanding ? "Partial salary payment recorded" : "Outstanding salary paid");
-      setDialogOpen(false);
-      await load();
-    } catch (error) {
-      toast.error(message(error));
-    } finally {
-      setSaving(false);
-    }
   };
 
   const reversePayment = async () => {
@@ -111,7 +225,11 @@ export function StaffPayrollBalanceCard({ staffId, canManage }: { staffId: numbe
     }
     setSaving(true);
     try {
-      await payrollPayablesApi.reversePayment(reversing.id, reversalReason.trim());
+      await payrollPayablesApi.reversePayment(
+        reversing.id,
+        reversalReason.trim(),
+        reversalDrawerId ? Number(reversalDrawerId) : undefined,
+      );
       toast.success("Payment reversed and the salary balance restored");
       setReversing(null);
       setReversalReason("");
@@ -123,41 +241,334 @@ export function StaffPayrollBalanceCard({ staffId, canManage }: { staffId: numbe
     }
   };
 
-  if (loading && !balance) return <Card><CardContent className="flex h-36 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-amber-600" /></CardContent></Card>;
+  if (loading && !balance) {
+    return (
+      <Card>
+        <CardContent className="flex h-36 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
+        </CardContent>
+      </Card>
+    );
+  }
   if (!balance) return null;
+
   const nextReady = balance.suggested_periods.find((row) => row.ready);
   const blocked = balance.suggested_periods.filter((row) => !row.ready);
 
-  return <>
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle>Salary balance</CardTitle><CardDescription>Earned salary, payments, and remaining obligations for this employee.</CardDescription></div><div className="flex flex-wrap justify-end gap-2">{canManage && approvedOutstanding > 0 ? <Button onClick={openPayment}><Banknote className="mr-2 h-4 w-4" />Pay outstanding</Button> : null}{canManage && nextReady ? <Button variant="outline" onClick={() => prepare()}><CalendarClock className="mr-2 h-4 w-4" />Prepare next period</Button> : null}</div></CardHeader>
-      <CardContent className="space-y-5">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Outstanding" value={money(balance.total_outstanding)} /><Metric label="Approved to pay" value={money(approvedOutstanding)} /><Metric label="Current accrual" value={money(balance.current_accrual)} /><Metric label="Paid through" value={displayDate(balance.paid_through)} /></div>
-        {balance.suggested_periods.length ? <CalculatedPeriods periods={balance.suggested_periods} canManage={canManage} onPrepare={prepare} /> : null}
-        {blocked.length ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3"><div className="flex items-center gap-2 font-medium"><AlertTriangle className="h-4 w-4 text-amber-600" />{blocked.length} payroll period{blocked.length === 1 ? "" : "s"} need attention</div><div className="mt-2 space-y-1 text-sm text-muted-foreground">{blocked.slice(0, 3).flatMap((period) => period.blockers.slice(0, 1).map((row) => <p key={`${period.date_from}-${row.code}`}>{displayDate(period.date_from)}–{displayDate(period.date_to)}: {row.message}</p>))}</div></div> : null}
-        <div className="grid gap-5 lg:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">Outstanding periods</h3><div className="space-y-2">{balance.outstanding_items.length ? balance.outstanding_items.map((item) => <div key={item.payroll_item_id} className="flex items-center justify-between rounded-lg border p-3"><div><p className="font-medium">{displayDate(item.date_from)} – {displayDate(item.date_to)}</p><p className="text-xs text-muted-foreground">Net {money(item.net_pay)} • paid {money(item.paid_amount)}</p></div><div className="text-right"><p className="font-semibold">{money(item.outstanding_amount)}</p><Badge variant={item.run_status === "partially_paid" ? "secondary" : "outline"}>{item.run_status.replaceAll("_", " ")}</Badge></div></div>) : <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No approved outstanding payroll.</p>}</div></div><div><h3 className="mb-2 text-sm font-semibold">Payment history</h3><div className="space-y-2">{payments.length ? payments.slice(0, 6).map((payment) => <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border p-3"><div><p className="font-medium capitalize">{payment.payment_method} • {displayDate(payment.paid_at)}</p><p className="text-xs text-muted-foreground">{payment.payment_reference || "No reference"}{payment.notes ? ` • ${payment.notes}` : ""}</p></div><div className="flex items-center gap-2"><div className="text-right"><p className="font-semibold">{money(payment.amount)}</p><Badge variant={payment.status === "posted" ? "default" : "destructive"}>{payment.status}</Badge></div>{canManage && payment.status === "posted" ? <Button size="icon" variant="ghost" title="Reverse or correct payment" onClick={() => { setReversing(payment); setReversalReason(""); }}><RotateCcw className="h-4 w-4" /><span className="sr-only">Reverse payment</span></Button> : null}</div></div>) : <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No salary payments recorded yet.</p>}</div></div></div>
-      </CardContent>
-    </Card>
-    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent><DialogHeader><DialogTitle>Pay {balance.staff_name}</DialogTitle><DialogDescription>Approved balance {money(approvedOutstanding)}. A smaller amount records a partial payment and leaves the remainder outstanding.</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Amount</Label><Input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></div><div className="space-y-2"><Label>Payment method</Label><Select value={method} onValueChange={setMethod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cash">Cash</SelectItem><SelectItem value="bank">Bank transfer</SelectItem><SelectItem value="cheque">Cheque</SelectItem><SelectItem value="wallet">Digital wallet</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Reference</Label><Input value={reference} onChange={(event) => setReference(event.target.value)} /></div><div className="space-y-2"><Label>Notes</Label><Input value={notes} onChange={(event) => setNotes(event.target.value)} /></div><div className="rounded-lg bg-muted p-3 text-sm">Remaining approved balance: <strong>{money(Math.max(0, approvedOutstanding - Number(amount || 0)))}</strong></div></div><DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button><Button onClick={savePayment} disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Record payment</Button></DialogFooter></DialogContent></Dialog>
-    <Dialog open={Boolean(reversing)} onOpenChange={(open) => { if (!open && !saving) setReversing(null); }}><DialogContent><DialogHeader><DialogTitle>Correct salary payment</DialogTitle><DialogDescription>This reverses the posted payment and restores {reversing ? money(reversing.amount) : "the amount"} to the employee&apos;s outstanding salary. The original record remains visible for audit.</DialogDescription></DialogHeader><div className="space-y-2"><Label>Reason for correction</Label><Input value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} placeholder="For example: wrong amount or duplicate entry" /></div><DialogFooter><Button variant="outline" onClick={() => setReversing(null)} disabled={saving}>Cancel</Button><Button variant="destructive" onClick={reversePayment} disabled={saving || reversalReason.trim().length < 3}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}Reverse payment</Button></DialogFooter></DialogContent></Dialog>
-  </>;
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>Salary overview</CardTitle>
+            <CardDescription>
+              What this employee earned, what has been paid, and what remains.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            {canManage && approvedOutstanding > 0 ? (
+              <Button onClick={() => setPaying(balance)}>
+                <Banknote className="mr-2 h-4 w-4" />
+                Pay {money(approvedOutstanding)}
+              </Button>
+            ) : null}
+            {canManage && nextReady ? (
+              <Button variant="outline" onClick={() => prepare()}>
+                <CalendarClock className="mr-2 h-4 w-4" /> Prepare next salary
+              </Button>
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric
+              icon={ReceiptText}
+              label="Salary earned"
+              value={money(balance.total_due)}
+              helper="Approved and calculated"
+            />
+            <Metric
+              icon={CheckCircle2}
+              label="Paid"
+              value={money(balance.total_paid)}
+              helper={`Through ${displayDate(balance.paid_through)}`}
+            />
+            <Metric
+              icon={WalletCards}
+              label="Remaining"
+              value={money(balance.total_outstanding)}
+              helper={`${balance.overdue_period_count} overdue period${balance.overdue_period_count === 1 ? "" : "s"}`}
+              prominent={balance.total_outstanding > 0}
+            />
+            <Metric
+              icon={CalendarClock}
+              label="Current accrual"
+              value={money(balance.current_accrual)}
+              helper="Not due yet"
+            />
+          </div>
+
+          {blocked.length ? (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <div className="flex items-center gap-2 font-medium">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                {blocked.length} salary period{blocked.length === 1 ? "" : "s"} need attention
+              </div>
+              <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                {blocked.slice(0, 3).flatMap((period) =>
+                  period.blockers.slice(0, 1).map((row) => (
+                    <p key={`${period.date_from}-${row.code}`}>
+                      {displayDate(period.date_from)} - {displayDate(period.date_to)}: {row.message}
+                    </p>
+                  )),
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {balance.suggested_periods.length ? (
+            <CalculatedPeriods
+              periods={balance.suggested_periods}
+              canManage={canManage}
+              onPrepare={prepare}
+            />
+          ) : null}
+
+          <section>
+            <div className="mb-3">
+              <h3 className="font-semibold">Approved salary waiting for payment</h3>
+              <p className="text-sm text-muted-foreground">
+                Pay the full balance or enter a smaller amount. Oldest periods are
+                settled first.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {balance.outstanding_items.length ? (
+                balance.outstanding_items.map((item) => (
+                  <div
+                    key={item.payroll_item_id}
+                    className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <Link
+                        href={`/payroll/${item.payroll_run_id}`}
+                        className="font-semibold hover:underline"
+                      >
+                        {displayDate(item.date_from)} - {displayDate(item.date_to)}
+                      </Link>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Net {money(item.net_pay)} · already paid {money(item.paid_amount)}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 sm:justify-end">
+                      <Badge variant={item.run_status === "partially_paid" ? "secondary" : "outline"}>
+                        {item.run_status.replaceAll("_", " ")}
+                      </Badge>
+                      <p className="text-lg font-bold">{money(item.outstanding_amount)}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+                  No approved salary is waiting for payment.
+                </div>
+              )}
+            </div>
+          </section>
+
+          {payrollHistory.length ? (
+            <section>
+              <div className="mb-3">
+                <h3 className="font-semibold">Detailed salary calculations</h3>
+                <p className="text-sm text-muted-foreground">
+                  Expand a period to see attendance, earnings, reductions, tax,
+                  and calculation evidence.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {payrollHistory.map(({ run, item }) => (
+                  <div key={item.id} className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                      <Link href={`/payroll/${run.id}`} className="text-sm font-semibold hover:underline">
+                        {displayDate(run.date_from)} - {displayDate(run.date_to)}
+                      </Link>
+                      <Badge variant={run.status === "paid" ? "default" : "secondary"}>
+                        {run.status.replaceAll("_", " ")}
+                      </Badge>
+                    </div>
+                    <SalaryCalculationBreakdown item={item} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <PayrollPaymentHistory
+            payments={payments}
+            canManage={canManage}
+            historyByItemId={historyByItemId}
+            onReverse={(payment) => {
+              setReversing(payment);
+              setReversalReason("");
+            }}
+          />
+        </CardContent>
+      </Card>
+
+      <PayrollPaymentDialog
+        staff={paying}
+        restaurantId={restaurantId}
+        onOpenChange={(open) => !open && setPaying(null)}
+        onRecorded={load}
+      />
+
+      <Dialog
+        open={Boolean(reversing)}
+        onOpenChange={(open) => {
+          if (!open && !saving) setReversing(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Correct salary payment</DialogTitle>
+            <DialogDescription>
+              This reverses the posted payment and restores {reversing ? money(reversing.amount) : "the amount"} to the employee&apos;s balance. The original record remains visible.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Reason for correction</Label>
+            <Input
+              value={reversalReason}
+              onChange={(event) => setReversalReason(event.target.value)}
+              placeholder="For example: wrong amount or duplicate payment"
+            />
+          </div>
+          {reversing?.payment_method.trim().toLowerCase() === "cash" ? (
+            <div className="space-y-2">
+              <Label>Cash reversal destination</Label>
+              {reversalDrawersLoading ? (
+                <div className="flex items-center gap-2 rounded-lg border p-3 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading open drawers...
+                </div>
+              ) : reversalDrawerError ? (
+                <Alert>{reversalDrawerError}</Alert>
+              ) : reversalDrawerControlsEnabled && reversalDrawers.length ? (
+                <Select value={reversalDrawerId} onValueChange={setReversalDrawerId}>
+                  <SelectTrigger><SelectValue placeholder="Select an open drawer" /></SelectTrigger>
+                  <SelectContent>
+                    {reversalDrawers.map((drawer) => (
+                      <SelectItem key={drawer.id} value={String(drawer.id)}>
+                        {drawer.name || drawer.drawer_key || `Drawer #${drawer.id}`}{drawer.station ? ` - ${drawer.station}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : reversalDrawerControlsEnabled ? (
+                <Alert>No open drawer is available to receive the reversed cash.</Alert>
+              ) : (
+                <Alert>Cash drawer controls are disabled; no drawer selection is required.</Alert>
+              )}
+              <p className="text-xs text-muted-foreground">
+                The reversed cash is added back to this drawer and the original payment remains visible.
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReversing(null)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={reversePayment}
+              disabled={
+                saving ||
+                reversalDrawersLoading ||
+                reversalReason.trim().length < 3 ||
+                (reversing?.payment_method.trim().toLowerCase() === "cash" &&
+                  reversalDrawerControlsEnabled &&
+                  !reversalDrawerId)
+              }
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+              Reverse payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl border bg-muted/20 p-4"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-1 text-lg font-bold">{value}</p></div>;
+function Metric({
+  icon: Icon,
+  label,
+  value,
+  helper,
+  prominent = false,
+}: {
+  icon: typeof Banknote;
+  label: string;
+  value: string;
+  helper: string;
+  prominent?: boolean;
+}) {
+  return (
+    <div className={`rounded-xl border p-4 ${prominent ? "border-amber-500/30 bg-amber-500/5" : "bg-muted/10"}`}>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Icon className="h-4 w-4" />
+        <p className="text-xs font-medium">{label}</p>
+      </div>
+      <p className="mt-2 text-xl font-bold">{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{helper}</p>
+    </div>
+  );
 }
 
-function CalculatedPeriods({ periods, canManage, onPrepare }: { periods: PayrollPeriodSuggestion[]; canManage: boolean; onPrepare: (period: PayrollPeriodSuggestion) => void }) {
-  return <div>
-    <div className="mb-2">
-      <h3 className="text-sm font-semibold">Calculated unpaid periods</h3>
-      <p className="text-xs text-muted-foreground">These completed periods are included in outstanding salary. Review and approve a period before recording its payment.</p>
-    </div>
-    <div className="space-y-2">
-      {periods.map((period) => <div key={`${period.date_from}-${period.date_to}`} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="font-medium">{displayDate(period.date_from)} – {displayDate(period.date_to)}</p><p className="text-xs text-muted-foreground">Due {displayDate(period.due_date)} • {period.frequency}</p></div>
-        <div className="flex items-center gap-2 sm:justify-end"><span className="font-semibold">{money(period.net_pay)}</span><Badge variant={period.ready ? "outline" : "secondary"}>{period.ready ? "ready to review" : "needs attention"}</Badge>{canManage && period.ready ? <Button size="sm" variant="outline" onClick={() => onPrepare(period)}>Prepare</Button> : null}</div>
-      </div>)}
-    </div>
-  </div>;
+function CalculatedPeriods({
+  periods,
+  canManage,
+  onPrepare,
+}: {
+  periods: PayrollPeriodSuggestion[];
+  canManage: boolean;
+  onPrepare: (period: PayrollPeriodSuggestion) => void;
+}) {
+  return (
+    <section>
+      <div className="mb-3">
+        <h3 className="font-semibold">Calculated unpaid periods</h3>
+        <p className="text-sm text-muted-foreground">
+          Completed periods are calculated automatically; only exceptions need your attention.
+        </p>
+      </div>
+      <div className="space-y-2">
+        {periods.map((period) => (
+          <div
+            key={`${period.date_from}-${period.date_to}`}
+            className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <p className="font-medium">
+                {displayDate(period.date_from)} - {displayDate(period.date_to)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Due {displayDate(period.due_date)} · {period.frequency}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <span className="font-semibold">{money(period.net_pay)}</span>
+              <Badge variant={period.ready ? "outline" : "secondary"}>
+                {period.ready ? "Ready to review" : "Needs attention"}
+              </Badge>
+              {canManage && period.ready ? (
+                <Button size="sm" variant="outline" onClick={() => onPrepare(period)}>
+                  Prepare
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }

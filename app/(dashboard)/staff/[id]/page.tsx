@@ -61,7 +61,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { StaffPayrollBalanceCard } from "@/components/payroll/staff-payroll-balance-card";
@@ -645,12 +644,11 @@ export default function StaffWorkspacePage() {
         </TabsContent> : null}
 
         {canViewPayroll ? <TabsContent value="payroll" className="space-y-5">
-          {profile ? <StaffPayrollBalanceCard staffId={profile.id} canManage={canManagePayroll} /> : null}
+          {profile ? <StaffPayrollBalanceCard staffId={profile.id} canManage={canManagePayroll} payrollHistory={payrollHistory} /> : null}
           <div className="grid gap-5 lg:grid-cols-[.75fr_1.25fr]">
             <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Current compensation</CardTitle><CardDescription>Effective salary used for new payroll periods.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent>{profile ? <div className="space-y-3"><div className="rounded-2xl bg-primary/10 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{profile.salary_type}</p><p className="mt-1 text-2xl font-bold">{money(profile.salary_amount)}</p></div><InfoRow label="Weekly hours" value={profile.weekly_hours == null ? "—" : String(profile.weekly_hours)} /><InfoRow label="Daily hours" value={profile.daily_hours == null ? "—" : String(profile.daily_hours)} /><InfoRow label="Salary records" value={String(salaryHistory.length)} /></div> : <EmptyState title="No compensation profile" description="Create a payroll profile before this employee can be included in payroll." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
             <Card><CardHeader><CardTitle>Salary history</CardTitle><CardDescription>Effective-dated compensation changes; periods crossing a change must be split.</CardDescription></CardHeader><CardContent><div className="space-y-3">{salaryHistory.length ? salaryHistory.map((record) => <div key={record.id} className="flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold capitalize">{record.salary_type} • {money(record.salary_amount)}</p><p className="text-sm text-muted-foreground">{dateOnly(record.effective_from)} to {record.effective_to ? dateOnly(record.effective_to) : "Current"}</p></div><div className="sm:text-right"><Badge variant={record.effective_to ? "outline" : "default"}>{record.effective_to ? "Historical" : "Current"}</Badge><p className="mt-1 text-xs text-muted-foreground">{record.reason || "No change reason"}</p></div></div>) : <EmptyState title="No salary history" description="A salary record will appear after the profile is created." />}</div></CardContent></Card>
           </div>
-          <Card><CardHeader><CardTitle>Payroll history</CardTitle><CardDescription>Run-level status with the staff member&apos;s complete calculation evidence.</CardDescription></CardHeader><CardContent><PayrollHistoryTable records={payrollHistory} /></CardContent></Card>
         </TabsContent> : null}
 
         <TabsContent value="employment" className="space-y-5">
@@ -716,11 +714,6 @@ function ScheduleCard({ schedules, templates }: { schedules: AttendanceSchedule[
 
 function LeaveCard({ leaves }: { leaves: AttendanceLeave[] }) {
   return <Card><CardHeader><CardTitle className="text-base">Leave</CardTitle><CardDescription>Paid and unpaid requests in this period.</CardDescription></CardHeader><CardContent className="space-y-2">{leaves.length ? leaves.map((leave) => <div key={leave.id} className="rounded-lg border p-3"><div className="flex items-center justify-between gap-3"><p className="font-medium capitalize">{leave.leave_type} leave</p><Badge variant={leave.status === "approved" ? "default" : "secondary"}>{leave.status}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{dateOnly(leave.date_from)} to {dateOnly(leave.date_to)} • {leave.day_fraction === 0.5 ? "Half day" : "Full day"}</p><p className="mt-1 text-sm">{leave.reason}</p></div>) : <EmptyState title="No leave records" description="No leave overlaps the selected period." />}</CardContent></Card>;
-}
-
-function PayrollHistoryTable({ records }: { records: PayrollHistoryRecord[] }) {
-  if (!records.length) return <EmptyState title="No payroll history" description="This staff member has not been included in a payroll run yet." />;
-  return <div className="overflow-x-auto rounded-xl border"><Table><TableHeader><TableRow><TableHead>Period</TableHead><TableHead>Status</TableHead><TableHead>Attendance</TableHead><TableHead>Pay breakdown</TableHead><TableHead className="text-right">Net pay</TableHead></TableRow></TableHeader><TableBody>{records.map(({ run, item }) => <TableRow key={item.id}><TableCell className="min-w-[170px]"><Link href={`/payroll/${run.id}`} className="font-semibold text-primary hover:underline">{dateOnly(run.date_from)} – {dateOnly(run.date_to)}</Link><p className="text-xs text-muted-foreground">Run #{run.id}</p></TableCell><TableCell><Badge variant={run.status === "paid" ? "default" : "secondary"}>{run.status}</Badge>{run.paid_at ? <p className="mt-1 text-xs text-muted-foreground">{dateOnly(run.paid_at)}</p> : null}</TableCell><TableCell className="min-w-[180px]"><p>{item.payable_days} payable / {item.scheduled_days} scheduled</p><p className="text-xs text-muted-foreground">{minutes(item.regular_minutes)} regular • {minutes(item.overtime_minutes)} OT</p></TableCell><TableCell className="min-w-[190px]"><p>{money(item.regular_pay)} regular</p><p className="text-xs text-muted-foreground">+ {money(item.overtime_pay + item.holiday_premium_pay + item.bonus)} extras • − {money(item.deduction + item.tax_amount)} deductions/tax</p></TableCell><TableCell className="text-right text-base font-bold">{money(item.net_pay)}</TableCell></TableRow>)}</TableBody></Table></div>;
 }
 
 function ActivityTimeline({ entries, salaryHistory, payrollHistory }: { entries: AttendanceEntry[]; salaryHistory: SalaryHistoryRecord[]; payrollHistory: PayrollHistoryRecord[] }) {

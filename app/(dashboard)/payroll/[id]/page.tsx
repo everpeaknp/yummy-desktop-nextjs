@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,17 +14,27 @@ import {
   Plus,
   Trash2,
   Printer,
+  Landmark,
 } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
-import { PayrollApis, StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
+import { AccountingApis, DrawerSessionApis, PayrollApis, StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
+import {
+  buildCashExpenseDrawerPayload,
+  parseActiveCashDrawers,
+  type ActiveCashDrawerSession,
+} from "@/lib/cash-expense-drawer-selection";
+import { getPaymentBankLabel } from "@/lib/payment-banks";
+import { requiresPayrollBank, requiresPayrollReference } from "@/lib/payroll/payment-form";
+import type { PaymentBank } from "@/types/accounting";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -137,6 +147,15 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
   const [paidMethod, setPaidMethod] = useState("");
   const [paidRef, setPaidRef] = useState("");
   const [paidAt, setPaidAt] = useState<string>("");
+  const [paidBankId, setPaidBankId] = useState("");
+  const [paidDrawerSessionId, setPaidDrawerSessionId] = useState("");
+  const [paymentBanks, setPaymentBanks] = useState<PaymentBank[]>([]);
+  const [cashDrawers, setCashDrawers] = useState<ActiveCashDrawerSession[]>([]);
+  const [drawerControlsEnabled, setDrawerControlsEnabled] = useState(false);
+  const [bankLoadFailed, setBankLoadFailed] = useState(false);
+  const [drawerLoadFailed, setDrawerLoadFailed] = useState(false);
+  const [paymentSourcesLoading, setPaymentSourcesLoading] = useState(false);
+  const [paymentSourcesLoaded, setPaymentSourcesLoaded] = useState(false);
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -164,7 +183,7 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
     if (!loading && !isPaid) router.push("/premium");
   }, [loading, isPaid, router]);
 
-  const loadStaff = async () => {
+  const loadStaff = useCallback(async () => {
     try {
       const [profilesRes, usersRes] = await Promise.all([
         apiClient.get(StaffProfileApis.list({ skip: 0, limit: 500 })),
@@ -185,9 +204,9 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
     } catch {
       // Not fatal; we'll show staff IDs instead.
     }
-  };
+  }, []);
 
-  const loadRun = async () => {
+  const loadRun = useCallback(async () => {
     if (!runId || Number.isNaN(runId)) {
       toast.error("Invalid payroll run id");
       router.push("/payroll");
@@ -207,7 +226,7 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
     } finally {
       setLoading(false);
     }
-  };
+  }, [router, runId]);
 
   useEffect(() => {
     if (!user) return;
@@ -217,7 +236,7 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
     }
     loadStaff();
     loadRun();
-  }, [user, runId, isPaid]);
+  }, [isPaid, loadRun, loadStaff, user]);
 
   const statusBadge = useMemo(() => {
     const s = (run?.status || "").toLowerCase();
@@ -276,11 +295,42 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
 
   const submitPaid = async () => {
     if (!run) return;
+    if (!paymentSourcesLoaded) {
+      toast.error("Payment sources are still loading. Try again in a moment.");
+      return;
+    }
+    const selectedBank = paymentBanks.find((bank) => String(bank.id) === paidBankId);
+    if (requiresPayrollBank(paidMethod) && bankLoadFailed) {
+      toast.error("Configured banks could not be loaded. Refresh before paying by bank.");
+      return;
+    }
+    if (requiresPayrollBank(paidMethod) && !selectedBank) {
+      toast.error("Select the restaurant bank account funding this payroll.");
+      return;
+    }
+    if (requiresPayrollReference(paidMethod) && paidRef.trim().length < 2) {
+      toast.error("Enter the bank transfer reference.");
+      return;
+    }
+    let drawerPayload: { drawer_session_id?: number } = {};
+    try {
+      drawerPayload = buildCashExpenseDrawerPayload({
+        paymentMethod: paidMethod,
+        controlsEnabled: drawerControlsEnabled,
+        selectedDrawerSessionId: paidDrawerSessionId,
+      });
+    } catch {
+      toast.error("Select the cash drawer funding this payroll payment.");
+      return;
+    }
     setActionLoading(true);
     try {
       const payload: any = {
-        payment_method: paidMethod || null,
-        payment_reference: paidRef || null,
+        payment_method: paidMethod,
+        payment_bank_id: selectedBank?.id,
+        cash_source: paidMethod === "cash" ? "drawer" : undefined,
+        ...drawerPayload,
+        payment_reference: paidRef.trim() || null,
         paid_at: paidAt ? new Date(paidAt).toISOString() : null,
       };
       const res = await apiClient.post(PayrollApis.markPaid(run.id), payload);
@@ -439,10 +489,81 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
 
   useEffect(() => {
     if (!run) return;
-    setPaidMethod(run.payment_method || "");
+    setPaidMethod(
+      ["bank", "bank_transfer", "bank transfer", "transfer"].includes(
+        String(run.payment_method || "").trim().toLowerCase(),
+      )
+        ? "bank_transfer"
+        : "cash",
+    );
     setPaidRef(run.payment_reference || "");
     setPaidAt(toDatetimeLocalValue(run.paid_at));
-  }, [run?.id]);
+  }, [run]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!paidOpen || !restaurant?.id) return;
+
+    const loadPaymentSources = async () => {
+      setPaymentSourcesLoading(true);
+      setPaymentSourcesLoaded(false);
+      setBankLoadFailed(false);
+      setDrawerLoadFailed(false);
+      const [bankResult, drawerResult] = await Promise.allSettled([
+        apiClient.get(AccountingApis.paymentBanks(restaurant.id)),
+        apiClient.get(
+          DrawerSessionApis.active({
+            restaurantId: restaurant.id,
+            businessLine: "restaurant",
+          }),
+        ),
+      ]);
+      if (cancelled) return;
+
+      if (bankResult.status === "fulfilled") {
+        const activeBanks = ((bankResult.value.data?.data || []) as PaymentBank[]).filter(
+          (bank) => bank.is_active,
+        );
+        setPaymentBanks(activeBanks);
+        setPaidBankId((current) =>
+          current && activeBanks.some((bank) => String(bank.id) === current)
+            ? current
+            : activeBanks[0]?.id
+              ? String(activeBanks[0].id)
+              : "",
+        );
+      } else {
+        setPaymentBanks([]);
+        setBankLoadFailed(true);
+      }
+
+      if (drawerResult.status === "fulfilled") {
+        const parsed = parseActiveCashDrawers(drawerResult.value.data);
+        setDrawerControlsEnabled(parsed.controlsEnabled);
+        setCashDrawers(parsed.sessions);
+        setPaidDrawerSessionId((current) =>
+          current && parsed.sessions.some((drawer) => String(drawer.id) === current)
+            ? current
+            : parsed.sessions[0]?.id
+              ? String(parsed.sessions[0].id)
+              : "",
+        );
+      } else {
+        // The backend may still resolve the manager's single assigned drawer.
+        setDrawerControlsEnabled(false);
+        setCashDrawers([]);
+        setPaidDrawerSessionId("");
+        setDrawerLoadFailed(true);
+      }
+      setPaymentSourcesLoading(false);
+      setPaymentSourcesLoaded(true);
+    };
+
+    void loadPaymentSources();
+    return () => {
+      cancelled = true;
+    };
+  }, [paidOpen, restaurant?.id]);
 
   if (loading) {
     return (
@@ -532,7 +653,7 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
             {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
             Approve
           </Button>
-          <Button variant="outline" onClick={() => setPaidOpen(true)} disabled={!canMarkPaid || actionLoading}>
+          <Button variant="outline" onClick={() => { setPaymentSourcesLoaded(false); setPaidOpen(true); }} disabled={!canMarkPaid || actionLoading}>
             <FileText className="w-4 h-4 mr-2" />
             {run.status === "partially_paid" ? "Pay remaining" : "Mark Paid"}
           </Button>
@@ -682,30 +803,102 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
 
       {/* Mark Paid Dialog */}
       <Dialog open={paidOpen} onOpenChange={setPaidOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Mark Payroll As Paid</DialogTitle>
+            <DialogTitle>{run.status === "partially_paid" ? "Pay remaining payroll" : "Pay payroll run"}</DialogTitle>
+            <DialogDescription>
+              Record the actual bank account or cash drawer funding this run. The source remains visible in the payroll audit trail.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Payment Method</Label>
-              <Input value={paidMethod} onChange={(e) => setPaidMethod(e.target.value)} placeholder="e.g. Cash, Bank, Wallet" />
+            <div className="rounded-xl border bg-muted/20 p-4">
+              <p className="text-xs text-muted-foreground">Payroll run total</p>
+              <p className="mt-1 text-xl font-bold">{formatMoney(run.total_payroll_amount)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{new Date(run.date_from).toLocaleDateString()} - {new Date(run.date_to).toLocaleDateString()}</p>
+              {run.status === "partially_paid" ? <p className="mt-2 text-xs text-muted-foreground">Only the remaining employee balances will be settled.</p> : null}
             </div>
             <div className="space-y-2">
-              <Label>Payment Reference</Label>
-              <Input value={paidRef} onChange={(e) => setPaidRef(e.target.value)} placeholder="Optional reference number" />
+              <Label>Payment method</Label>
+              <Select value={paidMethod} onValueChange={setPaidMethod}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="bank_transfer">Bank transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {paymentSourcesLoading ? (
+              <div className="flex items-center gap-2 rounded-lg border p-3 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading payment sources...
+              </div>
+            ) : null}
+
+            {paidMethod === "cash" && !paymentSourcesLoading ? (
+              drawerLoadFailed ? (
+                <Alert>
+                  Your role cannot list drawers. The server will use your single assigned open drawer, or stop if one cannot be resolved.
+                </Alert>
+              ) : drawerControlsEnabled ? (
+                <div className="space-y-2">
+                  <Label>Cash source</Label>
+                  {cashDrawers.length ? (
+                    <Select value={paidDrawerSessionId} onValueChange={setPaidDrawerSessionId}>
+                      <SelectTrigger><SelectValue placeholder="Select an open cash drawer" /></SelectTrigger>
+                      <SelectContent>
+                        {cashDrawers.map((drawer) => (
+                          <SelectItem key={drawer.id} value={String(drawer.id)}>
+                            {drawer.name || drawer.drawer_key || `Drawer #${drawer.id}`}{drawer.station ? ` - ${drawer.station}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Alert>
+                      No open cash drawer is available. Open one from <Link href="/cash-drawers" className="font-semibold underline">Cash Drawers</Link> first.
+                    </Alert>
+                  )}
+                </div>
+              ) : (
+                <Alert>Cash drawer controls are disabled. The run will be recorded as general cash.</Alert>
+              )
+            ) : null}
+
+            {requiresPayrollBank(paidMethod) && !paymentSourcesLoading ? (
+              <div className="space-y-2">
+                <Label>Pay from bank</Label>
+                {bankLoadFailed ? (
+                  <Alert variant="destructive">Configured banks could not be loaded. Refresh and try again.</Alert>
+                ) : paymentBanks.length ? (
+                  <Select value={paidBankId} onValueChange={setPaidBankId}>
+                    <SelectTrigger><SelectValue placeholder="Select a configured bank" /></SelectTrigger>
+                    <SelectContent>
+                      {paymentBanks.map((bank) => (
+                        <SelectItem key={bank.id} value={String(bank.id)}>{getPaymentBankLabel(bank)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Alert>No active bank is configured. Add one in <Link href="/manage/settings" className="font-semibold underline">Payment settings</Link> first.</Alert>
+                )}
+                {paidBankId ? <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Landmark className="h-3.5 w-3.5" /> This run will be paid from {getPaymentBankLabel(paymentBanks.find((bank) => String(bank.id) === paidBankId))}.</p> : null}
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <Label>Payment reference {requiresPayrollReference(paidMethod) ? "(required)" : "(optional)"}</Label>
+              <Input value={paidRef} onChange={(e) => setPaidRef(e.target.value)} placeholder={paidMethod === "bank_transfer" ? "Transfer reference" : "Receipt or voucher number"} />
             </div>
             <div className="space-y-2">
-              <Label>Paid At</Label>
+              <Label>Paid at</Label>
               <Input type="datetime-local" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
-              <p className="text-xs text-muted-foreground">Leave empty to let the server decide.</p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPaidOpen(false)} disabled={actionLoading}>Cancel</Button>
-            <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={submitPaid} disabled={actionLoading}>
+            <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={submitPaid} disabled={actionLoading || !paymentSourcesLoaded || paymentSourcesLoading}>
               {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Confirm Paid
+              Confirm payment
             </Button>
           </DialogFooter>
         </DialogContent>

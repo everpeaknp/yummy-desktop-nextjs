@@ -47,6 +47,7 @@ describe("payrollPayablesApi", () => {
       staff_id: 9,
       amount: 10000,
       payment_method: "bank_transfer",
+      payment_bank_id: 3,
       payment_reference: "TXN-100",
     });
 
@@ -54,7 +55,30 @@ describe("payrollPayablesApi", () => {
       staff_id: 9,
       amount: 10000,
       payment_method: "bank_transfer",
+      payment_bank_id: 3,
       payment_reference: "TXN-100",
+    });
+  });
+
+  it("records the cash drawer funding a salary payment", async () => {
+    mocked.post.mockResolvedValueOnce({
+      data: { data: { id: 8, staff_id: 9, amount: 5000 } },
+    });
+
+    await payrollPayablesApi.recordPayment({
+      staff_id: 9,
+      amount: 5000,
+      payment_method: "cash",
+      cash_source: "drawer",
+      drawer_session_id: 41,
+    });
+
+    expect(mocked.post).toHaveBeenCalledWith("/payroll/payments", {
+      staff_id: 9,
+      amount: 5000,
+      payment_method: "cash",
+      cash_source: "drawer",
+      drawer_session_id: 41,
     });
   });
 
@@ -112,6 +136,19 @@ describe("payrollPayablesApi", () => {
 
     expect(mocked.post).toHaveBeenCalledWith("/payroll/payments/7/reverse", {
       reason: "Duplicate payment",
+    });
+  });
+
+  it("can direct a cash reversal to an open drawer", async () => {
+    mocked.post.mockResolvedValueOnce({
+      data: { data: { id: 7, status: "reversed" } },
+    });
+
+    await payrollPayablesApi.reversePayment(7, "Wrong employee", 52);
+
+    expect(mocked.post).toHaveBeenCalledWith("/payroll/payments/7/reverse", {
+      reason: "Wrong employee",
+      drawer_session_id: 52,
     });
   });
 });

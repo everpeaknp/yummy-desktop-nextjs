@@ -50,6 +50,8 @@ export type PayrollHistoryItem = {
   salary_type: string;
   base_salary: number;
   period_days: number;
+  daily_rate: number;
+  earned_amount: number;
   regular_minutes: number;
   overtime_minutes: number;
   break_minutes: number;
@@ -67,6 +69,7 @@ export type PayrollHistoryItem = {
   deduction: number;
   tax_amount: number;
   net_pay: number;
+  salary_history_id?: number | null;
   salary_effective_from?: string | null;
   policy_evidence?: Array<Record<string, unknown>>;
 };

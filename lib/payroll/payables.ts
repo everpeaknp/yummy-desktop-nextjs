@@ -116,14 +116,37 @@ export type PayrollPayment = {
   staff_id: number;
   amount: number;
   payment_method: string;
+  payment_bank_id?: number | null;
+  payment_bank_name?: string | null;
+  payment_instrument_id?: number | null;
+  payment_instrument_name?: string | null;
+  cash_source?: string | null;
+  drawer_session_id?: number | null;
+  drawer_session_name?: string | null;
+  drawer_name?: string | null;
   payment_reference?: string | null;
   paid_at: string;
   notes?: string | null;
   status: "posted" | "reversed";
+  created_by?: number | null;
+  created_by_name?: string | null;
+  reversed_at?: string | null;
+  reversed_by?: number | null;
+  reversed_by_name?: string | null;
   reversal_reason?: string | null;
+  reversal_drawer_session_id?: number | null;
+  reversal_drawer_session_name?: string | null;
+  reversal_drawer_name?: string | null;
+  created_at?: string | null;
+  balance_after_payment?: number | null;
+  finance_event_id?: number | null;
+  reversal_finance_event_id?: number | null;
   allocations: Array<{
     id: number;
     payroll_item_id: number;
+    payroll_run_id?: number | null;
+    date_from?: string | null;
+    date_to?: string | null;
     amount: number;
     created_at?: string | null;
   }>;
@@ -190,6 +213,10 @@ export const payrollPayablesApi = {
     staff_id: number;
     amount: number;
     payment_method: string;
+    payment_bank_id?: number;
+    payment_instrument_id?: number;
+    cash_source?: string;
+    drawer_session_id?: number;
     payment_reference?: string;
     paid_at?: string;
     notes?: string;
@@ -200,9 +227,16 @@ export const payrollPayablesApi = {
     );
   },
 
-  async reversePayment(paymentId: number, reason: string) {
+  async reversePayment(
+    paymentId: number,
+    reason: string,
+    drawerSessionId?: number,
+  ) {
     return unwrap<PayrollPayment>(
-      await apiClient.post(PayrollApis.reversePayment(paymentId), { reason }),
+      await apiClient.post(PayrollApis.reversePayment(paymentId), {
+        reason,
+        ...(drawerSessionId ? { drawer_session_id: drawerSessionId } : {}),
+      }),
     );
   },
 };

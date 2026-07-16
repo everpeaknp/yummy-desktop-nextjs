@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,6 +8,8 @@ import {
   Banknote,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   Loader2,
   Settings2,
@@ -19,23 +21,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -44,8 +29,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/hooks/use-auth";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import { hasPermission } from "@/lib/role-permissions";
+import { PayrollPaymentDialog } from "@/components/payroll/payroll-payment-dialog";
 import { PayrollSetupWizard } from "@/components/payroll/payroll-setup-wizard";
+import { SalaryCalculationBreakdown } from "@/components/payroll/salary-calculation-breakdown";
 import {
   payrollPayablesApi,
   type PayrollDueSummary,
@@ -53,6 +41,10 @@ import {
   type PayrollSetupReadiness,
   type PayrollStaffBalance,
 } from "@/lib/payroll/payables";
+import {
+  staffWorkforceApi,
+  type PayrollHistoryRecord,
+} from "@/lib/staff/workforce";
 
 function money(value: number) {
   return `Rs. ${Number(value || 0).toLocaleString(undefined, {
@@ -75,6 +67,8 @@ function apiError(error: any) {
 export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
   const router = useRouter();
   const user = useAuth((state) => state.user);
+  const storedRestaurantId = useRestaurant((state) => state.restaurant?.id);
+  const restaurantId = storedRestaurantId ?? user?.restaurant_id;
   const canManage = hasPermission(user, "finance.payroll.manage");
   const [summary, setSummary] = useState<PayrollDueSummary | null>(null);
   const [readiness, setReadiness] = useState<PayrollSetupReadiness | null>(null);
@@ -83,12 +77,9 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
   const [paying, setPaying] = useState<PayrollStaffBalance | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("cash");
-  const [reference, setReference] = useState("");
-  const [notes, setNotes] = useState("");
-  const [paidAt, setPaidAt] = useState("");
+  const [expandedStaffId, setExpandedStaffId] = useState<number | null>(null);
+  const [historyLoadingStaffId, setHistoryLoadingStaffId] = useState<number | null>(null);
+  const [historyByStaffId, setHistoryByStaffId] = useState<Record<number, PayrollHistoryRecord[]>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,58 +126,22 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
     }
   };
 
-  const openPayment = (staff: PayrollStaffBalance) => {
-    const approvedOutstanding = staff.outstanding_items.reduce(
-      (total, item) => total + Number(item.outstanding_amount || 0),
-      0,
-    );
-    setPaying(staff);
-    setAmount(approvedOutstanding.toFixed(2));
-    setMethod("cash");
-    setReference("");
-    setNotes("");
-    const local = new Date();
-    local.setMinutes(local.getMinutes() - local.getTimezoneOffset());
-    setPaidAt(local.toISOString().slice(0, 16));
-  };
-
-  const recordPayment = async () => {
-    if (!paying) return;
-    const numericAmount = Number(amount);
-    const approvedOutstanding = paying.outstanding_items.reduce(
-      (total, item) => total + Number(item.outstanding_amount || 0),
-      0,
-    );
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      toast.error("Enter a payment amount greater than zero");
+  const toggleDetails = async (staffId: number) => {
+    if (expandedStaffId === staffId) {
+      setExpandedStaffId(null);
       return;
     }
-    if (numericAmount > approvedOutstanding + 0.001) {
-      toast.error("Payment cannot exceed the approved outstanding salary");
-      return;
-    }
-    setSaving(true);
+    setExpandedStaffId(staffId);
+    if (historyByStaffId[staffId]) return;
+    setHistoryLoadingStaffId(staffId);
     try {
-      await payrollPayablesApi.recordPayment({
-        staff_id: paying.staff_id,
-        amount: numericAmount,
-        payment_method: method,
-        payment_reference: reference.trim() || undefined,
-        paid_at: paidAt ? new Date(paidAt).toISOString() : undefined,
-        notes: notes.trim() || undefined,
-      });
-      toast.success(
-        numericAmount < approvedOutstanding
-          ? "Partial salary payment recorded"
-          : "Outstanding salary paid",
-      );
-      setPaying(null);
-      await load();
-      onChanged?.();
+      const history = await staffWorkforceApi.payrollHistory(staffId);
+      setHistoryByStaffId((current) => ({ ...current, [staffId]: history }));
     } catch (error) {
       toast.error(apiError(error));
+      setHistoryByStaffId((current) => ({ ...current, [staffId]: [] }));
     } finally {
-      setSaving(false);
+      setHistoryLoadingStaffId(null);
     }
   };
 
@@ -240,14 +195,19 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
                   const approvedOutstanding = staff.outstanding_items.reduce((total, item) => total + Number(item.outstanding_amount || 0), 0);
                   const nextReady = staff.suggested_periods.find((row) => row.ready);
                   const blocked = staff.suggested_periods.find((row) => !row.ready) || (staff.current_period && !staff.current_period.ready ? staff.current_period : undefined);
-                  return <TableRow key={staff.staff_id}>
-                    <TableCell><Link href={`/staff/${staff.user_id}`} className="font-semibold hover:underline">{staff.staff_name}</Link><p className="text-xs capitalize text-muted-foreground">{staff.salary_type} salary</p></TableCell>
-                    <TableCell>{dateOnly(staff.paid_through)}</TableCell>
-                    <TableCell><div className="flex flex-wrap gap-1">{staff.overdue_period_count > 0 ? <Badge variant="destructive">{staff.overdue_period_count} overdue</Badge> : <Badge variant="outline">Up to date</Badge>}{staff.suggested_periods.length ? <Badge variant="outline">{staff.suggested_periods.length} calculated</Badge> : null}{blocked ? <Badge variant="secondary">Needs review</Badge> : null}</div></TableCell>
-                    <TableCell className="text-right font-semibold">{money(staff.total_outstanding)}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{money(staff.current_accrual)}</TableCell>
-                    <TableCell className="text-right"><div className="flex justify-end gap-2">{canManage && approvedOutstanding > 0 ? <Button size="sm" onClick={() => openPayment(staff)}><Banknote className="mr-1.5 h-4 w-4" />Pay</Button> : null}{canManage && nextReady ? <Button size="sm" variant="outline" onClick={() => preparePeriod(staff)}><Clock3 className="mr-1.5 h-4 w-4" />Prepare {dateOnly(nextReady.date_to)}</Button> : null}{blocked && !nextReady ? <Button asChild size="sm" variant="outline"><Link href={blocked.blockers[0]?.action === "staff_profile" ? `/staff/${staff.user_id}?tab=employment` : blocked.blockers[0]?.action === "attendance_timesheets" ? `/attendance?tab=timesheets&staff_id=${staff.staff_id}` : `/attendance?tab=schedules&staff_id=${staff.staff_id}`}>Fix {blocked.blockers[0]?.action === "attendance_schedule" ? "schedule" : "blocker"}</Link></Button> : null}</div></TableCell>
-                  </TableRow>;
+                  const expanded = expandedStaffId === staff.staff_id;
+                  const history = historyByStaffId[staff.staff_id] || [];
+                  return <Fragment key={staff.staff_id}>
+                    <TableRow className={expanded ? "bg-muted/20" : undefined}>
+                      <TableCell><Link href={`/staff/${staff.user_id}?tab=payroll`} className="font-semibold hover:underline">{staff.staff_name}</Link><p className="text-xs capitalize text-muted-foreground">{staff.salary_type} salary</p></TableCell>
+                      <TableCell>{dateOnly(staff.paid_through)}</TableCell>
+                      <TableCell><div className="flex flex-wrap gap-1">{staff.overdue_period_count > 0 ? <Badge variant="destructive">{staff.overdue_period_count} overdue</Badge> : <Badge variant="outline">Up to date</Badge>}{staff.suggested_periods.length ? <Badge variant="outline">{staff.suggested_periods.length} calculated</Badge> : null}{blocked ? <Badge variant="secondary">Needs review</Badge> : null}</div></TableCell>
+                      <TableCell className="text-right font-semibold">{money(staff.total_outstanding)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{money(staff.current_accrual)}</TableCell>
+                      <TableCell className="text-right"><div className="flex flex-wrap justify-end gap-2">{canManage && approvedOutstanding > 0 ? <Button size="sm" onClick={() => setPaying(staff)}><Banknote className="mr-1.5 h-4 w-4" />Pay</Button> : null}{canManage && nextReady ? <Button size="sm" variant="outline" onClick={() => preparePeriod(staff)}><Clock3 className="mr-1.5 h-4 w-4" />Prepare {dateOnly(nextReady.date_to)}</Button> : null}{blocked && !nextReady ? <Button asChild size="sm" variant="outline"><Link href={blocked.blockers[0]?.action === "staff_profile" ? `/staff/${staff.user_id}?tab=employment` : blocked.blockers[0]?.action === "attendance_timesheets" ? `/attendance?tab=timesheets&staff_id=${staff.staff_id}` : `/attendance?tab=schedules&staff_id=${staff.staff_id}`}>Fix {blocked.blockers[0]?.action === "attendance_schedule" ? "schedule" : "blocker"}</Link></Button> : null}<Button size="sm" variant="ghost" onClick={() => void toggleDetails(staff.staff_id)}>{expanded ? <ChevronUp className="mr-1.5 h-4 w-4" /> : <ChevronDown className="mr-1.5 h-4 w-4" />}Details</Button></div></TableCell>
+                    </TableRow>
+                    {expanded ? <TableRow className="hover:bg-transparent"><TableCell colSpan={6} className="bg-muted/10 p-4 sm:p-6"><EmployeePayrollDetails staff={staff} history={history} loading={historyLoadingStaffId === staff.staff_id} canManage={canManage} onPay={() => setPaying(staff)} /></TableCell></TableRow> : null}
+                  </Fragment>;
                 })}
               </TableBody>
             </Table>
@@ -255,15 +215,127 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
         </CardContent>
       </Card>
 
-      <Dialog open={Boolean(paying)} onOpenChange={(open) => !open && setPaying(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Record salary payment</DialogTitle><DialogDescription>{paying ? `${paying.staff_name} has ${money(paying.outstanding_items.reduce((total, item) => total + Number(item.outstanding_amount || 0), 0))} approved and ready to pay. Payments are allocated to the oldest period first.` : ""}</DialogDescription></DialogHeader>
-          {paying ? <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Amount</Label><Input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></div><div className="space-y-2"><Label>Payment method</Label><Select value={method} onValueChange={setMethod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cash">Cash</SelectItem><SelectItem value="bank">Bank transfer</SelectItem><SelectItem value="cheque">Cheque</SelectItem><SelectItem value="wallet">Digital wallet</SelectItem></SelectContent></Select></div></div><div className="space-y-2"><Label>Paid at</Label><Input type="datetime-local" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} /></div><div className="space-y-2"><Label>Reference</Label><Input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Bank reference, cheque number…" /></div><div className="space-y-2"><Label>Notes</Label><Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Optional payment note" /></div><div className="rounded-lg border bg-muted/30 p-3 text-sm"><p className="font-medium">After this payment</p><p className="text-muted-foreground">Remaining approved balance: {money(Math.max(0, paying.outstanding_items.reduce((total, item) => total + Number(item.outstanding_amount || 0), 0) - Number(amount || 0)))}</p></div></div> : null}
-          <DialogFooter><Button variant="outline" onClick={() => setPaying(null)}>Cancel</Button><Button onClick={recordPayment} disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Record payment</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PayrollPaymentDialog
+        staff={paying}
+        restaurantId={restaurantId}
+        onOpenChange={(open) => !open && setPaying(null)}
+        onRecorded={async () => {
+          await load();
+          onChanged?.();
+        }}
+      />
 
       {readiness ? <PayrollSetupWizard open={setupOpen} onOpenChange={setSetupOpen} readiness={readiness} schedule={defaultSchedule} onReload={load} onBulkPrepare={bulkPrepare} bulkBusy={bulkBusy} /> : null}
+    </div>
+  );
+}
+
+function EmployeePayrollDetails({
+  staff,
+  history,
+  loading,
+  canManage,
+  onPay,
+}: {
+  staff: PayrollStaffBalance;
+  history: PayrollHistoryRecord[];
+  loading: boolean;
+  canManage: boolean;
+  onPay: () => void;
+}) {
+  const approvedOutstanding = staff.outstanding_items.reduce(
+    (total, item) => total + Number(item.outstanding_amount || 0),
+    0,
+  );
+  const latestCalculation = history[0];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="font-semibold">{staff.staff_name}&apos;s salary details</h3>
+          <p className="text-sm text-muted-foreground">
+            Review periods here, then open the staff payroll workspace for the
+            complete payment and correction history.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canManage && approvedOutstanding > 0 ? (
+            <Button size="sm" onClick={onPay}>
+              <Banknote className="mr-2 h-4 w-4" /> Pay {money(approvedOutstanding)}
+            </Button>
+          ) : null}
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/staff/${staff.user_id}?tab=payroll`}>Full payroll history</Link>
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[.85fr_1.15fr]">
+        <section className="rounded-xl border bg-background p-4">
+          <h4 className="text-sm font-semibold">Salary periods</h4>
+          <div className="mt-3 space-y-2">
+            {staff.outstanding_items.map((item) => (
+              <div key={item.payroll_item_id} className="rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <Link href={`/payroll/${item.payroll_run_id}`} className="text-sm font-medium hover:underline">
+                      {dateOnly(item.date_from)} - {dateOnly(item.date_to)}
+                    </Link>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Net {money(item.net_pay)} · paid {money(item.paid_amount)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold">{money(item.outstanding_amount)}</p>
+                    <p className="text-xs text-muted-foreground">remaining</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {staff.suggested_periods.map((period) => (
+              <div key={`${period.date_from}-${period.date_to}`} className="rounded-lg border border-dashed p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {dateOnly(period.date_from)} - {dateOnly(period.date_to)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {period.ready ? "Calculated; waiting for review" : period.blockers[0]?.message || "Needs attention"}
+                    </p>
+                  </div>
+                  <p className="font-semibold">{money(period.net_pay)}</p>
+                </div>
+              </div>
+            ))}
+            {!staff.outstanding_items.length && !staff.suggested_periods.length ? (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                No unpaid completed salary periods.
+              </p>
+            ) : null}
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-2">
+            <h4 className="text-sm font-semibold">Latest prepared calculation</h4>
+            <p className="text-xs text-muted-foreground">
+              Expand to see the attendance and salary arithmetic.
+            </p>
+          </div>
+          {loading ? (
+            <div className="flex h-32 items-center justify-center rounded-xl border bg-background">
+              <Loader2 className="h-5 w-5 animate-spin text-amber-600" />
+            </div>
+          ) : latestCalculation ? (
+            <SalaryCalculationBreakdown item={latestCalculation.item} />
+          ) : (
+            <div className="rounded-xl border border-dashed bg-background p-5 text-sm text-muted-foreground">
+              Prepare and approve a salary period to lock its detailed calculation.
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
