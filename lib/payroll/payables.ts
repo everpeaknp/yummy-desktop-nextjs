@@ -121,6 +121,7 @@ export type PayrollPayment = {
   payment_instrument_id?: number | null;
   payment_instrument_name?: string | null;
   cash_source?: string | null;
+  cash_source_name?: string | null;
   drawer_session_id?: number | null;
   drawer_session_name?: string | null;
   drawer_name?: string | null;
@@ -139,14 +140,82 @@ export type PayrollPayment = {
   reversal_drawer_name?: string | null;
   created_at?: string | null;
   balance_after_payment?: number | null;
+  source_balance_before?: number | null;
+  source_balance_after?: number | null;
   finance_event_id?: number | null;
   reversal_finance_event_id?: number | null;
+  metadata_reconstructed?: boolean;
+  history_quality?: "exact" | "reconstructed" | "partial" | string;
   allocations: Array<{
     id: number;
     payroll_item_id: number;
     payroll_run_id?: number | null;
     date_from?: string | null;
     date_to?: string | null;
+    amount: number;
+    created_at?: string | null;
+  }>;
+};
+
+export type PayrollTaxLiabilityRun = {
+  payroll_run_id: number;
+  date_from: string;
+  date_to: string;
+  status: string;
+  accrued_tax: number;
+  remitted_tax: number;
+  outstanding_tax: number;
+};
+
+export type PayrollTaxLiability = {
+  as_of: string;
+  accrued_tax: number;
+  remitted_tax: number;
+  outstanding_tax: number;
+  run_count: number;
+  remittance_count: number;
+  runs: PayrollTaxLiabilityRun[];
+};
+
+export type PayrollTaxRemittance = {
+  id: number;
+  restaurant_id: number;
+  amount: number;
+  remittance_date: string;
+  remitted_at: string;
+  payment_method: string;
+  payment_reference?: string | null;
+  payment_bank_id?: number | null;
+  payment_bank_name?: string | null;
+  payment_instrument_id?: number | null;
+  payment_instrument_name?: string | null;
+  cash_source?: string | null;
+  cash_source_name?: string | null;
+  drawer_session_id?: number | null;
+  drawer_session_name?: string | null;
+  drawer_name?: string | null;
+  source_balance_before?: number | null;
+  source_balance_after?: number | null;
+  finance_event_id?: number | null;
+  notes?: string | null;
+  status: "posted" | "reversed";
+  created_by?: number | null;
+  created_by_name?: string | null;
+  reversed_at?: string | null;
+  reversed_by?: number | null;
+  reversed_by_name?: string | null;
+  reversal_reason?: string | null;
+  reversal_drawer_session_id?: number | null;
+  reversal_drawer_session_name?: string | null;
+  reversal_drawer_name?: string | null;
+  reversal_finance_event_id?: number | null;
+  created_at?: string | null;
+  allocations: Array<{
+    id: number;
+    payroll_run_id: number;
+    date_from?: string | null;
+    date_to?: string | null;
+    tax_accrued: number;
     amount: number;
     created_at?: string | null;
   }>;
@@ -212,7 +281,7 @@ export const payrollPayablesApi = {
   async recordPayment(payload: {
     staff_id: number;
     amount: number;
-    payment_method: string;
+    payment_method: "cash" | "bank_transfer";
     payment_bank_id?: number;
     payment_instrument_id?: number;
     cash_source?: string;
@@ -234,6 +303,48 @@ export const payrollPayablesApi = {
   ) {
     return unwrap<PayrollPayment>(
       await apiClient.post(PayrollApis.reversePayment(paymentId), {
+        reason,
+        ...(drawerSessionId ? { drawer_session_id: drawerSessionId } : {}),
+      }),
+    );
+  },
+
+  async taxLiability(asOf?: string) {
+    return unwrap<PayrollTaxLiability>(
+      await apiClient.get(PayrollApis.taxLiability(asOf)),
+    );
+  },
+
+  async taxRemittances(limit = 100) {
+    return unwrap<PayrollTaxRemittance[]>(
+      await apiClient.get(PayrollApis.taxRemittances(limit)),
+    );
+  },
+
+  async recordTaxRemittance(payload: {
+    amount: number;
+    payment_method: "cash" | "bank_transfer";
+    payment_reference?: string;
+    payment_bank_id?: number;
+    payment_instrument_id?: number;
+    cash_source?: string;
+    drawer_session_id?: number;
+    remitted_at?: string;
+    notes?: string;
+    allocations?: Array<{ payroll_run_id: number; amount: number }>;
+  }) {
+    return unwrap<PayrollTaxRemittance>(
+      await apiClient.post(PayrollApis.recordTaxRemittance, payload),
+    );
+  },
+
+  async reverseTaxRemittance(
+    remittanceId: number,
+    reason: string,
+    drawerSessionId?: number,
+  ) {
+    return unwrap<PayrollTaxRemittance>(
+      await apiClient.post(PayrollApis.reverseTaxRemittance(remittanceId), {
         reason,
         ...(drawerSessionId ? { drawer_session_id: drawerSessionId } : {}),
       }),

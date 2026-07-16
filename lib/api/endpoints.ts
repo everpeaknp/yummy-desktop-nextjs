@@ -1906,6 +1906,15 @@ export const PayrollApis = {
     staffId ? `/payroll/payments?staff_id=${staffId}` : "/payroll/payments",
   recordPayment: "/payroll/payments",
   reversePayment: (paymentId: number) => `/payroll/payments/${paymentId}/reverse`,
+  taxLiability: (asOf?: string) =>
+    asOf
+      ? `/payroll/tax-liability?as_of=${encodeURIComponent(asOf)}`
+      : "/payroll/tax-liability",
+  taxRemittances: (limit = 100) =>
+    `/payroll/tax-remittances?limit=${encodeURIComponent(String(limit))}`,
+  recordTaxRemittance: "/payroll/tax-remittances",
+  reverseTaxRemittance: (remittanceId: number) =>
+    `/payroll/tax-remittances/${remittanceId}/reverse`,
 };
 
 export const PeriodCloseApis = {

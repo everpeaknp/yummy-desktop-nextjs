@@ -82,6 +82,28 @@ describe("payrollPayablesApi", () => {
     });
   });
 
+  it("records a safe-funded salary payment with an audit reference", async () => {
+    mocked.post.mockResolvedValueOnce({
+      data: { data: { id: 9, staff_id: 9, amount: 5000 } },
+    });
+
+    await payrollPayablesApi.recordPayment({
+      staff_id: 9,
+      amount: 5000,
+      payment_method: "cash",
+      cash_source: "safe",
+      payment_reference: "SAFE-VOUCHER-9",
+    });
+
+    expect(mocked.post).toHaveBeenCalledWith("/payroll/payments", {
+      staff_id: 9,
+      amount: 5000,
+      payment_method: "cash",
+      cash_source: "safe",
+      payment_reference: "SAFE-VOUCHER-9",
+    });
+  });
+
   it("saves the restaurant payroll schedule", async () => {
     mocked.put.mockResolvedValueOnce({
       data: { data: { id: 3, frequency: "monthly" } },
@@ -150,5 +172,64 @@ describe("payrollPayablesApi", () => {
       reason: "Wrong employee",
       drawer_session_id: 52,
     });
+  });
+
+  it("loads liability and records and reverses a tax remittance", async () => {
+    mocked.get
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            accrued_tax: 5000,
+            remitted_tax: 1000,
+            outstanding_tax: 4000,
+            runs: [],
+          },
+        },
+      })
+      .mockResolvedValueOnce({ data: { data: [] } });
+    mocked.post
+      .mockResolvedValueOnce({
+        data: { data: { id: 11, amount: 2000, status: "posted" } },
+      })
+      .mockResolvedValueOnce({
+        data: { data: { id: 11, amount: 2000, status: "reversed" } },
+      });
+
+    const liability = await payrollPayablesApi.taxLiability("2026-07-16");
+    await payrollPayablesApi.taxRemittances(50);
+    await payrollPayablesApi.recordTaxRemittance({
+      amount: 2000,
+      payment_method: "bank_transfer",
+      payment_bank_id: 3,
+      payment_reference: "TAX-2000",
+      allocations: [{ payroll_run_id: 7, amount: 2000 }],
+    });
+    await payrollPayablesApi.reverseTaxRemittance(11, "Duplicate remittance");
+
+    expect(mocked.get).toHaveBeenNthCalledWith(
+      1,
+      "/payroll/tax-liability?as_of=2026-07-16",
+    );
+    expect(mocked.get).toHaveBeenNthCalledWith(
+      2,
+      "/payroll/tax-remittances?limit=50",
+    );
+    expect(mocked.post).toHaveBeenNthCalledWith(
+      1,
+      "/payroll/tax-remittances",
+      {
+        amount: 2000,
+        payment_method: "bank_transfer",
+        payment_bank_id: 3,
+        payment_reference: "TAX-2000",
+        allocations: [{ payroll_run_id: 7, amount: 2000 }],
+      },
+    );
+    expect(mocked.post).toHaveBeenNthCalledWith(
+      2,
+      "/payroll/tax-remittances/11/reverse",
+      { reason: "Duplicate remittance" },
+    );
+    expect(liability.outstanding_tax).toBe(4000);
   });
 });

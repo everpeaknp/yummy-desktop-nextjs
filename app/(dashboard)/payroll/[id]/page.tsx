@@ -15,6 +15,7 @@ import {
   Trash2,
   Printer,
   Landmark,
+  ShieldCheck,
 } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
@@ -25,8 +26,17 @@ import {
   type ActiveCashDrawerSession,
 } from "@/lib/cash-expense-drawer-selection";
 import { getPaymentBankLabel } from "@/lib/payment-banks";
-import { requiresPayrollBank, requiresPayrollReference } from "@/lib/payroll/payment-form";
-import type { PaymentBank } from "@/types/accounting";
+import {
+  canUsePayrollSafe,
+  payrollSafeFundingError,
+  requiresPayrollBank,
+  requiresPayrollReference,
+  payrollRunPaymentErrorMessage,
+  type PayrollCashSource,
+  type PayrollPaymentMethod,
+} from "@/lib/payroll/payment-form";
+import type { DrawerCashControlSummary, PaymentBank } from "@/types/accounting";
+import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
@@ -41,6 +51,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { PayrollSafeSourceSummary } from "@/components/payroll/payroll-safe-source-summary";
 
 type PayrollStatus = "draft" | "approved" | "paid" | "cancelled" | string;
 
@@ -144,7 +155,10 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
   const [actionLoading, setActionLoading] = useState(false);
 
   const [paidOpen, setPaidOpen] = useState(false);
-  const [paidMethod, setPaidMethod] = useState("");
+  const [paidMethod, setPaidMethod] =
+    useState<PayrollPaymentMethod>("cash");
+  const [paidCashSource, setPaidCashSource] =
+    useState<PayrollCashSource>("drawer");
   const [paidRef, setPaidRef] = useState("");
   const [paidAt, setPaidAt] = useState<string>("");
   const [paidBankId, setPaidBankId] = useState("");
@@ -152,8 +166,11 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
   const [paymentBanks, setPaymentBanks] = useState<PaymentBank[]>([]);
   const [cashDrawers, setCashDrawers] = useState<ActiveCashDrawerSession[]>([]);
   const [drawerControlsEnabled, setDrawerControlsEnabled] = useState(false);
+  const [cashSummary, setCashSummary] =
+    useState<DrawerCashControlSummary | null>(null);
   const [bankLoadFailed, setBankLoadFailed] = useState(false);
   const [drawerLoadFailed, setDrawerLoadFailed] = useState(false);
+  const [safeLoadFailed, setSafeLoadFailed] = useState(false);
   const [paymentSourcesLoading, setPaymentSourcesLoading] = useState(false);
   const [paymentSourcesLoaded, setPaymentSourcesLoaded] = useState(false);
 
@@ -275,6 +292,15 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
     return list.sort((a, b) => (b.adj.id || 0) - (a.adj.id || 0));
   }, [run?.items]);
 
+  const hasSafePermission = hasPermission(
+    user,
+    "finance.cash.safe.disburse",
+  );
+  const canUseSafe = canUsePayrollSafe({
+    summary: cashSummary,
+    hasDisbursementPermission: hasSafePermission,
+  });
+
   const approveRun = async () => {
     if (!run) return;
     setActionLoading(true);
@@ -308,27 +334,48 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
       toast.error("Select the restaurant bank account funding this payroll.");
       return;
     }
-    if (requiresPayrollReference(paidMethod) && paidRef.trim().length < 2) {
+    if (requiresPayrollBank(paidMethod) && paidRef.trim().length < 2) {
       toast.error("Enter the bank transfer reference.");
       return;
     }
     let drawerPayload: { drawer_session_id?: number } = {};
-    try {
-      drawerPayload = buildCashExpenseDrawerPayload({
-        paymentMethod: paidMethod,
-        controlsEnabled: drawerControlsEnabled,
-        selectedDrawerSessionId: paidDrawerSessionId,
+    if (paidMethod === "cash" && paidCashSource === "drawer") {
+      try {
+        drawerPayload = buildCashExpenseDrawerPayload({
+          paymentMethod: paidMethod,
+          controlsEnabled: drawerControlsEnabled,
+          selectedDrawerSessionId: paidDrawerSessionId,
+        });
+      } catch {
+        toast.error("Select the cash drawer funding this payroll payment.");
+        return;
+      }
+    }
+    if (paidMethod === "cash" && paidCashSource === "safe") {
+      const safeError = payrollSafeFundingError({
+        summary: cashSummary,
+        hasDisbursementPermission: hasSafePermission,
+        reference: paidRef,
+        amount:
+          run.status === "partially_paid"
+            ? null
+            : Number(run.total_payroll_amount || 0),
       });
-    } catch {
-      toast.error("Select the cash drawer funding this payroll payment.");
-      return;
+      if (safeLoadFailed || safeError) {
+        toast.error(
+          safeError || "The Main Cash / Safe balance could not be verified.",
+        );
+        return;
+      }
     }
     setActionLoading(true);
     try {
       const payload: any = {
         payment_method: paidMethod,
-        payment_bank_id: selectedBank?.id,
-        cash_source: paidMethod === "cash" ? "drawer" : undefined,
+        payment_bank_id: requiresPayrollBank(paidMethod)
+          ? selectedBank?.id
+          : undefined,
+        cash_source: paidMethod === "cash" ? paidCashSource : undefined,
         ...drawerPayload,
         payment_reference: paidRef.trim() || null,
         paid_at: paidAt ? new Date(paidAt).toISOString() : null,
@@ -339,10 +386,14 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
         setPaidOpen(false);
         await loadRun();
       } else {
-        toast.error(res.data?.message || "Failed to mark paid");
+        toast.error(
+          `Payroll run payment failed. No employee payments were recorded.${
+            res.data?.message ? ` ${res.data.message}` : ""
+          }`,
+        );
       }
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || e?.response?.data?.detail || "Failed to mark paid");
+      toast.error(payrollRunPaymentErrorMessage(e));
     } finally {
       setActionLoading(false);
     }
@@ -498,6 +549,7 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
     );
     setPaidRef(run.payment_reference || "");
     setPaidAt(toDatetimeLocalValue(run.paid_at));
+    setPaidCashSource("drawer");
   }, [run]);
 
   useEffect(() => {
@@ -509,10 +561,18 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
       setPaymentSourcesLoaded(false);
       setBankLoadFailed(false);
       setDrawerLoadFailed(false);
-      const [bankResult, drawerResult] = await Promise.allSettled([
+      setSafeLoadFailed(false);
+      const [bankResult, drawerResult, cashSummaryResult] =
+        await Promise.allSettled([
         apiClient.get(AccountingApis.paymentBanks(restaurant.id)),
         apiClient.get(
           DrawerSessionApis.active({
+            restaurantId: restaurant.id,
+            businessLine: "restaurant",
+          }),
+        ),
+        apiClient.get(
+          DrawerSessionApis.cashControlSummary({
             restaurantId: restaurant.id,
             businessLine: "restaurant",
           }),
@@ -554,6 +614,12 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
         setCashDrawers([]);
         setPaidDrawerSessionId("");
         setDrawerLoadFailed(true);
+      }
+      if (cashSummaryResult.status === "fulfilled") {
+        setCashSummary(cashSummaryResult.value.data?.data || null);
+      } else {
+        setCashSummary(null);
+        setSafeLoadFailed(true);
       }
       setPaymentSourcesLoading(false);
       setPaymentSourcesLoaded(true);
@@ -819,7 +885,12 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
             </div>
             <div className="space-y-2">
               <Label>Payment method</Label>
-              <Select value={paidMethod} onValueChange={setPaidMethod}>
+              <Select
+                value={paidMethod}
+                onValueChange={(value) =>
+                  setPaidMethod(value as PayrollPaymentMethod)
+                }
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="cash">Cash</SelectItem>
@@ -835,33 +906,65 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
             ) : null}
 
             {paidMethod === "cash" && !paymentSourcesLoading ? (
-              drawerLoadFailed ? (
-                <Alert>
-                  Your role cannot list drawers. The server will use your single assigned open drawer, or stop if one cannot be resolved.
-                </Alert>
-              ) : drawerControlsEnabled ? (
+              <div className="space-y-3">
                 <div className="space-y-2">
                   <Label>Cash source</Label>
-                  {cashDrawers.length ? (
-                    <Select value={paidDrawerSessionId} onValueChange={setPaidDrawerSessionId}>
-                      <SelectTrigger><SelectValue placeholder="Select an open cash drawer" /></SelectTrigger>
-                      <SelectContent>
-                        {cashDrawers.map((drawer) => (
-                          <SelectItem key={drawer.id} value={String(drawer.id)}>
-                            {drawer.name || drawer.drawer_key || `Drawer #${drawer.id}`}{drawer.station ? ` - ${drawer.station}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Alert>
-                      No open cash drawer is available. Open one from <Link href="/cash-drawers" className="font-semibold underline">Cash Drawers</Link> first.
-                    </Alert>
-                  )}
+                  <Select
+                    value={paidCashSource}
+                    onValueChange={(value) =>
+                      setPaidCashSource(value as PayrollCashSource)
+                    }
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="drawer">Open cash drawer</SelectItem>
+                      <SelectItem value="safe" disabled={!canUseSafe}>
+                        Main Cash / Safe (1005){!canUseSafe ? " - unavailable" : ""}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {!canUseSafe ? (
+                    <p className="text-xs text-muted-foreground">
+                      Safe funding requires safe-disbursement permission and a ready accounting ledger.
+                    </p>
+                  ) : null}
                 </div>
-              ) : (
-                <Alert>Cash drawer controls are disabled. The run will be recorded as general cash.</Alert>
-              )
+
+                {paidCashSource === "safe" ? (
+                  <PayrollSafeSourceSummary
+                    summary={cashSummary}
+                    loading={paymentSourcesLoading}
+                    loadFailed={safeLoadFailed}
+                    amount={run.status === "partially_paid" ? 0 : run.total_payroll_amount}
+                  />
+                ) : drawerLoadFailed ? (
+                  <Alert>
+                    Your role cannot list drawers. The server will use your single assigned open drawer, or stop if one cannot be resolved.
+                  </Alert>
+                ) : drawerControlsEnabled ? (
+                  <div className="space-y-2">
+                    <Label>Open cash drawer</Label>
+                    {cashDrawers.length ? (
+                      <Select value={paidDrawerSessionId} onValueChange={setPaidDrawerSessionId}>
+                        <SelectTrigger><SelectValue placeholder="Select an open cash drawer" /></SelectTrigger>
+                        <SelectContent>
+                          {cashDrawers.map((drawer) => (
+                            <SelectItem key={drawer.id} value={String(drawer.id)}>
+                              {drawer.name || drawer.drawer_key || `Drawer #${drawer.id}`}{drawer.station ? ` - ${drawer.station}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Alert>
+                        No open cash drawer is available. Open one from <Link href="/cash-drawers" className="font-semibold underline">Cash Drawers</Link> first.
+                      </Alert>
+                    )}
+                  </div>
+                ) : (
+                  <Alert>Cash drawer controls are disabled. The run will be recorded as general cash.</Alert>
+                )}
+              </div>
             ) : null}
 
             {requiresPayrollBank(paidMethod) && !paymentSourcesLoading ? (
@@ -886,8 +989,8 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
             ) : null}
 
             <div className="space-y-2">
-              <Label>Payment reference {requiresPayrollReference(paidMethod) ? "(required)" : "(optional)"}</Label>
-              <Input value={paidRef} onChange={(e) => setPaidRef(e.target.value)} placeholder={paidMethod === "bank_transfer" ? "Transfer reference" : "Receipt or voucher number"} />
+              <Label>Payment reference {requiresPayrollReference(paidMethod, paidCashSource) ? "(required)" : "(optional)"}</Label>
+              <Input value={paidRef} onChange={(e) => setPaidRef(e.target.value)} placeholder={paidMethod === "bank_transfer" ? "Transfer reference" : paidCashSource === "safe" ? "Safe withdrawal voucher or reference" : "Receipt or voucher number"} />
             </div>
             <div className="space-y-2">
               <Label>Paid at</Label>
@@ -897,7 +1000,7 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
           <DialogFooter>
             <Button variant="outline" onClick={() => setPaidOpen(false)} disabled={actionLoading}>Cancel</Button>
             <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={submitPaid} disabled={actionLoading || !paymentSourcesLoaded || paymentSourcesLoading}>
-              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : paidMethod === "cash" && paidCashSource === "safe" ? <ShieldCheck className="w-4 h-4 mr-2" /> : null}
               Confirm payment
             </Button>
           </DialogFooter>

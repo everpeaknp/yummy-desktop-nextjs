@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Landmark,
   Loader2,
+  ShieldCheck,
   WalletCards,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,12 +26,18 @@ import {
   type PayrollStaffBalance,
 } from "@/lib/payroll/payables";
 import {
+  canUsePayrollSafe,
+  payrollSafeFundingError,
   previewPayrollAllocations,
   requiresPayrollBank,
   requiresPayrollReference,
+  type PayrollCashSource,
   type PayrollPaymentMethod,
 } from "@/lib/payroll/payment-form";
-import type { PaymentBank } from "@/types/accounting";
+import type {
+  DrawerCashControlSummary,
+  PaymentBank,
+} from "@/types/accounting";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +58,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { PayrollSafeSourceSummary } from "@/components/payroll/payroll-safe-source-summary";
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 
 type ApiResponse<T> = { data?: T; message?: string };
 
@@ -87,6 +97,7 @@ export function PayrollPaymentDialog({
   onRecorded: () => void | Promise<void>;
 }) {
   const open = Boolean(staff);
+  const user = useAuth((state) => state.user);
   const approvedOutstanding = useMemo(
     () =>
       staff?.outstanding_items.reduce(
@@ -97,6 +108,7 @@ export function PayrollPaymentDialog({
   );
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PayrollPaymentMethod>("cash");
+  const [cashSource, setCashSource] = useState<PayrollCashSource>("drawer");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [paidAt, setPaidAt] = useState("");
@@ -105,16 +117,20 @@ export function PayrollPaymentDialog({
   const [banks, setBanks] = useState<PaymentBank[]>([]);
   const [drawers, setDrawers] = useState<ActiveCashDrawerSession[]>([]);
   const [drawerControlsEnabled, setDrawerControlsEnabled] = useState(false);
+  const [cashSummary, setCashSummary] =
+    useState<DrawerCashControlSummary | null>(null);
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [bankLoadFailed, setBankLoadFailed] = useState(false);
   const [drawerLoadFailed, setDrawerLoadFailed] = useState(false);
+  const [safeLoadFailed, setSafeLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open || !staff) return;
     setAmount(approvedOutstanding.toFixed(2));
     setMethod("cash");
+    setCashSource("drawer");
     setReference("");
     setNotes("");
     setBankId("");
@@ -129,9 +145,11 @@ export function PayrollPaymentDialog({
     if (!open || !restaurantId) {
       setBanks([]);
       setDrawers([]);
+      setCashSummary(null);
       setSourcesLoaded(false);
       setBankLoadFailed(false);
       setDrawerLoadFailed(false);
+      setSafeLoadFailed(false);
       return;
     }
 
@@ -140,12 +158,20 @@ export function PayrollPaymentDialog({
       setSourcesLoaded(false);
       setBankLoadFailed(false);
       setDrawerLoadFailed(false);
-      const [bankResult, drawerResult] = await Promise.allSettled([
+      setSafeLoadFailed(false);
+      const [bankResult, drawerResult, cashSummaryResult] =
+        await Promise.allSettled([
         apiClient.get<ApiResponse<PaymentBank[]>>(
           AccountingApis.paymentBanks(restaurantId),
         ),
         apiClient.get(
           DrawerSessionApis.active({
+            restaurantId,
+            businessLine: "restaurant",
+          }),
+        ),
+        apiClient.get<ApiResponse<DrawerCashControlSummary>>(
+          DrawerSessionApis.cashControlSummary({
             restaurantId,
             businessLine: "restaurant",
           }),
@@ -189,6 +215,13 @@ export function PayrollPaymentDialog({
         setDrawers([]);
         setDrawerLoadFailed(true);
       }
+
+      if (cashSummaryResult.status === "fulfilled") {
+        setCashSummary(cashSummaryResult.value.data?.data || null);
+      } else {
+        setCashSummary(null);
+        setSafeLoadFailed(true);
+      }
       setSourcesLoading(false);
       setSourcesLoaded(true);
     };
@@ -213,6 +246,14 @@ export function PayrollPaymentDialog({
   const selectedDrawer = drawers.find(
     (drawer) => String(drawer.id) === drawerSessionId,
   );
+  const hasSafePermission = hasPermission(
+    user,
+    "finance.cash.safe.disburse",
+  );
+  const canUseSafe = canUsePayrollSafe({
+    summary: cashSummary,
+    hasDisbursementPermission: hasSafePermission,
+  });
 
   const recordPayment = async () => {
     if (!staff) return;
@@ -242,21 +283,40 @@ export function PayrollPaymentDialog({
       toast.error("Select the restaurant bank account used for this payment.");
       return;
     }
-    if (requiresPayrollReference(method) && reference.trim().length < 2) {
+    if (
+      requiresPayrollBank(method) &&
+      reference.trim().length < 2
+    ) {
       toast.error("Enter the bank transfer reference.");
       return;
     }
 
     let drawerPayload: { drawer_session_id?: number } = {};
-    try {
-      drawerPayload = buildCashExpenseDrawerPayload({
-        paymentMethod: method,
-        controlsEnabled: drawerControlsEnabled,
-        selectedDrawerSessionId: drawerSessionId,
+    if (method === "cash" && cashSource === "drawer") {
+      try {
+        drawerPayload = buildCashExpenseDrawerPayload({
+          paymentMethod: method,
+          controlsEnabled: drawerControlsEnabled,
+          selectedDrawerSessionId: drawerSessionId,
+        });
+      } catch {
+        toast.error("Select the cash drawer funding this salary payment.");
+        return;
+      }
+    }
+    if (method === "cash" && cashSource === "safe") {
+      const safeError = payrollSafeFundingError({
+        summary: cashSummary,
+        hasDisbursementPermission: hasSafePermission,
+        reference,
+        amount: numericAmount,
       });
-    } catch {
-      toast.error("Select the cash drawer funding this salary payment.");
-      return;
+      if (safeLoadFailed || safeError) {
+        toast.error(
+          safeError || "The Main Cash / Safe balance could not be verified.",
+        );
+        return;
+      }
     }
 
     setSaving(true);
@@ -265,8 +325,10 @@ export function PayrollPaymentDialog({
         staff_id: staff.staff_id,
         amount: numericAmount,
         payment_method: method,
-        payment_bank_id: selectedBank?.id,
-        cash_source: method === "cash" ? "drawer" : undefined,
+        payment_bank_id: requiresPayrollBank(method)
+          ? selectedBank?.id
+          : undefined,
+        cash_source: method === "cash" ? cashSource : undefined,
         payment_reference: reference.trim() || undefined,
         paid_at: paidAt ? new Date(paidAt).toISOString() : undefined,
         notes: notes.trim() || undefined,
@@ -368,7 +430,42 @@ export function PayrollPaymentDialog({
               </div>
             ) : null}
             {method === "cash" && !sourcesLoading ? (
-              drawerLoadFailed ? (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Cash source</Label>
+                  <Select
+                    value={cashSource}
+                    onValueChange={(value) =>
+                      setCashSource(value as PayrollCashSource)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="drawer">Open cash drawer</SelectItem>
+                      <SelectItem value="safe" disabled={!canUseSafe}>
+                        Main Cash / Safe (1005)
+                        {!canUseSafe ? " - unavailable" : ""}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {!canUseSafe ? (
+                    <p className="text-xs text-muted-foreground">
+                      Safe funding is available only with safe-disbursement
+                      permission and a ready accounting ledger.
+                    </p>
+                  ) : null}
+                </div>
+
+                {cashSource === "safe" ? (
+                  <PayrollSafeSourceSummary
+                    summary={cashSummary}
+                    loading={sourcesLoading}
+                    loadFailed={safeLoadFailed}
+                    amount={numericAmount}
+                  />
+                ) : drawerLoadFailed ? (
                 <Alert>
                   Your role cannot list cash drawers. The server will use your
                   single assigned open drawer; if it cannot resolve one, it will
@@ -376,7 +473,7 @@ export function PayrollPaymentDialog({
                 </Alert>
               ) : drawerControlsEnabled ? (
                 <div className="space-y-2">
-                  <Label>Cash source</Label>
+                  <Label>Open cash drawer</Label>
                   {drawers.length ? (
                     <Select value={drawerSessionId} onValueChange={setDrawerSessionId}>
                       <SelectTrigger>
@@ -412,7 +509,8 @@ export function PayrollPaymentDialog({
                   Cash drawer controls are disabled. This will be recorded as a
                   general cash payment.
                 </Alert>
-              )
+                )}
+              </div>
             ) : null}
 
             {requiresPayrollBank(method) && !sourcesLoading ? (
@@ -455,13 +553,20 @@ export function PayrollPaymentDialog({
             ) : null}
 
             <div className="space-y-2">
-              <Label>Reference {requiresPayrollReference(method) ? "(required)" : "(optional)"}</Label>
+              <Label>
+                Reference{" "}
+                {requiresPayrollReference(method, cashSource)
+                  ? "(required)"
+                  : "(optional)"}
+              </Label>
               <Input
                 value={reference}
                 onChange={(event) => setReference(event.target.value)}
                 placeholder={
                   method === "bank_transfer"
                     ? "Transfer reference"
+                    : cashSource === "safe"
+                      ? "Safe withdrawal voucher or reference"
                     : "Receipt or voucher number"
                 }
               />
@@ -515,7 +620,13 @@ export function PayrollPaymentDialog({
             onClick={recordPayment}
             disabled={saving || !sourcesLoaded || sourcesLoading || approvedOutstanding <= 0}
           >
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Building2 className="mr-2 h-4 w-4" />}
+            {saving ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : cashSource === "safe" && method === "cash" ? (
+              <ShieldCheck className="mr-2 h-4 w-4" />
+            ) : (
+              <Building2 className="mr-2 h-4 w-4" />
+            )}
             Record {numericAmount < approvedOutstanding ? "partial " : ""}payment
           </Button>
         </DialogFooter>

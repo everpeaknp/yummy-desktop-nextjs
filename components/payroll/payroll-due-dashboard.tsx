@@ -34,6 +34,7 @@ import { hasPermission } from "@/lib/role-permissions";
 import { PayrollPaymentDialog } from "@/components/payroll/payroll-payment-dialog";
 import { PayrollSetupWizard } from "@/components/payroll/payroll-setup-wizard";
 import { SalaryCalculationBreakdown } from "@/components/payroll/salary-calculation-breakdown";
+import { PayrollTaxLiabilityCard } from "@/components/payroll/payroll-tax-liability-card";
 import {
   payrollPayablesApi,
   type PayrollDueSummary,
@@ -183,6 +184,12 @@ export function PayrollDueDashboard({ onChanged }: { onChanged?: () => void }) {
         <SummaryCard label="Current accrual" value={money(summary.total_current_accrual)} icon={CalendarClock} tone="text-blue-600" />
         <SummaryCard label="Payments recorded" value={money(summary.total_paid)} icon={CheckCircle2} tone="text-emerald-600" />
       </div>
+
+      <PayrollTaxLiabilityCard
+        restaurantId={restaurantId}
+        canManage={canManage}
+        onChanged={onChanged}
+      />
 
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Employee balances</CardTitle></CardHeader>

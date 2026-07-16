@@ -135,6 +135,7 @@ export function StaffPayrollBalanceCard({
     if (
       !reversing ||
       reversing.payment_method.trim().toLowerCase() !== "cash" ||
+      reversing.cash_source?.trim().toLowerCase() === "safe" ||
       !restaurantId
     ) {
       setReversalDrawers([]);
@@ -407,6 +408,7 @@ export function StaffPayrollBalanceCard({
             payments={payments}
             canManage={canManage}
             historyByItemId={historyByItemId}
+            legacyHistory={payrollHistory}
             onReverse={(payment) => {
               setReversing(payment);
               setReversalReason("");
@@ -443,7 +445,15 @@ export function StaffPayrollBalanceCard({
               placeholder="For example: wrong amount or duplicate payment"
             />
           </div>
-          {reversing?.payment_method.trim().toLowerCase() === "cash" ? (
+          {reversing?.payment_method.trim().toLowerCase() === "cash" &&
+          reversing.cash_source?.trim().toLowerCase() === "safe" ? (
+            <Alert>
+              Reversing this payment restores the cash to Main Cash / Safe
+              (1005). No drawer selection is required.
+            </Alert>
+          ) : null}
+          {reversing?.payment_method.trim().toLowerCase() === "cash" &&
+          reversing.cash_source?.trim().toLowerCase() !== "safe" ? (
             <div className="space-y-2">
               <Label>Cash reversal destination</Label>
               {reversalDrawersLoading ? (
@@ -485,6 +495,7 @@ export function StaffPayrollBalanceCard({
                 reversalDrawersLoading ||
                 reversalReason.trim().length < 3 ||
                 (reversing?.payment_method.trim().toLowerCase() === "cash" &&
+                  reversing.cash_source?.trim().toLowerCase() !== "safe" &&
                   reversalDrawerControlsEnabled &&
                   !reversalDrawerId)
               }

@@ -193,6 +193,7 @@ export type PermissionKey =
   | "finance.drawer.expense.create"
   | "finance.drawer.expense.approve"
   | "finance.drawer.transfer.to_safe"
+  | "finance.cash.safe.disburse"
   | "finance.cash.transfer.to_bank"
   | "finance.bank_deposit.confirm"
   | "finance.variance.approve"
