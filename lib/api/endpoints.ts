@@ -328,6 +328,34 @@ export const InventoryApis = {
   markAdjustmentPayment: (id: number) => `/inventory/adjustments/${id}/payment`,
   rejectAdjustmentPayment: (id: number) =>
     `/inventory/adjustments/${id}/reject`,
+  activity: ({
+    restaurantId,
+    inventoryItemId,
+    activityType,
+    lifecycleStatus,
+    skip = 0,
+    limit = 200,
+  }: {
+    restaurantId: number;
+    inventoryItemId?: number;
+    activityType?: string;
+    lifecycleStatus?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+    if (inventoryItemId) params.append("inventory_item_id", inventoryItemId.toString());
+    if (activityType && activityType !== "all") params.append("activity_type", activityType);
+    if (lifecycleStatus && lifecycleStatus !== "all") params.append("lifecycle_status", lifecycleStatus);
+    return `/inventory/activity?${params.toString()}`;
+  },
+  cancelPurchase: (id: number) => `/inventory/adjustments/${id}/cancel`,
+  correctPurchase: (id: number) => `/inventory/adjustments/${id}/correct`,
+  returnPurchase: (id: number) => `/inventory/adjustments/${id}/return`,
   getLedger: ({
     itemId,
     skip = 0,

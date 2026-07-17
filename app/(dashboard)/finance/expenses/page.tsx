@@ -36,6 +36,7 @@ import {
   Clock,
   Pencil,
   Trash2,
+  PackageSearch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -119,6 +120,9 @@ function normalizeExpensePaymentMethod(raw: string | null | undefined): string {
 function buildExpensePaymentMethodBreakdown(expenses: any[]) {
   const totals = new Map<string, number>();
   for (const expense of expenses) {
+    if (["cancelled", "corrected"].includes(String(expense.source_status || "").toLowerCase())) {
+      continue;
+    }
     const method = normalizeExpensePaymentMethod(expense.payment_method);
     const amount = Number(expense.amount) || 0;
     totals.set(method, (totals.get(method) ?? 0) + amount);
@@ -144,14 +148,18 @@ function buildFinanceExpensePaymentMethodBreakdown(
   ]);
   const totals = new Map<string, number>();
   for (const transaction of transactions ?? []) {
-    if (!cashOutEventTypes.has(String(transaction.event_type || ""))) continue;
+    const eventType = String(transaction.event_type || "");
+    const originalEventType = String(transaction.metadata_json?.original_event_type || "");
+    const isReversal = eventType === "inventory_transaction_reversed";
+    if (!cashOutEventTypes.has(isReversal ? originalEventType : eventType)) continue;
     const amount = Number(transaction.amount) || 0;
     if (amount <= 0) continue;
     const method = normalizeExpensePaymentMethod(transaction.payment_method);
-    totals.set(method, (totals.get(method) ?? 0) + amount);
+    totals.set(method, (totals.get(method) ?? 0) + (isReversal ? -amount : amount));
   }
-  const grandTotal = Array.from(totals.values()).reduce((sum, n) => sum + n, 0);
-  return Array.from(totals.entries())
+  const positiveTotals = Array.from(totals.entries()).filter(([, amount]) => amount > 0.0001);
+  const grandTotal = positiveTotals.reduce((sum, [, amount]) => sum + amount, 0);
+  return positiveTotals
     .map(([method, amount]) => ({
       method,
       amount,
@@ -162,6 +170,10 @@ function buildFinanceExpensePaymentMethodBreakdown(
 
 function isFinanceEventExpense(expense: any): boolean {
   return String(expense?.source_type || "").startsWith("finance_event:");
+}
+
+function isInventoryFinanceExpense(expense: any): boolean {
+  return isFinanceEventExpense(expense) && String(expense?.source_type || "").includes("inventory_");
 }
 
 export default function ExpensesPage() {
@@ -1302,18 +1314,21 @@ export default function ExpensesPage() {
                       {filteredExpenses.map((expense: any) => {
                         const readOnlyFinanceRow =
                           isFinanceEventExpense(expense);
+                        const inventoryFinanceRow = isInventoryFinanceExpense(expense);
+                        const sourceStatus = String(expense.source_status || "").toLowerCase();
+                        const superseded = ["cancelled", "corrected"].includes(sourceStatus);
                         return (
                           <tr
                             key={`${expense.source_type || "expense"}-${expense.id}`}
                             className="hover:bg-muted/30 transition-colors"
                           >
-                            <td className="px-6 py-4 font-medium">
+                            <td className={cn("px-6 py-4 font-medium", superseded && "text-muted-foreground line-through")}>
                               {expense.description || "Untitled"}
                             </td>
                             <td className="px-6 py-4 text-muted-foreground">
                               {expense.category?.name || "General"}
                             </td>
-                            <td className="px-6 py-4 font-bold text-red-600 dark:text-red-500">
+                            <td className={cn("px-6 py-4 font-bold text-red-600 dark:text-red-500", superseded && "text-muted-foreground line-through dark:text-muted-foreground")}>
                               - Rs. {Number(expense.amount).toLocaleString()}
                             </td>
                             <td className="px-6 py-4 text-muted-foreground">
@@ -1330,14 +1345,22 @@ export default function ExpensesPage() {
                                 className="border-border text-muted-foreground capitalize"
                               >
                                 {readOnlyFinanceRow
-                                  ? "Recorded"
+                                  ? sourceStatus || "Recorded"
                                   : expense.status || "Completed"}
                               </Badge>
                             </td>
                             <td className="px-6 py-4">
                               {readOnlyFinanceRow ? (
                                 <div className="flex justify-end">
-                                  <Badge variant="secondary">Finance event</Badge>
+                                  {inventoryFinanceRow && expense.source_id ? (
+                                    <Button asChild size="sm" variant="outline">
+                                      <Link href={`/inventory?view=activity&adjustment=${expense.source_id}`}>
+                                        <PackageSearch className="mr-2 h-4 w-4" /> Manage in inventory
+                                      </Link>
+                                    </Button>
+                                  ) : (
+                                    <Badge variant="secondary">Finance event</Badge>
+                                  )}
                                 </div>
                               ) : (
                                 <div className="flex justify-end gap-2">

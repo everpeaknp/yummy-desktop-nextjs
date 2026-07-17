@@ -33,11 +33,14 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
 import { InventoryConsumptionDialog } from "@/components/inventory/inventory-consumption-dialog";
+import { InventoryActivityPanel } from "@/components/inventory/inventory-activity-panel";
 
 export default function InventoryPage() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
+  const [inventoryView, setInventoryView] = useState<"items" | "activity">("items");
+  const [focusAdjustmentId, setFocusAdjustmentId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [valuation, setValuation] = useState<any | null>(null);
 
@@ -105,6 +108,10 @@ export default function InventoryPage() {
     permissionKeys.has("inventory.manage");
   const canOverrideNegativeStock =
     isInventoryAdmin || permissionKeys.has("inventory.negative_stock.override");
+  const canManageInventory =
+    isInventoryAdmin ||
+    permissionKeys.has("inventory.manage") ||
+    permissionKeys.has("inventory.stock.manage");
 
   // 1. Session Restoration & Auth Guard
   useEffect(() => {
@@ -118,6 +125,24 @@ export default function InventoryPage() {
     const timer = setTimeout(checkAuth, 500);
     return () => clearTimeout(timer);
   }, [user, me, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "activity") setInventoryView("activity");
+    const adjustmentId = Number(params.get("adjustment"));
+    if (adjustmentId > 0) setFocusAdjustmentId(adjustmentId);
+  }, []);
+
+  const changeInventoryView = (view: "items" | "activity") => {
+    setInventoryView(view);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (view === "activity") url.searchParams.set("view", "activity");
+    else url.searchParams.delete("view");
+    if (view === "items") url.searchParams.delete("adjustment");
+    window.history.replaceState({}, "", url.toString());
+  };
 
   // 2. Fetch Data
   const fetchInventory = async () => {
@@ -600,7 +625,6 @@ export default function InventoryPage() {
           name: itemForm.name,
           unit: itemForm.unit,
           description: itemForm.description || null,
-          current_stock: Number(itemForm.current_stock),
           min_stock_level: Number(itemForm.min_stock_level),
           cost_per_unit: itemForm.cost_per_unit ? Number(itemForm.cost_per_unit) : null,
           supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
@@ -724,17 +748,17 @@ export default function InventoryPage() {
           <p className="text-muted-foreground">Track stock levels and manage supplies.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canConsumeInventory ? (
+          {inventoryView === "items" && canConsumeInventory ? (
             <Button variant="outline" onClick={() => setConsumeOpen(true)}>
               <Utensils className="mr-2 h-4 w-4" /> Consume
             </Button>
           ) : null}
-          <Button
+          {inventoryView === "items" ? <Button
             className="bg-orange-600 hover:bg-orange-700 text-white"
             onClick={openAdd}
           >
             <Plus className="w-4 h-4 mr-2" /> Add Item
-          </Button>
+          </Button> : null}
         </div>
 
       </div>
@@ -749,6 +773,16 @@ export default function InventoryPage() {
           onCompleted={fetchInventory}
         />
       ) : null}
+
+      <Tabs value={inventoryView} onValueChange={(value) => changeInventoryView(value as "items" | "activity")}>
+        <TabsList className="border border-border bg-muted">
+          <TabsTrigger value="items">Stock items</TabsTrigger>
+          <TabsTrigger value="activity"><History className="mr-2 h-4 w-4" /> Activity</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {inventoryView === "items" ? (
+        <>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card className="rounded-lg">
@@ -894,6 +928,20 @@ export default function InventoryPage() {
           </table>
         </div>
       )}
+
+        </>
+      ) : user?.restaurant_id ? (
+        <InventoryActivityPanel
+          restaurantId={user.restaurant_id}
+          canManage={canManageInventory}
+          focusAdjustmentId={focusAdjustmentId}
+          cashDrawerControlsEnabled={cashDrawerControlsEnabled}
+          cashDrawerSessions={cashDrawerSessions}
+          selectedCashDrawerSessionId={selectedCashDrawerSessionId}
+          onCashDrawerSessionChange={setSelectedCashDrawerSessionId}
+          onInventoryChanged={fetchInventory}
+        />
+      ) : null}
 
       {/* Adjust Stock Dialog */}
       <Dialog open={!!adjustingItem} onOpenChange={(open) => !open && setAdjustingItem(null)}>
@@ -1205,8 +1253,13 @@ export default function InventoryPage() {
                   required
                   placeholder="0.000"
                   value={itemForm.current_stock}
+                  readOnly={Boolean(editingItem)}
+                  className={editingItem ? "cursor-not-allowed bg-muted" : undefined}
                   onChange={(e) => setItemForm({ ...itemForm, current_stock: e.target.value })}
                 />
+                {editingItem ? (
+                  <p className="text-xs text-muted-foreground">Use Adjust Stock or Activity to preserve the inventory audit trail.</p>
+                ) : null}
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="min_stock_level">Minimum Stock Level *</Label>
