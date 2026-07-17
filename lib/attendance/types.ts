@@ -31,6 +31,8 @@ export type AttendanceSettings = {
   automatic_break_duration_minutes: number;
   missing_checkout_review_after_minutes: number;
   overtime_rate_multiplier: number;
+  full_day_minimum_percent: number;
+  half_day_minimum_percent: number;
   mobile_clocking_enabled: boolean;
   device_clocking_enabled: boolean;
   policy_version: number;
@@ -184,6 +186,33 @@ export type AttendanceSchedule = {
   effective_from: string;
   effective_to: string | null;
   is_day_off: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AttendanceLeave = {
+  id: number;
+  restaurant_id: number;
+  staff_id: number;
+  date_from: string;
+  date_to: string;
+  leave_type: "paid" | "unpaid";
+  day_fraction: number;
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  decision_note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AttendanceHoliday = {
+  id: number;
+  restaurant_id: number;
+  holiday_date: string;
+  name: string;
+  is_paid: boolean;
+  worked_rate_multiplier: number;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -1,6 +1,7 @@
 "use client";
 
-import { Receipt, ChefHat, Package, Settings, Clock } from "lucide-react";
+import { Receipt, ChefHat, Package, Settings, Clock, WalletCards } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { AppNotification } from "@/hooks/use-notifications";
 
@@ -40,6 +41,7 @@ function iconForType(type: string) {
     case "order": return Receipt;
     case "kot": return ChefHat;
     case "inventory": return Package;
+    case "payroll": return WalletCards;
     case "system": return Settings;
     default: return Receipt;
   }
@@ -50,6 +52,7 @@ function accentForType(type: string): string {
     case "order": return "text-orange-500 bg-orange-500/10";
     case "kot": return "text-blue-600 bg-blue-600/10";
     case "inventory": return "text-green-600 bg-green-600/10";
+    case "payroll": return "text-violet-600 bg-violet-600/10";
     case "system": return "text-gray-500 bg-gray-500/10";
     default: return "text-primary bg-primary/10";
   }
@@ -60,6 +63,7 @@ function dotColorForType(type: string): string {
     case "order": return "bg-orange-500";
     case "kot": return "bg-blue-600";
     case "inventory": return "bg-green-600";
+    case "payroll": return "bg-violet-600";
     default: return "bg-primary";
   }
 }
@@ -134,6 +138,7 @@ function extractContent(n: AppNotification): ContentView {
 
 // ── Component ────────────────────────────────────────────────────────
 export function NotificationCard({ notification }: { notification: AppNotification }) {
+  const router = useRouter();
   const Icon = iconForType(notification.type);
   const accent = accentForType(notification.type);
   const dotColor = dotColorForType(notification.type);
@@ -141,7 +146,10 @@ export function NotificationCard({ notification }: { notification: AppNotificati
   const isUnread = notification.read_at === null;
 
   return (
-    <div className={cn(
+    <div onClick={() => {
+      const route = notification.payload?.route;
+      if (typeof route === "string" && route.startsWith("/")) router.push(route);
+    }} className={cn(
       "flex gap-3 px-4 py-3 transition-colors hover:bg-muted/50 cursor-pointer border-b border-border/40 last:border-b-0",
       isUnread && "bg-muted/30"
     )}>

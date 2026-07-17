@@ -8,12 +8,13 @@ import { PayrollApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Search, Filter, DollarSign, Calendar, ArrowLeft, CheckCircle2, AlertCircle, Clock, FileText, Crown, Zap } from "lucide-react";
+import { Loader2, Plus, Filter, ArrowLeft, CheckCircle2, AlertCircle, Clock, FileText, Crown, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Link from "next/link";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { toast } from "sonner";
+import { PayrollDueDashboard } from "@/components/payroll/payroll-due-dashboard";
 
 type PayrollRunList = {
   id: number;
@@ -101,14 +102,12 @@ export default function PayrollPage() {
   const getStatusBadge = (status: string) => {
     const s = status.toLowerCase();
     if (s === 'paid') return <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Paid</Badge>;
+    if (s === 'partially_paid') return <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-950/30 dark:text-violet-400 border-violet-200"><Clock className="w-3 h-3 mr-1" /> Partially paid</Badge>;
     if (s === 'approved') return <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border-blue-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Approved</Badge>;
     if (s === 'draft') return <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-200"><Clock className="w-3 h-3 mr-1" /> Draft</Badge>;
     if (s === 'cancelled') return <Badge variant="destructive"><AlertCircle className="w-3 h-3 mr-1" /> Cancelled</Badge>;
     return <Badge variant="outline">{status}</Badge>;
   };
-
-  const totalPayroll = runs.reduce((acc, run) => acc + (run.total_payroll_amount || run.total_amount || 0), 0);
-  const pendingApproval = runs.filter(r => r.status === 'draft').length;
 
   return (
     <div className="flex flex-col gap-8 max-w-[1600px] mx-auto p-6">
@@ -121,11 +120,11 @@ export default function PayrollPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Payroll</h1>
-            <p className="text-muted-foreground">Manage staff compensation and payroll runs.</p>
+          <p className="text-muted-foreground">See salary due, current accrual, partial payments, and payroll history.</p>
           </div>
         </div>
         <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => router.push('/payroll/create')}>
-          <Plus className="w-4 h-4 mr-2" /> New Payroll Run
+          <Plus className="w-4 h-4 mr-2" /> Off-cycle payroll
         </Button>
       </div>
 
@@ -155,14 +154,10 @@ export default function PayrollPage() {
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <MetricCard label="Total Payroll (Historic)" value={`Rs. ${totalPayroll.toLocaleString()}`} icon={<DollarSign className="w-5 h-5" />} color="text-emerald-600" />
-        <MetricCard label="Pending Approval" value={pendingApproval} icon={<Clock className="w-5 h-5" />} color="text-amber-600" />
-        <MetricCard label="Last Run" value={runs[0]?.date_to ? new Date(runs[0].date_to).toLocaleDateString() : 'None'} icon={<Calendar className="w-5 h-5" />} color="text-blue-600" />
-      </div>
+      {isPaid ? <PayrollDueDashboard onChanged={fetchRuns} /> : null}
 
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Runs History</h2>
+        <div><h2 className="text-lg font-semibold">Payroll run history</h2><p className="text-sm text-muted-foreground">Drafts, approvals, partial settlement, and completed runs.</p></div>
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-muted-foreground" />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -173,6 +168,7 @@ export default function PayrollPage() {
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="partially_paid">Partially paid</SelectItem>
               <SelectItem value="paid">Paid</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
             </SelectContent>
@@ -242,23 +238,5 @@ export default function PayrollPage() {
         </Card>
       )}
     </div>
-  );
-}
-
-function MetricCard({ label, value, icon, color }: any) {
-  return (
-    <Card className="border-border">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
-            <p className="text-2xl font-bold">{value}</p>
-          </div>
-          <div className={`p-3 rounded-xl bg-muted ${color}`}>
-            {icon}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }

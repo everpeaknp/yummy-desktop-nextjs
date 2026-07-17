@@ -193,6 +193,7 @@ export type PermissionKey =
   | "finance.drawer.expense.create"
   | "finance.drawer.expense.approve"
   | "finance.drawer.transfer.to_safe"
+  | "finance.cash.safe.disburse"
   | "finance.cash.transfer.to_bank"
   | "finance.bank_deposit.confirm"
   | "finance.variance.approve"
@@ -557,6 +558,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/finance/accounting": "finance.accounting.view",
   "/finance": "finance.income.view",
   "/attendance": "attendance.manage",
+  "/workforce": "admin.staff.view",
   // Admin
   "/staff": "admin.staff.view",
   "/manage": "admin.staff.view",
@@ -587,6 +589,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/staff": ADMIN_MANAGER,
   "/payroll": ["admin", "cashier"],
   "/attendance": ADMIN_MANAGER,
+  "/workforce": ADMIN_MANAGER,
   "/period-reports": ADMIN_MANAGER,
   "/settings": ALL_DASHBOARD_ROLES,
   "/feedback": ALL_DASHBOARD_ROLES,
