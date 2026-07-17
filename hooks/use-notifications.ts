@@ -11,7 +11,7 @@ export interface AppNotification {
   restaurant_id: number;
   user_id: number | null;
   actor_id: number | null;
-  type: string; // "order" | "kot" | "inventory" | "system"
+  type: string; // "order" | "kot" | "inventory" | "payroll" | "system"
   status: string; // "created" | "sent" | "failed" | "read"
   channel: string;
   event: string;
@@ -35,10 +35,12 @@ interface NotificationTab {
 export function tabsForRole(role: string): NotificationTab[] {
   switch (role.toLowerCase()) {
     case "admin":
+    case "manager":
       return [
         { label: "Orders", type: "order" },
         { label: "KOT", type: "kot" },
         { label: "Inventory", type: "inventory" },
+        { label: "Payroll", type: "payroll" },
       ];
     case "kitchen":
     case "bar":

@@ -65,6 +65,9 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/finance/income": CreditCard,
   "/customers": Users,
   "/attendance": Fingerprint,
+  "/staff": Users,
+  "/payroll": Banknote,
+  "/workforce": Briefcase,
   "/tables": Armchair,
   "/reservations": Calendar,
   "/discounts": Percent,
@@ -185,7 +188,10 @@ export function useSidebarItems(): SidebarItem[] {
     };
 
     flatItems.forEach((item) => {
-      if (item.href === "/orders/history") {
+      if (["/staff", "/attendance", "/payroll"].includes(item.href)) {
+        // Workforce is assembled as one owner-oriented workflow below.
+        return;
+      } else if (item.href === "/orders/history") {
         // Skip history, it's inside the Orders page
         return;
       } else if (item.href === "/orders") {
@@ -201,7 +207,7 @@ export function useSidebarItems(): SidebarItem[] {
       } else if (["/kitchen", "/discounts"].includes(item.href)) {
         const group = getGroup("services", "Services", ChefHat, item.href === "/kitchen" ? "/kitchen" : item.href);
         group.subItems!.push(item);
-      } else if (["/finance/income", "/finance/expenses", "/finance/accounting", "/transactions", "/day-close", "/payroll"].includes(item.href)) {
+      } else if (["/finance/income", "/finance/expenses", "/finance/accounting", "/transactions", "/day-close"].includes(item.href)) {
         const group = getGroup("finance", "Finance", CreditCard, "/finance/income");
         group.subItems!.push(item);
       } else if (["/manage", "/settings"].includes(item.href)) {
@@ -214,6 +220,21 @@ export function useSidebarItems(): SidebarItem[] {
         result.push(item);
       }
     });
+
+    const workforceItems: SidebarItem[] = [];
+    if (hasPermission(user, "admin.staff.view")) {
+      workforceItems.push({ title: "Staff", href: "/staff", icon: Users, isNestedChild: true });
+    }
+    if (hasPermission(user, "attendance.manage")) {
+      workforceItems.push({ title: "Attendance", href: "/attendance", icon: Fingerprint, isNestedChild: true });
+    }
+    if (hasPermission(user, "finance.payroll.view")) {
+      workforceItems.push({ title: "Payroll", href: "/payroll", icon: Banknote, isNestedChild: true });
+    }
+    if (workforceItems.length) {
+      const group = getGroup("workforce", "Workforce", Briefcase, "/workforce");
+      group.subItems = workforceItems;
+    }
 
     if (hasPermission(user, "finance.income.view")) {
       const group = getGroup("finance", "Finance", CreditCard, "/finance/income");

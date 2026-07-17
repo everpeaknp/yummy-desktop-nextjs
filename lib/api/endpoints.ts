@@ -1826,6 +1826,8 @@ export const StaffProfileApis = {
   },
   get: (staffId: number) => `/staff/${staffId}`,
   create: "/staff",
+  update: (staffId: number) => `/staff/${staffId}`,
+  salaryHistory: (staffId: number) => `/staff/${staffId}/salary-history`,
 };
 
 export const AttendanceApis = {
@@ -1836,6 +1838,7 @@ export const AttendanceApis = {
   approveEntry: (id: number) => "/attendance/entries/" + id + "/approve",
   rejectEntry: (id: number) => "/attendance/entries/" + id + "/reject",
   reopenEntry: (id: number) => "/attendance/entries/" + id + "/reopen",
+  correctEntry: (id: number) => "/attendance/entries/" + id + "/correction",
   audit: (id: number) => "/attendance/entries/" + id + "/audit",
   exportCsv: "/attendance/export.csv",
   shiftTemplates: "/attendance/shift-templates",
@@ -1846,6 +1849,11 @@ export const AttendanceApis = {
       : "/attendance/schedules",
   createSchedule: "/attendance/schedules",
   schedule: (id: number) => "/attendance/schedules/" + id,
+  leaves: "/attendance/leaves",
+  leaveDecision: (id: number, action: "approve" | "reject" | "cancel") =>
+    `/attendance/leaves/${id}/${action}`,
+  holidays: "/attendance/holidays",
+  holiday: (id: number) => `/attendance/holidays/${id}`,
   createQrSession: "/attendance/qr-sessions",
   listDevices: "/attendance/devices",
   createDevice: "/attendance/devices",
@@ -1875,6 +1883,7 @@ export const PayrollApis = {
   },
   getRun: (id: number) => `/payroll/runs/${id}`,
   createRun: "/payroll/runs",
+  previewRun: "/payroll/runs/preview",
   approveRun: (id: number) => `/payroll/runs/${id}/approve`,
   markPaid: (id: number) => `/payroll/runs/${id}/paid`,
   cancelRun: (id: number) => `/payroll/runs/${id}/cancel`,
@@ -1882,6 +1891,30 @@ export const PayrollApis = {
   deleteAdjustment: (adjustmentId: number) =>
     `/payroll/adjustments/${adjustmentId}`,
   runPdf: (id: number) => `/payroll/runs/${id}/pdf`,
+  staffHistory: (staffId: number) => `/payroll/staff/${staffId}/history`,
+  dueSummary: (asOf?: string) =>
+    asOf ? `/payroll/due-summary?as_of=${encodeURIComponent(asOf)}` : "/payroll/due-summary",
+  staffBalance: (staffId: number, asOf?: string) =>
+    asOf
+      ? `/payroll/staff/${staffId}/balance?as_of=${encodeURIComponent(asOf)}`
+      : `/payroll/staff/${staffId}/balance`,
+  setupReadiness: (asOf?: string) =>
+    asOf ? `/payroll/setup-readiness?as_of=${encodeURIComponent(asOf)}` : "/payroll/setup-readiness",
+  bulkPrepare: "/payroll/runs/bulk-prepare",
+  schedules: "/payroll/schedules",
+  payments: (staffId?: number) =>
+    staffId ? `/payroll/payments?staff_id=${staffId}` : "/payroll/payments",
+  recordPayment: "/payroll/payments",
+  reversePayment: (paymentId: number) => `/payroll/payments/${paymentId}/reverse`,
+  taxLiability: (asOf?: string) =>
+    asOf
+      ? `/payroll/tax-liability?as_of=${encodeURIComponent(asOf)}`
+      : "/payroll/tax-liability",
+  taxRemittances: (limit = 100) =>
+    `/payroll/tax-remittances?limit=${encodeURIComponent(String(limit))}`,
+  recordTaxRemittance: "/payroll/tax-remittances",
+  reverseTaxRemittance: (remittanceId: number) =>
+    `/payroll/tax-remittances/${remittanceId}/reverse`,
 };
 
 export const PeriodCloseApis = {
