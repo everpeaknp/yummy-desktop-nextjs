@@ -80,7 +80,7 @@ export const useAuth = create<AuthState>()(
         if (!options?.silent) set({ isRedirecting: true });
         clearStoredTokens();
         set({ user: null, token: null, refreshToken: null });
-        useRestaurant.getState().setSelectedModule(null);
+        useRestaurant.getState().clearRestaurant();
         if (typeof window !== 'undefined') {
           const api = (window as Window & {
             electronAPI?: { clearAuthBackup?: () => Promise<void> };

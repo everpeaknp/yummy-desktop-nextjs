@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { DashboardStatusBanner } from "@/components/dashboard/dashboard-status-banner"
 import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
 import { UnifiedInsightsCard } from "@/components/dashboard/unified-insights-card"
+import { requestProductTour } from "@/lib/product-tour"
 import dynamic from "next/dynamic"
 import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown"
 import { DateRange } from "react-day-picker"
@@ -75,6 +76,7 @@ import {
   Briefcase,
   ExternalLink,
   RefreshCw,
+  HelpCircle,
   type LucideIcon,
 } from "lucide-react"
 
@@ -333,6 +335,16 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            data-tour="tour-help"
+            aria-label="Start product tour"
+            onClick={() => requestProductTour()}
+          >
+            <HelpCircle className="h-4 w-4" />
+          </Button>
           <DateRangeDropdown
             activeRange={activeRange}
             setActiveRange={setActiveRange}
@@ -367,7 +379,7 @@ export default function DashboardPage() {
       />
 
       {/* Live shift metrics — not affected by date filter */}
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3" data-tour="dashboard-stats">
       <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <HealthCard
           label="Active Orders"
@@ -719,7 +731,6 @@ export default function DashboardPage() {
             <PaymentSplitCard payments={paymentSplit} currency={currency} />
         </div>
       </section>
-
     </div>
   )
 }
@@ -1108,7 +1119,10 @@ function resolveQuickActionIcon(action: { key?: string }): LucideIcon {
 function QuickActionsCard({ actions }: { actions: any[] }) {
   const enabledActions = actions.filter((action: any) => action.enabled).slice(0, 6)
   return (
-    <Card className="dc-card transition-all duration-300 hover:-translate-y-1">
+    <Card
+      className="dc-card transition-all duration-300 hover:-translate-y-1"
+      data-tour="dashboard-quick-actions"
+    >
       <CardHeader className="pb-2">
         <CardTitle className="dc-card-title">Quick Actions</CardTitle>
       </CardHeader>

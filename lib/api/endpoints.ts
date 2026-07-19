@@ -256,6 +256,7 @@ export const TableTypeApis = {
 };
 
 export const RestaurantApis = {
+  create: "/restaurants/",
   getById: (id: number) => `/restaurants/${id}`,
   update: (id: number) => `/restaurants/${id}`,
   getByUser: "/restaurants/by-user",

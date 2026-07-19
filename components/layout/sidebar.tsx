@@ -24,7 +24,8 @@ import {
   ThumbsUp,
   Share,
   User,
-  DollarSign
+  DollarSign,
+  HelpCircle,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/hooks/use-auth";
@@ -51,6 +52,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import { HelpCenterDialog } from "@/components/onboarding/help-center-dialog";
 
 function SidebarNavLink({
   item,
@@ -91,6 +93,11 @@ function SidebarNavLink({
     </>
   );
 
+  const tourAttr = tourAttrForHref(item.href, {
+    isGroup: hasSubItems,
+    title: item.title,
+  });
+
   if (item.externalUrl) {
     return (
       <a
@@ -99,6 +106,7 @@ function SidebarNavLink({
         rel="noopener noreferrer"
         className={classes}
         title={item.title}
+        {...tourAttr}
       >
         {content}
       </a>
@@ -107,7 +115,7 @@ function SidebarNavLink({
 
   if (hasSubItems) {
     return (
-      <button onClick={onToggle} className={cn(classes, "w-full text-left")}>
+      <button onClick={onToggle} className={cn(classes, "w-full text-left")} {...tourAttr}>
         {content}
       </button>
     );
@@ -118,10 +126,29 @@ function SidebarNavLink({
       href={item.href}
       onClick={() => sessionStorage.removeItem("fromManage")}
       className={classes}
+      {...tourAttr}
     >
       {content}
     </Link>
   );
+}
+
+function tourAttrForHref(
+  href?: string,
+  options?: { isGroup?: boolean; title?: string }
+): { "data-tour"?: string } {
+  if (options?.isGroup) {
+    const key = (options.title || href || "group")
+      .toLowerCase()
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    return { "data-tour": `nav-group-${key}` };
+  }
+  if (!href) return {};
+  const key = href.replace(/^\//, "").replace(/\//g, "-");
+  if (!key) return {};
+  return { "data-tour": `nav-${key}` };
 }
 
 export function Sidebar() {
@@ -132,12 +159,34 @@ export function Sidebar() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { restaurant, fetchRestaurant, selectedModule } = useRestaurant();
-  const { collapsed, width, toggle, setWidth } = useSidebar();
+  const { collapsed, width, toggle, setWidth, setCollapsed } = useSidebar();
   const items = useSidebarItems();
   const { theme, setTheme } = useTheme();
   const [searchOpen, setSearchOpen] = useState(false);
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+  const [helpOpen, setHelpOpen] = useState(false);
   const resizingRef = useRef(false);
+
+  // Expand all sidebar groups while the product tour is active
+  useEffect(() => {
+    const onTour = (event: Event) => {
+      const active = Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active);
+      if (!active) return;
+      setCollapsed(false);
+      const next: Record<string, boolean> = {};
+      items.forEach((item) => {
+        if (item.subItems?.length) next[item.title] = true;
+      });
+      setOpenMenus(next);
+      try {
+        localStorage.setItem("sidebar:open-menus", JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("yummy-product-tour", onTour);
+    return () => window.removeEventListener("yummy-product-tour", onTour);
+  }, [items, setCollapsed]);
 
   // Restore open menus from local storage on mount
   useEffect(() => {
@@ -242,17 +291,22 @@ export function Sidebar() {
   return (
     <TooltipProvider delayDuration={0}>
       <div
+        data-tour="sidebar"
         className={cn(
           "hidden md:flex h-full flex-col border-r bg-background transition-[width] duration-300 ease-in-out shrink-0 relative",
           collapsed ? "w-[68px]" : ""
         )}
         style={collapsed ? undefined : { width: `${Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, width || 260))}px` }}
       >
-        <div className={cn(
+        <div
+          className={cn(
           "flex items-center justify-between border-b border-border/50",
           collapsed ? "flex-col gap-2 py-3 px-2" : "h-14 px-4"
         )}>
-          <Link href={homeHref} className={cn(
+          <Link
+            href={homeHref}
+            data-tour="sidebar-brand"
+            className={cn(
             "flex items-center font-bold hover:opacity-90 transition-opacity",
             collapsed ? "justify-center" : "gap-2 text-lg overflow-hidden min-w-0"
           )}>
@@ -270,6 +324,7 @@ export function Sidebar() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
+                  data-tour="sidebar-search"
                   onClick={() => setSearchOpen(true)}
                   className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 >
@@ -280,6 +335,7 @@ export function Sidebar() {
             </Tooltip>
 
             <button
+              data-tour="sidebar-collapse"
               onClick={toggle}
               className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
@@ -293,7 +349,9 @@ export function Sidebar() {
         <div className="p-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className={cn(
+              <button
+                data-tour="sidebar-outlet"
+                className={cn(
                 "w-full rounded-xl border border-border/50 bg-card transition-all hover:border-primary/30 outline-none focus-visible:ring-2 focus-visible:ring-primary overflow-hidden text-left shadow-sm",
                 collapsed ? "p-2" : ""
               )}>
@@ -417,10 +475,12 @@ export function Sidebar() {
                     <div className="ml-5 mt-1 flex flex-col gap-1 border-l pl-4 border-border/50">
                       {item.subItems.map((sub, sIdx) => {
                         const subActive = pathname === sub.href || (!!pathname && pathname.startsWith(sub.href + "/"));
+                        const subTour = tourAttrForHref(sub.href);
                         return (
                           <Link
                             key={sIdx}
                             href={sub.href}
+                            {...subTour}
                             className={cn(
                               "text-[13px] py-1.5 px-3 rounded-md transition-all font-medium",
                               subActive ? "text-primary bg-primary/5" : "text-muted-foreground hover:text-primary hover:bg-primary/5"
@@ -438,7 +498,7 @@ export function Sidebar() {
           </nav>
         </div>
 
-        <div className="p-3 mt-auto">
+        <div className="p-3 mt-auto" data-tour="sidebar-account">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className={cn(
@@ -489,6 +549,10 @@ export function Sidebar() {
                   <ThumbsUp className="h-4 w-4" /> Give Feedback
                 </DropdownMenuItem>
 
+                <DropdownMenuItem onClick={() => setHelpOpen(true)} className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground">
+                  <HelpCircle className="h-4 w-4" /> Help
+                </DropdownMenuItem>
+
                 <DropdownMenuItem className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground flex items-center justify-between" onSelect={(e) => e.preventDefault()}>
                   <div className="flex items-center gap-3">
                     <Sun className="h-4 w-4" /> Dark Theme
@@ -524,6 +588,7 @@ export function Sidebar() {
           />
         )}
       </div>
+      <HelpCenterDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </TooltipProvider>
   );
 }

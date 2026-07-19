@@ -26,9 +26,13 @@ import { RestaurantApis } from "@/lib/api/endpoints";
 import { useRouter } from "next/navigation";
 import { getImageUrl } from "@/lib/utils";
 import LocationPicker from "@/components/manage/profile/location-picker";
+import { TimezoneSelect } from "@/components/ui/timezone-select";
+import { AppPhoneInput } from "@/components/ui/phone-input";
+import { FieldInfo } from "@/components/ui/field-info";
 import { useCallback, useRef } from "react";
 import { ImageService } from "@/services/image-service";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { forwardGeocode, reverseGeocode } from "@/lib/geocode";
 
 function toHourMinute(value?: string | null) {
     if (!value) return "00:00";
@@ -69,6 +73,9 @@ export default function RestaurantProfilePage() {
         local_pos_ip: "",
     });
     const [initialData, setInitialData] = useState<typeof formData | null>(null);
+    const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const forwardGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const geocodeRequestIdRef = useRef(0);
 
     const hasChanges = initialData ? JSON.stringify(formData) !== JSON.stringify(initialData) : false;
 
@@ -107,11 +114,60 @@ export default function RestaurantProfilePage() {
     }, [user?.restaurant_id]);
 
     const handleLocationChange = useCallback((lat: string, lng: string) => {
-        setFormData(prev => ({
+        setFormData((prev) => ({
             ...prev,
             latitude: lat,
-            longitude: lng
+            longitude: lng,
         }));
+
+        if (forwardGeocodeTimerRef.current) {
+            clearTimeout(forwardGeocodeTimerRef.current);
+            forwardGeocodeTimerRef.current = null;
+        }
+        if (reverseGeocodeTimerRef.current) clearTimeout(reverseGeocodeTimerRef.current);
+
+        const requestId = ++geocodeRequestIdRef.current;
+        reverseGeocodeTimerRef.current = setTimeout(async () => {
+            try {
+                const address = await reverseGeocode(lat, lng);
+                if (requestId !== geocodeRequestIdRef.current) return;
+                if (address) {
+                    setFormData((prev) => ({ ...prev, address }));
+                }
+            } catch {
+                // keep coordinates
+            }
+        }, 450);
+    }, []);
+
+    const handleAddressChange = useCallback((value: string) => {
+        setFormData((prev) => ({ ...prev, address: value }));
+
+        if (reverseGeocodeTimerRef.current) {
+            clearTimeout(reverseGeocodeTimerRef.current);
+            reverseGeocodeTimerRef.current = null;
+        }
+        if (forwardGeocodeTimerRef.current) clearTimeout(forwardGeocodeTimerRef.current);
+
+        const trimmed = value.trim();
+        if (trimmed.length < 8) return;
+
+        const requestId = ++geocodeRequestIdRef.current;
+        forwardGeocodeTimerRef.current = setTimeout(async () => {
+            try {
+                const result = await forwardGeocode(trimmed);
+                if (requestId !== geocodeRequestIdRef.current) return;
+                if (result) {
+                    setFormData((prev) => ({
+                        ...prev,
+                        latitude: result.lat,
+                        longitude: result.lng,
+                    }));
+                }
+            } catch {
+                // keep typed address
+            }
+        }, 700);
     }, []);
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'cover') => {
@@ -323,22 +379,29 @@ export default function RestaurantProfilePage() {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="phone">Phone Number*</Label>
-                                <Input 
-                                    id="phone" 
-                                    value={formData.phone} 
-                                    onChange={(e) => setFormData(p => ({ ...p, phone: e.target.value }))} 
-                                    required
+                                <AppPhoneInput
+                                    id="phone"
+                                    value={formData.phone}
+                                    onChange={(value) => setFormData((p) => ({ ...p, phone: value }))}
+                                    defaultCountry="NP"
+                                    placeholder="Enter phone number"
                                 />
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label htmlFor="address">Physical Address*</Label>
+                                <div className="flex items-center gap-1.5">
+                                    <Label htmlFor="address">Physical Address*</Label>
+                                    <FieldInfo>
+                                        Type an address or set the map pin — both stay in sync. Format:
+                                        street, area, city, state, country.
+                                    </FieldInfo>
+                                </div>
                                 <Input 
                                     id="address" 
                                     value={formData.address} 
-                                    onChange={(e) => setFormData(p => ({ ...p, address: e.target.value }))} 
+                                    onChange={(e) => handleAddressChange(e.target.value)} 
                                     required
                                 />
                             </div>
@@ -353,16 +416,20 @@ export default function RestaurantProfilePage() {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="timezone">Timezone</Label>
-                                <Input 
-                                    id="timezone" 
-                                    value={formData.timezone} 
-                                    onChange={(e) => setFormData(p => ({ ...p, timezone: e.target.value }))} 
-                                    placeholder="e.g. Asia/Kathmandu"
-                                    required
+                                <TimezoneSelect
+                                    id="timezone"
+                                    value={formData.timezone}
+                                    onChange={(tz) => setFormData((p) => ({ ...p, timezone: tz }))}
+                                    placeholder="Select timezone"
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="business_day_start_time">Business Day Starts At</Label>
+                                <div className="flex items-center gap-1.5">
+                                    <Label htmlFor="business_day_start_time">Business Day Starts At</Label>
+                                    <FieldInfo>
+                                        Orders before this time are counted toward the previous business day.
+                                    </FieldInfo>
+                                </div>
                                 <Input
                                     id="business_day_start_time"
                                     type="time"
@@ -375,9 +442,6 @@ export default function RestaurantProfilePage() {
                                         }))
                                     }
                                 />
-                                <p className="text-[11px] text-muted-foreground">
-                                    Orders before this time are counted toward the previous business day.
-                                </p>
                             </div>
                         </div>
 
@@ -408,7 +472,8 @@ export default function RestaurantProfilePage() {
                                 <LocationPicker 
                                     latitude={formData.latitude} 
                                     longitude={formData.longitude} 
-                                    onChange={handleLocationChange} 
+                                    onChange={handleLocationChange}
+                                    height={400}
                                 />
                             </div>
                             <p className="text-[10px] text-muted-foreground italic">

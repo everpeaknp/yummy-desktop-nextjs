@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign, ArrowLeft, Settings, Zap, Download } from "lucide-react";
+import { Bell, User, Menu, LogOut, Store, ClipboardList, ChefHat, DollarSign, ArrowLeft, Settings, Zap, Download, HelpCircle } from "lucide-react";
 import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-download";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -19,6 +19,7 @@ import apiClient from "@/lib/api-client";
 import { DashboardApis } from "@/lib/api/endpoints";
 import { ModuleSwitcher } from "./module-switcher";
 import { hasPermission } from "@/lib/role-permissions";
+import { HelpCenterDialog } from "@/components/onboarding/help-center-dialog";
 
 import { memo } from "react";
 
@@ -94,6 +95,7 @@ const LiveStats = memo(function LiveStats() {
     <div className="hidden md:flex items-center gap-2">
       <Link
         href="/orders"
+        data-tour="navbar-stat-orders"
         className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
       >
         <ClipboardList className="h-3.5 w-3.5 text-blue-500" />
@@ -102,6 +104,7 @@ const LiveStats = memo(function LiveStats() {
       </Link>
       <Link
         href="/kitchen"
+        data-tour="navbar-stat-kot"
         className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
       >
         <ChefHat className="h-3.5 w-3.5 text-orange-500" />
@@ -111,6 +114,7 @@ const LiveStats = memo(function LiveStats() {
       {canViewAnalytics && (
         <Link
           href="/analytics"
+          data-tour="navbar-stat-sales"
           className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
         >
           <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
@@ -131,6 +135,7 @@ const NotificationBell = memo(function NotificationBell() {
       variant="ghost"
       size="icon"
       className="relative text-muted-foreground"
+      data-tour="navbar-notifications"
       onClick={() => setPanelOpen(true)}
     >
       <Bell className="h-5 w-5" />
@@ -152,6 +157,7 @@ export const Header = memo(function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const sidebarItems = useSidebarItems();
 
   const [isFromManage, setIsFromManage] = useState(false);
@@ -180,7 +186,10 @@ export const Header = memo(function Header() {
   };
 
   return (
-    <header className="flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
+    <header
+      data-tour="navbar"
+      className="flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6"
+    >
 
       {/* Live stats — active orders, KOT pending, today's sales */}
       <div className="flex items-center gap-4">
@@ -266,6 +275,17 @@ export const Header = memo(function Header() {
                       <span className="text-base font-medium">{item.title}</span>
                     </Link>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      setHelpOpen(true);
+                    }}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
+                  >
+                    <HelpCircle className="h-5 w-5" />
+                    <span className="text-base font-medium">Help & Onboarding</span>
+                  </button>
                 </nav>
               </div>
               <div className="border-t p-4">
@@ -290,6 +310,7 @@ export const Header = memo(function Header() {
             size="icon"
             asChild
             className="h-8 w-8 text-muted-foreground hover:text-primary"
+            data-tour="navbar-download"
           >
             <a
               href={DESKTOP_APP_DOWNLOAD_URL}
@@ -309,6 +330,7 @@ export const Header = memo(function Header() {
               variant="outline"
               size="sm"
               asChild
+              data-tour="navbar-premium"
               className="group relative flex items-center gap-1.5 px-4 h-8 bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-500 font-bold text-[10px] uppercase tracking-wider rounded-full overflow-hidden transition-all hover:scale-[1.02] active:scale-[0.98] mr-1"
             >
               <Link href="/premium">
@@ -320,11 +342,23 @@ export const Header = memo(function Header() {
 
           <NotificationBell />
           <NotificationPanel />
-          <ModeToggle />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground"
+            aria-label="Help and onboarding"
+            data-tour="navbar-help"
+            onClick={() => setHelpOpen(true)}
+          >
+            <HelpCircle className="h-5 w-5" />
+          </Button>
+          <div data-tour="navbar-theme">
+            <ModeToggle />
+          </div>
         </div>
 
         <div className="h-6 w-px bg-border mx-1 hidden md:block" />
-        <div className="flex items-center gap-2 pl-1">
+        <div className="flex items-center gap-2 pl-1" data-tour="navbar-user">
           <div className="relative h-8 w-8 min-w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-border/50">
             {restaurant?.profile_picture ? (
                <Image src={getImageUrl(restaurant.profile_picture)} alt="Profile" className="object-cover" fill unoptimized />
@@ -340,6 +374,7 @@ export const Header = memo(function Header() {
           </div>
         </div>
       </div>
+      <HelpCenterDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </header>
   );
 });

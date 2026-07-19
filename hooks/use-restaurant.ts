@@ -34,7 +34,8 @@ interface RestaurantState {
   error: string | null;
   selectedModule: 'restaurant' | 'hotel' | null;
   fetchRestaurant: (force?: boolean) => Promise<void>;
-  setRestaurant: (data: Restaurant) => void;
+  setRestaurant: (data: Restaurant | null) => void;
+  clearRestaurant: () => void;
   setSelectedModule: (module: 'restaurant' | 'hotel' | null) => void;
 }
 
@@ -47,13 +48,10 @@ export const useRestaurant = create<RestaurantState>()(
       error: null,
       
       setRestaurant: (data) => set({ restaurant: data }),
+      clearRestaurant: () => set({ restaurant: null, selectedModule: null, error: null }),
       setSelectedModule: (module) => set({ selectedModule: module }),
 
       fetchRestaurant: async (force = false) => {
-        // If we already have data and not forcing refresh, return (optional optimization, but user wants FRESH data usually? 
-        // Actually, for "fast" feeling, we rely on cached data first, but maybe refetch in background.
-        // For now, simple persist is huge improvement.
-        
         set({ loading: true });
         try {
           const response = await apiClient.get('/restaurants/by-user');
@@ -72,23 +70,25 @@ export const useRestaurant = create<RestaurantState>()(
             set({ restaurant: nextData, error: null });
           }
         } catch (err: any) {
-          // If the user hasn't created or been assigned a restaurant yet, the backend correctly returns 404.
-          // We don't need to log this as a critical error in the console.
-          if (err.response?.status !== 404) {
+          // New admins have no restaurant yet (404). Clear stale persisted profile
+          // so post-login routing can send them to onboarding.
+          if (err.response?.status === 404) {
+            set({ restaurant: null, selectedModule: null, error: null });
+          } else {
             console.error('Failed to fetch restaurant:', err);
+            set({ error: err.response?.data?.detail || 'Failed to fetch restaurant profile' });
           }
-          set({ error: err.response?.data?.detail || 'Failed to fetch restaurant profile' });
         } finally {
           set({ loading: false });
         }
       },
     }),
     {
-      name: 'restaurant-storage', // name of item in the storage (must be unique)
+      name: 'restaurant-storage',
       partialize: (state) => ({ 
         restaurant: state.restaurant,
         selectedModule: state.selectedModule 
-      }), // Only persist the data and selection
+      }),
     }
   )
 );

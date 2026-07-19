@@ -2,7 +2,7 @@
 
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useRouter } from "next/navigation";
-import { UtensilsCrossed, Bed, ArrowRight, LogOut, ChevronRight } from "lucide-react";
+import { UtensilsCrossed, Bed, LogOut, ChevronRight } from "lucide-react";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -12,6 +12,7 @@ export default function GatewayPage() {
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
   const loading = useRestaurant((s) => s.loading);
   const router = useRouter();
+  const user = useAuth((state) => state.user);
   const logout = useAuth((state) => state.logout);
 
   useEffect(() => {
@@ -19,7 +20,22 @@ export default function GatewayPage() {
   }, [fetchRestaurant]);
 
   useEffect(() => {
-    if (loading || !restaurant) return;
+    if (loading) return;
+
+    if (!restaurant) {
+      const roles = [
+        ...(Array.isArray(user?.roles) ? user.roles : []),
+        user?.role,
+        user?.primary_role,
+      ]
+        .filter(Boolean)
+        .map((r) => String(r).toLowerCase());
+      const canOnboard = roles.some(
+        (r) => r === "admin" || r === "owner" || r === "manager"
+      );
+      router.replace(canOnboard ? "/onboarding" : "/");
+      return;
+    }
 
     // Auto-redirect if only one module is enabled
     if (restaurant.hotel_enabled && !restaurant.restaurant_enabled) {
@@ -32,8 +48,8 @@ export default function GatewayPage() {
       router.replace("/dashboard");
       return;
     }
-    // If neither enabled, still let them see gateway (edge case)
-  }, [restaurant, loading, router, setSelectedModule]);
+    // Both enabled → stay on gateway for module choice
+  }, [restaurant, loading, router, setSelectedModule, user]);
 
   const handleSelect = (module: "restaurant" | "hotel") => {
     setSelectedModule(module);
@@ -60,9 +76,17 @@ export default function GatewayPage() {
     );
   }
 
+  const bothEnabled = restaurant.hotel_enabled && restaurant.restaurant_enabled;
+  if (!bothEnabled) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Top Bar */}
       <header className="flex items-center justify-between px-6 py-4 border-b bg-card/50 backdrop-blur">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -79,9 +103,7 @@ export default function GatewayPage() {
         </button>
       </header>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-12">
-        {/* Heading */}
         <div className="text-center mb-14 space-y-3">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider mb-2">
             <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
@@ -95,18 +117,13 @@ export default function GatewayPage() {
           </p>
         </div>
 
-        {/* Module Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
-          {/* Restaurant Card */}
           {restaurant.restaurant_enabled && (
             <button
               onClick={() => handleSelect("restaurant")}
               className="group relative flex flex-col items-start p-8 bg-card border-2 border-border hover:border-orange-400 rounded-2xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 text-left overflow-hidden"
             >
-              {/* Accent bar */}
               <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-400 to-amber-500 scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left rounded-t-2xl" />
-
-              {/* Background glow */}
               <div className="absolute bottom-0 right-0 w-48 h-48 bg-orange-500/5 rounded-full translate-x-1/4 translate-y-1/4 group-hover:scale-150 transition-transform duration-700" />
 
               <div className="relative">
@@ -127,16 +144,12 @@ export default function GatewayPage() {
             </button>
           )}
 
-          {/* Hotel Card */}
           {restaurant.hotel_enabled && (
             <button
               onClick={() => handleSelect("hotel")}
               className="group relative flex flex-col items-start p-8 bg-card border-2 border-border hover:border-blue-400 rounded-2xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 text-left overflow-hidden"
             >
-              {/* Accent bar */}
               <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500 scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left rounded-t-2xl" />
-
-              {/* Background glow */}
               <div className="absolute bottom-0 right-0 w-48 h-48 bg-blue-500/5 rounded-full translate-x-1/4 translate-y-1/4 group-hover:scale-150 transition-transform duration-700" />
 
               <div className="relative">

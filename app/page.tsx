@@ -62,11 +62,13 @@ export default function Home() {
   const [otpPassword, setOtpPassword] = useState("");
   const [otpConfirm, setOtpConfirm] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
 
   const router = useRouter();
   const setAuth = useAuth(state => state.setAuth);
   const setRedirecting = useAuth(state => state.setRedirecting);
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
+  const clearRestaurant = useRestaurant((s) => s.clearRestaurant);
   const { setTheme, theme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -118,12 +120,18 @@ export default function Home() {
     
     setAuth(user, access_token, refresh_token);
 
+    // New registrations have no restaurant — clear any stale persisted profile
+    // so resolvePostLoginRoute sends them to /onboarding.
+    if (!restaurant_id) {
+      clearRestaurant();
+    }
+
     void fetchRestaurant(true).finally(() => {
       const targetRoute = resolvePostLoginRoute(user);
       console.log(`[Auth] Redirecting to: ${targetRoute}`);
       router.replace(targetRoute);
     });
-  }, [setAuth, router, fetchRestaurant]);
+  }, [setAuth, router, fetchRestaurant, clearRestaurant]);
 
   // Helper: extract error message
   const extractError = (err: any): string => {
@@ -286,6 +294,9 @@ export default function Home() {
         password: regPassword,
         confirm_password: regConfirm,
       });
+      const maybeDevOtp = response.data?.data?.dev_otp as string | undefined;
+      setDevOtp(maybeDevOtp || null);
+      if (maybeDevOtp) setOtp(maybeDevOtp);
       // Success: show OTP screen
       setOtpEmail(regEmail.trim().toLowerCase());
       setOtpName(regName.trim());
@@ -349,7 +360,10 @@ export default function Home() {
     if (resendCooldown > 0) return;
     setError(null);
     try {
-      await apiClient.post("/users/admin/register/resend", { email: otpEmail });
+      const response = await apiClient.post("/users/admin/register/resend", { email: otpEmail });
+      const maybeDevOtp = response.data?.data?.dev_otp as string | undefined;
+      setDevOtp(maybeDevOtp || null);
+      if (maybeDevOtp) setOtp(maybeDevOtp);
       setResendCooldown(60);
     } catch (err: any) {
       setError(extractError(err));
@@ -369,12 +383,19 @@ export default function Home() {
                 </button>
                 <CardTitle className="text-2xl font-bold">Verify Email</CardTitle>
                 <CardDescription>
-                  We sent a verification code to <span className="font-medium text-foreground">{otpEmail}</span>
+                  {devOtp
+                    ? <>Local dev: email is not configured. Use the code below for <span className="font-medium text-foreground">{otpEmail}</span>.</>
+                    : <>We sent a verification code to <span className="font-medium text-foreground">{otpEmail}</span></>}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {error && (
                   <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">{error}</div>
+                )}
+                {devOtp && (
+                  <div className="p-3 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-200 text-sm font-medium">
+                    Dev OTP: <span className="font-mono tracking-widest">{devOtp}</span>
+                  </div>
                 )}
                 <div className="space-y-2">
                   <Label htmlFor="otp">Verification Code</Label>

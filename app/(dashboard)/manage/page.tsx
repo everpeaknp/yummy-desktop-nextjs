@@ -1,12 +1,13 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
-import { 
-    Users, 
-    CreditCard, 
-    ClipboardList, 
-    UserCircle, 
-    Package, 
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import {
+    Users,
+    CreditCard,
+    ClipboardList,
+    UserCircle,
+    Package,
     TrendingUp,
     TrendingDown,
     Settings2,
@@ -26,15 +27,27 @@ import {
     Store,
     Settings,
     Shield,
-    Fingerprint
+    Fingerprint,
+    HelpCircle,
 } from "lucide-react";
-import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
+import { HelpCenterDialog } from "@/components/onboarding/help-center-dialog";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { isPathAccessible } from "@/lib/role-permissions";
-import { useMemo } from "react";
 
-const sections = [
+type ManageItem = {
+    title: string;
+    description: string;
+    href: string;
+    icon: React.ComponentType<{ className?: string }>;
+    iconColor: string;
+    iconBg: string;
+    accessHref?: string;
+    action?: "help";
+};
+
+const sections: Array<{ title: string; items: ManageItem[] }> = [
     {
         title: "CORE OPERATIONS",
         items: [
@@ -62,7 +75,7 @@ const sections = [
                 iconColor: "text-slate-500",
                 iconBg: "bg-slate-50 dark:bg-slate-900/20",
             },
-        ]
+        ],
     },
     {
         title: "MENU & OFFERS",
@@ -99,7 +112,7 @@ const sections = [
                 iconColor: "text-rose-500",
                 iconBg: "bg-rose-50 dark:bg-rose-900/20",
             },
-        ]
+        ],
     },
     {
         title: "FINANCE & INSIGHTS",
@@ -136,7 +149,7 @@ const sections = [
                 iconColor: "text-amber-600",
                 iconBg: "bg-amber-50 dark:bg-amber-900/20",
             },
-        ]
+        ],
     },
     {
         title: "ADMINISTRATION",
@@ -205,7 +218,7 @@ const sections = [
                 iconColor: "text-violet-500",
                 iconBg: "bg-violet-50 dark:bg-violet-900/20",
             },
-        ]
+        ],
     },
     {
         title: "SYSTEM SETTINGS",
@@ -258,12 +271,23 @@ const sections = [
                 iconColor: "text-slate-600",
                 iconBg: "bg-slate-200 dark:bg-slate-800/80",
             },
-        ]
-    }
+            {
+                title: "Help",
+                description: "Tour, onboarding & resources",
+                href: "#help",
+                icon: HelpCircle,
+                iconColor: "text-teal-600",
+                iconBg: "bg-teal-50 dark:bg-teal-900/20",
+                accessHref: "/manage",
+                action: "help",
+            },
+        ],
+    },
 ];
 
 export default function ManagePage() {
     const user = useAuth((s) => s.user);
+    const [helpOpen, setHelpOpen] = useState(false);
 
     const visibleSections = useMemo(
         () =>
@@ -271,7 +295,7 @@ export default function ManagePage() {
                 .map((section) => ({
                     ...section,
                     items: section.items.filter((item) =>
-                        isPathAccessible(item.href, user)
+                        isPathAccessible(item.accessHref ?? item.href, user)
                     ),
                 }))
                 .filter((section) => section.items.length > 0),
@@ -279,10 +303,10 @@ export default function ManagePage() {
     );
 
     return (
-        <div className="p-8 max-w-[1600px] mx-auto space-y-12 pb-24">
+        <div className="mx-auto max-w-[1600px] space-y-12 p-8 pb-24">
             <div className="space-y-1">
                 <h1 className="text-3xl font-black tracking-tight text-foreground">Settings</h1>
-                <p className="text-muted-foreground font-medium">
+                <p className="font-medium text-muted-foreground">
                     Configure your operations, menu, and financial settings.
                 </p>
             </div>
@@ -290,38 +314,61 @@ export default function ManagePage() {
             <div className="space-y-12">
                 {visibleSections.map((section) => (
                     <div key={section.title} className="space-y-5">
-                        <h2 className="text-[11px] font-black tracking-[0.2em] text-muted-foreground/70 uppercase">
+                        <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
                             {section.title}
                         </h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {section.items.map((item) => (
-                                <Link key={item.href} href={item.href}>
-                                    <Card className="group hover:border-primary/50 transition-all hover:shadow-md cursor-pointer border-border/40 bg-card/40 backdrop-blur-sm overflow-hidden h-[90px]">
-                                        <CardContent className="h-full p-4 flex items-center gap-4">
-                                            <div className={cn(
-                                                "w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110",
-                                                item.iconBg,
-                                                item.iconColor
-                                            )}>
-                                                <item.icon className="w-5 h-5" />
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {section.items.map((item) => {
+                                const card = (
+                                    <Card className="group h-[90px] cursor-pointer overflow-hidden border-border/40 bg-card/40 backdrop-blur-sm transition-all hover:border-primary/50 hover:shadow-md">
+                                        <CardContent className="flex h-full items-center gap-4 p-4">
+                                            <div
+                                                className={cn(
+                                                    "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-transform group-hover:scale-110",
+                                                    item.iconBg,
+                                                    item.iconColor
+                                                )}
+                                            >
+                                                <item.icon className="h-5 w-5" />
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <h3 className="text-[14px] font-bold group-hover:text-primary transition-colors truncate mb-0.5">
+                                                <h3 className="mb-0.5 truncate text-[14px] font-bold transition-colors group-hover:text-primary">
                                                     {item.title}
                                                 </h3>
-                                                <p className="text-[11px] text-muted-foreground font-medium truncate">
+                                                <p className="truncate text-[11px] font-medium text-muted-foreground">
                                                     {item.description}
                                                 </p>
                                             </div>
-                                            <ChevronRight className="w-4 h-4 text-muted-foreground/20 group-hover:text-primary transition-colors shrink-0" />
+                                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/20 transition-colors group-hover:text-primary" />
                                         </CardContent>
                                     </Card>
-                                </Link>
-                            ))}
+                                );
+
+                                if (item.action === "help") {
+                                    return (
+                                        <button
+                                            key={item.href}
+                                            type="button"
+                                            className="w-full text-left"
+                                            onClick={() => setHelpOpen(true)}
+                                        >
+                                            {card}
+                                        </button>
+                                    );
+                                }
+
+                                return (
+                                    <Link key={item.href} href={item.href}>
+                                        {card}
+                                    </Link>
+                                );
+                            })}
                         </div>
                     </div>
                 ))}
             </div>
+
+            <HelpCenterDialog open={helpOpen} onOpenChange={setHelpOpen} />
         </div>
     );
 }

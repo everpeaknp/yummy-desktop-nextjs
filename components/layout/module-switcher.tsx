@@ -43,7 +43,8 @@ export function ModuleSwitcher() {
       <DropdownMenuTrigger asChild>
         <Button 
           variant="outline" 
-          size="sm" 
+          size="sm"
+          data-tour="navbar-module"
           className={cn(
             "h-8 gap-2 px-3 transition-all duration-300 rounded-full border-2",
             isRestaurant 

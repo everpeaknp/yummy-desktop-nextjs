@@ -1,151 +1,161 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import dynamic from "next/dynamic";
+import { useTheme } from "next-themes";
+import { Loader2, LocateFixed, Minus, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import type { LocationMapHandle } from "./location-map-canvas";
+
+const LocationMapCanvas = dynamic(() => import("./location-map-canvas"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center bg-muted">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  ),
+});
 
 interface LocationPickerProps {
-    latitude: string;
-    longitude: string;
-    onChange: (lat: string, lng: string) => void;
+  latitude: string;
+  longitude: string;
+  onChange: (lat: string, lng: string) => void;
+  /** Show locate button in the map control stack. Default true. */
+  showDetectButton?: boolean;
+  /** Fixed pixel height. Omit when using className="h-full" to fill parent. */
+  height?: number;
+  className?: string;
 }
 
-declare global {
-    interface Window {
-        L: any;
+export default function LocationPicker({
+  latitude,
+  longitude,
+  onChange,
+  showDetectButton = true,
+  height,
+  className,
+}: LocationPickerProps) {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const mapApiRef = useRef<LocationMapHandle | null>(null);
+  useEffect(() => setMounted(true), []);
+  const isDark = resolvedTheme === "dark";
+  const mapHeight = height ?? 220;
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported in this browser.");
+      return;
     }
-}
 
-export default function LocationPicker({ latitude, longitude, onChange }: LocationPickerProps) {
-    const mapContainerRef = useRef<HTMLDivElement>(null);
-    const mapRef = useRef<any>(null);
-    const markerRef = useRef<any>(null);
-    const [libLoaded, setLibLoaded] = useState(false);
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const checkLeaflet = () => {
-            if (window.L) {
-                if (isMounted) setLibLoaded(true);
-                return;
-            }
-        };
-
-        // Load Leaflet CSS only if not present
-        if (!document.getElementById("leaflet-css")) {
-            const link = document.createElement("link");
-            link.id = "leaflet-css";
-            link.rel = "stylesheet";
-            link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-            document.head.appendChild(link);
-        }
-
-        // Load Leaflet JS
-        if (!document.getElementById("leaflet-js")) {
-            const script = document.createElement("script");
-            script.id = "leaflet-js";
-            script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-            script.async = true;
-            document.head.appendChild(script);
-        }
-
-        // Poll for window.L since script.onload is sometimes flaky in Next.js SPA navigation
-        const interval = setInterval(() => {
-            if (window.L) {
-                if (isMounted) setLibLoaded(true);
-                clearInterval(interval);
-            }
-        }, 300);
-
-        checkLeaflet();
-
-        return () => {
-            isMounted = false;
-            clearInterval(interval);
-        };
-    }, []);
-
-    useEffect(() => {
-        if (!libLoaded || !mapContainerRef.current) return;
-
-        const L = window.L;
-        if (!L) return;
-
-        const defaultLat = parseFloat(latitude) || 27.7172; 
-        const defaultLng = parseFloat(longitude) || 85.3240;
-
-        // Ensure container has height
-        if (mapContainerRef.current.clientHeight === 0) {
-            mapContainerRef.current.style.height = "100%";
-            mapContainerRef.current.style.minHeight = "400px";
-        }
-
-        if (!mapRef.current) {
-            mapRef.current = L.map(mapContainerRef.current).setView([defaultLat, defaultLng], 13);
-
-            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(mapRef.current);
-
-            markerRef.current = L.marker([defaultLat, defaultLng], { draggable: true }).addTo(mapRef.current);
-
-            // Handle map click
-            mapRef.current.on("click", (e: any) => {
-                const { lat, lng } = e.latlng;
-                markerRef.current.setLatLng([lat, lng]);
-                onChange(lat.toFixed(6), lng.toFixed(6));
-            });
-
-            // Handle marker drag
-            markerRef.current.on("dragend", (e: any) => {
-                const { lat, lng } = e.target.getLatLng();
-                onChange(lat.toFixed(6), lng.toFixed(6));
-            });
-            
-            // Fix map sizing issues inside flex/grid containers
-            setTimeout(() => {
-                mapRef.current?.invalidateSize();
-            }, 500);
-        } else {
-            // Update marker if coordinates change from outside (e.g. typing)
-            const currentLat = parseFloat(latitude);
-            const currentLng = parseFloat(longitude);
-            if (!isNaN(currentLat) && !isNaN(currentLng)) {
-                const pos = markerRef.current.getLatLng();
-                if (pos.lat !== currentLat || pos.lng !== currentLng) {
-                    markerRef.current.setLatLng([currentLat, currentLng]);
-                    mapRef.current.panTo([currentLat, currentLng]);
-                }
-            }
-        }
-
-        return () => {
-            // Cleanup map instance properly on unmount
-            if (mapRef.current) {
-                mapRef.current.remove();
-                mapRef.current = null;
-            }
-        };
-    }, [libLoaded, latitude, longitude, onChange]);
-
-    return (
-        <>
-            {!libLoaded ? (
-                <div className="h-full w-full min-h-[400px] flex flex-col items-center justify-center bg-muted rounded-xl border z-10">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
-                    <p className="text-sm text-muted-foreground">Loading interactive map...</p>
-                </div>
-            ) : (
-                <div className="relative group w-full h-full min-h-[400px]">
-                    <div 
-                        ref={mapContainerRef} 
-                        className="w-full h-full min-h-[400px] rounded-xl overflow-hidden border z-0"
-                    />
-                    <div className="absolute top-2 right-2 z-[1000] bg-white p-2 rounded-md shadow-md text-[10px] font-semibold text-muted-foreground pointer-events-none">
-                        Click map or drag pin to move location
-                    </div>
-                </div>
-            )}
-        </>
+    setDetecting(true);
+    const toastId = toast.loading("Detecting location…");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        onChange(pos.coords.latitude.toFixed(6), pos.coords.longitude.toFixed(6));
+        toast.success("Location detected", { id: toastId });
+        setDetecting(false);
+      },
+      (err) => {
+        const message =
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission denied. Allow access and try again."
+            : "Could not detect your location. Try again or set the pin manually.";
+        toast.error(message, { id: toastId });
+        setDetecting(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
+  };
+
+  const controlBtn = cn(
+    "h-[34px] w-[34px] rounded-md border p-0 shadow-md",
+    isDark
+      ? "border-zinc-600 bg-zinc-900 text-zinc-100 hover:bg-zinc-800"
+      : "border-border bg-background text-foreground hover:bg-muted"
+  );
+
+  return (
+    <div
+      className={cn(
+        "relative w-full overflow-hidden rounded-xl border",
+        isDark ? "border-border bg-zinc-900" : "border-border bg-slate-100",
+        className
+      )}
+      style={height != null ? { height } : undefined}
+    >
+      {mounted && resolvedTheme ? (
+        <LocationMapCanvas
+          key={isDark ? "dark" : "light"}
+          latitude={latitude}
+          longitude={longitude}
+          isDark={isDark}
+          height={mapHeight}
+          onChange={onChange}
+          apiRef={mapApiRef}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "pointer-events-none absolute left-2 top-2 z-[1100] rounded-md border px-2 py-1.5 text-[10px] font-semibold shadow-md",
+          isDark
+            ? "border-zinc-700 bg-zinc-900/90 text-zinc-300"
+            : "border-border bg-white/95 text-muted-foreground"
+        )}
+      >
+        Click map or drag pin
+      </div>
+
+      <div className="absolute bottom-2.5 right-2.5 z-[1100] flex flex-col gap-1.5">
+        {showDetectButton ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            className={controlBtn}
+            onClick={detectLocation}
+            disabled={detecting}
+            title="Use my location"
+            aria-label="Use my location"
+          >
+            {detecting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <LocateFixed className="h-4 w-4" />
+            )}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          className={controlBtn}
+          onClick={() => mapApiRef.current?.zoomIn()}
+          title="Zoom in"
+          aria-label="Zoom in"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          className={controlBtn}
+          onClick={() => mapApiRef.current?.zoomOut()}
+          title="Zoom out"
+          aria-label="Zoom out"
+        >
+          <Minus className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
 }

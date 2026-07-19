@@ -62,6 +62,10 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
         ? "orders/"
         : joined === "expenses"
           ? "expenses/"
+          : joined === "restaurants"
+            ? "restaurants/"
+          : joined === "tax-config"
+            ? "tax-config/"
           : /^printers\/restaurants\/[^/]+\/station-config$/.test(joined)
             ? `${joined}/`
           : /^users\/[^/]+\/permissions$/.test(joined)

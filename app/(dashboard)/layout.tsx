@@ -4,13 +4,14 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { RoleGuard } from "@/components/auth/role-guard";
 import { GlobalKotPrinter } from "@/components/receipts/global-kot-printer";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth, useAuthHydrated } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { usePermissionsSync } from "@/hooks/use-permissions-sync";
 import { hasStoredSession } from "@/lib/auth-storage";
 import { hasSessionRestoreFinished, isSessionRestoreInFlight } from "@/lib/session-restore";
+import { ProductTourHost } from "@/components/onboarding/product-tour-host";
 
 export default function DashboardLayout({
   children,
@@ -58,6 +59,25 @@ export default function DashboardLayout({
     if (!mounted) return;
     fetchRestaurant();
   }, [fetchRestaurant, mounted]);
+
+  useEffect(() => {
+    if (!mounted || !storeHydrated) return;
+    if (loading || restaurant) return;
+
+    const roles = [
+      ...(Array.isArray(user?.roles) ? user.roles : []),
+      user?.role,
+      user?.primary_role,
+    ]
+      .filter(Boolean)
+      .map((r) => String(r).toLowerCase());
+    const canOnboard = roles.some(
+      (r) => r === "admin" || r === "owner" || r === "manager"
+    );
+    if (canOnboard) {
+      router.replace("/onboarding");
+    }
+  }, [mounted, storeHydrated, loading, restaurant, user, router]);
 
   useEffect(() => {
     if (!mounted || !storeHydrated) return;
@@ -131,6 +151,25 @@ export default function DashboardLayout({
   }
 
   if (!restaurant) {
+    const roles = [
+      ...(Array.isArray(user?.roles) ? user.roles : []),
+      user?.role,
+      user?.primary_role,
+    ]
+      .filter(Boolean)
+      .map((r) => String(r).toLowerCase());
+    const canOnboard = roles.some(
+      (r) => r === "admin" || r === "owner" || r === "manager"
+    );
+
+    if (canOnboard) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-background">
+          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+        </div>
+      );
+    }
+
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 p-6 text-center">
         <p className="text-sm text-muted-foreground">
@@ -157,6 +196,9 @@ export default function DashboardLayout({
         </main>
       </div>
       <GlobalKotPrinter />
+      <Suspense fallback={null}>
+        <ProductTourHost />
+      </Suspense>
     </div>
   );
 }
