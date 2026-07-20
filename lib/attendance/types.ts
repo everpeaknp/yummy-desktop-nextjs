@@ -20,6 +20,7 @@ export type AttendanceSettings = {
   id: number;
   restaurant_id: number;
   timezone: string;
+  address?: string | null;
   latitude: number | null;
   longitude: number | null;
   geofence_radius_meters: number;

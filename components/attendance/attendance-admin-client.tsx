@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import QRCode from "qrcode";
 import {
@@ -50,13 +49,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { AttendancePolicyMap } from "./attendance-policy-map";
+import { TimezoneSelect } from "@/components/ui/timezone-select";
+import { FieldInfo } from "@/components/ui/field-info";
+import LocationPicker from "@/components/manage/profile/location-picker";
+import { forwardGeocode, reverseGeocode } from "@/lib/geocode";
 import { attendanceRadiusLabel } from "./attendance-policy";
 
 type StaffProfile = { id: number; user_id: number; account_number?: string };
 type StaffUser = { id: number; name?: string; full_name?: string; email?: string };
 type AttendanceSettingsForm = {
   timezone: string;
+  address: string;
+  latitude: string;
+  longitude: string;
   geofence_radius_meters: string;
   required_location_accuracy_meters: string;
   early_clock_in_tolerance_minutes: string;
@@ -100,6 +105,9 @@ function mergeEntriesWithOpenCarryover(selectedEntries: AttendanceEntry[], recen
 function settingsToForm(settings: AttendanceSettings): AttendanceSettingsForm {
   return {
     timezone: settings.timezone || "Asia/Kathmandu",
+    address: settings.address || "",
+    latitude: settings.latitude != null ? String(settings.latitude) : "",
+    longitude: settings.longitude != null ? String(settings.longitude) : "",
     geofence_radius_meters: String(settings.geofence_radius_meters || 150),
     required_location_accuracy_meters: String(settings.required_location_accuracy_meters || 100),
     early_clock_in_tolerance_minutes: String(settings.early_clock_in_tolerance_minutes ?? 15),
@@ -179,7 +187,6 @@ export function AttendanceAdminClient() {
   const [loading, setLoading] = useState(true);
   const [dateFrom, setDateFrom] = useState(todayIso());
   const [dateTo, setDateTo] = useState(todayIso());
-  const [settings, setSettings] = useState<AttendanceSettings | null>(null);
   const [overview, setOverview] = useState<AttendanceOverview | null>(null);
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
@@ -208,6 +215,9 @@ export function AttendanceAdminClient() {
   const [busy, setBusy] = useState(false);
   const [settingsForm, setSettingsForm] = useState<AttendanceSettingsForm>({
     timezone: "Asia/Kathmandu",
+    address: "",
+    latitude: "",
+    longitude: "",
     geofence_radius_meters: "150",
     required_location_accuracy_meters: "100",
     early_clock_in_tolerance_minutes: "15",
@@ -222,6 +232,10 @@ export function AttendanceAdminClient() {
     mobile_clocking_enabled: true,
     device_clocking_enabled: true,
   });
+  const [resolvingAddress, setResolvingAddress] = useState(false);
+  const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const forwardGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const geocodeRequestIdRef = useRef(0);
 
   useEffect(() => {
     const requestedTab = searchParams.get("tab");
@@ -272,7 +286,6 @@ export function AttendanceAdminClient() {
         apiClient.get(StaffProfileApis.list({ limit: 500 })),
         apiClient.get(StaffApis.list()),
       ]);
-      setSettings(settingsData);
       setSettingsForm(settingsToForm(settingsData));
       setOverview(overviewData);
       setEntries(mergeEntriesWithOpenCarryover(selectedEntryData, recentEntryData));
@@ -296,6 +309,79 @@ export function AttendanceAdminClient() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    return () => {
+      if (reverseGeocodeTimerRef.current) clearTimeout(reverseGeocodeTimerRef.current);
+      if (forwardGeocodeTimerRef.current) clearTimeout(forwardGeocodeTimerRef.current);
+    };
+  }, []);
+
+  const handleLocationChange = useCallback((lat: string, lng: string) => {
+    setSettingsForm((current) => ({ ...current, latitude: lat, longitude: lng }));
+
+    if (forwardGeocodeTimerRef.current) {
+      clearTimeout(forwardGeocodeTimerRef.current);
+      forwardGeocodeTimerRef.current = null;
+    }
+    if (reverseGeocodeTimerRef.current) clearTimeout(reverseGeocodeTimerRef.current);
+
+    const requestId = ++geocodeRequestIdRef.current;
+    setResolvingAddress(true);
+    reverseGeocodeTimerRef.current = setTimeout(async () => {
+      try {
+        const address = await reverseGeocode(lat, lng);
+        if (requestId !== geocodeRequestIdRef.current) return;
+        if (address) {
+          setSettingsForm((current) => ({ ...current, address }));
+        }
+      } catch {
+        // Keep coordinates even if address lookup fails
+      } finally {
+        if (requestId === geocodeRequestIdRef.current) {
+          setResolvingAddress(false);
+        }
+      }
+    }, 450);
+  }, []);
+
+  const handleAddressChange = useCallback((value: string) => {
+    setSettingsForm((current) => ({ ...current, address: value }));
+
+    if (reverseGeocodeTimerRef.current) {
+      clearTimeout(reverseGeocodeTimerRef.current);
+      reverseGeocodeTimerRef.current = null;
+    }
+    if (forwardGeocodeTimerRef.current) clearTimeout(forwardGeocodeTimerRef.current);
+
+    const trimmed = value.trim();
+    if (trimmed.length < 8) {
+      setResolvingAddress(false);
+      return;
+    }
+
+    const requestId = ++geocodeRequestIdRef.current;
+    setResolvingAddress(true);
+    forwardGeocodeTimerRef.current = setTimeout(async () => {
+      try {
+        const result = await forwardGeocode(trimmed);
+        if (requestId !== geocodeRequestIdRef.current) return;
+        if (result) {
+          setSettingsForm((current) => ({
+            ...current,
+            latitude: result.lat,
+            longitude: result.lng,
+          }));
+        }
+      } catch {
+        // Keep typed address even if lookup fails
+      } finally {
+        if (requestId === geocodeRequestIdRef.current) {
+          setResolvingAddress(false);
+        }
+      }
+    }, 700);
+  }, []);
 
   useEffect(() => {
     if (!qrPayload) {
@@ -327,10 +413,24 @@ export function AttendanceAdminClient() {
     if (!Number.isFinite(fullDay) || !Number.isFinite(halfDay) || halfDay >= fullDay || fullDay > 100 || halfDay <= 0) {
       return toast.error("Half-day threshold must be above 0 and below the full-day threshold");
     }
+    const lat = settingsForm.latitude.trim();
+    const lng = settingsForm.longitude.trim();
+    const hasLocation = Boolean(lat && lng);
+    if (hasLocation) {
+      const latNum = Number(lat);
+      const lngNum = Number(lng);
+      if (!Number.isFinite(latNum) || !Number.isFinite(lngNum) || latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
+        return toast.error("Set a valid map location before saving");
+      }
+    }
     setBusy(true);
     try {
       const updated = await attendanceApi.updateSettings({
         timezone: settingsForm.timezone.trim() || "Asia/Kathmandu",
+        address: settingsForm.address.trim() || undefined,
+        ...(hasLocation
+          ? { latitude: Number(lat), longitude: Number(lng) }
+          : {}),
         geofence_radius_meters: Number.parseInt(settingsForm.geofence_radius_meters, 10) || 150,
         required_location_accuracy_meters: Number.parseInt(settingsForm.required_location_accuracy_meters, 10) || 100,
         early_clock_in_tolerance_minutes: Number.parseInt(settingsForm.early_clock_in_tolerance_minutes, 10) || 0,
@@ -345,7 +445,6 @@ export function AttendanceAdminClient() {
         mobile_clocking_enabled: settingsForm.mobile_clocking_enabled,
         device_clocking_enabled: settingsForm.device_clocking_enabled,
       });
-      setSettings(updated);
       setSettingsForm(settingsToForm(updated));
       toast.success("Attendance settings saved");
     } catch (error) {
@@ -746,22 +845,41 @@ export function AttendanceAdminClient() {
           <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Restaurant Geofence</CardTitle>
-              <CardDescription>The restaurant profile owns the location. Attendance controls only the allowed range.</CardDescription>
+              <CardDescription>
+                Search an address or drag the pin — both stay in sync for mobile attendance.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <AttendancePolicyMap
-                latitude={settings?.latitude ?? null}
-                longitude={settings?.longitude ?? null}
-                radiusMeters={radiusMeters}
-                onEditRestaurantLocation={() => window.location.assign("/manage/profile")}
-              />
-              {settings?.latitude != null && settings?.longitude != null ? (
-                <div className="flex justify-end">
-                  <Button asChild type="button" variant="ghost" size="sm">
-                    <Link href="/manage/profile"><MapPin className="mr-2 h-4 w-4" />Edit restaurant location</Link>
-                  </Button>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="attendance-address">Physical Address</Label>
+                  <FieldInfo>
+                    Type an address or move the map pin — both stay in sync. Format: street, area,
+                    city, state, country.
+                  </FieldInfo>
                 </div>
-              ) : null}
+                <Input
+                  id="attendance-address"
+                  value={settingsForm.address}
+                  onChange={(event) => handleAddressChange(event.target.value)}
+                  placeholder="Street, area, city, state, country"
+                />
+                {resolvingAddress ? (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Syncing address and map…
+                  </p>
+                ) : null}
+              </div>
+              <LocationPicker
+                latitude={settingsForm.latitude}
+                longitude={settingsForm.longitude}
+                height={320}
+                onChange={handleLocationChange}
+              />
+              <p className="text-xs text-muted-foreground">
+                Radius shown in policy is {radiusMeters} m around this pin ({attendanceRadiusLabel(radiusMeters)}).
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -810,7 +928,10 @@ export function AttendanceAdminClient() {
                 </div>
               </div>
               <Field label="Timezone">
-                <Input value={settingsForm.timezone} onChange={(event) => setSettingsForm((current) => ({ ...current, timezone: event.target.value }))} />
+                <TimezoneSelect
+                  value={settingsForm.timezone}
+                  onChange={(timezone) => setSettingsForm((current) => ({ ...current, timezone }))}
+                />
               </Field>
               <div className="border-t pt-4">
                 <p className="text-sm font-semibold">Time and payroll rules</p>
@@ -966,7 +1087,12 @@ export function AttendanceAdminClient() {
                   <Field label="IP address"><Input value={deviceForm.ip_address} onChange={(event) => setDeviceForm((current) => ({ ...current, ip_address: event.target.value }))} placeholder="192.168.1.50" /></Field>
                   <Field label="Port"><Input type="number" value={deviceForm.port} onChange={(event) => setDeviceForm((current) => ({ ...current, port: event.target.value }))} /></Field>
                 </div>
-                <Field label="Timezone"><Input value={deviceForm.timezone} onChange={(event) => setDeviceForm((current) => ({ ...current, timezone: event.target.value }))} /></Field>
+                <Field label="Timezone">
+                  <TimezoneSelect
+                    value={deviceForm.timezone}
+                    onChange={(timezone) => setDeviceForm((current) => ({ ...current, timezone }))}
+                  />
+                </Field>
                 <Button onClick={createDevice} disabled={busy} className="w-full"><Plus className="mr-2 h-4 w-4" />Register device</Button>
               </CardContent>
             </Card>
