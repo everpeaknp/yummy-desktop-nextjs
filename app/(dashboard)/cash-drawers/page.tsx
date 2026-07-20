@@ -353,6 +353,7 @@ export default function CashDrawersPage() {
             title="Drawer workspace"
             description="Use this page for opening float, drawer count, settlement decision, cash movement review, and expected cash checks."
             footerNote="Checkout automatically uses the logged-in cashier's active drawer. Day close only verifies that drawers are closed and settled."
+            includeAllActiveSessions
             onCashSummaryChange={handleDrawerCashSummary}
           />
 

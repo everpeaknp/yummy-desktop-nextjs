@@ -39,6 +39,7 @@ type DrawerSessionPanelProps = {
   title?: string;
   description?: string;
   footerNote?: string;
+  includeAllActiveSessions?: boolean;
   onCashSummaryChange?: (summary: {
     activeDrawerCash: number;
     activeSessionCount: number;
@@ -154,6 +155,7 @@ export function DrawerSessionPanel({
   title = "Drawer readiness",
   description,
   footerNote = "This operational panel checks drawer readiness only. Accounting review status is handled after the day is closed.",
+  includeAllActiveSessions = false,
   onCashSummaryChange,
 }: DrawerSessionPanelProps) {
   const user = useAuth((state) => state.user);
@@ -287,7 +289,7 @@ export function DrawerSessionPanel({
         .toLowerCase()
         .includes("drawer controls are disabled");
       const activeForDate = (activeRes.data?.data ?? []).filter(
-        (session) => session.business_date === effectiveBusinessDate,
+        (session) => includeAllActiveSessions || session.business_date === effectiveBusinessDate,
       );
       const historyForDate = historyRes.data?.data?.items ?? [];
       const nextSessions = [...activeForDate];
@@ -317,7 +319,7 @@ export function DrawerSessionPanel({
     } finally {
       setLoading(false);
     }
-  }, [businessLine, effectiveBusinessDate, loadBreakdowns, loadSuggestions, restaurantId]);
+  }, [businessLine, effectiveBusinessDate, includeAllActiveSessions, loadBreakdowns, loadSuggestions, restaurantId]);
 
   useEffect(() => {
     void load();
