@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import apiClient from "@/lib/api-client";
 import { DrawerSessionApis } from "@/lib/api/endpoints";
+import { nextDrawerBusinessDate } from "@/lib/drawer-business-date";
 import { formatDayCloseCurrency } from "@/lib/day-close-format";
 import { hasPermission } from "@/lib/role-permissions";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ import type {
   DrawerSession,
   DrawerExpectedBreakdown,
   DrawerSessionOpenInput,
+  DrawerSessionHistoryPage,
 } from "@/types/day-close";
 
 type BaseResponse<T> = {
@@ -115,6 +117,17 @@ function expectedCashForSession(session: DrawerSession, breakdown?: DrawerExpect
   return numberAmount(session.counted_opening_cash) + movementTotal;
 }
 
+function settledSessionForConfig(sessions: DrawerSession[], config: DrawerConfiguration) {
+  return (
+    sessions.find(
+      (session) =>
+        session.station === config.station &&
+        session.drawer_key === config.drawer_key &&
+        READY_STATUSES.has(String(session.status)),
+    ) ?? null
+  );
+}
+
 function drawerExpenseCashOut(session: DrawerSession, breakdown?: DrawerExpectedBreakdown | null) {
   if (breakdown) {
     return (
@@ -145,7 +158,8 @@ export function DrawerSessionPanel({
 }: DrawerSessionPanelProps) {
   const user = useAuth((state) => state.user);
   const canApproveOpeningDifference = hasPermission(user, "finance.variance.approve");
-  const effectiveBusinessDate = businessDate || todayIso();
+  const baseBusinessDate = businessDate || todayIso();
+  const [effectiveBusinessDate, setEffectiveBusinessDate] = useState(baseBusinessDate);
   const [configs, setConfigs] = useState<DrawerConfiguration[]>([]);
   const [sessions, setSessions] = useState<DrawerSession[]>([]);
   const [suggestions, setSuggestions] = useState<Record<string, DrawerOpeningSuggestion | null>>({});
@@ -156,6 +170,10 @@ export function DrawerSessionPanel({
   const [openingKey, setOpeningKey] = useState<string | null>(null);
   const [countSession, setCountSession] = useState<DrawerSession | null>(null);
   const [countDialogOpen, setCountDialogOpen] = useState(false);
+
+  useEffect(() => {
+    setEffectiveBusinessDate(baseBusinessDate);
+  }, [baseBusinessDate]);
 
   const activeConfigs = useMemo(
     () => configs.filter((config) => config.is_active !== false),
@@ -248,18 +266,34 @@ export function DrawerSessionPanel({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [activeRes, configRes] = await Promise.all([
+      const [activeRes, configRes, historyRes] = await Promise.all([
         apiClient.get<BaseResponse<DrawerSession[]>>(
           DrawerSessionApis.active({ restaurantId, businessLine: String(businessLine) }),
         ),
         apiClient.get<BaseResponse<DrawerConfiguration[]>>(
           DrawerSessionApis.configurations({ restaurantId, businessLine: String(businessLine) }),
         ).catch(() => ({ data: { data: [] as DrawerConfiguration[] } })),
+        apiClient.get<BaseResponse<DrawerSessionHistoryPage>>(
+          DrawerSessionApis.history({
+            restaurantId,
+            businessLine: String(businessLine),
+            dateFrom: effectiveBusinessDate,
+            dateTo: effectiveBusinessDate,
+            limit: 200,
+          }),
+        ).catch(() => ({ data: { data: { items: [] as DrawerSession[], total: 0, skip: 0, limit: 200 } } })),
       ]);
       const disabledByMessage = String(activeRes.data?.message ?? "")
         .toLowerCase()
         .includes("drawer controls are disabled");
-      const nextSessions = activeRes.data?.data ?? [];
+      const activeForDate = (activeRes.data?.data ?? []).filter(
+        (session) => session.business_date === effectiveBusinessDate,
+      );
+      const historyForDate = historyRes.data?.data?.items ?? [];
+      const nextSessions = [...activeForDate];
+      for (const session of historyForDate) {
+        if (!nextSessions.some((row) => row.id === session.id)) nextSessions.push(session);
+      }
       const nextConfigs = configRes.data?.data ?? [];
       setControlsDisabled(disabledByMessage);
       setSessions(nextSessions);
@@ -283,7 +317,7 @@ export function DrawerSessionPanel({
     } finally {
       setLoading(false);
     }
-  }, [businessLine, loadBreakdowns, loadSuggestions, restaurantId]);
+  }, [businessLine, effectiveBusinessDate, loadBreakdowns, loadSuggestions, restaurantId]);
 
   useEffect(() => {
     void load();
@@ -297,11 +331,13 @@ export function DrawerSessionPanel({
 
     for (const config of activeConfigs) {
       const session = sessionForConfig(sessions, config);
+      const settledSession = settledSessionForConfig(sessions, config);
       if (session) {
         activeSessionCount += 1;
         activeDrawerCash += expectedCashForSession(session, breakdowns[session.id]);
         continue;
       }
+      if (settledSession) continue;
       const suggestion = suggestions[drawerScopeKey(config.station, config.drawer_key)];
       if (suggestion?.source === "previous_retained_float") {
         unopenedRetainedCash += numberAmount(suggestion.amount);
@@ -443,6 +479,7 @@ export function DrawerSessionPanel({
             {activeConfigs.map((config) => {
               const key = drawerScopeKey(config.station, config.drawer_key);
               const session = sessionForConfig(sessions, config);
+              const settledSession = settledSessionForConfig(sessions, config);
               const breakdown = session ? breakdowns[session.id] : null;
               const suggestion = suggestions[key];
               const openingForm = openingForms[key] ?? { cash: "", reason: "", overrideRetained: false };
@@ -465,7 +502,7 @@ export function DrawerSessionPanel({
                   Boolean((openingForm.differenceSource || "").trim()));
               const countable = isCountable(session);
               const settlementPending = isSettlementPending(session);
-              const ready = Boolean(session && READY_STATUSES.has(String(session.status)));
+              const ready = Boolean(settledSession);
               const expectedClosingCash = session ? expectedCashForSession(session, breakdown) : null;
               const expenseCashOut = session ? drawerExpenseCashOut(session, breakdown) : 0;
               const countedOpeningCash =
@@ -478,7 +515,7 @@ export function DrawerSessionPanel({
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="font-semibold">{config.name || `${config.station} / ${config.drawer_key}`}</div>
                         <Badge variant={session ? "default" : "secondary"} className="text-[10px]">
-                          {readyLabel(session)}
+                          {ready ? "Settled" : readyLabel(session)}
                         </Badge>
                         {retainedCarryForward ? (
                           <Badge variant="outline" className="text-[10px]">Retained carry-forward</Badge>
@@ -498,7 +535,7 @@ export function DrawerSessionPanel({
                       ) : (
                         <AlertTriangle className="h-4 w-4 text-amber-600" />
                       )}
-                      {readyLabel(session)}
+                      {ready ? "Settled" : readyLabel(session)}
                     </div>
                   </div>
 
@@ -599,7 +636,23 @@ export function DrawerSessionPanel({
                     </div>
                   ) : null}
 
-                  {!session ? (
+                  {!session && settledSession ? (
+                    <div className="flex flex-col gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-400 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <CheckCircle2 className="mr-2 inline h-4 w-4" />
+                        This drawer is settled for {effectiveBusinessDate}. Opening it again for the same date would block day close.
+                      </div>
+                      {effectiveBusinessDate === baseBusinessDate ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setEffectiveBusinessDate(nextDrawerBusinessDate(effectiveBusinessDate))}
+                        >
+                          Prepare {nextDrawerBusinessDate(effectiveBusinessDate)}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : !session ? (
                     <div className="space-y-3">
                       {!suggestion ? (
                         <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">

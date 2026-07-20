@@ -1762,11 +1762,15 @@ export const DrawerSessionApis = {
   history: ({
     restaurantId,
     businessLine = "restaurant",
+    dateFrom,
+    dateTo,
     skip = 0,
     limit = 20,
   }: {
     restaurantId: number;
     businessLine?: string;
+    dateFrom?: string;
+    dateTo?: string;
     skip?: number;
     limit?: number;
   }) => {
@@ -1776,6 +1780,8 @@ export const DrawerSessionApis = {
       skip: skip.toString(),
       limit: limit.toString(),
     });
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
     return `/drawer-sessions/history?${params.toString()}`;
   },
   activity: (sessionId: number) => `/drawer-sessions/${sessionId}/activity`,
