@@ -26,7 +26,6 @@ import { cn } from "@/lib/utils"
 import { DashboardStatusBanner } from "@/components/dashboard/dashboard-status-banner"
 import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
 import { UnifiedInsightsCard } from "@/components/dashboard/unified-insights-card"
-import { requestProductTour } from "@/lib/product-tour"
 import dynamic from "next/dynamic"
 import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown"
 import { DateRange } from "react-day-picker"
@@ -76,7 +75,6 @@ import {
   Briefcase,
   ExternalLink,
   RefreshCw,
-  HelpCircle,
   type LucideIcon,
 } from "lucide-react"
 
@@ -335,16 +333,6 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            data-tour="tour-help"
-            aria-label="Start product tour"
-            onClick={() => requestProductTour()}
-          >
-            <HelpCircle className="h-4 w-4" />
-          </Button>
           <DateRangeDropdown
             activeRange={activeRange}
             setActiveRange={setActiveRange}
