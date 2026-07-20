@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { UtensilsCrossed, Bed, LogOut, ChevronRight } from "lucide-react";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { canAccessOnboarding } from "@/lib/onboarding";
 
 export default function GatewayPage() {
   const restaurant = useRestaurant((s) => s.restaurant);
@@ -23,17 +24,7 @@ export default function GatewayPage() {
     if (loading) return;
 
     if (!restaurant) {
-      const roles = [
-        ...(Array.isArray(user?.roles) ? user.roles : []),
-        user?.role,
-        user?.primary_role,
-      ]
-        .filter(Boolean)
-        .map((r) => String(r).toLowerCase());
-      const canOnboard = roles.some(
-        (r) => r === "admin" || r === "owner" || r === "manager"
-      );
-      router.replace(canOnboard ? "/onboarding" : "/");
+      router.replace(canAccessOnboarding(user) ? "/onboarding" : "/");
       return;
     }
 

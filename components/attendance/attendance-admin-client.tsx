@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import QRCode from "qrcode";
 import {
@@ -56,7 +57,34 @@ import { forwardGeocode, reverseGeocode } from "@/lib/geocode";
 import { attendanceRadiusLabel } from "./attendance-policy";
 
 type StaffProfile = { id: number; user_id: number; account_number?: string };
-type StaffUser = { id: number; name?: string; full_name?: string; email?: string };
+type StaffUser = {
+  id: number;
+  name?: string;
+  full_name?: string;
+  email?: string;
+  role?: string;
+  primary_role?: string;
+  roles?: string[];
+};
+
+function staffRoleLabel(user?: StaffUser) {
+  const raw =
+    user?.primary_role ||
+    user?.role ||
+    (Array.isArray(user?.roles) && user.roles.length ? user.roles[0] : "");
+  if (!raw) return "";
+  return String(raw)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function staffLabel(profile: StaffProfile | undefined, usersById: Map<number, StaffUser>) {
+  if (!profile) return "Unknown staff";
+  const user = usersById.get(profile.user_id);
+  const name = user?.name || user?.full_name || user?.email || profile.account_number || "Staff #" + profile.id;
+  const role = staffRoleLabel(user);
+  return role ? `${name} · ${role}` : name;
+}
 type AttendanceSettingsForm = {
   timezone: string;
   address: string;
@@ -173,12 +201,6 @@ function isBiometricAddonError(error: unknown) {
     data?.errors?.some((item) => item.code === "ATTENDANCE_BIOMETRIC_REQUIRED") ||
       data?.message?.includes("Biometric-device attendance is not enabled"),
   );
-}
-
-function staffLabel(profile: StaffProfile | undefined, usersById: Map<number, StaffUser>) {
-  if (!profile) return "Unknown staff";
-  const user = usersById.get(profile.user_id);
-  return user?.name || user?.full_name || user?.email || profile.account_number || "Staff #" + profile.id;
 }
 
 export function AttendanceAdminClient() {
@@ -1014,11 +1036,37 @@ export function AttendanceAdminClient() {
             <Card>
               <CardHeader><CardTitle>New Leave Request</CardTitle><CardDescription>Record full-day or half-day paid or unpaid leave.</CardDescription></CardHeader>
               <CardContent className="space-y-4">
-                <Field label="Staff"><Select value={leaveForm.staff_id} onValueChange={(value) => setLeaveForm((current) => ({ ...current, staff_id: value }))}><SelectTrigger><SelectValue placeholder="Select staff" /></SelectTrigger><SelectContent>{staffProfiles.map((profile) => <SelectItem key={profile.id} value={String(profile.id)}>{staffLabel(profile, usersById)}</SelectItem>)}</SelectContent></Select></Field>
+                <Field label="Staff">
+                  <Select
+                    value={leaveForm.staff_id}
+                    onValueChange={(value) => setLeaveForm((current) => ({ ...current, staff_id: value }))}
+                    disabled={!staffProfiles.length}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={staffProfiles.length ? "Select staff" : "No staff profiles yet"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {staffProfiles.map((profile) => (
+                        <SelectItem key={profile.id} value={String(profile.id)}>
+                          {staffLabel(profile, usersById)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                {!staffProfiles.length ? (
+                  <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    Leave needs an employment profile. Open{" "}
+                    <Link href="/staff" className="font-semibold text-primary underline-offset-2 hover:underline">
+                      Workforce → Staff
+                    </Link>
+                    , open a user, then create their <span className="font-medium text-foreground">Employment and pay profile</span>.
+                  </p>
+                ) : null}
                 <div className="grid gap-3 sm:grid-cols-2"><Field label="From"><Input type="date" value={leaveForm.date_from} onChange={(event) => setLeaveForm((current) => ({ ...current, date_from: event.target.value }))} /></Field><Field label="To"><Input type="date" value={leaveForm.date_to} onChange={(event) => setLeaveForm((current) => ({ ...current, date_to: event.target.value }))} /></Field></div>
                 <div className="grid gap-3 sm:grid-cols-2"><Field label="Leave type"><Select value={leaveForm.leave_type} onValueChange={(value: "paid" | "unpaid") => setLeaveForm((current) => ({ ...current, leave_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="paid">Paid</SelectItem><SelectItem value="unpaid">Unpaid</SelectItem></SelectContent></Select></Field><Field label="Day value"><Select value={leaveForm.day_fraction} onValueChange={(value) => setLeaveForm((current) => ({ ...current, day_fraction: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">Full day</SelectItem><SelectItem value="0.5">Half day</SelectItem></SelectContent></Select></Field></div>
                 <Field label="Reason"><Input value={leaveForm.reason} onChange={(event) => setLeaveForm((current) => ({ ...current, reason: event.target.value }))} /></Field>
-                <Button onClick={createLeave} disabled={busy} className="w-full"><Plus className="mr-2 h-4 w-4" />Create leave request</Button>
+                <Button onClick={createLeave} disabled={busy || !staffProfiles.length} className="w-full"><Plus className="mr-2 h-4 w-4" />Create leave request</Button>
               </CardContent>
             </Card>
             <Card>

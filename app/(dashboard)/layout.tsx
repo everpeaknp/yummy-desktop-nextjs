@@ -12,6 +12,7 @@ import { usePermissionsSync } from "@/hooks/use-permissions-sync";
 import { hasStoredSession } from "@/lib/auth-storage";
 import { hasSessionRestoreFinished, isSessionRestoreInFlight } from "@/lib/session-restore";
 import { ProductTourHost } from "@/components/onboarding/product-tour-host";
+import { canAccessOnboarding } from "@/lib/onboarding";
 
 export default function DashboardLayout({
   children,
@@ -64,17 +65,7 @@ export default function DashboardLayout({
     if (!mounted || !storeHydrated) return;
     if (loading || restaurant) return;
 
-    const roles = [
-      ...(Array.isArray(user?.roles) ? user.roles : []),
-      user?.role,
-      user?.primary_role,
-    ]
-      .filter(Boolean)
-      .map((r) => String(r).toLowerCase());
-    const canOnboard = roles.some(
-      (r) => r === "admin" || r === "owner" || r === "manager"
-    );
-    if (canOnboard) {
+    if (canAccessOnboarding(user)) {
       router.replace("/onboarding");
     }
   }, [mounted, storeHydrated, loading, restaurant, user, router]);
@@ -151,18 +142,7 @@ export default function DashboardLayout({
   }
 
   if (!restaurant) {
-    const roles = [
-      ...(Array.isArray(user?.roles) ? user.roles : []),
-      user?.role,
-      user?.primary_role,
-    ]
-      .filter(Boolean)
-      .map((r) => String(r).toLowerCase());
-    const canOnboard = roles.some(
-      (r) => r === "admin" || r === "owner" || r === "manager"
-    );
-
-    if (canOnboard) {
+    if (canAccessOnboarding(user)) {
       return (
         <div className="flex h-screen items-center justify-center bg-background">
           <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />

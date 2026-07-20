@@ -1,6 +1,25 @@
 export const ONBOARDING_PENDING_TOUR_KEY = "yummy:onboarding:pending-tour";
 export const ONBOARDING_HOURS_KEY = "yummy:onboarding:hours";
 
+type OnboardingUser = {
+  role?: string | null;
+  roles?: string[] | null;
+  primary_role?: string | null;
+} | null;
+
+/** Restaurant setup is admin-dashboard only (not waiter/cashier/kitchen). */
+export function canAccessOnboarding(user: OnboardingUser): boolean {
+  if (!user) return false;
+  const roles = [
+    ...(Array.isArray(user.roles) ? user.roles : []),
+    user.role,
+    user.primary_role,
+  ]
+    .filter(Boolean)
+    .map((r) => String(r).toLowerCase());
+  return roles.some((r) => r === "admin" || r === "owner" || r === "manager");
+}
+
 export type BusinessType = "dine_in" | "cafe" | "cloud_kitchen";
 
 export type WorkspaceMode = "restaurant" | "hotel" | "both";

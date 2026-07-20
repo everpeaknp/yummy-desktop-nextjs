@@ -284,7 +284,7 @@ export const Header = memo(function Header() {
                     className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
                   >
                     <HelpCircle className="h-5 w-5" />
-                    <span className="text-base font-medium">Help & Onboarding</span>
+                    <span className="text-base font-medium">Help</span>
                   </button>
                 </nav>
               </div>
@@ -346,7 +346,7 @@ export const Header = memo(function Header() {
             variant="ghost"
             size="icon"
             className="text-muted-foreground"
-            aria-label="Help and onboarding"
+            aria-label="Help"
             data-tour="navbar-help"
             onClick={() => setHelpOpen(true)}
           >

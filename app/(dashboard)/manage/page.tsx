@@ -368,7 +368,11 @@ export default function ManagePage() {
                 ))}
             </div>
 
-            <HelpCenterDialog open={helpOpen} onOpenChange={setHelpOpen} />
+            <HelpCenterDialog
+                open={helpOpen}
+                onOpenChange={setHelpOpen}
+                includeOnboarding
+            />
         </div>
     );
 }

@@ -22,7 +22,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { canAccessOnboarding } from "@/lib/onboarding";
+import { isPathAccessible } from "@/lib/role-permissions";
 import { requestProductTour } from "@/lib/product-tour";
 
 type HelpLink = {
@@ -83,13 +86,18 @@ function HelpLinkRow({ link, onNavigate }: { link: HelpLink; onNavigate?: () => 
 export function HelpCenterDialog({
   open,
   onOpenChange,
+  /** Only Manage / admin dashboard should surface the onboarding replay link. */
+  includeOnboarding = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  includeOnboarding?: boolean;
 }) {
+  const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const showGateway =
     Boolean(restaurant?.restaurant_enabled) && Boolean(restaurant?.hotel_enabled);
+  const showOnboarding = includeOnboarding && canAccessOnboarding(user);
 
   const helpGroups: Array<{ title: string; links: HelpLink[] }> = [
     {
@@ -105,14 +113,18 @@ export function HelpCenterDialog({
             requestProductTour();
           },
         },
-        {
-          title: "Onboarding",
-          description: "Replay the workspace setup guide",
-          href: "/onboarding?replay=1",
-          icon: Rocket,
-          iconColor: "text-primary",
-          iconBg: "bg-primary/10",
-        },
+        ...(showOnboarding
+          ? [
+              {
+                title: "Onboarding",
+                description: "Replay the workspace setup guide",
+                href: "/onboarding?replay=1",
+                icon: Rocket,
+                iconColor: "text-primary",
+                iconBg: "bg-primary/10",
+              } satisfies HelpLink,
+            ]
+          : []),
       ],
     },
     {
@@ -182,7 +194,16 @@ export function HelpCenterDialog({
         },
       ],
     },
-  ];
+  ]
+    .map((group) => ({
+      ...group,
+      links: group.links.filter((link) => {
+        if (!link.href) return true;
+        if (link.href.startsWith("/onboarding")) return showOnboarding;
+        return isPathAccessible(link.href, user);
+      }),
+    }))
+    .filter((group) => group.links.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -193,7 +214,9 @@ export function HelpCenterDialog({
             Help
           </DialogTitle>
           <DialogDescription>
-            Product tour, onboarding, and quick links to common settings.
+            {showOnboarding
+              ? "Product tour, onboarding, and quick links to common settings."
+              : "Product tour and quick links to common settings."}
           </DialogDescription>
         </DialogHeader>
 

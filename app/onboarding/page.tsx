@@ -6,6 +6,8 @@ import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { useAuth, useAuthHydrated } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { hasStoredSession } from "@/lib/auth-storage";
+import { canAccessOnboarding } from "@/lib/onboarding";
+import { getHomeRouteForUser } from "@/lib/role-permissions";
 
 function isReplayQuery(searchParams: ReturnType<typeof useSearchParams>) {
   const replay = searchParams.get("replay");
@@ -35,13 +37,21 @@ export default function OnboardingPage() {
   }, [authHydrated, token, router, fetchRestaurant]);
 
   useEffect(() => {
+    if (!authHydrated || !user) return;
+    if (!canAccessOnboarding(user)) {
+      router.replace(getHomeRouteForUser(user));
+    }
+  }, [authHydrated, user, router]);
+
+  useEffect(() => {
     if (!ready || loading) return;
+    if (!canAccessOnboarding(user)) return;
     if (restaurant?.id && !isReplay) {
       router.replace("/dashboard");
     }
-  }, [ready, loading, restaurant, router, isReplay]);
+  }, [ready, loading, restaurant, router, isReplay, user]);
 
-  if (!authHydrated || !ready || loading) {
+  if (!authHydrated || !ready || loading || !canAccessOnboarding(user)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
