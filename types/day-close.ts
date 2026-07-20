@@ -212,6 +212,7 @@ export interface DayCloseDrawerControlRow {
   approved_by_id?: number | null;
   approved_at?: string | null;
   is_current_session?: boolean;
+  boundary_inferred?: boolean;
 }
 
 export interface DayCloseDrawerControl {
@@ -221,6 +222,7 @@ export interface DayCloseDrawerControl {
   expected_cash?: number;
   counted_cash?: number | null;
   cash_variance?: number | null;
+  boundary_inferred?: boolean;
   drawers?: DayCloseDrawerControlRow[];
 }
 

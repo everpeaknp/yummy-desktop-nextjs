@@ -10,6 +10,7 @@ import {
   History,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Send,
   ShieldCheck,
   Wallet,
@@ -19,12 +20,22 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { AccountingApis, DrawerSessionApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -79,12 +90,14 @@ export default function CashDrawersPage() {
     useState<DrawerCashControlSummary | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
+  const [drawerWorkspaceKey, setDrawerWorkspaceKey] = useState(0);
   const [drawerSummary, setDrawerSummary] = useState({
     activeDrawerCash: 0,
     activeSessionCount: 0,
     unopenedRetainedCash: 0,
   });
   const canTransferCash = hasPermission(user, "finance.cash.transfer.to_bank");
+  const canReopenDrawer = hasPermission(user, "day_close.drawer.reopen");
   const canConfirmBankDeposit = hasPermission(
     user,
     "finance.bank_deposit.confirm",
@@ -348,6 +361,7 @@ export default function CashDrawersPage() {
           </div>
 
           <DrawerSessionPanel
+            key={drawerWorkspaceKey}
             restaurantId={restaurantId}
             businessLine={businessLine}
             title="Drawer workspace"
@@ -360,6 +374,11 @@ export default function CashDrawersPage() {
           <DrawerHistoryCard
             restaurantId={restaurantId}
             businessLine={businessLine}
+            canReopen={canReopenDrawer}
+            onReopened={() => {
+              setDrawerWorkspaceKey((current) => current + 1);
+              refreshCashBalances();
+            }}
           />
 
           <Card className="border-border/70">
@@ -486,15 +505,44 @@ export default function CashDrawersPage() {
 function DrawerHistoryCard({
   restaurantId,
   businessLine,
+  canReopen,
+  onReopened,
 }: {
   restaurantId: number;
   businessLine: BusinessLine;
+  canReopen: boolean;
+  onReopened: () => void;
 }) {
   const [history, setHistory] = useState<DrawerSessionHistoryPage | null>(null);
   const [loading, setLoading] = useState(false);
   const [expandedSessionId, setExpandedSessionId] = useState<number | null>(null);
   const [activityBySession, setActivityBySession] = useState<Record<number, DrawerActivityLog[]>>({});
   const [activityLoadingId, setActivityLoadingId] = useState<number | null>(null);
+  const [reopenSession, setReopenSession] = useState<DrawerSession | null>(null);
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopening, setReopening] = useState(false);
+
+  const submitReopen = async () => {
+    if (!reopenSession) return;
+    const reason = reopenReason.trim();
+    if (reason.length < 5) {
+      toast.error("Enter a correction reason of at least 5 characters.");
+      return;
+    }
+    setReopening(true);
+    try {
+      await apiClient.post(DrawerSessionApis.reopen(reopenSession.id), { reason });
+      toast.success("Drawer reopened. Recount and settle it again.");
+      setReopenSession(null);
+      setReopenReason("");
+      await loadHistory();
+      onReopened();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to reopen drawer."));
+    } finally {
+      setReopening(false);
+    }
+  };
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
@@ -608,6 +656,22 @@ function DrawerHistoryCard({
                           )}
                           Activity
                         </Button>
+                        {canReopen &&
+                        (session.status === "closed" || session.status === "approved") ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => {
+                              setReopenSession(session);
+                              setReopenReason("");
+                            }}
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                            Reopen
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                     {expanded ? (
@@ -628,6 +692,44 @@ function DrawerHistoryCard({
           </>
         )}
       </CardContent>
+      <Dialog
+        open={Boolean(reopenSession)}
+        onOpenChange={(open) => {
+          if (!open && !reopening) {
+            setReopenSession(null);
+            setReopenReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reopen drawer for correction?</DialogTitle>
+            <DialogDescription>
+              This keeps the original activity and records who reopened it. Recount and
+              settle the drawer again after reopening.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="drawer-reopen-reason">Correction reason</Label>
+            <Textarea
+              id="drawer-reopen-reason"
+              value={reopenReason}
+              onChange={(event) => setReopenReason(event.target.value)}
+              placeholder="Example: Closing cash was entered incorrectly"
+              disabled={reopening}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setReopenSession(null)} disabled={reopening}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void submitReopen()} disabled={reopening}>
+              {reopening ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+              Reopen drawer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

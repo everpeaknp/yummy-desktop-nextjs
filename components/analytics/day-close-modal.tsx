@@ -604,6 +604,7 @@ function DrawerCashResultStep({
 
   const expectedCash = liveSnapshot?.expected_cash;
   const countedCash = liveSnapshot?.drawer_control?.counted_cash;
+  const boundaryInferred = liveSnapshot?.drawer_control?.boundary_inferred === true;
   const actualCashForSubmit =
     typeof countedCash === "number" && Number.isFinite(countedCash)
       ? countedCash
@@ -733,7 +734,9 @@ function DrawerCashResultStep({
             {formatDayCloseCurrency(actualCashForSubmit)}
           </p>
           <p className="text-xs text-muted-foreground mt-2">
-            If this value is wrong, correct the drawer count before closing the day.
+            {boundaryInferred
+              ? "This historical drawer was counted after the business-day cutoff. Cash at the cutoff is reconstructed from drawer activity; later activity remains with the later period."
+              : "If this value is wrong, correct the drawer count before closing the day."}
           </p>
         </div>
         {error ? (
