@@ -28,15 +28,20 @@ export const AuthApis = {
 };
 
 export const RestaurantJoinApis = {
+  currentCode: "/restaurant-joins/code",
   rotateCode: "/restaurant-joins/code",
   request: "/restaurant-joins/requests",
   myRequests: "/restaurant-joins/requests/me",
+  cancelRequest: (id: number) => `/restaurant-joins/requests/${id}/cancel`,
   approve: (id: number) => `/restaurant-joins/requests/${id}/approve`,
   reject: (id: number) => `/restaurant-joins/requests/${id}/reject`,
   invitations: "/restaurant-joins/invitations",
   myInvitations: "/restaurant-joins/invitations/me",
   acceptInvitation: "/restaurant-joins/invitations/accept",
+  declineInvitation: (id: number) => `/restaurant-joins/invitations/${id}/decline`,
+  resendInvitation: (id: number) => `/restaurant-joins/invitations/${id}/resend`,
   revokeInvitation: (id: number) => `/restaurant-joins/invitations/${id}/revoke`,
+  leavePreflight: "/restaurant-joins/leave/preflight",
   leave: "/restaurant-joins/leave",
 };
 
@@ -1878,6 +1883,8 @@ export const StaffProfileApis = {
   create: "/staff",
   update: (staffId: number) => `/staff/${staffId}`,
   salaryHistory: (staffId: number) => `/staff/${staffId}/salary-history`,
+  employmentHistory: (userId: number) => `/staff/users/${userId}/employment-history`,
+  rehire: (staffId: number) => `/staff/${staffId}/rehire`,
 };
 
 export const AttendanceApis = {
