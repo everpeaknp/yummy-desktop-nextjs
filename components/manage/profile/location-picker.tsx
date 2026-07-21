@@ -1,151 +1,164 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, MapPinOff } from "lucide-react";
 
 interface LocationPickerProps {
-    latitude: string;
-    longitude: string;
-    onChange: (lat: string, lng: string) => void;
+  latitude: string;
+  longitude: string;
+  onChange: (lat: string, lng: string) => void;
 }
 
 declare global {
-    interface Window {
-        L: any;
-    }
+  interface Window {
+    L: any;
+  }
 }
 
+const DEFAULT_CENTER: [number, number] = [27.7172, 85.3240];
+
 export default function LocationPicker({ latitude, longitude, onChange }: LocationPickerProps) {
-    const mapContainerRef = useRef<HTMLDivElement>(null);
-    const mapRef = useRef<any>(null);
-    const markerRef = useRef<any>(null);
-    const [libLoaded, setLibLoaded] = useState(false);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const onChangeRef = useRef(onChange);
+  const coordinatesRef = useRef({ latitude, longitude });
+  const [libLoaded, setLibLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
-    useEffect(() => {
-        let isMounted = true;
+  onChangeRef.current = onChange;
+  coordinatesRef.current = { latitude, longitude };
 
-        const checkLeaflet = () => {
-            if (window.L) {
-                if (isMounted) setLibLoaded(true);
-                return;
-            }
-        };
+  useEffect(() => {
+    if (window.L) {
+      setLibLoaded(true);
+      return;
+    }
 
-        // Load Leaflet CSS only if not present
-        if (!document.getElementById("leaflet-css")) {
-            const link = document.createElement("link");
-            link.id = "leaflet-css";
-            link.rel = "stylesheet";
-            link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-            document.head.appendChild(link);
-        }
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
 
-        // Load Leaflet JS
-        if (!document.getElementById("leaflet-js")) {
-            const script = document.createElement("script");
-            script.id = "leaflet-js";
-            script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-            script.async = true;
-            document.head.appendChild(script);
-        }
+    let script = document.getElementById("leaflet-js") as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement("script");
+      script.id = "leaflet-js";
+      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      script.async = true;
+      document.head.appendChild(script);
+    }
 
-        // Poll for window.L since script.onload is sometimes flaky in Next.js SPA navigation
-        const interval = setInterval(() => {
-            if (window.L) {
-                if (isMounted) setLibLoaded(true);
-                clearInterval(interval);
-            }
-        }, 300);
+    const handleLoad = () => {
+      if (window.L) {
+        setLoadError(false);
+        setLibLoaded(true);
+      }
+    };
+    const handleError = () => setLoadError(true);
+    script.addEventListener("load", handleLoad);
+    script.addEventListener("error", handleError);
+    const timeout = window.setTimeout(() => {
+      if (!window.L) setLoadError(true);
+    }, 15000);
 
-        checkLeaflet();
+    return () => {
+      window.clearTimeout(timeout);
+      script?.removeEventListener("load", handleLoad);
+      script?.removeEventListener("error", handleError);
+    };
+  }, []);
 
-        return () => {
-            isMounted = false;
-            clearInterval(interval);
-        };
-    }, []);
+  useEffect(() => {
+    if (!libLoaded || !mapContainerRef.current || mapRef.current) return;
+    const L = window.L;
+    if (!L) return;
 
-    useEffect(() => {
-        if (!libLoaded || !mapContainerRef.current) return;
+    const initialLatitude = Number.parseFloat(coordinatesRef.current.latitude);
+    const initialLongitude = Number.parseFloat(coordinatesRef.current.longitude);
+    const hasInitialCoordinates = Number.isFinite(initialLatitude) && Number.isFinite(initialLongitude);
+    const center: [number, number] = hasInitialCoordinates
+      ? [initialLatitude, initialLongitude]
+      : DEFAULT_CENTER;
 
-        const L = window.L;
-        if (!L) return;
+    const map = L.map(mapContainerRef.current).setView(center, 13);
+    mapRef.current = map;
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
 
-        const defaultLat = parseFloat(latitude) || 27.7172; 
-        const defaultLng = parseFloat(longitude) || 85.3240;
+    const placeMarker = (lat: number, lng: number, notify: boolean) => {
+      if (!markerRef.current) {
+        markerRef.current = L.marker([lat, lng], { draggable: true }).addTo(map);
+        markerRef.current.on("dragend", (event: any) => {
+          const position = event.target.getLatLng();
+          onChangeRef.current(position.lat.toFixed(6), position.lng.toFixed(6));
+        });
+      } else {
+        markerRef.current.setLatLng([lat, lng]);
+      }
+      if (notify) onChangeRef.current(lat.toFixed(6), lng.toFixed(6));
+    };
 
-        // Ensure container has height
-        if (mapContainerRef.current.clientHeight === 0) {
-            mapContainerRef.current.style.height = "100%";
-            mapContainerRef.current.style.minHeight = "400px";
-        }
+    if (hasInitialCoordinates) placeMarker(initialLatitude, initialLongitude, false);
+    map.on("click", (event: any) => {
+      placeMarker(event.latlng.lat, event.latlng.lng, true);
+    });
 
-        if (!mapRef.current) {
-            mapRef.current = L.map(mapContainerRef.current).setView([defaultLat, defaultLng], 13);
+    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 250);
+    return () => {
+      window.clearTimeout(resizeTimer);
+      map.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+    };
+  }, [libLoaded]);
 
-            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(mapRef.current);
+  useEffect(() => {
+    if (!libLoaded || !mapRef.current) return;
+    const nextLatitude = Number.parseFloat(latitude);
+    const nextLongitude = Number.parseFloat(longitude);
+    if (!Number.isFinite(nextLatitude) || !Number.isFinite(nextLongitude)) return;
 
-            markerRef.current = L.marker([defaultLat, defaultLng], { draggable: true }).addTo(mapRef.current);
+    if (!markerRef.current) {
+      markerRef.current = window.L.marker([nextLatitude, nextLongitude], { draggable: true }).addTo(mapRef.current);
+      markerRef.current.on("dragend", (event: any) => {
+        const position = event.target.getLatLng();
+        onChangeRef.current(position.lat.toFixed(6), position.lng.toFixed(6));
+      });
+    } else {
+      markerRef.current.setLatLng([nextLatitude, nextLongitude]);
+    }
+    mapRef.current.panTo([nextLatitude, nextLongitude]);
+  }, [latitude, libLoaded, longitude]);
 
-            // Handle map click
-            mapRef.current.on("click", (e: any) => {
-                const { lat, lng } = e.latlng;
-                markerRef.current.setLatLng([lat, lng]);
-                onChange(lat.toFixed(6), lng.toFixed(6));
-            });
-
-            // Handle marker drag
-            markerRef.current.on("dragend", (e: any) => {
-                const { lat, lng } = e.target.getLatLng();
-                onChange(lat.toFixed(6), lng.toFixed(6));
-            });
-            
-            // Fix map sizing issues inside flex/grid containers
-            setTimeout(() => {
-                mapRef.current?.invalidateSize();
-            }, 500);
-        } else {
-            // Update marker if coordinates change from outside (e.g. typing)
-            const currentLat = parseFloat(latitude);
-            const currentLng = parseFloat(longitude);
-            if (!isNaN(currentLat) && !isNaN(currentLng)) {
-                const pos = markerRef.current.getLatLng();
-                if (pos.lat !== currentLat || pos.lng !== currentLng) {
-                    markerRef.current.setLatLng([currentLat, currentLng]);
-                    mapRef.current.panTo([currentLat, currentLng]);
-                }
-            }
-        }
-
-        return () => {
-            // Cleanup map instance properly on unmount
-            if (mapRef.current) {
-                mapRef.current.remove();
-                mapRef.current = null;
-            }
-        };
-    }, [libLoaded, latitude, longitude, onChange]);
-
+  if (loadError) {
     return (
-        <>
-            {!libLoaded ? (
-                <div className="h-full w-full min-h-[400px] flex flex-col items-center justify-center bg-muted rounded-xl border z-10">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
-                    <p className="text-sm text-muted-foreground">Loading interactive map...</p>
-                </div>
-            ) : (
-                <div className="relative group w-full h-full min-h-[400px]">
-                    <div 
-                        ref={mapContainerRef} 
-                        className="w-full h-full min-h-[400px] rounded-xl overflow-hidden border z-0"
-                    />
-                    <div className="absolute top-2 right-2 z-[1000] bg-white p-2 rounded-md shadow-md text-[10px] font-semibold text-muted-foreground pointer-events-none">
-                        Click map or drag pin to move location
-                    </div>
-                </div>
-            )}
-        </>
+      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-xl border bg-muted/40 p-6 text-center">
+        <MapPinOff className="mb-3 h-8 w-8 text-muted-foreground" />
+        <p className="font-medium">The interactive map could not be loaded.</p>
+        <p className="mt-1 text-sm text-muted-foreground">You can still enter the restaurant address and continue without a map pin.</p>
+      </div>
     );
+  }
+
+  return (
+    <div className="relative min-h-[400px] w-full">
+      {!libLoaded && (
+        <div className="absolute inset-0 z-10 flex min-h-[400px] flex-col items-center justify-center rounded-xl border bg-muted">
+          <Loader2 className="mb-2 h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading interactive map...</p>
+        </div>
+      )}
+      <div ref={mapContainerRef} className="min-h-[400px] w-full overflow-hidden rounded-xl border" />
+      {libLoaded && (
+        <div className="pointer-events-none absolute right-2 top-2 z-[1000] rounded-md bg-white p-2 text-[10px] font-semibold text-muted-foreground shadow-md">
+          Click the map or drag the pin to set the location
+        </div>
+      )}
+    </div>
+  );
 }

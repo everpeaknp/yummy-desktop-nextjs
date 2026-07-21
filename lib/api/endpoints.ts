@@ -27,6 +27,19 @@ export const AuthApis = {
   uploadProfilePicture: "/users/me/profile-picture",
 };
 
+export const RestaurantJoinApis = {
+  rotateCode: "/restaurant-joins/code",
+  request: "/restaurant-joins/requests",
+  myRequests: "/restaurant-joins/requests/me",
+  approve: (id: number) => `/restaurant-joins/requests/${id}/approve`,
+  reject: (id: number) => `/restaurant-joins/requests/${id}/reject`,
+  invitations: "/restaurant-joins/invitations",
+  myInvitations: "/restaurant-joins/invitations/me",
+  acceptInvitation: "/restaurant-joins/invitations/accept",
+  revokeInvitation: (id: number) => `/restaurant-joins/invitations/${id}/revoke`,
+  leave: "/restaurant-joins/leave",
+};
+
 export const UserAccessScopeApis = {
   list: (userId: number | string) => `/users/${userId}/access-scopes/`,
   upsert: (userId: number | string, scopeKey: string) =>
@@ -256,6 +269,7 @@ export const TableTypeApis = {
 };
 
 export const RestaurantApis = {
+  create: "/restaurants/",
   getById: (id: number) => `/restaurants/${id}`,
   update: (id: number) => `/restaurants/${id}`,
   getByUser: "/restaurants/by-user",
@@ -270,6 +284,8 @@ export const AdminManagementApis = {
     `/restaurant/${restaurantId}/admins`,
   removeAdmin: (restaurantId: number, userId: number) =>
     `/restaurant/${restaurantId}/admins/${userId}`,
+  transferOwnership: (restaurantId: number) =>
+    `/restaurant/${restaurantId}/ownership/transfer`,
   userRestaurants: `/users/me/restaurants`,
 };
 

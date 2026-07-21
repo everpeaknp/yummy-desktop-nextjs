@@ -80,7 +80,7 @@ export const useAuth = create<AuthState>()(
         if (!options?.silent) set({ isRedirecting: true });
         clearStoredTokens();
         set({ user: null, token: null, refreshToken: null });
-        useRestaurant.getState().setSelectedModule(null);
+        useRestaurant.getState().clearRestaurant();
         if (typeof window !== 'undefined') {
           const api = (window as Window & {
             electronAPI?: { clearAuthBackup?: () => Promise<void> };
@@ -157,7 +157,9 @@ export const useAuth = create<AuthState>()(
               role: p.role || current.role,
               roles,
               primary_role: p.primary_role || p.role || current.primary_role,
-              restaurant_id: p.restaurant_id ?? current.restaurant_id,
+              restaurant_id: Object.prototype.hasOwnProperty.call(p, "restaurant_id")
+                ? p.restaurant_id
+                : current.restaurant_id,
               currency: p.currency ?? current.currency,
               permissions: Array.isArray(p.permissions) ? p.permissions : [],
             },

@@ -560,6 +560,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/attendance": "attendance.manage",
   "/workforce": "admin.staff.view",
   // Admin
+  "/staff/join-requests": "admin.staff.manage",
   "/staff": "admin.staff.view",
   "/manage": "admin.staff.view",
 };
@@ -600,9 +601,16 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
 
 export function isRouteAllowed(
   pathname: string,
-  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[] } | null
+  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[]; restaurant_id?: number | null } | null
 ): boolean {
   if (!user) return false;
+
+  // Leaving is membership self-service. Do not tie it to a tenant permission
+  // that may not exist for a legitimate custom-role or legacy-association
+  // member. The backend remains authoritative when the action is submitted.
+  if (pathname === "/leave-restaurant") {
+    return true;
+  }
 
   // Analytics routes never bypass via admin role — explicit permission only
   if (isAnalyticsGatedPath(pathname)) {
@@ -647,7 +655,7 @@ export function isRouteAllowed(
 
 export function isRouteAllowedMulti(
   pathname: string,
-  user: { role: string; roles?: string[]; primary_role?: string | null; permissions?: string[] } | null
+  user: { role: string; roles?: string[]; primary_role?: string | null; permissions?: string[]; restaurant_id?: number | null } | null
 ): boolean {
   return isRouteAllowed(pathname, user);
 }
@@ -655,7 +663,7 @@ export function isRouteAllowedMulti(
 /** Route guard helper for sidebar/manage links (strips query strings). */
 export function isPathAccessible(
   href: string,
-  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[] } | null
+  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[]; restaurant_id?: number | null } | null
 ): boolean {
   const path = href.split("?")[0];
   return isRouteAllowed(path, user);

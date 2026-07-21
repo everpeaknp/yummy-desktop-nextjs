@@ -22,7 +22,6 @@ import {
   Phone,
   RefreshCw,
   ShieldCheck,
-  UserCheck,
   UserX,
   UserRound,
   WalletCards,
@@ -361,15 +360,14 @@ export default function StaffWorkspacePage() {
   };
 
   const saveAccount = async () => {
-    if (!accountForm.name.trim() || !accountForm.email.trim()) {
-      toast.error("Name and email are required");
+    if (!accountForm.name.trim()) {
+      toast.error("Name is required");
       return;
     }
     setAccountSaving(true);
     try {
       await apiClient.patch(StaffApis.update(userId), {
         name: accountForm.name.trim(),
-        email: accountForm.email.trim(),
       });
       toast.success("Staff account updated");
       setAccountOpen(false);
@@ -552,24 +550,14 @@ export default function StaffWorkspacePage() {
     }
   };
 
-  const deactivateStaff = async () => {
-    if (!window.confirm(`Deactivate ${staff?.name || "this employee"}? Login and attendance access will stop, while payroll history is preserved.`)) return;
+  const removeStaffMembership = async () => {
+    if (!window.confirm(`Remove ${staff?.name || "this employee"} from this restaurant? Their account stays active, while attendance and payroll history remain here.`)) return;
     try {
       await apiClient.delete(StaffApis.delete(userId));
-      toast.success("Employee deactivated; history was preserved");
-      await loadWorkspace(true);
+      toast.success("Staff membership removed; account and history were preserved");
+      router.replace("/staff");
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to deactivate employee");
-    }
-  };
-
-  const reactivateStaff = async () => {
-    try {
-      await apiClient.patch(StaffApis.update(userId), { is_active: true });
-      toast.success("Employee reactivated");
-      await loadWorkspace(true);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to reactivate employee");
+      toast.error(error?.response?.data?.detail || "Failed to remove staff member");
     }
   };
 
@@ -656,7 +644,7 @@ export default function StaffWorkspacePage() {
             <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Account details</CardTitle><CardDescription>Identity and restaurant login information.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={() => setAccountOpen(true)}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent className="space-y-4"><InfoLine icon={UserRound} label="Full name" value={staff.name} /><InfoLine icon={Mail} label="Email" value={staff.email || "Not set"} /><InfoLine icon={BriefcaseBusiness} label="Primary role" value={staff.primary_role || staff.role || "Staff"} /><InfoLine icon={CalendarDays} label="Joined" value={staff.created_at ? dateOnly(staff.created_at) : "—"} /></CardContent></Card>
             <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Employment and pay profile</CardTitle><CardDescription>Contact, account, salary, and expected hours.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />{profile ? "Edit" : "Create"}</Button> : null}</CardHeader><CardContent>{profile ? <div className="grid gap-4 sm:grid-cols-2"><InfoLine icon={WalletCards} label="Account number" value={profile.account_number} /><InfoLine icon={Banknote} label="Salary" value={`${money(profile.salary_amount)} / ${profile.salary_type}`} /><InfoLine icon={Phone} label="Phone" value={profile.phone || "Not set"} /><InfoLine icon={MapPin} label="Address" value={profile.address || "Not set"} /><InfoLine icon={Clock3} label="Weekly hours" value={profile.weekly_hours == null ? "Not set" : String(profile.weekly_hours)} /><InfoLine icon={Clock3} label="Daily hours" value={profile.daily_hours == null ? "Not set" : String(profile.daily_hours)} /></div> : <EmptyState title="No employment profile" description="Attendance and payroll need a linked staff profile." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
           </div>
-          {canManageStaff ? <Card><CardHeader><CardTitle className="text-base">Employment access</CardTitle><CardDescription>Deactivate access without deleting attendance, payroll, or audit history.</CardDescription></CardHeader><CardContent>{staff.is_active === false ? <Button onClick={reactivateStaff}><UserCheck className="mr-2 h-4 w-4" />Reactivate employee</Button> : <Button variant="outline" onClick={deactivateStaff}><UserX className="mr-2 h-4 w-4" />Deactivate employee</Button>}</CardContent></Card> : null}
+          {canManageStaff && !activeRoles.some((role) => role.toLowerCase() === "admin") ? <Card><CardHeader><CardTitle className="text-base">Restaurant membership</CardTitle><CardDescription>Remove restaurant access without disabling the person&apos;s account or deleting attendance, payroll, or audit history.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={removeStaffMembership}><UserX className="mr-2 h-4 w-4" />Remove from restaurant</Button></CardContent></Card> : null}
         </TabsContent>
 
         <TabsContent value="access" className="space-y-5">
@@ -669,7 +657,7 @@ export default function StaffWorkspacePage() {
 
       <Dialog open={Boolean(correctionEntry)} onOpenChange={(open) => { if (!open && !correctionSaving) setCorrectionEntry(null); }}><DialogContent><DialogHeader><DialogTitle>Correct attendance time</DialogTitle><DialogDescription>The record will return to draft and must be reviewed again before payroll.</DialogDescription></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2"><FormField label="Clock in"><Input type="datetime-local" value={correctionForm.clockIn} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockIn: event.target.value }))} /></FormField><FormField label="Clock out"><Input type="datetime-local" value={correctionForm.clockOut} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockOut: event.target.value }))} /></FormField><div className="sm:col-span-2"><FormField label="Correction reason"><Textarea value={correctionForm.reason} onChange={(event) => setCorrectionForm((current) => ({ ...current, reason: event.target.value }))} placeholder="For example: employee forgot to clock out" /></FormField></div></div><DialogFooter><Button variant="outline" disabled={correctionSaving} onClick={() => setCorrectionEntry(null)}>Cancel</Button><Button disabled={correctionSaving} onClick={saveAttendanceCorrection}>{correctionSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save correction</Button></DialogFooter></DialogContent></Dialog>
 
-      <Dialog open={accountOpen} onOpenChange={setAccountOpen}><DialogContent><DialogHeader><DialogTitle>Edit staff account</DialogTitle><DialogDescription>Update the employee&apos;s identity and login email. Roles and permissions are managed from Access.</DialogDescription></DialogHeader><div className="space-y-4 py-2"><div><Label>Full name</Label><Input value={accountForm.name} onChange={(event) => setAccountForm((current) => ({ ...current, name: event.target.value }))} /></div><div><Label>Email</Label><Input type="email" value={accountForm.email} onChange={(event) => setAccountForm((current) => ({ ...current, email: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setAccountOpen(false)}>Cancel</Button><Button onClick={saveAccount} disabled={accountSaving}>{accountSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save account</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={accountOpen} onOpenChange={setAccountOpen}><DialogContent><DialogHeader><DialogTitle>Edit staff account</DialogTitle><DialogDescription>Update the employee&apos;s display name. Login email changes require a separate verified email flow.</DialogDescription></DialogHeader><div className="space-y-4 py-2"><div><Label>Full name</Label><Input value={accountForm.name} onChange={(event) => setAccountForm((current) => ({ ...current, name: event.target.value }))} /></div><div><Label>Email</Label><Input type="email" value={accountForm.email} disabled /><p className="mt-1 text-xs text-muted-foreground">Email is identity-owned and cannot be changed by a restaurant.</p></div></div><DialogFooter><Button variant="outline" onClick={() => setAccountOpen(false)}>Cancel</Button><Button onClick={saveAccount} disabled={accountSaving}>{accountSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save account</Button></DialogFooter></DialogContent></Dialog>
 
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>{profile ? "Edit employment and pay profile" : "Create employment and pay profile"}</DialogTitle><DialogDescription>Salary changes create effective-dated history and can require payroll periods to be split.</DialogDescription></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2"><FormField label="Account number"><Input value={profileForm.account_number} onChange={(event) => setProfileForm((current) => ({ ...current, account_number: event.target.value }))} /></FormField><FormField label="Salary type"><Select value={profileForm.salary_type} onValueChange={(value) => setProfileForm((current) => ({ ...current, salary_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="daily">Daily</SelectItem><SelectItem value="hourly">Hourly</SelectItem></SelectContent></Select></FormField><FormField label="Salary amount"><Input type="number" min="0" step="0.01" value={profileForm.salary_amount} onChange={(event) => setProfileForm((current) => ({ ...current, salary_amount: event.target.value }))} /></FormField><FormField label="Effective from"><Input type="date" value={profileForm.salary_effective_from} onChange={(event) => setProfileForm((current) => ({ ...current, salary_effective_from: event.target.value }))} /></FormField><FormField label="Weekly hours"><Input type="number" min="0" step="0.25" value={profileForm.weekly_hours} onChange={(event) => setProfileForm((current) => ({ ...current, weekly_hours: event.target.value }))} /></FormField><FormField label="Daily hours"><Input type="number" min="0" step="0.25" value={profileForm.daily_hours} onChange={(event) => setProfileForm((current) => ({ ...current, daily_hours: event.target.value }))} /></FormField><FormField label="Phone"><Input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></FormField><FormField label="Age"><Input type="number" min="0" value={profileForm.age} onChange={(event) => setProfileForm((current) => ({ ...current, age: event.target.value }))} /></FormField><div className="sm:col-span-2"><FormField label="Address"><Input value={profileForm.address} onChange={(event) => setProfileForm((current) => ({ ...current, address: event.target.value }))} /></FormField></div><div className="sm:col-span-2"><FormField label="Salary change reason"><Input placeholder={profile ? "Promotion, review, correction…" : "Initial salary"} value={profileForm.salary_change_reason} onChange={(event) => setProfileForm((current) => ({ ...current, salary_change_reason: event.target.value }))} /></FormField></div></div><DialogFooter><Button variant="outline" onClick={() => setProfileOpen(false)}>Cancel</Button><Button onClick={saveProfile} disabled={profileSaving}>{profileSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save profile</Button></DialogFooter></DialogContent></Dialog>
 

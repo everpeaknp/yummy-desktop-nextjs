@@ -35,6 +35,7 @@ interface RestaurantState {
   selectedModule: 'restaurant' | 'hotel' | null;
   fetchRestaurant: (force?: boolean) => Promise<void>;
   setRestaurant: (data: Restaurant) => void;
+  clearRestaurant: () => void;
   setSelectedModule: (module: 'restaurant' | 'hotel' | null) => void;
 }
 
@@ -47,6 +48,7 @@ export const useRestaurant = create<RestaurantState>()(
       error: null,
       
       setRestaurant: (data) => set({ restaurant: data }),
+      clearRestaurant: () => set({ restaurant: null, selectedModule: null, error: null }),
       setSelectedModule: (module) => set({ selectedModule: module }),
 
       fetchRestaurant: async (force = false) => {
@@ -74,10 +76,12 @@ export const useRestaurant = create<RestaurantState>()(
         } catch (err: any) {
           // If the user hasn't created or been assigned a restaurant yet, the backend correctly returns 404.
           // We don't need to log this as a critical error in the console.
-          if (err.response?.status !== 404) {
+          if (err.response?.status === 404) {
+            set({ restaurant: null, selectedModule: null, error: null });
+          } else {
             console.error('Failed to fetch restaurant:', err);
+            set({ error: err.response?.data?.detail || 'Failed to fetch restaurant profile' });
           }
-          set({ error: err.response?.data?.detail || 'Failed to fetch restaurant profile' });
         } finally {
           set({ loading: false });
         }

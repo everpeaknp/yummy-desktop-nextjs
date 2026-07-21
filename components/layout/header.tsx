@@ -153,6 +153,12 @@ export const Header = memo(function Header() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const sidebarItems = useSidebarItems();
+  const identityRoles = [user?.role, user?.primary_role, ...(user?.roles || [])]
+    .map((role) => String(role || "").trim().toLowerCase());
+  const isPlatformIdentity = identityRoles.some((role) =>
+    ["superadmin", "super_admin", "platform_staff"].includes(role)
+  );
+  const canLeaveRestaurant = Boolean(restaurant?.id) && !isPlatformIdentity;
 
   const [isFromManage, setIsFromManage] = useState(false);
 
@@ -269,6 +275,16 @@ export const Header = memo(function Header() {
                 </nav>
               </div>
               <div className="border-t p-4">
+                {canLeaveRestaurant && (
+                  <Link
+                    href="/leave-restaurant"
+                    onClick={() => setOpen(false)}
+                    className="mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-base font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+                  >
+                    <Store className="h-5 w-5" />
+                    Leave restaurant
+                  </Link>
+                )}
                 <button
                   onClick={() => {
                     logout();
@@ -325,6 +341,11 @@ export const Header = memo(function Header() {
 
         <div className="h-6 w-px bg-border mx-1 hidden md:block" />
         <div className="flex items-center gap-2 pl-1">
+          {canLeaveRestaurant && (
+            <Button variant="ghost" size="sm" asChild className="hidden text-muted-foreground md:inline-flex">
+              <Link href="/leave-restaurant">Leave restaurant</Link>
+            </Button>
+          )}
           <div className="relative h-8 w-8 min-w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-border/50">
             {restaurant?.profile_picture ? (
                <Image src={getImageUrl(restaurant.profile_picture)} alt="Profile" className="object-cover" fill unoptimized />
