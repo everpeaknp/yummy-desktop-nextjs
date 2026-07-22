@@ -37,11 +37,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { ImageService } from "@/services/image-service";
 import { addMembershipEventListener } from "@/lib/restaurant-membership";
+import { canAccessOnboarding } from "@/lib/onboarding";
+import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
+  CardDescription,  
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -49,18 +51,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-
-const LocationPicker = dynamic(
-  () => import("@/components/manage/profile/location-picker"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex min-h-[400px] items-center justify-center rounded-2xl border bg-muted/30">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
-    ),
-  },
-);
 
 type OnboardingMode = "choice" | "create" | "join";
 type RequestItem = {
@@ -781,157 +771,30 @@ export default function OnboardingPage() {
         )}
 
         {mode === "create" && (
-          <section className="mx-auto max-w-5xl pb-12">
-            <Button variant="ghost" className="mb-4" onClick={() => setMode("choice")}>
+          <section className="space-y-4 pb-12">
+            <Button variant="ghost" className="mb-0" onClick={() => setMode("choice")}>
               <ArrowLeft className="mr-2 h-4 w-4" /> Back to options
             </Button>
-            <Card className="overflow-hidden rounded-3xl border-0 shadow-2xl">
-              <div className="border-b bg-muted/30 px-6 py-6 md:px-10">
-                <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-                  <div>
-                    <p className="text-sm font-semibold text-primary">Step {step + 1} of {steps.length}</p>
-                    <h1 className="mt-1 text-2xl font-black md:text-3xl">Let&apos;s set up your restaurant</h1>
-                    <p className="mt-2 text-muted-foreground">{steps[step]}</p>
-                  </div>
-                  <div className="flex min-w-64 gap-2">
-                    {steps.map((label, index) => (
-                      <div key={label} className="flex-1">
-                        <div className={`h-2 rounded-full ${index <= step ? "bg-primary" : "bg-muted"}`} />
-                        <p className={`mt-2 hidden text-xs md:block ${index === step ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{label}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <CardContent className="p-6 md:p-10">
-                {step === 0 && (
-                  <div className="space-y-8">
-                    <div>
-                      <h2 className="text-xl font-bold">Business profile</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">These details identify your business throughout Yummy and on receipts.</p>
-                    </div>
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <div className="space-y-2 md:col-span-2">
-                        <Label htmlFor="restaurant-name">Restaurant name *</Label>
-                        <Input id="restaurant-name" autoFocus value={restaurant.name} onChange={(event) => updateRestaurant("name", event.target.value)} placeholder="e.g. Yummy Bistro" className={fieldClass(Boolean(errors.name))} />
-                        {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="business-phone">Business phone *</Label>
-                        <Input id="business-phone" type="tel" value={restaurant.phone} onChange={(event) => updateRestaurant("phone", event.target.value)} placeholder="e.g. +977 98XXXXXXXX" className={fieldClass(Boolean(errors.phone))} />
-                        {errors.phone && <p className="text-xs text-destructive">{errors.phone}</p>}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="pan-number">PAN / VAT number</Label>
-                        <Input id="pan-number" value={restaurant.pan_number} onChange={(event) => updateRestaurant("pan_number", event.target.value)} placeholder="Optional tax registration number" />
-                      </div>
-                      <div className="space-y-2 md:col-span-2">
-                        <div className="flex items-center justify-between"><Label htmlFor="description">About the business *</Label><span className="text-xs text-muted-foreground">{restaurant.description.length}/200</span></div>
-                        <Textarea id="description" rows={4} maxLength={200} value={restaurant.description} onChange={(event) => updateRestaurant("description", event.target.value)} placeholder="Tell us about your cuisine, service and atmosphere…" className={fieldClass(Boolean(errors.description))} />
-                        {errors.description && <p className="text-xs text-destructive">{errors.description}</p>}
-                      </div>
-                      <div className="space-y-3 md:col-span-2">
-                        <div><Label>Restaurant branding</Label><p className="mt-1 text-xs text-muted-foreground">Optional now; both can be changed later. Image files are uploaded only when you create the restaurant.</p></div>
-                        <div className="grid gap-4 sm:grid-cols-[180px_1fr]">
-                          <label className="group flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-muted/20 text-center transition hover:border-primary/50 hover:bg-primary/5">
-                            {logoPreview ? <div className="h-28 w-28 rounded-2xl bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${logoPreview})` }} /> : <><ImageIcon className="h-7 w-7 text-primary" /><span className="mt-2 text-sm font-semibold">Add logo</span><span className="text-xs text-muted-foreground">Square works best</span></>}
-                            <input className="sr-only" type="file" accept="image/*" onChange={(event) => selectBrandFile(event.target.files?.[0], "logo")} />
-                          </label>
-                          <label className="group flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-muted/20 text-center transition hover:border-primary/50 hover:bg-primary/5">
-                            {coverPreview ? <div className="h-40 w-full bg-cover bg-center" style={{ backgroundImage: `url(${coverPreview})` }} /> : <><Camera className="h-7 w-7 text-primary" /><span className="mt-2 text-sm font-semibold">Add cover photo</span><span className="text-xs text-muted-foreground">Landscape, up to 5 MB</span></>}
-                            <input className="sr-only" type="file" accept="image/*" onChange={(event) => selectBrandFile(event.target.files?.[0], "cover")} />
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {step === 1 && (
-                  <div className="space-y-7">
-                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                      <div><h2 className="text-xl font-bold">Location and business clock</h2><p className="mt-1 text-sm text-muted-foreground">Pin the correct location so timezone-sensitive orders and reports stay accurate.</p></div>
-                      <Button variant="outline" onClick={useCurrentLocation} disabled={locating}>{locating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LocateFixed className="mr-2 h-4 w-4" />}Use current location</Button>
-                    </div>
-                    <div className="space-y-2"><Label htmlFor="address">Restaurant address *</Label><div className="relative"><MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input id="address" value={restaurant.address} onChange={(event) => updateRestaurant("address", event.target.value)} placeholder="Street, city, district" className={`pl-9 ${fieldClass(Boolean(errors.address))}`} /></div>{errors.address && <p className="text-xs text-destructive">{errors.address}</p>}</div>
-                    <LocationPicker latitude={restaurant.latitude} longitude={restaurant.longitude} onChange={handleLocationChange} />
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <div className="space-y-2"><Label htmlFor="timezone">Timezone *</Label><Input id="timezone" value={restaurant.timezone} onChange={(event) => updateRestaurant("timezone", event.target.value)} className={fieldClass(Boolean(errors.timezone))} /><p className="text-xs text-muted-foreground">Detected from this browser. Use an IANA timezone such as Asia/Kathmandu.</p>{errors.timezone && <p className="text-xs text-destructive">{errors.timezone}</p>}</div>
-                      <div className="space-y-2"><Label htmlFor="business-day"><Clock3 className="mr-1 inline h-4 w-4" />Business day starts at *</Label><Input id="business-day" type="time" value={restaurant.business_day_start_time} onChange={(event) => updateRestaurant("business_day_start_time", event.target.value)} className={fieldClass(Boolean(errors.business_day_start_time))} /><p className="text-xs text-muted-foreground">Orders before this time count toward the previous business day.</p>{errors.business_day_start_time && <p className="text-xs text-destructive">{errors.business_day_start_time}</p>}</div>
-                    </div>
-                  </div>
-                )}
-
-                {step === 2 && (
-                  <div className="space-y-8">
-                    <div><h2 className="text-xl font-bold">Choose how you operate</h2><p className="mt-1 text-sm text-muted-foreground">Start with sensible defaults. Every choice remains editable in Settings.</p></div>
-
-                    <section className="space-y-3">
-                      <div><h3 className="font-semibold">Business modules</h3><p className="text-sm text-muted-foreground">Enable the workspaces your team will use.</p></div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <ToggleCard icon={UtensilsCrossed} title="Restaurant POS" description="Tables, orders, kitchen and billing" checked={restaurant.restaurant_enabled} onChange={(checked) => updateRestaurant("restaurant_enabled", checked)} />
-                        <ToggleCard icon={Hotel} title="Hotel" description="Rooms, stays and hotel operations" checked={restaurant.hotel_enabled} onChange={(checked) => updateRestaurant("hotel_enabled", checked)} />
-                      </div>
-                      {errors.modules && <p className="text-xs text-destructive">{errors.modules}</p>}
-                    </section>
-
-                    <section className="space-y-3">
-                      <div><h3 className="font-semibold">Payments</h3><p className="text-sm text-muted-foreground">Choose the methods available when settling a bill.</p></div>
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <ToggleCard icon={BanknoteIcon} title="Cash" description="Cash drawer payments" checked={restaurant.accept_cash} onChange={(checked) => updateRestaurant("accept_cash", checked)} compact />
-                        <ToggleCard icon={CreditCard} title="Card" description="Terminal or card provider" checked={restaurant.accept_card} onChange={(checked) => updateRestaurant("accept_card", checked)} compact />
-                        <ToggleCard icon={QrCode} title="QR / digital" description="Static merchant QR" checked={restaurant.accept_qr} onChange={(checked) => updateRestaurant("accept_qr", checked)} compact />
-                      </div>
-                      {errors.payment_methods && <p className="text-xs text-destructive">{errors.payment_methods}</p>}
-                      {restaurant.accept_card && <div className="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2"><div className="space-y-2"><Label>Card provider *</Label><Input value={restaurant.card_name} onChange={(event) => updateRestaurant("card_name", event.target.value)} placeholder="e.g. Visa / terminal 1" className={fieldClass(Boolean(errors.card_name))} />{errors.card_name && <p className="text-xs text-destructive">{errors.card_name}</p>}</div><div className="space-y-2"><Label>Terminal identifier</Label><Input value={restaurant.card_identifier} onChange={(event) => updateRestaurant("card_identifier", event.target.value)} placeholder="Optional merchant or terminal ID" /></div></div>}
-                      {restaurant.accept_qr && <div className="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2"><div className="space-y-2"><Label>QR provider *</Label><Input value={restaurant.qr_name} onChange={(event) => updateRestaurant("qr_name", event.target.value)} placeholder="e.g. Fonepay" className={fieldClass(Boolean(errors.qr_name))} />{errors.qr_name && <p className="text-xs text-destructive">{errors.qr_name}</p>}</div><div className="space-y-2"><Label>Merchant payload or link *</Label><Input value={restaurant.qr_payload} onChange={(event) => updateRestaurant("qr_payload", event.target.value)} placeholder="Paste the QR contents" className={fieldClass(Boolean(errors.qr_payload))} />{errors.qr_payload && <p className="text-xs text-destructive">{errors.qr_payload}</p>}</div></div>}
-                    </section>
-
-                    <section className="grid gap-4 lg:grid-cols-2">
-                      <div className="space-y-3 rounded-2xl border p-4">
-                        <div className="flex items-center justify-between gap-4"><div><h3 className="font-semibold">Tax calculation</h3><p className="text-sm text-muted-foreground">Allow configured taxes on eligible bills.</p></div><Switch checked={restaurant.tax_enabled} onCheckedChange={(checked) => updateRestaurant("tax_enabled", checked)} /></div>
-                        <div className="flex items-center justify-between gap-4"><div><h3 className="font-semibold">Kitchen tickets</h3><p className="text-sm text-muted-foreground">Create KOTs for food preparation.</p></div><Switch checked={restaurant.kot_enabled} onCheckedChange={(checked) => updateRestaurant("kot_enabled", checked)} /></div>
-                      </div>
-                      <div className="space-y-3 rounded-2xl border p-4">
-                        <div className="flex items-center justify-between gap-4"><div><h3 className="font-semibold">Logo on receipt</h3><p className="text-sm text-muted-foreground">Use your brand in the receipt header.</p></div><Switch checked={restaurant.receipt_show_logo} onCheckedChange={(checked) => updateRestaurant("receipt_show_logo", checked)} /></div>
-                        <div className="flex items-center justify-between gap-4"><div><h3 className="font-semibold">PAN on receipt</h3><p className="text-sm text-muted-foreground">Show the tax registration number.</p></div><Switch checked={restaurant.receipt_show_pan} onCheckedChange={(checked) => updateRestaurant("receipt_show_pan", checked)} /></div>
-                      </div>
-                      <div className="space-y-2 lg:col-span-2"><Label htmlFor="receipt-footer">Receipt footer</Label><Input id="receipt-footer" value={restaurant.receipt_footer} onChange={(event) => updateRestaurant("receipt_footer", event.target.value)} maxLength={100} placeholder="A short thank-you message" /></div>
-                    </section>
-                  </div>
-                )}
-
-                {step === 3 && (
-                  <div className="space-y-7">
-                    <div><h2 className="text-xl font-bold">Review your restaurant</h2><p className="mt-1 text-sm text-muted-foreground">Confirm the essentials before Yummy builds your workspace.</p></div>
-                    <div className="rounded-2xl border bg-muted/25 p-5">
-                      <h3 className="font-bold">Restaurant details</h3>
-                      <div className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
-                        <ReviewItem label="Business" value={restaurant.name} />
-                        <ReviewItem label="Phone" value={restaurant.phone} />
-                        <ReviewItem label="Address" value={restaurant.address} />
-                        <ReviewItem label="Timezone" value={restaurant.timezone} />
-                        <ReviewItem label="Business day" value={restaurant.business_day_start_time} />
-                        <ReviewItem label="Map pin" value={restaurant.latitude && restaurant.longitude ? `${restaurant.latitude}, ${restaurant.longitude}` : "Not set"} />
-                        <ReviewItem label="PAN / VAT" value={restaurant.pan_number || "Not set"} />
-                        <ReviewItem label="Modules" value={[restaurant.restaurant_enabled && "Restaurant", restaurant.hotel_enabled && "Hotel"].filter(Boolean).join(" + ")} />
-                        <ReviewItem label="Payments" value={[restaurant.accept_cash && "Cash", restaurant.accept_card && "Card", restaurant.accept_qr && "QR"].filter(Boolean).join(", ")} />
-                        <ReviewItem label="Operations" value={`${restaurant.tax_enabled ? "Tax on" : "Tax off"} · ${restaurant.kot_enabled ? "KOT on" : "KOT off"}`} />
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3 rounded-2xl border bg-muted/20 p-4"><FileText className="mt-0.5 h-5 w-5 text-primary" /><div><p className="font-semibold">Receipt preference</p><p className="text-sm text-muted-foreground">{restaurant.receipt_show_logo ? "Logo shown" : "No logo"} · {restaurant.receipt_show_pan ? "PAN shown" : "PAN hidden"} · {restaurant.receipt_footer || "No custom footer"}</p></div></div>
-                    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm"><ShieldCheck className="mr-2 inline h-4 w-4 text-primary" />You will receive administrator access for this restaurant.</div>
-                  </div>
-                )}
-
-                <div className="mt-10 flex items-center justify-between border-t pt-6">
-                  <div className="flex items-center gap-2"><Button variant="outline" disabled={step === 0 || creating} onClick={() => setStep((current) => Math.max(0, current - 1))}><ArrowLeft className="mr-2 h-4 w-4" />Previous</Button><Button variant="ghost" className="text-muted-foreground" disabled={creating} onClick={discardDraft}><Trash2 className="mr-2 h-4 w-4" />Discard draft</Button></div>
-                  {step < steps.length - 1 ? <Button onClick={nextStep}>Continue <ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button size="lg" disabled={creating} onClick={() => void createRestaurant()}>{creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Create restaurant</Button>}
-                </div>
-                {draftSavedAt && <p className="mt-3 text-right text-xs text-muted-foreground">Draft saved locally at {draftSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Branding files are uploaded only at creation.</p>}
-              </CardContent>
-            </Card>
+            {canAccessOnboarding(user) ? (
+              <OnboardingWizard
+                initialEmail={user?.email || ""}
+                replay={false}
+                restaurantId={user?.restaurant_id ?? null}
+                initialRestaurant={null}
+              />
+            ) : (
+              <Card className="rounded-3xl border-0 shadow-xl">
+                <CardHeader>
+                  <CardTitle>Admin access required</CardTitle>
+                  <CardDescription>
+                    Creating a restaurant is limited to admin, owner, or manager accounts. Join an existing restaurant instead.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button onClick={() => setMode("join")}>Join a restaurant</Button>
+                </CardContent>
+              </Card>
+            )}
           </section>
         )}
 
