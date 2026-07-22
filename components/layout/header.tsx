@@ -383,14 +383,18 @@ export const Header = memo(function Header() {
           <div className="relative h-8 w-8 min-w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-border/50">
             {restaurant?.profile_picture ? (
                <Image src={getImageUrl(restaurant.profile_picture)} alt="Profile" className="object-cover" fill unoptimized />
-            ) : user?.full_name ? (
+            ) : user?.full_name && !user.full_name.includes("@") ? (
               <span className="text-xs font-bold">{user.full_name.charAt(0).toUpperCase()}</span>
             ) : (
               <User className="h-5 w-5" />
             )}
           </div>
           <div className="hidden md:block">
-            <p className="text-sm font-medium leading-tight">{user?.full_name || "Admin User"}</p>
+            <p className="text-sm font-medium leading-tight">
+              {user?.full_name && !user.full_name.includes("@")
+                ? user.full_name
+                : "Admin User"}
+            </p>
             <p className="text-xs text-muted-foreground leading-tight">{getVisibleRoleLabels(user)}</p>
           </div>
         </div>

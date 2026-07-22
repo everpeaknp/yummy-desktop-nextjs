@@ -87,12 +87,72 @@
 }
 
 @layer base {
+  html {
+    scrollbar-gutter: stable;
+  }
+
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Prevent Radix select/dialog scroll-lock from shifting the page sideways */
+  body[data-scroll-locked] {
+    margin-right: 0 !important;
+    padding-right: 0 !important;
   }
 }
 
 @layer utilities {
+  @keyframes onboarding-float-a {
+    0%,
+    100% {
+      transform: translate(0, 0);
+    }
+    50% {
+      transform: translate(4px, -6px);
+    }
+  }
+
+  @keyframes onboarding-float-b {
+    0%,
+    100% {
+      transform: translate(0, 0);
+    }
+    50% {
+      transform: translate(-5px, 4px);
+    }
+  }
+
+  @keyframes onboarding-float-c {
+    0%,
+    100% {
+      transform: translate(0, 0);
+    }
+    50% {
+      transform: translate(3px, 5px);
+    }
+  }
+
+  .animate-onboarding-float-a {
+    animation: onboarding-float-a 7s ease-in-out infinite;
+  }
+
+  .animate-onboarding-float-b {
+    animation: onboarding-float-b 8.5s ease-in-out infinite;
+  }
+
+  .animate-onboarding-float-c {
+    animation: onboarding-float-c 6.5s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-onboarding-float-a,
+    .animate-onboarding-float-b,
+    .animate-onboarding-float-c {
+      animation: none;
+    }
+  }
+
   .sidebar-scroll {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--primary) / 0.55) hsl(var(--muted) / 0.35);

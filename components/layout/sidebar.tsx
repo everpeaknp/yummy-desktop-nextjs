@@ -510,15 +510,22 @@ export function Sidebar() {
                 collapsed ? "justify-center" : "gap-3"
               )}>
                 <div className="h-9 w-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0 text-sm">
-                  {user?.full_name?.substring(0, 2)?.toUpperCase() || "US"}
+                  {(user?.full_name && !user.full_name.includes("@")
+                    ? user.full_name
+                    : "User"
+                  )
+                    .substring(0, 2)
+                    .toUpperCase()}
                 </div>
                 {!collapsed && (
                   <div className="flex-1 min-w-0 flex flex-col justify-center text-left">
                     <div className="font-semibold text-sm truncate text-foreground leading-none mb-1">
-                      {user?.full_name || "User"}
+                      {user?.full_name && !user.full_name.includes("@")
+                        ? user.full_name
+                        : "User"}
                     </div>
-                    <div className="text-[11px] text-muted-foreground truncate leading-none">
-                      @{user?.email?.split('@')[0] || "user"}
+                    <div className="text-[11px] text-muted-foreground truncate leading-none capitalize">
+                      {user?.role || user?.roles?.[0] || "Staff"}
                     </div>
                   </div>
                 )}
@@ -527,12 +534,22 @@ export function Sidebar() {
             <DropdownMenuContent side="right" align="end" sideOffset={16} className="w-[300px] p-2 rounded-2xl mb-2">
               <div className="flex items-center gap-3 p-2 mb-1">
                 <div className="h-12 w-12 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xl shrink-0">
-                  {user?.full_name?.substring(0, 2)?.toUpperCase() || "US"}
+                  {(user?.full_name && !user.full_name.includes("@")
+                    ? user.full_name
+                    : "User"
+                  )
+                    .substring(0, 2)
+                    .toUpperCase()}
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="font-bold text-[15px] truncate text-foreground">{user?.full_name || "User"}</span>
-                  <span className="text-xs text-muted-foreground truncate leading-snug">@{user?.email?.split('@')[0] || "user"}</span>
-                  <span className="text-[11px] text-foreground truncate mt-0.5">{user?.email || "user@example.com"}</span>
+                  <span className="font-bold text-[15px] truncate text-foreground">
+                    {user?.full_name && !user.full_name.includes("@")
+                      ? user.full_name
+                      : "User"}
+                  </span>
+                  <span className="text-xs text-muted-foreground truncate leading-snug capitalize">
+                    {user?.role || user?.roles?.[0] || "Staff"}
+                  </span>
                 </div>
               </div>
               

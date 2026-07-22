@@ -4,24 +4,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
-  Bed,
+  ArrowLeft,
   Camera,
   Check,
   ChefHat,
   Coffee,
+  ConciergeBell,
+  CookingPot,
   CreditCard,
-  Layers,
+  CupSoda,
+  IceCreamCone,
   Loader2,
   Map,
   Maximize2,
   Minimize2,
   Moon,
+  Pizza,
   Smartphone,
+  Soup,
   Store,
   Sun,
   Upload,
   UtensilsCrossed,
   Wallet,
+  Wine,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -134,6 +140,8 @@ function draftFromRestaurant(
         : hotelEnabled
           ? "hotel"
           : "restaurant",
+    taxEnabled: r.tax_enabled == null ? prev.taxEnabled : Boolean(r.tax_enabled),
+    kotEnabled: r.kot_enabled == null ? prev.kotEnabled : Boolean(r.kot_enabled),
   };
 }
 
@@ -141,7 +149,6 @@ const STEP_LABELS = [
   "Workspace",
   "Restaurant details",
   "Business type",
-  "Operating hours",
   "Service setup",
   "Review and finish",
 ] as const;
@@ -154,8 +161,8 @@ const BUSINESS_ICONS = {
 
 const WORKSPACE_ICONS = {
   restaurant: UtensilsCrossed,
-  hotel: Bed,
-  both: Layers,
+  hotel: ConciergeBell,
+  both: Soup,
 } as const;
 
 const PAYMENT_ICONS = {
@@ -163,6 +170,64 @@ const PAYMENT_ICONS = {
   card: CreditCard,
   digital_wallet: Smartphone,
 } as const;
+
+/** Soft decorative food icons for the onboarding sidebar (bottom/edge only). */
+const SIDEBAR_DECOR = [
+  {
+    Icon: UtensilsCrossed,
+    wrapClassName: "bottom-[7%] right-[8%] animate-onboarding-float-a",
+    iconClassName: "h-12 w-12 rotate-[8deg] text-white/30 blur-[3px]",
+    style: { animationDelay: "0s" },
+  },
+  {
+    Icon: ChefHat,
+    wrapClassName: "bottom-[22%] right-[18%] animate-onboarding-float-b",
+    iconClassName: "h-10 w-10 -rotate-[6deg] text-white/28 blur-[3px]",
+    style: { animationDelay: "0.8s" },
+  },
+  {
+    Icon: Pizza,
+    wrapClassName: "bottom-[10%] right-[38%] animate-onboarding-float-c",
+    iconClassName: "h-11 w-11 -rotate-[9deg] text-white/26 blur-[3px]",
+    style: { animationDelay: "1.4s" },
+  },
+  {
+    Icon: Coffee,
+    wrapClassName: "bottom-[34%] right-[6%] animate-onboarding-float-a",
+    iconClassName: "h-8 w-8 rotate-[7deg] text-white/24 blur-[2px]",
+    style: { animationDelay: "2.1s" },
+  },
+  {
+    Icon: Wine,
+    wrapClassName: "bottom-[28%] right-[42%] animate-onboarding-float-b",
+    iconClassName: "h-7 w-7 -rotate-[8deg] text-white/22 blur-[3px]",
+    style: { animationDelay: "0.4s" },
+  },
+  {
+    Icon: CookingPot,
+    wrapClassName: "bottom-[4%] right-[58%] animate-onboarding-float-c",
+    iconClassName: "h-9 w-9 rotate-[-5deg] text-white/25 blur-[3px]",
+    style: { animationDelay: "1.8s" },
+  },
+  {
+    Icon: IceCreamCone,
+    wrapClassName: "bottom-[18%] right-[62%] animate-onboarding-float-a",
+    iconClassName: "h-6 w-6 rotate-[10deg] text-white/22 blur-[2px]",
+    style: { animationDelay: "2.6s" },
+  },
+  {
+    Icon: CupSoda,
+    wrapClassName: "bottom-[8%] left-[10%] animate-onboarding-float-b",
+    iconClassName: "h-7 w-7 -rotate-[7deg] text-white/20 blur-[2px]",
+    style: { animationDelay: "1.1s" },
+  },
+  {
+    Icon: Store,
+    wrapClassName: "bottom-[40%] right-[28%] animate-onboarding-float-c",
+    iconClassName: "h-6 w-6 rotate-[4deg] text-white/20 blur-[2px]",
+    style: { animationDelay: "0.6s" },
+  },
+] as const;
 
 function extractError(err: unknown): string {
   const anyErr = err as any;
@@ -179,11 +244,15 @@ export function OnboardingWizard({
   replay = false,
   restaurantId = null,
   initialRestaurant = null,
+  onBackToOptions,
+  embedded = false,
 }: {
   initialEmail?: string;
   replay?: boolean;
   restaurantId?: number | null;
   initialRestaurant?: Record<string, unknown> | null;
+  onBackToOptions?: () => void;
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -220,6 +289,27 @@ export function OnboardingWizard({
   const logoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const prefilledRef = useRef<number | "store" | null>(null);
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    html.style.overflow = "auto";
+    body.style.overflow = "auto";
+    body.style.position = "";
+    body.style.height = "";
+    body.style.top = "";
+    body.style.width = "";
+    body.style.pointerEvents = "";
+    body.removeAttribute("data-scroll-locked");
+    return () => {
+      html.style.overflow = "";
+      body.style.overflow = "";
+    };
+  }, []);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [step]);
 
   // Replay: sync current restaurant profile into the form
   useEffect(() => {
@@ -466,16 +556,6 @@ export function OnboardingWizard({
         errors.address = "Enter a fuller address (street, area, city…).";
       }
 
-      if (!draft.timezone.trim()) {
-        errors.timezone = "Timezone is required.";
-      }
-
-      if (!draft.businessDayStartTime.trim()) {
-        errors.businessDayStartTime = "Business day start time is required.";
-      } else if (!/^\d{2}:\d{2}$/.test(draft.businessDayStartTime.trim())) {
-        errors.businessDayStartTime = "Enter a valid time.";
-      }
-
       const lat = draft.latitude.trim();
       const lng = draft.longitude.trim();
       if ((lat && !lng) || (!lat && lng)) {
@@ -491,35 +571,27 @@ export function OnboardingWizard({
       }
     }
 
-    if (step === 2 && draft.workspace !== "hotel") {
-      if (!draft.businessType) {
+    if (step === 2) {
+      if (draft.workspace !== "hotel" && !draft.businessType) {
         errors.businessType = "Please select a business type.";
       }
     }
 
     if (step === 3) {
-      const openDays = draft.hours.filter((h) => h.isOpen);
-      if (openDays.length === 0) {
-        errors.hours = "Open at least one day.";
-      } else {
-        for (const row of openDays) {
-          if (!row.open || !row.close) {
-            errors.hours = `Set open and close times for ${row.day}.`;
-            break;
-          }
-          if (row.open === row.close) {
-            errors.hours = `${row.day}: close time must differ from open time.`;
-            break;
-          }
-        }
+      if (!draft.timezone.trim()) {
+        errors.timezone = "Timezone is required.";
       }
-    }
 
-    if (step === 4) {
+      if (!draft.businessDayStartTime.trim()) {
+        errors.businessDayStartTime = "Business day start time is required.";
+      } else if (!/^\d{2}:\d{2}$/.test(draft.businessDayStartTime.trim())) {
+        errors.businessDayStartTime = "Enter a valid time.";
+      }
+
       if (!draft.currency) {
         errors.currency = "Currency is required.";
       }
-      if (draft.taxRate < 0 || draft.taxRate > 100) {
+      if (draft.taxEnabled && (draft.taxRate < 0 || draft.taxRate > 100)) {
         errors.taxRate = "Tax rate must be between 0 and 100.";
       }
       if (!Number.isFinite(draft.orderStart) || draft.orderStart < 1) {
@@ -586,12 +658,14 @@ export function OnboardingWizard({
 
   const finishSetup = async (skipped: boolean) => {
     if (submitting) return;
+    // First registration must complete every step — skip is replay-only ("Back to settings").
+    if (!replay && skipped) return;
     setSubmitting(true);
     try {
       if (replay) {
         if (skipped) {
-          toast.success("Returned to settings");
-          router.replace("/manage");
+          toast.success("Returned to dashboard");
+          router.replace("/dashboard");
           return;
         }
 
@@ -604,11 +678,37 @@ export function OnboardingWizard({
         const profile = buildProfilePayload();
         await apiClient.put(RestaurantApis.update(id), {
           ...profile,
-          tax_enabled: draft.taxRate > 0,
+          tax_enabled: draft.taxEnabled,
+          kot_enabled: draft.kotEnabled,
           restaurant_enabled: flags.restaurant_enabled,
           hotel_enabled: flags.hotel_enabled,
           payment_cards: paymentCardsFromSelection(draft.payments),
         });
+
+        try {
+          const templateResponse = await apiClient.get(RestaurantApis.getTemplates(id));
+          const receiptTemplate = (templateResponse.data?.data?.receipt_template || []) as Array<
+            Record<string, unknown>
+          >;
+          const configured = receiptTemplate.map((block) => {
+            if (block.type === "header") {
+              return {
+                ...block,
+                show_logo: draft.receiptShowLogo,
+                show_pan: draft.receiptShowPan,
+              };
+            }
+            if (block.type === "footer") {
+              return { ...block, message: draft.receiptFooter.trim() };
+            }
+            return block;
+          });
+          await apiClient.put(RestaurantApis.updateTemplates(id), {
+            receipt_template: configured,
+          });
+        } catch (err) {
+          console.warn("[onboarding] receipt template update skipped", err);
+        }
 
         saveOnboardingHours(draft.hours);
         await fetchRestaurant(true);
@@ -622,8 +722,8 @@ export function OnboardingWizard({
 
       const createRes = await apiClient.post(RestaurantApis.create, {
         ...profile,
-        tax_enabled: draft.taxRate > 0,
-        kot_enabled: true,
+        tax_enabled: draft.taxEnabled,
+        kot_enabled: draft.kotEnabled,
         restaurant_enabled: flags.restaurant_enabled,
         hotel_enabled: flags.hotel_enabled,
         payment_cards: paymentCardsFromSelection(draft.payments),
@@ -675,7 +775,7 @@ export function OnboardingWizard({
 
       // Best-effort extras — do not block finishing setup
       try {
-        if (flags.restaurant_enabled && draft.taxRate > 0) {
+        if (flags.restaurant_enabled && draft.taxEnabled && draft.taxRate > 0) {
           await apiClient.post(TaxConfigApis.create, {
             name: "VAT",
             rate: Number(draft.taxRate),
@@ -687,6 +787,31 @@ export function OnboardingWizard({
         }
       } catch (err) {
         console.warn("[onboarding] tax create skipped", err);
+      }
+
+      try {
+        const templateResponse = await apiClient.get(RestaurantApis.getTemplates(created.id));
+        const receiptTemplate = (templateResponse.data?.data?.receipt_template || []) as Array<
+          Record<string, unknown>
+        >;
+        const configured = receiptTemplate.map((block) => {
+          if (block.type === "header") {
+            return {
+              ...block,
+              show_logo: draft.receiptShowLogo,
+              show_pan: draft.receiptShowPan,
+            };
+          }
+          if (block.type === "footer") {
+            return { ...block, message: draft.receiptFooter.trim() };
+          }
+          return block;
+        });
+        await apiClient.put(RestaurantApis.updateTemplates(created.id), {
+          receipt_template: configured,
+        });
+      } catch (err) {
+        console.warn("[onboarding] receipt template update skipped", err);
       }
 
       if (
@@ -774,7 +899,21 @@ export function OnboardingWizard({
             ? "Not applicable"
             : String(draft.tables || 0),
       },
-      { label: "Tax rate", value: `${draft.taxRate || 0}%` },
+      {
+        label: "Tax",
+        value: draft.taxEnabled ? `${draft.taxRate || 0}%` : "Disabled",
+      },
+      { label: "Kitchen tickets", value: draft.kotEnabled ? "On" : "Off" },
+      {
+        label: "Receipt",
+        value: [
+          draft.receiptShowLogo ? "Logo" : null,
+          draft.receiptShowPan ? "PAN" : null,
+          draft.receiptFooter.trim() || null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "Defaults",
+      },
       {
         label: "Payment methods",
         value:
@@ -788,16 +927,45 @@ export function OnboardingWizard({
   );
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,hsl(var(--primary)/0.14),transparent_45%),radial-gradient(ellipse_at_bottom_right,hsl(var(--primary)/0.08),transparent_40%)] dark:bg-[radial-gradient(ellipse_at_top_left,hsl(var(--primary)/0.18),transparent_40%),radial-gradient(ellipse_at_bottom_right,hsl(var(--primary)/0.08),transparent_45%)]" />
+    <div className="relative w-full bg-transparent">
+      <div className="relative z-10 mx-auto w-full max-w-[1100px] px-4 pb-16 pt-2 sm:px-6 md:px-8">
+        <div className="grid w-full items-stretch overflow-hidden rounded-2xl bg-card shadow-2xl shadow-primary/10 sm:rounded-3xl md:grid-cols-[260px_minmax(0,1fr)] lg:grid-cols-[280px_minmax(0,1fr)]">
+          <aside
+            className="relative hidden h-auto min-h-full self-stretch overflow-hidden p-7 text-white md:block"
+            style={{
+              backgroundImage:
+                "linear-gradient(165deg, #FF6A00 0%, #FF4E12 48%, #FF3D2E 100%)",
+            }}
+          >
+            {/* Soft depth — clean premium wash, no clutter */}
+            <div
+              className="pointer-events-none absolute inset-0"
+              aria-hidden
+              style={{
+                backgroundImage:
+                  "radial-gradient(ellipse 80% 50% at 20% 0%, rgba(255,255,255,0.18), transparent 55%), radial-gradient(ellipse 70% 55% at 100% 100%, rgba(0,0,0,0.12), transparent 50%)",
+              }}
+            />
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1100px] items-center justify-center p-0 sm:p-6 md:p-8">
-        <div className="grid w-full overflow-hidden rounded-none border-border bg-card shadow-2xl shadow-primary/10 sm:rounded-3xl sm:border md:grid-cols-[280px_1fr] lg:grid-cols-[300px_1fr]">
-          <aside className="relative hidden overflow-hidden bg-gradient-to-br from-primary via-primary to-primary/80 p-8 text-primary-foreground md:block">
-            <div className="pointer-events-none absolute -bottom-16 -right-16 h-56 w-56 rounded-full bg-white/10" />
-            <div className="relative z-10">
-              <div className="mb-10 flex items-center gap-3">
-                <div className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl bg-white shadow-lg">
+            {/* Decorative restaurant icons — bottom & edges only */}
+            <div className="pointer-events-none absolute inset-0" aria-hidden>
+              {SIDEBAR_DECOR.map(({ Icon, wrapClassName, iconClassName, style }, index) => (
+                <div
+                  key={index}
+                  className={cn(
+                    "absolute will-change-transform drop-shadow-[0_0_8px_rgba(255,255,255,0.18)]",
+                    wrapClassName
+                  )}
+                  style={style}
+                >
+                  <Icon className={iconClassName} strokeWidth={1.35} />
+                </div>
+              ))}
+            </div>
+
+            <div className="relative z-10 flex h-full flex-col">
+              <div className="mb-8 flex items-center gap-3">
+                <div className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl bg-white shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
                   <Image
                     src="/logos/yummy_logo.png"
                     alt="Yummy"
@@ -807,16 +975,16 @@ export function OnboardingWizard({
                     unoptimized
                   />
                 </div>
-                <span className="text-xl font-extrabold tracking-tight">Yummy</span>
+                <span className="font-onboarding text-xl font-medium tracking-[-0.03em] text-white">Yummy</span>
               </div>
-              <h1 className="text-3xl font-extrabold leading-tight tracking-tight">
+              <h1 className="font-onboarding text-2xl font-medium leading-[1.15] tracking-[-0.03em] text-white lg:text-[2rem]">
                 Set up your restaurant in minutes.
               </h1>
-              <p className="mt-3 text-sm leading-relaxed text-primary-foreground/80">
+              <p className="mt-3 text-sm leading-relaxed text-white/80">
                 Complete the essentials now. You can change everything later from settings.
               </p>
 
-              <div className="mt-10 space-y-4">
+              <nav className="mt-8 space-y-2.5" aria-label="Onboarding steps">
                 {STEP_LABELS.map((label, index) => {
                   const active = index === step;
                   const done = index < step;
@@ -830,74 +998,85 @@ export function OnboardingWizard({
                     >
                       <div
                         className={cn(
-                          "grid h-8 w-8 place-items-center rounded-full border text-sm font-bold",
-                          active && "border-transparent bg-white text-primary",
-                          done && "border-transparent bg-emerald-100 text-emerald-800",
-                          !active && !done && "border-white/30 bg-white/15"
+                          "grid h-8 w-8 shrink-0 place-items-center rounded-full border text-sm font-medium",
+                          active && "border-transparent bg-white text-[#FF4E12]",
+                          done && "border-transparent bg-white/95 text-emerald-700",
+                          !active && !done && "border-white/35 bg-white/10 text-white"
                         )}
                       >
                         {done ? <Check className="h-4 w-4" /> : index + 1}
                       </div>
-                      <span className="text-sm font-semibold">{label}</span>
+                      <span className="text-sm font-medium leading-snug text-white">{label}</span>
                     </div>
                   );
                 })}
-              </div>
+              </nav>
             </div>
           </aside>
 
-          <main className="flex min-h-[680px] flex-col p-5 sm:p-8">
-            <div className="mb-6 flex items-center justify-between gap-4">
+          <main className="flex h-full min-w-0 flex-col bg-card">
+            <div className="flex items-center gap-3 px-4 py-3.5 sm:px-6 sm:py-4">
               <div className="min-w-0 flex-1">
-                <div className="mb-2 flex items-center justify-between gap-3 text-xs font-medium text-muted-foreground">
-                  <span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-muted-foreground">
+                  <span className="tabular-nums">
                     Step {step + 1} of {STEP_LABELS.length}
                   </span>
-                  <span className="md:hidden">{STEP_LABELS[step]}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-primary to-orange-400 transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  />
+                  <span className="truncate md:hidden">{STEP_LABELS[step]}</span>
+                  <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted sm:w-28">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-primary to-orange-400 transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex shrink-0 items-center gap-0.5">
+                {(replay || onBackToOptions) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-muted-foreground"
+                    disabled={submitting}
+                    onClick={() => {
+                      if (replay) {
+                        router.replace("/dashboard");
+                        return;
+                      }
+                      onBackToOptions?.();
+                    }}
+                  >
+                    <ArrowLeft className="mr-1.5 h-4 w-4" />
+                    {replay ? "Back to dashboard" : "Back to options"}
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="shrink-0"
+                  className="h-9 w-9 shrink-0"
                   onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                   aria-label="Toggle theme"
                 >
                   {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="shrink-0 text-muted-foreground"
-                  disabled={submitting}
-                  onClick={() => void finishSetup(true)}
-                >
-                  {replay ? "Back to settings" : "Skip setup"}
-                </Button>
               </div>
             </div>
 
-            <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="px-4 py-5 sm:px-6 sm:py-6">
+              <div className="pb-8">
               {step === 0 && (
                 <section>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-primary">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
                     Workspace
                   </p>
-                  <h2 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
                     Choose your workspace
                   </h2>
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                     Same choice as the gateway. Pick restaurant, hotel, or both — you can switch later.
                   </p>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-3 sm:items-stretch">
                     {WORKSPACE_OPTIONS.map((option) => {
                       const Icon = WORKSPACE_ICONS[option.value];
                       const selected = draft.workspace === option.value;
@@ -907,9 +1086,9 @@ export function OnboardingWizard({
                           type="button"
                           onClick={() => patch("workspace", option.value)}
                           className={cn(
-                            "rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5",
+                            "flex h-full flex-col rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm",
                             selected
-                              ? "border-primary bg-secondary shadow-sm"
+                              ? "border-primary bg-secondary shadow-sm ring-1 ring-primary/20"
                               : "border-border bg-card hover:border-primary/40",
                             fieldErrors.workspace && !selected && "border-destructive/60"
                           )}
@@ -922,8 +1101,8 @@ export function OnboardingWizard({
                           >
                             <Icon className="h-5 w-5" />
                           </div>
-                          <div className="font-bold">{option.title}</div>
-                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          <div className="font-medium">{option.title}</div>
+                          <p className="mt-1 flex-1 text-xs leading-relaxed text-muted-foreground">
                             {option.description}
                           </p>
                         </button>
@@ -936,10 +1115,10 @@ export function OnboardingWizard({
 
               {step === 1 && (
                 <section>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-primary">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
                     Welcome
                   </p>
-                  <h2 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
                     Tell us about your restaurant
                   </h2>
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
@@ -953,90 +1132,8 @@ export function OnboardingWizard({
                     </div>
                   )}
 
-                  <div className="space-y-6 rounded-2xl border border-border bg-card/40 p-5">
-                    <div>
-                      <div className="mb-4 flex items-center gap-2 text-sm font-bold">
-                        <Camera className="h-4 w-4 text-primary" />
-                        Branding &amp; media
-                      </div>
-                      <div className="relative mb-16 w-full rounded-xl border bg-muted/40 shadow-sm">
-                        <div className="relative h-40 w-full overflow-hidden rounded-t-xl group md:h-48">
-                          {uploadingCover ? (
-                            <div className="absolute inset-0 flex items-center justify-center bg-muted">
-                              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                            </div>
-                          ) : draft.coverPhoto ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={getImageUrl(draft.coverPhoto)}
-                              alt="Cover"
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted text-muted-foreground">
-                              <Camera className="mb-2 h-8 w-8" />
-                              <span className="text-[10px]">16:9 Landscape</span>
-                            </div>
-                          )}
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                            <button
-                              type="button"
-                              onClick={() => coverInputRef.current?.click()}
-                              className="cursor-pointer rounded-full bg-white/20 p-2 backdrop-blur-sm hover:bg-white/30"
-                              aria-label="Upload cover"
-                            >
-                              <Upload className="h-6 w-6 text-white" />
-                            </button>
-                          </div>
-                          <Input
-                            ref={coverInputRef}
-                            type="file"
-                            className="hidden"
-                            accept="image/*"
-                            onChange={(e) => void handleImageUpload(e, "cover")}
-                          />
-                        </div>
-
-                        <div className="absolute bottom-0 left-1/2 z-10 -translate-x-1/2 translate-y-1/2">
-                          <div className="relative flex h-28 w-28 flex-col items-center justify-center overflow-hidden rounded-full border-4 border-background bg-background text-muted-foreground shadow-md group">
-                            {uploadingLogo ? (
-                              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                            ) : draft.profilePicture ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={getImageUrl(draft.profilePicture)}
-                                alt="Logo"
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <>
-                                <Store className="mb-1 h-7 w-7" />
-                                <span className="text-[10px]">1:1 Ratio</span>
-                              </>
-                            )}
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                              <button
-                                type="button"
-                                onClick={() => logoInputRef.current?.click()}
-                                className="cursor-pointer"
-                                aria-label="Upload logo"
-                              >
-                                <Upload className="h-6 w-6 text-white" />
-                              </button>
-                            </div>
-                          </div>
-                          <Input
-                            ref={logoInputRef}
-                            type="file"
-                            className="hidden"
-                            accept="image/*"
-                            onChange={(e) => void handleImageUpload(e, "logo")}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-sm font-bold">
+                  <div className="space-y-6 overflow-visible rounded-2xl border border-border bg-card/40 p-5">
+                    <div className="flex items-center gap-2 text-sm font-medium">
                       <Store className="h-4 w-4 text-primary" />
                       General information
                     </div>
@@ -1098,37 +1195,6 @@ export function OnboardingWizard({
                           placeholder="Company registration number"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="timezone">Timezone*</Label>
-                        <TimezoneSelect
-                          id="timezone"
-                          value={draft.timezone}
-                          onChange={(tz) => patch("timezone", tz)}
-                          placeholder="Select timezone"
-                          className={fieldErrorClass("timezone")}
-                        />
-                        <FieldError name="timezone" />
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-1.5">
-                          <Label htmlFor="businessDayStartTime">Business Day Starts At*</Label>
-                          <FieldInfo>
-                            Orders before this time are counted toward the previous business day.
-                          </FieldInfo>
-                        </div>
-                        <Input
-                          id="businessDayStartTime"
-                          type="time"
-                          step={60}
-                          value={draft.businessDayStartTime}
-                          onChange={(e) =>
-                            patch("businessDayStartTime", toHourMinute(e.target.value))
-                          }
-                          className={fieldErrorClass("businessDayStartTime")}
-                          aria-invalid={Boolean(fieldErrors.businessDayStartTime)}
-                        />
-                        <FieldError name="businessDayStartTime" />
-                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -1186,10 +1252,10 @@ export function OnboardingWizard({
 
               {step === 2 && (
                 <section>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-primary">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
                     Business type
                   </p>
-                  <h2 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
                     {draft.workspace === "hotel"
                       ? "Hotel setup style"
                       : "How do you serve customers?"}
@@ -1197,11 +1263,109 @@ export function OnboardingWizard({
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                     {draft.workspace === "hotel"
                       ? "You can refine hotel operations later from rooms and settings."
-                      : "Choose the option that best describes your business. You can enable more later."}
+                      : "Add your brand visuals, then choose how you serve customers."}
                   </p>
+
+                  <div className="mb-8 overflow-visible rounded-2xl border border-border bg-card/40 p-5">
+                    <div className="mb-4 flex items-center gap-2 text-sm font-medium">
+                      <Camera className="h-4 w-4 text-primary" />
+                      Branding &amp; media
+                    </div>
+                    <div className="relative mb-14 w-full rounded-xl border border-border bg-muted/30 shadow-sm sm:mb-16">
+                      <button
+                        type="button"
+                        onClick={() => coverInputRef.current?.click()}
+                        className="group relative flex h-40 w-full flex-col items-center justify-center overflow-hidden rounded-t-xl text-muted-foreground transition hover:bg-muted/50 md:h-52"
+                        aria-label="Upload cover"
+                      >
+                        {uploadingCover ? (
+                          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        ) : draft.coverPhoto ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={getImageUrl(draft.coverPhoto)}
+                            alt="Cover"
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                        ) : (
+                          <>
+                            <Camera className="mb-2 h-8 w-8" />
+                            <span className="text-sm font-medium text-foreground">Add cover photo</span>
+                            <span className="mt-1 text-[10px]">16:9 landscape</span>
+                          </>
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                          <Upload className="h-6 w-6 text-white" />
+                        </div>
+                        <Input
+                          ref={coverInputRef}
+                          type="file"
+                          className="hidden"
+                          accept="image/*"
+                          onChange={(e) => void handleImageUpload(e, "cover")}
+                        />
+                      </button>
+
+                      <div className="absolute bottom-0 left-1/2 z-10 -translate-x-1/2 translate-y-1/2">
+                        <button
+                          type="button"
+                          onClick={() => logoInputRef.current?.click()}
+                          className="group relative flex h-28 w-28 flex-col items-center justify-center overflow-hidden rounded-full border-4 border-background bg-background text-muted-foreground shadow-md transition hover:border-primary/30 sm:h-32 sm:w-32"
+                          aria-label="Upload logo"
+                        >
+                          {uploadingLogo ? (
+                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                          ) : draft.profilePicture ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={getImageUrl(draft.profilePicture)}
+                              alt="Logo"
+                              className="absolute inset-0 h-full w-full object-cover"
+                            />
+                          ) : (
+                            <>
+                              <Store className="mb-1 h-7 w-7" />
+                              <span className="text-[10px]">Logo 1:1</span>
+                            </>
+                          )}
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                            <Upload className="h-5 w-5 text-white" />
+                          </div>
+                          <Input
+                            ref={logoInputRef}
+                            type="file"
+                            className="hidden"
+                            accept="image/*"
+                            onChange={(e) => void handleImageUpload(e, "logo")}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={uploadingCover}
+                        onClick={() => coverInputRef.current?.click()}
+                      >
+                        {uploadingCover ? "Uploading cover…" : "Change cover"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={uploadingLogo}
+                        onClick={() => logoInputRef.current?.click()}
+                      >
+                        {uploadingLogo ? "Uploading logo…" : "Change logo"}
+                      </Button>
+                    </div>
+                  </div>
+
                   {draft.workspace === "hotel" ? (
                     <div className="rounded-2xl border border-border bg-muted/30 p-5 text-sm text-muted-foreground">
-                      Hotel workspace selected. Continue to set hours and essentials.
+                      Hotel workspace selected. Continue to set timezone and essentials.
                     </div>
                   ) : (
                     <>
@@ -1232,7 +1396,7 @@ export function OnboardingWizard({
                               >
                                 <Icon className="h-5 w-5" />
                               </div>
-                              <div className="font-bold">{option.title}</div>
+                              <div className="font-medium">{option.title}</div>
                               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                                 {option.description}
                               </p>
@@ -1248,75 +1412,47 @@ export function OnboardingWizard({
 
               {step === 3 && (
                 <section>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-primary">
-                    Operating hours
-                  </p>
-                  <h2 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
-                    When are you open?
-                  </h2>
-                  <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    These hours help with planning. Your business day start time will use your earliest open hour.
-                  </p>
-                  <FieldError name="hours" />
-                  <div className="space-y-3">
-                    {draft.hours.map((row, index) => (
-                      <div
-                        key={row.day}
-                        className={cn(
-                          "grid grid-cols-2 items-center gap-3 rounded-xl border p-3 sm:grid-cols-[110px_1fr_1fr_auto]",
-                          fieldErrors.hours ? "border-destructive/50" : "border-border"
-                        )}
-                      >
-                        <strong className="col-span-2 text-sm sm:col-span-1">{row.day}</strong>
-                        <Input
-                          type="time"
-                          value={row.open}
-                          disabled={!row.isOpen}
-                          onChange={(e) => {
-                            const nextHours = [...draft.hours];
-                            nextHours[index] = { ...row, open: e.target.value };
-                            patch("hours", nextHours);
-                          }}
-                        />
-                        <Input
-                          type="time"
-                          value={row.close}
-                          disabled={!row.isOpen}
-                          onChange={(e) => {
-                            const nextHours = [...draft.hours];
-                            nextHours[index] = { ...row, close: e.target.value };
-                            patch("hours", nextHours);
-                          }}
-                        />
-                        <div className="col-span-2 flex justify-end sm:col-span-1">
-                          <Switch
-                            checked={row.isOpen}
-                            onCheckedChange={(checked) => {
-                              const nextHours = [...draft.hours];
-                              nextHours[index] = { ...row, isOpen: checked };
-                              patch("hours", nextHours);
-                            }}
-                            aria-label={`${row.day} open`}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {step === 4 && (
-                <section>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-primary">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
                     Service setup
                   </p>
-                  <h2 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
                     Configure the essentials
                   </h2>
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                     Add basic operational details so your dashboard is ready to use.
                   </p>
                   <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="timezone">Timezone*</Label>
+                      <TimezoneSelect
+                        id="timezone"
+                        value={draft.timezone}
+                        onChange={(tz) => patch("timezone", tz)}
+                        placeholder="Select timezone"
+                        className={fieldErrorClass("timezone")}
+                      />
+                      <FieldError name="timezone" />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <Label htmlFor="businessDayStartTime">Business Day Starts At*</Label>
+                        <FieldInfo>
+                          Orders before this time are counted toward the previous business day.
+                        </FieldInfo>
+                      </div>
+                      <Input
+                        id="businessDayStartTime"
+                        type="time"
+                        step={60}
+                        value={draft.businessDayStartTime}
+                        onChange={(e) =>
+                          patch("businessDayStartTime", toHourMinute(e.target.value))
+                        }
+                        className={fieldErrorClass("businessDayStartTime")}
+                        aria-invalid={Boolean(fieldErrors.businessDayStartTime)}
+                      />
+                      <FieldError name="businessDayStartTime" />
+                    </div>
                     {draft.workspace !== "hotel" && draft.businessType !== "cloud_kitchen" && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-1.5">
@@ -1375,6 +1511,7 @@ export function OnboardingWizard({
                         type="number"
                         min={0}
                         max={100}
+                        disabled={!draft.taxEnabled}
                         value={draft.taxRate}
                         onChange={(e) => patch("taxRate", Number(e.target.value) || 0)}
                         className={fieldErrorClass("taxRate")}
@@ -1400,6 +1537,68 @@ export function OnboardingWizard({
                       />
                       <FieldError name="orderStart" />
                     </div>
+
+                    <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
+                      <div className="divide-y divide-border rounded-2xl border border-border">
+                        <div className="flex items-center justify-between gap-4 p-4">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <p className="font-medium text-foreground">Tax calculation</p>
+                            <FieldInfo>Allow configured taxes on eligible bills.</FieldInfo>
+                          </div>
+                          <Switch
+                            checked={draft.taxEnabled}
+                            onCheckedChange={(checked) => patch("taxEnabled", checked)}
+                            aria-label="Tax calculation"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-4 p-4">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <p className="font-medium text-foreground">Kitchen tickets</p>
+                            <FieldInfo>Create KOTs for food preparation.</FieldInfo>
+                          </div>
+                          <Switch
+                            checked={draft.kotEnabled}
+                            onCheckedChange={(checked) => patch("kotEnabled", checked)}
+                            aria-label="Kitchen tickets"
+                          />
+                        </div>
+                      </div>
+                      <div className="divide-y divide-border rounded-2xl border border-border">
+                        <div className="flex items-center justify-between gap-4 p-4">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <p className="font-medium text-foreground">Logo on receipt</p>
+                            <FieldInfo>Use your brand in the receipt header.</FieldInfo>
+                          </div>
+                          <Switch
+                            checked={draft.receiptShowLogo}
+                            onCheckedChange={(checked) => patch("receiptShowLogo", checked)}
+                            aria-label="Logo on receipt"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-4 p-4">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <p className="font-medium text-foreground">PAN on receipt</p>
+                            <FieldInfo>Show the tax registration number.</FieldInfo>
+                          </div>
+                          <Switch
+                            checked={draft.receiptShowPan}
+                            onCheckedChange={(checked) => patch("receiptShowPan", checked)}
+                            aria-label="PAN on receipt"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor="receiptFooter">Receipt footer</Label>
+                      <Input
+                        id="receiptFooter"
+                        value={draft.receiptFooter}
+                        onChange={(e) => patch("receiptFooter", e.target.value)}
+                        placeholder="Thank you for dining with us."
+                      />
+                    </div>
+
                     <div className="space-y-3 sm:col-span-2">
                       <div className="flex items-center gap-1.5">
                         <Label>Accepted payment methods*</Label>
@@ -1426,7 +1625,7 @@ export function OnboardingWizard({
                               )}
                             >
                               <Icon className="mb-2 h-5 w-5 text-primary" />
-                              <div className="font-bold">{option.title}</div>
+                              <div className="font-medium">{option.title}</div>
                             </button>
                           );
                         })}
@@ -1437,12 +1636,12 @@ export function OnboardingWizard({
                 </section>
               )}
 
-              {step === 5 && (
+              {step === 4 && (
                 <section>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-primary">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
                     Almost done
                   </p>
-                  <h2 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
                     Review your setup
                   </h2>
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
@@ -1465,7 +1664,7 @@ export function OnboardingWizard({
                     <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
                       <Check className="h-8 w-8" />
                     </div>
-                    <h3 className="text-lg font-bold">Your workspace is ready</h3>
+                    <h3 className="text-lg font-medium">Your workspace is ready</h3>
                     <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
                       {draft.workspace === "both"
                         ? "Next stop is the gateway — pick Restaurant POS or Hotel Management."
@@ -1474,9 +1673,10 @@ export function OnboardingWizard({
                   </div>
                 </section>
               )}
+              </div>
             </div>
 
-            <div className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-5">
+            <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6">
               <Button
                 type="button"
                 variant="secondary"

@@ -1,33 +1,23 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import jsQR from "jsqr";
 import {
   ArrowLeft,
   ArrowRight,
-  Banknote as BanknoteIcon,
-  Building2,
-  Camera,
   Check,
+  ChefHat,
+  ChevronRight,
   Clock3,
-  CreditCard,
-  FileText,
-  Hotel,
-  ImageIcon,
   Loader2,
-  LocateFixed,
   LogOut,
-  MapPin,
   QrCode,
   ScanLine,
   ShieldCheck,
-  Store,
-  Trash2,
   Users,
   UtensilsCrossed,
-  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
@@ -37,30 +27,25 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { ImageService } from "@/services/image-service";
 import { addMembershipEventListener } from "@/lib/restaurant-membership";
+import { canAccessOnboarding, canReplayOnboarding } from "@/lib/onboarding";
+import { resolvePostLoginRoute } from "@/lib/post-login-route";
+import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
+  CardDescription,  
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-
-const LocationPicker = dynamic(
-  () => import("@/components/manage/profile/location-picker"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex min-h-[400px] items-center justify-center rounded-2xl border bg-muted/30">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
-    ),
-  },
-);
 
 type OnboardingMode = "choice" | "create" | "join";
 type RequestItem = {
@@ -134,11 +119,31 @@ function isValidTimezone(value: string) {
 }
 
 export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      }
+    >
+      <OnboardingPageContent />
+    </Suspense>
+  );
+}
+
+function OnboardingPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isReplay =
+    searchParams.get("replay") === "1" ||
+    searchParams.get("replay") === "true" ||
+    searchParams.has("replay-1");
   const user = useAuth((state) => state.user);
   const logout = useAuth((state) => state.logout);
   const syncUserProfile = useAuth((state) => state.syncUserProfile);
   const refreshSession = useAuth((state) => state.refreshSession);
+  const restaurantProfile = useRestaurant((state) => state.restaurant);
   const fetchRestaurant = useRestaurant((state) => state.fetchRestaurant);
   const browserTimezone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
@@ -610,6 +615,7 @@ export default function OnboardingPage() {
   const scan = async () => {
     stopScanner();
     const requestId = scanRequestRef.current;
+    setScanning(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
@@ -619,15 +625,28 @@ export default function OnboardingPage() {
         return;
       }
       streamRef.current = stream;
-      setScanning(true);
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
-      const video = videoRef.current;
-      if (!video || scanRequestRef.current !== requestId) {
+
+      // Wait for the centered dialog + video element to mount.
+      let video: HTMLVideoElement | null = null;
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
+        if (scanRequestRef.current !== requestId) {
+          stream.getTracks().forEach((track) => track.stop());
+          if (streamRef.current === stream) streamRef.current = null;
+          return;
+        }
+        video = videoRef.current;
+        if (video) break;
+      }
+
+      if (!video) {
         stream.getTracks().forEach((track) => track.stop());
         if (streamRef.current === stream) streamRef.current = null;
         if (scanRequestRef.current === requestId) setScanning(false);
+        toast.error("Unable to open camera preview");
         return;
       }
+
       video.srcObject = stream;
       await video.play();
       const canvas = document.createElement("canvas");
@@ -709,267 +728,440 @@ export default function OnboardingPage() {
     router.replace("/");
   };
 
-  return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.12),transparent_34%),linear-gradient(to_bottom,hsl(var(--background)),hsl(var(--muted)/0.35))] p-4 md:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <header className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-              <UtensilsCrossed className="h-5 w-5" />
+  // Replay setup tour from help center / settings.
+  useEffect(() => {
+    if (!isReplay) return;
+    void fetchRestaurant(true);
+  }, [isReplay, fetchRestaurant]);
+
+  // First registration only — after a restaurant exists, leave /onboarding unless admin replay.
+  useEffect(() => {
+    if (!user) return;
+    const hasRestaurant = Boolean(user.restaurant_id || restaurantProfile?.id);
+
+    if (isReplay) {
+      if (!canReplayOnboarding(user)) {
+        router.replace(resolvePostLoginRoute(user));
+      }
+      return;
+    }
+
+    if (hasRestaurant) {
+      router.replace(resolvePostLoginRoute(user));
+    }
+  }, [user, restaurantProfile?.id, isReplay, router]);
+
+  if (isReplay) {
+    if (!canReplayOnboarding(user)) {
+      return (
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      );
+    }
+    return (
+      <div className="bg-transparent">
+        <header className="relative z-30 w-full border-0 bg-transparent pb-3 pt-2 shadow-none sm:pb-4">
+          <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between px-4 py-3 sm:px-6 md:px-8">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+                <UtensilsCrossed className="h-5 w-5" />
+              </div>
+              <div className="text-left">
+                <p className="font-onboarding text-lg font-medium leading-tight tracking-[-0.03em]">Yummy</p>
+                <p className="text-xs leading-tight text-muted-foreground">Workspace onboarding</p>
+              </div>
             </div>
-            <div>
-              <p className="font-bold">Yummy</p>
-              <p className="text-xs text-muted-foreground">Workspace onboarding</p>
-            </div>
+            <Button
+              variant="ghost"
+              className="shrink-0 bg-transparent shadow-none hover:bg-transparent hover:text-foreground"
+              onClick={signOut}
+            >
+              <LogOut className="mr-2 h-4 w-4" /> Sign out
+            </Button>
           </div>
-          <Button variant="ghost" onClick={signOut}>
-            <LogOut className="mr-2 h-4 w-4" /> Sign out
-          </Button>
+        </header>
+        <OnboardingWizard
+          initialEmail={user?.email || ""}
+          replay
+          restaurantId={user?.restaurant_id ?? restaurantProfile?.id ?? null}
+          initialRestaurant={restaurantProfile as Record<string, unknown> | null}
+          embedded
+        />
+      </div>
+    );
+  }
+
+  // Already registered — redirect away from first-time onboarding.
+  if (user?.restaurant_id || restaurantProfile?.id) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (mode === "create") {
+    if (!canAccessOnboarding(user)) {
+      return (
+        <main className="bg-transparent p-4 md:p-8">
+          <div className="mx-auto max-w-lg space-y-4">
+            <Button variant="ghost" onClick={() => setMode("choice")}>
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back to options
+            </Button>
+            <Card className="rounded-3xl border-0 shadow-xl">
+              <CardHeader>
+                <CardTitle>Admin access required</CardTitle>
+                <CardDescription>
+                  Creating a restaurant is limited to admin, owner, or manager accounts. Join an existing restaurant instead.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={() => setMode("join")}>Join a restaurant</Button>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+      );
+    }
+
+    return (
+      <div className="bg-transparent">
+        <header className="relative z-30 w-full border-0 bg-transparent pb-3 pt-2 shadow-none sm:pb-4">
+          <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between px-4 py-3 sm:px-6 md:px-8">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+                <UtensilsCrossed className="h-5 w-5" />
+              </div>
+              <div className="text-left">
+                <p className="font-onboarding text-lg font-medium leading-tight tracking-[-0.03em]">Yummy</p>
+                <p className="text-xs leading-tight text-muted-foreground">Workspace onboarding</p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              className="shrink-0 bg-transparent shadow-none hover:bg-transparent hover:text-foreground"
+              onClick={signOut}
+            >
+              <LogOut className="mr-2 h-4 w-4" /> Sign out
+            </Button>
+          </div>
+        </header>
+        <OnboardingWizard
+          initialEmail={user?.email || ""}
+          replay={false}
+          restaurantId={user?.restaurant_id ?? null}
+          initialRestaurant={null}
+          onBackToOptions={() => setMode("choice")}
+          embedded
+        />
+      </div>
+    );
+  }
+
+  return (
+    <main className="bg-transparent px-4 pb-4 pt-2 md:px-8 md:pb-8 md:pt-3">
+      <div className="mx-auto max-w-6xl space-y-2">
+        <header className="relative z-30 flex items-center justify-between border-0 bg-transparent py-2 shadow-none font-sans">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <span className="text-sm font-bold text-primary">Y</span>
+            </div>
+            <span className="font-semibold text-foreground">Yummy</span>
+          </div>
+          <button
+            type="button"
+            onClick={signOut}
+            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </button>
         </header>
 
         {mode === "choice" && (
-          <section className="mx-auto max-w-5xl py-8 md:py-16">
-            <div className="mx-auto mb-10 max-w-2xl text-center">
-              <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Store className="h-7 w-7" />
+          <section className="font-sans pt-2 pb-8 md:pt-4 md:pb-12">
+            <div className="flex flex-col items-center justify-center px-2 pt-2 pb-6 md:pt-4 md:pb-10">
+              <div className="mb-10 space-y-3 text-center">
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  Get started
+                </div>
+                <h1 className="text-4xl font-bold tracking-tight text-foreground md:text-5xl">
+                  How would you like to get started?
+                </h1>
+                <p className="mx-auto max-w-md text-lg text-muted-foreground">
+                  Welcome
+                  {user?.full_name && !user.full_name.includes("@")
+                    ? `, ${user.full_name}`
+                    : ""}. Create your own workspace or request access to an existing restaurant.
+                </p>
               </div>
-              <h1 className="text-3xl font-black tracking-tight md:text-5xl">
-                How would you like to get started?
-              </h1>
-              <p className="mt-4 text-base text-muted-foreground md:text-lg">
-                Welcome, {user?.full_name || user?.email}. Create your own workspace or request access to an existing restaurant.
+
+              <div className="grid w-full max-w-3xl grid-cols-1 gap-6 md:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setMode("create")}
+                  className="group relative flex flex-col items-start overflow-hidden rounded-2xl border-2 border-border bg-card p-8 text-left transition-all duration-300 hover:-translate-y-1 hover:border-orange-400 hover:shadow-xl"
+                >
+                  <div className="absolute left-0 right-0 top-0 h-1 origin-left scale-x-0 rounded-t-2xl bg-gradient-to-r from-orange-400 to-amber-500 transition-transform duration-500 group-hover:scale-x-100" />
+                  <div className="absolute bottom-0 right-0 h-48 w-48 translate-x-1/4 translate-y-1/4 rounded-full bg-orange-500/5 transition-transform duration-700 group-hover:scale-150" />
+
+                  <div className="relative">
+                    <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-xl bg-orange-100 transition-transform duration-300 group-hover:scale-110 dark:bg-orange-900/30">
+                      <ChefHat className="h-8 w-8 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <h2 className="mb-2 text-2xl font-bold text-foreground">Create a restaurant</h2>
+                    <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+                      Set up your business details, map location, timezone and business day.
+                    </p>
+                    <div className="flex items-center gap-1.5 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                      Start setup
+                      <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMode("join")}
+                  className="group relative flex flex-col items-start overflow-hidden rounded-2xl border-2 border-border bg-card p-8 text-left transition-all duration-300 hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl"
+                >
+                  <div className="absolute left-0 right-0 top-0 h-1 origin-left scale-x-0 rounded-t-2xl bg-gradient-to-r from-blue-500 to-indigo-500 transition-transform duration-500 group-hover:scale-x-100" />
+                  <div className="absolute bottom-0 right-0 h-48 w-48 translate-x-1/4 translate-y-1/4 rounded-full bg-blue-500/5 transition-transform duration-700 group-hover:scale-150" />
+
+                  <div className="relative">
+                    <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-xl bg-blue-100 transition-transform duration-300 group-hover:scale-110 dark:bg-blue-900/30">
+                      <Users className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <h2 className="mb-2 text-2xl font-bold text-foreground">Join a restaurant</h2>
+                    <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+                      Use a restaurant code, scan its QR, or accept a verified-email invitation.
+                    </p>
+                    <div className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 dark:text-blue-400">
+                      View join options
+                      <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <p className="mt-12 text-center text-xs text-muted-foreground">
+                Joining never grants access until an authorized reviewer approves you.
               </p>
             </div>
-            <div className="grid gap-5 md:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setMode("create")}
-                className="group rounded-3xl border bg-card p-7 text-left shadow-sm transition hover:-translate-y-1 hover:border-primary/50 hover:shadow-xl"
-              >
-                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
-                  <Building2 className="h-7 w-7" />
-                </div>
-                <h2 className="text-2xl font-bold">Create a restaurant</h2>
-                <p className="mt-2 text-muted-foreground">
-                  Set up your business details, map location, timezone and business day.
-                </p>
-                <span className="mt-7 flex items-center font-semibold text-primary">
-                  Start setup <ArrowRight className="ml-2 h-4 w-4" />
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("join")}
-                className="group rounded-3xl border bg-card p-7 text-left shadow-sm transition hover:-translate-y-1 hover:border-primary/50 hover:shadow-xl"
-              >
-                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
-                  <Users className="h-7 w-7" />
-                </div>
-                <h2 className="text-2xl font-bold">Join a restaurant</h2>
-                <p className="mt-2 text-muted-foreground">
-                  Use a restaurant code, scan its QR, or accept a verified-email invitation.
-                </p>
-                <span className="mt-7 flex items-center font-semibold text-blue-600">
-                  View join options <ArrowRight className="ml-2 h-4 w-4" />
-                </span>
-              </button>
-            </div>
-            <div className="mt-6 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <ShieldCheck className="h-4 w-4" /> Joining never grants access until an authorized reviewer approves you.
-            </div>
-          </section>
-        )}
-
-        {mode === "create" && (
-          <section className="mx-auto max-w-5xl pb-12">
-            <Button variant="ghost" className="mb-4" onClick={() => setMode("choice")}>
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to options
-            </Button>
-            <Card className="overflow-hidden rounded-3xl border-0 shadow-2xl">
-              <div className="border-b bg-muted/30 px-6 py-6 md:px-10">
-                <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-                  <div>
-                    <p className="text-sm font-semibold text-primary">Step {step + 1} of {steps.length}</p>
-                    <h1 className="mt-1 text-2xl font-black md:text-3xl">Let&apos;s set up your restaurant</h1>
-                    <p className="mt-2 text-muted-foreground">{steps[step]}</p>
-                  </div>
-                  <div className="flex min-w-64 gap-2">
-                    {steps.map((label, index) => (
-                      <div key={label} className="flex-1">
-                        <div className={`h-2 rounded-full ${index <= step ? "bg-primary" : "bg-muted"}`} />
-                        <p className={`mt-2 hidden text-xs md:block ${index === step ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{label}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <CardContent className="p-6 md:p-10">
-                {step === 0 && (
-                  <div className="space-y-8">
-                    <div>
-                      <h2 className="text-xl font-bold">Business profile</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">These details identify your business throughout Yummy and on receipts.</p>
-                    </div>
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <div className="space-y-2 md:col-span-2">
-                        <Label htmlFor="restaurant-name">Restaurant name *</Label>
-                        <Input id="restaurant-name" autoFocus value={restaurant.name} onChange={(event) => updateRestaurant("name", event.target.value)} placeholder="e.g. Yummy Bistro" className={fieldClass(Boolean(errors.name))} />
-                        {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="business-phone">Business phone *</Label>
-                        <Input id="business-phone" type="tel" value={restaurant.phone} onChange={(event) => updateRestaurant("phone", event.target.value)} placeholder="e.g. +977 98XXXXXXXX" className={fieldClass(Boolean(errors.phone))} />
-                        {errors.phone && <p className="text-xs text-destructive">{errors.phone}</p>}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="pan-number">PAN / VAT number</Label>
-                        <Input id="pan-number" value={restaurant.pan_number} onChange={(event) => updateRestaurant("pan_number", event.target.value)} placeholder="Optional tax registration number" />
-                      </div>
-                      <div className="space-y-2 md:col-span-2">
-                        <div className="flex items-center justify-between"><Label htmlFor="description">About the business *</Label><span className="text-xs text-muted-foreground">{restaurant.description.length}/200</span></div>
-                        <Textarea id="description" rows={4} maxLength={200} value={restaurant.description} onChange={(event) => updateRestaurant("description", event.target.value)} placeholder="Tell us about your cuisine, service and atmosphere…" className={fieldClass(Boolean(errors.description))} />
-                        {errors.description && <p className="text-xs text-destructive">{errors.description}</p>}
-                      </div>
-                      <div className="space-y-3 md:col-span-2">
-                        <div><Label>Restaurant branding</Label><p className="mt-1 text-xs text-muted-foreground">Optional now; both can be changed later. Image files are uploaded only when you create the restaurant.</p></div>
-                        <div className="grid gap-4 sm:grid-cols-[180px_1fr]">
-                          <label className="group flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-muted/20 text-center transition hover:border-primary/50 hover:bg-primary/5">
-                            {logoPreview ? <div className="h-28 w-28 rounded-2xl bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${logoPreview})` }} /> : <><ImageIcon className="h-7 w-7 text-primary" /><span className="mt-2 text-sm font-semibold">Add logo</span><span className="text-xs text-muted-foreground">Square works best</span></>}
-                            <input className="sr-only" type="file" accept="image/*" onChange={(event) => selectBrandFile(event.target.files?.[0], "logo")} />
-                          </label>
-                          <label className="group flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-muted/20 text-center transition hover:border-primary/50 hover:bg-primary/5">
-                            {coverPreview ? <div className="h-40 w-full bg-cover bg-center" style={{ backgroundImage: `url(${coverPreview})` }} /> : <><Camera className="h-7 w-7 text-primary" /><span className="mt-2 text-sm font-semibold">Add cover photo</span><span className="text-xs text-muted-foreground">Landscape, up to 5 MB</span></>}
-                            <input className="sr-only" type="file" accept="image/*" onChange={(event) => selectBrandFile(event.target.files?.[0], "cover")} />
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {step === 1 && (
-                  <div className="space-y-7">
-                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                      <div><h2 className="text-xl font-bold">Location and business clock</h2><p className="mt-1 text-sm text-muted-foreground">Pin the correct location so timezone-sensitive orders and reports stay accurate.</p></div>
-                      <Button variant="outline" onClick={useCurrentLocation} disabled={locating}>{locating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LocateFixed className="mr-2 h-4 w-4" />}Use current location</Button>
-                    </div>
-                    <div className="space-y-2"><Label htmlFor="address">Restaurant address *</Label><div className="relative"><MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input id="address" value={restaurant.address} onChange={(event) => updateRestaurant("address", event.target.value)} placeholder="Street, city, district" className={`pl-9 ${fieldClass(Boolean(errors.address))}`} /></div>{errors.address && <p className="text-xs text-destructive">{errors.address}</p>}</div>
-                    <LocationPicker latitude={restaurant.latitude} longitude={restaurant.longitude} onChange={handleLocationChange} />
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <div className="space-y-2"><Label htmlFor="timezone">Timezone *</Label><Input id="timezone" value={restaurant.timezone} onChange={(event) => updateRestaurant("timezone", event.target.value)} className={fieldClass(Boolean(errors.timezone))} /><p className="text-xs text-muted-foreground">Detected from this browser. Use an IANA timezone such as Asia/Kathmandu.</p>{errors.timezone && <p className="text-xs text-destructive">{errors.timezone}</p>}</div>
-                      <div className="space-y-2"><Label htmlFor="business-day"><Clock3 className="mr-1 inline h-4 w-4" />Business day starts at *</Label><Input id="business-day" type="time" value={restaurant.business_day_start_time} onChange={(event) => updateRestaurant("business_day_start_time", event.target.value)} className={fieldClass(Boolean(errors.business_day_start_time))} /><p className="text-xs text-muted-foreground">Orders before this time count toward the previous business day.</p>{errors.business_day_start_time && <p className="text-xs text-destructive">{errors.business_day_start_time}</p>}</div>
-                    </div>
-                  </div>
-                )}
-
-                {step === 2 && (
-                  <div className="space-y-8">
-                    <div><h2 className="text-xl font-bold">Choose how you operate</h2><p className="mt-1 text-sm text-muted-foreground">Start with sensible defaults. Every choice remains editable in Settings.</p></div>
-
-                    <section className="space-y-3">
-                      <div><h3 className="font-semibold">Business modules</h3><p className="text-sm text-muted-foreground">Enable the workspaces your team will use.</p></div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <ToggleCard icon={UtensilsCrossed} title="Restaurant POS" description="Tables, orders, kitchen and billing" checked={restaurant.restaurant_enabled} onChange={(checked) => updateRestaurant("restaurant_enabled", checked)} />
-                        <ToggleCard icon={Hotel} title="Hotel" description="Rooms, stays and hotel operations" checked={restaurant.hotel_enabled} onChange={(checked) => updateRestaurant("hotel_enabled", checked)} />
-                      </div>
-                      {errors.modules && <p className="text-xs text-destructive">{errors.modules}</p>}
-                    </section>
-
-                    <section className="space-y-3">
-                      <div><h3 className="font-semibold">Payments</h3><p className="text-sm text-muted-foreground">Choose the methods available when settling a bill.</p></div>
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <ToggleCard icon={BanknoteIcon} title="Cash" description="Cash drawer payments" checked={restaurant.accept_cash} onChange={(checked) => updateRestaurant("accept_cash", checked)} compact />
-                        <ToggleCard icon={CreditCard} title="Card" description="Terminal or card provider" checked={restaurant.accept_card} onChange={(checked) => updateRestaurant("accept_card", checked)} compact />
-                        <ToggleCard icon={QrCode} title="QR / digital" description="Static merchant QR" checked={restaurant.accept_qr} onChange={(checked) => updateRestaurant("accept_qr", checked)} compact />
-                      </div>
-                      {errors.payment_methods && <p className="text-xs text-destructive">{errors.payment_methods}</p>}
-                      {restaurant.accept_card && <div className="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2"><div className="space-y-2"><Label>Card provider *</Label><Input value={restaurant.card_name} onChange={(event) => updateRestaurant("card_name", event.target.value)} placeholder="e.g. Visa / terminal 1" className={fieldClass(Boolean(errors.card_name))} />{errors.card_name && <p className="text-xs text-destructive">{errors.card_name}</p>}</div><div className="space-y-2"><Label>Terminal identifier</Label><Input value={restaurant.card_identifier} onChange={(event) => updateRestaurant("card_identifier", event.target.value)} placeholder="Optional merchant or terminal ID" /></div></div>}
-                      {restaurant.accept_qr && <div className="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2"><div className="space-y-2"><Label>QR provider *</Label><Input value={restaurant.qr_name} onChange={(event) => updateRestaurant("qr_name", event.target.value)} placeholder="e.g. Fonepay" className={fieldClass(Boolean(errors.qr_name))} />{errors.qr_name && <p className="text-xs text-destructive">{errors.qr_name}</p>}</div><div className="space-y-2"><Label>Merchant payload or link *</Label><Input value={restaurant.qr_payload} onChange={(event) => updateRestaurant("qr_payload", event.target.value)} placeholder="Paste the QR contents" className={fieldClass(Boolean(errors.qr_payload))} />{errors.qr_payload && <p className="text-xs text-destructive">{errors.qr_payload}</p>}</div></div>}
-                    </section>
-
-                    <section className="grid gap-4 lg:grid-cols-2">
-                      <div className="space-y-3 rounded-2xl border p-4">
-                        <div className="flex items-center justify-between gap-4"><div><h3 className="font-semibold">Tax calculation</h3><p className="text-sm text-muted-foreground">Allow configured taxes on eligible bills.</p></div><Switch checked={restaurant.tax_enabled} onCheckedChange={(checked) => updateRestaurant("tax_enabled", checked)} /></div>
-                        <div className="flex items-center justify-between gap-4"><div><h3 className="font-semibold">Kitchen tickets</h3><p className="text-sm text-muted-foreground">Create KOTs for food preparation.</p></div><Switch checked={restaurant.kot_enabled} onCheckedChange={(checked) => updateRestaurant("kot_enabled", checked)} /></div>
-                      </div>
-                      <div className="space-y-3 rounded-2xl border p-4">
-                        <div className="flex items-center justify-between gap-4"><div><h3 className="font-semibold">Logo on receipt</h3><p className="text-sm text-muted-foreground">Use your brand in the receipt header.</p></div><Switch checked={restaurant.receipt_show_logo} onCheckedChange={(checked) => updateRestaurant("receipt_show_logo", checked)} /></div>
-                        <div className="flex items-center justify-between gap-4"><div><h3 className="font-semibold">PAN on receipt</h3><p className="text-sm text-muted-foreground">Show the tax registration number.</p></div><Switch checked={restaurant.receipt_show_pan} onCheckedChange={(checked) => updateRestaurant("receipt_show_pan", checked)} /></div>
-                      </div>
-                      <div className="space-y-2 lg:col-span-2"><Label htmlFor="receipt-footer">Receipt footer</Label><Input id="receipt-footer" value={restaurant.receipt_footer} onChange={(event) => updateRestaurant("receipt_footer", event.target.value)} maxLength={100} placeholder="A short thank-you message" /></div>
-                    </section>
-                  </div>
-                )}
-
-                {step === 3 && (
-                  <div className="space-y-7">
-                    <div><h2 className="text-xl font-bold">Review your restaurant</h2><p className="mt-1 text-sm text-muted-foreground">Confirm the essentials before Yummy builds your workspace.</p></div>
-                    <div className="rounded-2xl border bg-muted/25 p-5">
-                      <h3 className="font-bold">Restaurant details</h3>
-                      <div className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
-                        <ReviewItem label="Business" value={restaurant.name} />
-                        <ReviewItem label="Phone" value={restaurant.phone} />
-                        <ReviewItem label="Address" value={restaurant.address} />
-                        <ReviewItem label="Timezone" value={restaurant.timezone} />
-                        <ReviewItem label="Business day" value={restaurant.business_day_start_time} />
-                        <ReviewItem label="Map pin" value={restaurant.latitude && restaurant.longitude ? `${restaurant.latitude}, ${restaurant.longitude}` : "Not set"} />
-                        <ReviewItem label="PAN / VAT" value={restaurant.pan_number || "Not set"} />
-                        <ReviewItem label="Modules" value={[restaurant.restaurant_enabled && "Restaurant", restaurant.hotel_enabled && "Hotel"].filter(Boolean).join(" + ")} />
-                        <ReviewItem label="Payments" value={[restaurant.accept_cash && "Cash", restaurant.accept_card && "Card", restaurant.accept_qr && "QR"].filter(Boolean).join(", ")} />
-                        <ReviewItem label="Operations" value={`${restaurant.tax_enabled ? "Tax on" : "Tax off"} · ${restaurant.kot_enabled ? "KOT on" : "KOT off"}`} />
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3 rounded-2xl border bg-muted/20 p-4"><FileText className="mt-0.5 h-5 w-5 text-primary" /><div><p className="font-semibold">Receipt preference</p><p className="text-sm text-muted-foreground">{restaurant.receipt_show_logo ? "Logo shown" : "No logo"} · {restaurant.receipt_show_pan ? "PAN shown" : "PAN hidden"} · {restaurant.receipt_footer || "No custom footer"}</p></div></div>
-                    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm"><ShieldCheck className="mr-2 inline h-4 w-4 text-primary" />You will receive administrator access for this restaurant.</div>
-                  </div>
-                )}
-
-                <div className="mt-10 flex items-center justify-between border-t pt-6">
-                  <div className="flex items-center gap-2"><Button variant="outline" disabled={step === 0 || creating} onClick={() => setStep((current) => Math.max(0, current - 1))}><ArrowLeft className="mr-2 h-4 w-4" />Previous</Button><Button variant="ghost" className="text-muted-foreground" disabled={creating} onClick={discardDraft}><Trash2 className="mr-2 h-4 w-4" />Discard draft</Button></div>
-                  {step < steps.length - 1 ? <Button onClick={nextStep}>Continue <ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button size="lg" disabled={creating} onClick={() => void createRestaurant()}>{creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Create restaurant</Button>}
-                </div>
-                {draftSavedAt && <p className="mt-3 text-right text-xs text-muted-foreground">Draft saved locally at {draftSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Branding files are uploaded only at creation.</p>}
-              </CardContent>
-            </Card>
           </section>
         )}
 
         {mode === "join" && (
-          <section className="mx-auto max-w-5xl pb-12">
-            <Button variant="ghost" className="mb-4" onClick={() => { stopScanner(); setMode("choice"); }}><ArrowLeft className="mr-2 h-4 w-4" />Back to options</Button>
-            <div className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><h1 className="text-3xl font-black">Join an existing restaurant</h1><p className="mt-2 text-muted-foreground">Your account remains unassigned until the restaurant approves your request or you accept an invitation sent to {user?.email}.</p></div><div className="flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />Live status updates</div></div>
-            <div className="grid gap-6 md:grid-cols-2">
-              <Card className="rounded-3xl"><CardHeader><CardTitle className="flex items-center gap-2"><QrCode className="h-5 w-5 text-primary" />Restaurant code or QR</CardTitle><CardDescription>Submitting a code creates a pending request. The restaurant chooses your role during approval.</CardDescription></CardHeader><CardContent className="space-y-4"><Input value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="Enter restaurant code" className="h-12 text-center font-mono text-lg tracking-widest" /><div className="flex gap-2"><Button className="flex-1" disabled={joinLoading} onClick={() => void requestJoin()}>{joinLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Request access</Button><Button variant="outline" onClick={() => void scan()}><ScanLine className="mr-2 h-4 w-4" />Scan</Button></div>{scanning && <div className="space-y-2"><video ref={videoRef} className="aspect-video w-full rounded-xl bg-black" muted playsInline /><Button variant="ghost" className="w-full" onClick={stopScanner}>Cancel scanning</Button></div>}{requests.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border bg-card p-3"><StatusIcon status={item.status} /><div className="min-w-0 flex-1"><p className="truncate font-semibold">{item.restaurant_name}</p><p className="text-xs capitalize text-muted-foreground">{item.status}{item.selected_role ? ` · ${item.selected_role}` : ""}</p></div>{item.status === "pending" && <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyAccessId === `request-${item.id}`} onClick={() => void cancelRequest(item)}>{busyAccessId === `request-${item.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cancel"}</Button>}</div>)}</CardContent></Card>
-              <Card className="rounded-3xl"><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-blue-600" />Verified email invitation</CardTitle><CardDescription>Only an account signed in with the invited email can accept this code.</CardDescription></CardHeader><CardContent className="space-y-4"><Input value={invitationCode} onChange={(event) => setInvitationCode(event.target.value)} placeholder="Invitation code from email" className="h-12" /><Button className="w-full" variant="secondary" disabled={joinLoading} onClick={() => void acceptInvitation()}>Accept invitation</Button>{invitations.map((item) => <div key={item.id} className="rounded-xl border bg-card p-3"><button type="button" onClick={() => setInvitationCode(item.code)} className="w-full text-left"><p className="font-semibold">{item.restaurant_name}</p><p className="text-xs text-muted-foreground">Invited as {item.selected_role || "staff"} · Click to use code</p>{item.expires_at && <p className="mt-1 text-xs text-muted-foreground">Expires {new Date(item.expires_at).toLocaleDateString()}</p>}</button><div className="mt-3 flex gap-2"><Button size="sm" className="flex-1" variant="outline" onClick={() => void acceptInvitation(item.code)}>Accept</Button><Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyAccessId === `invitation-${item.id}`} onClick={() => void declineInvitation(item)}>{busyAccessId === `invitation-${item.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : "Decline"}</Button></div></div>)}</CardContent></Card>
+          <section className="font-sans pt-2 pb-8 md:pt-4 md:pb-12">
+            <div className="flex flex-col items-center justify-center px-2 pt-2 pb-6 md:pt-4 md:pb-10">
+              <div className="mb-10 space-y-3 text-center">
+                <h1 className="text-4xl font-bold tracking-tight text-foreground md:text-5xl">
+                  Join an existing restaurant
+                </h1>
+                <p className="mx-auto max-w-md text-lg text-muted-foreground">
+                  Your account remains unassigned until the restaurant approves your request or you
+                  accept an invitation sent to your email.
+                </p>
+              </div>
+
+              <div className="grid w-full max-w-3xl grid-cols-1 gap-6 md:grid-cols-2">
+                <div className="group relative flex flex-col overflow-hidden rounded-2xl border-2 border-border bg-card p-8 transition-all duration-300 hover:-translate-y-1 hover:border-orange-400 hover:shadow-xl">
+                  <div className="absolute left-0 right-0 top-0 h-1 origin-left scale-x-0 rounded-t-2xl bg-gradient-to-r from-orange-400 to-amber-500 transition-transform duration-500 group-hover:scale-x-100" />
+                  <div className="absolute bottom-0 right-0 h-48 w-48 translate-x-1/4 translate-y-1/4 rounded-full bg-orange-500/5 transition-transform duration-700 group-hover:scale-150" />
+                  <div className="relative flex h-full flex-col">
+                    <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-xl bg-orange-100 transition-transform duration-300 group-hover:scale-110 dark:bg-orange-900/30">
+                      <QrCode className="h-8 w-8 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <h2 className="mb-2 text-2xl font-bold text-foreground">Restaurant code or QR</h2>
+                    <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+                      Submitting a code creates a pending request. The restaurant chooses your role
+                      during approval.
+                    </p>
+                    <div className="mt-auto space-y-4">
+                      <Input
+                        value={joinCode}
+                        onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                        placeholder="Enter restaurant code"
+                        className="h-12 border-2 text-center font-mono text-lg tracking-widest"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1"
+                          disabled={joinLoading}
+                          onClick={() => void requestJoin()}
+                        >
+                          {joinLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Request access
+                        </Button>
+                        <Button variant="outline" className="border-2" onClick={() => void scan()}>
+                          <ScanLine className="mr-2 h-4 w-4" />
+                          Scan
+                        </Button>
+                      </div>
+                      {requests.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center gap-3 rounded-2xl border-2 border-border bg-background/60 p-3"
+                        >
+                          <StatusIcon status={item.status} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-semibold">{item.restaurant_name}</p>
+                            <p className="text-xs capitalize text-muted-foreground">
+                              {item.status}
+                              {item.selected_role ? ` · ${item.selected_role}` : ""}
+                            </p>
+                          </div>
+                          {item.status === "pending" && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-muted-foreground hover:text-destructive"
+                              disabled={busyAccessId === `request-${item.id}`}
+                              onClick={() => void cancelRequest(item)}
+                            >
+                              {busyAccessId === `request-${item.id}` ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                "Cancel"
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="group relative flex flex-col overflow-hidden rounded-2xl border-2 border-border bg-card p-8 transition-all duration-300 hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl">
+                  <div className="absolute left-0 right-0 top-0 h-1 origin-left scale-x-0 rounded-t-2xl bg-gradient-to-r from-blue-500 to-indigo-500 transition-transform duration-500 group-hover:scale-x-100" />
+                  <div className="absolute bottom-0 right-0 h-48 w-48 translate-x-1/4 translate-y-1/4 rounded-full bg-blue-500/5 transition-transform duration-700 group-hover:scale-150" />
+                  <div className="relative flex h-full flex-col">
+                    <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-xl bg-blue-100 transition-transform duration-300 group-hover:scale-110 dark:bg-blue-900/30">
+                      <ShieldCheck className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <h2 className="mb-2 text-2xl font-bold text-foreground">Verified email invitation</h2>
+                    <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+                      Only an account signed in with the invited email can accept this code.
+                    </p>
+                    <div className="mt-auto space-y-4">
+                      <Input
+                        value={invitationCode}
+                        onChange={(event) => setInvitationCode(event.target.value)}
+                        placeholder="Invitation code from email"
+                        className="h-12 border-2"
+                      />
+                      <Button
+                        className="w-full border-2 border-blue-200 bg-blue-50 font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
+                        variant="secondary"
+                        disabled={joinLoading}
+                        onClick={() => void acceptInvitation()}
+                      >
+                        Accept invitation
+                      </Button>
+                      {invitations.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border-2 border-border bg-background/60 p-3"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setInvitationCode(item.code)}
+                            className="w-full text-left"
+                          >
+                            <p className="font-semibold">{item.restaurant_name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Invited as {item.selected_role || "staff"} · Click to use code
+                            </p>
+                            {item.expires_at && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Expires {new Date(item.expires_at).toLocaleDateString()}
+                              </p>
+                            )}
+                          </button>
+                          <div className="mt-3 flex gap-2">
+                            <Button
+                              size="sm"
+                              className="flex-1 border-2"
+                              variant="outline"
+                              onClick={() => void acceptInvitation(item.code)}
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-muted-foreground hover:text-destructive"
+                              disabled={busyAccessId === `invitation-${item.id}`}
+                              onClick={() => void declineInvitation(item)}
+                            >
+                              {busyAccessId === `invitation-${item.id}` ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                "Decline"
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="mt-12 text-center text-xs text-muted-foreground">
+                Joining never grants access until an authorized reviewer approves you.
+              </p>
+
+              <Button
+                variant="ghost"
+                className="mt-6 px-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
+                onClick={() => {
+                  stopScanner();
+                  setMode("choice");
+                }}
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to options
+              </Button>
             </div>
+
+            <Dialog
+              open={scanning}
+              onOpenChange={(open) => {
+                if (!open) stopScanner();
+              }}
+            >
+              <DialogContent className="font-sans sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
+                    <ScanLine className="h-5 w-5 text-primary" />
+                    Scan restaurant QR
+                  </DialogTitle>
+                  <DialogDescription className="text-sm leading-relaxed">
+                    Point your camera at the restaurant QR code. Scanning stops automatically when a
+                    code is detected.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="overflow-hidden rounded-2xl border-2 border-border bg-black">
+                  <video
+                    ref={videoRef}
+                    className="aspect-video w-full object-cover"
+                    muted
+                    playsInline
+                  />
+                </div>
+                <Button type="button" variant="outline" className="w-full border-2" onClick={stopScanner}>
+                  Cancel scanning
+                </Button>
+              </DialogContent>
+            </Dialog>
           </section>
         )}
       </div>
     </main>
   );
-}
-
-function ReviewItem({ label, value }: { label: string; value: string }) {
-  return <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1">{value || "—"}</p></div>;
-}
-
-function ToggleCard({
-  icon: Icon,
-  title,
-  description,
-  checked,
-  onChange,
-  compact = false,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  compact?: boolean;
-}) {
-  return <button type="button" aria-pressed={checked} onClick={() => onChange(!checked)} className={`flex items-center gap-3 rounded-2xl border p-4 text-left transition ${checked ? "border-primary/50 bg-primary/5 shadow-sm" : "bg-card hover:border-primary/30"}`}><div className={`flex shrink-0 items-center justify-center rounded-xl ${compact ? "h-9 w-9" : "h-11 w-11"} ${checked ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}><Icon className={compact ? "h-4 w-4" : "h-5 w-5"} /></div><div className="min-w-0 flex-1"><p className="font-semibold">{title}</p><p className="text-xs text-muted-foreground">{description}</p></div><div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"}`}>{checked && <Check className="h-3 w-3" />}</div></button>;
 }
 
 function StatusIcon({ status }: { status: string }) {
