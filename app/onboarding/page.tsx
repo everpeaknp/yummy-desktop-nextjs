@@ -1,33 +1,22 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import jsQR from "jsqr";
 import {
   ArrowLeft,
   ArrowRight,
-  Banknote as BanknoteIcon,
-  Building2,
-  Camera,
   Check,
+  ChefHat,
   Clock3,
-  CreditCard,
-  FileText,
-  Hotel,
-  ImageIcon,
   Loader2,
-  LocateFixed,
   LogOut,
-  MapPin,
   QrCode,
   ScanLine,
   ShieldCheck,
-  Store,
-  Trash2,
   Users,
   UtensilsCrossed,
-  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
@@ -48,9 +37,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 
 type OnboardingMode = "choice" | "create" | "join";
 type RequestItem = {
@@ -124,11 +110,31 @@ function isValidTimezone(value: string) {
 }
 
 export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      }
+    >
+      <OnboardingPageContent />
+    </Suspense>
+  );
+}
+
+function OnboardingPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isReplay =
+    searchParams.get("replay") === "1" ||
+    searchParams.get("replay") === "true" ||
+    searchParams.has("replay-1");
   const user = useAuth((state) => state.user);
   const logout = useAuth((state) => state.logout);
   const syncUserProfile = useAuth((state) => state.syncUserProfile);
   const refreshSession = useAuth((state) => state.refreshSession);
+  const restaurantProfile = useRestaurant((state) => state.restaurant);
   const fetchRestaurant = useRestaurant((state) => state.fetchRestaurant);
   const browserTimezone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
@@ -699,20 +705,122 @@ export default function OnboardingPage() {
     router.replace("/");
   };
 
+  // Replay setup tour from help center / settings.
+  useEffect(() => {
+    if (!isReplay) return;
+    void fetchRestaurant(true);
+  }, [isReplay, fetchRestaurant]);
+
+  if (isReplay) {
+    return (
+      <div className="bg-transparent">
+        <header className="relative z-30 w-full border-0 bg-transparent pb-3 pt-2 shadow-none sm:pb-4">
+          <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between px-4 py-3 sm:px-6 md:px-8">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+                <UtensilsCrossed className="h-5 w-5" />
+              </div>
+              <div className="text-left">
+                <p className="font-onboarding text-lg font-medium leading-tight tracking-[-0.03em]">Yummy</p>
+                <p className="text-xs leading-tight text-muted-foreground">Workspace onboarding</p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              className="shrink-0 bg-transparent shadow-none hover:bg-transparent hover:text-foreground"
+              onClick={signOut}
+            >
+              <LogOut className="mr-2 h-4 w-4" /> Sign out
+            </Button>
+          </div>
+        </header>
+        <OnboardingWizard
+          initialEmail={user?.email || ""}
+          replay
+          restaurantId={user?.restaurant_id ?? restaurantProfile?.id ?? null}
+          initialRestaurant={restaurantProfile as Record<string, unknown> | null}
+          embedded
+        />
+      </div>
+    );
+  }
+
+  if (mode === "create") {
+    if (!canAccessOnboarding(user)) {
+      return (
+        <main className="bg-transparent p-4 md:p-8">
+          <div className="mx-auto max-w-lg space-y-4">
+            <Button variant="ghost" onClick={() => setMode("choice")}>
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back to options
+            </Button>
+            <Card className="rounded-3xl border-0 shadow-xl">
+              <CardHeader>
+                <CardTitle>Admin access required</CardTitle>
+                <CardDescription>
+                  Creating a restaurant is limited to admin, owner, or manager accounts. Join an existing restaurant instead.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={() => setMode("join")}>Join a restaurant</Button>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+      );
+    }
+
+    return (
+      <div className="bg-transparent">
+        <header className="relative z-30 w-full border-0 bg-transparent pb-3 pt-2 shadow-none sm:pb-4">
+          <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between px-4 py-3 sm:px-6 md:px-8">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+                <UtensilsCrossed className="h-5 w-5" />
+              </div>
+              <div className="text-left">
+                <p className="font-onboarding text-lg font-medium leading-tight tracking-[-0.03em]">Yummy</p>
+                <p className="text-xs leading-tight text-muted-foreground">Workspace onboarding</p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              className="shrink-0 bg-transparent shadow-none hover:bg-transparent hover:text-foreground"
+              onClick={signOut}
+            >
+              <LogOut className="mr-2 h-4 w-4" /> Sign out
+            </Button>
+          </div>
+        </header>
+        <OnboardingWizard
+          initialEmail={user?.email || ""}
+          replay={false}
+          restaurantId={user?.restaurant_id ?? null}
+          initialRestaurant={null}
+          onBackToOptions={() => setMode("choice")}
+          embedded
+        />
+      </div>
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.12),transparent_34%),linear-gradient(to_bottom,hsl(var(--background)),hsl(var(--muted)/0.35))] p-4 md:p-8">
+    <main className="bg-transparent p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
-        <header className="flex items-center justify-between gap-4">
+        <header className="relative z-30 flex items-center justify-between border-0 bg-transparent py-3 shadow-none">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
               <UtensilsCrossed className="h-5 w-5" />
             </div>
-            <div>
-              <p className="font-bold">Yummy</p>
+            <div className="text-left">
+              <p className="font-onboarding text-lg font-medium tracking-[-0.03em]">Yummy</p>
               <p className="text-xs text-muted-foreground">Workspace onboarding</p>
             </div>
           </div>
-          <Button variant="ghost" onClick={signOut}>
+          <Button
+            variant="ghost"
+            className="shrink-0 bg-transparent shadow-none hover:bg-transparent hover:text-foreground"
+            onClick={signOut}
+          >
             <LogOut className="mr-2 h-4 w-4" /> Sign out
           </Button>
         </header>
@@ -721,9 +829,9 @@ export default function OnboardingPage() {
           <section className="mx-auto max-w-5xl py-8 md:py-16">
             <div className="mx-auto mb-10 max-w-2xl text-center">
               <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Store className="h-7 w-7" />
+                <UtensilsCrossed className="h-7 w-7" />
               </div>
-              <h1 className="text-3xl font-black tracking-tight md:text-5xl">
+              <h1 className="font-onboarding text-3xl font-medium tracking-[-0.04em] md:text-5xl">
                 How would you like to get started?
               </h1>
               <p className="mt-4 text-base text-muted-foreground md:text-lg">
@@ -737,13 +845,13 @@ export default function OnboardingPage() {
                 className="group rounded-3xl border bg-card p-7 text-left shadow-sm transition hover:-translate-y-1 hover:border-primary/50 hover:shadow-xl"
               >
                 <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
-                  <Building2 className="h-7 w-7" />
+                  <ChefHat className="h-7 w-7" />
                 </div>
-                <h2 className="text-2xl font-bold">Create a restaurant</h2>
+                <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em]">Create a restaurant</h2>
                 <p className="mt-2 text-muted-foreground">
                   Set up your business details, map location, timezone and business day.
                 </p>
-                <span className="mt-7 flex items-center font-semibold text-primary">
+                <span className="mt-7 flex items-center font-medium text-primary">
                   Start setup <ArrowRight className="ml-2 h-4 w-4" />
                 </span>
               </button>
@@ -755,11 +863,11 @@ export default function OnboardingPage() {
                 <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
                   <Users className="h-7 w-7" />
                 </div>
-                <h2 className="text-2xl font-bold">Join a restaurant</h2>
+                <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em]">Join a restaurant</h2>
                 <p className="mt-2 text-muted-foreground">
                   Use a restaurant code, scan its QR, or accept a verified-email invitation.
                 </p>
-                <span className="mt-7 flex items-center font-semibold text-blue-600">
+                <span className="mt-7 flex items-center font-medium text-blue-600">
                   View join options <ArrowRight className="ml-2 h-4 w-4" />
                 </span>
               </button>
@@ -770,69 +878,19 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {mode === "create" && (
-          <section className="space-y-4 pb-12">
-            <Button variant="ghost" className="mb-0" onClick={() => setMode("choice")}>
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to options
-            </Button>
-            {canAccessOnboarding(user) ? (
-              <OnboardingWizard
-                initialEmail={user?.email || ""}
-                replay={false}
-                restaurantId={user?.restaurant_id ?? null}
-                initialRestaurant={null}
-              />
-            ) : (
-              <Card className="rounded-3xl border-0 shadow-xl">
-                <CardHeader>
-                  <CardTitle>Admin access required</CardTitle>
-                  <CardDescription>
-                    Creating a restaurant is limited to admin, owner, or manager accounts. Join an existing restaurant instead.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button onClick={() => setMode("join")}>Join a restaurant</Button>
-                </CardContent>
-              </Card>
-            )}
-          </section>
-        )}
-
         {mode === "join" && (
           <section className="mx-auto max-w-5xl pb-12">
             <Button variant="ghost" className="mb-4" onClick={() => { stopScanner(); setMode("choice"); }}><ArrowLeft className="mr-2 h-4 w-4" />Back to options</Button>
-            <div className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><h1 className="text-3xl font-black">Join an existing restaurant</h1><p className="mt-2 text-muted-foreground">Your account remains unassigned until the restaurant approves your request or you accept an invitation sent to {user?.email}.</p></div><div className="flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />Live status updates</div></div>
+            <div className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><h1 className="font-onboarding text-3xl font-medium tracking-[-0.04em]">Join an existing restaurant</h1><p className="mt-2 text-muted-foreground">Your account remains unassigned until the restaurant approves your request or you accept an invitation sent to {user?.email}.</p></div><div className="flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />Live status updates</div></div>
             <div className="grid gap-6 md:grid-cols-2">
-              <Card className="rounded-3xl"><CardHeader><CardTitle className="flex items-center gap-2"><QrCode className="h-5 w-5 text-primary" />Restaurant code or QR</CardTitle><CardDescription>Submitting a code creates a pending request. The restaurant chooses your role during approval.</CardDescription></CardHeader><CardContent className="space-y-4"><Input value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="Enter restaurant code" className="h-12 text-center font-mono text-lg tracking-widest" /><div className="flex gap-2"><Button className="flex-1" disabled={joinLoading} onClick={() => void requestJoin()}>{joinLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Request access</Button><Button variant="outline" onClick={() => void scan()}><ScanLine className="mr-2 h-4 w-4" />Scan</Button></div>{scanning && <div className="space-y-2"><video ref={videoRef} className="aspect-video w-full rounded-xl bg-black" muted playsInline /><Button variant="ghost" className="w-full" onClick={stopScanner}>Cancel scanning</Button></div>}{requests.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border bg-card p-3"><StatusIcon status={item.status} /><div className="min-w-0 flex-1"><p className="truncate font-semibold">{item.restaurant_name}</p><p className="text-xs capitalize text-muted-foreground">{item.status}{item.selected_role ? ` · ${item.selected_role}` : ""}</p></div>{item.status === "pending" && <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyAccessId === `request-${item.id}`} onClick={() => void cancelRequest(item)}>{busyAccessId === `request-${item.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cancel"}</Button>}</div>)}</CardContent></Card>
-              <Card className="rounded-3xl"><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-blue-600" />Verified email invitation</CardTitle><CardDescription>Only an account signed in with the invited email can accept this code.</CardDescription></CardHeader><CardContent className="space-y-4"><Input value={invitationCode} onChange={(event) => setInvitationCode(event.target.value)} placeholder="Invitation code from email" className="h-12" /><Button className="w-full" variant="secondary" disabled={joinLoading} onClick={() => void acceptInvitation()}>Accept invitation</Button>{invitations.map((item) => <div key={item.id} className="rounded-xl border bg-card p-3"><button type="button" onClick={() => setInvitationCode(item.code)} className="w-full text-left"><p className="font-semibold">{item.restaurant_name}</p><p className="text-xs text-muted-foreground">Invited as {item.selected_role || "staff"} · Click to use code</p>{item.expires_at && <p className="mt-1 text-xs text-muted-foreground">Expires {new Date(item.expires_at).toLocaleDateString()}</p>}</button><div className="mt-3 flex gap-2"><Button size="sm" className="flex-1" variant="outline" onClick={() => void acceptInvitation(item.code)}>Accept</Button><Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyAccessId === `invitation-${item.id}`} onClick={() => void declineInvitation(item)}>{busyAccessId === `invitation-${item.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : "Decline"}</Button></div></div>)}</CardContent></Card>
+              <Card className="rounded-3xl"><CardHeader><CardTitle className="flex items-center gap-2"><QrCode className="h-5 w-5 text-primary" />Restaurant code or QR</CardTitle><CardDescription>Submitting a code creates a pending request. The restaurant chooses your role during approval.</CardDescription></CardHeader><CardContent className="space-y-4"><Input value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="Enter restaurant code" className="h-12 text-center font-mono text-lg tracking-widest" /><div className="flex gap-2"><Button className="flex-1" disabled={joinLoading} onClick={() => void requestJoin()}>{joinLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Request access</Button><Button variant="outline" onClick={() => void scan()}><ScanLine className="mr-2 h-4 w-4" />Scan</Button></div>{scanning && <div className="space-y-2"><video ref={videoRef} className="aspect-video w-full rounded-xl bg-black" muted playsInline /><Button variant="ghost" className="w-full" onClick={stopScanner}>Cancel scanning</Button></div>}{requests.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border bg-card p-3"><StatusIcon status={item.status} /><div className="min-w-0 flex-1"><p className="truncate font-medium">{item.restaurant_name}</p><p className="text-xs capitalize text-muted-foreground">{item.status}{item.selected_role ? ` · ${item.selected_role}` : ""}</p></div>{item.status === "pending" && <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyAccessId === `request-${item.id}`} onClick={() => void cancelRequest(item)}>{busyAccessId === `request-${item.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cancel"}</Button>}</div>)}</CardContent></Card>
+              <Card className="rounded-3xl"><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-blue-600" />Verified email invitation</CardTitle><CardDescription>Only an account signed in with the invited email can accept this code.</CardDescription></CardHeader><CardContent className="space-y-4"><Input value={invitationCode} onChange={(event) => setInvitationCode(event.target.value)} placeholder="Invitation code from email" className="h-12" /><Button className="w-full" variant="secondary" disabled={joinLoading} onClick={() => void acceptInvitation()}>Accept invitation</Button>{invitations.map((item) => <div key={item.id} className="rounded-xl border bg-card p-3"><button type="button" onClick={() => setInvitationCode(item.code)} className="w-full text-left"><p className="font-medium">{item.restaurant_name}</p><p className="text-xs text-muted-foreground">Invited as {item.selected_role || "staff"} · Click to use code</p>{item.expires_at && <p className="mt-1 text-xs text-muted-foreground">Expires {new Date(item.expires_at).toLocaleDateString()}</p>}</button><div className="mt-3 flex gap-2"><Button size="sm" className="flex-1" variant="outline" onClick={() => void acceptInvitation(item.code)}>Accept</Button><Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busyAccessId === `invitation-${item.id}`} onClick={() => void declineInvitation(item)}>{busyAccessId === `invitation-${item.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : "Decline"}</Button></div></div>)}</CardContent></Card>
             </div>
           </section>
         )}
       </div>
     </main>
   );
-}
-
-function ReviewItem({ label, value }: { label: string; value: string }) {
-  return <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1">{value || "—"}</p></div>;
-}
-
-function ToggleCard({
-  icon: Icon,
-  title,
-  description,
-  checked,
-  onChange,
-  compact = false,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  compact?: boolean;
-}) {
-  return <button type="button" aria-pressed={checked} onClick={() => onChange(!checked)} className={`flex items-center gap-3 rounded-2xl border p-4 text-left transition ${checked ? "border-primary/50 bg-primary/5 shadow-sm" : "bg-card hover:border-primary/30"}`}><div className={`flex shrink-0 items-center justify-center rounded-xl ${compact ? "h-9 w-9" : "h-11 w-11"} ${checked ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}><Icon className={compact ? "h-4 w-4" : "h-5 w-5"} /></div><div className="min-w-0 flex-1"><p className="font-semibold">{title}</p><p className="text-xs text-muted-foreground">{description}</p></div><div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"}`}>{checked && <Check className="h-3 w-3" />}</div></button>;
 }
 
 function StatusIcon({ status }: { status: string }) {

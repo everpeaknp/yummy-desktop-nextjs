@@ -51,6 +51,11 @@ export type OnboardingDraft = {
   tables: number;
   currency: string;
   taxRate: number;
+  taxEnabled: boolean;
+  kotEnabled: boolean;
+  receiptShowLogo: boolean;
+  receiptShowPan: boolean;
+  receiptFooter: string;
   orderStart: number;
   payments: PaymentMethodKey[];
   timezone: string;
@@ -147,6 +152,11 @@ export function createEmptyDraft(email = ""): OnboardingDraft {
     tables: 12,
     currency: "NPR",
     taxRate: 13,
+    taxEnabled: true,
+    kotEnabled: true,
+    receiptShowLogo: true,
+    receiptShowPan: true,
+    receiptFooter: "Thank you for dining with us.",
     orderStart: 1001,
     payments: ["cash", "card", "digital_wallet"],
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kathmandu",
