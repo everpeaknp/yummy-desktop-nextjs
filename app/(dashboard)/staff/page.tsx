@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { StaffApis, RoleApis, StaffProfileApis } from "@/lib/api/endpoints";
+import { StaffApis, RoleApis, StaffProfileApis, RestaurantJoinApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ import { AuthApis } from "@/lib/api/endpoints";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { hasPermission } from "@/lib/role-permissions";
 
 type StaffProfile = {
   id: number;
@@ -45,7 +46,6 @@ export default function StaffPage() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    password: "",
     role: "waiter",
     roles: ["waiter"] as string[],
     primary_role: "waiter"
@@ -75,6 +75,7 @@ export default function StaffPage() {
   const me = useAuth(state => state.me);
   const router = useRouter();
   const restaurant = useRestaurant((s) => s.restaurant);
+  const canManageStaff = hasPermission(user, "admin.staff.manage");
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -171,7 +172,17 @@ export default function StaffPage() {
       const builtIns = builtInRes.status === "fulfilled" ? collect(builtInRes.value) : [];
 
       // Fallback: ensure common system roles exist in UI even if backend doesn't return them.
-      const defaultRoleNames = ["waiter", "cashier", "manager", "kitchen", "bar", "cafe", "captain", "admin"];
+      const defaultRoleNames = [
+        "waiter",
+        "cashier",
+        "manager",
+        "kitchen",
+        "bar",
+        "cafe",
+        "barista",
+        "accountant",
+        "accounting_approver",
+      ];
       const defaults = defaultRoleNames.map((name, idx) => ({
         id: `default-${idx}-${name}`,
         name,
@@ -189,6 +200,7 @@ export default function StaffPage() {
       for (const r of merged) {
         const name = String(r?.name || "").trim();
         if (!name) continue;
+        if (["admin", "administrator", "superadmin", "super_admin", "platform_staff", "captain"].includes(name.toLowerCase())) continue;
         // Prefer a "real" backend role over defaults.
         const existing = byName.get(name);
         if (!existing) byName.set(name, r);
@@ -224,10 +236,14 @@ export default function StaffPage() {
 
   useEffect(() => {
     fetchStaff();
-    fetchStaffProfiles();
-    fetchPermissions();
-    fetchRoles();
-  }, []);
+    if (canManageStaff) {
+      fetchStaffProfiles();
+      fetchPermissions();
+      fetchRoles();
+    }
+    // These loaders intentionally run once when staff-management access becomes available.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManageStaff]);
 
   const openPayrollDialog = (member: any) => {
     const existing = staffProfilesByUserId.get(member.id);
@@ -248,6 +264,10 @@ export default function StaffPage() {
   };
 
   const savePayrollProfile = async () => {
+    if (!canManageStaff) {
+      toast.error("You do not have permission to manage staff");
+      return;
+    }
     if (!payrollTarget) return;
     const amount = Number(payrollForm.salary_amount);
     if (!payrollForm.account_number.trim()) return toast.error("Account number is required");
@@ -339,7 +359,6 @@ export default function StaffPage() {
       setFormData({
         name: member.name || "",
         email: member.email || "",
-        password: "", // Don't show existing password
         role: member.role || "waiter",
         roles: member.roles || [member.role || "waiter"],
         primary_role: member.primary_role || member.role || "waiter"
@@ -349,7 +368,6 @@ export default function StaffPage() {
       setFormData({
         name: "",
         email: "",
-        password: "",
         role: "waiter",
         roles: ["waiter"],
         primary_role: "waiter"
@@ -360,6 +378,10 @@ export default function StaffPage() {
 
   const handleSaveStaff = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageStaff) {
+      toast.error("You do not have permission to manage staff");
+      return;
+    }
     setSubmitting(true);
     try {
       if (editingStaff) {
@@ -382,33 +404,33 @@ export default function StaffPage() {
         }
 
         // Only include password if provided
-        if (formData.password) payload.password = formData.password;
         
         await apiClient.patch(StaffApis.update(editingStaff.id), payload);
         
         toast.success("Staff profile updated successfully");
       } else {
         const selectedRoleObj = availableRoles.find(r => r.name === formData.primary_role);
-        
+
         const createPayload: any = {
           name: formData.name,
           email: formData.email,
-          role: formData.primary_role,
-          roles: formData.roles,
-          primary_role: formData.primary_role
         };
 
-        if (selectedRoleObj && !String(selectedRoleObj.id).startsWith("default-") && !String(selectedRoleObj.id).startsWith("adhoc-")) {
-            createPayload.custom_role_id = selectedRoleObj.id;
+        const isCustomRole = selectedRoleObj?.is_system_role === false
+          && Number.isInteger(Number(selectedRoleObj.id));
+        if (isCustomRole) {
+          createPayload.custom_role_id = Number(selectedRoleObj.id);
+        } else {
+          createPayload.role = formData.primary_role;
         }
-        
-        if (formData.password) createPayload.password = formData.password;
-        if (user?.restaurant_id) createPayload.restaurant_id = user.restaurant_id;
 
-        const response = await apiClient.post(StaffApis.create, createPayload);
-        const newUserId = response.data.data.id;
-        
-        toast.success("New staff member added successfully");
+        const response = await apiClient.post(RestaurantJoinApis.invitations, createPayload);
+        const message = response.data?.message || "Invitation created. No account was created until the recipient accepts.";
+        const code = String(response.data?.data?.code || response.data?.code || "");
+        toast.success(message, {
+          description: code ? `Manual invitation code: ${code}` : undefined,
+          duration: code ? 10000 : undefined,
+        });
       }
       setIsDialogOpen(false);
       fetchStaff();
@@ -421,26 +443,20 @@ export default function StaffPage() {
     }
   };
 
-  const handleDeactivateStaff = async (id: number) => {
-    if (!confirm("Deactivate this employee? They will lose access, but attendance and payroll history will be preserved.")) return;
+  const handleRemoveStaff = async (id: number) => {
+    if (!canManageStaff) {
+      toast.error("You do not have permission to manage staff");
+      return;
+    }
+    if (!confirm("Remove this person from the restaurant? Their account stays active, and attendance and payroll history will be preserved.")) return;
     try {
       await apiClient.delete(StaffApis.delete(id));
-      toast.success("Employee deactivated; history was preserved");
+      toast.success("Staff membership removed; account and history were preserved");
       fetchStaff();
     } catch (err: any) {
-      console.error("Failed to deactivate staff:", err);
-      const errMsg = err.response?.data?.message || err.response?.data?.detail || "Failed to deactivate employee";
+      console.error("Failed to remove staff membership:", err);
+      const errMsg = err.response?.data?.message || err.response?.data?.detail || "Failed to remove staff member";
       toast.error(errMsg);
-    }
-  };
-
-  const handleReactivateStaff = async (id: number) => {
-    try {
-      await apiClient.patch(StaffApis.update(id), { is_active: true });
-      toast.success("Employee reactivated");
-      fetchStaff();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || err.response?.data?.detail || "Failed to reactivate employee");
     }
   };
 
@@ -479,18 +495,25 @@ export default function StaffPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          {canManageStaff && (
+            <Link href="/staff/join-requests">
+              <Button variant="outline"><Mail className="mr-2 h-4 w-4" />Join requests</Button>
+            </Link>
+          )}
           <Button variant="outline" size="icon" onClick={() => fetchStaff()} disabled={loading} title="Refresh staff list">
             <Loader2 className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
-          <Button className="bg-primary hover:bg-primary/90" onClick={() => handleOpenDialog()}>
-            <UserPlus className="w-4 h-4 mr-2" /> Add Staff Member
-          </Button>
+          {canManageStaff && (
+            <Button className="bg-primary hover:bg-primary/90" onClick={() => handleOpenDialog()}>
+              <UserPlus className="w-4 h-4 mr-2" /> Invite Staff Member
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <MetricCard label="Total Staff" value={staff.length} icon={<Shield className="w-5 h-5" />} color="text-blue-500" />
-        <MetricCard label="Active Now" value={staff.length} icon={<UserIcon className="w-5 h-5" />} color="text-emerald-500" />
+        <MetricCard label="Active Now" value={staff.filter((member) => member.is_active !== false).length} icon={<UserIcon className="w-5 h-5" />} color="text-emerald-500" />
         <MetricCard label="Managers" value={staff.filter(s => s.role?.toLowerCase() === 'manager' || s.role?.toLowerCase() === 'admin').length} icon={<Shield className="w-5 h-5" />} color="text-indigo-500" />
       </div>
 
@@ -601,16 +624,21 @@ export default function StaffPage() {
                           <DropdownMenuItem onClick={() => router.push(`/staff/${member.id}`)}>
                             <UserIcon className="w-4 h-4 mr-2" /> View Details
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openPayrollDialog(member)}>
-                            <Wallet className="w-4 h-4 mr-2" /> Setup Payroll Profile
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleOpenDialog(member)}>
-                            <Edit className="w-4 h-4 mr-2" /> Edit Profile
-                          </DropdownMenuItem>
-                          {member.is_active === false ? <DropdownMenuItem onClick={() => handleReactivateStaff(member.id)}><UserPlus className="w-4 h-4 mr-2" /> Reactivate</DropdownMenuItem> : <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeactivateStaff(member.id)}>
-                            <UserX className="w-4 h-4 mr-2" /> Deactivate
-                          </DropdownMenuItem>
-                          }
+                          {canManageStaff && (
+                            <>
+                              <DropdownMenuItem onClick={() => openPayrollDialog(member)}>
+                                <Wallet className="w-4 h-4 mr-2" /> Setup Payroll Profile
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenDialog(member)}>
+                                <Edit className="w-4 h-4 mr-2" /> Edit Profile
+                              </DropdownMenuItem>
+                              {!String(member.role || "").toLowerCase().includes("admin") && (
+                                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleRemoveStaff(member.id)}>
+                                  <UserX className="w-4 h-4 mr-2" /> Remove from restaurant
+                                </DropdownMenuItem>
+                              )}
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -764,9 +792,9 @@ export default function StaffPage() {
         <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
           <div className="px-6 pt-6 pb-2 shrink-0">
             <DialogHeader>
-              <DialogTitle>{editingStaff ? "Edit Staff Member" : "Add Staff Member"}</DialogTitle>
+              <DialogTitle>{editingStaff ? "Edit Staff Member" : "Invite Staff Member"}</DialogTitle>
               <DialogDescription>
-                {editingStaff ? "Update profile details for this staff member." : "Create a new account for your employee. They will be added to your restaurant."}
+                {editingStaff ? "Update profile details for this staff member." : "Send an invitation. No account or access is created until the verified email owner accepts."}
               </DialogDescription>
             </DialogHeader>
           </div>
@@ -790,25 +818,13 @@ export default function StaffPage() {
                 type="email" 
                 value={formData.email} 
                 onChange={(e) => setFormData({...formData, email: e.target.value})} 
+                disabled={Boolean(editingStaff)}
                 required 
                 placeholder="john@example.com"
                 autoComplete="off"
               />
+              {editingStaff && <p className="text-xs text-muted-foreground">Login email is owned by the user and cannot be changed here.</p>}
             </div>
-            {!editingStaff && (
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input 
-                  id="password" 
-                  type="password" 
-                  value={formData.password} 
-                  onChange={(e) => setFormData({...formData, password: e.target.value})} 
-                  required 
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                />
-              </div>
-            )}
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Assigned Roles</Label>
@@ -861,7 +877,7 @@ export default function StaffPage() {
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={submitting}>
                   {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  {editingStaff ? "Save Changes" : "Create Account"}
+                  {editingStaff ? "Save Changes" : "Send Invitation"}
                 </Button>
               </DialogFooter>
             </div>

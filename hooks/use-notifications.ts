@@ -232,7 +232,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 function buildWsBase(): string {
   const base =
     process.env.NEXT_PUBLIC_API_URL ||
-    "https://yummy-container-app.ambitiouspebble-f5ba67fe.southeastasia.azurecontainerapps.io";
+    "https://api.yummyever.com";
   return base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://").replace(/\/+$/, "");
 }
 
@@ -240,14 +240,10 @@ function buildWsBase(): string {
 export function useNotifications() {
   const user = useAuth((s) => s.user);
   const store = useNotificationStore();
-  const notifWsRef = useRef<WebSocket | null>(null);
   const kotWsRef = useRef<WebSocket | null>(null);
   const timersRef = useRef<{
-    notifPing?: ReturnType<typeof setInterval>;
-    notifReconnect?: ReturnType<typeof setTimeout>;
     kotPing?: ReturnType<typeof setInterval>;
     kotReconnect?: ReturnType<typeof setTimeout>;
-    poll?: ReturnType<typeof setInterval>;
   }>({});
 
   const restaurantId = user?.restaurant_id;
@@ -367,58 +363,7 @@ export function useNotifications() {
     const wsBase = buildWsBase();
     const token = () => localStorage.getItem("accessToken") || "";
 
-    // ── 1. Notification WebSocket (unread count badge) ─────────
-    const connectNotifWs = () => {
-      if (!alive || !token()) return;
-      if (notifWsRef.current) {
-        const s = notifWsRef.current.readyState;
-        if (s === WebSocket.OPEN || s === WebSocket.CONNECTING) return;
-        try { notifWsRef.current.close(); } catch { }
-      }
-
-      const params = new URLSearchParams();
-      params.append("restaurant_id", String(restaurantId));
-      if (user.id) params.append("user_id", String(user.id));
-      if (role) params.append("role", role);
-      params.append("token", token());
-
-      const ws = new WebSocket(`${wsBase}/ws/notifications?${params}`);
-      notifWsRef.current = ws;
-
-      ws.onopen = () => {
-        if (timersRef.current.notifPing) clearInterval(timersRef.current.notifPing);
-        timersRef.current.notifPing = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) try { ws.send(JSON.stringify({ type: "ping" })); } catch { }
-        }, 30000);
-      };
-
-      ws.onmessage = (ev) => {
-        try {
-          const data = JSON.parse(ev.data);
-          if (data.event === "notifications_unread" && data.payload) {
-            const newCount = typeof data.payload.count === "number" ? data.payload.count : parseInt(data.payload.count) || 0;
-            const oldCount = useNotificationStore.getState().unreadCount;
-            if (alive) useNotificationStore.getState().setUnreadCount(newCount);
-            // If count increased and tab is hidden, show browser notification
-            if (newCount > oldCount && document.visibilityState === "hidden") {
-              showBrowserNotification(
-                "🔔 New Notification",
-                `You have ${newCount} unread notification${newCount === 1 ? "" : "s"}`,
-              );
-            }
-          }
-        } catch { }
-      };
-
-      ws.onerror = () => { };
-      ws.onclose = () => {
-        if (timersRef.current.notifPing) { clearInterval(timersRef.current.notifPing); timersRef.current.notifPing = undefined; }
-        notifWsRef.current = null;
-        if (alive) timersRef.current.notifReconnect = setTimeout(connectNotifWs, 5000);
-      };
-    };
-
-    // ── 2. KOT WebSocket (real-time push notifications) ────────
+    // KOT WebSocket (notification/membership events use the global socket).
     const connectKotWs = () => {
       if (!alive || !token()) return;
       if (kotWsRef.current) {
@@ -508,36 +453,24 @@ export function useNotifications() {
       };
     };
 
-    // Start both WS connections
-    const t1 = setTimeout(connectNotifWs, 500);
-    const t2 = setTimeout(connectKotWs, 800);
-
-    // Poll unread count every 30s as fallback
-    timersRef.current.poll = setInterval(() => {
-      if (alive) fetchUnreadCount();
-    }, 30000);
+    const connectTimer = setTimeout(connectKotWs, 500);
 
     // Tab visibility
     const onVisible = () => {
       if (document.visibilityState === "visible" && alive) {
         fetchUnreadCount();
-        if (!notifWsRef.current || notifWsRef.current.readyState !== WebSocket.OPEN) connectNotifWs();
         if (!kotWsRef.current || kotWsRef.current.readyState !== WebSocket.OPEN) connectKotWs();
       }
     };
     document.addEventListener("visibilitychange", onVisible);
+    const timers = timersRef.current;
 
     return () => {
       alive = false;
-      clearTimeout(t1);
-      clearTimeout(t2);
-      if (notifWsRef.current) try { notifWsRef.current.close(); } catch { }
+      clearTimeout(connectTimer);
       if (kotWsRef.current) try { kotWsRef.current.close(); } catch { }
-      if (timersRef.current.notifPing) clearInterval(timersRef.current.notifPing);
-      if (timersRef.current.notifReconnect) clearTimeout(timersRef.current.notifReconnect);
-      if (timersRef.current.kotPing) clearInterval(timersRef.current.kotPing);
-      if (timersRef.current.kotReconnect) clearTimeout(timersRef.current.kotReconnect);
-      if (timersRef.current.poll) clearInterval(timersRef.current.poll);
+      if (timers.kotPing) clearInterval(timers.kotPing);
+      if (timers.kotReconnect) clearTimeout(timers.kotReconnect);
       document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

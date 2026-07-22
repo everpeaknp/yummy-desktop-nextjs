@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { SessionBootstrap } from "@/components/auth/session-bootstrap";
 import { useAuth } from "@/hooks/use-auth";
+import { MembershipEventsProvider } from "@/components/membership-events-provider";
 
 function SessionExpiredListener() {
   const router = useRouter();
@@ -27,6 +28,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       {children}
       <SessionBootstrap />
       <SessionExpiredListener />
+      <MembershipEventsProvider />
     </>
   );
 }

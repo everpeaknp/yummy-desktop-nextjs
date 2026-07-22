@@ -157,7 +157,9 @@ export const useAuth = create<AuthState>()(
               role: p.role || current.role,
               roles,
               primary_role: p.primary_role || p.role || current.primary_role,
-              restaurant_id: p.restaurant_id ?? current.restaurant_id,
+              restaurant_id: Object.prototype.hasOwnProperty.call(p, "restaurant_id")
+                ? p.restaurant_id
+                : current.restaurant_id,
               currency: p.currency ?? current.currency,
               permissions: Array.isArray(p.permissions) ? p.permissions : [],
             },

@@ -19,6 +19,7 @@ import {
   useResizableDialogStyle,
 } from "@/lib/resizable-dialog";
 import apiClient from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/api-error-message";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
 import { OperationalCloseStatus } from "@/components/day-close/operational-close-status";
@@ -39,22 +40,6 @@ import {
   type BusinessLine,
   type DayCloseDrawerControlRow,
 } from "@/types/day-close";
-
-function getApiErrorMessage(err: unknown, fallback: string) {
-  const response = (err as { response?: { data?: unknown } })?.response?.data;
-  if (!response || typeof response !== "object") return fallback;
-  const data = response as {
-    message?: unknown;
-    detail?: unknown;
-  };
-  if (typeof data.message === "string" && data.message.trim()) return data.message;
-  if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
-  if (data.detail && typeof data.detail === "object") {
-    const detail = data.detail as { message?: unknown };
-    if (typeof detail.message === "string" && detail.message.trim()) return detail.message;
-  }
-  return fallback;
-}
 
 interface DayCloseModalProps {
   isOpen: boolean;
@@ -619,6 +604,7 @@ function DrawerCashResultStep({
 
   const expectedCash = liveSnapshot?.expected_cash;
   const countedCash = liveSnapshot?.drawer_control?.counted_cash;
+  const boundaryInferred = liveSnapshot?.drawer_control?.boundary_inferred === true;
   const actualCashForSubmit =
     typeof countedCash === "number" && Number.isFinite(countedCash)
       ? countedCash
@@ -748,7 +734,9 @@ function DrawerCashResultStep({
             {formatDayCloseCurrency(actualCashForSubmit)}
           </p>
           <p className="text-xs text-muted-foreground mt-2">
-            If this value is wrong, correct the drawer count before closing the day.
+            {boundaryInferred
+              ? "This historical drawer was counted after the business-day cutoff. Cash at the cutoff is reconstructed from drawer activity; later activity remains with the later period."
+              : "If this value is wrong, correct the drawer count before closing the day."}
           </p>
         </div>
         {error ? (

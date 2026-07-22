@@ -70,8 +70,7 @@ export const useRestaurant = create<RestaurantState>()(
             set({ restaurant: nextData, error: null });
           }
         } catch (err: any) {
-          // New admins have no restaurant yet (404). Clear stale persisted profile
-          // so post-login routing can send them to onboarding.
+          // No restaurant yet (404): clear stale persisted profile for onboarding/join routing.
           if (err.response?.status === 404) {
             set({ restaurant: null, selectedModule: null, error: null });
           } else {

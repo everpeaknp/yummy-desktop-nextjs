@@ -9,8 +9,8 @@ import {
     MoreVertical, 
     Search,
     Loader2,
-    Check,
-    X
+    Copy,
+    Crown
 } from "lucide-react";
 import { 
     Table, 
@@ -40,6 +40,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { AdminManagementApis } from "@/lib/api/endpoints";
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 
 interface Admin {
     id: number;
@@ -55,14 +57,19 @@ interface AdminManagementProps {
 }
 
 export function AdminManagement({ restaurantId }: AdminManagementProps) {
+    const currentUser = useAuth((state) => state.user);
+    const currentUserId = currentUser?.id;
+    const canManageAdmins = hasPermission(currentUser, "admin.staff.manage");
     const [admins, setAdmins] = useState<Admin[]>([]);
     const [loading, setLoading] = useState(true);
     const [forbidden, setForbidden] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [isRemoving, setIsRemoving] = useState<number | null>(null);
     const [isInviteOpen, setIsInviteOpen] = useState(false);
-    const [inviteForm, setInviteForm] = useState({ name: "", email: "", password: "" });
+    const [inviteForm, setInviteForm] = useState({ name: "", email: "" });
+    const [invitationResult, setInvitationResult] = useState<{ message: string; code: string } | null>(null);
     const [isInviting, setIsInviting] = useState(false);
+    const [isTransferring, setIsTransferring] = useState<number | null>(null);
 
     const fetchAdmins = useCallback(async () => {
         try {
@@ -91,6 +98,15 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
     }, [fetchAdmins]);
 
     const handleRemoveAdmin = async (adminId: number) => {
+        if (!canManageAdmins) {
+            toast.error("You do not have permission to manage administrators");
+            return;
+        }
+        const target = admins.find((admin) => admin.id === adminId);
+        if (!target || target.is_owner || target.id === currentUserId) {
+            toast.error("The owner and your own administrator access cannot be removed here");
+            return;
+        }
         if (!confirm("Are you sure you want to remove this administrator's access to this restaurant?")) return;
         
         try {
@@ -100,34 +116,75 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                 toast.success("Administrator removed");
                 setAdmins(prev => prev.filter(a => a.id !== adminId));
             }
-        } catch (err) {
-            toast.error("Failed to remove administrator");
+        } catch (err: any) {
+            toast.error(err.response?.data?.detail || err.response?.data?.message || "Failed to remove administrator");
         } finally {
             setIsRemoving(null);
         }
     };
 
     const handleInviteAdmin = async () => {
-        if (!inviteForm.name || !inviteForm.email || !inviteForm.password) {
-            toast.error("Please fill in all fields");
+        if (!canManageAdmins) {
+            toast.error("You do not have permission to manage administrators");
+            return;
+        }
+        if (!inviteForm.name.trim() || !inviteForm.email.trim()) {
+            toast.error("Name and email are required");
             return;
         }
 
         try {
             setIsInviting(true);
-            const response = await apiClient.post(AdminManagementApis.restaurantAdmins(restaurantId), inviteForm);
+            const response = await apiClient.post(AdminManagementApis.restaurantAdmins(restaurantId), {
+                name: inviteForm.name.trim(),
+                email: inviteForm.email.trim(),
+            });
             if (response.data.status === 'success') {
-                toast.success("Administrator invited successfully");
-                setIsInviteOpen(false);
-                setInviteForm({ name: "", email: "", password: "" });
-                fetchAdmins();
+                const message = response.data.message || "Administrator invitation created";
+                const code = String(response.data.data?.code || response.data.code || "");
+                setInvitationResult({ message, code });
+                toast.success(message);
             }
         } catch (err: any) {
-            toast.error(err.response?.data?.message || "Failed to invite administrator");
+            toast.error(err.response?.data?.detail || err.response?.data?.message || "Failed to invite administrator");
         } finally {
             setIsInviting(false);
         }
     };
+
+    const handleCopyInvitationCode = async () => {
+        if (!invitationResult?.code) return;
+        try {
+            await navigator.clipboard.writeText(invitationResult.code);
+            toast.success("Invitation code copied");
+        } catch {
+            toast.error("Could not copy automatically. Select and copy the code manually.");
+        }
+    };
+
+    const handleTransferOwnership = async (admin: Admin) => {
+        if (!viewerIsOwner) {
+            toast.error("Only the restaurant owner can transfer ownership");
+            return;
+        }
+        if (!confirm(`Transfer restaurant ownership to ${admin.name}? You will remain an administrator.`)) return;
+
+        try {
+            setIsTransferring(admin.id);
+            const response = await apiClient.post(
+                AdminManagementApis.transferOwnership(restaurantId),
+                { new_owner_id: admin.id },
+            );
+            toast.success(response.data?.message || `Ownership transferred to ${admin.name}`);
+            await fetchAdmins();
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || err.response?.data?.detail || "Failed to transfer ownership");
+        } finally {
+            setIsTransferring(null);
+        }
+    };
+
+    const viewerIsOwner = admins.some((admin) => admin.id === currentUserId && admin.is_owner);
 
     const filteredAdmins = admins.filter(admin => 
         admin.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -175,10 +232,12 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <Button size="sm" onClick={() => setIsInviteOpen(true)}>
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Invite Admin
-                </Button>
+                {canManageAdmins && (
+                    <Button size="sm" onClick={() => setIsInviteOpen(true)}>
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        Invite Admin
+                    </Button>
+                )}
             </div>
 
             <div className="space-y-4">
@@ -239,23 +298,34 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                                         )}
                                     </TableCell>
                                     <TableCell className="text-right py-2.5">
-                                        <DropdownMenu>
+                                        {(viewerIsOwner && !admin.is_owner) || (canManageAdmins && !admin.is_owner && admin.id !== currentUserId) ? <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="ghost" size="icon" className="h-8 w-8">
                                                     <MoreVertical className="w-4 h-4" />
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
-                                                <DropdownMenuItem 
-                                                    onClick={() => handleRemoveAdmin(admin.id)}
-                                                    className="text-destructive focus:text-destructive"
-                                                    disabled={isRemoving === admin.id}
-                                                >
-                                                    {isRemoving === admin.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                                                    Remove Access
-                                                </DropdownMenuItem>
+                                                {viewerIsOwner && !admin.is_owner && (
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleTransferOwnership(admin)}
+                                                        disabled={isTransferring === admin.id}
+                                                    >
+                                                        {isTransferring === admin.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Crown className="w-4 h-4 mr-2" />}
+                                                        Transfer Ownership
+                                                    </DropdownMenuItem>
+                                                )}
+                                                {canManageAdmins && !admin.is_owner && admin.id !== currentUserId && (
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleRemoveAdmin(admin.id)}
+                                                        className="text-destructive focus:text-destructive"
+                                                        disabled={isRemoving === admin.id}
+                                                    >
+                                                        {isRemoving === admin.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                                                        Remove Access
+                                                    </DropdownMenuItem>
+                                                )}
                                             </DropdownMenuContent>
-                                        </DropdownMenu>
+                                        </DropdownMenu> : <span className="text-muted-foreground">-</span>}
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -266,12 +336,41 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
         </div>
 
         {/* Invite Admin Dialog */}
-        <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+        <Dialog
+            open={isInviteOpen}
+            onOpenChange={(open) => {
+                setIsInviteOpen(open);
+                if (!open) {
+                    setInviteForm({ name: "", email: "" });
+                    setInvitationResult(null);
+                }
+            }}
+        >
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-black uppercase tracking-tight italic">Invite Administrator</DialogTitle>
-                    <p className="text-xs text-muted-foreground font-medium">Add a new admin who can manage this restaurant dashboard.</p>
+                    <p className="text-xs text-muted-foreground font-medium">The recipient must sign in with this verified email and accept the invitation before they become an admin.</p>
                 </DialogHeader>
+                {invitationResult ? (
+                    <div className="grid gap-4 py-4">
+                        <div className="rounded-lg border bg-muted/30 p-4">
+                            <p className="text-sm font-medium">{invitationResult.message}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">No administrator account or access has been created yet.</p>
+                        </div>
+                        {invitationResult.code && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="admin-invitation-code" className="text-[10px] font-black uppercase tracking-widest opacity-60">Manual Invitation Code</Label>
+                                <div className="flex gap-2">
+                                    <Input id="admin-invitation-code" value={invitationResult.code} readOnly className="font-mono font-bold" />
+                                    <Button type="button" variant="outline" size="icon" onClick={handleCopyInvitationCode} aria-label="Copy invitation code">
+                                        <Copy className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                                <p className="text-xs text-muted-foreground">Share this code securely if email delivery was unavailable.</p>
+                            </div>
+                        )}
+                    </div>
+                ) : (
                 <div className="grid gap-4 py-4">
                     <div className="grid gap-2">
                         <Label htmlFor="name" className="text-[10px] font-black uppercase tracking-widest opacity-60">Full Name</Label>
@@ -294,26 +393,17 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                             className="font-bold border-border/40"
                         />
                     </div>
-                    <div className="grid gap-2">
-                        <Label htmlFor="pass" className="text-[10px] font-black uppercase tracking-widest opacity-60">Initial Password</Label>
-                        <Input 
-                            id="pass" 
-                            type="password"
-                            value={inviteForm.password}
-                            onChange={(e) => setInviteForm({...inviteForm, password: e.target.value})}
-                            placeholder="••••••••" 
-                            className="font-bold border-border/40"
-                        />
-                    </div>
                 </div>
+                )}
                 <DialogFooter>
                     <Button 
                         variant="outline" 
                         onClick={() => setIsInviteOpen(false)}
                         className="h-10 font-bold border-border/40"
                     >
-                        Cancel
+                        {invitationResult ? "Close" : "Cancel"}
                     </Button>
+                    {!invitationResult && (
                     <Button 
                         onClick={handleInviteAdmin} 
                         disabled={isInviting}
@@ -322,6 +412,7 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                         {isInviting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
                         Send Invitation
                     </Button>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>
