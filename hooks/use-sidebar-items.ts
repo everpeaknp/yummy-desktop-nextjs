@@ -38,7 +38,11 @@ import {
   filterSidebarLinksByAccess,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useSubscriptionStore } from "@/hooks/use-subscription";
 import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
+import {
+  isSubscriptionEntitlementEnabled,
+} from "@/lib/subscription/entitlements";
 export interface SidebarItem {
   title: string;
   href: string;
@@ -140,8 +144,12 @@ export function useSidebarItems(): SidebarItem[] {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const selectedModule = useRestaurant((s) => s.selectedModule);
+  const currentSubscription = useSubscriptionStore((state) => state.current);
 
   return useMemo(() => {
+    const isExplicitlyLocked = (key: string) =>
+      Boolean(currentSubscription) &&
+      !isSubscriptionEntitlementEnabled(currentSubscription, key, true);
     const roles = normalizeRolesForUser(user);
     const isAdminOrManager = roles.some(r => r === "admin" || r === "manager");
     const isCashier = roles.some(r => r === "cashier");
@@ -166,6 +174,24 @@ export function useSidebarItems(): SidebarItem[] {
         if (hotelOnlyHrefs.includes(item.href)) return false;
         // If restaurant not enabled, don't show restaurant-specific items
         if (!restaurant?.restaurant_enabled && restaurantOnlyItems.includes(item.href)) return false;
+        const entitlementByRoute: Record<string, string> = {
+          "/inventory": "inventory.enabled",
+          "/manage/suppliers": "inventory.suppliers.enabled",
+          "/reservations": "reservations.enabled",
+          "/payroll": "payroll.enabled",
+          "/finance/accounting": "finance.accounting.enabled",
+          "/menu/modifiers": "menu.modifiers.enabled",
+          "/finance/income": "finance.income_expense.enabled",
+          "/finance/expenses": "finance.income_expense.enabled",
+          "/cash-drawers": "finance.cash_drawer.enabled",
+          "/customers": "customers.crm.enabled",
+          "/day-close": "finance.daybook.enabled",
+          "/period-reports": "finance.period_close.enabled",
+          "/manage/receipt-designer": "designers.receipt.enabled",
+          "/manage/kot-designer": "designers.kot.enabled",
+        };
+        const requiredEntitlement = entitlementByRoute[item.href];
+        if (requiredEntitlement && isExplicitlyLocked(requiredEntitlement)) return false;
         return true;
       })
       .map((item) => ({
@@ -225,10 +251,16 @@ export function useSidebarItems(): SidebarItem[] {
     if (hasPermission(user, "admin.staff.view")) {
       workforceItems.push({ title: "Staff", href: "/staff", icon: Users, isNestedChild: true });
     }
-    if (hasPermission(user, "attendance.manage")) {
+    if (
+      hasPermission(user, "attendance.manage") &&
+      !(
+        isExplicitlyLocked("attendance.mobile.enabled") &&
+        isExplicitlyLocked("attendance.biometric.enabled")
+      )
+    ) {
       workforceItems.push({ title: "Attendance", href: "/attendance", icon: Fingerprint, isNestedChild: true });
     }
-    if (hasPermission(user, "finance.payroll.view")) {
+    if (hasPermission(user, "finance.payroll.view") && !isExplicitlyLocked("payroll.enabled")) {
       workforceItems.push({ title: "Payroll", href: "/payroll", icon: Banknote, isNestedChild: true });
     }
     if (workforceItems.length) {
@@ -236,7 +268,10 @@ export function useSidebarItems(): SidebarItem[] {
       group.subItems = workforceItems;
     }
 
-    if (hasPermission(user, "finance.income.view")) {
+    if (
+      hasPermission(user, "finance.income.view") &&
+      !isExplicitlyLocked("finance.income_expense.enabled")
+    ) {
       const group = getGroup("finance", "Finance", CreditCard, "/finance/income");
       const subItems = group.subItems ?? [];
       if (!subItems.some((item) => item.href === "/finance/expenses")) {
@@ -260,6 +295,7 @@ export function useSidebarItems(): SidebarItem[] {
       }
       if (
         isFinanceFeatureEnabled(restaurant, "accounting") &&
+        !isExplicitlyLocked("finance.accounting.enabled") &&
         !subItems.some((item) => item.href === "/finance/accounting")
       ) {
         subItems.push({
@@ -277,5 +313,5 @@ export function useSidebarItems(): SidebarItem[] {
       ...r,
       subItems: r.subItems?.length ? r.subItems : undefined
     }));
-  }, [restaurant, user, selectedModule]);
+  }, [currentSubscription, restaurant, user, selectedModule]);
 }

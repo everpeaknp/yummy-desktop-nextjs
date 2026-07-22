@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import apiClient from '@/lib/api-client';
 
-interface Restaurant {
+export interface Restaurant {
   id: number;
   name: string;
   address: string;
@@ -26,6 +26,16 @@ interface Restaurant {
   restaurant_enabled: boolean;
   finance_reports_enabled: boolean;
   finance_accounting_enabled: boolean;
+  subscription?: {
+    plan_code: string;
+    plan_name: string;
+    plan_version?: number | null;
+    status: string;
+    current_period_end?: string | null;
+  } | null;
+  entitlements?: Record<string, boolean | number | string | null>;
+  usage?: Record<string, { used: number; limit: number | null; remaining: number | null }>;
+  addons?: Array<Record<string, unknown>>;
 }
 
 interface RestaurantState {

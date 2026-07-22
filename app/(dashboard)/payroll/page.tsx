@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Link from "next/link";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useEntitlement } from "@/hooks/use-subscription";
 import { toast } from "sonner";
 import { PayrollDueDashboard } from "@/components/payroll/payroll-due-dashboard";
 
@@ -39,9 +40,13 @@ export default function PayrollPage() {
 
   const planState = restaurant?.plan_state?.toLowerCase() || "free";
   const effectivePlan = restaurant?.effective_plan?.toLowerCase() || "free";
-  const isPaid =
+  const legacyPayrollEnabled =
     (effectivePlan === "paid" || effectivePlan === "trial_paid") &&
     (planState === "paid" || planState === "trialing");
+  const { allowed: isPaid, loading: subscriptionLoading } = useEntitlement(
+    "payroll.enabled",
+    legacyPayrollEnabled,
+  );
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -52,7 +57,7 @@ export default function PayrollPage() {
     checkAuth();
   }, [user, me, router]);
 
-  const fetchRuns = async () => {
+  const fetchRuns = useCallback(async () => {
     setLoading(true);
     try {
       const statuses = statusFilter === 'all' ? undefined : [statusFilter];
@@ -87,9 +92,10 @@ export default function PayrollPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter]);
 
   useEffect(() => {
+    if (subscriptionLoading) return;
     if (!isPaid) {
       setLoading(false);
       return;
@@ -97,7 +103,7 @@ export default function PayrollPage() {
     if (user?.restaurant_id) {
       fetchRuns();
     }
-  }, [user, statusFilter, isPaid]);
+  }, [user, isPaid, subscriptionLoading, fetchRuns]);
 
   const getStatusBadge = (status: string) => {
     const s = status.toLowerCase();
@@ -128,7 +134,7 @@ export default function PayrollPage() {
         </Button>
       </div>
 
-      {!isPaid ? (
+      {!subscriptionLoading && !isPaid ? (
         <Card className="border-border">
           <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-start gap-4">
@@ -136,7 +142,7 @@ export default function PayrollPage() {
                 <Crown className="h-6 w-6 text-amber-600" />
               </div>
               <div className="space-y-1">
-                <h2 className="text-lg font-bold">Payroll is a Premium feature</h2>
+                <h2 className="text-lg font-bold">Payroll is not included in your plan</h2>
                 <p className="text-sm text-muted-foreground">
                   Your current plan doesn’t include payroll management. Upgrade to enable payroll runs, approvals, and PDF exports.
                 </p>
@@ -146,7 +152,7 @@ export default function PayrollPage() {
               <Link href="/premium">
                 <Button className="bg-amber-600 hover:bg-amber-700 text-white">
                   <Zap className="w-4 h-4 mr-2" />
-                  View Premium
+                  View plans
                 </Button>
               </Link>
             </div>
@@ -154,7 +160,7 @@ export default function PayrollPage() {
         </Card>
       ) : null}
 
-      {isPaid ? <PayrollDueDashboard onChanged={fetchRuns} /> : null}
+      {!subscriptionLoading && isPaid ? <PayrollDueDashboard onChanged={fetchRuns} /> : null}
 
       <div className="flex items-center justify-between">
         <div><h2 className="text-lg font-semibold">Payroll run history</h2><p className="text-sm text-muted-foreground">Drafts, approvals, partial settlement, and completed runs.</p></div>
@@ -176,13 +182,13 @@ export default function PayrollPage() {
         </div>
       </div>
 
-      {loading ? (
+      {loading || subscriptionLoading ? (
         <div className="h-64 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
         </div>
       ) : !isPaid ? (
         <div className="h-40 flex items-center justify-center text-muted-foreground">
-          Upgrade to Premium to view payroll runs.
+          Choose a plan that includes payroll to view payroll runs.
         </div>
       ) : (
         <Card className="border-border shadow-sm overflow-hidden">

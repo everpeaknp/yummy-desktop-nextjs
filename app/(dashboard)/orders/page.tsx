@@ -36,6 +36,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useSubscriptionStore } from "@/hooks/use-subscription";
+import { entitlementLimit } from "@/lib/subscription/entitlements";
 import { Badge } from "@/components/ui/badge";
 import { format, isToday, isYesterday, startOfDay, endOfDay, subDays } from "date-fns";
 import { 
@@ -123,6 +125,8 @@ export default function OrdersPage() {
     const user = useAuth(state => state.user);
     const me = useAuth(state => state.me);
     const restaurant = useRestaurant(state => state.restaurant);
+    const subscriptionEntitlements = useSubscriptionStore((state) => state.current?.entitlements);
+    const historyDays = entitlementLimit(subscriptionEntitlements, "finance.history_days");
     const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
     const canUseExtendedHistory = useMemo(() => hasExtendedHistoryAccess(user), [user]);
 
@@ -242,6 +246,7 @@ export default function OrdersPage() {
         const validation = validateHistoryDateRange(dateRange, {
             role: primaryRole,
             effectivePlan: restaurant?.effective_plan,
+            historyDays,
             user,
         });
         if (!validation.allowed) {
@@ -323,6 +328,7 @@ export default function OrdersPage() {
         historyLimit,
         primaryRole,
         restaurant?.effective_plan,
+        historyDays,
     ]);
 
     const applySuggestedHistoryRange = useCallback(() => {

@@ -339,7 +339,7 @@ export const Header = memo(function Header() {
             </a>
           </Button>
 
-          {/* Go Premium Navbar Button */}
+          {/* Subscription catalog shortcut */}
           {((user?.role?.toLowerCase() === "admin" || user?.role?.toLowerCase() === "manager" || 
             user?.roles?.some(r => ["admin", "manager"].includes(r.toLowerCase()))) || true) && (
             <Button
@@ -351,7 +351,7 @@ export const Header = memo(function Header() {
             >
               <Link href="/premium">
                 <Zap className="h-3.5 w-3.5 fill-current animate-pulse group-hover:animate-none" />
-                <span>Premium</span>
+                <span>Plans</span>
               </Link>
             </Button>
           )}

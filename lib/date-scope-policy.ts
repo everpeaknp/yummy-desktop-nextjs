@@ -120,6 +120,7 @@ export function validateAnalyticsDateRange(
   options: {
     role: UserRole | null;
     effectivePlan?: string | null;
+    historyDays?: number | null;
   }
 ): DateScopeValidation {
   const result = validateHistoryDateRange(range, options);
@@ -154,6 +155,7 @@ export function validateHistoryDateRange(
   options: {
     role: UserRole | null;
     effectivePlan?: string | null;
+    historyDays?: number | null;
     user?: HistoryScopeUser;
   }
 ): DateScopeValidation {
@@ -162,15 +164,22 @@ export function validateHistoryDateRange(
   if (!from || !to) return { allowed: true };
 
   const today = new Date();
-  const oldestFreeAllowed = subDays(today, FREE_PLAN_MAX_LOOKBACK_DAYS - 1);
+  const planHistoryDays = options.historyDays !== undefined
+    ? options.historyDays
+    : isFreePlan(options.effectivePlan)
+      ? FREE_PLAN_MAX_LOOKBACK_DAYS
+      : null;
+  const oldestPlanAllowed = planHistoryDays != null && planHistoryDays > 0
+    ? subDays(today, planHistoryDays - 1)
+    : null;
 
-  if (isFreePlan(options.effectivePlan) && startOfDay(from) < startOfDay(oldestFreeAllowed)) {
+  if (oldestPlanAllowed && startOfDay(from) < startOfDay(oldestPlanAllowed)) {
     return {
       allowed: false,
       kind: "plan_date_limit",
-      message: `Free plan can only access the last ${FREE_PLAN_MAX_LOOKBACK_DAYS} days of data.`,
-      maxDays: FREE_PLAN_MAX_LOOKBACK_DAYS,
-      suggestedRange: { from: oldestFreeAllowed, to: today },
+      message: `Your current plan can only access the last ${planHistoryDays} days of data.`,
+      maxDays: planHistoryDays ?? FREE_PLAN_MAX_LOOKBACK_DAYS,
+      suggestedRange: { from: oldestPlanAllowed, to: today },
     };
   }
 

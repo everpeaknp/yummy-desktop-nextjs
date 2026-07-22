@@ -9,6 +9,7 @@ import apiClient from "@/lib/api-client";
 import { PayrollApis, StaffApis, StaffProfileApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useEntitlement } from "@/hooks/use-subscription";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -101,9 +102,13 @@ export default function PayrollCreatePage() {
 
   const planState = restaurant?.plan_state?.toLowerCase() || "free";
   const effectivePlan = restaurant?.effective_plan?.toLowerCase() || "free";
-  const isPaid =
+  const legacyPayrollEnabled =
     (effectivePlan === "paid" || effectivePlan === "trial_paid") &&
     (planState === "paid" || planState === "trialing");
+  const { allowed: isPaid, loading: subscriptionLoading } = useEntitlement(
+    "payroll.enabled",
+    legacyPayrollEnabled,
+  );
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -195,14 +200,14 @@ export default function PayrollCreatePage() {
   }, [user]);
 
   useEffect(() => {
-    if (!loading && !isPaid) router.push("/premium");
-  }, [loading, isPaid, router]);
+    if (!loading && !subscriptionLoading && !isPaid) router.push("/premium");
+  }, [loading, subscriptionLoading, isPaid, router]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || subscriptionLoading) return;
     if (!isPaid) return;
     if (!includeAllStaff) fetchStaff();
-  }, [user, includeAllStaff, isPaid]);
+  }, [user, includeAllStaff, isPaid, subscriptionLoading]);
 
   const toggleStaff = (id: number) => {
     setSelectedStaffIds((prev) => {
@@ -279,7 +284,7 @@ export default function PayrollCreatePage() {
     }
   };
 
-  if (loading) {
+  if (loading || subscriptionLoading) {
     return (
       <div className="h-64 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
@@ -293,11 +298,11 @@ export default function PayrollCreatePage() {
         <Card className="border-border">
           <CardContent className="p-6 flex items-center justify-between gap-4">
             <div className="space-y-1">
-              <p className="text-lg font-semibold">Payroll is a Premium feature</p>
-              <p className="text-sm text-muted-foreground">Upgrade to Premium to create payroll runs.</p>
+              <p className="text-lg font-semibold">Payroll is not included in your plan</p>
+              <p className="text-sm text-muted-foreground">Choose a plan that includes payroll to create payroll runs.</p>
             </div>
             <Link href="/premium">
-              <Button className="bg-amber-600 hover:bg-amber-700 text-white">View Premium</Button>
+              <Button className="bg-amber-600 hover:bg-amber-700 text-white">View plans</Button>
             </Link>
           </CardContent>
         </Card>

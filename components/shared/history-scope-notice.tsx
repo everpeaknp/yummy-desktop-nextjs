@@ -31,7 +31,7 @@ export function HistoryScopeNotice({
               <h2 className="text-lg font-bold">Upgrade for full history</h2>
               <p className="text-sm text-muted-foreground">{error.message}</p>
               <p className="text-xs text-muted-foreground">
-                Premium unlocks unlimited finance and order history beyond the free plan window.
+                Review the published plan limits to find the history access your restaurant needs.
               </p>
             </div>
           </div>
@@ -44,7 +44,7 @@ export function HistoryScopeNotice({
             <Button asChild className="bg-amber-600 hover:bg-amber-700 text-white">
               <Link href="/premium">
                 <Zap className="w-4 h-4 mr-2" />
-                View Premium
+                View plans
               </Link>
             </Button>
           </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { SessionBootstrap } from "@/components/auth/session-bootstrap";
 import { useAuth } from "@/hooks/use-auth";
 import { MembershipEventsProvider } from "@/components/membership-events-provider";
+import { SubscriptionSyncProvider } from "@/components/subscription/subscription-sync-provider";
 
 function SessionExpiredListener() {
   const router = useRouter();
@@ -29,6 +30,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <SessionBootstrap />
       <SessionExpiredListener />
       <MembershipEventsProvider />
+      <SubscriptionSyncProvider />
     </>
   );
 }

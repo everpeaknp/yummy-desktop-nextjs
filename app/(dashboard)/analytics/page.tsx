@@ -57,6 +57,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { Badge } from "@/components/ui/badge";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useSubscriptionStore } from "@/hooks/use-subscription";
+import { entitlementLimit } from "@/lib/subscription/entitlements";
 import {
   AnalyticsApis,
   DayCloseApis,
@@ -164,6 +166,8 @@ export default function AnalyticsPage() {
   const user = useAuth((state) => state.user);
   const { ready, canViewAnalytics } = useAnalyticsViewAccess();
   const restaurant = useRestaurant((s) => s.restaurant);
+  const subscriptionEntitlements = useSubscriptionStore((state) => state.current?.entitlements);
+  const historyDays = entitlementLimit(subscriptionEntitlements, "finance.history_days");
   const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
 
   const [station, setStation] = useState<string | undefined>();
@@ -601,6 +605,7 @@ export default function AnalyticsPage() {
       const validation = validateAnalyticsDateRange(presetRange, {
         role: primaryRole,
         effectivePlan: restaurant?.effective_plan,
+        historyDays,
       });
       if (!validation.allowed) {
         setScopeNotice(validationToScopeError(validation));
@@ -819,6 +824,7 @@ export default function AnalyticsPage() {
     fetchTrigger,
     primaryRole,
     restaurant?.effective_plan,
+    historyDays,
     selectedDayCloseSession,
   ]);
 

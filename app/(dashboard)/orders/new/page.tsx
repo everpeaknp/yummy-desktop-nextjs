@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { RoomContainer, type TableData } from "@/components/tables/room-container";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useEntitlement } from "@/hooks/use-subscription";
 
 
 interface TableType {
@@ -48,6 +49,45 @@ export default function NewOrderPage() {
     const restaurant = useRestaurant((s) => s.restaurant);
     const router = useRouter();
     const hotelEnabled = restaurant?.hotel_enabled ?? false;
+    const dineInAccess = useEntitlement("orders.dine_in.enabled", true);
+    const takeawayAccess = useEntitlement("orders.takeaway.enabled", true);
+    const deliveryAccess = useEntitlement("orders.delivery.enabled", true);
+    const hotelAccess = useEntitlement("business.hotel.enabled", hotelEnabled);
+    const orderAccessLoading =
+        dineInAccess.loading ||
+        takeawayAccess.loading ||
+        deliveryAccess.loading ||
+        hotelAccess.loading;
+    const orderAccessError =
+        (!dineInAccess.resolved && dineInAccess.error) ||
+        (!takeawayAccess.resolved && takeawayAccess.error) ||
+        (!deliveryAccess.resolved && deliveryAccess.error) ||
+        (!hotelAccess.resolved && hotelAccess.error);
+
+    useEffect(() => {
+        if (orderAccessLoading || orderAccessError) return;
+        const allowedByTab: Record<string, boolean> = {
+            tables: dineInAccess.allowed,
+            rooms: hotelEnabled && hotelAccess.allowed,
+            quick_bill: takeawayAccess.allowed,
+            delivery: deliveryAccess.allowed,
+            pickup: takeawayAccess.allowed,
+        };
+        if (allowedByTab[activeTab]) return;
+        const firstAllowed = Object.keys(allowedByTab).find((tab) => allowedByTab[tab]);
+        setActiveTab(firstAllowed ?? "locked");
+        setActivePOS(null);
+        setSelectedTables([]);
+    }, [
+        activeTab,
+        deliveryAccess.allowed,
+        dineInAccess.allowed,
+        hotelAccess.allowed,
+        hotelEnabled,
+        orderAccessError,
+        orderAccessLoading,
+        takeawayAccess.allowed,
+    ]);
 
     // 1. Session Restoration & Auth Guard
     useEffect(() => {
@@ -223,6 +263,42 @@ export default function NewOrderPage() {
         });
     };
 
+    if (orderAccessLoading) {
+        return (
+            <div className="flex min-h-[50vh] items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        );
+    }
+
+    if (orderAccessError) {
+        return (
+            <div className="mx-auto w-full max-w-2xl p-6">
+                <Card>
+                    <CardContent className="space-y-4 p-6">
+                        <h1 className="text-lg font-bold">Unable to verify order-channel access</h1>
+                        <p className="text-sm text-muted-foreground">{orderAccessError}</p>
+                        <Button variant="outline" onClick={() => router.push("/premium")}>Open billing</Button>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
+    if (activeTab === "locked") {
+        return (
+            <div className="mx-auto w-full max-w-2xl p-6">
+                <Card>
+                    <CardContent className="space-y-4 p-6">
+                        <h1 className="text-lg font-bold">No ordering channel is included in this plan</h1>
+                        <p className="text-sm text-muted-foreground">Review the published plans to enable an ordering workflow.</p>
+                        <Button onClick={() => router.push("/premium")}>View plans</Button>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
     if (activePOS) {
         let label = "Table Order";
         if (activePOS.channel === "room_service") {
@@ -270,7 +346,7 @@ export default function NewOrderPage() {
             icon: Sofa, 
             description: 'Table service', 
             activeColor: 'bg-orange-600',
-            show: true,
+            show: dineInAccess.allowed,
         },
         // Room service — only shown when hotel is enabled
         ...(hotelEnabled ? [{
@@ -279,7 +355,7 @@ export default function NewOrderPage() {
             icon: BedDouble,
             description: 'Hotel room orders',
             activeColor: 'bg-blue-600',
-            show: true,
+            show: hotelAccess.allowed,
         }] : []),
         { 
             id: 'quick_bill', 
@@ -287,7 +363,7 @@ export default function NewOrderPage() {
             icon: Zap, 
             description: 'Fast checkout', 
             activeColor: 'bg-indigo-600',
-            show: true,
+            show: takeawayAccess.allowed,
         },
         { 
             id: 'delivery', 
@@ -295,7 +371,7 @@ export default function NewOrderPage() {
             icon: Truck, 
             description: 'Online orders', 
             activeColor: 'bg-purple-600',
-            show: true,
+            show: deliveryAccess.allowed,
         },
         { 
             id: 'pickup', 
@@ -303,7 +379,7 @@ export default function NewOrderPage() {
             icon: ShoppingBag, 
             description: 'Takeaway service', 
             activeColor: 'bg-green-600',
-            show: true,
+            show: takeawayAccess.allowed,
         },
     ];
 
@@ -319,7 +395,7 @@ export default function NewOrderPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 flex-shrink-0">
 
 
-                {orderTypes.map((type) => (
+                {orderTypes.filter((type) => type.show).map((type) => (
                     <Card 
                         key={type.id}
                         className={cn(

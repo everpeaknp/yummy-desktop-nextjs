@@ -27,6 +27,14 @@ export const AuthApis = {
   uploadProfilePicture: "/users/me/profile-picture",
 };
 
+export const SubscriptionApis = {
+  catalog: "/subscriptions/catalog",
+  current: "/subscriptions/current",
+  usage: "/subscriptions/usage",
+  invoices: "/subscriptions/invoices",
+  upgradeRequests: "/subscriptions/upgrade-requests",
+};
+
 export const RestaurantJoinApis = {
   currentCode: "/restaurant-joins/code",
   rotateCode: "/restaurant-joins/code",

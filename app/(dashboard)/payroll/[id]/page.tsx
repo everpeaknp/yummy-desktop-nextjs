@@ -39,6 +39,7 @@ import type { DrawerCashControlSummary, PaymentBank } from "@/types/accounting";
 import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useEntitlement } from "@/hooks/use-subscription";
 
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
@@ -143,9 +144,13 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
 
   const planState = restaurant?.plan_state?.toLowerCase() || "free";
   const effectivePlan = restaurant?.effective_plan?.toLowerCase() || "free";
-  const isPaid =
+  const legacyPayrollEnabled =
     (effectivePlan === "paid" || effectivePlan === "trial_paid") &&
     (planState === "paid" || planState === "trialing");
+  const { allowed: isPaid, loading: subscriptionLoading } = useEntitlement(
+    "payroll.enabled",
+    legacyPayrollEnabled,
+  );
 
   const [loading, setLoading] = useState(true);
   const [run, setRun] = useState<PayrollRunDetail | null>(null);
@@ -197,8 +202,8 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
   }, [user, me, router]);
 
   useEffect(() => {
-    if (!loading && !isPaid) router.push("/premium");
-  }, [loading, isPaid, router]);
+    if (!loading && !subscriptionLoading && !isPaid) router.push("/premium");
+  }, [loading, subscriptionLoading, isPaid, router]);
 
   const loadStaff = useCallback(async () => {
     try {
@@ -247,13 +252,13 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
 
   useEffect(() => {
     if (!user) return;
-    if (!isPaid) {
+    if (subscriptionLoading || !isPaid) {
       setLoading(false);
       return;
     }
     loadStaff();
     loadRun();
-  }, [isPaid, loadRun, loadStaff, user]);
+  }, [isPaid, loadRun, loadStaff, subscriptionLoading, user]);
 
   const statusBadge = useMemo(() => {
     const s = (run?.status || "").toLowerCase();
@@ -631,7 +636,7 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
     };
   }, [paidOpen, restaurant?.id]);
 
-  if (loading) {
+  if (loading || subscriptionLoading) {
     return (
       <div className="h-64 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
@@ -645,11 +650,11 @@ export default function PayrollRunDetailPage({ params }: { params: { id: string 
         <Card className="border-border">
           <CardContent className="p-6 flex items-center justify-between gap-4">
             <div className="space-y-1">
-              <p className="text-lg font-semibold">Payroll is a Premium feature</p>
-              <p className="text-sm text-muted-foreground">Upgrade to Premium to view payroll runs.</p>
+              <p className="text-lg font-semibold">Payroll is not included in your plan</p>
+              <p className="text-sm text-muted-foreground">Choose a plan that includes payroll to view payroll runs.</p>
             </div>
             <Link href="/premium">
-              <Button className="bg-amber-600 hover:bg-amber-700 text-white">View Premium</Button>
+              <Button className="bg-amber-600 hover:bg-amber-700 text-white">View plans</Button>
             </Link>
           </CardContent>
         </Card>

@@ -40,8 +40,8 @@ const TOUR_COPY: Record<string, { title: string; text: string }> = {
     text: "Download the Yummy POS desktop app for Windows.",
   },
   "navbar-premium": {
-    title: "Premium",
-    text: "View billing, trial status, and upgrade options.",
+    title: "Plans & billing",
+    text: "View the current subscription, usage, published plans, and upgrade options.",
   },
   "navbar-notifications": {
     title: "Notifications",
@@ -224,7 +224,7 @@ const TOUR_COPY: Record<string, { title: string; text: string }> = {
     text: "Guest check-in and check-out flows.",
   },
   "nav-premium": {
-    title: "Premium",
+    title: "Plans & billing",
     text: "Subscription and plan details.",
   },
   "sidebar-account": {

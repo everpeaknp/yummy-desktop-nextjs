@@ -30,7 +30,9 @@ import {
 import { useTheme } from "next-themes";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useSubscriptionStore } from "@/hooks/use-subscription";
 import { useSidebar } from "@/hooks/use-sidebar";
+import { currentPlanDisplayName } from "@/lib/subscription/entitlements";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Tooltip,
@@ -159,6 +161,7 @@ export function Sidebar() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { restaurant, fetchRestaurant, selectedModule } = useRestaurant();
+  const currentSubscription = useSubscriptionStore((state) => state.current);
   const { collapsed, width, toggle, setWidth, setCollapsed } = useSidebar();
   const items = useSidebarItems();
   const { theme, setTheme } = useTheme();
@@ -166,6 +169,7 @@ export function Sidebar() {
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [helpOpen, setHelpOpen] = useState(false);
   const resizingRef = useRef(false);
+  const planDisplayName = currentPlanDisplayName(currentSubscription, restaurant);
 
   // Expand all sidebar groups while the product tour is active
   useEffect(() => {
@@ -372,7 +376,7 @@ export function Sidebar() {
                       </div>
                       <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
                         <Crown className="h-3 w-3 text-amber-500" />
-                        <span className="truncate">Premium (Trial)</span>
+                        <span className="truncate">{planDisplayName}</span>
                       </div>
                     </div>
                   )}
@@ -380,7 +384,7 @@ export function Sidebar() {
                 </div>
                 {!collapsed && (
                   <div className="bg-primary/5 text-primary text-[11px] font-semibold px-3 py-1.5 text-center border-t border-primary/10 hover:bg-primary/10 transition-colors flex items-center justify-center gap-1 uppercase tracking-wider">
-                    Upgrade Now <Zap className="h-3 w-3" />
+                    View subscription <Zap className="h-3 w-3" />
                   </div>
                 )}
               </button>
@@ -402,7 +406,7 @@ export function Sidebar() {
                     <div className="flex items-center gap-2 mt-1.5">
                       <div className="flex items-center gap-1 text-[11px] text-amber-500 font-bold tracking-tight">
                         <Crown className="h-3 w-3 fill-amber-500" />
-                        Premium (Trial)
+                        {planDisplayName}
                       </div>
                       <div className="text-[10px] font-bold bg-muted px-2 py-0.5 rounded-md text-foreground/80 tracking-tight">
                         Role: {user?.roles?.filter(r => !r.startsWith("__user_"))?.[0] || user?.role || "Admin"}
