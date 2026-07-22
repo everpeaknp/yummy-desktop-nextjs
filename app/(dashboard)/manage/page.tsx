@@ -371,7 +371,6 @@ export default function ManagePage() {
             <HelpCenterDialog
                 open={helpOpen}
                 onOpenChange={setHelpOpen}
-                includeOnboarding
             />
         </div>
     );

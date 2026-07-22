@@ -658,12 +658,14 @@ export function OnboardingWizard({
 
   const finishSetup = async (skipped: boolean) => {
     if (submitting) return;
+    // First registration must complete every step — skip is replay-only ("Back to settings").
+    if (!replay && skipped) return;
     setSubmitting(true);
     try {
       if (replay) {
         if (skipped) {
-          toast.success("Returned to settings");
-          router.replace("/manage");
+          toast.success("Returned to dashboard");
+          router.replace("/dashboard");
           return;
         }
 
@@ -1009,35 +1011,11 @@ export function OnboardingWizard({
                   );
                 })}
               </nav>
-
-              {onBackToOptions && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="mt-10 w-fit px-0 text-white/85 hover:bg-transparent hover:text-white"
-                  onClick={onBackToOptions}
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to options
-                </Button>
-              )}
             </div>
           </aside>
 
           <main className="flex h-full min-w-0 flex-col bg-card">
             <div className="flex items-center gap-3 px-4 py-3.5 sm:px-6 sm:py-4">
-              {onBackToOptions && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 px-2 text-muted-foreground md:hidden"
-                  onClick={onBackToOptions}
-                >
-                  <ArrowLeft className="mr-1.5 h-4 w-4" />
-                  Options
-                </Button>
-              )}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-muted-foreground">
                   <span className="tabular-nums">
@@ -1053,6 +1031,25 @@ export function OnboardingWizard({
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-0.5">
+                {(replay || onBackToOptions) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-muted-foreground"
+                    disabled={submitting}
+                    onClick={() => {
+                      if (replay) {
+                        router.replace("/dashboard");
+                        return;
+                      }
+                      onBackToOptions?.();
+                    }}
+                  >
+                    <ArrowLeft className="mr-1.5 h-4 w-4" />
+                    {replay ? "Back to dashboard" : "Back to options"}
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="ghost"
@@ -1062,16 +1059,6 @@ export function OnboardingWizard({
                   aria-label="Toggle theme"
                 >
                   {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 text-muted-foreground"
-                  disabled={submitting}
-                  onClick={() => void finishSetup(true)}
-                >
-                  {replay ? "Back to settings" : "Skip setup"}
                 </Button>
               </div>
             </div>

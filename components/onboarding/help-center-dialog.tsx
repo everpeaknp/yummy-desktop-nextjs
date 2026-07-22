@@ -24,7 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { canAccessOnboarding } from "@/lib/onboarding";
+import { canAccessOnboarding, canReplayOnboarding } from "@/lib/onboarding";
 import { isPathAccessible } from "@/lib/role-permissions";
 import { requestProductTour } from "@/lib/product-tour";
 
@@ -86,18 +86,18 @@ function HelpLinkRow({ link, onNavigate }: { link: HelpLink; onNavigate?: () => 
 export function HelpCenterDialog({
   open,
   onOpenChange,
-  /** Only Manage / admin dashboard should surface the onboarding replay link. */
-  includeOnboarding = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** @deprecated Replay is admin-only via canReplayOnboarding; prop ignored. */
   includeOnboarding?: boolean;
 }) {
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const showGateway =
     Boolean(restaurant?.restaurant_enabled) && Boolean(restaurant?.hotel_enabled);
-  const showOnboarding = includeOnboarding && canAccessOnboarding(user);
+  // Admin-only: first registration is automatic; later access is Help → Onboarding.
+  const showOnboarding = canReplayOnboarding(user);
 
   const helpGroups: Array<{ title: string; links: HelpLink[] }> = [
     {

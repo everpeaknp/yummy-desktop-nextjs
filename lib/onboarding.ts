@@ -5,19 +5,36 @@ type OnboardingUser = {
   role?: string | null;
   roles?: string[] | null;
   primary_role?: string | null;
+  restaurant_id?: number | null;
 } | null;
 
-/** Restaurant setup is admin-dashboard only (not waiter/cashier/kitchen). */
-export function canAccessOnboarding(user: OnboardingUser): boolean {
-  if (!user) return false;
-  const roles = [
+function collectRoles(user: OnboardingUser): string[] {
+  if (!user) return [];
+  return [
     ...(Array.isArray(user.roles) ? user.roles : []),
     user.role,
     user.primary_role,
   ]
     .filter(Boolean)
     .map((r) => String(r).toLowerCase());
-  return roles.some((r) => r === "admin" || r === "owner" || r === "manager");
+}
+
+/** First-time restaurant create (admin dashboard roles). */
+export function canAccessOnboarding(user: OnboardingUser): boolean {
+  if (!user) return false;
+  return collectRoles(user).some((r) => r === "admin" || r === "owner" || r === "manager");
+}
+
+/** Replay from Help is admin-only after the restaurant already exists. */
+export function canReplayOnboarding(user: OnboardingUser): boolean {
+  if (!user) return false;
+  return collectRoles(user).some((r) => r === "admin");
+}
+
+/** True when the user still needs first registration (no restaurant yet). */
+export function needsFirstOnboarding(user: OnboardingUser): boolean {
+  if (!user) return false;
+  return !user.restaurant_id;
 }
 
 export type BusinessType = "dine_in" | "cafe" | "cloud_kitchen";
