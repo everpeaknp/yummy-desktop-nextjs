@@ -87,8 +87,10 @@ export const useRestaurant = create<RestaurantState>()(
               set({ restaurant: nextData, error: null });
             }
           } catch (err: any) {
-            // No restaurant yet (404): clear stale persisted profile for onboarding/join routing.
-            if (err.response?.status === 404) {
+            // No restaurant yet (404) or onboarding bootstrap without pos.view (403):
+            // clear stale persisted profile for onboarding/join routing.
+            const status = err.response?.status;
+            if (status === 404 || status === 403) {
               set({ restaurant: null, selectedModule: null, error: null });
             } else {
               console.error('Failed to fetch restaurant:', err);
