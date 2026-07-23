@@ -10,16 +10,14 @@ import {
   ChefHat,
   Coffee,
   ConciergeBell,
-  CookingPot,
   CreditCard,
-  CupSoda,
-  IceCreamCone,
   Loader2,
+  LogOut,
   Map,
   Maximize2,
   Minimize2,
   Moon,
-  Pizza,
+  QrCode,
   Smartphone,
   Soup,
   Store,
@@ -27,7 +25,6 @@ import {
   Upload,
   UtensilsCrossed,
   Wallet,
-  Wine,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -64,93 +61,32 @@ import {
   TaxConfigApis,
 } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
-import { useRestaurant } from "@/hooks/use-restaurant";
+import { useOnboarding, useOnboardingHydrated } from "@/hooks/use-onboarding";
+import { useRestaurant, type Restaurant } from "@/hooks/use-restaurant";
 import { cn, getImageUrl } from "@/lib/utils";
 import { ImageService } from "@/services/image-service";
 import {
   BUSINESS_TYPE_OPTIONS,
   businessTypeLabel,
-  createEmptyDraft,
+  draftFromRestaurant,
   earliestOpenTime,
   markPendingTour,
-  OnboardingDraft,
   PAYMENT_OPTIONS,
-  PaymentMethodKey,
   paymentCardsFromSelection,
   saveOnboardingHours,
+  toApiBusinessDayTime,
+  toHourMinute,
   WORKSPACE_OPTIONS,
   workspaceFlags,
   workspaceLabel,
 } from "@/lib/onboarding";
 
-function toHourMinute(value?: string | null) {
-  if (!value) return "00:00";
-  const match = String(value).trim().match(/^(\d{1,2}):(\d{1,2})/);
-  if (!match) return "00:00";
-  const hour = Math.max(0, Math.min(23, Number(match[1]) || 0));
-  const minute = Math.max(0, Math.min(59, Number(match[2]) || 0));
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-}
-
-function toApiBusinessDayTime(value?: string | null) {
-  const normalized = toHourMinute(value);
-  return `${normalized}:00`;
-}
-
-function normalizePhoneForInput(phone?: string | null) {
-  const raw = String(phone || "").trim();
-  if (!raw) return "";
-  if (raw.startsWith("+")) return raw;
-  // Profile sometimes stores local digits; default to Nepal for onboarding sync
-  const digits = raw.replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("977")) return `+${digits}`;
-  return `+977${digits}`;
-}
-
-function draftFromRestaurant(
-  r: Record<string, unknown>,
-  email: string,
-  base?: OnboardingDraft
-): OnboardingDraft {
-  const prev = base || createEmptyDraft(email);
-  const restaurantEnabled = Boolean(r.restaurant_enabled ?? true);
-  const hotelEnabled = Boolean(r.hotel_enabled);
-  return {
-    ...prev,
-    restaurantName: String(r.name || prev.restaurantName || ""),
-    phone: normalizePhoneForInput(String(r.phone || prev.phone || "")),
-    email: email || prev.email,
-    taxNumber: String(r.pan_number || prev.taxNumber || ""),
-    address: String(r.address || prev.address || ""),
-    description: String(r.description || prev.description || ""),
-    latitude:
-      r.latitude != null && r.latitude !== "" ? String(r.latitude) : prev.latitude,
-    longitude:
-      r.longitude != null && r.longitude !== "" ? String(r.longitude) : prev.longitude,
-    businessDayStartTime:
-      toHourMinute(r.business_day_start_time as string | null | undefined) ||
-      prev.businessDayStartTime,
-    profilePicture: String(r.profile_picture || prev.profilePicture || ""),
-    coverPhoto: String(r.cover_photo || prev.coverPhoto || ""),
-    timezone: String(r.timezone || prev.timezone || "Asia/Kathmandu"),
-    workspace:
-      restaurantEnabled && hotelEnabled
-        ? "both"
-        : hotelEnabled
-          ? "hotel"
-          : "restaurant",
-    taxEnabled: r.tax_enabled == null ? prev.taxEnabled : Boolean(r.tax_enabled),
-    kotEnabled: r.kot_enabled == null ? prev.kotEnabled : Boolean(r.kot_enabled),
-  };
-}
-
 const STEP_LABELS = [
+  "Business details",
   "Workspace",
-  "Restaurant details",
-  "Business type",
-  "Service setup",
-  "Review and finish",
+  "Operations",
+  "Essentials",
+  "Review",
 ] as const;
 
 const BUSINESS_ICONS = {
@@ -169,68 +105,20 @@ const PAYMENT_ICONS = {
   cash: Wallet,
   card: CreditCard,
   digital_wallet: Smartphone,
+  fonepay: QrCode,
 } as const;
-
-/** Soft decorative food icons for the onboarding sidebar (bottom/edge only). */
-const SIDEBAR_DECOR = [
-  {
-    Icon: UtensilsCrossed,
-    wrapClassName: "bottom-[7%] right-[8%] animate-onboarding-float-a",
-    iconClassName: "h-12 w-12 rotate-[8deg] text-white/30 blur-[3px]",
-    style: { animationDelay: "0s" },
-  },
-  {
-    Icon: ChefHat,
-    wrapClassName: "bottom-[22%] right-[18%] animate-onboarding-float-b",
-    iconClassName: "h-10 w-10 -rotate-[6deg] text-white/28 blur-[3px]",
-    style: { animationDelay: "0.8s" },
-  },
-  {
-    Icon: Pizza,
-    wrapClassName: "bottom-[10%] right-[38%] animate-onboarding-float-c",
-    iconClassName: "h-11 w-11 -rotate-[9deg] text-white/26 blur-[3px]",
-    style: { animationDelay: "1.4s" },
-  },
-  {
-    Icon: Coffee,
-    wrapClassName: "bottom-[34%] right-[6%] animate-onboarding-float-a",
-    iconClassName: "h-8 w-8 rotate-[7deg] text-white/24 blur-[2px]",
-    style: { animationDelay: "2.1s" },
-  },
-  {
-    Icon: Wine,
-    wrapClassName: "bottom-[28%] right-[42%] animate-onboarding-float-b",
-    iconClassName: "h-7 w-7 -rotate-[8deg] text-white/22 blur-[3px]",
-    style: { animationDelay: "0.4s" },
-  },
-  {
-    Icon: CookingPot,
-    wrapClassName: "bottom-[4%] right-[58%] animate-onboarding-float-c",
-    iconClassName: "h-9 w-9 rotate-[-5deg] text-white/25 blur-[3px]",
-    style: { animationDelay: "1.8s" },
-  },
-  {
-    Icon: IceCreamCone,
-    wrapClassName: "bottom-[18%] right-[62%] animate-onboarding-float-a",
-    iconClassName: "h-6 w-6 rotate-[10deg] text-white/22 blur-[2px]",
-    style: { animationDelay: "2.6s" },
-  },
-  {
-    Icon: CupSoda,
-    wrapClassName: "bottom-[8%] left-[10%] animate-onboarding-float-b",
-    iconClassName: "h-7 w-7 -rotate-[7deg] text-white/20 blur-[2px]",
-    style: { animationDelay: "1.1s" },
-  },
-  {
-    Icon: Store,
-    wrapClassName: "bottom-[40%] right-[28%] animate-onboarding-float-c",
-    iconClassName: "h-6 w-6 rotate-[4deg] text-white/20 blur-[2px]",
-    style: { animationDelay: "0.6s" },
-  },
-] as const;
 
 function extractError(err: unknown): string {
   const anyErr = err as any;
+  const code = String(anyErr?.code || "");
+  const message = String(anyErr?.message || "");
+  if (
+    code === "ECONNABORTED" ||
+    /timeout/i.test(message) ||
+    /timeout of \d+ms exceeded/i.test(message)
+  ) {
+    return "Restaurant setup is taking longer than expected. Please try Finish setup again.";
+  }
   return (
     anyErr?.response?.data?.detail ||
     anyErr?.response?.data?.message ||
@@ -260,14 +148,27 @@ export function OnboardingWizard({
   const token = useAuth((s) => s.token);
   const refreshToken = useAuth((s) => s.refreshToken);
   const setAuth = useAuth((s) => s.setAuth);
+  const logout = useAuth((s) => s.logout);
   const setRestaurant = useRestaurant((s) => s.setRestaurant);
   const setSelectedModule = useRestaurant((s) => s.setSelectedModule);
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
+  const onboardingHydrated = useOnboardingHydrated();
+  const step = useOnboarding((s) => s.step);
+  const draft = useOnboarding((s) => s.draft);
+  const fieldErrors = useOnboarding((s) => s.fieldErrors);
+  const setDraft = useOnboarding((s) => s.setDraft);
+  const patch = useOnboarding((s) => s.patch);
+  const togglePayment = useOnboarding((s) => s.togglePayment);
+  const setFieldErrors = useOnboarding((s) => s.setFieldErrors);
+  const clearFieldError = useOnboarding((s) => s.clearFieldError);
+  const initSession = useOnboarding((s) => s.initSession);
+  const resetOnboarding = useOnboarding((s) => s.reset);
+  const nextStep = useOnboarding((s) => s.nextStep);
+  const prevStep = useOnboarding((s) => s.prevStep);
 
   const resolvedRestaurantId =
     restaurantId ?? user?.restaurant_id ?? (initialRestaurant?.id as number | undefined) ?? null;
 
-  const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [resolvingAddress, setResolvingAddress] = useState(false);
   const [locationMapOpen, setLocationMapOpen] = useState(false);
@@ -275,20 +176,34 @@ export function OnboardingWizard({
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [syncingProfile, setSyncingProfile] = useState(Boolean(replay));
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [draft, setDraft] = useState<OnboardingDraft>(() => {
-    const email = initialEmail || "";
-    if (replay && initialRestaurant) {
-      return draftFromRestaurant(initialRestaurant, email);
-    }
-    return createEmptyDraft(email);
-  });
   const reverseGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const forwardGeocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const geocodeRequestIdRef = useRef(0);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const prefilledRef = useRef<number | "store" | null>(null);
+  const sessionKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!onboardingHydrated) return;
+    const key = `${replay ? "replay" : "create"}:${user?.id ?? "anon"}`;
+    if (sessionKeyRef.current === key) return;
+    sessionKeyRef.current = key;
+    initSession({
+      userId: user?.id ?? null,
+      email: initialEmail || user?.email || "",
+      replay,
+      restaurant: replay ? initialRestaurant : null,
+    });
+  }, [
+    onboardingHydrated,
+    user?.id,
+    user?.email,
+    initialEmail,
+    replay,
+    initialRestaurant,
+    initSession,
+  ]);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -313,8 +228,8 @@ export function OnboardingWizard({
 
   // Replay: sync current restaurant profile into the form
   useEffect(() => {
-    if (!replay) {
-      setSyncingProfile(false);
+    if (!replay || !onboardingHydrated) {
+      if (!replay) setSyncingProfile(false);
       return;
     }
 
@@ -370,27 +285,15 @@ export function OnboardingWizard({
     };
   }, [
     replay,
+    onboardingHydrated,
     resolvedRestaurantId,
     user?.email,
     initialEmail,
     initialRestaurant,
+    setDraft,
   ]);
 
   const progress = ((step + 1) / STEP_LABELS.length) * 100;
-
-  const clearFieldError = useCallback((key: string) => {
-    setFieldErrors((prev) => {
-      if (!prev[key]) return prev;
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-  }, []);
-
-  const patch = <K extends keyof OnboardingDraft>(key: K, value: OnboardingDraft[K]) => {
-    setDraft((prev) => ({ ...prev, [key]: value }));
-    clearFieldError(String(key));
-  };
 
   const fieldErrorClass = (key: string) =>
     fieldErrors[key] ? "border-destructive focus-visible:border-destructive" : undefined;
@@ -506,19 +409,6 @@ export function OnboardingWizard({
     }
   };
 
-  const togglePayment = (value: PaymentMethodKey) => {
-    clearFieldError("payments");
-    setDraft((prev) => {
-      const exists = prev.payments.includes(value);
-      return {
-        ...prev,
-        payments: exists
-          ? prev.payments.filter((p) => p !== value)
-          : [...prev.payments, value],
-      };
-    });
-  };
-
   const validate = () => {
     const errors: Record<string, string> = {};
 
@@ -532,12 +422,6 @@ export function OnboardingWizard({
     }
 
     if (step === 0) {
-      if (!draft.workspace) {
-        errors.workspace = "Please choose a workspace.";
-      }
-    }
-
-    if (step === 1) {
       if (!draft.restaurantName.trim()) {
         errors.restaurantName = "Business name is required.";
       } else if (draft.restaurantName.trim().length < 2) {
@@ -571,13 +455,17 @@ export function OnboardingWizard({
       }
     }
 
+    if (step === 1) {
+      if (!draft.workspace) {
+        errors.workspace = "Please choose a workspace.";
+      }
+    }
+
     if (step === 2) {
       if (draft.workspace !== "hotel" && !draft.businessType) {
         errors.businessType = "Please select a business type.";
       }
-    }
 
-    if (step === 3) {
       if (!draft.timezone.trim()) {
         errors.timezone = "Timezone is required.";
       }
@@ -587,7 +475,9 @@ export function OnboardingWizard({
       } else if (!/^\d{2}:\d{2}$/.test(draft.businessDayStartTime.trim())) {
         errors.businessDayStartTime = "Enter a valid time.";
       }
+    }
 
+    if (step === 3) {
       if (!draft.currency) {
         errors.currency = "Currency is required.";
       }
@@ -664,6 +554,7 @@ export function OnboardingWizard({
     try {
       if (replay) {
         if (skipped) {
+          resetOnboarding(initialEmail || user?.email || "");
           toast.success("Returned to dashboard");
           router.replace("/dashboard");
           return;
@@ -712,6 +603,7 @@ export function OnboardingWizard({
 
         saveOnboardingHours(draft.hours);
         await fetchRestaurant(true);
+        resetOnboarding(initialEmail || user?.email || "");
         toast.success("Restaurant profile updated");
         router.replace("/manage/profile");
         return;
@@ -720,14 +612,159 @@ export function OnboardingWizard({
       const flags = workspaceFlags(draft.workspace);
       const profile = buildProfilePayload();
 
-      const createRes = await apiClient.post(RestaurantApis.create, {
-        ...profile,
-        tax_enabled: draft.taxEnabled,
-        kot_enabled: draft.kotEnabled,
-        restaurant_enabled: flags.restaurant_enabled,
-        hotel_enabled: flags.hotel_enabled,
-        payment_cards: paymentCardsFromSelection(draft.payments),
-      });
+      const openWorkspace = async (
+        created: Pick<Restaurant, "id" | "restaurant_enabled" | "hotel_enabled"> &
+          Partial<Restaurant>
+      ) => {
+        const restaurantEnabled =
+          Boolean(created.restaurant_enabled) || flags.restaurant_enabled;
+        const hotelEnabled = Boolean(created.hotel_enabled) || flags.hotel_enabled;
+
+        // Land on dashboard after finish. Dual-module defaults to restaurant POS.
+        if (!restaurantEnabled && hotelEnabled) {
+          setSelectedModule("hotel");
+        } else {
+          setSelectedModule("restaurant");
+        }
+
+        setRestaurant({
+          ...(created as any),
+          restaurant_enabled: restaurantEnabled,
+          hotel_enabled: hotelEnabled,
+        });
+        if (user && token) {
+          setAuth(
+            { ...user, restaurant_id: created.id },
+            token,
+            refreshToken
+          );
+        }
+
+        saveOnboardingHours(draft.hours);
+
+        // Best-effort extras — do not block finishing setup
+        try {
+          if (restaurantEnabled && draft.taxEnabled && draft.taxRate > 0) {
+            await apiClient.post(TaxConfigApis.create, {
+              name: "VAT",
+              rate: Number(draft.taxRate),
+              type: "percentage",
+              applicable_to: "all",
+              is_active: true,
+              restaurant_id: created.id,
+            });
+          }
+        } catch (err) {
+          console.warn("[onboarding] tax create skipped", err);
+        }
+
+        try {
+          const templateResponse = await apiClient.get(RestaurantApis.getTemplates(created.id));
+          const receiptTemplate = (templateResponse.data?.data?.receipt_template || []) as Array<
+            Record<string, unknown>
+          >;
+          const configured = receiptTemplate.map((block) => {
+            if (block.type === "header") {
+              return {
+                ...block,
+                show_logo: draft.receiptShowLogo,
+                show_pan: draft.receiptShowPan,
+              };
+            }
+            if (block.type === "footer") {
+              return { ...block, message: draft.receiptFooter.trim() };
+            }
+            return block;
+          });
+          await apiClient.put(RestaurantApis.updateTemplates(created.id), {
+            receipt_template: configured,
+          });
+        } catch (err) {
+          console.warn("[onboarding] receipt template update skipped", err);
+        }
+
+        if (
+          restaurantEnabled &&
+          draft.businessType !== "cloud_kitchen" &&
+          draft.tables > 0
+        ) {
+          try {
+            const typeRes = await apiClient.post(TableTypeApis.createTableType(created.id), {
+              name: "Main Floor",
+              layout_height: 200,
+            });
+            const typeId = typeRes.data?.data?.id ?? typeRes.data?.id;
+            if (typeId) {
+              const count = Math.min(Number(draft.tables) || 0, 40);
+              for (let i = 1; i <= count; i += 1) {
+                await apiClient.post(TableApis.createTable(created.id), {
+                  name: `T${i}`,
+                  capacity: 4,
+                  table_type_id: typeId,
+                  status: "FREE",
+                  pos_x: ((i - 1) % 6) * 120,
+                  pos_y: Math.floor((i - 1) / 6) * 100,
+                });
+              }
+            }
+          } catch (err) {
+            console.warn("[onboarding] table seed skipped", err);
+          }
+        }
+
+        await fetchRestaurant(true);
+        resetOnboarding(initialEmail || user?.email || "");
+        toast.success(skipped ? "Setup skipped — workspace ready" : "Restaurant setup complete");
+
+        if (!restaurantEnabled && hotelEnabled) {
+          router.replace("/rooms");
+          return;
+        }
+        markPendingTour();
+        router.replace("/dashboard?tour=1");
+      };
+
+      // If a previous create already succeeded (timeout / retry), open that workspace.
+      if (user?.restaurant_id || useRestaurant.getState().restaurant?.id) {
+        await fetchRestaurant(true);
+        const existing = useRestaurant.getState().restaurant;
+        if (existing?.id) {
+          await openWorkspace(existing);
+          return;
+        }
+      }
+
+      // Restaurant create seeds defaults + accounting; allow longer than the global 30s timeout.
+      let createRes;
+      try {
+        createRes = await apiClient.post(
+          RestaurantApis.create,
+          {
+            ...profile,
+            tax_enabled: draft.taxEnabled,
+            kot_enabled: draft.kotEnabled,
+            restaurant_enabled: flags.restaurant_enabled,
+            hotel_enabled: flags.hotel_enabled,
+            payment_cards: paymentCardsFromSelection(draft.payments),
+          },
+          { timeout: 120_000 }
+        );
+      } catch (createErr) {
+        const msg = extractError(createErr);
+        if (
+          /already have a restaurant|leave your current restaurant|creating another/i.test(
+            msg
+          )
+        ) {
+          await fetchRestaurant(true);
+          const existing = useRestaurant.getState().restaurant;
+          if (existing?.id) {
+            await openWorkspace(existing);
+            return;
+          }
+        }
+        throw createErr;
+      }
 
       const body = createRes?.data;
       let created =
@@ -749,111 +786,7 @@ export function OnboardingWizard({
         );
       }
 
-      // Dual-module accounts must land on gateway (no pre-selected module).
-      if (flags.restaurant_enabled && flags.hotel_enabled) {
-        setSelectedModule(null);
-      } else if (flags.hotel_enabled) {
-        setSelectedModule("hotel");
-      } else {
-        setSelectedModule("restaurant");
-      }
-
-      setRestaurant({
-        ...created,
-        restaurant_enabled: flags.restaurant_enabled,
-        hotel_enabled: flags.hotel_enabled,
-      });
-      if (user && token) {
-        setAuth(
-          { ...user, restaurant_id: created.id },
-          token,
-          refreshToken
-        );
-      }
-
-      saveOnboardingHours(draft.hours);
-
-      // Best-effort extras — do not block finishing setup
-      try {
-        if (flags.restaurant_enabled && draft.taxEnabled && draft.taxRate > 0) {
-          await apiClient.post(TaxConfigApis.create, {
-            name: "VAT",
-            rate: Number(draft.taxRate),
-            type: "percentage",
-            applicable_to: "all",
-            is_active: true,
-            restaurant_id: created.id,
-          });
-        }
-      } catch (err) {
-        console.warn("[onboarding] tax create skipped", err);
-      }
-
-      try {
-        const templateResponse = await apiClient.get(RestaurantApis.getTemplates(created.id));
-        const receiptTemplate = (templateResponse.data?.data?.receipt_template || []) as Array<
-          Record<string, unknown>
-        >;
-        const configured = receiptTemplate.map((block) => {
-          if (block.type === "header") {
-            return {
-              ...block,
-              show_logo: draft.receiptShowLogo,
-              show_pan: draft.receiptShowPan,
-            };
-          }
-          if (block.type === "footer") {
-            return { ...block, message: draft.receiptFooter.trim() };
-          }
-          return block;
-        });
-        await apiClient.put(RestaurantApis.updateTemplates(created.id), {
-          receipt_template: configured,
-        });
-      } catch (err) {
-        console.warn("[onboarding] receipt template update skipped", err);
-      }
-
-      if (
-        flags.restaurant_enabled &&
-        draft.businessType !== "cloud_kitchen" &&
-        draft.tables > 0
-      ) {
-        try {
-          const typeRes = await apiClient.post(TableTypeApis.createTableType(created.id), {
-            name: "Main Floor",
-            layout_height: 200,
-          });
-          const typeId = typeRes.data?.data?.id ?? typeRes.data?.id;
-          if (typeId) {
-            const count = Math.min(Number(draft.tables) || 0, 40);
-            for (let i = 1; i <= count; i += 1) {
-              await apiClient.post(TableApis.createTable(created.id), {
-                name: `T${i}`,
-                capacity: 4,
-                table_type_id: typeId,
-                status: "FREE",
-                pos_x: ((i - 1) % 6) * 120,
-                pos_y: Math.floor((i - 1) / 6) * 100,
-              });
-            }
-          }
-        } catch (err) {
-          console.warn("[onboarding] table seed skipped", err);
-        }
-      }
-
-      await fetchRestaurant(true);
-      toast.success(skipped ? "Setup skipped — workspace ready" : "Restaurant setup complete");
-
-      if (flags.restaurant_enabled && flags.hotel_enabled) {
-        router.replace("/gateway");
-      } else if (flags.hotel_enabled) {
-        router.replace("/rooms");
-      } else {
-        markPendingTour();
-        router.replace("/dashboard?tour=1");
-      }
+      await openWorkspace(created as Restaurant);
     } catch (err) {
       toast.error(extractError(err));
     } finally {
@@ -863,9 +796,8 @@ export function OnboardingWizard({
 
   const next = async () => {
     if (!validate()) return;
-    setFieldErrors({});
     if (step < STEP_LABELS.length - 1) {
-      setStep((s) => s + 1);
+      nextStep();
       return;
     }
     await finishSetup(false);
@@ -926,9 +858,17 @@ export function OnboardingWizard({
     [draft]
   );
 
+  if (!onboardingHydrated) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full bg-transparent">
-      <div className="relative z-10 mx-auto w-full max-w-[1100px] px-4 pb-16 pt-2 sm:px-6 md:px-8">
+      <div className="relative z-10 mx-auto w-full max-w-[1100px] px-4 pb-16 pt-4 sm:px-6 md:px-8">
         <div className="grid w-full items-stretch overflow-hidden rounded-2xl bg-card shadow-2xl shadow-primary/10 sm:rounded-3xl md:grid-cols-[260px_minmax(0,1fr)] lg:grid-cols-[280px_minmax(0,1fr)]">
           <aside
             className="relative hidden h-auto min-h-full self-stretch overflow-hidden p-7 text-white md:block"
@@ -947,22 +887,6 @@ export function OnboardingWizard({
               }}
             />
 
-            {/* Decorative restaurant icons — bottom & edges only */}
-            <div className="pointer-events-none absolute inset-0" aria-hidden>
-              {SIDEBAR_DECOR.map(({ Icon, wrapClassName, iconClassName, style }, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    "absolute will-change-transform drop-shadow-[0_0_8px_rgba(255,255,255,0.18)]",
-                    wrapClassName
-                  )}
-                  style={style}
-                >
-                  <Icon className={iconClassName} strokeWidth={1.35} />
-                </div>
-              ))}
-            </div>
-
             <div className="relative z-10 flex h-full flex-col">
               <div className="mb-8 flex items-center gap-3">
                 <div className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl bg-white shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
@@ -978,7 +902,7 @@ export function OnboardingWizard({
                 <span className="font-onboarding text-xl font-medium tracking-[-0.03em] text-white">Yummy</span>
               </div>
               <h1 className="font-onboarding text-2xl font-medium leading-[1.15] tracking-[-0.03em] text-white lg:text-[2rem]">
-                Set up your restaurant in minutes.
+                Set up your business in minutes.
               </h1>
               <p className="mt-3 text-sm leading-relaxed text-white/80">
                 Complete the essentials now. You can change everything later from settings.
@@ -1060,6 +984,20 @@ export function OnboardingWizard({
                 >
                   {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-500"
+                  onClick={() => {
+                    logout();
+                    router.replace("/");
+                  }}
+                  aria-label="Log out"
+                  title="Log out"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
               </div>
             </div>
 
@@ -1068,61 +1006,13 @@ export function OnboardingWizard({
               {step === 0 && (
                 <section>
                   <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Workspace
+                    Business details
                   </p>
                   <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    Choose your workspace
+                    Tell us about your business
                   </h2>
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    Same choice as the gateway. Pick restaurant, hotel, or both — you can switch later.
-                  </p>
-                  <div className="grid gap-3 sm:grid-cols-3 sm:items-stretch">
-                    {WORKSPACE_OPTIONS.map((option) => {
-                      const Icon = WORKSPACE_ICONS[option.value];
-                      const selected = draft.workspace === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => patch("workspace", option.value)}
-                          className={cn(
-                            "flex h-full flex-col rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm",
-                            selected
-                              ? "border-primary bg-secondary shadow-sm ring-1 ring-primary/20"
-                              : "border-border bg-card hover:border-primary/40",
-                            fieldErrors.workspace && !selected && "border-destructive/60"
-                          )}
-                        >
-                          <div
-                            className={cn(
-                              "mb-3 grid h-11 w-11 place-items-center rounded-xl",
-                              selected ? "bg-primary text-primary-foreground" : "bg-muted text-primary"
-                            )}
-                          >
-                            <Icon className="h-5 w-5" />
-                          </div>
-                          <div className="font-medium">{option.title}</div>
-                          <p className="mt-1 flex-1 text-xs leading-relaxed text-muted-foreground">
-                            {option.description}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <FieldError name="workspace" />
-                </section>
-              )}
-
-              {step === 1 && (
-                <section>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Welcome
-                  </p>
-                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    Tell us about your restaurant
-                  </h2>
-                  <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    Same details as Restaurant Profile — these appear on receipts and your public profile.
+                    Business name, contact, and address — these appear on receipts and your public profile.
                   </p>
 
                   {replay && syncingProfile && (
@@ -1250,20 +1140,16 @@ export function OnboardingWizard({
                 </section>
               )}
 
-              {step === 2 && (
+              {step === 1 && (
                 <section>
                   <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Business type
+                    Workspace
                   </p>
                   <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    {draft.workspace === "hotel"
-                      ? "Hotel setup style"
-                      : "How do you serve customers?"}
+                    Brand your business and choose a workspace
                   </h2>
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    {draft.workspace === "hotel"
-                      ? "You can refine hotel operations later from rooms and settings."
-                      : "Add your brand visuals, then choose how you serve customers."}
+                    Upload your logo and cover, then pick restaurant, hotel, or both — you can switch later.
                   </p>
 
                   <div className="mb-8 overflow-visible rounded-2xl border border-border bg-card/40 p-5">
@@ -1341,31 +1227,98 @@ export function OnboardingWizard({
                         </button>
                       </div>
                     </div>
-                    <div className="flex flex-wrap justify-center gap-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={uploadingCover}
-                        onClick={() => coverInputRef.current?.click()}
-                      >
-                        {uploadingCover ? "Uploading cover…" : "Change cover"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={uploadingLogo}
-                        onClick={() => logoInputRef.current?.click()}
-                      >
-                        {uploadingLogo ? "Uploading logo…" : "Change logo"}
-                      </Button>
+                  </div>
+
+                  <div className="grid w-full gap-3 sm:grid-cols-3 sm:items-stretch">
+                    {WORKSPACE_OPTIONS.map((option) => {
+                      const Icon = WORKSPACE_ICONS[option.value];
+                      const selected = draft.workspace === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => patch("workspace", option.value)}
+                          className={cn(
+                            "flex h-full flex-col items-center rounded-2xl border p-5 text-center transition-all hover:-translate-y-0.5 hover:shadow-sm",
+                            selected
+                              ? "border-primary bg-secondary shadow-sm ring-1 ring-primary/20"
+                              : "border-border bg-card hover:border-primary/40",
+                            fieldErrors.workspace && !selected && "border-destructive/60"
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              "mb-3 grid h-11 w-11 place-items-center rounded-xl",
+                              selected ? "bg-primary text-primary-foreground" : "bg-muted text-primary"
+                            )}
+                          >
+                            <Icon className="h-5 w-5" />
+                          </div>
+                          <div className="font-medium">{option.title}</div>
+                          <p className="mt-1 flex-1 text-xs leading-relaxed text-muted-foreground">
+                            {option.description}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <FieldError name="workspace" />
+                </section>
+              )}
+
+              {step === 2 && (
+                <section>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
+                    Operations
+                  </p>
+                  <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
+                    {draft.workspace === "hotel"
+                      ? "Set your hotel schedule and timezone"
+                      : "Set schedule and how you serve"}
+                  </h2>
+                  <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                    {draft.workspace === "hotel"
+                      ? "Timezone and business day start for hotel operations. You can refine rooms and settings later."
+                      : "Timezone, business day start, and service style — dine-in, cafe, or cloud kitchen. Change anytime in settings."}
+                  </p>
+
+                  <div className="mb-7 grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="timezone">Timezone*</Label>
+                      <TimezoneSelect
+                        id="timezone"
+                        value={draft.timezone}
+                        onChange={(tz) => patch("timezone", tz)}
+                        placeholder="Select timezone"
+                        className={fieldErrorClass("timezone")}
+                      />
+                      <FieldError name="timezone" />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <Label htmlFor="businessDayStartTime">Business Day Starts At*</Label>
+                        <FieldInfo>
+                          Orders before this time are counted toward the previous business day.
+                        </FieldInfo>
+                      </div>
+                      <Input
+                        id="businessDayStartTime"
+                        type="time"
+                        step={60}
+                        value={draft.businessDayStartTime}
+                        onChange={(e) =>
+                          patch("businessDayStartTime", toHourMinute(e.target.value))
+                        }
+                        className={fieldErrorClass("businessDayStartTime")}
+                        aria-invalid={Boolean(fieldErrors.businessDayStartTime)}
+                      />
+                      <FieldError name="businessDayStartTime" />
                     </div>
                   </div>
 
                   {draft.workspace === "hotel" ? (
                     <div className="rounded-2xl border border-border bg-muted/30 p-5 text-sm text-muted-foreground">
-                      Hotel workspace selected. Continue to set timezone and essentials.
+                      Hotel workspace selected. Continue to configure the remaining essentials.
                     </div>
                   ) : (
                     <>
@@ -1413,46 +1366,15 @@ export function OnboardingWizard({
               {step === 3 && (
                 <section>
                   <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Service setup
+                    Essentials
                   </p>
                   <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    Configure the essentials
+                    Configure payments and operations
                   </h2>
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    Add basic operational details so your dashboard is ready to use.
+                    Tables, currency, tax, receipts, and accepted payment methods for checkout.
                   </p>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="timezone">Timezone*</Label>
-                      <TimezoneSelect
-                        id="timezone"
-                        value={draft.timezone}
-                        onChange={(tz) => patch("timezone", tz)}
-                        placeholder="Select timezone"
-                        className={fieldErrorClass("timezone")}
-                      />
-                      <FieldError name="timezone" />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1.5">
-                        <Label htmlFor="businessDayStartTime">Business Day Starts At*</Label>
-                        <FieldInfo>
-                          Orders before this time are counted toward the previous business day.
-                        </FieldInfo>
-                      </div>
-                      <Input
-                        id="businessDayStartTime"
-                        type="time"
-                        step={60}
-                        value={draft.businessDayStartTime}
-                        onChange={(e) =>
-                          patch("businessDayStartTime", toHourMinute(e.target.value))
-                        }
-                        className={fieldErrorClass("businessDayStartTime")}
-                        aria-invalid={Boolean(fieldErrors.businessDayStartTime)}
-                      />
-                      <FieldError name="businessDayStartTime" />
-                    </div>
                     {draft.workspace !== "hotel" && draft.businessType !== "cloud_kitchen" && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-1.5">
@@ -1607,7 +1529,7 @@ export function OnboardingWizard({
                           these later in settings.
                         </FieldInfo>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         {PAYMENT_OPTIONS.map((option) => {
                           const Icon = PAYMENT_ICONS[option.value];
                           const selected = draft.payments.includes(option.value);
@@ -1639,15 +1561,13 @@ export function OnboardingWizard({
               {step === 4 && (
                 <section>
                   <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
-                    Almost done
+                    Review
                   </p>
                   <h2 className="font-onboarding text-2xl font-medium tracking-[-0.03em] sm:text-3xl">
-                    Review your setup
+                    Review your business setup
                   </h2>
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    {draft.workspace === "both"
-                      ? "After finishing you will open the gateway to choose Restaurant or Hotel."
-                      : "Check the details below before opening your workspace."}
+                    Confirm the details below, then finish to open your dashboard.
                   </p>
                   <div className="rounded-2xl border border-border bg-muted/30 p-5">
                     {summaryRows.map((row) => (
@@ -1666,9 +1586,10 @@ export function OnboardingWizard({
                     </div>
                     <h3 className="text-lg font-medium">Your workspace is ready</h3>
                     <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                      After finishing, you will open the dashboard
                       {draft.workspace === "both"
-                        ? "Next stop is the gateway — pick Restaurant POS or Hotel Management."
-                        : "After finishing, a short guided tour will highlight the most important dashboard options."}
+                        ? " (Restaurant POS). You can switch to Hotel anytime from the sidebar."
+                        : ", and a short guided tour will highlight the most important options."}
                     </p>
                   </div>
                 </section>
@@ -1682,10 +1603,7 @@ export function OnboardingWizard({
                 variant="secondary"
                 className={cn(step === 0 && "invisible")}
                 disabled={submitting}
-                onClick={() => {
-                  setFieldErrors({});
-                  setStep((s) => Math.max(0, s - 1));
-                }}
+                onClick={() => prevStep()}
               >
                 Back
               </Button>

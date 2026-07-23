@@ -1,5 +1,7 @@
 export const ONBOARDING_PENDING_TOUR_KEY = "yummy:onboarding:pending-tour";
 export const ONBOARDING_HOURS_KEY = "yummy:onboarding:hours";
+export const ONBOARDING_WIZARD_STORAGE_KEY = "yummy:onboarding-wizard";
+export const ONBOARDING_WIZARD_STEP_COUNT = 5;
 
 type OnboardingUser = {
   role?: string | null;
@@ -44,7 +46,7 @@ export type BusinessType = "dine_in" | "cafe" | "cloud_kitchen";
 
 export type WorkspaceMode = "restaurant" | "hotel" | "both";
 
-export type PaymentMethodKey = "cash" | "card" | "digital_wallet";
+export type PaymentMethodKey = "cash" | "card" | "digital_wallet" | "fonepay";
 
 export type DayHours = {
   day: string;
@@ -142,6 +144,7 @@ export const PAYMENT_OPTIONS: Array<{
   { value: "cash", title: "Cash" },
   { value: "card", title: "Card" },
   { value: "digital_wallet", title: "Digital wallet" },
+  { value: "fonepay", title: "Fonepay" },
 ];
 
 export function defaultHours(): DayHours[] {
@@ -226,8 +229,71 @@ export function saveOnboardingHours(hours: DayHours[]) {
 export function paymentCardsFromSelection(payments: PaymentMethodKey[]) {
   return payments
     .filter((p) => p !== "cash")
-    .map((p) => ({
-      name: p === "card" ? "Card" : "Digital Wallet",
-      identifier: p === "card" ? "CARD" : "WALLET",
-    }));
+    .map((p) => {
+      if (p === "card") return { name: "Card", identifier: "CARD" };
+      if (p === "fonepay") return { name: "Fonepay", identifier: "FONEPAY" };
+      return { name: "Digital Wallet", identifier: "WALLET" };
+    });
+}
+
+export function toHourMinute(value?: string | null) {
+  if (!value) return "00:00";
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{1,2})/);
+  if (!match) return "00:00";
+  const hour = Math.max(0, Math.min(23, Number(match[1]) || 0));
+  const minute = Math.max(0, Math.min(59, Number(match[2]) || 0));
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+export function toApiBusinessDayTime(value?: string | null) {
+  const normalized = toHourMinute(value);
+  return `${normalized}:00`;
+}
+
+function normalizePhoneForInput(phone?: string | null) {
+  const raw = String(phone || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("+")) return raw;
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("977")) return `+${digits}`;
+  return `+977${digits}`;
+}
+
+/** Map restaurant profile fields into the onboarding draft. */
+export function draftFromRestaurant(
+  r: Record<string, unknown>,
+  email: string,
+  base?: OnboardingDraft
+): OnboardingDraft {
+  const prev = base || createEmptyDraft(email);
+  const restaurantEnabled = Boolean(r.restaurant_enabled ?? true);
+  const hotelEnabled = Boolean(r.hotel_enabled);
+  return {
+    ...prev,
+    restaurantName: String(r.name || prev.restaurantName || ""),
+    phone: normalizePhoneForInput(String(r.phone || prev.phone || "")),
+    email: email || prev.email,
+    taxNumber: String(r.pan_number || prev.taxNumber || ""),
+    address: String(r.address || prev.address || ""),
+    description: String(r.description || prev.description || ""),
+    latitude:
+      r.latitude != null && r.latitude !== "" ? String(r.latitude) : prev.latitude,
+    longitude:
+      r.longitude != null && r.longitude !== "" ? String(r.longitude) : prev.longitude,
+    businessDayStartTime:
+      toHourMinute(r.business_day_start_time as string | null | undefined) ||
+      prev.businessDayStartTime,
+    profilePicture: String(r.profile_picture || prev.profilePicture || ""),
+    coverPhoto: String(r.cover_photo || prev.coverPhoto || ""),
+    timezone: String(r.timezone || prev.timezone || "Asia/Kathmandu"),
+    workspace:
+      restaurantEnabled && hotelEnabled
+        ? "both"
+        : hotelEnabled
+          ? "hotel"
+          : "restaurant",
+    taxEnabled: r.tax_enabled == null ? prev.taxEnabled : Boolean(r.tax_enabled),
+    kotEnabled: r.kot_enabled == null ? prev.kotEnabled : Boolean(r.kot_enabled),
+  };
 }

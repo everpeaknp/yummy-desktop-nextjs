@@ -17,7 +17,6 @@ import {
   ScanLine,
   ShieldCheck,
   Users,
-  UtensilsCrossed,
 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
@@ -804,26 +803,6 @@ function OnboardingPageContent() {
     }
     return (
       <div className="bg-transparent">
-        <header className="relative z-30 w-full border-0 bg-transparent pb-3 pt-2 shadow-none sm:pb-4">
-          <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between px-4 py-3 sm:px-6 md:px-8">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-                <UtensilsCrossed className="h-5 w-5" />
-              </div>
-              <div className="text-left">
-                <p className="font-onboarding text-lg font-medium leading-tight tracking-[-0.03em]">Yummy</p>
-                <p className="text-xs leading-tight text-muted-foreground">Workspace onboarding</p>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              className="shrink-0 bg-transparent shadow-none hover:bg-transparent hover:text-foreground"
-              onClick={signOut}
-            >
-              <LogOut className="mr-2 h-4 w-4" /> Sign out
-            </Button>
-          </div>
-        </header>
         <OnboardingWizard
           initialEmail={user?.email || ""}
           replay
@@ -847,26 +826,6 @@ function OnboardingPageContent() {
   if (mode === "create") {
     return (
       <div className="bg-transparent">
-        <header className="relative z-30 w-full border-0 bg-transparent pb-3 pt-2 shadow-none sm:pb-4">
-          <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between px-4 py-3 sm:px-6 md:px-8">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-                <UtensilsCrossed className="h-5 w-5" />
-              </div>
-              <div className="text-left">
-                <p className="font-onboarding text-lg font-medium leading-tight tracking-[-0.03em]">Yummy</p>
-                <p className="text-xs leading-tight text-muted-foreground">Workspace onboarding</p>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              className="shrink-0 bg-transparent shadow-none hover:bg-transparent hover:text-foreground"
-              onClick={signOut}
-            >
-              <LogOut className="mr-2 h-4 w-4" /> Sign out
-            </Button>
-          </div>
-        </header>
         <OnboardingWizard
           initialEmail={user?.email || ""}
           replay={false}
