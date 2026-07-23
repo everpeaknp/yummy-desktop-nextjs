@@ -20,6 +20,7 @@ import { Toaster as SonnerToaster } from "sonner";
 import { GlobalLoaderOverlay } from "@/components/global-loader-overlay";
 import { AppProviders } from "@/components/providers";
 import { AppUpdaterNotifier } from "@/components/app-updater-notifier";
+import { Analytics } from "@vercel/analytics/next";
 
 export default function RootLayout({
   children,
@@ -49,6 +50,7 @@ export default function RootLayout({
             <Toaster />
             <SonnerToaster position="top-right" richColors closeButton />
           </ThemeProvider>
+          <Analytics />
       </body>
     </html>
   );
