@@ -1,20 +1,34 @@
 "use client";
 
+import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LogOut, ShieldAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { getHomeRouteForUser } from "@/lib/role-permissions";
 
 export default function WelcomePage() {
   const user = useAuth((state) => state.user);
   const logout = useAuth((state) => state.logout);
   const router = useRouter();
 
+  // Restaurant owners (and anyone with a real dashboard role) should never stay here.
+  useEffect(() => {
+    if (!user) return;
+    if (user.restaurant_id) {
+      router.replace(getHomeRouteForUser(user));
+    }
+  }, [user, router]);
+
   const handleLogout = () => {
     logout();
     router.push("/");
   };
+
+  if (user?.restaurant_id) {
+    return null;
+  }
 
   return (
     <div className="flex h-full w-full items-center justify-center p-6">

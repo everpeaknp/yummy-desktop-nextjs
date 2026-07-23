@@ -17,6 +17,8 @@ export type UserRole =
 export function normalizeRole(role?: string | null): UserRole | null {
   if (!role) return null;
   const r = role.trim().toLowerCase();
+  // Per-user permission bags are not identity roles (e.g. __user_12__).
+  if (r.startsWith("__user_") || r.startsWith("__platform_user_")) return null;
   // Legacy "staff" maps to waiter
   if (r === "staff") return "waiter";
   const valid: UserRole[] = [
@@ -733,18 +735,34 @@ export function getHomeRouteForRoles(roles: UserRole[]): string {
  * normalized legacy role but still have granular permissions.
  */
 export function getHomeRouteForUser(
-  user: { role?: string | null; roles?: string[] | null; primary_role?: string | null; permissions?: string[] } | null
+  user: {
+    role?: string | null;
+    roles?: string[] | null;
+    primary_role?: string | null;
+    permissions?: string[];
+    restaurant_id?: number | null;
+  } | null
 ): string {
   if (!user) return "/";
 
   const roles = normalizeRolesForUser(user);
-  if (roles.length > 0) return getHomeRouteForRoles(roles);
+  if (roles.length > 0) {
+    const home = getHomeRouteForRoles(roles);
+    // Restaurant owners must never land on the staff "waiting for role" screen.
+    if (home === "/welcome" && user.restaurant_id) {
+      return "/dashboard";
+    }
+    return home;
+  }
 
   // Custom-role user with no recognized legacy role — use permissions to decide
   const perms = user.permissions || [];
   if (perms.includes("dashboard.view")) return "/dashboard";
   if (perms.includes("pos.view")) return "/orders/active";
   if (perms.includes("station.kitchen.view")) return "/kitchen";
+
+  // Owner who just finished onboarding may briefly lack normalized roles.
+  if (user.restaurant_id) return "/dashboard";
 
   return "/dashboard"; // Sensible default for any authenticated custom-role user
 }

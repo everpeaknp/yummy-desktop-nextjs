@@ -633,11 +633,25 @@ export function OnboardingWizard({
           hotel_enabled: hotelEnabled,
         });
         if (user && token) {
+          // Creator is restaurant admin — refresh identity so RoleGuard does not
+          // treat a stale pre-onboarding role as "waiting for assignment".
           setAuth(
-            { ...user, restaurant_id: created.id },
+            {
+              ...user,
+              restaurant_id: created.id,
+              role: "admin",
+              roles: ["admin"],
+              primary_role: "admin",
+            },
             token,
             refreshToken
           );
+        }
+        try {
+          await useAuth.getState().refreshSession();
+          await useAuth.getState().syncUserProfile();
+        } catch (err) {
+          console.warn("[onboarding] post-create session refresh skipped", err);
         }
 
         saveOnboardingHours(draft.hours);
