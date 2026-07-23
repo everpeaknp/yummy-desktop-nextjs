@@ -27,7 +27,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { ImageService } from "@/services/image-service";
 import { addMembershipEventListener } from "@/lib/restaurant-membership";
-import { canAccessOnboarding, canReplayOnboarding } from "@/lib/onboarding";
+import { canReplayOnboarding } from "@/lib/onboarding";
 import { resolvePostLoginRoute } from "@/lib/post-login-route";
 import {
   invitationTokenFromPayload,
@@ -35,13 +35,6 @@ import {
 } from "@/lib/restaurant-invitation-link";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,  
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -852,29 +845,6 @@ function OnboardingPageContent() {
   }
 
   if (mode === "create") {
-    if (!canAccessOnboarding(user)) {
-      return (
-        <main className="bg-transparent p-4 md:p-8">
-          <div className="mx-auto max-w-lg space-y-4">
-            <Button variant="ghost" onClick={() => setMode("choice")}>
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to options
-            </Button>
-            <Card className="rounded-3xl border-0 shadow-xl">
-              <CardHeader>
-                <CardTitle>Admin access required</CardTitle>
-                <CardDescription>
-                  Creating a restaurant is limited to admin, owner, or manager accounts. Join an existing restaurant instead.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button onClick={() => setMode("join")}>Join a restaurant</Button>
-              </CardContent>
-            </Card>
-          </div>
-        </main>
-      );
-    }
-
     return (
       <div className="bg-transparent">
         <header className="relative z-30 w-full border-0 bg-transparent pb-3 pt-2 shadow-none sm:pb-4">

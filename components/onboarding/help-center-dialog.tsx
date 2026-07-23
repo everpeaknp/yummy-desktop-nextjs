@@ -24,7 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { canAccessOnboarding, canReplayOnboarding } from "@/lib/onboarding";
+import { canReplayOnboarding } from "@/lib/onboarding";
 import { isPathAccessible } from "@/lib/role-permissions";
 import { requestProductTour } from "@/lib/product-tour";
 

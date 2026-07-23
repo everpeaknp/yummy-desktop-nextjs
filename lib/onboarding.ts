@@ -19,9 +19,12 @@ function collectRoles(user: OnboardingUser): string[] {
     .map((r) => String(r).toLowerCase());
 }
 
-/** First-time restaurant create (admin dashboard roles). */
+/** Who can open first-time onboarding (create/join). New users have no restaurant roles yet. */
 export function canAccessOnboarding(user: OnboardingUser): boolean {
   if (!user) return false;
+  // First registration — any authenticated account without a restaurant can create or join.
+  if (!user.restaurant_id) return true;
+  // Existing restaurant members: admin/owner/manager only (replay uses canReplayOnboarding).
   return collectRoles(user).some((r) => r === "admin" || r === "owner" || r === "manager");
 }
 
