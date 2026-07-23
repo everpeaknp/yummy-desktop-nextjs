@@ -2,8 +2,16 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Calendar } from "lucide-react";
+import { Calendar, ChevronRight, Loader2, Printer } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type {
   DayCloseDetail,
   DayCloseDrawerControlRow,
@@ -26,14 +34,23 @@ import {
   snapshotRefundRows,
   snapshotSalesByCategoryRows,
   snapshotSalesByTableRows,
+  snapshotOrdersForTable,
   snapshotBankRows,
   snapshotFonepayRows,
+  type DayCloseOrderSnapshotRow,
   type DayCloseSnapshotTab,
+  type DayCloseTableSalesRow,
 } from "@/lib/day-close-snapshot-view";
+import {
+  formatDayCloseOrderPayments,
+  formatDayCloseOrderTime,
+  printDayOrdersThermally,
+} from "@/lib/day-close-order-print";
 import { DayCloseMetricCard } from "@/components/analytics/day-close-metric-card";
 import { DayCloseFinancialSummary } from "@/components/analytics/day-close-financial-summary";
 import { DayClosePaymentMethodsCard } from "@/components/analytics/day-close-payment-methods-card";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 type DayCloseSnapshotPanelProps = {
   snapshot: DayCloseSnapshotData;
@@ -75,6 +92,7 @@ export function DayCloseSnapshotPanel({
       : null;
   const drawerEvidence = snapshotDrawerEvidence(snapshot);
   const expectedDrawerRows = snapshotExpectedDrawerRows(snapshot);
+  const [selectedTable, setSelectedTable] = useState<DayCloseTableSalesRow | null>(null);
   const coveredRange = formatDayCloseCoveredRange(
     snapshot.period_start_at,
     snapshot.period_end_at,
@@ -85,6 +103,30 @@ export function DayCloseSnapshotPanel({
     const next = value as DayCloseSnapshotTab;
     if (activeTab === undefined) setInternalTab(next);
     onTabChange?.(next);
+  };
+  const selectedTableOrders = selectedTable
+    ? snapshotOrdersForTable(dayOrders, selectedTable)
+    : [];
+  const reportTimezone =
+    detail?.timezone
+    ?? (typeof snapshot.timezone === "string" ? snapshot.timezone : undefined);
+  const handlePrintOrders = async (orders: DayCloseOrderSnapshotRow[]) => {
+    try {
+      const result = await printDayOrdersThermally({
+        orders,
+        restaurantId: detail?.restaurant_id,
+        timezone: reportTimezone,
+      });
+      toast.success(
+        result.mode === "network"
+          ? `Day Orders sent to ${result.printerName || "the default thermal printer"}.`
+          : "Thermal print dialog opened.",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to print Day Orders.",
+      );
+    }
   };
 
   return (
@@ -288,7 +330,11 @@ export function DayCloseSnapshotPanel({
           ) : null}
           <TabsContent value="day-orders" className="m-0">
             {dayOrders.length > 0 ? (
-              <DayOrdersList orders={dayOrders} />
+              <DayOrdersList
+                orders={dayOrders}
+                timezone={reportTimezone}
+                onPrint={() => handlePrintOrders(dayOrders)}
+              />
             ) : (
               <EmptySnapshotNotice message="Day orders are not available in this snapshot." />
             )}
@@ -302,7 +348,10 @@ export function DayCloseSnapshotPanel({
           </TabsContent>
           <TabsContent value="sales-by-table" className="m-0">
             {salesByTable.length > 0 ? (
-              <SimpleListCard title="Sales by Table" rows={salesByTable} />
+              <SalesByTableList
+                rows={salesByTable}
+                onSelect={setSelectedTable}
+              />
             ) : (
               <EmptySnapshotNotice message="Sales by table are not available in this snapshot." />
             )}
@@ -330,6 +379,34 @@ export function DayCloseSnapshotPanel({
           <SimpleListCard title="Room vs Food" rows={hotelSplit} />
         </section>
       ) : null}
+
+      <Dialog
+        open={selectedTable != null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTable(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedTable?.tableName ?? "Table"} Orders</DialogTitle>
+            <DialogDescription>
+              {detail?.business_date
+                ? `Orders included in the ${detail.business_date} day close.`
+                : "Orders included in this saved day close."}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedTableOrders.length > 0 ? (
+            <DayOrdersList
+              title={`${selectedTable?.tableName ?? "Table"} Orders`}
+              orders={selectedTableOrders}
+              timezone={reportTimezone}
+              onPrint={() => handlePrintOrders(selectedTableOrders)}
+            />
+          ) : (
+            <EmptySnapshotNotice message="Order details are not available for this table in this older snapshot." />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -529,29 +606,58 @@ function EvidenceMetric({ label, value }: { label: string; value: number | undef
 
 function DayOrdersList({
   orders,
+  title = "Day Orders",
+  timezone,
+  onPrint,
 }: {
-  orders: ReturnType<typeof snapshotDayOrderRows>;
+  orders: DayCloseOrderSnapshotRow[];
+  title?: string;
+  timezone?: string;
+  onPrint?: () => Promise<void>;
 }) {
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  const handlePrint = async () => {
+    if (!onPrint || isPrinting) return;
+    setIsPrinting(true);
+    try {
+      await onPrint();
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm">
-      <p className="dc-eyebrow px-5 py-3 border-b border-border/40">
-        Day Orders ({orders.length})
-      </p>
+      <div className="flex items-center justify-between gap-3 border-b border-border/40 px-5 py-3">
+        <p className="dc-eyebrow">
+          {title} ({orders.length})
+        </p>
+        {onPrint ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 gap-2"
+            disabled={isPrinting}
+            onClick={() => void handlePrint()}
+          >
+            {isPrinting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Printer className="h-3.5 w-3.5" />
+            )}
+            Thermal Print
+          </Button>
+        ) : null}
+      </div>
       <div>
         {orders.map((order) => {
           const isRefunded =
             order.isRefunded || String(order.status ?? "").toLowerCase() === "refunded";
-          const statusLabel = isRefunded
-            ? "REFUNDED"
-            : String(order.status ?? "completed").toUpperCase();
-          const subtitleParts = [
-            order.tableName ?? "Takeaway/Delivery",
-            order.channel ? order.channel.toUpperCase() : null,
-            statusLabel,
-            isRefunded && order.refundAmount
-              ? `Refund ${formatDayCloseCurrency(order.refundAmount)}`
-              : null,
-          ].filter(Boolean);
+          const tableName = order.tableName ?? "Takeaway/Delivery";
+          const orderTime = formatDayCloseOrderTime(order, timezone);
+          const paymentBreakdown = formatDayCloseOrderPayments(order);
 
           return (
             <Link
@@ -565,21 +671,64 @@ function DayOrdersList({
                 </span>
                 <span
                   className={cn(
-                    "text-xs truncate block",
+                    "mt-0.5 text-xs block",
                     isRefunded
                       ? "text-rose-600 dark:text-rose-400 font-medium"
                       : "text-muted-foreground",
                   )}
                 >
-                  {subtitleParts.join(" · ")}
+                  Table: {tableName} · Time: {orderTime}
+                  {isRefunded ? " · Refunded" : ""}
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Payment: {paymentBreakdown}
                 </span>
               </div>
               <span className="dc-amount shrink-0">
-                {formatDayCloseCurrency(order.grandTotal)}
+                {formatDayCloseCurrency(order.totalPayment ?? order.grandTotal)}
               </span>
             </Link>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function SalesByTableList({
+  rows,
+  onSelect,
+}: {
+  rows: DayCloseTableSalesRow[];
+  onSelect: (row: DayCloseTableSalesRow) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card/80 shadow-sm backdrop-blur-sm">
+      <p className="dc-eyebrow border-b border-border/40 px-5 py-3">
+        Sales by Table
+      </p>
+      <div className="space-y-2 p-3">
+        {rows.map((row, index) => (
+          <button
+            key={`${row.tableId ?? row.tableName}-${index}`}
+            type="button"
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/10 px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-muted/30"
+            onClick={() => onSelect(row)}
+          >
+            <div className="min-w-0">
+              <span className="block truncate text-sm font-medium">{row.label}</span>
+              {row.secondary ? (
+                <span className="text-[11px] text-muted-foreground">{row.secondary}</span>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="dc-amount whitespace-nowrap text-sm text-emerald-600 dark:text-emerald-400">
+                {formatDayCloseCurrency(row.amount)}
+              </span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );

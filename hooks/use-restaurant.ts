@@ -49,6 +49,8 @@ interface RestaurantState {
   setSelectedModule: (module: 'restaurant' | 'hotel' | null) => void;
 }
 
+let restaurantFetchPromise: Promise<void> | null = null;
+
 export const useRestaurant = create<RestaurantState>()(
   persist(
     (set, get) => ({
@@ -62,33 +64,45 @@ export const useRestaurant = create<RestaurantState>()(
       setSelectedModule: (module) => set({ selectedModule: module }),
 
       fetchRestaurant: async (force = false) => {
-        set({ loading: true });
-        try {
-          const response = await apiClient.get('/restaurants/by-user');
-          if (response.data.status === 'success') {
-            const nextData = response.data.data;
-            console.log("[useRestaurant] Full Data received:", nextData);
-            console.log("[useRestaurant] Data flags check:", { id: nextData.id, hotel: nextData.hotel_enabled, rest: nextData.restaurant_enabled });
-            const current = get().restaurant;
-            
-            // If we switched to a different restaurant, clear selection
-            if (current && current.id !== nextData.id) {
-               console.log("[useRestaurant] Restaurant changed, clearing selectedModule");
-               set({ selectedModule: null });
+        if (restaurantFetchPromise) {
+          return restaurantFetchPromise;
+        }
+
+        restaurantFetchPromise = (async () => {
+          set({ loading: true, ...(force ? { error: null } : {}) });
+          try {
+            const response = await apiClient.get('/restaurants/by-user');
+            if (response.data.status === 'success') {
+              const nextData = response.data.data;
+              console.log("[useRestaurant] Full Data received:", nextData);
+              console.log("[useRestaurant] Data flags check:", { id: nextData.id, hotel: nextData.hotel_enabled, rest: nextData.restaurant_enabled });
+              const current = get().restaurant;
+
+              // If we switched to a different restaurant, clear selection
+              if (current && current.id !== nextData.id) {
+                console.log("[useRestaurant] Restaurant changed, clearing selectedModule");
+                set({ selectedModule: null });
+              }
+
+              set({ restaurant: nextData, error: null });
             }
-            
-            set({ restaurant: nextData, error: null });
+          } catch (err: any) {
+            // No restaurant yet (404): clear stale persisted profile for onboarding/join routing.
+            if (err.response?.status === 404) {
+              set({ restaurant: null, selectedModule: null, error: null });
+            } else {
+              console.error('Failed to fetch restaurant:', err);
+              set({ error: err.response?.data?.detail || 'Failed to fetch restaurant profile' });
+            }
+          } finally {
+            set({ loading: false });
           }
-        } catch (err: any) {
-          // No restaurant yet (404): clear stale persisted profile for onboarding/join routing.
-          if (err.response?.status === 404) {
-            set({ restaurant: null, selectedModule: null, error: null });
-          } else {
-            console.error('Failed to fetch restaurant:', err);
-            set({ error: err.response?.data?.detail || 'Failed to fetch restaurant profile' });
-          }
+        })();
+
+        try {
+          await restaurantFetchPromise;
         } finally {
-          set({ loading: false });
+          restaurantFetchPromise = null;
         }
       },
     }),

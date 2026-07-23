@@ -389,10 +389,20 @@ function mapLabelAmountRows(value: unknown): SnapshotListRow[] {
 export type DayCloseOrderSnapshotRow = {
   orderId: number;
   restaurantOrderId?: string | number;
+  tableId?: number;
   tableName?: string;
   channel?: string;
   status?: string;
   grandTotal?: number;
+  totalPayment?: number;
+  paymentMethods: string[];
+  paymentBreakdown: Array<{
+    method: string;
+    instrument?: string;
+    amount: number;
+  }>;
+  createdAt?: string;
+  completedAt?: string;
   isRefunded?: boolean;
   refundAmount?: number;
 };
@@ -406,15 +416,43 @@ export function snapshotDayOrderRows(snapshot: DayCloseSnapshotData): DayCloseOr
     const row = entry as Record<string, unknown>;
     const orderId = Number(row.order_id);
     if (!Number.isFinite(orderId)) continue;
+    const grandTotal = readSnapshotNumber(row.grand_total);
+    const tableId = readSnapshotNumber(row.table_id);
+    const paymentMethods = Array.isArray(row.payment_methods)
+      ? row.payment_methods
+          .map((method) => String(method).trim())
+          .filter(Boolean)
+      : [];
+    const paymentBreakdown = Array.isArray(row.payment_breakdown)
+      ? row.payment_breakdown.flatMap((entry) => {
+          if (!entry || typeof entry !== "object") return [];
+          const payment = entry as Record<string, unknown>;
+          const amount = readSnapshotNumber(payment.amount);
+          const method = String(payment.method ?? "").trim();
+          if (amount == null || !method) return [];
+          const instrument = String(payment.instrument ?? "").trim();
+          return [{
+            method,
+            instrument: instrument || undefined,
+            amount,
+          }];
+        })
+      : [];
 
     rows.push({
       orderId,
       restaurantOrderId:
         row.restaurant_order_id != null ? (row.restaurant_order_id as string | number) : undefined,
+      tableId,
       tableName: row.table_name != null ? String(row.table_name) : undefined,
       channel: row.channel != null ? String(row.channel) : undefined,
       status: row.status != null ? String(row.status) : undefined,
-      grandTotal: readSnapshotNumber(row.grand_total),
+      grandTotal,
+      totalPayment: readSnapshotNumber(row.total_payment) ?? grandTotal,
+      paymentMethods,
+      paymentBreakdown,
+      createdAt: row.created_at != null ? String(row.created_at) : undefined,
+      completedAt: row.completed_at != null ? String(row.completed_at) : undefined,
       isRefunded: Boolean(row.is_refunded),
       refundAmount: readSnapshotNumber(row.refund_amount),
     });
@@ -448,25 +486,71 @@ export function snapshotSalesByCategoryRows(snapshot: DayCloseSnapshotData): Sna
   return mapLabelAmountRows(snapshot.sales_by_category);
 }
 
-export function snapshotSalesByTableRows(snapshot: DayCloseSnapshotData): SnapshotListRow[] {
+export type DayCloseTableSalesRow = SnapshotListRow & {
+  tableId?: number;
+  tableName: string;
+  orderIds: number[];
+};
+
+export function snapshotSalesByTableRows(snapshot: DayCloseSnapshotData): DayCloseTableSalesRow[] {
   const details = Array.isArray(snapshot.table_details) ? snapshot.table_details : [];
   if (details.length > 0) {
-    const rows: SnapshotListRow[] = [];
+    const rows: DayCloseTableSalesRow[] = [];
     details.forEach((entry, idx) => {
       if (!entry || typeof entry !== "object") return;
       const row = entry as Record<string, unknown>;
       const label = String(row.table_name ?? row.name ?? `Table ${idx + 1}`);
       const amount = readSnapshotNumber(row.revenue ?? row.sales ?? row.amount ?? row.total);
       if (amount == null) return;
-      const ordersCount = readSnapshotNumber(row.orders_count ?? row.order_count);
+      const tableId = readSnapshotNumber(row.table_id);
+      const orderIds = Array.isArray(row.orders)
+        ? row.orders.flatMap((entry) => {
+            if (!entry || typeof entry !== "object") return [];
+            const id = readSnapshotNumber((entry as Record<string, unknown>).order_id);
+            return id == null ? [] : [id];
+          })
+        : [];
+      const ordersCount = readSnapshotNumber(
+        row.total_orders ?? row.orders_count ?? row.order_count,
+      ) ?? (orderIds.length || undefined);
       rows.push({
         label,
+        tableId,
+        tableName: label,
+        orderIds,
         amount,
-        secondary: ordersCount != null ? `${ordersCount} orders` : undefined,
+        secondary:
+          ordersCount != null
+            ? `${ordersCount} ${ordersCount === 1 ? "order" : "orders"}`
+            : undefined,
       });
     });
     return rows.sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0));
   }
 
-  return mapLabelAmountRows(snapshot.sales_by_table);
+  return mapLabelAmountRows(snapshot.sales_by_table).map((row) => ({
+    ...row,
+    tableName: row.label,
+    orderIds: [],
+  }));
+}
+
+export function snapshotOrdersForTable(
+  orders: DayCloseOrderSnapshotRow[],
+  table: DayCloseTableSalesRow,
+): DayCloseOrderSnapshotRow[] {
+  const orderIds = new Set(table.orderIds);
+  if (orderIds.size > 0) {
+    return orders.filter((order) => orderIds.has(order.orderId));
+  }
+
+  if (table.tableId != null) {
+    const byId = orders.filter((order) => order.tableId === table.tableId);
+    if (byId.length > 0) return byId;
+  }
+
+  const normalizedName = table.tableName.trim().toLocaleLowerCase();
+  return orders.filter(
+    (order) => (order.tableName ?? "Takeaway/Delivery").trim().toLocaleLowerCase() === normalizedName,
+  );
 }

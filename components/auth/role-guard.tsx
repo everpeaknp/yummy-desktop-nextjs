@@ -5,10 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth, useAuthHydrated } from "@/hooks/use-auth";
 import { hasStoredSession, readStoredTokens } from "@/lib/auth-storage";
 import { isAuthRecoveryActive } from "@/lib/auth-recovery";
-import {
-  isSessionRestoreInFlight,
-  hasSessionRestoreFinished,
-} from "@/lib/session-restore";
+import { useSessionRestoreState } from "@/hooks/use-session-restore";
 import {
   normalizeRolesForUser,
   isRouteAllowedMulti,
@@ -33,6 +30,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
   );
   const [sessionWaitExpired, setSessionWaitExpired] = useState(false);
   const hydrated = useAuthHydrated();
+  const sessionRestore = useSessionRestoreState();
 
   const isDesktopShell =
     typeof window !== "undefined" &&
@@ -42,15 +40,15 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
 
   const restoringSession =
     isAuthRecoveryActive() ||
-    isSessionRestoreInFlight() ||
-    (hasStoredSession() && !hasSessionRestoreFinished()) ||
+    sessionRestore.inFlight ||
+    (hasStoredSession() && !sessionRestore.finished) ||
     meLoading;
 
   useEffect(() => {
     if (!hydrated || user || !hasStoredSession()) return;
-    if (hasSessionRestoreFinished()) return;
+    if (sessionRestore.finished) return;
     void bootstrapSession();
-  }, [hydrated, user, bootstrapSession]);
+  }, [hydrated, user, bootstrapSession, sessionRestore.finished]);
 
   useEffect(() => {
     const hasStoredTokens = hasStoredSession();

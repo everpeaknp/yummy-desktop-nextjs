@@ -10,7 +10,7 @@ import { useAuth, useAuthHydrated } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { usePermissionsSync } from "@/hooks/use-permissions-sync";
 import { hasStoredSession } from "@/lib/auth-storage";
-import { hasSessionRestoreFinished, isSessionRestoreInFlight } from "@/lib/session-restore";
+import { useSessionRestoreState } from "@/hooks/use-session-restore";
 import { ProductTourHost } from "@/components/onboarding/product-tour-host";
 import { canAccessOnboarding } from "@/lib/onboarding";
 
@@ -30,6 +30,7 @@ export default function DashboardLayout({
   const token = useAuth((s) => s.token);
   const meLoading = useAuth((s) => s.meLoading);
   const authHydrated = useAuthHydrated();
+  const sessionRestore = useSessionRestoreState();
   const router = useRouter();
   const pathname = usePathname() || "";
   const [mounted, setMounted] = useState(false);
@@ -56,10 +57,18 @@ export default function DashboardLayout({
     setMounted(true);
   }, []);
 
+  const storedSession = hasStoredSession();
+  const waitingForAuth =
+    !authHydrated ||
+    meLoading ||
+    sessionRestore.inFlight ||
+    (storedSession && !sessionRestore.finished) ||
+    ((token || storedSession) && !user);
+
   useEffect(() => {
-    if (!mounted) return;
-    fetchRestaurant();
-  }, [fetchRestaurant, mounted]);
+    if (!mounted || waitingForAuth || !token || !user) return;
+    void fetchRestaurant();
+  }, [fetchRestaurant, mounted, token, user, waitingForAuth]);
 
   useEffect(() => {
     if (!mounted || !storeHydrated) return;
@@ -115,13 +124,6 @@ export default function DashboardLayout({
     mounted,
     storeHydrated,
   ]);
-
-  const waitingForAuth =
-    !authHydrated ||
-    meLoading ||
-    isSessionRestoreInFlight() ||
-    (hasStoredSession() && !hasSessionRestoreFinished()) ||
-    ((token || hasStoredSession()) && !user);
 
   const showShell = mounted && !waitingForAuth && (restaurant || !loading);
 

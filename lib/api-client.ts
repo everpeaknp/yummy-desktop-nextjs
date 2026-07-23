@@ -2,6 +2,9 @@ import axios from 'axios';
 import { syncAuthFromRefreshResponse } from '@/lib/auth-session';
 import { clearStoredTokens, readStoredTokens } from '@/lib/auth-storage';
 import { isAuthRecoveryActive } from '@/lib/auth-recovery';
+import { RefreshRequestQueue } from '@/lib/refresh-request-queue';
+
+export const API_REQUEST_TIMEOUT_MS = 30_000;
 
 const getApiBaseUrl = () => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
@@ -20,6 +23,7 @@ const PROXY_BASE = '/api/proxy';
 const apiClient = axios.create({
   // In local dev we proxy API calls through Next.js rewrites to avoid CORS when hitting a remote backend.
   baseURL: isLocalhost ? PROXY_BASE : getApiBaseUrl(),
+  timeout: API_REQUEST_TIMEOUT_MS,
 });
 
 // Request Interceptor: Attach Token
@@ -39,16 +43,7 @@ apiClient.interceptors.request.use(
 
 // Response Interceptor: Auto-refresh token on 401, then retry
 let isRefreshing = false;
-let refreshSubscribers: ((token: string) => void)[] = [];
-
-function onTokenRefreshed(token: string) {
-  refreshSubscribers.forEach((cb) => cb(token));
-  refreshSubscribers = [];
-}
-
-function addRefreshSubscriber(cb: (token: string) => void) {
-  refreshSubscribers.push(cb);
-}
+const refreshRequestQueue = new RefreshRequestQueue<string>();
 
 apiClient.interceptors.response.use(
   (response) => response,
@@ -68,13 +63,12 @@ apiClient.interceptors.response.use(
       }
 
       if (isRefreshing) {
-        // Queue this request until refresh completes
-        return new Promise((resolve) => {
-          addRefreshSubscriber((newToken: string) => {
-            originalRequest.headers.Authorization = `Bearer ${newToken}`;
-            originalRequest._retry = true;
-            resolve(apiClient(originalRequest));
-          });
+        // Queue this request until refresh completes. Failure rejects every
+        // waiter so dashboard startup cannot remain pending forever.
+        return refreshRequestQueue.wait().then((newToken) => {
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          originalRequest._retry = true;
+          return apiClient(originalRequest);
         });
       }
 
@@ -87,7 +81,11 @@ apiClient.interceptors.response.use(
         if (!refreshToken) throw new Error('No refresh token');
 
         const refreshBase = isLocalhost ? PROXY_BASE : getApiBaseUrl();
-        const res = await axios.post(`${refreshBase}/auth/refresh`, { refresh_token: refreshToken });
+        const res = await axios.post(
+          `${refreshBase}/auth/refresh`,
+          { refresh_token: refreshToken },
+          { timeout: API_REQUEST_TIMEOUT_MS },
+        );
         if (res.data?.status === 'success' && res.data.data?.access_token) {
           const refreshData = res.data.data;
           syncAuthFromRefreshResponse(refreshData);
@@ -95,14 +93,14 @@ apiClient.interceptors.response.use(
 
           // Update Authorization header and retry
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
-          onTokenRefreshed(newToken);
+          refreshRequestQueue.resolve(newToken);
           isRefreshing = false;
           return apiClient(originalRequest);
         }
         throw new Error('Refresh failed');
       } catch (refreshError) {
         isRefreshing = false;
-        refreshSubscribers = [];
+        refreshRequestQueue.reject(refreshError);
         const isAuth401 = (refreshError as any)?.response?.status === 401;
         // During cold-start session restore, do not wipe tokens on transient failures.
         // However, if the server explicitly rejects the refresh token (401), we must wipe them.

@@ -21,7 +21,10 @@ describe("mobile app association documents", () => {
     expect(response.headers.get("content-type")).toContain("application/json");
     expect(document.applinks.details[0]).toMatchObject({
       appIDs: ["3ANX28CC3Y.com.yummyever.mobile"],
-      components: [{ "/": "/join" }],
+      components: [
+        { "/": "/join" },
+        { "/": "/invite" },
+      ],
     });
   });
 

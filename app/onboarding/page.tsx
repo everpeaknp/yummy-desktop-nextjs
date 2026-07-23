@@ -29,6 +29,10 @@ import { ImageService } from "@/services/image-service";
 import { addMembershipEventListener } from "@/lib/restaurant-membership";
 import { canAccessOnboarding, canReplayOnboarding } from "@/lib/onboarding";
 import { resolvePostLoginRoute } from "@/lib/post-login-route";
+import {
+  invitationTokenFromPayload,
+  PENDING_INVITATION_TOKEN_KEY,
+} from "@/lib/restaurant-invitation-link";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { Button } from "@/components/ui/button";
 import {
@@ -188,6 +192,7 @@ function OnboardingPageContent() {
 
   const [joinCode, setJoinCode] = useState("");
   const [invitationCode, setInvitationCode] = useState("");
+  const [invitationLinkError, setInvitationLinkError] = useState("");
   const [requests, setRequests] = useState<RequestItem[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [joinLoading, setJoinLoading] = useState(false);
@@ -315,6 +320,15 @@ function OnboardingPageContent() {
     setMode("join");
   }, []);
 
+  useEffect(() => {
+    const token = invitationTokenFromPayload(
+      localStorage.getItem(PENDING_INVITATION_TOKEN_KEY) || "",
+    );
+    if (!token) return;
+    setInvitationCode(token);
+    setMode("join");
+  }, []);
+
   const refreshAccessOptions = useCallback(async () => {
     if (refreshingAccessRef.current) return;
     refreshingAccessRef.current = true;
@@ -332,8 +346,29 @@ function OnboardingPageContent() {
       }
       if (invitationResult.status === "fulfilled") {
         const rows = (invitationResult.value.data?.data || []) as Invitation[];
-        setInvitations(rows);
-        if (rows.length === 1) setInvitationCode(rows[0].code);
+        const linkedToken = invitationTokenFromPayload(
+          localStorage.getItem(PENDING_INVITATION_TOKEN_KEY) || "",
+        );
+        const linkedInvitation = linkedToken
+          ? rows.find((item) => item.code === linkedToken)
+          : undefined;
+        const orderedRows = linkedInvitation
+          ? [
+              linkedInvitation,
+              ...rows.filter((item) => item.id !== linkedInvitation.id),
+            ]
+          : rows;
+        setInvitations(orderedRows);
+        if (linkedInvitation) {
+          setInvitationCode(linkedInvitation.code);
+          setInvitationLinkError("");
+        } else if (linkedToken) {
+          setInvitationLinkError(
+            "This invitation is unavailable for the signed-in email. It may belong to another email, or it may have expired or been revoked.",
+          );
+        } else if (rows.length === 1) {
+          setInvitationCode(rows[0].code);
+        }
       }
     } finally {
       refreshingAccessRef.current = false;
@@ -679,6 +714,13 @@ function OnboardingPageContent() {
       await apiClient.post(RestaurantJoinApis.acceptInvitation, {
         code: selectedCode,
       });
+      if (
+        invitationTokenFromPayload(
+          localStorage.getItem(PENDING_INVITATION_TOKEN_KEY) || "",
+        ) === selectedCode
+      ) {
+        localStorage.removeItem(PENDING_INVITATION_TOKEN_KEY);
+      }
       toast.success("Invitation accepted");
       await enterRestaurantWorkspace();
     } catch (error: unknown) {
@@ -707,6 +749,14 @@ function OnboardingPageContent() {
     setBusyAccessId(`invitation-${invitation.id}`);
     try {
       await apiClient.post(RestaurantJoinApis.declineInvitation(invitation.id));
+      if (
+        invitationTokenFromPayload(
+          localStorage.getItem(PENDING_INVITATION_TOKEN_KEY) || "",
+        ) === invitation.code
+      ) {
+        localStorage.removeItem(PENDING_INVITATION_TOKEN_KEY);
+        setInvitationLinkError("");
+      }
       setInvitations((current) => current.filter((item) => item.id !== invitation.id));
       if (invitationCode === invitation.code) setInvitationCode("");
       toast.success("Invitation declined");
@@ -1046,9 +1096,26 @@ function OnboardingPageContent() {
                       Only an account signed in with the invited email can accept this code.
                     </p>
                     <div className="mt-auto space-y-4">
+                      {invitationLinkError && (
+                        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                          <p className="font-semibold">Invitation could not be opened</p>
+                          <p className="mt-1 text-xs leading-relaxed">
+                            {invitationLinkError}
+                          </p>
+                        </div>
+                      )}
+                      {invitations.some((item) => item.code === invitationCode) && (
+                        <div className="flex items-center gap-2 rounded-2xl border border-blue-300 bg-blue-50 p-3 text-sm font-semibold text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+                          <ShieldCheck className="h-4 w-4" />
+                          Invitation opened securely from your email
+                        </div>
+                      )}
                       <Input
                         value={invitationCode}
-                        onChange={(event) => setInvitationCode(event.target.value)}
+                        onChange={(event) => {
+                          setInvitationCode(event.target.value);
+                          setInvitationLinkError("");
+                        }}
                         placeholder="Invitation code from email"
                         className="h-12 border-2"
                       />
@@ -1063,7 +1130,11 @@ function OnboardingPageContent() {
                       {invitations.map((item) => (
                         <div
                           key={item.id}
-                          className="rounded-2xl border-2 border-border bg-background/60 p-3"
+                          className={`rounded-2xl border-2 bg-background/60 p-3 ${
+                            item.code === invitationCode
+                              ? "border-blue-500 shadow-sm shadow-blue-500/10"
+                              : "border-border"
+                          }`}
                         >
                           <button
                             type="button"

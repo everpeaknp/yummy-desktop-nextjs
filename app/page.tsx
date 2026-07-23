@@ -14,7 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Moon, Sun, Lock, ArrowLeft } from "lucide-react";
+import { Loader2, Moon, Sun, Lock, ArrowLeft, MailCheck } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
@@ -25,6 +25,7 @@ import {
   completeGoogleRedirectIfNeeded,
   signInWithGoogle,
 } from "@/lib/firebase";
+import { markInteractiveSessionReady } from "@/lib/session-restore";
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -71,9 +72,14 @@ export default function Home() {
   const clearRestaurant = useRestaurant((s) => s.clearRestaurant);
   const { setTheme, theme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [hasInvitationContext, setHasInvitationContext] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    setHasInvitationContext(
+      new URLSearchParams(window.location.search).get("invitation") === "1"
+        || Boolean(localStorage.getItem("yummy:pending-invitation-token")),
+    );
   }, []);
 
   // Resend cooldown timer
@@ -119,6 +125,7 @@ export default function Home() {
     console.log("[Auth] Constructed User Object:", user);
     
     setAuth(user, access_token, refresh_token);
+    markInteractiveSessionReady();
 
     // New registrations have no restaurant — clear any stale persisted profile
     // so resolvePostLoginRoute sends them to /onboarding.
@@ -131,7 +138,7 @@ export default function Home() {
       console.log(`[Auth] Redirecting to: ${targetRoute}`);
       router.replace(targetRoute);
     });
-  }, [setAuth, router, fetchRestaurant, clearRestaurant]);
+  }, [setAuth, setRedirecting, router, fetchRestaurant, clearRestaurant]);
 
   // Helper: extract error message
   const extractError = (err: any): string => {
@@ -487,6 +494,17 @@ export default function Home() {
 
       {/* Auth Card */}
       <div className="w-full max-w-md animate-in slide-in-from-bottom-10 fade-in duration-700 delay-200">
+        {hasInvitationContext && (
+          <div className="mb-4 flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50/90 p-4 text-blue-950 shadow-sm dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-100">
+            <MailCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-300" />
+            <div>
+              <p className="text-sm font-semibold">Your invitation is ready</p>
+              <p className="mt-1 text-xs leading-relaxed text-blue-800 dark:text-blue-200">
+                Sign in or create an account using the email that received the invitation.
+              </p>
+            </div>
+          </div>
+        )}
         <Tabs defaultValue="login" className="w-full" value={activeTab} onValueChange={(v) => { setActiveTab(v); setError(null); }}>
           <TabsList className="grid w-full grid-cols-2 mb-4 bg-background/50 backdrop-blur-sm border h-11">
             <TabsTrigger value="login" className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-sm">Login</TabsTrigger>

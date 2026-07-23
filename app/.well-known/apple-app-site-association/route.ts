@@ -15,6 +15,11 @@ export function GET() {
                 "/": "/join",
                 comment: "Open restaurant join links in the Yummy mobile app.",
               },
+              {
+                "/": "/invite",
+                comment:
+                  "Open verified-email restaurant invitations in the Yummy mobile app.",
+              },
             ],
           },
         ],
