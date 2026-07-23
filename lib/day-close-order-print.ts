@@ -28,6 +28,18 @@ export type DayOrdersPrintResult = {
   printerName?: string;
 };
 
+export type DayOrdersThermalSummaryRow = {
+  label: string;
+  amount: number | undefined;
+};
+
+export type DayOrdersThermalOptions = {
+  orders: DayCloseOrderSnapshotRow[];
+  timezone?: string;
+  salesSummary?: DayOrdersThermalSummaryRow[];
+  paymentSummary?: DayOrdersThermalSummaryRow[];
+};
+
 function titleCase(value: string): string {
   return value
     .replace(/[_-]+/g, " ")
@@ -80,18 +92,40 @@ export function formatDayCloseOrderPayments(
       .join(" + ");
   }
 
-  if (order.paymentMethods.length > 0) {
-    return order.paymentMethods.map(titleCase).join(" + ");
+  if (order.paymentMethods.length === 1) {
+    const total = order.totalPayment ?? order.grandTotal;
+    return `${titleCase(order.paymentMethods[0])}: ${formatAmount(total)}`;
+  }
+
+  if (order.paymentMethods.length > 1) {
+    return `${order.paymentMethods.map(titleCase).join(" + ")} (split amounts not saved)`;
   }
 
   return "Not recorded";
 }
 
-export function buildDayOrdersThermalText(options: {
-  orders: DayCloseOrderSnapshotRow[];
-  timezone?: string;
-}): string {
-  const lines = ["DAY ORDERS", "--------------------------------"];
+function appendSummarySection(
+  lines: string[],
+  title: string,
+  rows: DayOrdersThermalSummaryRow[] | undefined,
+): void {
+  const availableRows = (rows ?? []).filter((row) => row.amount != null);
+  if (availableRows.length === 0) return;
+
+  lines.push(title, "--------------------------------");
+  availableRows.forEach((row) => {
+    lines.push(`${row.label}: ${formatAmount(row.amount)}`);
+  });
+  lines.push("--------------------------------");
+}
+
+export function buildDayOrdersThermalText(
+  options: DayOrdersThermalOptions,
+): string {
+  const lines: string[] = [];
+  appendSummarySection(lines, "SALES SUMMARY", options.salesSummary);
+  appendSummarySection(lines, "PAYMENT METHODS", options.paymentSummary);
+  lines.push(`DAY ORDERS (${options.orders.length})`, "--------------------------------");
 
   options.orders.forEach((order, index) => {
     lines.push(
@@ -109,10 +143,9 @@ export function buildDayOrdersThermalText(options: {
   return `${lines.join("\n")}\n`;
 }
 
-export function buildDayOrdersEscPosPayload(options: {
-  orders: DayCloseOrderSnapshotRow[];
-  timezone?: string;
-}): string {
+export function buildDayOrdersEscPosPayload(
+  options: DayOrdersThermalOptions,
+): string {
   return [
     "\x1B@",
     "\x1Ba\x01",
@@ -131,10 +164,9 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#039;");
 }
 
-export function buildDayOrdersPrintHtml(options: {
-  orders: DayCloseOrderSnapshotRow[];
-  timezone?: string;
-}): string {
+export function buildDayOrdersPrintHtml(
+  options: DayOrdersThermalOptions,
+): string {
   const text = escapeHtml(buildDayOrdersThermalText(options));
   return `<!doctype html>
 <html>
@@ -187,10 +219,7 @@ async function resolveDefaultNetworkPrinter(
   }
 }
 
-function openThermalPrintDialog(options: {
-  orders: DayCloseOrderSnapshotRow[];
-  timezone?: string;
-}): void {
+function openThermalPrintDialog(options: DayOrdersThermalOptions): void {
   const popup = window.open("", "_blank", "width=420,height=720");
   if (!popup) {
     throw new Error("The print window was blocked. Allow popups and try again.");
@@ -216,6 +245,8 @@ export async function printDayOrdersThermally(options: {
   orders: DayCloseOrderSnapshotRow[];
   restaurantId?: number;
   timezone?: string;
+  salesSummary?: DayOrdersThermalSummaryRow[];
+  paymentSummary?: DayOrdersThermalSummaryRow[];
 }): Promise<DayOrdersPrintResult> {
   if (options.orders.length === 0) {
     throw new Error("There are no day orders to print.");

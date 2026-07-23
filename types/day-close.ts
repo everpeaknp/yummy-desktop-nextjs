@@ -314,6 +314,9 @@ export interface DayCloseSnapshotData {
   manual_income_total?: number;
   manual_cash_income?: number;
   gross_sales?: number;
+  discount_total?: number;
+  tax_total?: number;
+  service_charge_total?: number;
   net_sales?: number;
   total_income?: number;
   expected_cash?: number;

@@ -17,10 +17,11 @@ import type {
   DayCloseDrawerControlRow,
   DayCloseSnapshotData,
 } from "@/types/day-close";
-import { formatDayCloseCurrency } from "@/lib/day-close-format";
 import {
   formatDayCloseCoveredRange,
   formatDayCloseCloseName,
+  formatDayCloseCurrency,
+  pickBackendAmount,
 } from "@/lib/day-close-format";
 import {
   isHotelDayClose,
@@ -40,6 +41,7 @@ import {
   type DayCloseOrderSnapshotRow,
   type DayCloseSnapshotTab,
   type DayCloseTableSalesRow,
+  type SnapshotListRow,
 } from "@/lib/day-close-snapshot-view";
 import {
   formatDayCloseOrderPayments,
@@ -62,6 +64,24 @@ type DayCloseSnapshotPanelProps = {
   activeTab?: DayCloseSnapshotTab;
   onTabChange?: (tab: DayCloseSnapshotTab) => void;
 };
+
+function paymentInstrumentSummaryRows(
+  methodLabel: string,
+  methodRows: SnapshotListRow[],
+  instrumentRows: SnapshotListRow[],
+): SnapshotListRow[] {
+  if (instrumentRows.length === 0) {
+    return methodRows.filter((row) => row.label === methodLabel);
+  }
+
+  return instrumentRows.map((row) => ({
+    ...row,
+    label:
+      row.label.trim().toLocaleLowerCase() === methodLabel.toLocaleLowerCase()
+        ? methodLabel
+        : `${row.label} (${methodLabel})`,
+  }));
+}
 
 export function DayCloseSnapshotPanel({
   snapshot,
@@ -110,12 +130,65 @@ export function DayCloseSnapshotPanel({
   const reportTimezone =
     detail?.timezone
     ?? (typeof snapshot.timezone === "string" ? snapshot.timezone : undefined);
-  const handlePrintOrders = async (orders: DayCloseOrderSnapshotRow[]) => {
+  const salesSummary = [
+    {
+      label: "Gross Sales",
+      amount: pickBackendAmount(snapshot.gross_sales, detail?.gross_sales),
+    },
+    {
+      label: "Discounts",
+      amount: pickBackendAmount(snapshot.discount_total, detail?.discount_total),
+    },
+    {
+      label: "Tax",
+      amount: pickBackendAmount(snapshot.tax_total, detail?.tax_total),
+    },
+    {
+      label: "Service Charge",
+      amount: pickBackendAmount(
+        snapshot.service_charge_total,
+        detail?.service_charge_total,
+      ),
+    },
+    {
+      label: "Refunds",
+      amount: pickBackendAmount(snapshot.refunds?.total, detail?.refund_total),
+    },
+    {
+      label: "Net Sales",
+      amount: pickBackendAmount(snapshot.net_sales, detail?.net_sales),
+    },
+    {
+      label: "Manual Income",
+      amount: pickBackendAmount(snapshot.manual_income_total),
+    },
+    {
+      label: "Expenses",
+      amount: pickBackendAmount(snapshot.expense_total, detail?.expense_total),
+    },
+    {
+      label: "Total Income",
+      amount: pickBackendAmount(snapshot.total_income, detail?.total_income),
+    },
+  ];
+  const paymentSummary = [
+    ...paymentMethods.filter((row) => row.label === "Cash"),
+    ...paymentInstrumentSummaryRows("Card", paymentMethods, cardInstruments),
+    ...paymentInstrumentSummaryRows("Digital/QR", paymentMethods, digitalInstruments),
+    ...paymentInstrumentSummaryRows("Fonepay", paymentMethods, fonepayInstruments),
+    ...paymentMethods.filter((row) => row.label === "Credit"),
+  ];
+  const handlePrintOrders = async (
+    orders: DayCloseOrderSnapshotRow[],
+    includeDaySummary = true,
+  ) => {
     try {
       const result = await printDayOrdersThermally({
         orders,
         restaurantId: detail?.restaurant_id,
         timezone: reportTimezone,
+        salesSummary: includeDaySummary ? salesSummary : undefined,
+        paymentSummary: includeDaySummary ? paymentSummary : undefined,
       });
       toast.success(
         result.mode === "network"
@@ -400,7 +473,7 @@ export function DayCloseSnapshotPanel({
               title={`${selectedTable?.tableName ?? "Table"} Orders`}
               orders={selectedTableOrders}
               timezone={reportTimezone}
-              onPrint={() => handlePrintOrders(selectedTableOrders)}
+              onPrint={() => handlePrintOrders(selectedTableOrders, false)}
             />
           ) : (
             <EmptySnapshotNotice message="Order details are not available for this table in this older snapshot." />

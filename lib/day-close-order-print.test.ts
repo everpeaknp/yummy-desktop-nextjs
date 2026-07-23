@@ -41,7 +41,46 @@ describe("day orders thermal report", () => {
     expect(text).not.toContain("Grand Total");
   });
 
-  it("uses old payment method names when amounts were not saved", () => {
+  it("prints sales and instrument-level payment summaries before the orders", () => {
+    const text = buildDayOrdersThermalText({
+      orders: [splitPaymentOrder],
+      timezone: "UTC",
+      salesSummary: [
+        { label: "Gross Sales", amount: 1_000 },
+        { label: "Discounts", amount: 100 },
+        { label: "Refunds", amount: 50 },
+        { label: "Net Sales", amount: 850 },
+      ],
+      paymentSummary: [
+        { label: "Cash", amount: 300 },
+        { label: "Visa (Card)", amount: 200 },
+        { label: "eSewa (Digital/QR)", amount: 350 },
+      ],
+    });
+
+    expect(text.indexOf("SALES SUMMARY")).toBeLessThan(text.indexOf("PAYMENT METHODS"));
+    expect(text.indexOf("PAYMENT METHODS")).toBeLessThan(text.indexOf("DAY ORDERS"));
+    expect(text).toContain("Gross Sales: Rs. 1,000.00");
+    expect(text).toContain("Discounts: Rs. 100.00");
+    expect(text).toContain("Refunds: Rs. 50.00");
+    expect(text).toContain("Cash: Rs. 300.00");
+    expect(text).toContain("Visa (Card): Rs. 200.00");
+    expect(text).toContain("eSewa (Digital/QR): Rs. 350.00");
+  });
+
+  it("uses the saved total for an old single-method order", () => {
+    const oldOrder: DayCloseOrderSnapshotRow = {
+      orderId: 12,
+      grandTotal: 650,
+      totalPayment: 650,
+      paymentMethods: ["cash"],
+      paymentBreakdown: [],
+    };
+
+    expect(formatDayCloseOrderPayments(oldOrder)).toBe("Cash: Rs. 650.00");
+  });
+
+  it("does not invent split amounts for an old multi-method order", () => {
     const oldOrder: DayCloseOrderSnapshotRow = {
       orderId: 12,
       grandTotal: 650,
@@ -50,7 +89,9 @@ describe("day orders thermal report", () => {
       paymentBreakdown: [],
     };
 
-    expect(formatDayCloseOrderPayments(oldOrder)).toBe("Cash + Digital");
+    expect(formatDayCloseOrderPayments(oldOrder)).toBe(
+      "Cash + Digital (split amounts not saved)",
+    );
   });
 
   it("uses completed time before created time", () => {
