@@ -7,7 +7,9 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock3,
+  Copy,
   Crown,
+  ExternalLink,
   FileText,
   Loader2,
   Mail,
@@ -22,6 +24,14 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { UsageIndicator } from "@/components/subscription/usage-indicator";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
@@ -40,6 +50,26 @@ import { cn } from "@/lib/utils";
 
 const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "yummyever.np@gmail.com";
 const supportWhatsapp = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP || "").replace(/\D/g, "");
+
+type ContactDraft = {
+  subject: string;
+  message: string;
+};
+
+function gmailComposeHref(draft: ContactDraft): string {
+  const parameters = new URLSearchParams({
+    view: "cm",
+    fs: "1",
+    to: supportEmail,
+    su: draft.subject,
+    body: draft.message,
+  });
+  return `https://mail.google.com/mail/?${parameters.toString()}`;
+}
+
+function contactClipboardText(draft: ContactDraft): string {
+  return `To: ${supportEmail}\nSubject: ${draft.subject}\n\n${draft.message}`;
+}
 
 function intervalLabel(months: number | null): string {
   if (months == null) return "No fixed term";
@@ -88,6 +118,7 @@ export default function PremiumPage() {
   const [requestingPlan, setRequestingPlan] = useState<string | null>(null);
   const [savedRequestPlan, setSavedRequestPlan] = useState<string | null>(null);
   const [selectedAddonCodes, setSelectedAddonCodes] = useState<string[]>([]);
+  const [contactDraft, setContactDraft] = useState<ContactDraft | null>(null);
 
   useEffect(() => {
     void refreshAll({ restaurantId: restaurant?.id ?? null });
@@ -111,7 +142,7 @@ export default function PremiumPage() {
   const currentStatus = current?.subscription?.status || current?.plan_state || restaurant?.plan_state;
   const periodEnd = formatDate(subscriptionPeriodEnd(current) || restaurant?.subscription?.current_period_end);
 
-  const contactHref = (plan: SubscriptionPlan) => {
+  const planContactDraft = (plan: SubscriptionPlan): ContactDraft => {
     const pricing = pricesForInterval(plan, selectedInterval);
     const billingIntervalMonths =
       currentCode === plan.code && selectedAddonCodes.length > 0
@@ -121,10 +152,32 @@ export default function PremiumPage() {
       ? ` with add-ons: ${selectedAddonCodes.join(", ")}`
       : "";
     const message = `Hello Yummy Team, I saved a plan request for ${restaurant?.name || "my restaurant"} to the ${plan.name} plan (${intervalLabel(billingIntervalMonths)})${addonText}.`;
+    return {
+      subject: `${plan.name} plan request`,
+      message,
+    };
+  };
+
+  const openContact = (draft: ContactDraft) => {
     if (supportWhatsapp) {
-      return `https://wa.me/${supportWhatsapp}?text=${encodeURIComponent(message)}`;
+      window.open(
+        `https://wa.me/${supportWhatsapp}?text=${encodeURIComponent(draft.message)}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      return;
     }
-    return `mailto:${supportEmail}?subject=${encodeURIComponent(`${plan.name} plan request`)}&body=${encodeURIComponent(message)}`;
+    setContactDraft(draft);
+  };
+
+  const copyContactDetails = async () => {
+    if (!contactDraft) return;
+    try {
+      await navigator.clipboard.writeText(contactClipboardText(contactDraft));
+      toast.success("Contact details copied.");
+    } catch {
+      toast.error(`Unable to copy automatically. Email us at ${supportEmail}.`);
+    }
   };
 
   const handlePlanRequest = async (plan: SubscriptionPlan) => {
@@ -436,15 +489,14 @@ export default function PremiumPage() {
                                 : `Request ${plan.name}`}
                       </Button>
                       {savedRequestPlan === plan.code && (
-                        <Button className="w-full" variant="outline" asChild>
-                          <a
-                            href={contactHref(plan)}
-                            target={supportWhatsapp ? "_blank" : undefined}
-                            rel={supportWhatsapp ? "noopener noreferrer" : undefined}
-                          >
-                            <MessageSquare className="mr-2 h-4 w-4" />
-                            Contact Yummy (optional)
-                          </a>
+                        <Button
+                          type="button"
+                          className="w-full"
+                          variant="outline"
+                          onClick={() => openContact(planContactDraft(plan))}
+                        >
+                          <MessageSquare className="mr-2 h-4 w-4" />
+                          Contact Yummy (optional)
                         </Button>
                       )}
                     </div>
@@ -529,13 +581,79 @@ export default function PremiumPage() {
           <p className="font-bold">Need help choosing a plan?</p>
           <p className="text-sm text-muted-foreground">Save a plan request above or contact the Yummy team.</p>
         </div>
-        <Button variant="outline" asChild>
-          <a href={`mailto:${supportEmail}`}>
-            <Mail className="mr-2 h-4 w-4" />
-            {supportEmail}
-          </a>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() =>
+            openContact({
+              subject: "Yummy plan support",
+              message: `Hello Yummy Team, I need help choosing a plan for ${restaurant?.name || "my restaurant"}.`,
+            })
+          }
+        >
+          <Mail className="mr-2 h-4 w-4" />
+          {supportEmail}
         </Button>
       </div>
+
+      <Dialog
+        open={contactDraft !== null}
+        onOpenChange={(open) => {
+          if (!open) setContactDraft(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Contact Yummy</DialogTitle>
+            <DialogDescription>
+              Your plan request is already saved. Use the prepared email below
+              if you would also like to contact the Yummy team directly.
+            </DialogDescription>
+          </DialogHeader>
+
+          {contactDraft && (
+            <div className="space-y-4">
+              <div className="rounded-xl border bg-muted/30 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Send to
+                </p>
+                <p className="mt-1 font-semibold">{supportEmail}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Subject</p>
+                <div className="rounded-lg border bg-background px-3 py-2 text-sm">
+                  {contactDraft.subject}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Message</p>
+                <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border bg-background px-3 py-2 text-sm">
+                  {contactDraft.message}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={copyContactDetails}>
+              <Copy className="mr-2 h-4 w-4" />
+              Copy details
+            </Button>
+            {contactDraft && (
+              <Button asChild>
+                <a
+                  href={gmailComposeHref(contactDraft)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Open Gmail
+                </a>
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
