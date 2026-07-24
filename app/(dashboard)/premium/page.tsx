@@ -1,21 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import {
   AlertCircle,
-  CalendarClock,
+  ArrowRight,
   CheckCircle2,
-  Clock3,
-  Copy,
   Crown,
-  ExternalLink,
   FileText,
   Loader2,
   Mail,
   MessageSquare,
   RefreshCw,
   ShieldCheck,
+  User,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -28,10 +26,12 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import FUIPricingSectionWithOnePlan from "@/components/ui/colorful-pricing";
 import { UsageIndicator } from "@/components/subscription/usage-indicator";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
@@ -50,6 +50,8 @@ import { cn } from "@/lib/utils";
 
 const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "yummyever.np@gmail.com";
 const supportWhatsapp = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP || "").replace(/\D/g, "");
+const visibleFeatureLimit = 10;
+const featureRowHeight = 32;
 
 type ContactDraft = {
   subject: string;
@@ -71,6 +73,12 @@ function contactClipboardText(draft: ContactDraft): string {
   return `To: ${supportEmail}\nSubject: ${draft.subject}\n\n${draft.message}`;
 }
 
+type ContactFormState = {
+  fullName: string;
+  emailAddress: string;
+  message: string;
+};
+
 function intervalLabel(months: number | null): string {
   if (months == null) return "No fixed term";
   if (months === 12) return "Annual";
@@ -90,8 +98,118 @@ function formatDate(value: string | null | undefined): string | null {
   return Number.isNaN(date.getTime()) ? null : format(date, "PPP");
 }
 
+function formatCatalogVersion(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return format(date, "MMM d, yyyy · HH:mm");
+}
+
+function statusBadgeVariant(status: string | null | undefined): "default" | "secondary" | "outline" {
+  const normalized = (status || "").toLowerCase();
+  if (normalized === "active" || normalized === "trialing") return "default";
+  if (normalized === "past_due" || normalized === "canceled" || normalized === "cancelled") {
+    return "secondary";
+  }
+  return "outline";
+}
+
 function formatMoney(value: number, currency = "NPR") {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value);
+}
+
+type PlanFeatureItem = {
+  label: string;
+  included: boolean;
+};
+
+function PlanFeatureList({ features }: { features: PlanFeatureItem[] }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const extraFeatures = Math.max(features.length - visibleFeatureLimit, 0);
+  const isScrollable = extraFeatures > 0;
+  const [remainingCount, setRemainingCount] = useState(extraFeatures);
+
+  const handleScroll = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container || !isScrollable) {
+      setRemainingCount(0);
+      return;
+    }
+
+    const hiddenPixels = Math.max(
+      container.scrollHeight - container.clientHeight - container.scrollTop,
+      0,
+    );
+    const rowsRemaining = Math.ceil(hiddenPixels / featureRowHeight);
+    setRemainingCount(Math.min(extraFeatures, rowsRemaining));
+  }, [extraFeatures, isScrollable]);
+
+  useEffect(() => {
+    setRemainingCount(extraFeatures);
+    if (isScrollable) {
+      requestAnimationFrame(handleScroll);
+    }
+  }, [extraFeatures, handleScroll, isScrollable]);
+
+  if (!features.length) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Detailed entitlements are being prepared.
+      </p>
+    );
+  }
+
+  return (
+    <div className="shrink-0 space-y-3">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className={cn(
+          "space-y-3 overscroll-contain [&::-webkit-scrollbar]:w-[1px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-muted-foreground/5 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/15",
+          isScrollable && "overflow-y-auto",
+        )}
+        style={
+          isScrollable
+            ? {
+                maxHeight: `calc(1.25rem * ${visibleFeatureLimit} + 0.75rem * ${visibleFeatureLimit - 1})`,
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'hsl(var(--muted-foreground) / 0.05) transparent'
+              }
+            : undefined
+        }
+      >
+        {features.map((feature, index) => (
+          <div
+            key={`${feature.label}-${index}`}
+            className="flex h-5 items-center gap-2.5 text-sm leading-5"
+          >
+            {feature.included ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            ) : (
+              <XCircle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+            )}
+            <span
+              title={feature.label}
+              className={cn("truncate", !feature.included && "text-muted-foreground")}
+            >
+              {feature.label}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {isScrollable ? (
+        <div className="flex h-5 items-center gap-2.5 text-sm leading-5">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+          <span className="truncate">
+            {remainingCount > 0
+              ? `+${remainingCount} more included capabilities`
+              : "All features shown"}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function PremiumPage() {
@@ -119,6 +237,12 @@ export default function PremiumPage() {
   const [savedRequestPlan, setSavedRequestPlan] = useState<string | null>(null);
   const [selectedAddonCodes, setSelectedAddonCodes] = useState<string[]>([]);
   const [contactDraft, setContactDraft] = useState<ContactDraft | null>(null);
+  const [contactForm, setContactForm] = useState<ContactFormState>({
+    fullName: "",
+    emailAddress: "",
+    message: "",
+  });
+  const [previewPlanCode, setPreviewPlanCode] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshAll({ restaurantId: restaurant?.id ?? null });
@@ -141,6 +265,23 @@ export default function PremiumPage() {
   ).toLowerCase();
   const currentStatus = current?.subscription?.status || current?.plan_state || restaurant?.plan_state;
   const periodEnd = formatDate(subscriptionPeriodEnd(current) || restaurant?.subscription?.current_period_end);
+  const catalogUpdated = formatCatalogVersion(catalog?.catalog_version);
+  const planVersion = current?.subscription?.plan_version;
+  const activeAddons = current?.addons ?? [];
+  const previewPlan = useMemo(
+    () => catalog?.plans.find((plan) => plan.code === previewPlanCode) ?? null,
+    [catalog?.plans, previewPlanCode],
+  );
+  const previewPrices = useMemo(
+    () => (previewPlan ? pricesForInterval(previewPlan, selectedInterval) : null),
+    [previewPlan, selectedInterval],
+  );
+  const previewPrimaryPrice = previewPrices ? previewPrices.initial ?? previewPrices.renewal : null;
+  const previewRenewal = previewPrices?.initial ? previewPrices.renewal : null;
+  const previewFeatureLabels = useMemo(
+    () => (previewPlan ? planFeatures(previewPlan).map((feature) => feature.label) : []),
+    [previewPlan],
+  );
 
   const planContactDraft = (plan: SubscriptionPlan): ContactDraft => {
     const pricing = pricesForInterval(plan, selectedInterval);
@@ -168,16 +309,45 @@ export default function PremiumPage() {
       return;
     }
     setContactDraft(draft);
+    setContactForm({
+      fullName: restaurant?.name || "",
+      emailAddress: "",
+      message: draft.message,
+    });
   };
 
   const copyContactDetails = async () => {
     if (!contactDraft) return;
+    const subject = contactDraft.subject || "Yummy plan support";
+    const message = [
+      `Name: ${contactForm.fullName || "Not provided"}`,
+      `Email: ${contactForm.emailAddress || "Not provided"}`,
+      "",
+      contactForm.message || contactDraft.message,
+    ].join("\n");
     try {
-      await navigator.clipboard.writeText(contactClipboardText(contactDraft));
+      await navigator.clipboard.writeText(contactClipboardText({ subject, message }));
       toast.success("Contact details copied.");
     } catch {
       toast.error(`Unable to copy automatically. Email us at ${supportEmail}.`);
     }
+  };
+
+  const submitContactForm = () => {
+    if (!contactDraft) return;
+    const subject = contactDraft.subject || "Yummy plan support";
+    const message = [
+      `Name: ${contactForm.fullName || "Not provided"}`,
+      `Email: ${contactForm.emailAddress || "Not provided"}`,
+      "",
+      contactForm.message || contactDraft.message,
+    ].join("\n");
+
+    window.open(
+      gmailComposeHref({ subject, message }),
+      "_blank",
+      "noopener,noreferrer",
+    );
   };
 
   const handlePlanRequest = async (plan: SubscriptionPlan) => {
@@ -242,85 +412,61 @@ export default function PremiumPage() {
         </Button>
       </div>
 
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/[0.08] via-card to-card">
-        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.25fr_2fr]">
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="rounded-2xl border border-primary/20 bg-primary/10 p-3">
-                <ShieldCheck className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Current account</p>
-                <h2 className="mt-1 text-2xl font-black">
+      <Card>
+        <CardContent className="space-y-5 p-5 md:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Current account
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-black tracking-tight md:text-2xl">
                   {currentLoading && !current
                     ? "Loading plan..."
                     : currentPlanDisplayName(current, restaurant)}
                 </h2>
+                {currentStatus ? (
+                  <Badge variant={statusBadgeVariant(currentStatus)}>
+                    {statusLabel(currentStatus)}
+                  </Badge>
+                ) : null}
               </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {currentStatus && <Badge variant="outline">{statusLabel(currentStatus)}</Badge>}
-              {current?.subscription?.plan_version != null && (
-                <Badge variant="outline">Version {current.subscription.plan_version}</Badge>
-              )}
-            </div>
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p className="flex items-center gap-2">
-                <CalendarClock className="h-4 w-4" />
-                {periodEnd ? `Current period ends ${periodEnd}` : "No fixed period end is recorded."}
-              </p>
-              <p className="flex items-center gap-2">
-                <Clock3 className="h-4 w-4" />
-                Catalog version {catalog?.catalog_version || "not loaded"}
+              <p className="text-sm text-muted-foreground">
+                {[
+                  periodEnd ? `Period ends ${periodEnd}` : null,
+                  planVersion != null ? `Version ${planVersion}` : null,
+                  activeAddons.length
+                    ? `${activeAddons.length} add-on${activeAddons.length === 1 ? "" : "s"}`
+                    : "No add-ons",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             </div>
-            <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Active add-ons</p>
-              <div className="flex flex-wrap gap-2">
-                {current?.addons.length ? (
-                  current.addons.map((addon) => (
-                    <Badge key={`${addon.code}-${String(addon.id)}`} variant="secondary">
-                      {addon.name}{addon.status ? ` - ${statusLabel(addon.status)}` : ""}
-                    </Badge>
-                  ))
-                ) : (
-                  <span className="text-sm text-muted-foreground">No add-ons assigned.</span>
-                )}
-              </div>
-            </div>
+            {catalogUpdated ? (
+              <p className="shrink-0 text-xs text-muted-foreground sm:pt-1">
+                Catalog {catalogUpdated}
+              </p>
+            ) : null}
           </div>
 
           <div>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-bold">Current usage</p>
-              {usageLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">Usage</p>
+              {usageLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
             </div>
             {Object.keys(mergedUsage).length ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {Object.entries(mergedUsage).map(([key, value]) => (
                   <UsageIndicator key={key} entitlementKey={key} usage={value} compact />
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
                 Usage counters are not available for this account yet.
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-primary" />Billing history</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">Invoices and payment status for this billing account.</p>
-          </div>
-          {invoicesLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
-        </CardHeader>
-        <CardContent>
-          {invoicesError ? <Alert><AlertCircle className="h-4 w-4" /><AlertTitle>Billing history unavailable</AlertTitle><AlertDescription>{invoicesError}</AlertDescription></Alert> : invoices.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground"><th className="pb-3 pr-4">Invoice</th><th className="pb-3 pr-4">Period</th><th className="pb-3 pr-4">Total</th><th className="pb-3 pr-4">Paid</th><th className="pb-3 pr-4">Due</th><th className="pb-3">Status</th></tr></thead><tbody>{invoices.map((invoice) => <tr key={String(invoice.id)} className="border-b last:border-0"><td className="py-4 pr-4"><p className="font-semibold">{invoice.invoice_number}</p><p className="text-xs text-muted-foreground">{formatDate(invoice.created_at) || "Date unavailable"} · {invoice.source}</p></td><td className="py-4 pr-4">{formatDate(invoice.period_start) || "—"}<span className="block text-xs text-muted-foreground">to {formatDate(invoice.period_end) || "—"}</span></td><td className="py-4 pr-4 font-semibold">{formatMoney(invoice.total_amount, invoice.currency)}</td><td className="py-4 pr-4 text-emerald-700">{formatMoney(invoice.amount_paid, invoice.currency)}</td><td className="py-4 pr-4">{formatMoney(invoice.amount_due, invoice.currency)}{invoice.due_at ? <span className="block text-xs text-muted-foreground">Due {formatDate(invoice.due_at)}</span> : null}</td><td className="py-4"><Badge variant={invoice.status === "paid" ? "secondary" : "outline"}>{statusLabel(invoice.status)}</Badge></td></tr>)}</tbody></table></div> : invoicesLoading ? <div className="h-24 animate-pulse rounded-2xl bg-muted/40" /> : <p className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">No subscription invoices have been issued yet.</p>}
-          <p className="mt-4 text-xs text-muted-foreground">Online payment is not enabled yet. Use the payment instructions provided by Yummy; the ledger updates when payment is recorded.</p>
         </CardContent>
       </Card>
 
@@ -368,8 +514,8 @@ export default function PremiumPage() {
           </Alert>
         ) : catalogLoading && !catalog ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <div key={index} className="h-[460px] animate-pulse rounded-2xl border bg-muted/30" />
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="h-[640px] animate-pulse rounded-2xl border bg-muted/30" />
             ))}
           </div>
         ) : (
@@ -380,86 +526,124 @@ export default function PremiumPage() {
               const renewal = prices.initial ? prices.renewal : null;
               const features = planFeatures(plan);
               const isCurrent = currentCode === plan.code;
+              const isFreePlan = plan.code.toLowerCase() === "free";
               const canRequest =
                 (isCurrent && selectedAddonCodes.length > 0) ||
                 prices.quoteOnly ||
                 Boolean(primaryPrice);
               const isRequesting = requestingPlan === plan.code && requestLoading;
+              const showContact = savedRequestPlan === plan.code;
 
               return (
                 <Card
                   key={String(plan.id)}
                   className={cn(
-                    "relative flex h-full flex-col overflow-hidden transition-shadow hover:shadow-lg",
-                    isCurrent && "border-2 border-primary shadow-md shadow-primary/5",
+                    "relative flex h-full min-h-[640px] flex-col overflow-hidden border-border/50 transition-all duration-200 hover:border-border",
+                    !isFreePlan && "cursor-pointer focus-within:ring-2 focus-within:ring-primary/30",
+                    isCurrent && "border-2 border-primary",
                   )}
+                  role={isFreePlan ? undefined : "button"}
+                  tabIndex={isFreePlan ? -1 : 0}
+                  onClick={() => {
+                    if (!isFreePlan) {
+                      setPreviewPlanCode(plan.code);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (!isFreePlan && (event.key === "Enter" || event.key === " ")) {
+                      event.preventDefault();
+                      setPreviewPlanCode(plan.code);
+                    }
+                  }}
                 >
-                  {isCurrent && (
-                    <div className="bg-primary px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest text-primary-foreground">
-                      Current plan
-                    </div>
-                  )}
-                  <CardHeader className="pb-4">
+                  <div
+                    className={cn(
+                      "shrink-0 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest",
+                      isCurrent ? "bg-primary text-primary-foreground" : "invisible",
+                    )}
+                    aria-hidden={!isCurrent}
+                  >
+                    Current plan
+                  </div>
+                  <CardHeader className="shrink-0 space-y-1.5 pb-3 pt-5">
                     <CardTitle className="flex items-center justify-between gap-3 text-xl">
-                      {plan.name}
-                      {prices.quoteOnly && <Badge variant="outline">Custom</Badge>}
+                      <span className="truncate">{plan.name}</span>
+                      {prices.quoteOnly ? <Badge variant="outline">Custom</Badge> : null}
                     </CardTitle>
-                    <p className="min-h-10 text-sm text-muted-foreground">
-                      {plan.current_version?.subtitle || plan.description || "Plan details configured by Yummy billing."}
-                    </p>
+                    {(plan.current_version?.subtitle || plan.description) ? (
+                      <p className="line-clamp-2 text-sm text-muted-foreground">
+                        {plan.current_version?.subtitle || plan.description}
+                      </p>
+                    ) : null}
                   </CardHeader>
-                  <CardContent className="flex flex-1 flex-col gap-5">
-                    <div className="rounded-2xl border bg-muted/20 p-4">
+                  <CardContent className="flex flex-1 flex-col gap-5 pt-0">
+                    <div
+                      className="flex min-h-[148px] shrink-0 flex-col justify-between rounded-2xl border bg-muted/20 p-4"
+                    >
                       {prices.quoteOnly ? (
                         <>
-                          <p className="text-2xl font-black">Let&apos;s chat</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Pricing is prepared for your contract.</p>
+                          <div>
+                            <p className="text-2xl font-black">Let&apos;s chat</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Custom - {intervalLabel(prices.billingIntervalMonths)}
+                            </p>
+                          </div>
+                          <div className="mt-3 min-h-[52px] border-t pt-3 text-sm">
+                            <span className="font-semibold">Renewal: On request</span>
+                            <span className="ml-1 text-muted-foreground">
+                              per {intervalLabel(prices.billingIntervalMonths).toLowerCase()}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-muted-foreground">Tax and terms defined in contract</p>
                         </>
                       ) : primaryPrice ? (
                         <>
-                          <p className="text-2xl font-black">{formatPrice(primaryPrice.amount, primaryPrice.currency)}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {priceTypeLabel(primaryPrice)} - {intervalLabel(prices.billingIntervalMonths)}
-                          </p>
-                          {renewal && (
-                            <div className="mt-3 border-t pt-3 text-sm">
-                              <span className="font-semibold">Renewal: {formatPrice(renewal.amount, renewal.currency)}</span>
-                              <span className="ml-1 text-muted-foreground">per {intervalLabel(prices.billingIntervalMonths).toLowerCase()}</span>
-                            </div>
-                          )}
+                          <div>
+                            <p className="text-2xl font-black">
+                              {formatPrice(primaryPrice.amount, primaryPrice.currency)}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {priceTypeLabel(primaryPrice)} - {intervalLabel(prices.billingIntervalMonths)}
+                            </p>
+                          </div>
+                          <div className="mt-3 min-h-[52px] border-t pt-3 text-sm">
+                            {renewal ? (
+                              <>
+                                <span className="font-semibold">
+                                  Renewal: {formatPrice(renewal.amount, renewal.currency)}
+                                </span>
+                                <span className="ml-1 text-muted-foreground">
+                                  per {intervalLabel(prices.billingIntervalMonths).toLowerCase()}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">No separate renewal price</span>
+                            )}
+                          </div>
                           <p className="mt-2 text-[11px] text-muted-foreground">
                             Tax {primaryPrice.tax_inclusive ? "included" : "not included"}
                           </p>
                         </>
                       ) : (
                         <>
-                          <p className="text-base font-bold">Not offered for this cycle</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Choose another billing period.</p>
+                          <div>
+                            <p className="text-2xl font-black">N/A</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Not offered for this billing cycle.
+                            </p>
+                          </div>
+                          <p className="mt-3 text-[11px] text-muted-foreground">Choose another period</p>
                         </>
                       )}
                     </div>
 
-                    <div className="flex-1 space-y-3">
-                      {features.length ? (
-                        features.slice(0, 14).map((feature, index) => (
-                          <div key={`${feature.label}-${index}`} className="flex items-start gap-2.5 text-sm">
-                            {feature.included ? (
-                              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                            ) : (
-                              <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/40" />
-                            )}
-                            <span className={cn(!feature.included && "text-muted-foreground")}>{feature.label}</span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Detailed entitlements are being prepared.</p>
-                      )}
-                      {features.length > 14 && (
-                        <p className="text-xs font-semibold text-primary">+ {features.length - 14} more included capabilities</p>
-                      )}
-                    </div>
+                    <PlanFeatureList features={features} />
 
-                    <div className="space-y-2">
+                    <div
+                      className="mt-auto flex shrink-0 flex-col gap-2"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
                       <Button
                         className="w-full"
                         variant={isCurrent ? "outline" : "default"}
@@ -488,17 +672,161 @@ export default function PremiumPage() {
                                 ? "Request quote"
                                 : `Request ${plan.name}`}
                       </Button>
-                      {savedRequestPlan === plan.code && (
-                        <Button
-                          type="button"
-                          className="w-full"
-                          variant="outline"
-                          onClick={() => openContact(planContactDraft(plan))}
-                        >
-                          <MessageSquare className="mr-2 h-4 w-4" />
-                          Contact Yummy (optional)
-                        </Button>
+                      <Button
+                        type="button"
+                        className={cn("w-full", !showContact && "invisible pointer-events-none")}
+                        variant="outline"
+                        aria-hidden={!showContact}
+                        tabIndex={showContact ? 0 : -1}
+                        disabled={!showContact}
+                        onClick={() => openContact(planContactDraft(plan))}
+                      >
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Contact Yummy (optional)
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+
+            {catalog?.addons.filter((addon) => addon.is_public).map((addon) => {
+              const addonPricing = pricesForInterval(addon, selectedInterval);
+              const primaryPrice = addonPricing.initial;
+              const quoteOnly = addonPricing.quoteOnly;
+              const selected = selectedAddonCodes.includes(addon.code);
+              return (
+                <Card
+                  key={String(addon.id)}
+                  className={cn(
+                    "relative flex h-full min-h-[640px] flex-col overflow-hidden border-border/50 transition-all duration-200 hover:border-border",
+                    selected && "border-2 border-primary",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "shrink-0 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest",
+                      selected ? "bg-primary text-primary-foreground" : "bg-muted/40 text-muted-foreground",
+                    )}
+                  >
+                    {selected ? "Added to request" : "Available add-on"}
+                  </div>
+                  <CardHeader className="shrink-0 space-y-1.5 pb-3 pt-5">
+                    <CardTitle className="flex items-center justify-between gap-3 text-xl">
+                      <span className="truncate">{addon.name}</span>
+                      {quoteOnly ? <Badge variant="outline">Custom</Badge> : null}
+                    </CardTitle>
+                    {addon.description ? (
+                      <p className="line-clamp-2 text-sm text-muted-foreground">
+                        {addon.description}
+                      </p>
+                    ) : null}
+                  </CardHeader>
+                  <CardContent className="flex flex-1 flex-col gap-5 pt-0">
+                    <div
+                      className="flex min-h-[148px] shrink-0 flex-col justify-between rounded-2xl border bg-muted/20 p-4"
+                    >
+                      {quoteOnly ? (
+                        <>
+                          <div>
+                            <p className="text-2xl font-black">Custom quote</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Contact for pricing
+                            </p>
+                          </div>
+                          <div className="mt-3 min-h-[52px] border-t pt-3 text-sm">
+                            <span className="text-muted-foreground">Available with published plans</span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-muted-foreground">Price determined on request</p>
+                        </>
+                      ) : primaryPrice ? (
+                        <>
+                          <div>
+                            <p className="text-2xl font-black">
+                              {formatPrice(primaryPrice.amount, primaryPrice.currency || catalog.currency)}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {priceTypeLabel(primaryPrice)} - {intervalLabel(addonPricing.billingIntervalMonths)}
+                            </p>
+                          </div>
+                          <div className="mt-3 min-h-[52px] border-t pt-3 text-sm">
+                            <span className="text-muted-foreground">
+                              {addon.compatible_plan_codes.length > 0
+                                ? `Available with ${addon.compatible_plan_codes.join(", ")}`
+                                : "Available with all plans"}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-muted-foreground">
+                            Tax {primaryPrice.tax_inclusive ? "included" : "not included"}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="text-2xl font-black">Pricing on request</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Contact Yummy team
+                            </p>
+                          </div>
+                          <p className="mt-3 text-[11px] text-muted-foreground">Not offered for this billing cycle</p>
+                        </>
                       )}
+                    </div>
+
+                    <div className="shrink-0 space-y-3">
+                      <div className="flex items-center gap-2.5 text-sm">
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                        <span className="truncate">Add-ons are enforced separately</span>
+                      </div>
+                      <div className="flex items-center gap-2.5 text-sm">
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                        <span className="truncate">Can be combined with any plan</span>
+                      </div>
+                      <div className="flex items-center gap-2.5 text-sm">
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                        <span className="truncate">Billed with your subscription</span>
+                      </div>
+                    </div>
+
+                    <div
+                      className="mt-auto flex shrink-0 flex-col gap-2"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <Button
+                        type="button"
+                        className="w-full"
+                        variant={selected ? "default" : "outline"}
+                        aria-pressed={selected}
+                        onClick={() =>
+                          setSelectedAddonCodes((current) =>
+                            current.includes(addon.code)
+                              ? current.filter((code) => code !== addon.code)
+                              : [...current, addon.code],
+                          )
+                        }
+                      >
+                        <ShieldCheck className="mr-2 h-4 w-4" />
+                        {selected ? "Included in request" : "Add to request"}
+                      </Button>
+                      <Button
+                        type="button"
+                        className={cn("w-full", !selected && "invisible pointer-events-none")}
+                        variant="outline"
+                        aria-hidden={!selected}
+                        tabIndex={selected ? 0 : -1}
+                        disabled={!selected}
+                        onClick={() => {
+                          const draft = {
+                            subject: `${addon.name} add-on request`,
+                            message: `Hello Yummy Team, I would like to add ${addon.name} to ${restaurant?.name || "my restaurant"}'s subscription.`,
+                          };
+                          openContact(draft);
+                        }}
+                      >
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Contact Yummy (optional)
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -508,65 +836,91 @@ export default function PremiumPage() {
         )}
       </section>
 
-      {catalog?.addons.length ? (
-        <section className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
-            <h2 className="text-2xl font-black">Available add-ons</h2>
-            <p className="text-sm text-muted-foreground">Add-ons are assigned and enforced separately from the base plan.</p>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              Billing history
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Invoices and payment status for this billing account.
+            </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {catalog.addons.filter((addon) => addon.is_public).map((addon) => {
-              const addonPricing = pricesForInterval(addon, selectedInterval);
-              const primaryPrice = addonPricing.initial;
-              const quoteOnly = addonPricing.quoteOnly;
-              const selected = selectedAddonCodes.includes(addon.code);
-              return (
-                <Card
-                  key={String(addon.id)}
-                  className={cn(selected && "border-primary ring-1 ring-primary/20")}
-                >
-                  <CardContent className="space-y-4 p-5">
-                    <div className="flex items-start gap-3">
-                      <div className="rounded-xl bg-primary/10 p-2"><ShieldCheck className="h-5 w-5 text-primary" /></div>
-                      <div>
-                        <h3 className="font-bold">{addon.name}</h3>
-                        <p className="mt-1 text-sm text-muted-foreground">{addon.description || "Contact Yummy for availability."}</p>
-                        {(primaryPrice || quoteOnly) && (
-                          <p className="mt-3 text-sm font-bold">
-                            {quoteOnly
-                              ? "Custom quote"
-                              : `${formatPrice(primaryPrice?.amount ?? null, primaryPrice?.currency || catalog.currency)} - ${intervalLabel(addonPricing.billingIntervalMonths)}`}
-                          </p>
-                        )}
-                        {addon.compatible_plan_codes.length > 0 && (
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            Available with {addon.compatible_plan_codes.join(", ")}.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      className="w-full"
-                      variant={selected ? "default" : "outline"}
-                      aria-pressed={selected}
-                      onClick={() =>
-                        setSelectedAddonCodes((current) =>
-                          current.includes(addon.code)
-                            ? current.filter((code) => code !== addon.code)
-                            : [...current, addon.code],
-                        )
-                      }
-                    >
-                      {selected ? "Included in request" : "Add to request"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
+          {invoicesLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+        </CardHeader>
+        <CardContent>
+          {invoicesError ? (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Billing history unavailable</AlertTitle>
+              <AlertDescription>{invoicesError}</AlertDescription>
+            </Alert>
+          ) : invoices.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
+                    <th className="pb-3 pr-4">Invoice</th>
+                    <th className="pb-3 pr-4">Period</th>
+                    <th className="pb-3 pr-4">Total</th>
+                    <th className="pb-3 pr-4">Paid</th>
+                    <th className="pb-3 pr-4">Due</th>
+                    <th className="pb-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.map((invoice) => (
+                    <tr key={String(invoice.id)} className="border-b last:border-0">
+                      <td className="py-4 pr-4">
+                        <p className="font-semibold">{invoice.invoice_number}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(invoice.created_at) || "Date unavailable"} · {invoice.source}
+                        </p>
+                      </td>
+                      <td className="py-4 pr-4">
+                        {formatDate(invoice.period_start) || "—"}
+                        <span className="block text-xs text-muted-foreground">
+                          to {formatDate(invoice.period_end) || "—"}
+                        </span>
+                      </td>
+                      <td className="py-4 pr-4 font-semibold">
+                        {formatMoney(invoice.total_amount, invoice.currency)}
+                      </td>
+                      <td className="py-4 pr-4 text-emerald-700">
+                        {formatMoney(invoice.amount_paid, invoice.currency)}
+                      </td>
+                      <td className="py-4 pr-4">
+                        {formatMoney(invoice.amount_due, invoice.currency)}
+                        {invoice.due_at ? (
+                          <span className="block text-xs text-muted-foreground">
+                            Due {formatDate(invoice.due_at)}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="py-4">
+                        <Badge variant={invoice.status === "paid" ? "secondary" : "outline"}>
+                          {statusLabel(invoice.status)}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : invoicesLoading ? (
+            <div className="h-24 animate-pulse rounded-2xl bg-muted/40" />
+          ) : (
+            <p className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">
+              No subscription invoices have been issued yet.
+            </p>
+          )}
+          <p className="mt-4 text-xs text-muted-foreground">
+            Online payment is not enabled yet. Use the payment instructions provided by Yummy; the
+            ledger updates when payment is recorded.
+          </p>
+        </CardContent>
+      </Card>
 
       {requestError && (
         <Alert variant="destructive">
@@ -602,56 +956,120 @@ export default function PremiumPage() {
           if (!open) setContactDraft(null);
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Contact Yummy</DialogTitle>
+            <div className="inline-flex w-fit rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              Contact Yummy
+            </div>
+            <DialogTitle className="text-3xl font-black tracking-tight">Let&apos;s Get In Touch.</DialogTitle>
             <DialogDescription>
-              Your plan request is already saved. Use the prepared email below
-              if you would also like to contact the Yummy team directly.
+              <span className="block text-foreground/90">
+                Your plan request is already saved. Use the prepared email below if you would also like to contact the Yummy team directly.
+              </span>
+              <span className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <Mail className="h-4 w-4" />
+                <a href={`mailto:${supportEmail}`} className="font-semibold text-primary hover:underline">
+                  {supportEmail}
+                </a>
+              </span>
             </DialogDescription>
           </DialogHeader>
 
           {contactDraft && (
-            <div className="space-y-4">
-              <div className="rounded-xl border bg-muted/30 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Send to
-                </p>
-                <p className="mt-1 font-semibold">{supportEmail}</p>
-              </div>
+            <div className="space-y-5">
               <div className="space-y-2">
-                <p className="text-sm font-semibold">Subject</p>
-                <div className="rounded-lg border bg-background px-3 py-2 text-sm">
-                  {contactDraft.subject}
+                <p className="text-sm font-semibold">Full Name</p>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={contactForm.fullName}
+                    onChange={(event) => setContactForm((current) => ({ ...current, fullName: event.target.value }))}
+                    placeholder="Enter your full name"
+                    className="h-12 rounded-full pl-11"
+                  />
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Email Address</p>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="email"
+                    value={contactForm.emailAddress}
+                    onChange={(event) => setContactForm((current) => ({ ...current, emailAddress: event.target.value }))}
+                    placeholder="Enter your email address"
+                    className="h-12 rounded-full pl-11"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <p className="text-sm font-semibold">Message</p>
-                <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border bg-background px-3 py-2 text-sm">
-                  {contactDraft.message}
-                </div>
+                <Textarea
+                  value={contactForm.message}
+                  onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))}
+                  placeholder="Enter your message"
+                  className="min-h-36 rounded-2xl"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={copyContactDetails}>
+                  Copy details
+                </Button>
+                <Button type="button" className="w-full rounded-full sm:flex-1" onClick={submitContactForm}>
+                  Submit Form
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={copyContactDetails}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copy details
-            </Button>
-            {contactDraft && (
-              <Button asChild>
-                <a
-                  href={gmailComposeHref(contactDraft)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Open Gmail
-                </a>
-              </Button>
-            )}
-          </DialogFooter>
+      <Dialog
+        open={previewPlanCode !== null}
+        onOpenChange={(open) => {
+          if (!open) setPreviewPlanCode(null);
+        }}
+      >
+        <DialogContent className="w-[78vw] max-w-2xl h-[calc(100vh-40px)] max-h-[calc(100vh-40px)] overflow-hidden p-2 sm:w-[76vw] sm:h-[calc(100vh-48px)] sm:max-h-[calc(100vh-48px)] sm:p-3">
+          {previewPlan && previewPrices ? (
+            <FUIPricingSectionWithOnePlan
+              className="h-full"
+              plan={{
+                name: previewPlan.name,
+                desc: previewPlan.current_version?.subtitle || previewPlan.description || "Plan details",
+                priceLabel: previewPrices.quoteOnly
+                  ? "Let's chat"
+                  : previewPrimaryPrice
+                    ? formatPrice(previewPrimaryPrice.amount, previewPrimaryPrice.currency)
+                    : "N/A",
+                periodLabel: previewPrices.quoteOnly
+                  ? `Custom - ${intervalLabel(previewPrices.billingIntervalMonths)}`
+                  : previewPrimaryPrice
+                    ? `${priceTypeLabel(previewPrimaryPrice)} - ${intervalLabel(previewPrices.billingIntervalMonths)}`
+                    : "Not offered for this billing cycle",
+                renewalLabel: previewPrices.quoteOnly
+                  ? `Renewal: On request per ${intervalLabel(previewPrices.billingIntervalMonths).toLowerCase()}`
+                  : previewRenewal
+                    ? `Renewal: ${formatPrice(previewRenewal.amount, previewRenewal.currency)} per ${intervalLabel(previewPrices.billingIntervalMonths).toLowerCase()}`
+                    : "No separate renewal price",
+                noteLabel: previewPrices.quoteOnly
+                  ? "Tax and terms defined in contract"
+                  : previewPrimaryPrice
+                    ? `Tax ${previewPrimaryPrice.tax_inclusive ? "included" : "not included"}`
+                    : "Choose another period",
+                ctaLabel: previewPrices.quoteOnly ? "Request quote" : `Request ${previewPlan.name}`,
+                onCtaClick: () => {
+                  setPreviewPlanCode(null);
+                  void handlePlanRequest(previewPlan);
+                },
+                features: previewFeatureLabels,
+              }}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>
