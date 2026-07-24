@@ -35,6 +35,25 @@ export const SubscriptionApis = {
   upgradeRequests: "/subscriptions/upgrade-requests",
 };
 
+export const FiscalApis = {
+  profile: "/fiscal/profile",
+  validateProfile: "/fiscal/profile/validate",
+  activateProfile: "/fiscal/profile/activate",
+  orderDocument: (orderId: number) => `/fiscal/orders/${orderId}/document`,
+  issueOrderDocument: (orderId: number) => `/fiscal/orders/${orderId}/issue`,
+  documents: "/fiscal/documents",
+  document: (documentId: number) => `/fiscal/documents/${documentId}`,
+  printAuthorizations: (documentId: number) =>
+    `/fiscal/documents/${documentId}/print-authorizations`,
+  completePrintAuthorization: (authorizationId: number) =>
+    `/fiscal/print-authorizations/${authorizationId}/complete`,
+  creditNotes: (documentId: number) =>
+    `/fiscal/documents/${documentId}/credit-notes`,
+  cbmsStatus: "/fiscal/cbms/status",
+  cbmsConfig: "/fiscal/cbms/config",
+  cbmsReconcile: "/fiscal/cbms/reconcile",
+};
+
 export const RestaurantJoinApis = {
   currentCode: "/restaurant-joins/code",
   rotateCode: "/restaurant-joins/code",
@@ -46,9 +65,12 @@ export const RestaurantJoinApis = {
   invitations: "/restaurant-joins/invitations",
   myInvitations: "/restaurant-joins/invitations/me",
   acceptInvitation: "/restaurant-joins/invitations/accept",
-  declineInvitation: (id: number) => `/restaurant-joins/invitations/${id}/decline`,
-  resendInvitation: (id: number) => `/restaurant-joins/invitations/${id}/resend`,
-  revokeInvitation: (id: number) => `/restaurant-joins/invitations/${id}/revoke`,
+  declineInvitation: (id: number) =>
+    `/restaurant-joins/invitations/${id}/decline`,
+  resendInvitation: (id: number) =>
+    `/restaurant-joins/invitations/${id}/resend`,
+  revokeInvitation: (id: number) =>
+    `/restaurant-joins/invitations/${id}/revoke`,
   leavePreflight: "/restaurant-joins/leave/preflight",
   leave: "/restaurant-joins/leave",
 };
@@ -377,9 +399,12 @@ export const InventoryApis = {
       skip: skip.toString(),
       limit: limit.toString(),
     });
-    if (inventoryItemId) params.append("inventory_item_id", inventoryItemId.toString());
-    if (activityType && activityType !== "all") params.append("activity_type", activityType);
-    if (lifecycleStatus && lifecycleStatus !== "all") params.append("lifecycle_status", lifecycleStatus);
+    if (inventoryItemId)
+      params.append("inventory_item_id", inventoryItemId.toString());
+    if (activityType && activityType !== "all")
+      params.append("activity_type", activityType);
+    if (lifecycleStatus && lifecycleStatus !== "all")
+      params.append("lifecycle_status", lifecycleStatus);
     return `/inventory/activity?${params.toString()}`;
   },
   cancelPurchase: (id: number) => `/inventory/adjustments/${id}/cancel`,
@@ -1891,7 +1916,8 @@ export const StaffProfileApis = {
   create: "/staff",
   update: (staffId: number) => `/staff/${staffId}`,
   salaryHistory: (staffId: number) => `/staff/${staffId}/salary-history`,
-  employmentHistory: (userId: number) => `/staff/users/${userId}/employment-history`,
+  employmentHistory: (userId: number) =>
+    `/staff/users/${userId}/employment-history`,
   rehire: (staffId: number) => `/staff/${staffId}/rehire`,
 };
 
@@ -1958,19 +1984,24 @@ export const PayrollApis = {
   runPdf: (id: number) => `/payroll/runs/${id}/pdf`,
   staffHistory: (staffId: number) => `/payroll/staff/${staffId}/history`,
   dueSummary: (asOf?: string) =>
-    asOf ? `/payroll/due-summary?as_of=${encodeURIComponent(asOf)}` : "/payroll/due-summary",
+    asOf
+      ? `/payroll/due-summary?as_of=${encodeURIComponent(asOf)}`
+      : "/payroll/due-summary",
   staffBalance: (staffId: number, asOf?: string) =>
     asOf
       ? `/payroll/staff/${staffId}/balance?as_of=${encodeURIComponent(asOf)}`
       : `/payroll/staff/${staffId}/balance`,
   setupReadiness: (asOf?: string) =>
-    asOf ? `/payroll/setup-readiness?as_of=${encodeURIComponent(asOf)}` : "/payroll/setup-readiness",
+    asOf
+      ? `/payroll/setup-readiness?as_of=${encodeURIComponent(asOf)}`
+      : "/payroll/setup-readiness",
   bulkPrepare: "/payroll/runs/bulk-prepare",
   schedules: "/payroll/schedules",
   payments: (staffId?: number) =>
     staffId ? `/payroll/payments?staff_id=${staffId}` : "/payroll/payments",
   recordPayment: "/payroll/payments",
-  reversePayment: (paymentId: number) => `/payroll/payments/${paymentId}/reverse`,
+  reversePayment: (paymentId: number) =>
+    `/payroll/payments/${paymentId}/reverse`,
   taxLiability: (asOf?: string) =>
     asOf
       ? `/payroll/tax-liability?as_of=${encodeURIComponent(asOf)}`

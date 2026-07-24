@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import { 
     Plus, 
     MoreVertical, 
@@ -46,6 +47,11 @@ export default function TaxesPage() {
     const user = useAuth(state => state.user);
     const restaurant = useRestaurant((s) => s.restaurant);
     const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
+    const {
+        profile: fiscalProfile,
+        isActiveVat,
+        loading: fiscalProfileLoading,
+    } = useFiscalProfile(Boolean(user?.restaurant_id));
     const router = useRouter();
     const [taxes, setTaxes] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -73,7 +79,7 @@ export default function TaxesPage() {
     }, [fetchTaxes]);
 
     const handleToggleTax = async (enabled: boolean) => {
-        if (!user?.restaurant_id) return;
+        if (!user?.restaurant_id || isActiveVat || fiscalProfileLoading) return;
         try {
             await apiClient.put(RestaurantApis.update(user.restaurant_id), {
                 tax_enabled: enabled
@@ -86,6 +92,7 @@ export default function TaxesPage() {
     };
 
     const handleDelete = async (id: number) => {
+        if (isActiveVat) return;
         if (!confirm("Are you sure you want to remove this tax? This will affect future receipts.")) return;
         try {
             await apiClient.delete(TaxConfigApis.delete(id));
@@ -119,7 +126,7 @@ export default function TaxesPage() {
                     </Button>
                     <Button 
                         onClick={() => { setSelectedTax(null); setIsDialogOpen(true); }}
-                        disabled={taxes.length > 0}
+                        disabled={fiscalProfileLoading || isActiveVat || taxes.length > 0}
                     >
                         <Plus className="w-4 h-4 mr-2" />
                         {taxes.length > 0 ? "Tax Configured" : "Add Tax"}
@@ -127,7 +134,21 @@ export default function TaxesPage() {
                 </div>
             </div>
 
-            {!restaurant?.tax_enabled && (
+            {isActiveVat && (
+                <Alert className="bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900">
+                    <ShieldAlert className="h-4 w-4 text-emerald-600" />
+                    <AlertTitle className="text-emerald-800 dark:text-emerald-200 font-bold">
+                        VAT is managed by Yummy
+                    </AlertTitle>
+                    <AlertDescription className="text-emerald-700 dark:text-emerald-300 text-sm">
+                        The active {fiscalProfile?.fiscal_billing_mode ?? "VAT"} profile locks tax
+                        enablement and rate changes. These controls are managed by Yummy&apos;s
+                        compliance team.
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {!isActiveVat && !restaurant?.tax_enabled && (
                 <Alert className="bg-amber-50 border-amber-200">
                     <ShieldAlert className="h-4 w-4 text-amber-600" />
                     <AlertTitle className="text-amber-800 font-bold">Tax is Globally Disabled</AlertTitle>
@@ -138,7 +159,7 @@ export default function TaxesPage() {
                 </Alert>
             )}
 
-            <Card className={cn("overflow-hidden", !restaurant?.tax_enabled && "opacity-60 grayscale-[0.5]")}>
+            <Card className={cn("overflow-hidden", !isActiveVat && !restaurant?.tax_enabled && "opacity-60 grayscale-[0.5]")}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0">
                     <div>
                         <CardTitle>Global Enablement</CardTitle>
@@ -147,8 +168,9 @@ export default function TaxesPage() {
                         </CardDescription>
                     </div>
                     <Switch 
-                        checked={restaurant?.tax_enabled}
+                        checked={isActiveVat ? true : restaurant?.tax_enabled}
                         onCheckedChange={handleToggleTax}
+                        disabled={isActiveVat || fiscalProfileLoading}
                     />
                 </CardHeader>
             </Card>
@@ -224,11 +246,18 @@ export default function TaxesPage() {
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
-                                                <DropdownMenuItem onClick={() => { setSelectedTax(tax); setIsDialogOpen(true); }}>
+                                                <DropdownMenuItem
+                                                    disabled={isActiveVat}
+                                                    onClick={() => { setSelectedTax(tax); setIsDialogOpen(true); }}
+                                                >
                                                     <Edit className="w-4 h-4 mr-2" />
                                                     Edit
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => handleDelete(tax.id)} className="text-destructive">
+                                                <DropdownMenuItem
+                                                    disabled={isActiveVat}
+                                                    onClick={() => handleDelete(tax.id)}
+                                                    className="text-destructive"
+                                                >
                                                     <Trash2 className="w-4 h-4 mr-2" />
                                                     Remove
                                                 </DropdownMenuItem>
@@ -242,7 +271,7 @@ export default function TaxesPage() {
                 </Table>
             </Card>
 
-            {user?.restaurant_id && (
+            {user?.restaurant_id && !isActiveVat && (
                 <TaxDialog 
                     open={isDialogOpen} 
                     onOpenChange={setIsDialogOpen} 

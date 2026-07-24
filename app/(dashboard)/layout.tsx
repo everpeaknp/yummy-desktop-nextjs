@@ -155,7 +155,8 @@ export default function DashboardLayout({
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 p-6 text-center">
         <p className="text-sm text-muted-foreground">
-          Could not load your restaurant profile. Check your connection and try again.
+          Could not load your restaurant profile. Check your connection and try
+          again.
         </p>
         <button
           type="button"

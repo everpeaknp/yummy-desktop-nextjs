@@ -25,7 +25,9 @@ export function canAccessOnboarding(user: OnboardingUser): boolean {
   // First registration — any authenticated account without a restaurant can create or join.
   if (!user.restaurant_id) return true;
   // Existing restaurant members: admin/owner/manager only (replay uses canReplayOnboarding).
-  return collectRoles(user).some((r) => r === "admin" || r === "owner" || r === "manager");
+  return collectRoles(user).some(
+    (r) => r === "admin" || r === "owner" || r === "manager",
+  );
 }
 
 /** Replay from Help is admin-only after the restaurant already exists. */
@@ -179,7 +181,8 @@ export function createEmptyDraft(email = ""): OnboardingDraft {
     receiptFooter: "Thank you for dining with us.",
     orderStart: 1001,
     payments: ["cash", "card", "digital_wallet"],
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kathmandu",
+    timezone:
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kathmandu",
   };
 }
 

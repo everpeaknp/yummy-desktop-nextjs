@@ -24,6 +24,7 @@ import {
   Soup,
   Store,
   Sun,
+  ShieldCheck,
   Upload,
   UtensilsCrossed,
   Wallet,
@@ -65,6 +66,7 @@ import {
 } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import { cn, getImageUrl } from "@/lib/utils";
 import { ImageService } from "@/services/image-service";
 import {
@@ -266,6 +268,11 @@ export function OnboardingWizard({
 
   const resolvedRestaurantId =
     restaurantId ?? user?.restaurant_id ?? (initialRestaurant?.id as number | undefined) ?? null;
+  const {
+    profile: fiscalProfile,
+    isActiveVat,
+    loading: fiscalProfileLoading,
+  } = useFiscalProfile(Boolean(resolvedRestaurantId));
 
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -646,7 +653,9 @@ export function OnboardingWizard({
       address,
       phone,
       description,
-      pan_number: draft.taxNumber.trim() || null,
+      ...(!isActiveVat
+        ? { pan_number: draft.taxNumber.trim() || null }
+        : {}),
       timezone: draft.timezone || "Asia/Kathmandu",
       business_day_start_time: businessDayStart,
       latitude: lat ? Number(lat) : null,
@@ -678,7 +687,7 @@ export function OnboardingWizard({
         const profile = buildProfilePayload();
         await apiClient.put(RestaurantApis.update(id), {
           ...profile,
-          tax_enabled: draft.taxEnabled,
+          ...(!isActiveVat ? { tax_enabled: draft.taxEnabled } : {}),
           kot_enabled: draft.kotEnabled,
           restaurant_enabled: flags.restaurant_enabled,
           hotel_enabled: flags.hotel_enabled,
@@ -695,7 +704,7 @@ export function OnboardingWizard({
               return {
                 ...block,
                 show_logo: draft.receiptShowLogo,
-                show_pan: draft.receiptShowPan,
+                show_pan: isActiveVat ? true : draft.receiptShowPan,
               };
             }
             if (block.type === "footer") {
@@ -722,7 +731,7 @@ export function OnboardingWizard({
 
       const createRes = await apiClient.post(RestaurantApis.create, {
         ...profile,
-        tax_enabled: draft.taxEnabled,
+        ...(!isActiveVat ? { tax_enabled: draft.taxEnabled } : {}),
         kot_enabled: draft.kotEnabled,
         restaurant_enabled: flags.restaurant_enabled,
         hotel_enabled: flags.hotel_enabled,
@@ -775,7 +784,12 @@ export function OnboardingWizard({
 
       // Best-effort extras — do not block finishing setup
       try {
-        if (flags.restaurant_enabled && draft.taxEnabled && draft.taxRate > 0) {
+        if (
+          !isActiveVat &&
+          flags.restaurant_enabled &&
+          draft.taxEnabled &&
+          draft.taxRate > 0
+        ) {
           await apiClient.post(TaxConfigApis.create, {
             name: "VAT",
             rate: Number(draft.taxRate),
@@ -799,7 +813,7 @@ export function OnboardingWizard({
             return {
               ...block,
               show_logo: draft.receiptShowLogo,
-              show_pan: draft.receiptShowPan,
+              show_pan: isActiveVat ? true : draft.receiptShowPan,
             };
           }
           if (block.type === "footer") {
@@ -901,14 +915,18 @@ export function OnboardingWizard({
       },
       {
         label: "Tax",
-        value: draft.taxEnabled ? `${draft.taxRate || 0}%` : "Disabled",
+        value: isActiveVat
+          ? "13% (IRD managed)"
+          : draft.taxEnabled
+            ? `${draft.taxRate || 0}%`
+            : "Disabled",
       },
       { label: "Kitchen tickets", value: draft.kotEnabled ? "On" : "Off" },
       {
         label: "Receipt",
         value: [
           draft.receiptShowLogo ? "Logo" : null,
-          draft.receiptShowPan ? "PAN" : null,
+          isActiveVat || draft.receiptShowPan ? "PAN" : null,
           draft.receiptFooter.trim() || null,
         ]
           .filter(Boolean)
@@ -923,7 +941,7 @@ export function OnboardingWizard({
             .join(", ") || "None selected",
       },
     ],
-    [draft]
+    [draft, isActiveVat]
   );
 
   return (
@@ -1190,10 +1208,20 @@ export function OnboardingWizard({
                         <Label htmlFor="taxNumber">PAN / VAT Number</Label>
                         <Input
                           id="taxNumber"
-                          value={draft.taxNumber}
+                          value={
+                            isActiveVat
+                              ? fiscalProfile?.seller_pan ?? draft.taxNumber
+                              : draft.taxNumber
+                          }
                           onChange={(e) => patch("taxNumber", e.target.value)}
+                          disabled={isActiveVat || fiscalProfileLoading}
                           placeholder="Company registration number"
                         />
+                        {isActiveVat && (
+                          <p className="text-xs text-muted-foreground">
+                            Managed by the active fiscal compliance profile.
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -1421,6 +1449,20 @@ export function OnboardingWizard({
                   <p className="mt-2 mb-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                     Add basic operational details so your dashboard is ready to use.
                   </p>
+                  {isActiveVat && (
+                    <div className="mb-5 flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm dark:border-emerald-900 dark:bg-emerald-950/30">
+                      <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                      <div>
+                        <p className="font-medium text-emerald-900 dark:text-emerald-100">
+                          VAT e-billing is active
+                        </p>
+                        <p className="mt-1 text-emerald-800/80 dark:text-emerald-200/80">
+                          PAN, VAT rate and tax visibility are controlled by the fiscal
+                          compliance profile and cannot be changed from onboarding.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="timezone">Timezone*</Label>
@@ -1511,8 +1553,12 @@ export function OnboardingWizard({
                         type="number"
                         min={0}
                         max={100}
-                        disabled={!draft.taxEnabled}
-                        value={draft.taxRate}
+                        disabled={
+                          fiscalProfileLoading ||
+                          isActiveVat ||
+                          !draft.taxEnabled
+                        }
+                        value={isActiveVat ? 13 : draft.taxRate}
                         onChange={(e) => patch("taxRate", Number(e.target.value) || 0)}
                         className={fieldErrorClass("taxRate")}
                         aria-invalid={Boolean(fieldErrors.taxRate)}
@@ -1546,8 +1592,9 @@ export function OnboardingWizard({
                             <FieldInfo>Allow configured taxes on eligible bills.</FieldInfo>
                           </div>
                           <Switch
-                            checked={draft.taxEnabled}
+                            checked={isActiveVat ? true : draft.taxEnabled}
                             onCheckedChange={(checked) => patch("taxEnabled", checked)}
+                            disabled={isActiveVat || fiscalProfileLoading}
                             aria-label="Tax calculation"
                           />
                         </div>
@@ -1581,8 +1628,9 @@ export function OnboardingWizard({
                             <FieldInfo>Show the tax registration number.</FieldInfo>
                           </div>
                           <Switch
-                            checked={draft.receiptShowPan}
+                            checked={isActiveVat ? true : draft.receiptShowPan}
                             onCheckedChange={(checked) => patch("receiptShowPan", checked)}
+                            disabled={isActiveVat || fiscalProfileLoading}
                             aria-label="PAN on receipt"
                           />
                         </div>

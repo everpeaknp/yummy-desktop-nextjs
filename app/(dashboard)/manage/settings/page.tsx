@@ -36,6 +36,7 @@ import { getPaymentBankDescription, getPaymentBankLabel, isReviewBank } from "@/
 import { hasPermission } from "@/lib/role-permissions";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import type { DrawerAssignment, DrawerCashier, DrawerConfiguration } from "@/types/day-close";
 import type { PaymentBank, PaymentBankInput } from "@/types/accounting";
 import { 
@@ -74,6 +75,11 @@ const emptyDrawerForm = (): DrawerConfigForm => ({
 
 export default function RestaurantSettingsPage() {
     const user = useAuth(state => state.user);
+    const {
+        profile: fiscalProfile,
+        isActiveVat,
+        loading: fiscalProfileLoading,
+    } = useFiscalProfile(Boolean(user?.restaurant_id));
     const setGlobalRestaurant = useRestaurant(state => state.setRestaurant);
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -1178,13 +1184,26 @@ export default function RestaurantSettingsPage() {
                             </div>
                             <div className="flex items-center justify-between p-4 border rounded-lg">
                                 <div className="space-y-0.5">
-                                    <Label>Enable Tax (VAT)</Label>
-                                    <p className="text-xs text-muted-foreground mr-8">Enable or disable global tax calculation for all orders.</p>
+                                    <Label className="flex items-center gap-2">
+                                        Enable Tax (VAT)
+                                        {isActiveVat && <Badge variant="success">IRD managed</Badge>}
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground mr-8">
+                                        {isActiveVat
+                                            ? `Locked by the active ${fiscalProfile?.fiscal_billing_mode ?? "VAT"} fiscal profile.`
+                                            : "Enable or disable global tax calculation for all orders."}
+                                    </p>
+                                    {isActiveVat && (
+                                        <p className="text-xs text-muted-foreground">
+                                            VAT settings are managed by Yummy&apos;s compliance team.
+                                        </p>
+                                    )}
                                 </div>
                                 <Switch 
-                                    checked={restaurant?.tax_enabled ?? false} 
+                                    checked={isActiveVat ? true : restaurant?.tax_enabled ?? false}
+                                    disabled={isActiveVat || fiscalProfileLoading}
                                     onCheckedChange={async (val) => {
-                                        if (!user?.restaurant_id) return;
+                                        if (!user?.restaurant_id || isActiveVat || fiscalProfileLoading) return;
                                         try {
                                             const updated = { ...restaurant, tax_enabled: val };
                                             setRestaurant(updated);

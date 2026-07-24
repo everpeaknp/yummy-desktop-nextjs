@@ -4,8 +4,34 @@ import { useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { User, Phone, Mail, Award, Calendar, History, Wallet, DollarSign, Loader2, CreditCard, Clock, Receipt, ArrowRight } from "lucide-react";
+import {
+    ArrowRight,
+    Award,
+    Building2,
+    Calendar,
+    Clock,
+    CreditCard,
+    DollarSign,
+    History,
+    Loader2,
+    Mail,
+    MapPin,
+    Pencil,
+    Phone,
+    Receipt,
+    User,
+} from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { RepayCreditDialog } from "./repay-credit-dialog";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -14,6 +40,10 @@ import { CustomerApis, OrderApis } from "@/lib/api/endpoints";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/utils";
+import {
+    customerPanValidationMessage,
+    optionalCustomerText,
+} from "@/lib/customer-fiscal";
 
 interface CustomerDetailsSheetProps {
     customer: any | null;
@@ -22,7 +52,8 @@ interface CustomerDetailsSheetProps {
     onUpdate?: () => void;
 }
 
-export function CustomerDetailsSheet({ customer, open, onOpenChange, onUpdate }: CustomerDetailsSheetProps) {
+export function CustomerDetailsSheet({ customer: customerProp, open, onOpenChange, onUpdate }: CustomerDetailsSheetProps) {
+    const [customer, setCustomer] = useState<any | null>(customerProp);
     const [isRepayDialogOpen, setIsRepayDialogOpen] = useState(false);
     const [orders, setOrders] = useState<any[]>([]);
     const [loadingOrders, setLoadingOrders] = useState(false);
@@ -30,7 +61,85 @@ export function CustomerDetailsSheet({ customer, open, onOpenChange, onUpdate }:
     const [creditPaidTotal, setCreditPaidTotal] = useState(0);
     const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
+    const [editOpen, setEditOpen] = useState(false);
+    const [editSubmitting, setEditSubmitting] = useState(false);
+    const [editError, setEditError] = useState<string | null>(null);
+    const [editForm, setEditForm] = useState({
+        name: "",
+        phone: "",
+        email: "",
+        business_name: "",
+        pan_number: "",
+        billing_address: "",
+    });
     const user = useAuth((state) => state.user);
+
+    useEffect(() => {
+        setCustomer(customerProp);
+    }, [customerProp]);
+
+    const openEditDialog = () => {
+        if (!customer) return;
+        setEditForm({
+            name: customer.name || customer.full_name || "",
+            phone: customer.phone || "",
+            email: customer.email || "",
+            business_name: customer.business_name || "",
+            pan_number: customer.pan_number || "",
+            billing_address: customer.billing_address || "",
+        });
+        setEditError(null);
+        setEditOpen(true);
+    };
+
+    const saveCustomerProfile = async (event: React.FormEvent) => {
+        event.preventDefault();
+        if (!customer?.id) return;
+        const panError = customerPanValidationMessage(editForm.pan_number);
+        if (panError) {
+            setEditError(panError);
+            return;
+        }
+        if (!editForm.name.trim()) {
+            setEditError("Customer name is required.");
+            return;
+        }
+
+        setEditSubmitting(true);
+        setEditError(null);
+        try {
+            const response = await apiClient.patch(
+                CustomerApis.updateCustomer(customer.id),
+                {
+                    name: editForm.name.trim(),
+                    phone: optionalCustomerText(editForm.phone),
+                    email: optionalCustomerText(editForm.email),
+                    business_name: optionalCustomerText(editForm.business_name),
+                    pan_number: optionalCustomerText(editForm.pan_number),
+                    billing_address: optionalCustomerText(
+                        editForm.billing_address,
+                    ),
+                },
+            );
+            if (response.data?.status !== "success") {
+                throw new Error(
+                    response.data?.message || "Failed to update customer.",
+                );
+            }
+            setCustomer(response.data.data);
+            setEditOpen(false);
+            onUpdate?.();
+        } catch (requestError: any) {
+            setEditError(
+                requestError?.response?.data?.detail ||
+                    requestError?.response?.data?.message ||
+                    requestError?.message ||
+                    "Failed to update customer.",
+            );
+        } finally {
+            setEditSubmitting(false);
+        }
+    };
 
     const getPaymentSplit = (order: any) => {
         const payments = Array.isArray(order?.payments) ? order.payments : [];
@@ -188,6 +297,37 @@ export function CustomerDetailsSheet({ customer, open, onOpenChange, onUpdate }:
                                 <div className="flex items-center gap-3">
                                     <Mail className="w-4 h-4 text-muted-foreground" />
                                     <span className="font-medium">{customer.email || "N/A"}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">
+                                Tax Invoice Details
+                            </h3>
+                            <div className="grid gap-3 p-4 border rounded-lg bg-card/50">
+                                <div className="flex items-start gap-3">
+                                    <Building2 className="mt-0.5 w-4 h-4 text-muted-foreground" />
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Business name</p>
+                                        <p className="font-medium">{customer.business_name || "Not provided"}</p>
+                                    </div>
+                                </div>
+                                <Separator />
+                                <div className="flex items-start gap-3">
+                                    <Receipt className="mt-0.5 w-4 h-4 text-muted-foreground" />
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">PAN number</p>
+                                        <p className="font-medium">{customer.pan_number || "Not provided"}</p>
+                                    </div>
+                                </div>
+                                <Separator />
+                                <div className="flex items-start gap-3">
+                                    <MapPin className="mt-0.5 w-4 h-4 text-muted-foreground" />
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Billing address</p>
+                                        <p className="font-medium">{customer.billing_address || "Not provided"}</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -360,11 +500,142 @@ export function CustomerDetailsSheet({ customer, open, onOpenChange, onUpdate }:
                     </div>
 
                     <div className="mt-8 flex justify-end gap-2">
-                        <Button variant="outline">Edit Profile</Button>
+                        <Button variant="outline" onClick={openEditDialog}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit Profile
+                        </Button>
                         <Button>New Order</Button>
                     </div>
                 </SheetContent>
             </Sheet>
+
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Edit Customer Profile</DialogTitle>
+                        <DialogDescription>
+                            Business billing details are copied into newly issued
+                            fiscal tax invoices for this customer.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={saveCustomerProfile} className="space-y-4">
+                        {editError && (
+                            <p className="rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive">
+                                {editError}
+                            </p>
+                        )}
+                        <div className="grid gap-2">
+                            <Label htmlFor="edit-customer-name">Full Name</Label>
+                            <Input
+                                id="edit-customer-name"
+                                value={editForm.name}
+                                onChange={(event) =>
+                                    setEditForm((current) => ({
+                                        ...current,
+                                        name: event.target.value,
+                                    }))
+                                }
+                                required
+                            />
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-customer-phone">Phone</Label>
+                                <Input
+                                    id="edit-customer-phone"
+                                    value={editForm.phone}
+                                    onChange={(event) =>
+                                        setEditForm((current) => ({
+                                            ...current,
+                                            phone: event.target.value,
+                                        }))
+                                    }
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-customer-email">Email</Label>
+                                <Input
+                                    id="edit-customer-email"
+                                    type="email"
+                                    value={editForm.email}
+                                    onChange={(event) =>
+                                        setEditForm((current) => ({
+                                            ...current,
+                                            email: event.target.value,
+                                        }))
+                                    }
+                                />
+                            </div>
+                        </div>
+                        <div className="rounded-lg border p-4 space-y-4">
+                            <p className="text-sm font-semibold">
+                                Business billing (optional)
+                            </p>
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-business-name">
+                                    Business Name
+                                </Label>
+                                <Input
+                                    id="edit-business-name"
+                                    value={editForm.business_name}
+                                    onChange={(event) =>
+                                        setEditForm((current) => ({
+                                            ...current,
+                                            business_name: event.target.value,
+                                        }))
+                                    }
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-pan-number">PAN Number</Label>
+                                <Input
+                                    id="edit-pan-number"
+                                    inputMode="numeric"
+                                    maxLength={9}
+                                    value={editForm.pan_number}
+                                    onChange={(event) =>
+                                        setEditForm((current) => ({
+                                            ...current,
+                                            pan_number: event.target.value,
+                                        }))
+                                    }
+                                    placeholder="9 digits"
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-billing-address">
+                                    Billing Address
+                                </Label>
+                                <Input
+                                    id="edit-billing-address"
+                                    value={editForm.billing_address}
+                                    onChange={(event) =>
+                                        setEditForm((current) => ({
+                                            ...current,
+                                            billing_address: event.target.value,
+                                        }))
+                                    }
+                                />
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setEditOpen(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button type="submit" disabled={editSubmitting}>
+                                {editSubmitting && (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                )}
+                                Save Customer
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
 
             <RepayCreditDialog
                 customer={customer}

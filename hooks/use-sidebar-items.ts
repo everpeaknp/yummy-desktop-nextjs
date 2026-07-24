@@ -40,9 +40,7 @@ import {
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
 import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
-import {
-  isSubscriptionEntitlementEnabled,
-} from "@/lib/subscription/entitlements";
+import { isSubscriptionEntitlementEnabled } from "@/lib/subscription/entitlements";
 export interface SidebarItem {
   title: string;
   href: string;
@@ -81,19 +79,43 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
 };
 
 const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
-  { title: "Room Overview",   href: "/rooms",           icon: BedDouble,     section: "Hotel" },
-  { title: "Orders",          href: "/orders",          icon: ClipboardList, section: "Hotel" },
-  { title: "Order History",   href: "/orders/history",  icon: ClipboardList, section: "Hotel" },
-  { title: "New Order",       href: "/orders/new",      icon: Plus,          section: "Hotel" },
-  { title: "Check In/Out",    href: "/rooms/checkin",   icon: KeyRound,      section: "Hotel" },
-  { title: "Reservations",    href: "/reservations",    icon: Calendar,      section: "Hotel" },
-  { title: "Finance",         href: "/finance/income",  icon: CreditCard,    section: "Hotel" },
-  { title: "Customers",       href: "/customers",       icon: Users,         section: "Hotel" },
-  { title: "Manage",          href: "/manage",          icon: Settings,      section: "Hotel" },
+  { title: "Room Overview", href: "/rooms", icon: BedDouble, section: "Hotel" },
+  { title: "Orders", href: "/orders", icon: ClipboardList, section: "Hotel" },
+  {
+    title: "Order History",
+    href: "/orders/history",
+    icon: ClipboardList,
+    section: "Hotel",
+  },
+  { title: "New Order", href: "/orders/new", icon: Plus, section: "Hotel" },
+  {
+    title: "Check In/Out",
+    href: "/rooms/checkin",
+    icon: KeyRound,
+    section: "Hotel",
+  },
+  {
+    title: "Reservations",
+    href: "/reservations",
+    icon: Calendar,
+    section: "Hotel",
+  },
+  {
+    title: "Finance",
+    href: "/finance/income",
+    icon: CreditCard,
+    section: "Hotel",
+  },
+  { title: "Customers", href: "/customers", icon: Users, section: "Hotel" },
+  { title: "Manage", href: "/manage", icon: Settings, section: "Hotel" },
 ];
 
 function getHotelSidebarItems(
-  user: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null
+  user: {
+    role?: string | null;
+    roles?: string[] | null;
+    permissions?: string[];
+  } | null,
 ): SidebarItem[] {
   const base = filterSidebarLinksByAccess(HOTEL_SIDEBAR_BASE, user);
 
@@ -101,7 +123,9 @@ function getHotelSidebarItems(
     return base;
   }
 
-  const financeIndex = base.findIndex((item) => item.href === "/finance/income");
+  const financeIndex = base.findIndex(
+    (item) => item.href === "/finance/income",
+  );
   const analyticsItem: SidebarItem = {
     title: "Analytics",
     href: "/analytics",
@@ -116,11 +140,7 @@ function getHotelSidebarItems(
   if (financeIndex < 0) {
     const manageIndex = base.findIndex((item) => item.href === "/manage");
     const insertAt = manageIndex >= 0 ? manageIndex : base.length;
-    return [
-      ...base.slice(0, insertAt),
-      analyticsItem,
-      ...base.slice(insertAt),
-    ];
+    return [...base.slice(0, insertAt), analyticsItem, ...base.slice(insertAt)];
   }
 
   return [
@@ -131,13 +151,28 @@ function getHotelSidebarItems(
 }
 
 const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
-  { title: "Room Overview", href: "/rooms",          icon: BedDouble,     section: "Hotel" },
-  { title: "Orders",        href: "/orders",         icon: ClipboardList, section: "Hotel" },
-  { title: "Order History", href: "/orders/history", icon: ClipboardList, section: "Hotel" },
-  { title: "New Order",     href: "/orders/new",     icon: Plus,          section: "Hotel" },
-  { title: "Check In/Out", href: "/rooms/checkin",  icon: KeyRound,      section: "Hotel" },
-  { title: "Finance",      href: "/finance/income", icon: CreditCard,    section: "Hotel" },
-  { title: "Customers",    href: "/customers",      icon: Users,         section: "Hotel" },
+  { title: "Room Overview", href: "/rooms", icon: BedDouble, section: "Hotel" },
+  { title: "Orders", href: "/orders", icon: ClipboardList, section: "Hotel" },
+  {
+    title: "Order History",
+    href: "/orders/history",
+    icon: ClipboardList,
+    section: "Hotel",
+  },
+  { title: "New Order", href: "/orders/new", icon: Plus, section: "Hotel" },
+  {
+    title: "Check In/Out",
+    href: "/rooms/checkin",
+    icon: KeyRound,
+    section: "Hotel",
+  },
+  {
+    title: "Finance",
+    href: "/finance/income",
+    icon: CreditCard,
+    section: "Hotel",
+  },
+  { title: "Customers", href: "/customers", icon: Users, section: "Hotel" },
 ];
 
 export function useSidebarItems(): SidebarItem[] {
@@ -151,19 +186,28 @@ export function useSidebarItems(): SidebarItem[] {
       Boolean(currentSubscription) &&
       !isSubscriptionEntitlementEnabled(currentSubscription, key, true);
     const roles = normalizeRolesForUser(user);
-    const isAdminOrManager = roles.some(r => r === "admin" || r === "manager");
-    const isCashier = roles.some(r => r === "cashier");
+    const isAdminOrManager = roles.some(
+      (r) => r === "admin" || r === "manager",
+    );
+    const isCashier = roles.some((r) => r === "cashier");
 
     // --- HOTEL MODE ---
     if (selectedModule === "hotel" && restaurant?.hotel_enabled) {
       if (isAdminOrManager) return getHotelSidebarItems(user);
-      if (isCashier) return filterSidebarLinksByAccess(HOTEL_CASHIER_ITEMS, user);
+      if (isCashier)
+        return filterSidebarLinksByAccess(HOTEL_CASHIER_ITEMS, user);
       // Other staff in hotel mode see basic view
       return [{ title: "Room Overview", href: "/rooms", icon: BedDouble }];
     }
 
     // --- RESTAURANT MODE (or single-module restaurant) ---
-    const restaurantOnlyItems = ["/orders", "/orders/new", "/kitchen", "/tables", "/reservations"];
+    const restaurantOnlyItems = [
+      "/orders",
+      "/orders/new",
+      "/kitchen",
+      "/tables",
+      "/reservations",
+    ];
     const hotelOnlyHrefs = ["/rooms"];
 
     const flatItems = getSidebarItemsForRoles(roles, user)
@@ -173,7 +217,11 @@ export function useSidebarItems(): SidebarItem[] {
         // Never show hotel-only items in restaurant mode
         if (hotelOnlyHrefs.includes(item.href)) return false;
         // If restaurant not enabled, don't show restaurant-specific items
-        if (!restaurant?.restaurant_enabled && restaurantOnlyItems.includes(item.href)) return false;
+        if (
+          !restaurant?.restaurant_enabled &&
+          restaurantOnlyItems.includes(item.href)
+        )
+          return false;
         const entitlementByRoute: Record<string, string> = {
           "/inventory": "inventory.enabled",
           "/manage/suppliers": "inventory.suppliers.enabled",
@@ -191,7 +239,8 @@ export function useSidebarItems(): SidebarItem[] {
           "/manage/kot-designer": "designers.kot.enabled",
         };
         const requiredEntitlement = entitlementByRoute[item.href];
-        if (requiredEntitlement && isExplicitlyLocked(requiredEntitlement)) return false;
+        if (requiredEntitlement && isExplicitlyLocked(requiredEntitlement))
+          return false;
         return true;
       })
       .map((item) => ({
@@ -205,7 +254,12 @@ export function useSidebarItems(): SidebarItem[] {
     const groups: { [key: string]: SidebarItem } = {};
     const result: SidebarItem[] = [];
 
-    const getGroup = (id: string, title: string, icon: LucideIcon, href: string) => {
+    const getGroup = (
+      id: string,
+      title: string,
+      icon: LucideIcon,
+      href: string,
+    ) => {
       if (!groups[id]) {
         groups[id] = { title, href, icon, subItems: [] };
         result.push(groups[id]);
@@ -224,17 +278,39 @@ export function useSidebarItems(): SidebarItem[] {
         result.push(item);
       } else if (item.href === "/orders/new") {
         result.push({ ...item, isNestedChild: true });
-      } else if (["/menu/items", "/menu/categories", "/menu/modifiers"].includes(item.href)) {
+      } else if (
+        ["/menu/items", "/menu/categories", "/menu/modifiers"].includes(
+          item.href,
+        )
+      ) {
         const group = getGroup("menu", "Menu", UtensilsCrossed, "/menu/items");
         if (item.href !== "/menu/items") group.subItems!.push(item);
       } else if (["/tables", "/reservations"].includes(item.href)) {
         const group = getGroup("tables", "Table & Space", Armchair, "/tables");
         group.subItems!.push(item);
       } else if (["/kitchen", "/discounts"].includes(item.href)) {
-        const group = getGroup("services", "Services", ChefHat, item.href === "/kitchen" ? "/kitchen" : item.href);
+        const group = getGroup(
+          "services",
+          "Services",
+          ChefHat,
+          item.href === "/kitchen" ? "/kitchen" : item.href,
+        );
         group.subItems!.push(item);
-      } else if (["/finance/income", "/finance/expenses", "/finance/accounting", "/transactions", "/day-close"].includes(item.href)) {
-        const group = getGroup("finance", "Finance", CreditCard, "/finance/income");
+      } else if (
+        [
+          "/finance/income",
+          "/finance/expenses",
+          "/finance/accounting",
+          "/transactions",
+          "/day-close",
+        ].includes(item.href)
+      ) {
+        const group = getGroup(
+          "finance",
+          "Finance",
+          CreditCard,
+          "/finance/income",
+        );
         group.subItems!.push(item);
       } else if (["/manage", "/settings"].includes(item.href)) {
         const group = getGroup("settings", "Settings", Settings, "/manage");
@@ -249,7 +325,12 @@ export function useSidebarItems(): SidebarItem[] {
 
     const workforceItems: SidebarItem[] = [];
     if (hasPermission(user, "admin.staff.view")) {
-      workforceItems.push({ title: "Staff", href: "/staff", icon: Users, isNestedChild: true });
+      workforceItems.push({
+        title: "Staff",
+        href: "/staff",
+        icon: Users,
+        isNestedChild: true,
+      });
     }
     if (
       hasPermission(user, "attendance.manage") &&
@@ -258,10 +339,23 @@ export function useSidebarItems(): SidebarItem[] {
         isExplicitlyLocked("attendance.biometric.enabled")
       )
     ) {
-      workforceItems.push({ title: "Attendance", href: "/attendance", icon: Fingerprint, isNestedChild: true });
+      workforceItems.push({
+        title: "Attendance",
+        href: "/attendance",
+        icon: Fingerprint,
+        isNestedChild: true,
+      });
     }
-    if (hasPermission(user, "finance.payroll.view") && !isExplicitlyLocked("payroll.enabled")) {
-      workforceItems.push({ title: "Payroll", href: "/payroll", icon: Banknote, isNestedChild: true });
+    if (
+      hasPermission(user, "finance.payroll.view") &&
+      !isExplicitlyLocked("payroll.enabled")
+    ) {
+      workforceItems.push({
+        title: "Payroll",
+        href: "/payroll",
+        icon: Banknote,
+        isNestedChild: true,
+      });
     }
     if (workforceItems.length) {
       const group = getGroup("workforce", "Workforce", Briefcase, "/workforce");
@@ -272,7 +366,12 @@ export function useSidebarItems(): SidebarItem[] {
       hasPermission(user, "finance.income.view") &&
       !isExplicitlyLocked("finance.income_expense.enabled")
     ) {
-      const group = getGroup("finance", "Finance", CreditCard, "/finance/income");
+      const group = getGroup(
+        "finance",
+        "Finance",
+        CreditCard,
+        "/finance/income",
+      );
       const subItems = group.subItems ?? [];
       if (!subItems.some((item) => item.href === "/finance/expenses")) {
         subItems.push({
@@ -309,9 +408,9 @@ export function useSidebarItems(): SidebarItem[] {
     }
 
     // Clean up empty subItems arrays
-    return result.map(r => ({
+    return result.map((r) => ({
       ...r,
-      subItems: r.subItems?.length ? r.subItems : undefined
+      subItems: r.subItems?.length ? r.subItems : undefined,
     }));
   }, [currentSubscription, restaurant, user, selectedModule]);
 }
