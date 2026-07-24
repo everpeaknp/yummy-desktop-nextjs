@@ -165,12 +165,16 @@ function PlanFeatureList({ features }: { features: PlanFeatureItem[] }) {
         ref={scrollRef}
         onScroll={handleScroll}
         className={cn(
-          "space-y-3 overscroll-contain pr-1",
+          "space-y-3 overscroll-contain [&::-webkit-scrollbar]:w-[1px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-muted-foreground/5 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/15",
           isScrollable && "overflow-y-auto",
         )}
         style={
           isScrollable
-            ? { maxHeight: `calc(1.25rem * ${visibleFeatureLimit} + 0.75rem * ${visibleFeatureLimit - 1})` }
+            ? { 
+                maxHeight: `calc(1.25rem * ${visibleFeatureLimit} + 0.75rem * ${visibleFeatureLimit - 1})`,
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'hsl(var(--muted-foreground) / 0.05) transparent'
+              }
             : undefined
         }
       >
@@ -510,7 +514,7 @@ export default function PremiumPage() {
           </Alert>
         ) : catalogLoading && !catalog ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 5 }).map((_, index) => (
+            {Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="h-[640px] animate-pulse rounded-2xl border bg-muted/30" />
             ))}
           </div>
@@ -534,9 +538,9 @@ export default function PremiumPage() {
                 <Card
                   key={String(plan.id)}
                   className={cn(
-                    "relative flex h-full min-h-[640px] flex-col overflow-hidden transition-shadow hover:shadow-lg",
+                    "relative flex h-full min-h-[640px] flex-col overflow-hidden border-border/50 transition-all duration-200 hover:border-border",
                     !isFreePlan && "cursor-pointer focus-within:ring-2 focus-within:ring-primary/30",
-                    isCurrent && "border-2 border-primary shadow-md shadow-primary/5",
+                    isCurrent && "border-2 border-primary",
                   )}
                   role={isFreePlan ? undefined : "button"}
                   tabIndex={isFreePlan ? -1 : 0}
@@ -685,18 +689,8 @@ export default function PremiumPage() {
                 </Card>
               );
             })}
-          </div>
-        )}
-      </section>
-
-      {catalog?.addons.length ? (
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-2xl font-black">Available add-ons</h2>
-            <p className="text-sm text-muted-foreground">Add-ons are assigned and enforced separately from the base plan.</p>
-          </div>
-          <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {catalog.addons.filter((addon) => addon.is_public).map((addon) => {
+            
+            {catalog?.addons.filter((addon) => addon.is_public).map((addon) => {
               const addonPricing = pricesForInterval(addon, selectedInterval);
               const primaryPrice = addonPricing.initial;
               const quoteOnly = addonPricing.quoteOnly;
@@ -705,56 +699,142 @@ export default function PremiumPage() {
                 <Card
                   key={String(addon.id)}
                   className={cn(
-                    "flex h-full min-h-[220px] flex-col",
-                    selected && "border-primary ring-1 ring-primary/20",
+                    "relative flex h-full min-h-[640px] flex-col overflow-hidden border-border/50 transition-all duration-200 hover:border-border",
+                    selected && "border-2 border-primary",
                   )}
                 >
-                  <CardContent className="flex flex-1 flex-col gap-4 p-5">
-                    <div className="flex items-start gap-3">
-                      <div className="shrink-0 rounded-xl bg-primary/10 p-2">
-                        <ShieldCheck className="h-5 w-5 text-primary" />
+                  <div
+                    className={cn(
+                      "shrink-0 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest",
+                      selected ? "bg-primary text-primary-foreground" : "bg-muted/40 text-muted-foreground",
+                    )}
+                  >
+                    {selected ? "Added to request" : "Available add-on"}
+                  </div>
+                  <CardHeader className="shrink-0 space-y-1.5 pb-3 pt-5">
+                    <CardTitle className="flex items-center justify-between gap-3 text-xl">
+                      <span className="truncate">{addon.name}</span>
+                      {quoteOnly ? <Badge variant="outline">Custom</Badge> : null}
+                    </CardTitle>
+                    {addon.description ? (
+                      <p className="line-clamp-2 text-sm text-muted-foreground">
+                        {addon.description}
+                      </p>
+                    ) : null}
+                  </CardHeader>
+                  <CardContent className="flex flex-1 flex-col gap-5 pt-0">
+                    <div
+                      className="flex min-h-[148px] shrink-0 flex-col justify-between rounded-2xl border bg-muted/20 p-4"
+                    >
+                      {quoteOnly ? (
+                        <>
+                          <div>
+                            <p className="text-2xl font-black">Custom quote</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Contact for pricing
+                            </p>
+                          </div>
+                          <div className="mt-3 min-h-[52px] border-t pt-3 text-sm">
+                            <span className="text-muted-foreground">Available with published plans</span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-muted-foreground">Price determined on request</p>
+                        </>
+                      ) : primaryPrice ? (
+                        <>
+                          <div>
+                            <p className="text-2xl font-black">
+                              {formatPrice(primaryPrice.amount, primaryPrice.currency || catalog.currency)}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {priceTypeLabel(primaryPrice)} - {intervalLabel(addonPricing.billingIntervalMonths)}
+                            </p>
+                          </div>
+                          <div className="mt-3 min-h-[52px] border-t pt-3 text-sm">
+                            <span className="text-muted-foreground">
+                              {addon.compatible_plan_codes.length > 0
+                                ? `Available with ${addon.compatible_plan_codes.join(", ")}`
+                                : "Available with all plans"}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-muted-foreground">
+                            Tax {primaryPrice.tax_inclusive ? "included" : "not included"}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="text-2xl font-black">Pricing on request</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Contact Yummy team
+                            </p>
+                          </div>
+                          <p className="mt-3 text-[11px] text-muted-foreground">Not offered for this billing cycle</p>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="shrink-0 space-y-3">
+                      <div className="flex items-center gap-2.5 text-sm">
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                        <span className="truncate">Add-ons are enforced separately</span>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="truncate font-bold">{addon.name}</h3>
-                        <p className="mt-1 line-clamp-2 min-h-10 text-sm text-muted-foreground">
-                          {addon.description || "Contact Yummy for availability."}
-                        </p>
-                        <p className="mt-3 min-h-5 text-sm font-bold">
-                          {quoteOnly
-                            ? "Custom quote"
-                            : primaryPrice
-                              ? `${formatPrice(primaryPrice.amount, primaryPrice.currency || catalog.currency)} - ${intervalLabel(addonPricing.billingIntervalMonths)}`
-                              : "Pricing on request"}
-                        </p>
-                        <p className="mt-2 min-h-8 text-xs text-muted-foreground">
-                          {addon.compatible_plan_codes.length > 0
-                            ? `Available with ${addon.compatible_plan_codes.join(", ")}.`
-                            : "Available with published plans."}
-                        </p>
+                      <div className="flex items-center gap-2.5 text-sm">
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                        <span className="truncate">Can be combined with any plan</span>
+                      </div>
+                      <div className="flex items-center gap-2.5 text-sm">
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                        <span className="truncate">Billed with your subscription</span>
                       </div>
                     </div>
-                    <Button
-                      type="button"
-                      className="mt-auto w-full"
-                      variant={selected ? "default" : "outline"}
-                      aria-pressed={selected}
-                      onClick={() =>
-                        setSelectedAddonCodes((current) =>
-                          current.includes(addon.code)
-                            ? current.filter((code) => code !== addon.code)
-                            : [...current, addon.code],
-                        )
-                      }
+
+                    <div
+                      className="mt-auto flex shrink-0 flex-col gap-2"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
                     >
-                      {selected ? "Included in request" : "Add to request"}
-                    </Button>
+                      <Button
+                        type="button"
+                        className="w-full"
+                        variant={selected ? "default" : "outline"}
+                        aria-pressed={selected}
+                        onClick={() =>
+                          setSelectedAddonCodes((current) =>
+                            current.includes(addon.code)
+                              ? current.filter((code) => code !== addon.code)
+                              : [...current, addon.code],
+                          )
+                        }
+                      >
+                        <ShieldCheck className="mr-2 h-4 w-4" />
+                        {selected ? "Included in request" : "Add to request"}
+                      </Button>
+                      <Button
+                        type="button"
+                        className={cn("w-full", !selected && "invisible pointer-events-none")}
+                        variant="outline"
+                        aria-hidden={!selected}
+                        tabIndex={selected ? 0 : -1}
+                        disabled={!selected}
+                        onClick={() => {
+                          const draft = {
+                            subject: `${addon.name} add-on request`,
+                            message: `Hello Yummy Team, I would like to add ${addon.name} to ${restaurant?.name || "my restaurant"}'s subscription.`,
+                          };
+                          openContact(draft);
+                        }}
+                      >
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Contact Yummy (optional)
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               );
             })}
           </div>
-        </section>
-      ) : null}
+        )}
+      </section>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
