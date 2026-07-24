@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import {
   AlertCircle,
@@ -30,6 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import FUIPricingSectionWithOnePlan from "@/components/ui/colorful-pricing";
 import { UsageIndicator } from "@/components/subscription/usage-indicator";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
@@ -48,6 +49,8 @@ import { cn } from "@/lib/utils";
 
 const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "yummyever.np@gmail.com";
 const supportWhatsapp = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP || "").replace(/\D/g, "");
+const visibleFeatureLimit = 10;
+const featureRowHeight = 32;
 
 type ContactDraft = {
   subject: string;
@@ -108,6 +111,96 @@ function formatMoney(value: number, currency = "NPR") {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value);
 }
 
+type PlanFeatureItem = {
+  label: string;
+  included: boolean;
+};
+
+function PlanFeatureList({ features }: { features: PlanFeatureItem[] }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const extraFeatures = Math.max(features.length - visibleFeatureLimit, 0);
+  const isScrollable = extraFeatures > 0;
+  const [remainingCount, setRemainingCount] = useState(extraFeatures);
+
+  const handleScroll = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container || !isScrollable) {
+      setRemainingCount(0);
+      return;
+    }
+
+    const hiddenPixels = Math.max(
+      container.scrollHeight - container.clientHeight - container.scrollTop,
+      0,
+    );
+    const rowsRemaining = Math.ceil(hiddenPixels / featureRowHeight);
+    setRemainingCount(Math.min(extraFeatures, rowsRemaining));
+  }, [extraFeatures, isScrollable]);
+
+  useEffect(() => {
+    setRemainingCount(extraFeatures);
+    if (isScrollable) {
+      requestAnimationFrame(handleScroll);
+    }
+  }, [extraFeatures, handleScroll, isScrollable]);
+
+  if (!features.length) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Detailed entitlements are being prepared.
+      </p>
+    );
+  }
+
+  return (
+    <div className="shrink-0 space-y-3">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className={cn(
+          "space-y-3 overscroll-contain pr-1",
+          isScrollable && "overflow-y-auto",
+        )}
+        style={
+          isScrollable
+            ? { maxHeight: `calc(1.25rem * ${visibleFeatureLimit} + 0.75rem * ${visibleFeatureLimit - 1})` }
+            : undefined
+        }
+      >
+        {features.map((feature, index) => (
+          <div
+            key={`${feature.label}-${index}`}
+            className="flex h-5 items-center gap-2.5 text-sm leading-5"
+          >
+            {feature.included ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            ) : (
+              <XCircle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+            )}
+            <span
+              title={feature.label}
+              className={cn("truncate", !feature.included && "text-muted-foreground")}
+            >
+              {feature.label}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {isScrollable ? (
+        <div className="flex h-5 items-center gap-2.5 text-sm leading-5">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+          <span className="truncate">
+            {remainingCount > 0
+              ? `+${remainingCount} more included capabilities`
+              : "All features shown"}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function PremiumPage() {
   const restaurant = useRestaurant((state) => state.restaurant);
   const catalog = useSubscriptionStore((state) => state.catalog);
@@ -133,6 +226,7 @@ export default function PremiumPage() {
   const [savedRequestPlan, setSavedRequestPlan] = useState<string | null>(null);
   const [selectedAddonCodes, setSelectedAddonCodes] = useState<string[]>([]);
   const [contactDraft, setContactDraft] = useState<ContactDraft | null>(null);
+  const [previewPlanCode, setPreviewPlanCode] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshAll({ restaurantId: restaurant?.id ?? null });
@@ -158,6 +252,20 @@ export default function PremiumPage() {
   const catalogUpdated = formatCatalogVersion(catalog?.catalog_version);
   const planVersion = current?.subscription?.plan_version;
   const activeAddons = current?.addons ?? [];
+  const previewPlan = useMemo(
+    () => catalog?.plans.find((plan) => plan.code === previewPlanCode) ?? null,
+    [catalog?.plans, previewPlanCode],
+  );
+  const previewPrices = useMemo(
+    () => (previewPlan ? pricesForInterval(previewPlan, selectedInterval) : null),
+    [previewPlan, selectedInterval],
+  );
+  const previewPrimaryPrice = previewPrices ? previewPrices.initial ?? previewPrices.renewal : null;
+  const previewRenewal = previewPrices?.initial ? previewPrices.renewal : null;
+  const previewFeatureLabels = useMemo(
+    () => (previewPlan ? planFeatures(previewPlan).map((feature) => feature.label) : []),
+    [previewPlan],
+  );
 
   const planContactDraft = (plan: SubscriptionPlan): ContactDraft => {
     const pricing = pricesForInterval(plan, selectedInterval);
@@ -373,6 +481,7 @@ export default function PremiumPage() {
               const renewal = prices.initial ? prices.renewal : null;
               const features = planFeatures(plan);
               const isCurrent = currentCode === plan.code;
+              const isFreePlan = plan.code.toLowerCase() === "free";
               const canRequest =
                 (isCurrent && selectedAddonCodes.length > 0) ||
                 prices.quoteOnly ||
@@ -385,14 +494,32 @@ export default function PremiumPage() {
                   key={String(plan.id)}
                   className={cn(
                     "relative flex h-full min-h-[640px] flex-col overflow-hidden transition-shadow hover:shadow-lg",
+                    !isFreePlan && "cursor-pointer focus-within:ring-2 focus-within:ring-primary/30",
                     isCurrent && "border-2 border-primary shadow-md shadow-primary/5",
                   )}
+                  role={isFreePlan ? undefined : "button"}
+                  tabIndex={isFreePlan ? -1 : 0}
+                  onClick={() => {
+                    if (!isFreePlan) {
+                      setPreviewPlanCode(plan.code);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (!isFreePlan && (event.key === "Enter" || event.key === " ")) {
+                      event.preventDefault();
+                      setPreviewPlanCode(plan.code);
+                    }
+                  }}
                 >
-                  {isCurrent ? (
-                    <div className="shrink-0 bg-primary px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest text-primary-foreground">
-                      Current plan
-                    </div>
-                  ) : null}
+                  <div
+                    className={cn(
+                      "shrink-0 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest",
+                      isCurrent ? "bg-primary text-primary-foreground" : "invisible",
+                    )}
+                    aria-hidden={!isCurrent}
+                  >
+                    Current plan
+                  </div>
                   <CardHeader className="shrink-0 space-y-1.5 pb-3 pt-5">
                     <CardTitle className="flex items-center justify-between gap-3 text-xl">
                       <span className="truncate">{plan.name}</span>
@@ -405,16 +532,24 @@ export default function PremiumPage() {
                     ) : null}
                   </CardHeader>
                   <CardContent className="flex flex-1 flex-col gap-5 pt-0">
-                    <div className="flex min-h-[148px] shrink-0 flex-col justify-between rounded-2xl border bg-muted/20 p-4">
+                    <div
+                      className="flex min-h-[148px] shrink-0 flex-col justify-between rounded-2xl border bg-muted/20 p-4"
+                    >
                       {prices.quoteOnly ? (
                         <>
                           <div>
                             <p className="text-2xl font-black">Let&apos;s chat</p>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              Pricing is prepared for your contract.
+                              Custom - {intervalLabel(prices.billingIntervalMonths)}
                             </p>
                           </div>
-                          <p className="mt-3 text-[11px] text-muted-foreground">Custom contract pricing</p>
+                          <div className="mt-3 min-h-[52px] border-t pt-3 text-sm">
+                            <span className="font-semibold">Renewal: On request</span>
+                            <span className="ml-1 text-muted-foreground">
+                              per {intervalLabel(prices.billingIntervalMonths).toLowerCase()}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-muted-foreground">Tax and terms defined in contract</p>
                         </>
                       ) : primaryPrice ? (
                         <>
@@ -457,44 +592,13 @@ export default function PremiumPage() {
                       )}
                     </div>
 
-                    <div
-                      className={cn(
-                        "shrink-0 space-y-3 overscroll-contain pr-1",
-                        features.length > 10 && "overflow-y-auto",
-                      )}
-                      style={
-                        features.length > 10
-                          ? { maxHeight: "calc(1.25rem * 10 + 0.75rem * 9)" }
-                          : undefined
-                      }
-                    >
-                      {features.length ? (
-                        features.map((feature, index) => (
-                          <div
-                            key={`${feature.label}-${index}`}
-                            className="flex h-5 items-center gap-2.5 text-sm leading-5"
-                          >
-                            {feature.included ? (
-                              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                            ) : (
-                              <XCircle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-                            )}
-                            <span
-                              title={feature.label}
-                              className={cn("truncate", !feature.included && "text-muted-foreground")}
-                            >
-                              {feature.label}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          Detailed entitlements are being prepared.
-                        </p>
-                      )}
-                    </div>
+                    <PlanFeatureList features={features} />
 
-                    <div className="mt-auto flex shrink-0 flex-col gap-2">
+                    <div
+                      className="mt-auto flex shrink-0 flex-col gap-2"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
                       <Button
                         className="w-full"
                         variant={isCurrent ? "outline" : "default"}
@@ -523,17 +627,18 @@ export default function PremiumPage() {
                                 ? "Request quote"
                                 : `Request ${plan.name}`}
                       </Button>
-                      {showContact ? (
-                        <Button
-                          type="button"
-                          className="w-full"
-                          variant="outline"
-                          onClick={() => openContact(planContactDraft(plan))}
-                        >
-                          <MessageSquare className="mr-2 h-4 w-4" />
-                          Contact Yummy (optional)
-                        </Button>
-                      ) : null}
+                      <Button
+                        type="button"
+                        className={cn("w-full", !showContact && "invisible pointer-events-none")}
+                        variant="outline"
+                        aria-hidden={!showContact}
+                        tabIndex={showContact ? 0 : -1}
+                        disabled={!showContact}
+                        onClick={() => openContact(planContactDraft(plan))}
+                      >
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Contact Yummy (optional)
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -780,6 +885,51 @@ export default function PremiumPage() {
               </Button>
             )}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={previewPlanCode !== null}
+        onOpenChange={(open) => {
+          if (!open) setPreviewPlanCode(null);
+        }}
+      >
+        <DialogContent className="w-[78vw] max-w-2xl h-[calc(100vh-40px)] max-h-[calc(100vh-40px)] overflow-hidden p-2 sm:w-[76vw] sm:h-[calc(100vh-48px)] sm:max-h-[calc(100vh-48px)] sm:p-3">
+          {previewPlan && previewPrices ? (
+            <FUIPricingSectionWithOnePlan
+              className="h-full"
+              plan={{
+                name: previewPlan.name,
+                desc: previewPlan.current_version?.subtitle || previewPlan.description || "Plan details",
+                priceLabel: previewPrices.quoteOnly
+                  ? "Let's chat"
+                  : previewPrimaryPrice
+                    ? formatPrice(previewPrimaryPrice.amount, previewPrimaryPrice.currency)
+                    : "N/A",
+                periodLabel: previewPrices.quoteOnly
+                  ? `Custom - ${intervalLabel(previewPrices.billingIntervalMonths)}`
+                  : previewPrimaryPrice
+                    ? `${priceTypeLabel(previewPrimaryPrice)} - ${intervalLabel(previewPrices.billingIntervalMonths)}`
+                    : "Not offered for this billing cycle",
+                renewalLabel: previewPrices.quoteOnly
+                  ? `Renewal: On request per ${intervalLabel(previewPrices.billingIntervalMonths).toLowerCase()}`
+                  : previewRenewal
+                    ? `Renewal: ${formatPrice(previewRenewal.amount, previewRenewal.currency)} per ${intervalLabel(previewPrices.billingIntervalMonths).toLowerCase()}`
+                    : "No separate renewal price",
+                noteLabel: previewPrices.quoteOnly
+                  ? "Tax and terms defined in contract"
+                  : previewPrimaryPrice
+                    ? `Tax ${previewPrimaryPrice.tax_inclusive ? "included" : "not included"}`
+                    : "Choose another period",
+                ctaLabel: previewPrices.quoteOnly ? "Request quote" : `Request ${previewPlan.name}`,
+                onCtaClick: () => {
+                  setPreviewPlanCode(null);
+                  void handlePlanRequest(previewPlan);
+                },
+                features: previewFeatureLabels,
+              }}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>
