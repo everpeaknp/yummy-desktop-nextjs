@@ -4,16 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import {
   AlertCircle,
+  ArrowRight,
   CheckCircle2,
-  Copy,
   Crown,
-  ExternalLink,
   FileText,
   Loader2,
   Mail,
   MessageSquare,
   RefreshCw,
   ShieldCheck,
+  User,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -26,10 +26,11 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import FUIPricingSectionWithOnePlan from "@/components/ui/colorful-pricing";
 import { UsageIndicator } from "@/components/subscription/usage-indicator";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -71,6 +72,12 @@ function gmailComposeHref(draft: ContactDraft): string {
 function contactClipboardText(draft: ContactDraft): string {
   return `To: ${supportEmail}\nSubject: ${draft.subject}\n\n${draft.message}`;
 }
+
+type ContactFormState = {
+  fullName: string;
+  emailAddress: string;
+  message: string;
+};
 
 function intervalLabel(months: number | null): string {
   if (months == null) return "No fixed term";
@@ -226,6 +233,11 @@ export default function PremiumPage() {
   const [savedRequestPlan, setSavedRequestPlan] = useState<string | null>(null);
   const [selectedAddonCodes, setSelectedAddonCodes] = useState<string[]>([]);
   const [contactDraft, setContactDraft] = useState<ContactDraft | null>(null);
+  const [contactForm, setContactForm] = useState<ContactFormState>({
+    fullName: "",
+    emailAddress: "",
+    message: "",
+  });
   const [previewPlanCode, setPreviewPlanCode] = useState<string | null>(null);
 
   useEffect(() => {
@@ -293,16 +305,45 @@ export default function PremiumPage() {
       return;
     }
     setContactDraft(draft);
+    setContactForm({
+      fullName: restaurant?.name || "",
+      emailAddress: "",
+      message: draft.message,
+    });
   };
 
   const copyContactDetails = async () => {
     if (!contactDraft) return;
+    const subject = contactDraft.subject || "Yummy plan support";
+    const message = [
+      `Name: ${contactForm.fullName || "Not provided"}`,
+      `Email: ${contactForm.emailAddress || "Not provided"}`,
+      "",
+      contactForm.message || contactDraft.message,
+    ].join("\n");
     try {
-      await navigator.clipboard.writeText(contactClipboardText(contactDraft));
+      await navigator.clipboard.writeText(contactClipboardText({ subject, message }));
       toast.success("Contact details copied.");
     } catch {
       toast.error(`Unable to copy automatically. Email us at ${supportEmail}.`);
     }
+  };
+
+  const submitContactForm = () => {
+    if (!contactDraft) return;
+    const subject = contactDraft.subject || "Yummy plan support";
+    const message = [
+      `Name: ${contactForm.fullName || "Not provided"}`,
+      `Email: ${contactForm.emailAddress || "Not provided"}`,
+      "",
+      contactForm.message || contactDraft.message,
+    ].join("\n");
+
+    window.open(
+      gmailComposeHref({ subject, message }),
+      "_blank",
+      "noopener,noreferrer",
+    );
   };
 
   const handlePlanRequest = async (plan: SubscriptionPlan) => {
@@ -835,56 +876,75 @@ export default function PremiumPage() {
           if (!open) setContactDraft(null);
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Contact Yummy</DialogTitle>
+            <div className="inline-flex w-fit rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              Contact Yummy
+            </div>
+            <DialogTitle className="text-3xl font-black tracking-tight">Let&apos;s Get In Touch.</DialogTitle>
             <DialogDescription>
-              Your plan request is already saved. Use the prepared email below
-              if you would also like to contact the Yummy team directly.
+              <span className="block text-foreground/90">
+                Your plan request is already saved. Use the prepared email below if you would also like to contact the Yummy team directly.
+              </span>
+              <span className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <Mail className="h-4 w-4" />
+                <a href={`mailto:${supportEmail}`} className="font-semibold text-primary hover:underline">
+                  {supportEmail}
+                </a>
+              </span>
             </DialogDescription>
           </DialogHeader>
 
           {contactDraft && (
-            <div className="space-y-4">
-              <div className="rounded-xl border bg-muted/30 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Send to
-                </p>
-                <p className="mt-1 font-semibold">{supportEmail}</p>
-              </div>
+            <div className="space-y-5">
               <div className="space-y-2">
-                <p className="text-sm font-semibold">Subject</p>
-                <div className="rounded-lg border bg-background px-3 py-2 text-sm">
-                  {contactDraft.subject}
+                <p className="text-sm font-semibold">Full Name</p>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={contactForm.fullName}
+                    onChange={(event) => setContactForm((current) => ({ ...current, fullName: event.target.value }))}
+                    placeholder="Enter your full name"
+                    className="h-12 rounded-full pl-11"
+                  />
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Email Address</p>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="email"
+                    value={contactForm.emailAddress}
+                    onChange={(event) => setContactForm((current) => ({ ...current, emailAddress: event.target.value }))}
+                    placeholder="Enter your email address"
+                    className="h-12 rounded-full pl-11"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <p className="text-sm font-semibold">Message</p>
-                <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border bg-background px-3 py-2 text-sm">
-                  {contactDraft.message}
-                </div>
+                <Textarea
+                  value={contactForm.message}
+                  onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))}
+                  placeholder="Enter your message"
+                  className="min-h-36 rounded-2xl"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={copyContactDetails}>
+                  Copy details
+                </Button>
+                <Button type="button" className="w-full rounded-full sm:flex-1" onClick={submitContactForm}>
+                  Submit Form
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
               </div>
             </div>
           )}
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={copyContactDetails}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copy details
-            </Button>
-            {contactDraft && (
-              <Button asChild>
-                <a
-                  href={gmailComposeHref(contactDraft)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Open Gmail
-                </a>
-              </Button>
-            )}
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
