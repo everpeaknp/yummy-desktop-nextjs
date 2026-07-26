@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import {
   AlertCircle,
@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import FUIPricingSectionWithOnePlan from "@/components/ui/colorful-pricing";
 import { UsageIndicator } from "@/components/subscription/usage-indicator";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
@@ -51,7 +50,6 @@ import { cn } from "@/lib/utils";
 const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "yummyever.np@gmail.com";
 const supportWhatsapp = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP || "").replace(/\D/g, "");
 const visibleFeatureLimit = 10;
-const featureRowHeight = 32;
 
 type ContactDraft = {
   subject: string;
@@ -123,33 +121,10 @@ type PlanFeatureItem = {
   included: boolean;
 };
 
-function PlanFeatureList({ features }: { features: PlanFeatureItem[] }) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const extraFeatures = Math.max(features.length - visibleFeatureLimit, 0);
-  const isScrollable = extraFeatures > 0;
-  const [remainingCount, setRemainingCount] = useState(extraFeatures);
-
-  const handleScroll = useCallback(() => {
-    const container = scrollRef.current;
-    if (!container || !isScrollable) {
-      setRemainingCount(0);
-      return;
-    }
-
-    const hiddenPixels = Math.max(
-      container.scrollHeight - container.clientHeight - container.scrollTop,
-      0,
-    );
-    const rowsRemaining = Math.ceil(hiddenPixels / featureRowHeight);
-    setRemainingCount(Math.min(extraFeatures, rowsRemaining));
-  }, [extraFeatures, isScrollable]);
-
-  useEffect(() => {
-    setRemainingCount(extraFeatures);
-    if (isScrollable) {
-      requestAnimationFrame(handleScroll);
-    }
-  }, [extraFeatures, handleScroll, isScrollable]);
+function PlanFeatureList({ features, planCode, onShowMore }: { features: PlanFeatureItem[]; planCode: string; onShowMore: (planCode: string) => void }) {
+  const visibleFeatures = features.slice(0, visibleFeatureLimit);
+  const hiddenFeatures = features.slice(visibleFeatureLimit);
+  const hasMoreFeatures = hiddenFeatures.length > 0;
 
   if (!features.length) {
     return (
@@ -161,24 +136,8 @@ function PlanFeatureList({ features }: { features: PlanFeatureItem[] }) {
 
   return (
     <div className="shrink-0 space-y-3">
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className={cn(
-          "space-y-3 overscroll-contain [&::-webkit-scrollbar]:w-[1px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-muted-foreground/5 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/15",
-          isScrollable && "overflow-y-auto",
-        )}
-        style={
-          isScrollable
-            ? { 
-                maxHeight: `calc(1.25rem * ${visibleFeatureLimit} + 0.75rem * ${visibleFeatureLimit - 1})`,
-                scrollbarWidth: 'thin',
-                scrollbarColor: 'hsl(var(--muted-foreground) / 0.05) transparent'
-              }
-            : undefined
-        }
-      >
-        {features.map((feature, index) => (
+      <div className="space-y-3">
+        {visibleFeatures.map((feature, index) => (
           <div
             key={`${feature.label}-${index}`}
             className="flex h-5 items-center gap-2.5 text-sm leading-5"
@@ -198,15 +157,17 @@ function PlanFeatureList({ features }: { features: PlanFeatureItem[] }) {
         ))}
       </div>
 
-      {isScrollable ? (
-        <div className="flex h-5 items-center gap-2.5 text-sm leading-5">
+      {hasMoreFeatures ? (
+        <button
+          type="button"
+          onClick={() => onShowMore(planCode)}
+          className="flex h-5 w-full items-center gap-2.5 text-sm leading-5 text-left transition-colors hover:text-primary"
+        >
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
           <span className="truncate">
-            {remainingCount > 0
-              ? `+${remainingCount} more included capabilities`
-              : "All features shown"}
+            +{hiddenFeatures.length} more included capabilities
           </span>
-        </div>
+        </button>
       ) : null}
     </div>
   );
@@ -242,7 +203,7 @@ export default function PremiumPage() {
     emailAddress: "",
     message: "",
   });
-  const [previewPlanCode, setPreviewPlanCode] = useState<string | null>(null);
+  const [featureListPlan, setFeatureListPlan] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshAll({ restaurantId: restaurant?.id ?? null });
@@ -268,20 +229,6 @@ export default function PremiumPage() {
   const catalogUpdated = formatCatalogVersion(catalog?.catalog_version);
   const planVersion = current?.subscription?.plan_version;
   const activeAddons = current?.addons ?? [];
-  const previewPlan = useMemo(
-    () => catalog?.plans.find((plan) => plan.code === previewPlanCode) ?? null,
-    [catalog?.plans, previewPlanCode],
-  );
-  const previewPrices = useMemo(
-    () => (previewPlan ? pricesForInterval(previewPlan, selectedInterval) : null),
-    [previewPlan, selectedInterval],
-  );
-  const previewPrimaryPrice = previewPrices ? previewPrices.initial ?? previewPrices.renewal : null;
-  const previewRenewal = previewPrices?.initial ? previewPrices.renewal : null;
-  const previewFeatureLabels = useMemo(
-    () => (previewPlan ? planFeatures(previewPlan).map((feature) => feature.label) : []),
-    [previewPlan],
-  );
 
   const planContactDraft = (plan: SubscriptionPlan): ContactDraft => {
     const pricing = pricesForInterval(plan, selectedInterval);
@@ -539,22 +486,8 @@ export default function PremiumPage() {
                   key={String(plan.id)}
                   className={cn(
                     "relative flex h-full min-h-[640px] flex-col overflow-hidden border-border/50 transition-all duration-200 hover:border-border",
-                    !isFreePlan && "cursor-pointer focus-within:ring-2 focus-within:ring-primary/30",
                     isCurrent && "border-2 border-primary",
                   )}
-                  role={isFreePlan ? undefined : "button"}
-                  tabIndex={isFreePlan ? -1 : 0}
-                  onClick={() => {
-                    if (!isFreePlan) {
-                      setPreviewPlanCode(plan.code);
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (!isFreePlan && (event.key === "Enter" || event.key === " ")) {
-                      event.preventDefault();
-                      setPreviewPlanCode(plan.code);
-                    }
-                  }}
                 >
                   <div
                     className={cn(
@@ -637,7 +570,7 @@ export default function PremiumPage() {
                       )}
                     </div>
 
-                    <PlanFeatureList features={features} />
+                    <PlanFeatureList features={features} planCode={plan.code} onShowMore={setFeatureListPlan} />
 
                     <div
                       className="mt-auto flex shrink-0 flex-col gap-2"
@@ -1029,47 +962,151 @@ export default function PremiumPage() {
       </Dialog>
 
       <Dialog
-        open={previewPlanCode !== null}
+        open={contactDraft !== null}
         onOpenChange={(open) => {
-          if (!open) setPreviewPlanCode(null);
+          if (!open) setContactDraft(null);
         }}
       >
-        <DialogContent className="w-[78vw] max-w-2xl h-[calc(100vh-40px)] max-h-[calc(100vh-40px)] overflow-hidden p-2 sm:w-[76vw] sm:h-[calc(100vh-48px)] sm:max-h-[calc(100vh-48px)] sm:p-3">
-          {previewPlan && previewPrices ? (
-            <FUIPricingSectionWithOnePlan
-              className="h-full"
-              plan={{
-                name: previewPlan.name,
-                desc: previewPlan.current_version?.subtitle || previewPlan.description || "Plan details",
-                priceLabel: previewPrices.quoteOnly
-                  ? "Let's chat"
-                  : previewPrimaryPrice
-                    ? formatPrice(previewPrimaryPrice.amount, previewPrimaryPrice.currency)
-                    : "N/A",
-                periodLabel: previewPrices.quoteOnly
-                  ? `Custom - ${intervalLabel(previewPrices.billingIntervalMonths)}`
-                  : previewPrimaryPrice
-                    ? `${priceTypeLabel(previewPrimaryPrice)} - ${intervalLabel(previewPrices.billingIntervalMonths)}`
-                    : "Not offered for this billing cycle",
-                renewalLabel: previewPrices.quoteOnly
-                  ? `Renewal: On request per ${intervalLabel(previewPrices.billingIntervalMonths).toLowerCase()}`
-                  : previewRenewal
-                    ? `Renewal: ${formatPrice(previewRenewal.amount, previewRenewal.currency)} per ${intervalLabel(previewPrices.billingIntervalMonths).toLowerCase()}`
-                    : "No separate renewal price",
-                noteLabel: previewPrices.quoteOnly
-                  ? "Tax and terms defined in contract"
-                  : previewPrimaryPrice
-                    ? `Tax ${previewPrimaryPrice.tax_inclusive ? "included" : "not included"}`
-                    : "Choose another period",
-                ctaLabel: previewPrices.quoteOnly ? "Request quote" : `Request ${previewPlan.name}`,
-                onCtaClick: () => {
-                  setPreviewPlanCode(null);
-                  void handlePlanRequest(previewPlan);
-                },
-                features: previewFeatureLabels,
-              }}
-            />
-          ) : null}
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <div className="inline-flex w-fit rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              Contact Yummy
+            </div>
+            <DialogTitle className="text-3xl font-black tracking-tight">Let&apos;s Get In Touch.</DialogTitle>
+            <DialogDescription>
+              <span className="block text-foreground/90">
+                Your plan request is already saved. Use the prepared email below if you would also like to contact the Yummy team directly.
+              </span>
+              <span className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <Mail className="h-4 w-4" />
+                <a href={`mailto:${supportEmail}`} className="font-semibold text-primary hover:underline">
+                  {supportEmail}
+                </a>
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          {contactDraft && (
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Full Name</p>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={contactForm.fullName}
+                    onChange={(event) => setContactForm((current) => ({ ...current, fullName: event.target.value }))}
+                    placeholder="Enter your full name"
+                    className="h-12 rounded-full pl-11"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Email Address</p>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="email"
+                    value={contactForm.emailAddress}
+                    onChange={(event) => setContactForm((current) => ({ ...current, emailAddress: event.target.value }))}
+                    placeholder="Enter your email address"
+                    className="h-12 rounded-full pl-11"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Message</p>
+                <Textarea
+                  value={contactForm.message}
+                  onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))}
+                  placeholder="Enter your message"
+                  className="min-h-36 rounded-2xl"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={copyContactDetails}>
+                  Copy details
+                </Button>
+                <Button type="button" className="w-full rounded-full sm:flex-1" onClick={submitContactForm}>
+                  Submit Form
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={featureListPlan !== null}
+        onOpenChange={(open) => {
+          if (!open) setFeatureListPlan(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-6xl">
+          <DialogHeader>
+            <div className="flex items-start justify-between gap-6">
+              <div className="flex-1">
+                <DialogTitle className="text-2xl font-black">
+                  {catalog?.plans.find((p) => p.code === featureListPlan)?.name} Features
+                </DialogTitle>
+                <DialogDescription>
+                  Complete list of included capabilities
+                </DialogDescription>
+              </div>
+              {featureListPlan && (() => {
+                const plan = catalog?.plans.find((p) => p.code === featureListPlan);
+                if (!plan) return null;
+                const prices = pricesForInterval(plan, selectedInterval);
+                const primaryPrice = prices.initial ?? prices.renewal;
+                return (
+                  <div className="shrink-0 text-right">
+                    {prices.quoteOnly ? (
+                      <p className="text-4xl font-black tracking-tight">Custom quote</p>
+                    ) : primaryPrice ? (
+                      <p className="text-right leading-tight">
+                        <span className="text-4xl font-black tracking-tight">
+                          {formatPrice(primaryPrice.amount, primaryPrice.currency)}
+                        </span>
+                        <span className="ml-2 text-sm font-medium text-muted-foreground">
+                          - {priceTypeLabel(primaryPrice)} {intervalLabel(prices.billingIntervalMonths)}
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="text-4xl font-black tracking-tight">N/A</p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </DialogHeader>
+          <div
+            className={cn(
+              "grid gap-3",
+              featureListPlan && planFeatures(catalog?.plans.find((p) => p.code === featureListPlan)!).length > 20
+                ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                : "grid-cols-1 sm:grid-cols-2"
+            )}
+          >
+            {featureListPlan &&
+              planFeatures(catalog?.plans.find((p) => p.code === featureListPlan)!).map((feature, index) => (
+                <div
+                  key={`${feature.label}-${index}`}
+                  className="flex items-center gap-2.5 text-sm"
+                >
+                  {feature.included ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                  ) : (
+                    <XCircle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                  )}
+                  <span className={cn(!feature.included && "text-muted-foreground")}>
+                    {feature.label}
+                  </span>
+                </div>
+              ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
