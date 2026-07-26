@@ -40,7 +40,13 @@ import {
 } from "lucide-react";
 import type { ReceiptData, OrderItem, OrderPayment } from "@/types/order";
 import { ThermalReceipt } from "@/components/receipts/thermal-receipt";
+import { FiscalReceipt } from "@/components/receipts/fiscal-receipt";
 import { RestaurantApis } from "@/lib/api/endpoints";
+import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
+import { useOrderFiscalDocument } from "@/hooks/use-order-fiscal-document";
+import { useFiscalPrint } from "@/hooks/use-fiscal-print";
+import { buildFiscalReceiptRawPayload } from "@/lib/fiscal/receipt-print";
+import { getRecordedOrderDiscount } from "@/lib/order-totals";
 
 function formatCurrency(amount: number) {
   return `Rs. ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -108,7 +114,7 @@ function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: 
   const tax = Number(order?.tax_total ?? 0);
   const total = Number(order?.grand_total ?? 0);
   const serviceCharge = Number(order?.service_charge ?? 0);
-  const computedDiscount = Math.max(0, Number((subtotal + tax + serviceCharge - total).toFixed(2)));
+  const computedDiscount = getRecordedOrderDiscount(order);
   const loyaltyPointsRedeemed =
     Number(order?.loyalty_points_redeemed ?? order?.redeemed_points ?? order?.points_redeemed ?? 0) || 0;
   const discountReason =
@@ -194,6 +200,31 @@ function getReceiptNetworkTarget(
   return null;
 }
 
+type FiscalPrintDestination =
+  | {
+      kind: "network";
+      host: string;
+      port: number;
+      printerName: string;
+    }
+  | {
+      kind: "silent";
+      printerName: string;
+    }
+  | {
+      kind: "browser";
+      printerName: string;
+    };
+
+function waitForFiscalReceiptRender(): Promise<void> {
+  if (typeof requestAnimationFrame !== "function") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
 export default function ReceiptPage() {
   const params = useParams() as { id?: string | string[] } | null;
   const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
@@ -235,6 +266,27 @@ export default function ReceiptPage() {
   const autoPrintedOrderRef = useRef<number | null>(null);
   const suppressAutoPrintFallbackRef = useRef(false);
   const receiptRef = useRef<HTMLDivElement>(null);
+  const {
+    isActiveVatEbilling,
+    loading: fiscalProfileLoading,
+    error: fiscalProfileError,
+    refresh: refreshFiscalProfile,
+  } = useFiscalProfile(Boolean(orderId));
+  const {
+    document: fiscalDocument,
+    loading: fiscalDocumentLoading,
+    error: fiscalDocumentError,
+    refresh: refreshFiscalDocument,
+  } = useOrderFiscalDocument({
+    orderId,
+    enabled: isActiveVatEbilling && Boolean(receipt),
+  });
+  const {
+    print: printFiscalDocument,
+    printing: fiscalPrinting,
+    error: fiscalPrintError,
+    lastAuthorization,
+  } = useFiscalPrint(fiscalDocument);
 
   // Reset print guard when navigating to a different receipt id.
   useEffect(() => {
@@ -383,18 +435,207 @@ export default function ReceiptPage() {
     setPrinted(true);
   }, [receipt, template, orderId, tryElectronNetworkReceiptPrint, openPrintDialog]);
 
-  // Auto-print once on open — no artificial delay; network uses receipt.printer_config when available.
+  const resolveFiscalPrintDestination =
+    useCallback(async (): Promise<FiscalPrintDestination> => {
+      if (!receipt) {
+        throw new Error("Receipt data is not ready.");
+      }
+
+      const winAny = typeof window !== "undefined" ? (window as any) : null;
+      const directNetworkTarget = getReceiptNetworkTarget(receipt);
+      const directPrinterName =
+        String(receipt.printer_config?.name || "").trim() ||
+        "Configured receipt printer";
+
+      if (directNetworkTarget && winAny?.electronAPI?.printNetworkRaw) {
+        return {
+          kind: "network",
+          ...directNetworkTarget,
+          printerName: directPrinterName,
+        };
+      }
+
+      if (
+        receipt.printer_config?.name?.trim() &&
+        winAny?.electronAPI?.printSilent
+      ) {
+        return {
+          kind: "silent",
+          printerName: receipt.printer_config.name.trim(),
+        };
+      }
+
+      const restaurantId = receipt.restaurant?.id || user?.restaurant_id;
+      if (
+        restaurantId &&
+        (winAny?.electronAPI?.printNetworkRaw ||
+          winAny?.electronAPI?.printSilent)
+      ) {
+        try {
+          const response = await apiClient.get(PrinterApis.list(restaurantId));
+          const assigned = resolveReceiptAssignedPrinter(
+            response?.data?.data || [],
+            receipt.restaurant,
+          );
+          if (assigned) {
+            const printerName =
+              String(assigned?.name || assigned?.display_name || "").trim() ||
+              "Assigned receipt printer";
+            const host = String(
+              assigned?.connection_config?.ip_address ||
+                assigned?.address ||
+                "",
+            ).trim();
+            const port = Number(assigned?.connection_config?.port || 9100);
+            const printerType = String(
+              assigned?.printer_type || "",
+            ).toLowerCase();
+            const isNetwork =
+              printerType.includes("network") ||
+              /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+
+            if (isNetwork && host && winAny.electronAPI.printNetworkRaw) {
+              return {
+                kind: "network",
+                host,
+                port,
+                printerName,
+              };
+            }
+            if (winAny.electronAPI.printSilent) {
+              return { kind: "silent", printerName };
+            }
+          }
+        } catch (printerError) {
+          console.warn(
+            "[ReceiptPage] Could not resolve the assigned fiscal printer",
+            printerError,
+          );
+        }
+      }
+
+      return {
+        kind: "browser",
+        printerName: "Browser print dialog",
+      };
+    }, [receipt, user?.restaurant_id]);
+
+  const runFiscalPrint = useCallback(async () => {
+    if (!receipt || !fiscalDocument) {
+      throw new Error(
+        fiscalDocumentError || "The immutable fiscal tax invoice is not ready.",
+      );
+    }
+
+    const destination = await resolveFiscalPrintDestination();
+    const winAny = typeof window !== "undefined" ? (window as any) : null;
+    const authorization = await printFiscalDocument({
+      authorizationInput: {
+        device_identifier: "yummy-web-receipt-route",
+        printer_name: destination.printerName,
+      },
+      dispatch: async (printAuthorization) => {
+        if (destination.kind === "network") {
+          const result = await winAny?.electronAPI?.printNetworkRaw({
+            host: destination.host,
+            port: destination.port,
+            payload: buildFiscalReceiptRawPayload(printAuthorization),
+            timeoutMs: 2000,
+          });
+          if (!result?.success) {
+            throw new Error(
+              result?.message || "The fiscal invoice could not be printed.",
+            );
+          }
+          return;
+        }
+
+        await waitForFiscalReceiptRender();
+        if (destination.kind === "silent") {
+          const result = await winAny?.electronAPI?.printSilent({
+            printerName: destination.printerName,
+          });
+          if (!result?.success) {
+            throw new Error(
+              result?.error || "The fiscal invoice could not be printed.",
+            );
+          }
+          return;
+        }
+
+        window.print();
+      },
+    });
+
+    setPrinted(true);
+    return authorization;
+  }, [
+    fiscalDocument,
+    fiscalDocumentError,
+    printFiscalDocument,
+    receipt,
+    resolveFiscalPrintDestination,
+  ]);
+
+  // Active VAT e-billing waits for an immutable fiscal document and a
+  // server-issued print authorization. Other tenants keep legacy auto-print.
   useEffect(() => {
     if (!receipt || !template) return;
+    if (fiscalProfileLoading || fiscalProfileError) return;
     if (autoPrintedOrderRef.current === orderId) return;
     if (receipt.should_auto_print === false) return;
+
+    if (isActiveVatEbilling) {
+      if (fiscalDocumentLoading || !fiscalDocument || fiscalDocumentError) {
+        return;
+      }
+      autoPrintedOrderRef.current = orderId;
+      void runFiscalPrint().catch((printError) => {
+        toast.error(
+          printError instanceof Error
+            ? printError.message
+            : "Fiscal printing failed.",
+        );
+      });
+      return;
+    }
+
     autoPrintedOrderRef.current = orderId;
-
     void runAutoPrint();
-  }, [receipt, template, orderId, runAutoPrint]);
+  }, [
+    fiscalDocument,
+    fiscalDocumentError,
+    fiscalDocumentLoading,
+    fiscalProfileError,
+    fiscalProfileLoading,
+    isActiveVatEbilling,
+    orderId,
+    receipt,
+    runAutoPrint,
+    runFiscalPrint,
+    template,
+  ]);
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     suppressAutoPrintFallbackRef.current = true;
+    if (fiscalProfileLoading) return;
+    if (fiscalProfileError) {
+      toast.error(fiscalProfileError);
+      return;
+    }
+    if (isActiveVatEbilling) {
+      try {
+        await runFiscalPrint();
+        toast.success("Fiscal print result recorded.");
+      } catch (printError) {
+        toast.error(
+          printError instanceof Error
+            ? printError.message
+            : "Fiscal printing failed.",
+        );
+      }
+      return;
+    }
     openPrintDialog();
     setPrinted(true);
   };
@@ -516,7 +757,7 @@ export default function ReceiptPage() {
   };
 
   // ── Loading ──
-  if (loading) {
+  if (loading || fiscalProfileLoading) {
     return (
       <div className="flex flex-col gap-6 max-w-3xl mx-auto">
         <div className="flex items-center gap-4">
@@ -537,6 +778,55 @@ export default function ReceiptPage() {
         <Button variant="outline" onClick={fetchData}>
           <RefreshCw className="h-4 w-4 mr-2" /> Retry
         </Button>
+      </div>
+    );
+  }
+
+  if (fiscalProfileError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+        <AlertCircle className="h-12 w-12 text-destructive" />
+        <p className="text-destructive font-medium">{fiscalProfileError}</p>
+        <Button
+          variant="outline"
+          onClick={() =>
+            void Promise.all([fetchData(), refreshFiscalProfile()])
+          }
+        >
+          <RefreshCw className="h-4 w-4 mr-2" /> Retry
+        </Button>
+      </div>
+    );
+  }
+
+  if (isActiveVatEbilling && (fiscalDocumentLoading || !fiscalDocument)) {
+    if (fiscalDocumentError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-[60vh] gap-4 px-6 text-center">
+          <AlertCircle className="h-12 w-12 text-destructive" />
+          <p className="max-w-lg text-destructive font-medium">
+            {fiscalDocumentError}
+          </p>
+          <p className="max-w-lg text-sm text-muted-foreground">
+            VAT e-billing is active, so the mutable legacy receipt cannot be
+            printed as a fallback.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => void refreshFiscalDocument()}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" /> Retry fiscal invoice
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col gap-6 max-w-3xl mx-auto">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-10 rounded-xl" />
+          <Skeleton className="h-7 w-48" />
+        </div>
+        <Skeleton className="h-[600px] rounded-xl" />
       </div>
     );
   }
@@ -639,8 +929,18 @@ export default function ReceiptPage() {
             <Button variant="outline" size="sm" onClick={handleShare} className="gap-2 rounded-xl" id="share-btn">
               <Share2 className="h-3.5 w-3.5" /> Share
             </Button>
-            <Button size="sm" onClick={handlePrint} className="gap-2 rounded-xl shadow-lg">
-              <Printer className="h-3.5 w-3.5" /> Print
+            <Button
+              size="sm"
+              onClick={() => void handlePrint()}
+              disabled={fiscalPrinting}
+              className="gap-2 rounded-xl shadow-lg"
+            >
+              {fiscalPrinting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Printer className="h-3.5 w-3.5" />
+              )}
+              {isActiveVatEbilling ? "Print Tax Invoice" : "Print"}
             </Button>
           </div>
         </div>
@@ -660,10 +960,27 @@ export default function ReceiptPage() {
 
         {/* ── Receipt Rendering (Thermal Slip) ── */}
         <div className="flex-1 flex items-start justify-center p-4 bg-muted/30 overflow-y-auto">
-             <div ref={receiptRef} id="receipt-printable-wrapper" className="shadow-2xl border border-border/40 bg-white">
-                <ThermalReceipt data={receipt} template={template} />
-             </div>
+          <div
+            ref={receiptRef}
+            id={isActiveVatEbilling ? undefined : "receipt-printable-wrapper"}
+            className="shadow-2xl border border-border/40 bg-white"
+          >
+            {isActiveVatEbilling && fiscalDocument ? (
+              <FiscalReceipt
+                document={lastAuthorization?.document ?? fiscalDocument}
+                copyNumber={lastAuthorization?.copy_number}
+                designation={lastAuthorization?.designation}
+              />
+            ) : (
+              <ThermalReceipt data={receipt} template={template} />
+            )}
+          </div>
         </div>
+        {(fiscalPrintError || fiscalDocumentError) && (
+          <p className="no-print px-4 text-sm text-destructive">
+            {fiscalPrintError || fiscalDocumentError}
+          </p>
+        )}
 
         {/* Bottom Actions (no-print) */}
         <div className="flex flex-col sm:flex-row items-center gap-3 no-print px-4 pb-4">
@@ -705,9 +1022,15 @@ export default function ReceiptPage() {
             <Button
               variant="outline"
               className="flex-1 h-12 gap-2 rounded-xl font-bold"
-              onClick={handlePrint}
+              onClick={() => void handlePrint()}
+              disabled={fiscalPrinting}
             >
-              <Printer className="h-4 w-4" /> Print Again
+              {fiscalPrinting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Printer className="h-4 w-4" />
+              )}
+              {isActiveVatEbilling ? "Print Tax Invoice Again" : "Print Again"}
             </Button>
             <Button
               variant="outline"

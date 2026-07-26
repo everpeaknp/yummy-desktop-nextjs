@@ -53,6 +53,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/hooks/use-preferences";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import { 
     Dialog, 
     DialogContent, 
@@ -348,6 +349,11 @@ export default function AdditionalSettingsPage() {
     const logout = useAuth((s) => s.logout);
     const restaurant = useRestaurant((s) => s.restaurant);
     const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
+    const {
+        profile: fiscalProfile,
+        isActiveVat,
+        loading: fiscalProfileLoading,
+    } = useFiscalProfile(Boolean(user?.restaurant_id));
     const { theme, setTheme } = useTheme();
     const { preferences, updatePreference } = usePreferences();
     const router = useRouter();
@@ -378,7 +384,7 @@ export default function AdditionalSettingsPage() {
     };
 
     const handleToggleTax = async (enabled: boolean) => {
-        if (!restaurant) return;
+        if (!restaurant || isActiveVat || fiscalProfileLoading) return;
         try {
             setIsUpdating(true);
             const response = await apiClient.put(RestaurantApis.update(restaurant.id), {
@@ -659,12 +665,21 @@ export default function AdditionalSettingsPage() {
                         <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
                                 <Label className="text-[10px] font-black tracking-widest uppercase opacity-60 text-emerald-600">Tax Enablement</Label>
-                                <p className="text-sm font-bold tracking-tight">Toggle tax calculations globally.</p>
+                                <p className="text-sm font-bold tracking-tight">
+                                    {isActiveVat
+                                        ? `Locked by the active ${fiscalProfile?.fiscal_billing_mode ?? "VAT"} fiscal profile.`
+                                        : "Toggle tax calculations globally."}
+                                </p>
+                                {isActiveVat && (
+                                    <p className="text-xs text-muted-foreground">
+                                        VAT settings are managed by Yummy&apos;s compliance team.
+                                    </p>
+                                )}
                             </div>
                             <Switch 
-                                checked={restaurant?.tax_enabled}
+                                checked={isActiveVat ? true : restaurant?.tax_enabled}
                                 onCheckedChange={handleToggleTax}
-                                disabled={isUpdating}
+                                disabled={isUpdating || isActiveVat || fiscalProfileLoading}
                             />
                         </div>
                     </div>

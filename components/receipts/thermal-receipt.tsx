@@ -5,6 +5,7 @@ import { ReceiptData } from "@/types/order";
 import { numberToWords } from "@/lib/utils/number-to-words";
 import { QrCode } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getRecordedOrderDiscount } from "@/lib/order-totals";
 
 interface ThermalReceiptProps {
     data: ReceiptData;
@@ -99,10 +100,7 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
         lineHeight: '1.2'
     };
 
-    const computedDiscount = Math.max(
-        0,
-        Number(((order.subtotal || 0) + (order.tax_total || 0) + (order.service_charge || 0) - (order.grand_total || 0)).toFixed(2))
-    );
+    const computedDiscount = getRecordedOrderDiscount(order);
 
     switch (type) {
         case 'header':

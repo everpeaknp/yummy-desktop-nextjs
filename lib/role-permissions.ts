@@ -37,12 +37,12 @@ export function normalizeRole(role?: string | null): UserRole | null {
 
 /**
  * Normalizes a list of role strings to known UserRole values.
- * Custom role names (e.g. "Head Waiter") are dropped from the list — 
+ * Custom role names (e.g. "Head Waiter") are dropped from the list —
  * use `normalizeRolesWithFallback` when you also have a legacy role field.
  */
 export function normalizeRoles(roles?: string[] | null): UserRole[] {
   if (!roles || roles.length === 0) return [];
-  
+
   // Backend sometimes returns concatenated roles like "Waiter + Cashier + Rooms"
   const splitRoles = roles.flatMap(r => {
     if (!r) return [];

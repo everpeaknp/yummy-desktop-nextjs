@@ -33,6 +33,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import { MenuApis, ModifierApis, ItemCategoryApis } from "@/lib/api/endpoints";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ import { ImageService } from "@/services/image-service";
 import { MenuGalleryDialog, MenuGalleryItem } from "@/components/menu/menu-gallery-dialog";
 import { InventoryLinkDialog } from "@/components/menu/inventory-link-dialog";
 import Image from "next/image";
+import type { FiscalTaxCategory } from "@/lib/fiscal/types";
 
 interface MenuItem {
   id: number;
@@ -51,6 +53,9 @@ interface MenuItem {
   item_category_id?: number;
   image?: string;
   modifier_group_ids?: number[];
+  fiscal_code?: string | null;
+  tax_category?: FiscalTaxCategory | null;
+  unit?: string | null;
 }
 
 interface CategoryGroup {
@@ -64,10 +69,12 @@ interface FormData {
   price: string;
   item_category_id: string;
   description: string;
-
   is_price_tax_inclusive: boolean;
   image: string;
   modifier_group_ids: number[];
+  fiscal_code: string;
+  tax_category: "" | FiscalTaxCategory;
+  unit: string;
 }
 
 const emptyForm: FormData = {
@@ -75,10 +82,12 @@ const emptyForm: FormData = {
   price: "",
   item_category_id: "",
   description: "",
-
   is_price_tax_inclusive: true,
   image: "",
   modifier_group_ids: [],
+  fiscal_code: "",
+  tax_category: "",
+  unit: "",
 };
 
 export default function MenuItemsPage() {
@@ -90,6 +99,12 @@ export default function MenuItemsPage() {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const restaurantId = useAuth((s) => s.user?.restaurant_id);
   const restaurant = useRestaurant((s) => s.restaurant);
+  const {
+    profile: fiscalProfile,
+    loading: fiscalProfileLoading,
+  } = useFiscalProfile(Boolean(restaurantId));
+  const requiresFiscalClassification =
+    fiscalProfile?.fiscal_billing_mode === "vat_ebilling";
 
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
@@ -210,10 +225,12 @@ export default function MenuItemsPage() {
       price: String(item.price),
       item_category_id: String(item.item_category_id || ""),
       description: item.description || "",
-
       is_price_tax_inclusive: true,
       image: item.image || "",
       modifier_group_ids: item.modifier_group_ids || [],
+      fiscal_code: item.fiscal_code || "",
+      tax_category: item.tax_category || "",
+      unit: item.unit || "",
     });
     setSelectedFile(null);
     setPreviewUrl(null);
@@ -246,9 +263,25 @@ export default function MenuItemsPage() {
 
   const handleSubmit = async () => {
     if (!restaurantId) return;
+    if (fiscalProfileLoading) {
+      setFormError("Please wait while fiscal requirements are checked.");
+      return;
+    }
     if (!form.name.trim()) { setFormError("Name is required"); return; }
     if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) { setFormError("Valid price is required"); return; }
     if (!form.item_category_id) { setFormError("Category is required"); return; }
+    if (requiresFiscalClassification && !form.fiscal_code.trim()) {
+      setFormError("Fiscal code is required for VAT e-billing.");
+      return;
+    }
+    if (requiresFiscalClassification && !form.tax_category) {
+      setFormError("Choose a VAT tax category for this item.");
+      return;
+    }
+    if (requiresFiscalClassification && !form.unit.trim()) {
+      setFormError("Unit is required for VAT e-billing.");
+      return;
+    }
 
     setSubmitting(true);
     setFormError(null);
@@ -280,6 +313,9 @@ export default function MenuItemsPage() {
         is_price_tax_inclusive: form.is_price_tax_inclusive,
         image: imageUrl || null,
         modifier_group_ids: form.modifier_group_ids,
+        fiscal_code: form.fiscal_code.trim() || null,
+        tax_category: form.tax_category || null,
+        unit: form.unit.trim() || null,
       };
 
       if (editingItem) {
@@ -465,7 +501,7 @@ export default function MenuItemsPage() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingItem ? "Edit Menu Item" : "Add Menu Item"}</DialogTitle>
             <DialogDescription>
@@ -590,6 +626,81 @@ export default function MenuItemsPage() {
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
               />
             </div>
+
+            {fiscalProfile?.fiscal_billing_mode === "vat_ebilling" && (
+              <div className="space-y-4 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold">Fiscal classification</p>
+                    <Badge variant={requiresFiscalClassification ? "warning" : "outline"}>
+                      {requiresFiscalClassification ? "Required" : "Optional"}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    These values are snapshotted by the backend when a VAT invoice is issued.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="fiscal-code">
+                      Fiscal / service code{requiresFiscalClassification ? " *" : ""}
+                    </Label>
+                    <Input
+                      id="fiscal-code"
+                      value={form.fiscal_code}
+                      onChange={(event) =>
+                        setForm({ ...form, fiscal_code: event.target.value })
+                      }
+                      placeholder="IRD item or service code"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>
+                      Tax category{requiresFiscalClassification ? " *" : ""}
+                    </Label>
+                    <Select
+                      value={form.tax_category || undefined}
+                      onValueChange={(value: FiscalTaxCategory) =>
+                        setForm({ ...form, tax_category: value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="vat_13">VAT 13%</SelectItem>
+                        <SelectItem value="exempt">VAT exempt</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="fiscal-unit">
+                    Unit{requiresFiscalClassification ? " *" : ""}
+                  </Label>
+                  <Input
+                    id="fiscal-unit"
+                    list="fiscal-unit-options"
+                    value={form.unit}
+                    onChange={(event) =>
+                      setForm({ ...form, unit: event.target.value })
+                    }
+                    placeholder="e.g. plate, serving, bottle"
+                  />
+                  <datalist id="fiscal-unit-options">
+                    <option value="plate" />
+                    <option value="serving" />
+                    <option value="item" />
+                    <option value="glass" />
+                    <option value="bottle" />
+                    <option value="kg" />
+                    <option value="litre" />
+                  </datalist>
+                </div>
+              </div>
+            )}
             
             <div className="space-y-2">
               <Label>Modifier Groups</Label>
@@ -639,7 +750,10 @@ export default function MenuItemsPage() {
             <Button variant="outline" onClick={() => setFormOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting || isUploading}>
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting || isUploading || fiscalProfileLoading}
+            >
               {(submitting || isUploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isUploading ? "Uploading..." : editingItem ? "Update" : "Create"}
             </Button>

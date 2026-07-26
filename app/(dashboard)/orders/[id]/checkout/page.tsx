@@ -69,6 +69,11 @@ import {
 } from "@/lib/checkout-cash-drawer-readiness";
 import type { DrawerSession } from "@/types/day-close";
 import type { PaymentInstrument } from "@/types/accounting";
+import {
+  customerPanValidationMessage,
+  optionalCustomerText,
+} from "@/lib/customer-fiscal";
+import { getRecordedOrderDiscount } from "@/lib/order-totals";
 
 function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
   if (!input) return null;
@@ -277,6 +282,9 @@ type CustomerOption = {
   name?: string | null;
   phone?: string | null;
   email?: string | null;
+  business_name?: string | null;
+  pan_number?: string | null;
+  billing_address?: string | null;
   credit?: number | null;
 };
 
@@ -550,6 +558,9 @@ export default function CheckoutPage() {
     name: "",
     phone: "",
     email: "",
+    business_name: "",
+    pan_number: "",
+    billing_address: "",
   });
 
   // Discount dialog
@@ -1087,12 +1098,22 @@ export default function CheckoutPage() {
     setQuickAddSubmitting(true);
     setQuickAddError(null);
     try {
+      const panError = customerPanValidationMessage(quickAddForm.pan_number);
+      if (panError) {
+        setQuickAddError(panError);
+        return;
+      }
       const phone = quickAddForm.phone.trim();
       const email = quickAddForm.email.trim();
       const payload = {
         name: quickAddForm.name.trim(),
         phone,
         email: email || undefined,
+        business_name: optionalCustomerText(quickAddForm.business_name),
+        pan_number: optionalCustomerText(quickAddForm.pan_number),
+        billing_address: optionalCustomerText(
+          quickAddForm.billing_address,
+        ),
         restaurant_id: user.restaurant_id,
         is_active: true,
       };
@@ -1105,7 +1126,14 @@ export default function CheckoutPage() {
       await fetchCustomers();
       if (created?.id) setSelectedCustomerId(String(created.id));
 
-      setQuickAddForm({ name: "", phone: "", email: "" });
+      setQuickAddForm({
+        name: "",
+        phone: "",
+        email: "",
+        business_name: "",
+        pan_number: "",
+        billing_address: "",
+      });
       setQuickAddOpen(false);
     } catch (err: any) {
       const backendDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to add customer";
@@ -1124,7 +1152,14 @@ export default function CheckoutPage() {
         });
         if (existing?.id) {
           setSelectedCustomerId(String(existing.id));
-          setQuickAddForm({ name: "", phone: "", email: "" });
+          setQuickAddForm({
+            name: "",
+            phone: "",
+            email: "",
+            business_name: "",
+            pan_number: "",
+            billing_address: "",
+          });
           setQuickAddOpen(false);
           toast.info("Customer already exists, selected them instead.");
           return;
@@ -1959,10 +1994,7 @@ export default function CheckoutPage() {
 
   if (!bill) return null;
 
-  const computedDiscount = Math.max(
-    0,
-    Number((bill.subtotal + bill.tax_total + bill.service_charge - bill.grand_total).toFixed(2))
-  );
+  const computedDiscount = getRecordedOrderDiscount(bill);
   const hasDiscount = computedDiscount > 0;
   const displayBillItems = bill.items.map((item) => {
     const overrides = itemOverrides[item.id] || {};
@@ -1979,7 +2011,9 @@ export default function CheckoutPage() {
     };
   });
   const displaySubtotal = Number(displayBillItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0).toFixed(2));
-  const displayGrandTotal = Number((displaySubtotal + Number(bill.tax_total || 0) + Number(bill.service_charge || 0) - computedDiscount).toFixed(2));
+  // The backend stores tax-inclusive menu prices. VAT is a breakdown of the
+  // subtotal, not an extra amount to add to the customer's total.
+  const displayGrandTotal = Number((displaySubtotal + Number(bill.service_charge || 0) - computedDiscount).toFixed(2));
   const displayBalanceDue = Math.max(0, Number((displayGrandTotal - Number(bill.total_paid || 0)).toFixed(2)));
   const displayIsFullyPaid = displayBalanceDue <= 0;
   const showCheckoutControls = !displayIsFullyPaid
@@ -3845,6 +3879,57 @@ export default function CheckoutPage() {
                 onChange={(e) => setQuickAddForm((s) => ({ ...s, email: e.target.value }))}
                 placeholder="customer@example.com"
               />
+            </div>
+            <div className="rounded-lg border p-3 space-y-3">
+              <p className="text-sm font-semibold">
+                Business billing (optional)
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="qa-business-name">Business Name</Label>
+                <Input
+                  id="qa-business-name"
+                  value={quickAddForm.business_name}
+                  onChange={(e) =>
+                    setQuickAddForm((state) => ({
+                      ...state,
+                      business_name: e.target.value,
+                    }))
+                  }
+                  placeholder="Customer business or legal name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="qa-pan-number">PAN Number</Label>
+                <Input
+                  id="qa-pan-number"
+                  inputMode="numeric"
+                  maxLength={9}
+                  value={quickAddForm.pan_number}
+                  onChange={(e) =>
+                    setQuickAddForm((state) => ({
+                      ...state,
+                      pan_number: e.target.value,
+                    }))
+                  }
+                  placeholder="9 digits"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="qa-billing-address">
+                  Billing Address
+                </Label>
+                <Input
+                  id="qa-billing-address"
+                  value={quickAddForm.billing_address}
+                  onChange={(e) =>
+                    setQuickAddForm((state) => ({
+                      ...state,
+                      billing_address: e.target.value,
+                    }))
+                  }
+                  placeholder="Registered billing address"
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setQuickAddOpen(false)}>

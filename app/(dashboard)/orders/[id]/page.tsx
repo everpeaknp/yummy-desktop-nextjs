@@ -87,6 +87,7 @@ import type {
 import { EntityNotificationsCard } from "@/components/notifications/entity-notifications-card";
 import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
+import { getRecordedOrderDiscount } from "@/lib/order-totals";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
@@ -108,10 +109,7 @@ function formatTime(dateStr: string) {
 }
 
 function computeOrderDiscount(order: Order) {
-  return Math.max(
-    0,
-    Number((((order.subtotal || 0) + (order.tax_total || 0) + (order.service_charge || 0)) - (order.grand_total || 0)).toFixed(2))
-  );
+  return getRecordedOrderDiscount(order);
 }
 
 function getOrderItemEffectiveUnitPrice(item: OrderItem) {
@@ -225,7 +223,9 @@ export default function OrderDetailPage() {
         });
         const subtotal = Number(items.reduce((sum, item) => sum + Number(item.line_total || 0), 0).toFixed(2));
         const computedDiscount = computeOrderDiscount(sourceOrder);
-        const grandTotal = Number((subtotal + Number(sourceOrder.tax_total || 0) + Number(sourceOrder.service_charge || 0) - computedDiscount).toFixed(2));
+        // Menu prices/subtotal are tax-inclusive; VAT is reported separately
+        // and must not be added to the amount due a second time.
+        const grandTotal = Number((subtotal + Number(sourceOrder.service_charge || 0) - computedDiscount).toFixed(2));
         return {
           ...sourceOrder,
           items,

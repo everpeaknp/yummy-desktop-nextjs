@@ -11,12 +11,7 @@ type AuthUser = Parameters<typeof getHomeRouteForUser>[0] & {
  */
 export function resolvePostLoginRoute(user: AuthUser): string {
   const { restaurant, selectedModule } = useRestaurant.getState();
-  const identityRoles = [user?.role, user?.primary_role, ...(user?.roles || [])]
-    .map((role) => String(role || "").trim().toLowerCase());
-  const isPlatformIdentity = identityRoles.some((role) =>
-    ["superadmin", "super_admin", "platform_staff"].includes(role),
-  );
-  if (!user?.restaurant_id && !restaurant?.id && !isPlatformIdentity) {
+  if (!user?.restaurant_id && !restaurant?.id) {
     return "/onboarding";
   }
   const home = getHomeRouteForUser(user);
