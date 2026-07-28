@@ -286,8 +286,12 @@ export function ReservationForm({
         onOpenChange(false);
       }
     } catch (err: any) {
-      console.error("Failed to save reservation:", err);
-      console.error("Error response:", JSON.stringify(err.response?.data, null, 2));
+      console.error("=== RESERVATION UPDATE ERROR ===");
+      console.error("Full error:", err);
+      console.error("Error response data:", JSON.stringify(err.response?.data, null, 2));
+      console.error("Error status:", err.response?.status);
+      console.error("Error headers:", err.response?.headers);
+      
       const errorMessage = err.response?.data?.detail || err.response?.data?.message || "Failed to save reservation";
       toast.error(errorMessage);
     } finally {
