@@ -284,7 +284,10 @@ export function ReservationForm({
 
       if (response.data.status === "success") {
         toast.success(reservation ? "Reservation updated" : "Reservation created");
+        console.log("=== RESERVATION SAVED SUCCESSFULLY ===");
+        console.log("Calling onSuccess callback...");
         onSuccess?.();
+        console.log("Closing form...");
         onOpenChange(false);
       }
     } catch (err: any) {

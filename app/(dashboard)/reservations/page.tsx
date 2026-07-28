@@ -61,6 +61,10 @@ export default function ReservationsPage() {
   }, [user, me, router, authChecked]);
 
   const fetchReservations = useCallback(async () => {
+    console.log("=== fetchReservations CALLED ===");
+    console.log("authChecked:", authChecked);
+    console.log("user?.restaurant_id:", user?.restaurant_id);
+    
     if (!authChecked) return;
     
     if (!user?.restaurant_id) {
