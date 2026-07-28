@@ -244,7 +244,7 @@ export function ReservationForm({
         scheduled_at: scheduledAt.toISOString(),
         number_of_guests: parseInt(formData.guests),
         duration_minutes: durationMinutes,
-        stay_nights: stayNights,
+        stay_nights: stayNights > 0 ? stayNights : null, // Only send if > 0
         table_ids: formData.tableIds,
         notes: formData.notes,
         checkout_at: isRoom ? formatISO(formData.checkoutDate) : null,
