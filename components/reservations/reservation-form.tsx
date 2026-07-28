@@ -42,7 +42,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PhoneInput from "react-phone-number-input";
-import "react-phone-number-input/style.css";
+import "./phone-input-custom.css";
 
 interface ReservationFormProps {
   open: boolean;
