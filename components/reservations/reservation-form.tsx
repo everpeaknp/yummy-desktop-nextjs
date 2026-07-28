@@ -245,22 +245,32 @@ export function ReservationForm({
         special_requests: formData.notes 
       };
 
+      console.log("=== RESERVATION FORM DEBUG ===");
+      console.log("Is Room:", isRoom);
+      console.log("Stay Nights:", stayNights);
+      console.log("Duration Minutes:", durationMinutes);
+      console.log("Common Data:", JSON.stringify(commonData, null, 2));
+
       let response;
       if (reservation) {
         // Update existing reservation (Order)
-        response = await apiClient.patch(ReservationApis.updateReservation(reservation.id), {
+        const updatePayload = {
           ...commonData,
           customer_id: formData.customerId,
-        });
+        };
+        console.log("UPDATE Payload:", JSON.stringify(updatePayload, null, 2));
+        response = await apiClient.patch(ReservationApis.updateReservation(reservation.id), updatePayload);
       } else {
         // Create new reservation (Order)
-        response = await apiClient.post(ReservationApis.createReservation, {
+        const createPayload = {
           ...commonData,
           restaurant_id: user?.restaurant_id,
           customer_id: formData.customerId,
           channel: 'reservation',
           items: [], // Required for OrderCreate
-        });
+        };
+        console.log("CREATE Payload:", JSON.stringify(createPayload, null, 2));
+        response = await apiClient.post(ReservationApis.createReservation, createPayload);
       }
 
       if (response.data.status === "success") {
