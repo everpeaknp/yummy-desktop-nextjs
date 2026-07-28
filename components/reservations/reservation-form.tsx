@@ -416,7 +416,7 @@ export function ReservationForm({
           {/* Schedule Section */}
           <div className="space-y-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Schedule & Party</h3>
-            <div className="grid grid-cols-[1.1fr_1fr_0.7fr] gap-4">
+            <div className="grid grid-cols-4 gap-3">
               <div className="space-y-2">
                 <Label>Date *</Label>
                 <div className="relative">
@@ -446,7 +446,7 @@ export function ReservationForm({
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Number of Guests *</Label>
+                <Label>Guests *</Label>
                 <div className="relative">
                   <Users className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input 
@@ -458,6 +458,27 @@ export function ReservationForm({
                   />
                 </div>
               </div>
+              {bookingType === 'table' && (
+                <div className="space-y-2">
+                  <Label>Duration *</Label>
+                  <Select 
+                    value={formData.duration} 
+                    onValueChange={(v) => setFormData({...formData, duration: v})}
+                  >
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Duration" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="30">30 min</SelectItem>
+                      <SelectItem value="60">1 hr</SelectItem>
+                      <SelectItem value="90">1.5 hrs</SelectItem>
+                      <SelectItem value="120">2 hrs</SelectItem>
+                      <SelectItem value="180">3 hrs</SelectItem>
+                      <SelectItem value="240">4 hrs</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             {tables.some(t => formData.tableIds.includes(t.id) && t.space_kind === "room") && (
@@ -485,30 +506,6 @@ export function ReservationForm({
                       />
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {bookingType === 'table' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                 <div className="space-y-2">
-                  <Label>Duration (Minutes)</Label>
-                  <Select 
-                    value={formData.duration} 
-                    onValueChange={(v) => setFormData({...formData, duration: v})}
-                  >
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue placeholder="Select duration" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="30">30 Minutes</SelectItem>
-                      <SelectItem value="60">1 Hour</SelectItem>
-                      <SelectItem value="90">1.5 Hours</SelectItem>
-                      <SelectItem value="120">2 Hours</SelectItem>
-                      <SelectItem value="180">3 Hours</SelectItem>
-                      <SelectItem value="240">4 Hours</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
             )}
