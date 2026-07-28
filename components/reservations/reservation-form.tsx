@@ -288,7 +288,7 @@ export function ReservationForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+      <DialogContent className="sm:max-w-2xl max-w-[95vw] max-h-[90vh] overflow-y-auto overflow-x-hidden p-0 gap-0">
         <DialogHeader className="p-6 border-b bg-slate-50 dark:bg-slate-900/50">
           <DialogTitle>{reservation ? "Edit Reservation" : "New Reservation"}</DialogTitle>
           <DialogDescription>
