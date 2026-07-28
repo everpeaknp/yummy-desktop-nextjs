@@ -49,17 +49,32 @@ const apiClient = axios.create({
 // Request Interceptor: Attach Token
 apiClient.interceptors.request.use(
   (config) => {
-    config.baseURL = isAttendanceRequest(config.url)
+    // Determine the correct base URL for this request
+    let baseURL = isAttendanceRequest(config.url)
       ? ATTENDANCE_PROXY_BASE
       : isLocalhost
         ? PROXY_BASE
         : getApiBaseUrl();
     
-    // Force HTTPS for api.yummyever.com to prevent mixed content errors
-    if (config.baseURL && config.baseURL.includes('api.yummyever.com') && config.baseURL.startsWith('http://')) {
-      console.warn('[API Client Interceptor] Converting HTTP to HTTPS in request interceptor');
-      config.baseURL = config.baseURL.replace('http://', 'https://');
+    // CRITICAL FIX: Force HTTPS on production domain
+    // This runs on every request, so it catches cases where the initial
+    // axios instance was created with HTTP during SSR
+    const isProductionDomain = typeof window !== 'undefined' && 
+      (window.location.hostname === 'app.yummyever.com' || 
+       window.location.protocol === 'https:');
+    
+    if (isProductionDomain && baseURL && !baseURL.startsWith('/api/')) {
+      // If baseURL contains api.yummyever.com, force HTTPS
+      if (baseURL.includes('api.yummyever.com')) {
+        baseURL = 'https://api.yummyever.com';
+        console.log('[API Interceptor] Forced HTTPS for api.yummyever.com');
+      } else if (baseURL.startsWith('http://')) {
+        baseURL = baseURL.replace('http://', 'https://');
+        console.log('[API Interceptor] Converted HTTP to HTTPS');
+      }
     }
+    
+    config.baseURL = baseURL;
     
     // TODO: Get token from Zustand store or localStorage
     const token =
