@@ -381,7 +381,7 @@ export function ReservationForm({
           {/* Schedule Section */}
           <div className="space-y-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Schedule & Party</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-[1.1fr_1fr_0.7fr] gap-4">
               <div className="space-y-2">
                 <Label>Date *</Label>
                 <div className="relative">
