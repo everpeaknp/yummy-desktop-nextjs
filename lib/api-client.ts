@@ -41,15 +41,16 @@ function isAttendanceRequest(url?: string) {
 }
 
 const apiClient = axios.create({
-  // In local dev we proxy API calls through Next.js rewrites to avoid CORS when hitting a remote backend.
-  baseURL: isLocalhost ? PROXY_BASE : getApiBaseUrl(),
+  // DO NOT set baseURL here - it will be set in the request interceptor
+  // to ensure HTTPS is used on production regardless of environment variables
   timeout: API_REQUEST_TIMEOUT_MS,
 });
 
-// Request Interceptor: Attach Token
+// Request Interceptor: Attach Token and set baseURL dynamically
 apiClient.interceptors.request.use(
   (config) => {
-    // Determine the correct base URL for this request
+    // ALWAYS determine baseURL at request time (not at axios instance creation)
+    // This ensures we can properly detect HTTPS pages and force HTTPS API calls
     let baseURL = isAttendanceRequest(config.url)
       ? ATTENDANCE_PROXY_BASE
       : isLocalhost
@@ -57,8 +58,7 @@ apiClient.interceptors.request.use(
         : getApiBaseUrl();
     
     // CRITICAL FIX: Force HTTPS on production domain
-    // This runs on every request, so it catches cases where the initial
-    // axios instance was created with HTTP during SSR
+    // This runs on every request in the browser where window exists
     const isProductionDomain = typeof window !== 'undefined' && 
       (window.location.hostname === 'app.yummyever.com' || 
        window.location.protocol === 'https:');
@@ -74,9 +74,12 @@ apiClient.interceptors.request.use(
       }
     }
     
+    // Set the baseURL on the config
     config.baseURL = baseURL;
+    console.log('[API Interceptor] Final baseURL:', config.baseURL);
+    console.log('[API Interceptor] Request URL:', config.url);
     
-    // TODO: Get token from Zustand store or localStorage
+    // Attach authorization token
     const token =
       typeof window !== 'undefined' ? readStoredTokens().accessToken : null;
     if (token) {
