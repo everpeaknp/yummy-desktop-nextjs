@@ -448,7 +448,7 @@ export function ReservationForm({
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Guests *</Label>
+                <Label>Number of Guests *</Label>
                 <div className="relative">
                   <Users className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input 
