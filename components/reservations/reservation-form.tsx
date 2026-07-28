@@ -326,10 +326,12 @@ export function ReservationForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-w-[95vw] max-h-[90vh] overflow-y-auto overflow-x-hidden p-0 gap-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-400">
         <DialogHeader className="p-6 border-b bg-slate-50 dark:bg-slate-900/50">
-          <DialogTitle>{reservation ? "Edit Reservation" : "New Reservation"}</DialogTitle>
-          <DialogDescription>
-            Fill in the details to {reservation ? "update" : "create"} a booking.
-          </DialogDescription>
+          <div className="flex items-center gap-3">
+            <DialogTitle className="mb-0">{reservation ? "Edit Reservation" : "New Reservation"}</DialogTitle>
+            <DialogDescription className="mb-0">
+              Fill in the details to {reservation ? "update" : "create"} a booking.
+            </DialogDescription>
+          </div>
           
           {restaurant?.hotel_enabled && restaurant?.restaurant_enabled && !reservation && (
             <div className="pt-4">
@@ -420,10 +422,10 @@ export function ReservationForm({
               <div className="space-y-2">
                 <Label>Date *</Label>
                 <div className="relative">
-                  <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground z-10" />
+                  <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground z-10 pointer-events-none" />
                   <Input 
                     type="date"
-                    className="pl-9"
+                    className="pl-9 [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                     value={formData.date ? format(formData.date, "yyyy-MM-dd") : ""}
                     onChange={(e) => {
                       const date = e.target.value ? new Date(e.target.value) : new Date();
