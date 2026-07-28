@@ -106,7 +106,7 @@ export function ReservationDetailsSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-md flex flex-col gap-0 p-0">
+      <SheetContent className="sm:max-w-lg flex flex-col gap-0 p-0">
         <SheetHeader className="p-6 bg-slate-50 dark:bg-slate-900/50 border-b">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
