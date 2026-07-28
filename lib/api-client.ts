@@ -7,19 +7,23 @@ import { RefreshRequestQueue } from '@/lib/refresh-request-queue';
 export const API_REQUEST_TIMEOUT_MS = 30_000;
 
 const getApiBaseUrl = () => {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
+  let envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
   
-  // Always use HTTPS for api.yummyever.com domain to prevent mixed content errors
-  // This is critical for production where the app runs on HTTPS
-  if (envUrl.includes('api.yummyever.com') && envUrl.startsWith('http://')) {
-    console.warn('[API Client] Converting HTTP to HTTPS for api.yummyever.com');
-    return envUrl.replace('http://', 'https://');
-  }
+  // CRITICAL: Force HTTPS for production domain to prevent mixed content errors
+  // If we're on app.yummyever.com, we MUST use HTTPS for the API
+  const isProductionDomain = typeof window !== 'undefined' && 
+    (window.location.hostname === 'app.yummyever.com' || 
+     window.location.protocol === 'https:');
   
-  // Also check if we're in a browser with HTTPS page
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && envUrl.startsWith('http://')) {
-    console.warn('[API Client] Converting HTTP to HTTPS due to HTTPS page');
-    return envUrl.replace('http://', 'https://');
+  if (isProductionDomain) {
+    // Force HTTPS for api.yummyever.com on production
+    if (envUrl.includes('api.yummyever.com')) {
+      envUrl = 'https://api.yummyever.com';
+      console.log('[API Client] Forced HTTPS for production domain');
+    } else if (envUrl.startsWith('http://')) {
+      envUrl = envUrl.replace('http://', 'https://');
+      console.log('[API Client] Converted HTTP to HTTPS for HTTPS page');
+    }
   }
   
   return envUrl;
