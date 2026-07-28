@@ -70,13 +70,20 @@ export default function ReservationsPage() {
 
     setLoading(true);
     try {
-      const response = await apiClient.get(ReservationApis.listReservations(user.restaurant_id));
+      const url = ReservationApis.listReservations(user.restaurant_id);
+      console.log("=== FETCHING RESERVATIONS ===");
+      console.log("URL:", url);
+      const response = await apiClient.get(url);
+      console.log("Response status:", response.data.status);
+      console.log("Response data structure:", Object.keys(response.data.data || {}));
       if (response.data.status === "success") {
         const data = response.data.data;
         // Flutter uses /orders API which returns { orders: [...] }
         // The previous /reservations API returned { reservations: [...] }
         // We check for both to be safe.
         const list = Array.isArray(data) ? data : (data.orders || data.reservations || []);
+        console.log("Parsed list length:", list.length);
+        console.log("First reservation:", list[0]);
         setReservations(list);
       }
     } catch (err) {
