@@ -287,8 +287,9 @@ export function ReservationForm({
       }
     } catch (err: any) {
       console.error("Failed to save reservation:", err);
-      console.error("Error response:", err.response?.data);
-      toast.error(err.response?.data?.detail || "Failed to save reservation");
+      console.error("Error response:", JSON.stringify(err.response?.data, null, 2));
+      const errorMessage = err.response?.data?.detail || err.response?.data?.message || "Failed to save reservation";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
