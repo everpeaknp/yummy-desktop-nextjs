@@ -126,10 +126,19 @@ export function ReservationForm({
         if (table) setBookingType(table.space_kind === 'room' ? 'room' : 'table');
       }
     } else {
-      setFormData(prev => ({
-        ...prev,
-        tableIds: initialTableId ? [initialTableId] : []
-      }));
+      // Reset all fields for new reservation
+      setFormData({
+        customerName: "",
+        customerPhone: "",
+        customerId: null,
+        guests: "2",
+        duration: "60",
+        date: new Date(),
+        time: "18:00",
+        checkoutDate: new Date(new Date().setDate(new Date().getDate() + 1)),
+        tableIds: initialTableId ? [initialTableId] : [],
+        notes: ""
+      });
       // Set bookingType from initial table if available
       if (initialTableId && tables.length > 0) {
         const table = tables.find(t => t.id === initialTableId);
