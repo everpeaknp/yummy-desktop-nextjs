@@ -238,17 +238,19 @@ export function ReservationForm({
         durationMinutes = stayNights * 24 * 60; // Approximate for overlap checks
       }
 
+      // For table bookings: stay_nights MUST be null (not 0) per backend validation
+      const finalStayNights = isRoom && stayNights > 0 ? stayNights : null;
+
       const commonData = {
         customer_name: formData.customerName,
         customer_phone: formData.customerPhone || null,
         scheduled_at: scheduledAt.toISOString(),
         number_of_guests: parseInt(formData.guests),
         duration_minutes: durationMinutes,
-        stay_nights: stayNights > 0 ? stayNights : null, // Only send if > 0
+        stay_nights: finalStayNights,
         table_ids: formData.tableIds,
         notes: formData.notes,
         checkout_at: isRoom ? formatISO(formData.checkoutDate) : null,
-        // Fallback for legacy fields if backend needs them temporarily
         special_requests: formData.notes 
       };
 
