@@ -9,13 +9,16 @@ export const API_REQUEST_TIMEOUT_MS = 30_000;
 const getApiBaseUrl = () => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
   
-  // Always use HTTPS in production to avoid mixed content errors
-  // Check if we're in a browser and the page is HTTPS, or if running in production
-  const shouldUseHttps = 
-    (typeof window !== 'undefined' && window.location.protocol === 'https:') ||
-    process.env.NODE_ENV === 'production';
+  // Always use HTTPS for api.yummyever.com domain to prevent mixed content errors
+  // This is critical for production where the app runs on HTTPS
+  if (envUrl.includes('api.yummyever.com') && envUrl.startsWith('http://')) {
+    console.warn('[API Client] Converting HTTP to HTTPS for api.yummyever.com');
+    return envUrl.replace('http://', 'https://');
+  }
   
-  if (shouldUseHttps && envUrl.startsWith('http://')) {
+  // Also check if we're in a browser with HTTPS page
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && envUrl.startsWith('http://')) {
+    console.warn('[API Client] Converting HTTP to HTTPS due to HTTPS page');
     return envUrl.replace('http://', 'https://');
   }
   
@@ -47,6 +50,13 @@ apiClient.interceptors.request.use(
       : isLocalhost
         ? PROXY_BASE
         : getApiBaseUrl();
+    
+    // Force HTTPS for api.yummyever.com to prevent mixed content errors
+    if (config.baseURL && config.baseURL.includes('api.yummyever.com') && config.baseURL.startsWith('http://')) {
+      console.warn('[API Client Interceptor] Converting HTTP to HTTPS in request interceptor');
+      config.baseURL = config.baseURL.replace('http://', 'https://');
+    }
+    
     // TODO: Get token from Zustand store or localStorage
     const token =
       typeof window !== 'undefined' ? readStoredTokens().accessToken : null;
