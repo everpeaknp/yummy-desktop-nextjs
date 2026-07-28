@@ -96,9 +96,16 @@ export function ReservationForm({
 
   useEffect(() => {
     if (reservation) {
+      // Format phone number to E.164 if it exists but doesn't start with +
+      let formattedPhone = reservation.customer_phone || "";
+      if (formattedPhone && !formattedPhone.startsWith('+')) {
+        // Assume Nepal if no country code
+        formattedPhone = `+977${formattedPhone}`;
+      }
+      
       setFormData({
         customerName: reservation.customer_name || "",
-        customerPhone: reservation.customer_phone || "",
+        customerPhone: formattedPhone,
         customerId: reservation.customer_id || null,
         guests: (reservation.party_size || reservation.number_of_guests || "2").toString(),
         duration: (reservation.duration_minutes || "60").toString(),
@@ -280,6 +287,7 @@ export function ReservationForm({
       }
     } catch (err: any) {
       console.error("Failed to save reservation:", err);
+      console.error("Error response:", err.response?.data);
       toast.error(err.response?.data?.detail || "Failed to save reservation");
     } finally {
       setLoading(false);
