@@ -8,9 +8,17 @@ export const API_REQUEST_TIMEOUT_MS = 30_000;
 
 const getApiBaseUrl = () => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && envUrl.startsWith('http://')) {
+  
+  // Always use HTTPS in production to avoid mixed content errors
+  // Check if we're in a browser and the page is HTTPS, or if running in production
+  const shouldUseHttps = 
+    (typeof window !== 'undefined' && window.location.protocol === 'https:') ||
+    process.env.NODE_ENV === 'production';
+  
+  if (shouldUseHttps && envUrl.startsWith('http://')) {
     return envUrl.replace('http://', 'https://');
   }
+  
   return envUrl;
 };
 
