@@ -215,7 +215,7 @@ export default function ReservationsPage() {
             <div 
               key={res.id}
               onClick={() => openDetails(res)}
-              className="group relative bg-card hover:bg-slate-50 dark:hover:bg-slate-900/40 border border-border rounded-[32px] p-5 transition-all hover:shadow-xl hover:shadow-orange-600/5 cursor-pointer"
+              className="group relative bg-card hover:bg-slate-50 dark:hover:bg-slate-900/40 border border-gray-300 dark:border-gray-700 rounded-[32px] p-5 transition-all hover:shadow-xl hover:shadow-orange-600/5 cursor-pointer"
             >
               {/* Card Header */}
               <div className="flex justify-between items-start mb-4">
