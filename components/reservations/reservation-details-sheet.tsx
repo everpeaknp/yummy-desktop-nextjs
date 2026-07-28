@@ -25,6 +25,17 @@ import {
   Clock3,
   MessageSquare
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { OrderApis, ReservationApis } from "@/lib/api/endpoints";
 import { cn } from "@/lib/utils";
@@ -46,6 +57,7 @@ export function ReservationDetailsSheet({
 }: ReservationDetailsSheetProps) {
   const [isActivating, setIsActivating] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
 
   if (!reservation) return null;
 
@@ -62,20 +74,23 @@ export function ReservationDetailsSheet({
         table_ids: tableIds
       });
       if (response.data.status === "success") {
-        alert("Reservation seated!");
+        toast.success("Reservation seated!");
         onOpenChange(false);
         onRefresh?.();
       }
     } catch (err: any) {
       console.error("Failed to seat reservation:", err);
-      alert(err.response?.data?.detail || "Failed to seat reservation");
+      toast.error(err.response?.data?.detail || "Failed to seat reservation");
     } finally {
       setIsActivating(false);
     }
   };
 
-  const handleCancel = async () => {
-    if (!confirm("Are you sure you want to cancel this reservation?")) return;
+  const handleCancelClick = () => {
+    setCancelDialogOpen(true);
+  };
+
+  const handleCancelConfirm = async () => {
     setIsCanceling(true);
     try {
       // Send reason in body
@@ -83,15 +98,16 @@ export function ReservationDetailsSheet({
         reason: "Staff canceled via dashboard"
       });
       if (response.data.status === "success") {
-        alert("Reservation canceled.");
+        toast.success("Reservation canceled");
         onOpenChange(false);
         onRefresh?.();
       }
     } catch (err: any) {
       console.error("Failed to cancel reservation:", err);
-      alert(err.response?.data?.detail || "Failed to cancel reservation");
+      toast.error(err.response?.data?.detail || "Failed to cancel reservation");
     } finally {
       setIsCanceling(false);
+      setCancelDialogOpen(false);
     }
   };
 
@@ -219,7 +235,7 @@ export function ReservationDetailsSheet({
             <Button 
               variant="outline" 
               className="rounded-xl font-bold h-11 border-red-500/20 text-red-500 hover:text-red-600 hover:bg-red-50"
-              onClick={handleCancel}
+              onClick={handleCancelClick}
               disabled={isActivating || isCanceling || reservation.status === 'canceled'}
             >
               <XCircle className="h-4 w-4 mr-2" /> Cancel
@@ -248,6 +264,36 @@ export function ReservationDetailsSheet({
           </Button>
         </SheetFooter>
       </SheetContent>
+
+      <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Reservation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel this reservation for
+              <span className="font-bold text-foreground"> {reservation.customer_name}</span>?
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No, Keep It</AlertDialogCancel>
+            <AlertDialogAction 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90" 
+              onClick={handleCancelConfirm}
+              disabled={isCanceling}
+            >
+              {isCanceling ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Canceling...
+                </>
+              ) : (
+                "Yes, Cancel Reservation"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   );
 }
