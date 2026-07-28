@@ -235,7 +235,7 @@ export function ReservationDetailsSheet({
               ) : (
                 <CheckCircle className="h-4 w-4 mr-2" />
               )}
-              Arrived / Seat
+              Seat Guest
             </Button>
           </div>
           
