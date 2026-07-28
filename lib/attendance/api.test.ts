@@ -61,6 +61,17 @@ describe("attendanceApi", () => {
     });
     expect(mocked.get).toHaveBeenCalledWith("/attendance/entries/9/audit");
     expect(attendanceApi.exportCsvUrl("2026-06-23", "2026-06-24")).toBe("/attendance/export.csv?date_from=2026-06-23&date_to=2026-06-24");
+
+    mocked.get.mockResolvedValueOnce({
+      data: new Blob(["staff,hours"]),
+      headers: { "content-disposition": 'attachment; filename="attendance.csv"' },
+    });
+    const exported = await attendanceApi.downloadExportCsv("2026-06-23", "2026-06-24");
+    expect(mocked.get).toHaveBeenLastCalledWith(
+      "/attendance/export.csv?date_from=2026-06-23&date_to=2026-06-24",
+      { responseType: "blob" },
+    );
+    expect(exported.filename).toBe("attendance.csv");
   });
 
   it("calls QR device connector and mobile-device endpoints", async () => {

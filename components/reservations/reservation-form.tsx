@@ -41,8 +41,7 @@ import { Separator } from "@/components/ui/separator";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import PhoneInput from "react-phone-number-input";
-import "./phone-input-custom.css";
+import { AppPhoneInput } from "@/components/ui/phone-input";
 
 interface ReservationFormProps {
   open: boolean;
@@ -364,13 +363,12 @@ export function ReservationForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="customerPhone">Phone Number</Label>
-                <PhoneInput
+                <AppPhoneInput
                   id="customerPhone"
-                  international
-                  defaultCountry="NP"
                   value={formData.customerPhone}
-                  onChange={(value) => setFormData({...formData, customerPhone: value || ""})}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  onChange={(value) => setFormData({...formData, customerPhone: value})}
+                  defaultCountry="NP"
+                  placeholder="Enter phone number"
                 />
               </div>
             </div>

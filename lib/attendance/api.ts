@@ -133,6 +133,20 @@ export const attendanceApi = {
   exportCsvUrl(dateFrom: string, dateTo: string) {
     return AttendanceApis.exportCsv + query({ date_from: dateFrom, date_to: dateTo });
   },
+  async downloadExportCsv(dateFrom: string, dateTo: string) {
+    const response = await apiClient.get(
+      AttendanceApis.exportCsv + query({ date_from: dateFrom, date_to: dateTo }),
+      { responseType: "blob" },
+    );
+    const disposition = String(response.headers?.["content-disposition"] || "");
+    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+    return {
+      blob: response.data as Blob,
+      filename: filenameMatch?.[1]
+        ? decodeURIComponent(filenameMatch[1].replace(/"/g, ""))
+        : `attendance-${dateFrom}-to-${dateTo}.csv`,
+    };
+  },
   async createQrSession(payload: { station_label?: string; ttl_seconds: number }) {
     return unwrap<AttendanceQrSession>(await apiClient.post(AttendanceApis.createQrSession, payload));
   },

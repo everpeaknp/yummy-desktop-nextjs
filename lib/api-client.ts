@@ -19,6 +19,11 @@ const isLocalhost =
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
 const PROXY_BASE = '/api/proxy';
+const ATTENDANCE_PROXY_BASE = '/api/attendance-proxy';
+
+function isAttendanceRequest(url?: string) {
+  return Boolean(url && /^\/?attendance(?:\/|$)/.test(url));
+}
 
 const apiClient = axios.create({
   // In local dev we proxy API calls through Next.js rewrites to avoid CORS when hitting a remote backend.
@@ -29,7 +34,11 @@ const apiClient = axios.create({
 // Request Interceptor: Attach Token
 apiClient.interceptors.request.use(
   (config) => {
-    config.baseURL = isLocalhost ? PROXY_BASE : getApiBaseUrl();
+    config.baseURL = isAttendanceRequest(config.url)
+      ? ATTENDANCE_PROXY_BASE
+      : isLocalhost
+        ? PROXY_BASE
+        : getApiBaseUrl();
     // TODO: Get token from Zustand store or localStorage
     const token =
       typeof window !== 'undefined' ? readStoredTokens().accessToken : null;
