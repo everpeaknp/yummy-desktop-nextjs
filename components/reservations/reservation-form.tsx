@@ -23,6 +23,7 @@ import {
   Table as TableIcon,
   Check
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Select,
   SelectContent,
@@ -40,6 +41,8 @@ import { Separator } from "@/components/ui/separator";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PhoneInput from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 
 interface ReservationFormProps {
   open: boolean;
@@ -198,17 +201,17 @@ export function ReservationForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.customerName) {
-      alert("Please enter customer name");
+      toast.error("Please enter customer name");
       return;
     }
     if (formData.tableIds.length === 0) {
-      alert("Please select at least one table/room");
+      toast.error("Please select at least one table/room");
       return;
     }
 
     const isRoomBooking = tables.some(t => formData.tableIds.includes(t.id) && t.space_kind === "room");
     if (isRoomBooking && formData.checkoutDate <= formData.date) {
-      alert("Check-out date must be after check-in date");
+      toast.error("Check-out date must be after check-in date");
       return;
     }
 
@@ -262,13 +265,13 @@ export function ReservationForm({
       }
 
       if (response.data.status === "success") {
-        alert(reservation ? "Reservation updated" : "Reservation created");
+        toast.success(reservation ? "Reservation updated" : "Reservation created");
         onSuccess?.();
         onOpenChange(false);
       }
     } catch (err: any) {
       console.error("Failed to save reservation:", err);
-      alert(err.response?.data?.detail || "Failed to save reservation");
+      toast.error(err.response?.data?.detail || "Failed to save reservation");
     } finally {
       setLoading(false);
     }
@@ -361,16 +364,14 @@ export function ReservationForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="customerPhone">Phone Number</Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    id="customerPhone"
-                    placeholder="+977..."
-                    className="pl-9"
-                    value={formData.customerPhone}
-                    onChange={(e) => setFormData({...formData, customerPhone: e.target.value})}
-                  />
-                </div>
+                <PhoneInput
+                  id="customerPhone"
+                  international
+                  defaultCountry="NP"
+                  value={formData.customerPhone}
+                  onChange={(value) => setFormData({...formData, customerPhone: value || ""})}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                />
               </div>
             </div>
           </div>
