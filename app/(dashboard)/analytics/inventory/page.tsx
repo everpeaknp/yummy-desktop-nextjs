@@ -95,6 +95,7 @@ export default function AnalyticsInventoryPage() {
         page,
         pageSize,
         view,
+        businessLine: "all",
       });
 
       const res = await apiClient.get(url);

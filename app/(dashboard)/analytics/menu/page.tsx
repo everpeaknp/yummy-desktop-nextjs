@@ -286,6 +286,7 @@ export default function AnalyticsMenuPage() {
       sortDir,
       search: nextSearch.trim() || undefined,
       category: nextCategory.trim() || undefined,
+      businessLine: "all",
     });
     const res = await apiClient.get(url);
     if (res.data?.status === "success") {
@@ -312,6 +313,7 @@ export default function AnalyticsMenuPage() {
       category: nextCategory.trim() || undefined,
       search: nextSearch.trim() || undefined,
       station: nextStation || undefined,
+      businessLine: "all",
     });
     const res = await apiClient.get(url);
     if (res.data?.status === "success") {
@@ -337,6 +339,7 @@ export default function AnalyticsMenuPage() {
         station: station || undefined,
         page: tracePage,
         pageSize: 20,
+        businessLine: "all",
       });
       const res = await apiClient.get(url);
       if (res.data?.status === "success") {
@@ -456,6 +459,7 @@ export default function AnalyticsMenuPage() {
         category: category.trim() || undefined,
         search: search.trim() || undefined,
         exportMode,
+        businessLine: "all",
       });
       const response = await apiClient.get(url, { responseType: "blob" });
       const blob = new Blob([response.data], {

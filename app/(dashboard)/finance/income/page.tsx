@@ -19,12 +19,13 @@ import { CategoryPieChart } from "@/components/analytics/category-pie";
 import { RevenueChart } from "@/components/analytics/revenue-chart";
 import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
 import type { FinanceOverviewResponse } from "@/types/finance";
+import { financeStationOptions, isFinanceStationAvailable, toFinanceStationParam } from "@/lib/finance-station-scope";
+import { shouldUseFinanceMetrics } from "@/lib/finance-metric-authority";
 
-function hasAuthoritativeFinanceActivity(finance: FinanceOverviewResponse | null | undefined): boolean {
-  if (!finance?.meta?.ledger_complete) return false;
-  const metrics = finance.metrics;
+function shouldUseFinanceEventMetrics(finance: FinanceOverviewResponse | null | undefined): boolean {
+  const metrics = finance?.metrics;
   if (!metrics) return false;
-  return [
+  return shouldUseFinanceMetrics(finance.meta?.ledger_complete, [
     metrics.sales_total,
     metrics.discount_total,
     metrics.collections_total,
@@ -41,7 +42,7 @@ function hasAuthoritativeFinanceActivity(finance: FinanceOverviewResponse | null
     metrics.supplier_payments,
     metrics.paid_open_orders_count,
     metrics.paid_open_orders_amount,
-  ].some((value) => Math.abs(Number(value) || 0) > 0.0001);
+  ]);
 }
 
 export default function IncomePage() {
@@ -77,6 +78,17 @@ export default function IncomePage() {
     checkAuth();
   }, [user, me, router]);
 
+  useEffect(() => {
+    if (
+      !isFinanceStationAvailable(selectedStation, {
+        businessLine,
+        hotelEnabled: Boolean(restaurant?.hotel_enabled),
+      })
+    ) {
+      setSelectedStation("all");
+    }
+  }, [businessLine, restaurant?.hotel_enabled, selectedStation]);
+
   const getDateRange = () => {
     const now = new Date();
     let start = "";
@@ -106,7 +118,10 @@ export default function IncomePage() {
     setLoading(true);
     setTrendsLoading(true);
     const { start, end } = getDateRange();
-    const stationParam = selectedStation === 'all' ? undefined : selectedStation;
+    const stationParam = toFinanceStationParam(selectedStation, {
+      businessLine,
+      hotelEnabled: Boolean(restaurant?.hotel_enabled),
+    });
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     let startTimeVal: string | undefined = undefined;
     let endTimeVal: string | undefined = undefined;
@@ -137,7 +152,7 @@ export default function IncomePage() {
         dateFrom: start,
         dateTo: end,
         station: stationParam,
-        businessLine: businessLine === 'all' ? undefined : businessLine,
+        businessLine,
         timezone: tz
       });
       const financeOverviewUrl = FinanceApis.overview({
@@ -145,7 +160,7 @@ export default function IncomePage() {
         dateFrom: start,
         dateTo: end,
         station: stationParam,
-        businessLine: businessLine === 'all' ? undefined : businessLine,
+        businessLine,
         timezone: tz,
         startTime: startTimeVal,
         endTime: endTimeVal,
@@ -159,7 +174,7 @@ export default function IncomePage() {
             date_from: start, 
             date_to: end, 
             station: stationParam,
-            business_line: businessLine === 'all' ? undefined : businessLine,
+            business_line: businessLine,
             limit: recentLimit,
             timezone: tz
           }
@@ -170,6 +185,7 @@ export default function IncomePage() {
             date_from: start,
             date_to: end,
             station: stationParam,
+            business_line: businessLine,
             timezone: tz
           }
         }),
@@ -201,6 +217,7 @@ export default function IncomePage() {
           startTime: startTimeVal,
           endTime: endTimeVal,
           station: stationParam,
+          businessLine,
           timezone: tz
         });
         const trendsRes = await apiClient.get(trendsUrl);
@@ -269,7 +286,7 @@ export default function IncomePage() {
     value: point.income,
     revenue: point.income
   }));
-  const financeMetrics = hasAuthoritativeFinanceActivity(financeOverview) ? financeOverview?.metrics : null;
+  const financeMetrics = shouldUseFinanceEventMetrics(financeOverview) ? financeOverview?.metrics : null;
   const netSales = financeMetrics
     ? financeMetrics.net_sales
     : incomeData?.summary?.total_net_income || 0;
@@ -293,11 +310,11 @@ export default function IncomePage() {
     ? financeMetrics.manual_operating_expense + financeMetrics.inventory_direct_expense + financeMetrics.inventory_cogs
     : expenseSummary?.total_amount || 0;
   const operatingProfit = financeMetrics?.operating_profit ?? netSales - operatingExpenses;
-  const paymentMethodRows = financeMetrics && financeOverview?.payment_method_breakdown?.length
-    ? financeOverview.payment_method_breakdown
+  const paymentMethodRows = financeMetrics
+    ? financeOverview?.payment_method_breakdown ?? []
     : incomeData?.by_payment_method || [];
-  const paymentInstrumentRows = financeMetrics && financeOverview?.payment_instrument_breakdown?.length
-    ? financeOverview.payment_instrument_breakdown
+  const paymentInstrumentRows = financeMetrics
+    ? financeOverview?.payment_instrument_breakdown ?? []
     : incomeData?.by_payment_instrument || [];
 
   return (
@@ -358,14 +375,14 @@ export default function IncomePage() {
                 <SelectValue placeholder="Station" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Stations</SelectItem>
-                <SelectItem value="kitchen">Kitchen</SelectItem>
-                <SelectItem value="bar">Bar</SelectItem>
-                <SelectItem value="cafe">Cafe</SelectItem>
-                {restaurant?.hotel_enabled && (
-                  <SelectItem value="rooms">Rooms / Hotel</SelectItem>
-                )}
-                <SelectItem value="general">General</SelectItem>
+                {financeStationOptions({
+                  businessLine,
+                  hotelEnabled: restaurant?.hotel_enabled,
+                }).map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 

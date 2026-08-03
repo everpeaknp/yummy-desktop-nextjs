@@ -28,6 +28,10 @@ test("income page presents distinct finance-core concepts", () => {
   assert.doesNotMatch(source, /label="Total Revenue"/);
   assert.match(source, /payment_method_breakdown/);
   assert.match(source, /payment_instrument_breakdown/);
+  assert.doesNotMatch(
+    source,
+    /financeMetrics && financeOverview\?\.payment_method_breakdown\?\.length/,
+  );
   assert.match(source, /discount_total/);
   assert.doesNotMatch(
     source,
@@ -117,6 +121,84 @@ test("analytics finance summary shows the exact reporting scope", () => {
   assert.match(source, /Date range:/);
   assert.match(source, /Station:/);
   assert.match(source, /getActiveDates\(\)/);
+});
+
+test("finance station filters share canonical All and General scopes", () => {
+  const helper = read("lib/finance-station-scope.ts");
+  const sources = [
+    read("app/(dashboard)/analytics/page.tsx"),
+    read("app/(dashboard)/analytics/compare/page.tsx"),
+    read("app/(dashboard)/finance/income/page.tsx"),
+    read("app/(dashboard)/finance/expenses/page.tsx"),
+  ];
+
+  assert.match(helper, /value: "general"[\s\S]*label: "General \/ Shared"/);
+  assert.match(helper, /normalizedBusinessLine === "hotel"/);
+  assert.match(helper, /normalizedBusinessLine === "restaurant"/);
+  assert.match(helper, /normalized === ALL_FINANCE_STATIONS/);
+  for (const source of sources) {
+    assert.match(source, /financeStationOptions/);
+    assert.match(source, /isFinanceStationAvailable/);
+    assert.match(source, /toFinanceStationParam/);
+  }
+});
+
+test("reporting screens send All as an explicit business-line scope", () => {
+  const analyticsSource = read("app/(dashboard)/analytics/page.tsx");
+  const compareSource = read("app/(dashboard)/analytics/compare/page.tsx");
+  const incomeSource = read("app/(dashboard)/finance/income/page.tsx");
+  const expensesSource = read("app/(dashboard)/finance/expenses/page.tsx");
+  const menuSource = read("app/(dashboard)/analytics/menu/page.tsx");
+  const inventorySource = read("app/(dashboard)/analytics/inventory/page.tsx");
+  const kitchenSource = read("app/(dashboard)/analytics/kitchen/page.tsx");
+  const staffSource = read("app/(dashboard)/analytics/staff/page.tsx");
+
+  assert.match(analyticsSource, /businessLine: queryBusinessLine \?\? "all"/);
+  assert.match(compareSource, /businessLine: showBusinessLine \? businessLine : "all"/);
+  assert.match(incomeSource, /business_line: businessLine/);
+  assert.doesNotMatch(incomeSource, /businessLine === 'all' \? undefined/);
+  assert.match(expensesSource, /const listBusinessLineParam = businessLine;/);
+  assert.match(expensesSource, /businessLine: listBusinessLineParam/);
+  assert.match(expensesSource, /business_line: listBusinessLineParam/);
+  assert.match(menuSource, /businessLine: "all"/);
+  assert.match(inventorySource, /businessLine: "all"/);
+  for (const source of [kitchenSource, staffSource]) {
+    assert.match(source, /businessLine: showBusinessLine \? businessLine : "all"/);
+  }
+});
+
+test("aggregate analytics never presents one business line as drawer custody", () => {
+  const source = read("app/(dashboard)/analytics/page.tsx");
+
+  assert.match(
+    source,
+    /queryBusinessLine === "restaurant" \|\| queryBusinessLine === "hotel"/,
+  );
+  assert.match(source, /accountingMode && cashControlSummary/);
+  assert.match(
+    source,
+    /Select Restaurant or Hotel to view drawer cash custody\./,
+  );
+});
+
+test("analytics discloses transitional ledger and station allocation semantics", () => {
+  const source = read("app/(dashboard)/analytics/page.tsx");
+
+  assert.match(source, /v2\?\.ledgerComplete === false/);
+  assert.match(source, /Transitional finance coverage/);
+  assert.match(source, /authoritative selected-scope total/);
+  assert.match(source, /legacy Other, and unattributed activity/);
+});
+
+test("expense writes use canonical attribution independently of reporting All", () => {
+  const helper = read("lib/finance-station-scope.ts");
+  const source = read("app/(dashboard)/finance/expenses/page.tsx");
+
+  assert.match(helper, /toFinanceAttributionStation/);
+  assert.match(source, /station: toFinanceAttributionStation/);
+  assert.match(source, /businessLine: expenseWriteBusinessLine/);
+  assert.match(source, /includeAll: false/);
+  assert.doesNotMatch(source, /station: "other"/);
 });
 
 test("executive dashboard reads sectioned analytics finance metrics", () => {
@@ -220,11 +302,22 @@ test("expense page exposes edit and delete actions for recorded expenses", () =>
   assert.match(source, /\bhandleDeleteExpense\b/);
   assert.match(source, /ExpenseApis\.update/);
   assert.match(source, /ExpenseApis\.delete/);
+  assert.match(source, /Posted financial details are locked/);
+  assert.match(source, /immutable after posting/);
+  assert.match(
+    source,
+    /ExpenseApis\.update\(editingExpense\.id\)[\s\S]*?description: payload\.description,[\s\S]*?\}\)[\s\S]*?: await apiClient\.post/,
+  );
   assert.match(source, /Inventory Purchases/);
   assert.match(source, /simpleInventoryPurchases/);
   assert.match(source, /Inventory Cash Outflow/);
   assert.match(source, /Accounting expense detail/);
   assert.match(source, /Supplier Payable/);
+  assert.match(source, /operatingExpenseTotal = financeExpenseMetrics/);
+  assert.match(
+    source,
+    /financeExpenseMetrics[\s\S]*buildFinanceExpensePaymentMethodBreakdown/,
+  );
   assert.doesNotMatch(
     source,
     /if \(!finance\?\.meta\?\.ledger_complete\) return false;/,

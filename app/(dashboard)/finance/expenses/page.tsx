@@ -66,13 +66,20 @@ import {
   parseActiveCashDrawers,
   type ActiveCashDrawerSession,
 } from "@/lib/cash-expense-drawer-selection";
+import {
+  financeStationOptions,
+  isFinanceStationAvailable,
+  toFinanceAttributionStation,
+  toFinanceStationParam,
+} from "@/lib/finance-station-scope";
+import { shouldUseFinanceMetrics } from "@/lib/finance-metric-authority";
 
-function hasAuthoritativeFinanceActivity(
+function shouldUseFinanceEventMetrics(
   finance: FinanceExpensesResponse | null | undefined,
 ): boolean {
   const metrics = finance?.metrics;
   if (!metrics) return false;
-  return [
+  return shouldUseFinanceMetrics(finance.meta?.ledger_complete, [
     metrics.sales_total,
     metrics.collections_total,
     metrics.credit_sales,
@@ -88,7 +95,7 @@ function hasAuthoritativeFinanceActivity(
     metrics.refund_liabilities,
     metrics.supplier_payables,
     metrics.supplier_payments,
-  ].some((value) => Math.abs(Number(value) || 0) > 0.0001);
+  ]);
 }
 
 type BusinessLineFilter = "all" | "restaurant" | "hotel";
@@ -196,7 +203,7 @@ export default function ExpensesPage() {
   const [newExpense, setNewExpense] = useState({
     amount: "",
     description: "",
-    station: "other",
+    station: "general",
     category_id: "",
     payment_method: "cash",
   });
@@ -225,8 +232,7 @@ export default function ExpensesPage() {
   const dualBusinessLines =
     !!restaurant?.hotel_enabled && !!restaurant?.restaurant_enabled;
 
-  const listBusinessLineParam =
-    businessLine === "all" ? undefined : businessLine;
+  const listBusinessLineParam = businessLine;
 
   const createBusinessLine = useMemo((): "restaurant" | "hotel" => {
     if (businessLine === "restaurant" || businessLine === "hotel") {
@@ -245,6 +251,42 @@ export default function ExpensesPage() {
     restaurant?.hotel_enabled,
     restaurant?.restaurant_enabled,
   ]);
+  const expenseWriteBusinessLine = useMemo((): "restaurant" | "hotel" => {
+    const existingBusinessLine = String(
+      editingExpense?.business_line ?? "",
+    ).toLowerCase();
+    if (existingBusinessLine === "hotel" || editingExpense?.station === "rooms") {
+      return "hotel";
+    }
+    if (existingBusinessLine === "restaurant") return "restaurant";
+    return createBusinessLine;
+  }, [createBusinessLine, editingExpense]);
+
+  useEffect(() => {
+    if (
+      !isFinanceStationAvailable(selectedStation, {
+        businessLine,
+        hotelEnabled: Boolean(restaurant?.hotel_enabled),
+      })
+    ) {
+      setSelectedStation("all");
+    }
+  }, [businessLine, restaurant?.hotel_enabled, selectedStation]);
+
+  useEffect(() => {
+    if (
+      !isFinanceStationAvailable(newExpense.station, {
+        businessLine: expenseWriteBusinessLine,
+        hotelEnabled: Boolean(restaurant?.hotel_enabled),
+      })
+    ) {
+      setNewExpense((current) => ({
+        ...current,
+        station: "general",
+        category_id: "",
+      }));
+    }
+  }, [expenseWriteBusinessLine, newExpense.station, restaurant?.hotel_enabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -349,7 +391,7 @@ export default function ExpensesPage() {
       const res = await apiClient.get(ExpenseApis.expenseCategories, {
         params: {
           restaurant_id: user.restaurant_id,
-          business_line: listBusinessLineParam,
+          business_line: businessLine,
         },
       });
       if (res.data.status === "success") {
@@ -358,7 +400,7 @@ export default function ExpensesPage() {
     } catch (e) {
       console.error("Failed to load categories", e);
     }
-  }, [user?.restaurant_id, listBusinessLineParam]);
+  }, [user?.restaurant_id, businessLine]);
 
   useEffect(() => {
     if (user?.restaurant_id) {
@@ -398,8 +440,10 @@ export default function ExpensesPage() {
     if (!user?.restaurant_id) return;
     setLoading(true);
     const { start, end } = getDateRange();
-    const stationParam =
-      selectedStation === "all" ? undefined : selectedStation;
+    const stationParam = toFinanceStationParam(selectedStation, {
+      businessLine,
+      hotelEnabled: Boolean(restaurant?.hotel_enabled),
+    });
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     let startTimeVal: string | undefined = undefined;
     let endTimeVal: string | undefined = undefined;
@@ -498,6 +542,8 @@ export default function ExpensesPage() {
     selectedCategory,
     recentLimit,
     listBusinessLineParam,
+    businessLine,
+    restaurant?.hotel_enabled,
     dateFilter,
     customStartDate,
     customEndDate,
@@ -535,19 +581,14 @@ export default function ExpensesPage() {
         description: newExpense.description,
         category_id: parseInt(newExpense.category_id, 10),
         payment_method: newExpense.payment_method,
-        station: newExpense.station,
-        business_line: createBusinessLine,
+        station: toFinanceAttributionStation(newExpense.station),
+        business_line: expenseWriteBusinessLine,
         ...drawerPayload,
       };
 
       const res = editingExpense
         ? await apiClient.patch(ExpenseApis.update(editingExpense.id), {
-            amount: payload.amount,
             description: payload.description,
-            category_id: payload.category_id,
-            payment_method: payload.payment_method,
-            station: payload.station,
-            business_line: payload.business_line,
           })
         : await apiClient.post(ExpenseApis.list, payload);
       if (res.data.status === "success") {
@@ -565,6 +606,7 @@ export default function ExpensesPage() {
       const responseMessage = error?.response?.data?.message;
       const message =
         (typeof detail === "string" && detail.trim()) ||
+        (typeof detail?.message === "string" && detail.message.trim()) ||
         (typeof responseMessage === "string" && responseMessage.trim()) ||
         (error instanceof Error && error.message) ||
         "Failed to record expense";
@@ -625,21 +667,18 @@ export default function ExpensesPage() {
     }
   });
 
-  const financePaymentMethodBreakdown = useMemo(
-    () =>
-      buildFinanceExpensePaymentMethodBreakdown(financeExpenses?.transactions),
-    [financeExpenses?.transactions],
-  );
-  const paymentMethodBreakdown = useMemo(
-    () =>
-      financePaymentMethodBreakdown.length > 0
-        ? financePaymentMethodBreakdown
-        : buildExpensePaymentMethodBreakdown(filteredExpenses),
-    [filteredExpenses, financePaymentMethodBreakdown],
-  );
-  const financeExpenseMetrics = hasAuthoritativeFinanceActivity(financeExpenses)
+  const financeExpenseMetrics = shouldUseFinanceEventMetrics(financeExpenses)
     ? financeExpenses?.metrics
     : null;
+  const paymentMethodBreakdown = useMemo(
+    () =>
+      financeExpenseMetrics
+        ? buildFinanceExpensePaymentMethodBreakdown(
+            financeExpenses?.transactions,
+          )
+        : buildExpensePaymentMethodBreakdown(filteredExpenses),
+    [filteredExpenses, financeExpenseMetrics, financeExpenses?.transactions],
+  );
   const accountingMode = Boolean(
     financeExpenses?.meta?.finance_accounting_enabled ||
     financeExpenses?.meta?.accounting_v2_enabled ||
@@ -661,20 +700,20 @@ export default function ExpensesPage() {
     inventoryCogs +
     inventoryWastage +
     inventoryVariance;
-  const operatingExpenseTotal =
-    expenseSummaryTotal ||
-    financeOperatingExpenseTotal ||
-    filteredExpenses.reduce(
-      (acc: number, curr: any) => acc + (Number(curr.amount) || 0),
-      0,
-    );
+  const operatingExpenseTotal = financeExpenseMetrics
+    ? financeOperatingExpenseTotal
+    : expenseSummaryTotal ||
+      filteredExpenses.reduce(
+        (acc: number, curr: any) => acc + (Number(curr.amount) || 0),
+        0,
+      );
 
   const resetExpenseForm = () => {
     setEditingExpense(null);
     setNewExpense({
       amount: "",
       description: "",
-      station: "other",
+      station: "general",
       category_id: "",
       payment_method: "cash",
     });
@@ -691,7 +730,7 @@ export default function ExpensesPage() {
     setNewExpense({
       amount: String(expense.amount ?? ""),
       description: expense.description || "",
-      station: expense.station || "other",
+      station: toFinanceAttributionStation(expense.station),
       category_id: expense.category_id ? String(expense.category_id) : "",
       payment_method: expense.payment_method || "cash",
     });
@@ -812,14 +851,14 @@ export default function ExpensesPage() {
                 <SelectValue placeholder="Station" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Stations</SelectItem>
-                <SelectItem value="kitchen">Kitchen</SelectItem>
-                <SelectItem value="bar">Bar</SelectItem>
-                <SelectItem value="cafe">Cafe</SelectItem>
-                {restaurant?.hotel_enabled && (
-                  <SelectItem value="rooms">Rooms / Hotel</SelectItem>
-                )}
-                <SelectItem value="general">General</SelectItem>
+                {financeStationOptions({
+                  businessLine,
+                  hotelEnabled: restaurant?.hotel_enabled,
+                }).map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -1063,7 +1102,7 @@ export default function ExpensesPage() {
             </DialogTitle>
             <DialogDescription>
               {editingExpense
-                ? "Update this business expense."
+                ? "Update the note. Posted financial details are locked to protect the ledger."
                 : "Record a new business expense. Required fields are marked with *."}
             </DialogDescription>
           </DialogHeader>
@@ -1078,6 +1117,7 @@ export default function ExpensesPage() {
                 placeholder="0.00"
                 className="col-span-3"
                 value={newExpense.amount}
+                disabled={Boolean(editingExpense)}
                 onChange={(e) =>
                   setNewExpense({ ...newExpense, amount: e.target.value })
                 }
@@ -1089,6 +1129,7 @@ export default function ExpensesPage() {
               </Label>
               <Select
                 value={newExpense.station}
+                disabled={Boolean(editingExpense)}
                 onValueChange={(val) =>
                   setNewExpense({
                     ...newExpense,
@@ -1101,13 +1142,15 @@ export default function ExpensesPage() {
                   <SelectValue placeholder="Select Station" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="kitchen">Kitchen</SelectItem>
-                  <SelectItem value="bar">Bar</SelectItem>
-                  <SelectItem value="cafe">Cafe</SelectItem>
-                  {restaurant?.hotel_enabled && (
-                    <SelectItem value="rooms">Rooms / Hotel</SelectItem>
-                  )}
-                  <SelectItem value="other">General / Other</SelectItem>
+                  {financeStationOptions({
+                    businessLine: expenseWriteBusinessLine,
+                    hotelEnabled: restaurant?.hotel_enabled,
+                    includeAll: false,
+                  }).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1117,6 +1160,7 @@ export default function ExpensesPage() {
               </Label>
               <Select
                 value={newExpense.category_id}
+                disabled={Boolean(editingExpense)}
                 onValueChange={(val) =>
                   setNewExpense({ ...newExpense, category_id: val })
                 }
@@ -1128,8 +1172,10 @@ export default function ExpensesPage() {
                   {categories
                     .filter(
                       (cat: any) =>
-                        cat.type === newExpense.station ||
-                        (!cat.type && newExpense.station === "other"),
+                        String(cat.business_line ?? "restaurant").toLowerCase() ===
+                          expenseWriteBusinessLine &&
+                        toFinanceAttributionStation(cat.type) ===
+                          newExpense.station,
                     )
                     .map((cat: any) => (
                       <SelectItem key={cat.id} value={cat.id.toString()}>
@@ -1164,8 +1210,9 @@ export default function ExpensesPage() {
             </div>
             {editingExpense && (
               <p className="col-start-2 col-span-3 -mt-2 text-xs text-muted-foreground">
-                Payment method is locked after posting. Use an audited
-                correction workflow to reclassify it.
+                Amount, station, category, payment method, and posting date are
+                immutable after posting. Delete and recreate the expense to
+                make an audited financial correction.
               </p>
             )}
             {!editingExpense &&

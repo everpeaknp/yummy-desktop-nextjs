@@ -94,7 +94,7 @@ export default function AnalyticsStaffPage() {
         timezone,
         page,
         pageSize,
-        businessLine: showBusinessLine && businessLine !== "all" ? businessLine : undefined,
+        businessLine: showBusinessLine ? businessLine : "all",
       });
 
       const res = await apiClient.get(url);

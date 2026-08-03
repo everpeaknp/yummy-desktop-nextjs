@@ -820,6 +820,7 @@ export const AnalyticsApis = {
     endTime,
     timezone,
     station,
+    businessLine,
   }: any) => {
     const params = new URLSearchParams({ metric });
     if (restaurantId) params.append("restaurant_id", restaurantId.toString());
@@ -829,6 +830,7 @@ export const AnalyticsApis = {
     if (endTime) params.append("end_time", endTime);
     if (timezone) params.append("timezone", timezone);
     if (station) params.append("station", station);
+    if (businessLine) params.append("business_line", businessLine);
     return `/analytics/trends?${params.toString()}`;
   },
   breakdown: ({

@@ -117,7 +117,7 @@ export default function AnalyticsKitchenPage() {
         timezone,
         page,
         pageSize,
-        businessLine: showBusinessLine && businessLine !== "all" ? businessLine : undefined,
+        businessLine: showBusinessLine ? businessLine : "all",
         category: category.trim() || undefined,
       });
 

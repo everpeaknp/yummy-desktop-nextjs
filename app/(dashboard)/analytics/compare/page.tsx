@@ -6,6 +6,11 @@ import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { AnalyticsApis } from "@/lib/api/endpoints";
+import {
+  financeStationOptions,
+  isFinanceStationAvailable,
+  toFinanceStationParam,
+} from "@/lib/finance-station-scope";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import {
@@ -53,6 +58,14 @@ export default function AnalyticsComparePage() {
   const [station, setStation] = useState<string>("all");
   const showBusinessLine = Boolean(restaurant?.hotel_enabled && restaurant?.restaurant_enabled);
   const [businessLine, setBusinessLine] = useState<string>("all");
+  const stationOptions = useMemo(
+    () =>
+      financeStationOptions({
+        businessLine,
+        hotelEnabled: Boolean(restaurant?.hotel_enabled),
+      }),
+    [businessLine, restaurant?.hotel_enabled],
+  );
 
   const money = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }), []);
 
@@ -73,8 +86,11 @@ export default function AnalyticsComparePage() {
         dateFrom,
         dateTo,
         timezone,
-        station: station !== "all" ? station : undefined,
-        businessLine: showBusinessLine && businessLine !== "all" ? businessLine : undefined,
+        station: toFinanceStationParam(station, {
+          businessLine,
+          hotelEnabled: Boolean(restaurant?.hotel_enabled),
+        }),
+        businessLine: showBusinessLine ? businessLine : "all",
       });
       const res = await apiClient.get(url);
       if (res.data?.status === "success") {
@@ -95,6 +111,17 @@ export default function AnalyticsComparePage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (
+      !isFinanceStationAvailable(station, {
+        businessLine,
+        hotelEnabled: Boolean(restaurant?.hotel_enabled),
+      })
+    ) {
+      setStation("all");
+    }
+  }, [businessLine, restaurant?.hotel_enabled, station]);
 
   useEffect(() => {
     if (!ready || !canViewAnalytics || !restaurantId) return;
@@ -137,7 +164,7 @@ export default function AnalyticsComparePage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Period Comparison</h1>
-            <p className="text-muted-foreground">Compare income, expense, and profit vs the prior period.</p>
+            <p className="text-muted-foreground">Compare income, expense, and operating profit vs the prior period.</p>
           </div>
         </div>
         <Button variant="outline" onClick={fetchCompare} disabled={loading}>
@@ -166,10 +193,11 @@ export default function AnalyticsComparePage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="kitchen">Kitchen</SelectItem>
-                <SelectItem value="bar">Bar</SelectItem>
-                <SelectItem value="cafe">Cafe</SelectItem>
+                {stationOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -197,7 +225,7 @@ export default function AnalyticsComparePage() {
         {[
           { label: "Income", key: "income" as const, delta: deltas?.income_pct },
           { label: "Expense", key: "expense" as const, delta: deltas?.expense_pct },
-          { label: "Profit", key: "profit" as const, delta: deltas?.profit_pct },
+          { label: "Operating Profit", key: "profit" as const, delta: deltas?.profit_pct },
         ].map(({ label, key, delta }) => (
           <Card key={key} className="border-border">
             <CardHeader className="pb-2">

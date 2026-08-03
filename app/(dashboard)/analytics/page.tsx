@@ -134,6 +134,17 @@ import {
   type BusinessLine,
 } from "@/types/day-close";
 import type { DrawerCashControlSummary } from "@/types/accounting";
+import {
+  analyticsMetricDelta,
+  analyticsMetricValue,
+  mapAnalyticsFinanceMetrics,
+} from "@/lib/analytics-finance-metrics";
+import {
+  financeStationLabel,
+  financeStationOptions,
+  isFinanceStationAvailable,
+  toFinanceStationParam,
+} from "@/lib/finance-station-scope";
 
 export default function AnalyticsPage() {
   const [activeRange, setActiveRange] = useState<DateRangePreset>("today");
@@ -171,6 +182,24 @@ export default function AnalyticsPage() {
   const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
 
   const [station, setStation] = useState<string | undefined>();
+  const stationOptions = useMemo(
+    () =>
+      financeStationOptions({
+        businessLine: businessLine ?? "all",
+        hotelEnabled: Boolean(restaurant?.hotel_enabled),
+      }),
+    [businessLine, restaurant?.hotel_enabled],
+  );
+  useEffect(() => {
+    if (
+      !isFinanceStationAvailable(station, {
+        businessLine: businessLine ?? "all",
+        hotelEnabled: Boolean(restaurant?.hotel_enabled),
+      })
+    ) {
+      setStation(undefined);
+    }
+  }, [businessLine, restaurant?.hotel_enabled, station]);
   // Revenue Trends card: selected day (triggers refetch for that specific day's hourly data)
   const [revenueCardDay, setRevenueCardDay] = useState<string | null>(null);
   const [revenueCardDayLabel, setRevenueCardDayLabel] = useState<string | null>(
@@ -271,7 +300,7 @@ export default function AnalyticsPage() {
       startTime = selectedDayCloseSession.period_start_at;
       endTime = selectedDayCloseSession.period_end_at;
       queryBusinessLine = selectedDayCloseSession.business_line;
-    } else if (activeRange === "today" && dayCloseAlignedTodaySession) {
+    } else if (activeRange === "today" && !station && dayCloseAlignedTodaySession) {
       startTime = dayCloseAlignedTodaySession.period_start_at;
       endTime = dayCloseAlignedTodaySession.period_end_at;
       queryBusinessLine = dayCloseAlignedTodaySession.business_line ?? businessLine;
@@ -293,6 +322,7 @@ export default function AnalyticsPage() {
     selectedDayCloseSession,
     dayCloseAlignedTodaySession,
     businessLine,
+    station,
   ]);
 
   // Fetch Menu Categories
@@ -335,7 +365,7 @@ export default function AnalyticsPage() {
           sortDir: menuSortDir as any,
           search: menuSearch.trim() || undefined,
           category: menuCategory.trim() || undefined,
-          businessLine: dates.businessLine,
+          businessLine: dates.businessLine ?? "all",
         });
         const res = await apiClient.get(url);
         if (res.data?.status === "success") {
@@ -374,7 +404,7 @@ export default function AnalyticsPage() {
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           page: staffPage,
           pageSize: staffPageSize,
-          businessLine: dates.businessLine,
+          businessLine: dates.businessLine ?? "all",
         });
         const res = await apiClient.get(url);
         if (res.data?.status === "success") {
@@ -410,7 +440,7 @@ export default function AnalyticsPage() {
           startTime: dates.startTime,
           endTime: dates.endTime,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          businessLine: dates.businessLine,
+          businessLine: dates.businessLine ?? "all",
           skip: (ncOrdersPage - 1) * ncOrdersPageSize,
           limit: ncOrdersPageSize,
         });
@@ -561,7 +591,7 @@ export default function AnalyticsPage() {
     }
 
     parts.push(`Business line: ${dates.businessLine || "all"}`);
-    parts.push(`Station: ${station ? station : "All stations"}`);
+    parts.push(`Station: ${financeStationLabel(station)}`);
 
     return parts.join(" | ");
   }, [
@@ -683,6 +713,7 @@ export default function AnalyticsPage() {
         } else if (
           activeRange === "today" &&
           !selectedDayCloseSession &&
+          !station &&
           (businessLine === "restaurant" || businessLine === "hotel")
         ) {
           dayCloseAlignedTodayLocal = false;
@@ -753,24 +784,31 @@ export default function AnalyticsPage() {
           startTime,
           endTime,
           timezone,
-          businessLine: queryBusinessLine,
+          businessLine: queryBusinessLine ?? "all",
           station:
-            selectedDayCloseSession || dayCloseAlignedTodayLocal
+            selectedDayCloseSession
               ? undefined
-              : station,
+              : toFinanceStationParam(station, {
+                  businessLine: queryBusinessLine ?? "all",
+                  hotelEnabled: Boolean(restaurant?.hotel_enabled),
+                }),
           include: "core",
         });
+        const cashControlRequest =
+          queryBusinessLine === "restaurant" || queryBusinessLine === "hotel"
+            ? apiClient
+                .get(
+                  DrawerSessionApis.cashControlSummary({
+                    restaurantId: user.restaurant_id,
+                    businessLine: queryBusinessLine,
+                  }),
+                )
+                .catch(() => null)
+            : Promise.resolve(null);
 
         const [res, cashSummaryRes] = await Promise.all([
           apiClient.get(dashboardUrl),
-          apiClient
-            .get(
-              DrawerSessionApis.cashControlSummary({
-                restaurantId: user.restaurant_id,
-                businessLine: queryBusinessLine,
-              }),
-            )
-            .catch(() => null),
+          cashControlRequest,
         ]);
         setCashControlSummary(cashSummaryRes?.data?.data ?? null);
 
@@ -824,6 +862,7 @@ export default function AnalyticsPage() {
     fetchTrigger,
     primaryRole,
     restaurant?.effective_plan,
+    restaurant?.hotel_enabled,
     historyDays,
     selectedDayCloseSession,
   ]);
@@ -868,36 +907,30 @@ export default function AnalyticsPage() {
     const financeMetrics = data.tabs.finance?.pnl_summary?.metrics || [];
     const ordersMetrics = data.tabs.orders?.outcome_summary?.metrics || [];
 
-    const getMetric = (list: any[], keys: string[]) => {
-      if (!Array.isArray(list)) return null;
-      for (const key of keys) {
-        const found = list.find((m: any) => m?.key === key);
-        if (found) return found;
-      }
-      return null;
-    };
     const getVal = (list: any[], keys: string[], fallback = 0) => {
-      const m = getMetric(list, keys);
-      return m && typeof m.value === "number" ? m.value : fallback;
-    };
-    const getValOptional = (list: any[], keys: string[]) => {
-      const m = getMetric(list, keys);
-      return m && typeof m.value === "number" ? m.value : undefined;
+      return analyticsMetricValue(list, keys) ?? fallback;
     };
     const getDelta = (list: any[], keys: string[]) => {
-      const m = getMetric(list, keys);
-      return m?.delta?.vs_previous_period_pct ?? 0;
+      return analyticsMetricDelta(list, keys);
     };
 
     const income = getVal(overviewMetrics, ["income", "sales"]);
     const expense = getVal(overviewMetrics, ["expense"]);
-    const profit = getVal(overviewMetrics, ["net_profit", "profit"]);
+    const profit = getVal(overviewMetrics, [
+      "operating_profit",
+      "net_profit",
+      "profit",
+    ]);
     const orders = getVal(overviewMetrics, ["orders"]);
     const sales = getVal(overviewMetrics, ["sales", "income"]);
 
     const incomeDelta = getDelta(overviewMetrics, ["income", "sales"]);
     const expenseDelta = getDelta(overviewMetrics, ["expense"]);
-    const profitDelta = getDelta(overviewMetrics, ["net_profit", "profit"]);
+    const profitDelta = getDelta(overviewMetrics, [
+      "operating_profit",
+      "net_profit",
+      "profit",
+    ]);
     const ordersDelta = getDelta(overviewMetrics, ["orders"]);
 
     const avgOrderValue = orders > 0 ? sales / orders : 0;
@@ -909,103 +942,55 @@ export default function AnalyticsPage() {
     const avgServiceTime = getVal(ordersMetrics, ["avg_service_time_min"]);
 
     const discounts =
-      getVal(financeMetrics, [
+      analyticsMetricValue(financeMetrics, [
         "discounts",
         "discount",
         "total_discount",
         "discount_total",
-      ]) ||
-      getVal(overviewMetrics, [
+      ]) ??
+      analyticsMetricValue(overviewMetrics, [
         "discounts",
         "discount",
         "total_discount",
         "discount_total",
-      ]) ||
+      ]) ??
       0;
     const refunds =
-      getVal(ordersMetrics, [
+      analyticsMetricValue(ordersMetrics, [
         "refund_total",
         "refunds",
         "total_refunds",
         "refund_amount",
-      ]) ||
-      getVal(overviewMetrics, [
+      ]) ??
+      analyticsMetricValue(overviewMetrics, [
         "refund_total",
         "refunds",
         "total_refunds",
         "refund_amount",
-      ]) ||
+      ]) ??
       0;
 
     const peakHour = data.tabs.overview?.table_utilization?.peak_hour || "—";
 
-    // Finance summary metrics
-    const grossIncome =
-      getVal(financeMetrics, ["gross_income", "income", "sales"]) || income;
-    const netProfit =
-      getVal(financeMetrics, ["net_profit", "profit"]) || profit;
-    const totalExpense =
-      getVal(financeMetrics, ["expenses", "expense"]) || expense;
-    const expenseSpend = getVal(financeMetrics, ["expense_spend"]) || expense;
-    const discount =
-      getVal(financeMetrics, ["discount", "discounts", "total_discount"]) ||
-      discounts;
-    const netSales =
-      getValOptional(financeMetrics, ["net_sales"]) ??
-      getValOptional(overviewMetrics, ["net_sales"]);
-    const collectionsTotal = getVal(financeMetrics, ["collections_total"]);
-    const creditSales = getVal(financeMetrics, ["credit_sales"]);
-    const refundTotal = getVal(financeMetrics, ["refund_total", "refunds"]);
-    const refundLiabilities = getVal(financeMetrics, ["refund_liabilities"]);
-    const discountTotal = getVal(financeMetrics, [
-      "discount_total",
-      "discount",
-      "discounts",
-      "total_discount",
-    ]);
-    const manualIncomeTotal = getVal(financeMetrics, ["manual_income_total"]);
-    const manualOperatingExpense = getVal(financeMetrics, [
-      "manual_operating_expense",
-    ]);
-    const inventoryDirectExpense = getVal(financeMetrics, [
-      "inventory_direct_expense",
-    ]);
-    const inventoryCashOutflow = getVal(financeMetrics, [
-      "inventory_cash_outflow",
-    ]);
-    const inventoryCogs = getVal(financeMetrics, ["inventory_cogs"]);
-    const inventoryWastage = getVal(financeMetrics, ["inventory_wastage"]);
-    const inventoryVariance = getVal(financeMetrics, ["inventory_variance"]);
-    const cashExpected = getVal(financeMetrics, ["cash_expected"]);
-    const currentPeriodSalesCollected = getVal(financeMetrics, [
-      "current_period_sales_collected",
-    ]);
-    const priorPeriodPaymentsApplied = getVal(financeMetrics, [
-      "prior_period_payments_applied",
-    ]);
-    const postPeriodPaymentsApplied = getVal(financeMetrics, [
-      "post_period_payments_applied",
-    ]);
-    const collectionsForOtherPeriodSales = getVal(financeMetrics, [
-      "collections_for_other_period_sales",
-    ]);
-    const uncollectedSalesBalance = getVal(financeMetrics, [
-      "uncollected_sales_balance",
-    ]);
-    const salesCollectionGap = getVal(financeMetrics, ["sales_collection_gap"]);
-    const paidOpenOrdersCount = getVal(financeMetrics, [
-      "paid_open_orders_count",
-    ]);
-    const paidOpenOrdersAmount = getVal(financeMetrics, [
-      "paid_open_orders_amount",
-    ]);
+    const canonicalFinance = mapAnalyticsFinanceMetrics({
+      financeMetrics,
+      overviewMetrics,
+      fallbackIncome: income,
+      fallbackProfit: profit,
+      fallbackExpense: expense,
+      fallbackDiscount: discounts,
+    });
 
     const grossIncomeDelta = getDelta(financeMetrics, [
       "gross_income",
       "income",
       "sales",
     ]);
-    const netProfitDelta = getDelta(financeMetrics, ["net_profit", "profit"]);
+    const netProfitDelta = getDelta(financeMetrics, [
+      "operating_profit",
+      "net_profit",
+      "profit",
+    ]);
     const totalExpenseDelta = getDelta(financeMetrics, ["expenses", "expense"]);
     const discountDelta = getDelta(financeMetrics, [
       "discount",
@@ -1028,37 +1013,11 @@ export default function AnalyticsPage() {
       peakHour,
       discounts,
       refunds,
-      grossIncome,
+      ...canonicalFinance,
       grossIncomeDelta,
-      netProfit,
       netProfitDelta,
-      totalExpense,
-      expenseSpend,
       totalExpenseDelta,
-      discount,
       discountDelta,
-      netSales,
-      collectionsTotal,
-      creditSales,
-      refundTotal,
-      refundLiabilities,
-      discountTotal,
-      manualIncomeTotal,
-      manualOperatingExpense,
-      inventoryDirectExpense,
-      inventoryCashOutflow,
-      inventoryCogs,
-      inventoryWastage,
-      inventoryVariance,
-      cashExpected,
-      currentPeriodSalesCollected,
-      priorPeriodPaymentsApplied,
-      postPeriodPaymentsApplied,
-      collectionsForOtherPeriodSales,
-      uncollectedSalesBalance,
-      salesCollectionGap,
-      paidOpenOrdersCount,
-      paidOpenOrdersAmount,
     };
   }, [data]);
 
@@ -1153,10 +1112,15 @@ export default function AnalyticsPage() {
     ? v2.refunds
     : kpis.refund_total || data?.refund_total || 0;
   const accountingMode = Boolean(
+    v2?.financeAccountingEnabled ||
+    v2?.accountingV2Enabled ||
+    v2?.ledgerComplete ||
     cashControlSummary?.finance_accounting_enabled ||
     cashControlSummary?.accounting_v2_enabled ||
     cashControlSummary?.ledger_complete,
   );
+  const hasConcreteCashControlScope =
+    businessLine === "restaurant" || businessLine === "hotel";
   const simpleInventoryPurchases =
     (v2?.inventoryDirectExpense ?? 0) + (v2?.inventoryCashOutflow ?? 0);
 
@@ -1467,6 +1431,7 @@ export default function AnalyticsPage() {
                 } else {
                   const sess = sessions.find((s) => String(s.id) === val);
                   if (sess) {
+                    setStation(undefined);
                     setSelectedDayCloseSession(sess);
                     if (sess.business_line) setBusinessLine(sess.business_line);
                     setFetchTrigger((t) => t + 1);
@@ -1518,7 +1483,12 @@ export default function AnalyticsPage() {
             <Select
               value={station || "all"}
               onValueChange={(val) => {
-                setStation(val === "all" ? undefined : val);
+                setStation(
+                  toFinanceStationParam(val, {
+                    businessLine: businessLine ?? "all",
+                    hotelEnabled: Boolean(restaurant?.hotel_enabled),
+                  }),
+                );
                 setFetchTrigger((t) => t + 1);
               }}
               disabled={!!selectedDayCloseSession}
@@ -1526,15 +1496,16 @@ export default function AnalyticsPage() {
               <SelectTrigger className="h-10 rounded-xl bg-card border-border/60 font-medium">
                 <SelectValue placeholder="Station: All">
                   {station
-                    ? `Station: ${station.charAt(0).toUpperCase() + station.slice(1)}`
+                    ? `Station: ${financeStationLabel(station)}`
                     : "Station: All"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent className="rounded-xl">
-                <SelectItem value="all">Station: All</SelectItem>
-                <SelectItem value="kitchen">Kitchen</SelectItem>
-                <SelectItem value="bar">Bar</SelectItem>
-                <SelectItem value="cafe">Cafe</SelectItem>
+                {stationOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.value === "all" ? "Station: All" : option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -2343,6 +2314,20 @@ export default function AnalyticsPage() {
                   {financeSummaryScopeLabel}
                 </p>
               </div>
+              <div
+                className={cn(
+                  "rounded-xl border px-3 py-2 text-xs",
+                  v2?.ledgerComplete === false
+                    ? "border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300"
+                    : "border-border/60 bg-muted/30 text-muted-foreground",
+                )}
+              >
+                {v2?.ledgerComplete === false
+                  ? "Transitional finance coverage: totals combine legacy reporting with finance events. Station views are analytical allocations; General / Shared consolidates shared, legacy Other, and unattributed activity."
+                  : station
+                    ? "This station view contains backend allocations for the selected station. Use All Stations for the authoritative selected-scope total."
+                    : "All Stations is the authoritative selected-scope total. General / Shared consolidates shared, legacy Other, and unattributed activity."}
+              </div>
               <FinanceMetricGroup title="Sales Earned">
                 <BigMetricCard
                   label="Net Sales"
@@ -2371,7 +2356,7 @@ export default function AnalyticsPage() {
                   tagColor="bg-red-500/10 text-red-500"
                 />
                 <BigMetricCard
-                  label="Net Profit"
+                  label="Operating Profit"
                   value={v2?.netProfit ?? currentProfit}
                   icon={<TrendingUp className="w-4.5 h-4.5" />}
                   color="text-blue-500"
@@ -2406,7 +2391,11 @@ export default function AnalyticsPage() {
                   tagColor="bg-cyan-500/10 text-cyan-500"
                 />
               </FinanceMetricGroup>
-              {accountingMode ? (
+              {!hasConcreteCashControlScope ? (
+                <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  Select Restaurant or Hotel to view drawer cash custody.
+                </div>
+              ) : accountingMode && cashControlSummary ? (
                 <FinanceMetricGroup title="Cash Control">
                   <BigMetricCard
                     label="Cash in Drawers"
@@ -4250,7 +4239,7 @@ function RevenueTrendsCard({
       gradientId: "gradExpenseTrends",
     },
     profit: {
-      label: "Net Profit",
+      label: "Operating Profit",
       color: "#3b82f6",
       gradientId: "gradProfitTrends",
     },
