@@ -23,6 +23,7 @@ import {
   Table as TableIcon,
   Check
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Select,
   SelectContent,
@@ -40,6 +41,7 @@ import { Separator } from "@/components/ui/separator";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AppPhoneInput } from "@/components/ui/phone-input";
 
 interface ReservationFormProps {
   open: boolean;
@@ -94,9 +96,16 @@ export function ReservationForm({
 
   useEffect(() => {
     if (reservation) {
+      // Format phone number to E.164 if it exists but doesn't start with +
+      let formattedPhone = reservation.customer_phone || "";
+      if (formattedPhone && !formattedPhone.startsWith('+')) {
+        // Assume Nepal if no country code
+        formattedPhone = `+977${formattedPhone}`;
+      }
+      
       setFormData({
         customerName: reservation.customer_name || "",
-        customerPhone: reservation.customer_phone || "",
+        customerPhone: formattedPhone,
         customerId: reservation.customer_id || null,
         guests: (reservation.party_size || reservation.number_of_guests || "2").toString(),
         duration: (reservation.duration_minutes || "60").toString(),
@@ -117,10 +126,19 @@ export function ReservationForm({
         if (table) setBookingType(table.space_kind === 'room' ? 'room' : 'table');
       }
     } else {
-      setFormData(prev => ({
-        ...prev,
-        tableIds: initialTableId ? [initialTableId] : []
-      }));
+      // Reset all fields for new reservation
+      setFormData({
+        customerName: "",
+        customerPhone: "",
+        customerId: null,
+        guests: "2",
+        duration: "60",
+        date: new Date(),
+        time: "18:00",
+        checkoutDate: new Date(new Date().setDate(new Date().getDate() + 1)),
+        tableIds: initialTableId ? [initialTableId] : [],
+        notes: ""
+      });
       // Set bookingType from initial table if available
       if (initialTableId && tables.length > 0) {
         const table = tables.find(t => t.id === initialTableId);
@@ -198,17 +216,17 @@ export function ReservationForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.customerName) {
-      alert("Please enter customer name");
+      toast.error("Please enter customer name");
       return;
     }
     if (formData.tableIds.length === 0) {
-      alert("Please select at least one table/room");
+      toast.error("Please select at least one table/room");
       return;
     }
 
     const isRoomBooking = tables.some(t => formData.tableIds.includes(t.id) && t.space_kind === "room");
     if (isRoomBooking && formData.checkoutDate <= formData.date) {
-      alert("Check-out date must be after check-in date");
+      toast.error("Check-out date must be after check-in date");
       return;
     }
 
@@ -229,46 +247,67 @@ export function ReservationForm({
         durationMinutes = stayNights * 24 * 60; // Approximate for overlap checks
       }
 
+      // For table bookings: stay_nights MUST be null (not 0) per backend validation
+      const finalStayNights = isRoom && stayNights > 0 ? stayNights : null;
+
       const commonData = {
         customer_name: formData.customerName,
         customer_phone: formData.customerPhone || null,
         scheduled_at: scheduledAt.toISOString(),
         number_of_guests: parseInt(formData.guests),
         duration_minutes: durationMinutes,
-        stay_nights: stayNights,
+        stay_nights: finalStayNights,
         table_ids: formData.tableIds,
         notes: formData.notes,
         checkout_at: isRoom ? formatISO(formData.checkoutDate) : null,
-        // Fallback for legacy fields if backend needs them temporarily
         special_requests: formData.notes 
       };
+
+      console.log("=== RESERVATION FORM DEBUG ===");
+      console.log("Is Room:", isRoom);
+      console.log("Stay Nights:", stayNights);
+      console.log("Duration Minutes:", durationMinutes);
+      console.log("Common Data:", JSON.stringify(commonData, null, 2));
 
       let response;
       if (reservation) {
         // Update existing reservation (Order)
-        response = await apiClient.patch(ReservationApis.updateReservation(reservation.id), {
+        const updatePayload = {
           ...commonData,
           customer_id: formData.customerId,
-        });
+        };
+        console.log("UPDATE Payload:", JSON.stringify(updatePayload, null, 2));
+        response = await apiClient.patch(ReservationApis.updateReservation(reservation.id), updatePayload);
       } else {
         // Create new reservation (Order)
-        response = await apiClient.post(ReservationApis.createReservation, {
+        const createPayload = {
           ...commonData,
           restaurant_id: user?.restaurant_id,
           customer_id: formData.customerId,
           channel: 'reservation',
           items: [], // Required for OrderCreate
-        });
+        };
+        console.log("CREATE Payload:", JSON.stringify(createPayload, null, 2));
+        response = await apiClient.post(ReservationApis.createReservation, createPayload);
       }
 
       if (response.data.status === "success") {
-        alert(reservation ? "Reservation updated" : "Reservation created");
+        toast.success(reservation ? "Reservation updated" : "Reservation created");
+        console.log("=== RESERVATION SAVED SUCCESSFULLY ===");
+        console.log("Calling onSuccess callback...");
         onSuccess?.();
+        console.log("Closing form...");
         onOpenChange(false);
       }
     } catch (err: any) {
-      console.error("Failed to save reservation:", err);
-      alert(err.response?.data?.detail || "Failed to save reservation");
+      console.error("=== RESERVATION UPDATE ERROR ===");
+      console.error("Full error:", err);
+      console.error("Error response data:", JSON.stringify(err.response?.data, null, 2));
+      console.error("Error status:", err.response?.status);
+      console.error("Error headers:", err.response?.headers);
+      
+      const errorMessage = err.response?.data?.detail || err.response?.data?.message || "Failed to save reservation";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -285,12 +324,14 @@ export function ReservationForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+      <DialogContent className="sm:max-w-2xl max-w-[95vw] max-h-[90vh] overflow-y-auto overflow-x-hidden p-0 gap-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-400">
         <DialogHeader className="p-6 border-b bg-slate-50 dark:bg-slate-900/50">
-          <DialogTitle>{reservation ? "Edit Reservation" : "New Reservation"}</DialogTitle>
-          <DialogDescription>
-            Fill in the details to {reservation ? "update" : "create"} a booking.
-          </DialogDescription>
+          <div className="flex items-center gap-3">
+            <DialogTitle className="mb-0">{reservation ? "Edit Reservation" : "New Reservation"}</DialogTitle>
+            <DialogDescription className="mb-0">
+              Fill in the details to {reservation ? "update" : "create"} a booking.
+            </DialogDescription>
+          </div>
           
           {restaurant?.hotel_enabled && restaurant?.restaurant_enabled && !reservation && (
             <div className="pt-4">
@@ -361,16 +402,13 @@ export function ReservationForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="customerPhone">Phone Number</Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    id="customerPhone"
-                    placeholder="+977..."
-                    className="pl-9"
-                    value={formData.customerPhone}
-                    onChange={(e) => setFormData({...formData, customerPhone: e.target.value})}
-                  />
-                </div>
+                <AppPhoneInput
+                  id="customerPhone"
+                  value={formData.customerPhone}
+                  onChange={(value) => setFormData({...formData, customerPhone: value})}
+                  defaultCountry="NP"
+                  placeholder="Enter phone number"
+                />
               </div>
             </div>
           </div>
@@ -380,14 +418,14 @@ export function ReservationForm({
           {/* Schedule Section */}
           <div className="space-y-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Schedule & Party</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-3">
               <div className="space-y-2">
                 <Label>Date *</Label>
                 <div className="relative">
-                  <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground z-10" />
+                  <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground z-10 pointer-events-none" />
                   <Input 
                     type="date"
-                    className="pl-9"
+                    className="pl-9 [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                     value={formData.date ? format(formData.date, "yyyy-MM-dd") : ""}
                     onChange={(e) => {
                       const date = e.target.value ? new Date(e.target.value) : new Date();
@@ -422,6 +460,27 @@ export function ReservationForm({
                   />
                 </div>
               </div>
+              {bookingType === 'table' && (
+                <div className="space-y-2">
+                  <Label>Duration *</Label>
+                  <Select 
+                    value={formData.duration} 
+                    onValueChange={(v) => setFormData({...formData, duration: v})}
+                  >
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Duration" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="30">30 min</SelectItem>
+                      <SelectItem value="60">1 hr</SelectItem>
+                      <SelectItem value="90">1.5 hrs</SelectItem>
+                      <SelectItem value="120">2 hrs</SelectItem>
+                      <SelectItem value="180">3 hrs</SelectItem>
+                      <SelectItem value="240">4 hrs</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             {tables.some(t => formData.tableIds.includes(t.id) && t.space_kind === "room") && (
@@ -449,30 +508,6 @@ export function ReservationForm({
                       />
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {bookingType === 'table' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                 <div className="space-y-2">
-                  <Label>Duration (Minutes)</Label>
-                  <Select 
-                    value={formData.duration} 
-                    onValueChange={(v) => setFormData({...formData, duration: v})}
-                  >
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue placeholder="Select duration" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="30">30 Minutes</SelectItem>
-                      <SelectItem value="60">1 Hour</SelectItem>
-                      <SelectItem value="90">1.5 Hours</SelectItem>
-                      <SelectItem value="120">2 Hours</SelectItem>
-                      <SelectItem value="180">3 Hours</SelectItem>
-                      <SelectItem value="240">4 Hours</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
             )}

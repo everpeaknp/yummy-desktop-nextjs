@@ -572,6 +572,26 @@ export function AttendanceAdminClient() {
     }
   }
 
+  async function exportTimesheets() {
+    setBusy(true);
+    try {
+      const { blob, filename } = await attendanceApi.downloadExportCsv(dateFrom, dateTo);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast.success("Attendance CSV exported");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to export attendance CSV"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createTemplate() {
     if (!templateForm.name.trim()) return toast.error("Shift name is required");
     setBusy(true);
@@ -852,7 +872,7 @@ export function AttendanceAdminClient() {
                 <CardTitle>Timesheets</CardTitle>
                 <CardDescription>Approve payable hours before payroll snapshot. Open entries stay visible even when they started earlier.</CardDescription>
               </div>
-              <Button variant="outline" onClick={() => window.open(attendanceApi.exportCsvUrl(dateFrom, dateTo), "_blank")}>
+              <Button variant="outline" disabled={busy} onClick={() => void exportTimesheets()}>
                 <Download className="mr-2 h-4 w-4" />
                 Export CSV
               </Button>

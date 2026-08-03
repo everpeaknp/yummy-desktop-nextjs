@@ -61,6 +61,10 @@ export default function ReservationsPage() {
   }, [user, me, router, authChecked]);
 
   const fetchReservations = useCallback(async () => {
+    console.log("=== fetchReservations CALLED ===");
+    console.log("authChecked:", authChecked);
+    console.log("user?.restaurant_id:", user?.restaurant_id);
+    
     if (!authChecked) return;
     
     if (!user?.restaurant_id) {
@@ -70,13 +74,20 @@ export default function ReservationsPage() {
 
     setLoading(true);
     try {
-      const response = await apiClient.get(ReservationApis.listReservations(user.restaurant_id));
+      const url = ReservationApis.listReservations(user.restaurant_id);
+      console.log("=== FETCHING RESERVATIONS ===");
+      console.log("URL:", url);
+      const response = await apiClient.get(url);
+      console.log("Response status:", response.data.status);
+      console.log("Response data structure:", Object.keys(response.data.data || {}));
       if (response.data.status === "success") {
         const data = response.data.data;
         // Flutter uses /orders API which returns { orders: [...] }
         // The previous /reservations API returned { reservations: [...] }
         // We check for both to be safe.
         const list = Array.isArray(data) ? data : (data.orders || data.reservations || []);
+        console.log("Parsed list length:", list.length);
+        console.log("First reservation:", list[0]);
         setReservations(list);
       }
     } catch (err) {
@@ -204,7 +215,7 @@ export default function ReservationsPage() {
             <div 
               key={res.id}
               onClick={() => openDetails(res)}
-              className="group relative bg-card hover:bg-slate-50 dark:hover:bg-slate-900/40 border border-border rounded-[32px] p-5 transition-all hover:shadow-xl hover:shadow-orange-600/5 cursor-pointer"
+              className="group relative bg-card hover:bg-slate-50 dark:hover:bg-slate-900/40 border border-gray-300 dark:border-gray-700 rounded-[32px] p-5 transition-all hover:shadow-xl hover:shadow-orange-600/5 cursor-pointer"
             >
               {/* Card Header */}
               <div className="flex justify-between items-start mb-4">

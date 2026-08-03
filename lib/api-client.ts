@@ -7,10 +7,25 @@ import { RefreshRequestQueue } from '@/lib/refresh-request-queue';
 export const API_REQUEST_TIMEOUT_MS = 30_000;
 
 const getApiBaseUrl = () => {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && envUrl.startsWith('http://')) {
-    return envUrl.replace('http://', 'https://');
+  let envUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.yummyever.com';
+  
+  // CRITICAL: Force HTTPS for production domain to prevent mixed content errors
+  // If we're on app.yummyever.com, we MUST use HTTPS for the API
+  const isProductionDomain = typeof window !== 'undefined' && 
+    (window.location.hostname === 'app.yummyever.com' || 
+     window.location.protocol === 'https:');
+  
+  if (isProductionDomain) {
+    // Force HTTPS for api.yummyever.com on production
+    if (envUrl.includes('api.yummyever.com')) {
+      envUrl = 'https://api.yummyever.com';
+      console.log('[API Client] Forced HTTPS for production domain');
+    } else if (envUrl.startsWith('http://')) {
+      envUrl = envUrl.replace('http://', 'https://');
+      console.log('[API Client] Converted HTTP to HTTPS for HTTPS page');
+    }
   }
+  
   return envUrl;
 };
 
@@ -19,18 +34,52 @@ const isLocalhost =
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
 const PROXY_BASE = '/api/proxy';
+const ATTENDANCE_PROXY_BASE = '/api/attendance-proxy';
+
+function isAttendanceRequest(url?: string) {
+  return Boolean(url && /^\/?attendance(?:\/|$)/.test(url));
+}
 
 const apiClient = axios.create({
-  // In local dev we proxy API calls through Next.js rewrites to avoid CORS when hitting a remote backend.
-  baseURL: isLocalhost ? PROXY_BASE : getApiBaseUrl(),
+  // DO NOT set baseURL here - it will be set in the request interceptor
+  // to ensure HTTPS is used on production regardless of environment variables
   timeout: API_REQUEST_TIMEOUT_MS,
 });
 
-// Request Interceptor: Attach Token
+// Request Interceptor: Attach Token and set baseURL dynamically
 apiClient.interceptors.request.use(
   (config) => {
-    config.baseURL = isLocalhost ? PROXY_BASE : getApiBaseUrl();
-    // TODO: Get token from Zustand store or localStorage
+    // ALWAYS determine baseURL at request time (not at axios instance creation)
+    // This ensures we can properly detect HTTPS pages and force HTTPS API calls
+    let baseURL = isAttendanceRequest(config.url)
+      ? ATTENDANCE_PROXY_BASE
+      : isLocalhost
+        ? PROXY_BASE
+        : getApiBaseUrl();
+    
+    // CRITICAL FIX: Force HTTPS on production domain
+    // This runs on every request in the browser where window exists
+    const isProductionDomain = typeof window !== 'undefined' && 
+      (window.location.hostname === 'app.yummyever.com' || 
+       window.location.protocol === 'https:');
+    
+    if (isProductionDomain && baseURL && !baseURL.startsWith('/api/')) {
+      // If baseURL contains api.yummyever.com, force HTTPS
+      if (baseURL.includes('api.yummyever.com')) {
+        baseURL = 'https://api.yummyever.com';
+        console.log('[API Interceptor] Forced HTTPS for api.yummyever.com');
+      } else if (baseURL.startsWith('http://')) {
+        baseURL = baseURL.replace('http://', 'https://');
+        console.log('[API Interceptor] Converted HTTP to HTTPS');
+      }
+    }
+    
+    // Set the baseURL on the config
+    config.baseURL = baseURL;
+    console.log('[API Interceptor] Final baseURL:', config.baseURL);
+    console.log('[API Interceptor] Request URL:', config.url);
+    
+    // Attach authorization token
     const token =
       typeof window !== 'undefined' ? readStoredTokens().accessToken : null;
     if (token) {
