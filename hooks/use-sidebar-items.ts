@@ -29,6 +29,7 @@ import {
   Banknote,
   Fingerprint,
   FileText,
+  Sprout,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -66,6 +67,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/inventory": Package,
   "/finance/income": CreditCard,
   "/customers": Users,
+  "/grow": Sprout,
   "/attendance": Fingerprint,
   "/staff": Users,
   "/payroll": Banknote,
@@ -182,9 +184,9 @@ export function useSidebarItems(): SidebarItem[] {
   const currentSubscription = useSubscriptionStore((state) => state.current);
 
   return useMemo(() => {
-    const isExplicitlyLocked = (key: string) =>
+    const isExplicitlyLocked = (key: string, legacyFallback = true) =>
       Boolean(currentSubscription) &&
-      !isSubscriptionEntitlementEnabled(currentSubscription, key, true);
+      !isSubscriptionEntitlementEnabled(currentSubscription, key, legacyFallback);
     const roles = normalizeRolesForUser(user);
     const isAdminOrManager = roles.some(
       (r) => r === "admin" || r === "manager",
@@ -233,13 +235,17 @@ export function useSidebarItems(): SidebarItem[] {
           "/finance/expenses": "finance.income_expense.enabled",
           "/cash-drawers": "finance.cash_drawer.enabled",
           "/customers": "customers.crm.enabled",
+          "/grow": "grow.enabled",
           "/day-close": "finance.daybook.enabled",
           "/period-reports": "finance.period_close.enabled",
           "/manage/receipt-designer": "designers.receipt.enabled",
           "/manage/kot-designer": "designers.kot.enabled",
         };
         const requiredEntitlement = entitlementByRoute[item.href];
-        if (requiredEntitlement && isExplicitlyLocked(requiredEntitlement))
+        if (
+          requiredEntitlement &&
+          isExplicitlyLocked(requiredEntitlement, item.href !== "/grow")
+        )
           return false;
         return true;
       })
@@ -408,9 +414,20 @@ export function useSidebarItems(): SidebarItem[] {
     }
 
     // Clean up empty subItems arrays
-    return result.map((r) => ({
+    const orderedResult = [
+      ...result.filter((item) => item.href !== "/grow"),
+      ...result.filter((item) => item.href === "/grow"),
+    ];
+
+    return orderedResult.map((r) => ({
       ...r,
-      subItems: r.subItems?.length ? r.subItems : undefined,
+      section: r.href === "/grow" ? "Yummy Grow" : "Yummy Operations",
+      subItems: r.subItems?.length
+        ? r.subItems.map((subItem) => ({
+            ...subItem,
+            section: "Yummy Operations",
+          }))
+        : undefined,
     }));
   }, [currentSubscription, restaurant, user, selectedModule]);
 }

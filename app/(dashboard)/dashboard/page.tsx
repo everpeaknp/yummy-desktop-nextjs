@@ -260,11 +260,11 @@ export default function DashboardPage() {
     XLSX.writeFile(wb, buildExportFilename(activeRange, dateFrom, dateTo))
   }
 
-  const aiInsights =
+  const analyticsInsights =
     analyticsData?.insights ||
     analyticsData?.tabs?.overview?.alert_insights?.items ||
     []
-  const mergedInsights = mergeDashboardInsights(quickInsights, aiInsights)
+  const mergedInsights = mergeDashboardInsights(quickInsights, analyticsInsights)
 
   const salesVsLabel =
     activeRange === "today" ? "Sales vs Yesterday" : `Sales vs ${compareLabel}`;

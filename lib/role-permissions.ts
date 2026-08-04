@@ -161,6 +161,12 @@ export type PermissionKey =
   | "customers.manage"
   | "customers.loyalty.manage"
   | "customers.credit.manage"
+  // Yummy Grow
+  | "grow.view"
+  | "grow.campaigns.manage"
+  | "grow.campaigns.approve"
+  | "grow.campaigns.send"
+  | "grow.settings.manage"
   // Reports & Day Close
   | "reports.daily.view"
   | "reports.dayclose.view"
@@ -257,6 +263,7 @@ export const CANONICAL_ROUTE_GATES = {
   income: "finance.income.view",
   accounting: "finance.accounting.view",
   inventory: "inventory.view",
+  grow: "grow.view",
 } as const satisfies Record<string, PermissionKey>;
 
 function isAnalyticsGatedPath(pathname: string): boolean {
@@ -501,6 +508,12 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "attendance.manage",
   },
   {
+    title: "Overview",
+    href: "/grow",
+    allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "grow.view",
+  },
+  {
     title: "Feedback",
     href: "/feedback",
     allowedRoles: ALL_DASHBOARD_ROLES,
@@ -554,6 +567,9 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/reservations": "tables.reservation.view",
   "/discounts": "pos.order.discount.apply",
   "/customers": "customers.view",
+  "/grow/campaigns/new": "grow.campaigns.manage",
+  "/grow/campaigns": "grow.view",
+  "/grow": "grow.view",
   "/rooms": "hotel.manage",
   // Finance
   "/finance/accounting/inventory": "inventory.accounting.view",
@@ -583,6 +599,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/finance/income": ADMIN_SHELL_ROLES,
   "/finance/expenses": ADMIN_SHELL_ROLES,
   "/customers": ADMIN_SHELL_ROLES,
+  "/grow": ADMIN_MANAGER,
   "/tables": ADMIN_MANAGER,
   "/rooms": ["admin", "manager", "cashier", "waiter"],
   "/reservations": ADMIN_SHELL_ROLES,

@@ -2112,6 +2112,53 @@ export const FeedbackApis = {
   submit: "/feedbacks/",
 };
 
+export const GrowthApis = {
+  overview: "/growth/overview",
+  readiness: "/growth/readiness",
+  opportunities: "/growth/opportunities",
+  refreshOpportunities: "/growth/opportunities/refresh",
+  segmentPreview: (segmentCode: string) =>
+    `/growth/segments/${encodeURIComponent(segmentCode)}/preview`,
+  campaigns: "/growth/campaigns",
+  campaign: (campaignId: number | string) => `/growth/campaigns/${campaignId}`,
+  campaignAudiencePreview: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/preview-audience`,
+  campaignSubmitReview: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/submit-review`,
+  campaignReturnToDraft: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/return-to-draft`,
+  campaignPosterUpload: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/creative-assets/upload`,
+  campaignApprove: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/approve`,
+  campaignSchedule: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/schedule`,
+  campaignPause: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/pause`,
+  campaignCancel: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/cancel`,
+  campaignResults: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/results`,
+  settings: "/growth/settings",
+  brand: "/growth/brand",
+  messageTemplates: "/growth/message-templates",
+  suggestCopy: "/growth/content/suggest-copy",
+  validateOffer: "/growth/offers/validate",
+  redemptionByOrder: (orderId: number | string) =>
+    `/growth/redemptions/by-order/${orderId}`,
+};
+
+export const PublicGrowthApis = {
+  restaurant: (publicSlug: string) =>
+    `/public/growth/restaurants/${encodeURIComponent(publicSlug)}`,
+  join: (publicSlug: string) =>
+    `/public/growth/restaurants/${encodeURIComponent(publicSlug)}/join`,
+  preferences: (signedToken: string) =>
+    `/public/growth/preferences/${encodeURIComponent(signedToken)}`,
+  unsubscribe: (signedToken: string) =>
+    `/public/growth/preferences/${encodeURIComponent(signedToken)}/unsubscribe`,
+};
+
 export const TransactionsApis = {
   list: ({
     restaurantId,

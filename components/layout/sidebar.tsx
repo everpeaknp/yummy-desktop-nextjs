@@ -445,9 +445,23 @@ export function Sidebar() {
             {items.map((item, index) => {
               const active = isItemActive(item);
               const isOpen = openMenus[item.title];
+              const showSectionLabel =
+                !collapsed &&
+                item.section &&
+                (index === 0 || items[index - 1]?.section !== item.section);
               
               return (
                 <div key={index} className="flex flex-col">
+                  {showSectionLabel && (
+                    <div
+                      className={cn(
+                        "px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70",
+                        index > 0 && "mt-5 border-t border-border/50 pt-4",
+                      )}
+                    >
+                      {item.section}
+                    </div>
+                  )}
                   {collapsed ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
