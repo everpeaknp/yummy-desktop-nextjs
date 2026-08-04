@@ -68,7 +68,7 @@ export function UnifiedInsightsCard({
       <CardContent className="space-y-3 pt-4">
         {unavailable ? (
           <p className="text-sm text-muted-foreground">
-            Analytics access is required to load AI recommendations.
+            Analytics access is required to load operational insights.
           </p>
         ) : loading && visible.length === 0 ? (
           <div className="space-y-3">
@@ -96,7 +96,7 @@ export function UnifiedInsightsCard({
                         <span>{insight.message}</span>
                         <span className="font-semibold text-muted-foreground">
                           {" "}
-                          — {insight.source === "ai" ? "AI" : "Operational"}
+                          — {insight.source === "ai_assisted" ? "AI-assisted" : "Operational insight"}
                         </span>
                       </p>
                       {insight.suggested_action ? (

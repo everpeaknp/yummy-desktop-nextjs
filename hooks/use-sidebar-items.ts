@@ -31,6 +31,7 @@ import {
   Truck,
   BookOpenCheck,
   BadgeDollarSign,
+  Sprout,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -40,6 +41,8 @@ import {
   filterSidebarLinksByAccess,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useSubscriptionStore } from "@/hooks/use-subscription";
+import { isSubscriptionEntitlementEnabled } from "@/lib/subscription/entitlements";
 export interface SidebarItem {
   title: string;
   href: string;
@@ -77,6 +80,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/finance/setup": Settings,
   "/finance/operations": Banknote,
   "/customers": Users,
+  "/grow": Sprout,
   "/attendance": Fingerprint,
   "/staff": Users,
   "/workforce": Briefcase,
@@ -170,8 +174,12 @@ const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
 export function useSidebarItems(): SidebarItem[] {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((s) => s.restaurant);
+  const currentSubscription = useSubscriptionStore((state) => state.current);
 
   return useMemo(() => {
+    const isExplicitlyLocked = (key: string, legacyFallback = true) =>
+      Boolean(currentSubscription) &&
+      !isSubscriptionEntitlementEnabled(currentSubscription, key, legacyFallback);
     const roles = normalizeRolesForUser(user);
     const isAdminOrManager = roles.some(
       (r) => r === "admin" || r === "manager",
@@ -207,6 +215,29 @@ export function useSidebarItems(): SidebarItem[] {
         if (
           !restaurant?.restaurant_enabled &&
           restaurantOnlyItems.includes(item.href)
+        )
+          return false;
+        const entitlementByRoute: Record<string, string> = {
+          "/inventory": "inventory.enabled",
+          "/manage/suppliers": "inventory.suppliers.enabled",
+          "/reservations": "reservations.enabled",
+          "/payroll": "payroll.enabled",
+          "/finance/accounting": "finance.accounting.enabled",
+          "/menu/modifiers": "menu.modifiers.enabled",
+          "/finance/income": "finance.income_expense.enabled",
+          "/finance/expenses": "finance.income_expense.enabled",
+          "/cash-drawers": "finance.cash_drawer.enabled",
+          "/customers": "customers.crm.enabled",
+          "/grow": "grow.enabled",
+          "/day-close": "finance.daybook.enabled",
+          "/period-reports": "finance.period_close.enabled",
+          "/manage/receipt-designer": "designers.receipt.enabled",
+          "/manage/kot-designer": "designers.kot.enabled",
+        };
+        const requiredEntitlement = entitlementByRoute[item.href];
+        if (
+          requiredEntitlement &&
+          isExplicitlyLocked(requiredEntitlement, item.href !== "/grow")
         )
           return false;
         return true;
@@ -547,20 +578,35 @@ export function useSidebarItems(): SidebarItem[] {
       }
     }
 
-    // Ensure Settings is always at the very end of navigation
-    const cleaned = result.map((r) => ({
+    const orderedResult = [
+      ...result.filter((item) => item.href !== "/grow"),
+      ...result.filter((item) => item.href === "/grow"),
+    ];
+
+    // Ensure Settings is always at the end of the operational navigation,
+    // immediately before the separately labelled Grow product.
+    const cleaned = orderedResult.map((r) => ({
       ...r,
-      subItems: r.subItems?.length ? r.subItems : undefined,
+      section: r.href === "/grow" ? "Yummy Grow" : "Yummy Operations",
+      subItems: r.subItems?.length
+        ? r.subItems.map((subItem) => ({
+            ...subItem,
+            section: "Yummy Operations",
+          }))
+        : undefined,
     }));
 
     const settingsIndex = cleaned.findIndex(
       (item) => item.href === "/settings" || item.title.toLowerCase() === "settings",
     );
-    if (settingsIndex >= 0 && settingsIndex !== cleaned.length - 1) {
+    const growIndex = cleaned.findIndex((item) => item.href === "/grow");
+    const desiredSettingsIndex = growIndex >= 0 ? growIndex - 1 : cleaned.length - 1;
+    if (settingsIndex >= 0 && settingsIndex !== desiredSettingsIndex) {
       const [settingsItem] = cleaned.splice(settingsIndex, 1);
-      cleaned.push(settingsItem);
+      const nextGrowIndex = cleaned.findIndex((item) => item.href === "/grow");
+      cleaned.splice(nextGrowIndex >= 0 ? nextGrowIndex : cleaned.length, 0, settingsItem);
     }
 
     return cleaned;
-  }, [restaurant, user]);
+  }, [currentSubscription, restaurant, user]);
 }
