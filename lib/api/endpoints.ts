@@ -1853,6 +1853,8 @@ export const DrawerSessionApis = {
   approveVariance: (sessionId: number) =>
     `/drawer-sessions/${sessionId}/approve-variance`,
   reopen: (sessionId: number) => `/drawer-sessions/${sessionId}/reopen`,
+  reopenForCorrection: (sessionId: number) =>
+    `/drawer-sessions/${sessionId}/reopen-for-correction`,
 };
 
 export const HistoryApis = {

@@ -531,8 +531,20 @@ function DrawerHistoryCard({
     }
     setReopening(true);
     try {
-      await apiClient.post(DrawerSessionApis.reopen(reopenSession.id), { reason });
-      toast.success("Drawer reopened. Recount and settle it again.");
+      const transferSettlement = ["safe_transfer", "pending_bank_deposit", "immediate_bank_deposit"].includes(
+        String(reopenSession.settlement_mode || ""),
+      );
+      await apiClient.post(
+        transferSettlement
+          ? DrawerSessionApis.reopenForCorrection(reopenSession.id)
+          : DrawerSessionApis.reopen(reopenSession.id),
+        { reason },
+      );
+      toast.success(
+        transferSettlement
+          ? "Settlement transfer reversed. Recount and settle this drawer again."
+          : "Drawer reopened. Recount and settle it again.",
+      );
       setReopenSession(null);
       setReopenReason("");
       await loadHistory();
@@ -617,6 +629,14 @@ function DrawerHistoryCard({
               {items.map((session) => {
                 const activity = activityBySession[session.id] ?? [];
                 const expanded = expandedSessionId === session.id;
+                const hasLaterSameDaySession = items.some(
+                  (candidate) =>
+                    candidate.id > session.id &&
+                    candidate.business_date === session.business_date &&
+                    candidate.business_line === session.business_line &&
+                    candidate.station === session.station &&
+                    candidate.drawer_key === session.drawer_key,
+                );
                 return (
                   <div key={session.id} className="px-4 py-3">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -642,6 +662,11 @@ function DrawerHistoryCard({
                             Variance {formatMoney(Number(session.cash_variance))}
                           </span>
                         ) : null}
+                        {hasLaterSameDaySession ? (
+                          <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+                            Earlier session - correct latest session
+                          </span>
+                        ) : null}
                         <Button
                           type="button"
                           variant="outline"
@@ -657,6 +682,7 @@ function DrawerHistoryCard({
                           Activity
                         </Button>
                         {canReopen &&
+                        !hasLaterSameDaySession &&
                         (session.status === "closed" || session.status === "approved") ? (
                           <Button
                             type="button"
@@ -669,7 +695,7 @@ function DrawerHistoryCard({
                             }}
                           >
                             <RotateCcw className="h-4 w-4" />
-                            Reopen
+                            Correct / Reopen
                           </Button>
                         ) : null}
                       </div>
@@ -705,8 +731,9 @@ function DrawerHistoryCard({
           <DialogHeader>
             <DialogTitle>Reopen drawer for correction?</DialogTitle>
             <DialogDescription>
-              This keeps the original activity and records who reopened it. Recount and
-              settle the drawer again after reopening.
+              {reopenSession?.settlement_mode && reopenSession.settlement_mode !== "retain_all"
+                ? "This creates a compensating reversal for the recorded safe or bank transfer, keeps the original audit trail, and reopens this same session."
+                : "This keeps the original activity and records who reopened it. Recount and settle the drawer again after reopening."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

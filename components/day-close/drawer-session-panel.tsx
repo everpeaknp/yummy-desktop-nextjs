@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Banknote, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, Banknote, CheckCircle2, Loader2, RefreshCw, RotateCcw, Split } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/hooks/use-auth";
@@ -15,6 +15,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { DrawerCountDialog } from "./drawer-count-dialog";
 import type {
   BusinessLine,
@@ -54,6 +63,8 @@ type OpeningForm = {
   differenceSource?: string;
   differenceReference?: string;
 };
+
+type CorrectionAction = "correct_count" | "change_settlement" | "reopen";
 
 const COUNTABLE_STATUSES = new Set(["opened", "closing_count_required", "variance_review_required", "reopened"]);
 const SETTLEMENT_PENDING_STATUSES = new Set(["closed"]);
@@ -160,6 +171,7 @@ export function DrawerSessionPanel({
 }: DrawerSessionPanelProps) {
   const user = useAuth((state) => state.user);
   const canApproveOpeningDifference = hasPermission(user, "finance.variance.approve");
+  const canReopenDrawer = hasPermission(user, "day_close.drawer.reopen");
   const baseBusinessDate = businessDate || todayIso();
   const [effectiveBusinessDate, setEffectiveBusinessDate] = useState(baseBusinessDate);
   const [configs, setConfigs] = useState<DrawerConfiguration[]>([]);
@@ -172,9 +184,15 @@ export function DrawerSessionPanel({
   const [openingKey, setOpeningKey] = useState<string | null>(null);
   const [countSession, setCountSession] = useState<DrawerSession | null>(null);
   const [countDialogOpen, setCountDialogOpen] = useState(false);
+  const [newSessionKeys, setNewSessionKeys] = useState<Record<string, boolean>>({});
+  const [correctionSession, setCorrectionSession] = useState<DrawerSession | null>(null);
+  const [correctionAction, setCorrectionAction] = useState<CorrectionAction>("reopen");
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [correctionBusy, setCorrectionBusy] = useState(false);
 
   useEffect(() => {
     setEffectiveBusinessDate(baseBusinessDate);
+    setNewSessionKeys({});
   }, [baseBusinessDate]);
 
   const activeConfigs = useMemo(
@@ -409,6 +427,7 @@ export function DrawerSessionPanel({
         opening_difference_source: needsApproval ? differenceSource : null,
         opening_difference_destination: differenceSource === "safe_transfer" ? "main_cash_safe" : null,
         opening_difference_reference: form.differenceReference?.trim() || null,
+        start_new_session: Boolean(newSessionKeys[key]),
       };
       const res = await apiClient.post<BaseResponse<DrawerSession>>(DrawerSessionApis.open, payload);
       const session = res.data?.data;
@@ -439,6 +458,54 @@ export function DrawerSessionPanel({
   const openCountDialog = (session: DrawerSession) => {
     setCountSession(session);
     setCountDialogOpen(true);
+  };
+
+  const beginCorrection = (session: DrawerSession, action: CorrectionAction) => {
+    setCorrectionSession(session);
+    setCorrectionAction(action);
+    setCorrectionReason("");
+  };
+
+  const submitCorrection = async () => {
+    if (!correctionSession || correctionReason.trim().length < 5) {
+      toast.error("Enter a clear reason of at least 5 characters.");
+      return;
+    }
+    const reversesCashTransfer = new Set([
+      "safe_transfer",
+      "pending_bank_deposit",
+      "immediate_bank_deposit",
+    ]).has(String(correctionSession.settlement_mode || ""));
+    setCorrectionBusy(true);
+    try {
+      const endpoint = reversesCashTransfer
+        ? DrawerSessionApis.reopenForCorrection(correctionSession.id)
+        : DrawerSessionApis.reopen(correctionSession.id);
+      const res = await apiClient.post<BaseResponse<DrawerSession>>(endpoint, {
+        reason: correctionReason.trim(),
+      });
+      const reopened = res.data?.data;
+      if (!reopened) throw new Error("Drawer reopen response did not include a session");
+      setCorrectionSession(null);
+      updateSession(reopened);
+      await load();
+      if (correctionAction !== "reopen") {
+        setCountSession(reopened);
+        setCountDialogOpen(true);
+      }
+      toast.success(
+        reversesCashTransfer
+          ? "Settlement transfer reversed and drawer reopened."
+          : "Drawer reopened.",
+      );
+    } catch (error) {
+      console.error("Failed to reopen drawer for correction", error);
+      const apiError = error as { response?: { data?: { detail?: unknown } } };
+      const detail = apiError.response?.data?.detail;
+      toast.error(typeof detail === "string" && detail.trim() ? detail : "Failed to reopen drawer");
+    } finally {
+      setCorrectionBusy(false);
+    }
   };
 
   return (
@@ -638,24 +705,58 @@ export function DrawerSessionPanel({
                     </div>
                   ) : null}
 
-                  {!session && settledSession ? (
-                    <div className="flex flex-col gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-400 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <CheckCircle2 className="mr-2 inline h-4 w-4" />
-                        This drawer is settled for {effectiveBusinessDate}. Opening it again for the same date would block day close.
+                  {!session && settledSession && !newSessionKeys[key] ? (
+                    <div className="space-y-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-950 dark:text-emerald-300">
+                      <div className="flex items-start gap-2">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                        <div>
+                          <div className="font-semibold">This drawer is closed and settled for {effectiveBusinessDate}.</div>
+                          <div className="mt-1 text-xs opacity-80">
+                            Counted {formatDayCloseCurrency(settledSession.counted_closing_cash ?? 0)}; retained {formatDayCloseCurrency(settledSession.retained_float ?? 0)}; {sourceLabel(settledSession.settlement_mode)} {formatDayCloseCurrency(settledSession.settlement_amount ?? 0)}.
+                          </div>
+                          <div className="mt-1 text-xs opacity-80">
+                            If the count or settlement was wrong, correct this session. Start a new session only for a genuinely new shift.
+                          </div>
+                        </div>
                       </div>
-                      {effectiveBusinessDate === baseBusinessDate ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" onClick={() => beginCorrection(settledSession, "correct_count")} disabled={!canReopenDrawer}>
+                          Correct Closing Count
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => beginCorrection(settledSession, "change_settlement")} disabled={!canReopenDrawer}>
+                          Change/Undo Settlement
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => beginCorrection(settledSession, "reopen")} disabled={!canReopenDrawer}>
+                          <RotateCcw className="mr-2 h-4 w-4" /> Reopen This Drawer
+                        </Button>
                         <Button
                           type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setNewSessionKeys((current) => ({ ...current, [key]: true }))}
+                        >
+                          <Split className="mr-2 h-4 w-4" /> Start New Shift/Session
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
                           variant="outline"
                           onClick={() => setEffectiveBusinessDate(nextDrawerBusinessDate(effectiveBusinessDate))}
                         >
-                          Prepare {nextDrawerBusinessDate(effectiveBusinessDate)}
+                          Open Drawer for Another Business Date
                         </Button>
-                      ) : null}
+                      </div>
                     </div>
                   ) : !session ? (
                     <div className="space-y-3">
+                      {newSessionKeys[key] && settledSession ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-400">
+                          <span>You are starting a separate shift on the same business date. The settled session remains unchanged.</span>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setNewSessionKeys((current) => ({ ...current, [key]: false }))}>
+                            Cancel new session
+                          </Button>
+                        </div>
+                      ) : null}
                       {!suggestion ? (
                         <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
                           Opening policy is loading or unavailable. Refresh drawer readiness if this remains blank.
@@ -819,6 +920,39 @@ export function DrawerSessionPanel({
           onOpenChange={setCountDialogOpen}
           onUpdated={updateSession}
         />
+        <Dialog open={Boolean(correctionSession)} onOpenChange={(open) => !open && !correctionBusy && setCorrectionSession(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {correctionAction === "correct_count"
+                  ? "Correct Closing Count"
+                  : correctionAction === "change_settlement"
+                    ? "Change or Undo Settlement"
+                    : "Reopen This Drawer"}
+              </DialogTitle>
+              <DialogDescription>
+                {correctionSession?.settlement_mode && correctionSession.settlement_mode !== "retain_all"
+                  ? "The recorded safe or bank transfer will be reversed with a compensating audit/accounting entry before this same drawer session is reopened."
+                  : "This same drawer session will be reopened. No new session or artificial variance will be created."}
+              </DialogDescription>
+            </DialogHeader>
+            <label className="grid gap-2 text-sm font-medium">
+              Reason
+              <Textarea
+                value={correctionReason}
+                onChange={(event) => setCorrectionReason(event.target.value)}
+                placeholder="Explain what was entered incorrectly and what will be corrected"
+              />
+            </label>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCorrectionSession(null)} disabled={correctionBusy}>Cancel</Button>
+              <Button onClick={() => void submitCorrection()} disabled={correctionBusy || correctionReason.trim().length < 5}>
+                {correctionBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Continue with correction
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

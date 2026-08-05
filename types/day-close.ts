@@ -76,6 +76,7 @@ export interface DrawerSessionOpenInput {
   opening_difference_source?: string | null;
   opening_difference_destination?: string | null;
   opening_difference_reference?: string | null;
+  start_new_session?: boolean;
 }
 
 export interface DrawerClosingCountInput {
