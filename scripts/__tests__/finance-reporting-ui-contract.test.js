@@ -123,6 +123,29 @@ test("analytics finance summary shows the exact reporting scope", () => {
   assert.match(source, /getActiveDates\(\)/);
 });
 
+test("analytics station changes cancel superseded requests without double triggering", () => {
+  const source = read("app/(dashboard)/analytics/page.tsx");
+  const endpoints = read("lib/api/endpoints.ts");
+  const stationSelect = source.match(
+    /\{\/\* Station Select \*\/\}([\s\S]*?)\{\/\* Business Line Select \*\/\}/,
+  );
+
+  assert.ok(stationSelect, "station selector should remain present");
+  assert.match(stationSelect[1], /setStation\(/);
+  assert.doesNotMatch(stationSelect[1], /setFetchTrigger\(/);
+  assert.match(source, /new AbortController\(\)/);
+  assert.match(source, /analyticsRequestGenerationRef/);
+  assert.match(source, /signal: controller\.signal/);
+  assert.match(source, /if \(!isCurrentRequest\(\)\) return/);
+  assert.match(source, /AnalyticsApis\.financeSummary/);
+  assert.match(source, /fastFinanceOverview/);
+  assert.match(source, /fullDashboardResolved/);
+  assert.match(source, /if \(!data\?\.tabs && !quick\) return null/);
+  assert.match(source, /activeTab === "finance" && fastFinanceOverview/);
+  assert.match(endpoints, /financeSummary:/);
+  assert.match(endpoints, /\/analytics\/finance-summary/);
+});
+
 test("finance station filters share canonical All and General scopes", () => {
   const helper = read("lib/finance-station-scope.ts");
   const sources = [

@@ -134,6 +134,7 @@ import {
   type BusinessLine,
 } from "@/types/day-close";
 import type { DrawerCashControlSummary } from "@/types/accounting";
+import type { FinanceOverviewResponse } from "@/types/finance";
 import {
   analyticsMetricDelta,
   analyticsMetricValue,
@@ -151,6 +152,8 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<any>(null);
   const [cashControlSummary, setCashControlSummary] =
     useState<DrawerCashControlSummary | null>(null);
+  const [fastFinanceOverview, setFastFinanceOverview] =
+    useState<FinanceOverviewResponse | null>(null);
   const [trendsData, setTrendsData] = useState<any[]>([]);
   const [categoryData, setCategoryData] = useState<any[]>([]);
   const [breakdownType, setBreakdownType] = useState<BreakdownTab>("source");
@@ -158,6 +161,7 @@ export default function AnalyticsPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [scopeNotice, setScopeNotice] = useState<ParsedScopeError | null>(null);
   const [fetchTrigger, setFetchTrigger] = useState(0);
+  const analyticsRequestGenerationRef = useRef(0);
   const [date, setDate] = useState<DateRange | undefined>();
   const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
   const [businessLine, setBusinessLine] = useState<string | undefined>(
@@ -612,9 +616,17 @@ export default function AnalyticsPage() {
 
   // Fetch all analytics from unified /analytics/dashboard (same as Flutter)
   useEffect(() => {
+    const controller = new AbortController();
+    const requestGeneration = ++analyticsRequestGenerationRef.current;
+    const isCurrentRequest = () =>
+      requestGeneration === analyticsRequestGenerationRef.current &&
+      !controller.signal.aborted;
+    let fullDashboardResolved = false;
+
     const fetchAnalytics = async () => {
       if (!user?.restaurant_id || !canViewAnalytics) {
         setData(null);
+        setFastFinanceOverview(null);
         setCashControlSummary(null);
         setTrendsData([]);
         setCategoryData([]);
@@ -625,6 +637,7 @@ export default function AnalyticsPage() {
         return;
       }
       if (activeRange === "custom" && (!date?.from || !date?.to)) {
+        setFastFinanceOverview(null);
         setDayCloseAlignedToday(false);
         setDayCloseAlignedTodaySession(null);
         setDayCloseNetSalesOverride(undefined);
@@ -641,6 +654,7 @@ export default function AnalyticsPage() {
         setScopeNotice(validationToScopeError(validation));
         setFetchError(null);
         setData(null);
+        setFastFinanceOverview(null);
         setCashControlSummary(null);
         setTrendsData([]);
         setCategoryData([]);
@@ -654,6 +668,7 @@ export default function AnalyticsPage() {
       setScopeNotice(null);
       setLoading(true);
       setFetchError(null);
+      setFastFinanceOverview(null);
       try {
         const formatDate = (date: Date) => {
           const year = date.getFullYear();
@@ -726,12 +741,14 @@ export default function AnalyticsPage() {
                   restaurantId: user.restaurant_id,
                   businessLine: businessLine as BusinessLine,
                 }),
+                { signal: controller.signal },
               ),
               apiClient.get(
                 DayCloseApis.generateSnapshot({
                   restaurantId: user.restaurant_id,
                   businessLine: businessLine as BusinessLine,
                 }),
+                { signal: controller.signal },
               ),
             ]);
 
@@ -766,17 +783,25 @@ export default function AnalyticsPage() {
                 snapshotData?.net_sales ?? undefined;
             }
           } catch {
+            if (!isCurrentRequest()) return;
             dayCloseAlignedTodayLocal = false;
             dayCloseAlignedTodaySessionLocal = null;
             dayCloseNetSalesOverrideLocal = undefined;
           }
         }
 
+        if (!isCurrentRequest()) return;
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         setDayCloseAlignedToday(dayCloseAlignedTodayLocal);
         setDayCloseAlignedTodaySession(dayCloseAlignedTodaySessionLocal);
         setDayCloseNetSalesOverride(dayCloseNetSalesOverrideLocal);
 
+        const stationParam = selectedDayCloseSession
+          ? undefined
+          : toFinanceStationParam(station, {
+              businessLine: queryBusinessLine ?? "all",
+              hotelEnabled: Boolean(restaurant?.hotel_enabled),
+            });
         const dashboardUrl = AnalyticsApis.dashboard({
           restaurantId: user.restaurant_id,
           dateFrom: selectedDayCloseSession ? undefined : dateFrom,
@@ -785,15 +810,31 @@ export default function AnalyticsPage() {
           endTime,
           timezone,
           businessLine: queryBusinessLine ?? "all",
-          station:
-            selectedDayCloseSession
-              ? undefined
-              : toFinanceStationParam(station, {
-                  businessLine: queryBusinessLine ?? "all",
-                  hotelEnabled: Boolean(restaurant?.hotel_enabled),
-                }),
+          station: stationParam,
           include: "core",
         });
+        const financeSummaryUrl = AnalyticsApis.financeSummary({
+          restaurantId: user.restaurant_id,
+          dateFrom: selectedDayCloseSession ? undefined : dateFrom,
+          dateTo: selectedDayCloseSession ? undefined : dateTo,
+          startTime,
+          endTime,
+          timezone,
+          businessLine: queryBusinessLine ?? "all",
+          station: stationParam,
+        });
+        void apiClient
+          .get(financeSummaryUrl, { signal: controller.signal })
+          .then((financeResponse) => {
+            if (
+              isCurrentRequest() &&
+              !fullDashboardResolved &&
+              financeResponse.data?.status === "success"
+            ) {
+              setFastFinanceOverview(financeResponse.data.data);
+            }
+          })
+          .catch(() => null);
         const cashControlRequest =
           queryBusinessLine === "restaurant" || queryBusinessLine === "hotel"
             ? apiClient
@@ -802,18 +843,22 @@ export default function AnalyticsPage() {
                     restaurantId: user.restaurant_id,
                     businessLine: queryBusinessLine,
                   }),
+                  { signal: controller.signal },
                 )
                 .catch(() => null)
             : Promise.resolve(null);
 
         const [res, cashSummaryRes] = await Promise.all([
-          apiClient.get(dashboardUrl),
+          apiClient.get(dashboardUrl, { signal: controller.signal }),
           cashControlRequest,
         ]);
+        if (!isCurrentRequest()) return;
         setCashControlSummary(cashSummaryRes?.data?.data ?? null);
 
         if (res.data?.status === "success") {
+          fullDashboardResolved = true;
           const d = res.data.data;
+          setFastFinanceOverview(null);
           setData(d);
           setTrendsData(mapAnalyticsTrends(d, preferHourlyTrends(activeRange)));
         } else {
@@ -822,6 +867,7 @@ export default function AnalyticsPage() {
           );
         }
       } catch (err: unknown) {
+        if (!isCurrentRequest()) return;
         const parsed = parseApiScopeError(err, { role: primaryRole });
         if (parsed) {
           setScopeNotice(parsed);
@@ -843,14 +889,15 @@ export default function AnalyticsPage() {
           "Failed to load analytics dashboard";
         setFetchError(message);
       } finally {
-        setLoading(false);
+        if (isCurrentRequest()) setLoading(false);
       }
     };
 
-    if (!ready) return;
+    if (!ready) return () => controller.abort();
     if (user?.restaurant_id) {
-      fetchAnalytics();
+      void fetchAnalytics();
     }
+    return () => controller.abort();
   }, [
     ready,
     canViewAnalytics,
@@ -901,11 +948,12 @@ export default function AnalyticsPage() {
 
   // executive summary metrics
   const v2 = useMemo(() => {
-    if (!data?.tabs) return null;
+    const quick = fastFinanceOverview?.metrics;
+    if (!data?.tabs && !quick) return null;
     const overviewMetrics =
-      data.tabs.overview?.executive_summary?.metrics || [];
-    const financeMetrics = data.tabs.finance?.pnl_summary?.metrics || [];
-    const ordersMetrics = data.tabs.orders?.outcome_summary?.metrics || [];
+      data?.tabs?.overview?.executive_summary?.metrics || [];
+    const financeMetrics = data?.tabs?.finance?.pnl_summary?.metrics || [];
+    const ordersMetrics = data?.tabs?.orders?.outcome_summary?.metrics || [];
 
     const getVal = (list: any[], keys: string[], fallback = 0) => {
       return analyticsMetricValue(list, keys) ?? fallback;
@@ -970,7 +1018,7 @@ export default function AnalyticsPage() {
       ]) ??
       0;
 
-    const peakHour = data.tabs.overview?.table_utilization?.peak_hour || "—";
+    const peakHour = data?.tabs?.overview?.table_utilization?.peak_hour || "—";
 
     const canonicalFinance = mapAnalyticsFinanceMetrics({
       financeMetrics,
@@ -980,6 +1028,52 @@ export default function AnalyticsPage() {
       fallbackExpense: expense,
       fallbackDiscount: discounts,
     });
+    const quickExpense = quick
+      ? quick.manual_operating_expense +
+        quick.inventory_direct_expense +
+        quick.inventory_cogs +
+        quick.inventory_wastage +
+        quick.inventory_variance
+      : null;
+    const quickFinance = quick
+      ? {
+          grossIncome: quick.gross_sales,
+          netProfit: quick.operating_profit,
+          totalExpense: quickExpense ?? 0,
+          expenseSpend: quickExpense ?? 0,
+          discount: quick.discount_total,
+          netSales: quick.net_sales,
+          collectionsTotal: quick.collections_total,
+          creditSales: quick.credit_sales,
+          refundTotal: quick.refund_total,
+          refundLiabilities: quick.refund_liabilities,
+          discountTotal: quick.discount_total,
+          manualIncomeTotal: quick.manual_income_total,
+          manualOperatingExpense: quick.manual_operating_expense,
+          inventoryDirectExpense: quick.inventory_direct_expense,
+          inventoryCashOutflow: quick.inventory_cash_outflow,
+          inventoryCogs: quick.inventory_cogs,
+          inventoryWastage: quick.inventory_wastage,
+          inventoryVariance: quick.inventory_variance,
+          cashExpected: quick.cash_expected,
+          currentPeriodSalesCollected: quick.current_period_sales_collected,
+          priorPeriodPaymentsApplied: quick.prior_period_payments_applied,
+          postPeriodPaymentsApplied: quick.post_period_payments_applied,
+          collectionsForOtherPeriodSales:
+            quick.collections_for_other_period_sales,
+          uncollectedSalesBalance: quick.uncollected_sales_balance,
+          salesCollectionGap: quick.sales_collection_gap,
+          paidOpenOrdersCount: quick.paid_open_orders_count,
+          paidOpenOrdersAmount: quick.paid_open_orders_amount,
+          ledgerComplete: Boolean(fastFinanceOverview?.meta.ledger_complete),
+          financeAccountingEnabled: Boolean(
+            fastFinanceOverview?.meta.finance_accounting_enabled,
+          ),
+          accountingV2Enabled: Boolean(
+            fastFinanceOverview?.meta.accounting_v2_enabled,
+          ),
+        }
+      : canonicalFinance;
 
     const grossIncomeDelta = getDelta(financeMetrics, [
       "gross_income",
@@ -999,27 +1093,27 @@ export default function AnalyticsPage() {
     ]);
 
     return {
-      income,
-      incomeDelta,
-      expense,
-      expenseDelta,
-      profit,
-      profitDelta,
+      income: quick ? quick.net_sales + quick.manual_income_total : income,
+      incomeDelta: quick ? 0 : incomeDelta,
+      expense: quickExpense ?? expense,
+      expenseDelta: quick ? 0 : expenseDelta,
+      profit: quick ? quick.operating_profit : profit,
+      profitDelta: quick ? 0 : profitDelta,
       orders,
       ordersDelta,
       avgOrderValue,
       cancellationRateVal,
       avgServiceTime,
       peakHour,
-      discounts,
-      refunds,
-      ...canonicalFinance,
-      grossIncomeDelta,
-      netProfitDelta,
-      totalExpenseDelta,
-      discountDelta,
+      discounts: quick?.discount_total ?? discounts,
+      refunds: quick?.refund_total ?? refunds,
+      ...quickFinance,
+      grossIncomeDelta: quick ? 0 : grossIncomeDelta,
+      netProfitDelta: quick ? 0 : netProfitDelta,
+      totalExpenseDelta: quick ? 0 : totalExpenseDelta,
+      discountDelta: quick ? 0 : discountDelta,
     };
-  }, [data]);
+  }, [data, fastFinanceOverview]);
 
   // Revenue/Performance trends data
   const revenueTrendsData = useMemo(() => {
@@ -1489,7 +1583,6 @@ export default function AnalyticsPage() {
                     hotelEnabled: Boolean(restaurant?.hotel_enabled),
                   }),
                 );
-                setFetchTrigger((t) => t + 1);
               }}
               disabled={!!selectedDayCloseSession}
             >
@@ -1550,7 +1643,10 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      {loading && !data && !scopeNotice ? (
+      {loading &&
+      !data &&
+      !(activeTab === "finance" && fastFinanceOverview) &&
+      !scopeNotice ? (
         <AnalyticsSkeleton />
       ) : scopeNotice ? null : (
         <Tabs

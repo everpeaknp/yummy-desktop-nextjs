@@ -497,6 +497,40 @@ export const AnalyticsApis = {
     if (include) params.append("include", include);
     return `/analytics/dashboard?${params.toString()}`;
   },
+  financeSummary: ({
+    restaurantId,
+    dateFrom,
+    dateTo,
+    startTime,
+    endTime,
+    timezone,
+    station,
+    businessLine,
+  }: {
+    restaurantId: number;
+    dateFrom?: string;
+    dateTo?: string;
+    startTime?: string;
+    endTime?: string;
+    timezone?: string;
+    station?: string;
+    businessLine?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+    });
+    if (startTime && endTime) {
+      params.append("start_time", startTime);
+      params.append("end_time", endTime);
+    } else {
+      if (dateFrom) params.append("date_from", dateFrom);
+      if (dateTo) params.append("date_to", dateTo);
+    }
+    if (timezone) params.append("timezone", timezone);
+    if (station) params.append("station", station);
+    if (businessLine) params.append("business_line", businessLine);
+    return `/analytics/finance-summary?${params.toString()}`;
+  },
   compare: ({
     restaurantId,
     dateFrom,
