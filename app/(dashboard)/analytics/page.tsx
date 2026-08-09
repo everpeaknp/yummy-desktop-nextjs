@@ -2410,20 +2410,6 @@ export default function AnalyticsPage() {
                   {financeSummaryScopeLabel}
                 </p>
               </div>
-              <div
-                className={cn(
-                  "rounded-xl border px-3 py-2 text-xs",
-                  v2?.ledgerComplete === false
-                    ? "border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300"
-                    : "border-border/60 bg-muted/30 text-muted-foreground",
-                )}
-              >
-                {v2?.ledgerComplete === false
-                  ? "Transitional finance coverage: totals combine legacy reporting with finance events. Station views are analytical allocations; General / Shared consolidates shared, legacy Other, and unattributed activity."
-                  : station
-                    ? "This station view contains backend allocations for the selected station. Use All Stations for the authoritative selected-scope total."
-                    : "All Stations is the authoritative selected-scope total. General / Shared consolidates shared, legacy Other, and unattributed activity."}
-              </div>
               <FinanceMetricGroup title="Sales Earned">
                 <BigMetricCard
                   label="Net Sales"

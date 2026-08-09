@@ -204,13 +204,11 @@ test("aggregate analytics never presents one business line as drawer custody", (
   );
 });
 
-test("analytics discloses transitional ledger and station allocation semantics", () => {
+test("analytics omits the transitional finance coverage banner", () => {
   const source = read("app/(dashboard)/analytics/page.tsx");
 
-  assert.match(source, /v2\?\.ledgerComplete === false/);
-  assert.match(source, /Transitional finance coverage/);
-  assert.match(source, /authoritative selected-scope total/);
-  assert.match(source, /legacy Other, and unattributed activity/);
+  assert.doesNotMatch(source, /Transitional finance coverage/);
+  assert.doesNotMatch(source, /legacy Other, and unattributed activity/);
 });
 
 test("expense writes use canonical attribution independently of reporting All", () => {
