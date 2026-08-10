@@ -693,3 +693,13 @@ body[data-scroll-locked] .orders-new-order-cta {
   background-color: hsl(var(--card)) !important;
   background-image: none !important;
 }
+
+/* Hide the clear/clean icon in react-phone-number-input */
+.phone-input-field .PhoneInputInput::-webkit-search-cancel-button,
+.phone-input-field .PhoneInputInput::-webkit-search-decoration,
+.phone-input-field .PhoneInputInput::-webkit-clear-button,
+.phone-input-field .PhoneInputInput::-ms-clear {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
