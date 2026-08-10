@@ -11,6 +11,7 @@ import {
   CircleDashed,
   Clock3,
   DollarSign,
+  Download,
   FileImage,
   Info,
   Loader2,
@@ -57,6 +58,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import apiClient from "@/lib/api-client";
+import { GrowthApis } from "@/lib/api/endpoints";
 import { getApiErrorMessage } from "@/lib/api-error-message";
 import { growthApi } from "@/lib/api/growth";
 import type {
@@ -79,15 +82,15 @@ import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
 
 const statusStyles: Record<GrowthCampaignStatus, string> = {
-  draft: "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300",
-  review: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  approved: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-  scheduled: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-  sending: "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
-  completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  paused: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300",
-  canceled: "border-border bg-muted text-muted-foreground",
-  failed: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+  draft: "border border-border bg-muted text-foreground",
+  review: "border border-border bg-muted text-foreground",
+  approved: "border border-border bg-muted text-foreground",
+  scheduled: "border border-border bg-muted text-foreground",
+  sending: "border border-border bg-muted text-foreground",
+  completed: "border border-border bg-muted text-foreground",
+  paused: "border border-border bg-muted text-foreground",
+  canceled: "border border-border bg-muted text-muted-foreground",
+  failed: "border border-border bg-muted text-foreground",
 };
 
 type ReasonAction = "return" | "pause" | "cancel";
@@ -138,7 +141,7 @@ function localInputForZone(timeZone: string): string {
 
 function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <div className="rounded-2xl border bg-muted/20 p-4">
+    <div className="rounded-xl border border-border bg-card p-4 transition-all hover:shadow-sm">
       <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="mt-1 text-xl font-black">{value}</p>
       {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
@@ -148,9 +151,9 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 
 function DetailSkeleton() {
   return (
-    <div className="mx-auto max-w-[1500px] space-y-5 pb-10" aria-label="Loading campaign detail">
-      <Skeleton className="h-48 rounded-3xl" />
-      <div className="grid gap-5 xl:grid-cols-2">
+    <div className="mx-auto max-w-[1400px] space-y-8 pb-16" aria-label="Loading campaign detail">
+      <Skeleton className="h-48 rounded-2xl" />
+      <div className="grid gap-8 xl:grid-cols-2">
         <Skeleton className="h-80 rounded-2xl" />
         <Skeleton className="h-80 rounded-2xl" />
       </div>
@@ -356,201 +359,395 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
     if (completed) setScheduleOpen(false);
   }
 
+  async function downloadCSV() {
+    if (!restaurant?.id) {
+      toast.error("Restaurant context is required for CSV export.");
+      return;
+    }
+    setBusyAction("csv");
+    try {
+      const response = await apiClient.get(GrowthApis.campaignResultsCsv(currentCampaignId), {
+        responseType: 'blob',
+        timeout: 60000, // 60 seconds for CSV generation
+      });
+      
+      const blob = response.data;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      
+      // Extract filename from Content-Disposition header or use default
+      const contentDisposition = response.headers["content-disposition"];
+      let filename = `campaign_${currentCampaignId}_results.csv`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (match) filename = match[1];
+      }
+      
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("Campaign results exported to CSV.");
+    } catch (csvError) {
+      toast.error(getApiErrorMessage(csvError, "CSV export failed."));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   return (
-    <div className="mx-auto max-w-[1500px] space-y-6 pb-10" data-tour="grow-campaign-detail">
-      <section className="rounded-3xl border bg-gradient-to-br from-emerald-500/10 via-card to-primary/5 p-6 shadow-sm md:p-8">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+    <div className="mx-auto max-w-[1400px] space-y-8 pb-16" data-tour="grow-campaign-detail">
+      {/* Hero Section */}
+      <section className="relative overflow-hidden rounded-xl border border-border bg-card p-8">
+        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="min-w-0 max-w-4xl">
-            <Link href="/grow/campaigns" className="inline-flex items-center text-xs font-semibold text-primary hover:underline">
-              <ArrowLeft className="mr-1 h-3.5 w-3.5" />Campaign administration
+            <Link href="/grow/campaigns" className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+              <ArrowLeft className="h-4 w-4" />
+              Campaigns
             </Link>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className={cn(statusStyles[campaign.status])}>{campaignStatusLabels[campaign.status]}</Badge>
-              <span className="text-xs capitalize text-muted-foreground">{campaign.playbook_code.replaceAll("_", " ")} · {campaign.segment_code} customers</span>
+            
+            <div className="mt-4 flex items-center gap-3">
+              <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span className="text-xs font-medium">Campaign Detail</span>
+              </div>
+              <Badge variant="outline" className={cn("text-xs", statusStyles[campaign.status])}>{campaignStatusLabels[campaign.status]}</Badge>
             </div>
-            <h1 className="mt-3 break-words text-3xl font-black tracking-tight md:text-4xl">{campaign.name}</h1>
-            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            
+            <h1 className="mt-4 break-words text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl">{campaign.name}</h1>
+            
+            <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+              <span className="capitalize">{campaign.playbook_code.replaceAll("_", " ")}</span>
+              <span>•</span>
+              <span>{campaign.segment_code} segment</span>
+              <span>•</span>
               <span>Campaign #{campaign.id}</span>
-              <span>Updated {formatDate(campaign.updated_at)}</span>
-              {campaign.scheduled_at ? <span className="inline-flex items-center gap-1"><CalendarClock className="h-3.5 w-3.5" />Scheduled {formatDate(campaign.scheduled_at)}</span> : null}
+              {campaign.scheduled_at && (
+                <>
+                  <span>•</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <CalendarClock className="h-3.5 w-3.5" />
+                    {formatDate(campaign.scheduled_at)}
+                  </span>
+                </>
+              )}
             </div>
           </div>
+          
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => void load()} disabled={Boolean(busyAction)}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
-            {actions.submitReview && <Button size="sm" onClick={() => void submitReview()} disabled={Boolean(busyAction)}>{busyAction === "review" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}Submit for review</Button>}
-            {actions.returnToDraft && <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("return"); }}><RotateCcw className="mr-2 h-4 w-4" />Return to draft</Button>}
-            {actions.approve && <Button size="sm" onClick={() => setApprovalOpen(true)} disabled={!approvalReady}><LockKeyhole className="mr-2 h-4 w-4" />Approve snapshot</Button>}
-            {actions.schedule && <Button size="sm" onClick={openSchedule}><CalendarClock className="mr-2 h-4 w-4" />Schedule delivery</Button>}
-            {actions.pause && <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("pause"); }}><Pause className="mr-2 h-4 w-4" />Pause</Button>}
-            {actions.cancel && <Button size="sm" variant="destructive" onClick={() => { setReason(""); setReasonAction("cancel"); }}><XCircle className="mr-2 h-4 w-4" />Cancel</Button>}
+            <Button variant="outline" size="sm" onClick={() => void load()} disabled={Boolean(busyAction)} className="rounded-xl border border-border">
+              <RefreshCw className="mr-2 h-4 w-4" />Refresh
+            </Button>
+            {actions.submitReview && (
+              <Button size="sm" onClick={() => void submitReview()} disabled={Boolean(busyAction)} className="rounded-xl border border-border">
+                {busyAction === "review" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                Submit for review
+              </Button>
+            )}
+            {actions.returnToDraft && (
+              <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("return"); }} className="rounded-xl border border-border">
+                <RotateCcw className="mr-2 h-4 w-4" />Return to draft
+              </Button>
+            )}
+            {actions.approve && (
+              <Button size="sm" onClick={() => setApprovalOpen(true)} disabled={!approvalReady} className="rounded-xl border border-border">
+                <LockKeyhole className="mr-2 h-4 w-4" />Approve
+              </Button>
+            )}
+            {actions.schedule && (
+              <Button size="sm" onClick={openSchedule} className="rounded-xl border border-border">
+                <CalendarClock className="mr-2 h-4 w-4" />Schedule
+              </Button>
+            )}
+            {actions.pause && (
+              <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("pause"); }} className="rounded-xl border border-border">
+                <Pause className="mr-2 h-4 w-4" />Pause
+              </Button>
+            )}
+            {actions.cancel && (
+              <Button size="sm" variant="destructive" onClick={() => { setReason(""); setReasonAction("cancel"); }} className="rounded-xl border border-border">
+                <XCircle className="mr-2 h-4 w-4" />Cancel
+              </Button>
+            )}
           </div>
         </div>
       </section>
 
       {secondaryWarnings.length > 0 && (
-        <Alert className="border-amber-500/40 bg-amber-500/5">
-          <TriangleAlert className="h-4 w-4 text-amber-600" />
-          <AlertTitle>Some evidence is unavailable</AlertTitle>
-          <AlertDescription>{secondaryWarnings.join(" ")} Campaign state remains backend-authoritative.</AlertDescription>
+        <Alert className="rounded-xl border border-border bg-card">
+          <TriangleAlert className="h-4 w-4" />
+          <AlertTitle>Partial data</AlertTitle>
+          <AlertDescription>{secondaryWarnings.join(" ")}</AlertDescription>
         </Alert>
       )}
 
       {campaign.failure_reason ? (
-        <Alert variant="destructive"><ShieldAlert className="h-4 w-4" /><AlertTitle>Campaign failure recorded</AlertTitle><AlertDescription>{campaign.failure_reason}</AlertDescription></Alert>
+        <Alert variant="destructive" className="rounded-xl">
+          <ShieldAlert className="h-4 w-4" />
+          <AlertTitle>Campaign failed</AlertTitle>
+          <AlertDescription>{campaign.failure_reason}</AlertDescription>
+        </Alert>
       ) : campaign.pause_reason ? (
-        <Alert className="border-orange-500/40 bg-orange-500/5"><Pause className="h-4 w-4 text-orange-600" /><AlertTitle>Campaign paused</AlertTitle><AlertDescription>{campaign.pause_reason}</AlertDescription></Alert>
+        <Alert className="rounded-xl border border-border bg-card">
+          <Pause className="h-4 w-4" />
+          <AlertTitle>Campaign paused</AlertTitle>
+          <AlertDescription>{campaign.pause_reason}</AlertDescription>
+        </Alert>
       ) : null}
 
-      <section className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Tag className="h-5 w-5 text-primary" />Offer economics</CardTitle>
-            <CardDescription>The offer is bounded server-side; profitability is only claimed when cost evidence supports it.</CardDescription>
+      {/* Offer & Approval Section */}
+      <section className="grid gap-8 xl:grid-cols-2">
+        <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
+          <CardHeader className="space-y-3">
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <div className="rounded-lg border border-border bg-muted p-2">
+                <Tag className="h-5 w-5" />
+              </div>
+              Offer Economics
+            </CardTitle>
+            <CardDescription className="text-sm">Bounded server-side with cost verification</CardDescription>
           </CardHeader>
           <CardContent>
             {!campaign.offer ? (
-              <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">Offer details are unavailable.</div>
+              <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30">
+                <p className="text-sm text-muted-foreground">No offer available</p>
+              </div>
             ) : (
               <div className="space-y-4">
-                <div className="rounded-2xl bg-primary/5 p-5">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Customer offer</p>
-                  <p className="mt-2 text-2xl font-black">{formatOffer(campaign.offer)}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">Minimum order {formatMoney(Number(campaign.offer.minimum_order_value ?? 0))} · Valid {formatDate(campaign.offer.valid_from)} to {formatDate(campaign.offer.valid_until)}</p>
+                <div className="rounded-xl border border-border bg-muted p-5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Customer Offer</p>
+                  <p className="mt-2 text-2xl font-bold">{formatOffer(campaign.offer)}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Min order {formatMoney(Number(campaign.offer.minimum_order_value ?? 0))} · Valid until {formatDate(campaign.offer.valid_until)}
+                  </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Metric
                     label="Maximum exposure"
                     value={campaign.offer.maximum_exposure == null ? "Not provable" : formatMoney(Number(campaign.offer.maximum_exposure))}
-                    detail={campaign.offer.redemption_limit ? `${campaign.offer.redemption_limit.toLocaleString("en-NP")} redemption limit` : "No finite redemption limit supplied"}
+                    detail={campaign.offer.redemption_limit ? `${campaign.offer.redemption_limit.toLocaleString("en-NP")} limit` : "No limit"}
                   />
                   <Metric
                     label="Profitability"
                     value={campaign.offer.profitability_status === "verified" ? "Verified" : "Unverified"}
-                    detail={campaign.offer.profitability_status === "verified" ? "Supported by current cost evidence" : "No precise profit claim is made"}
+                    detail={campaign.offer.profitability_status === "verified" ? "Cost verified" : "Not verified"}
                   />
                 </div>
-                {((campaign.offer.item_ids?.length ?? 0) > 0 || (campaign.offer.category_ids?.length ?? 0) > 0) && (
-                  <p className="text-xs text-muted-foreground">Scoped to {campaign.offer.item_ids?.length ?? 0} item(s) and {campaign.offer.category_ids?.length ?? 0} categor{campaign.offer.category_ids?.length === 1 ? "y" : "ies"}.</p>
-                )}
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary" />Approval bundle</CardTitle>
-            <CardDescription>All material facts are checked independently before the approver can freeze them.</CardDescription>
+        <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
+          <CardHeader className="space-y-3">
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <div className="rounded-lg border border-border bg-muted p-2">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              Approval Checks
+            </CardTitle>
+            <CardDescription className="text-sm">Required before campaign approval</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {approvalChecks.map((check) => (
-              <div key={check.key} className="flex items-start gap-3 rounded-2xl border p-4">
-                <div className={cn("mt-0.5 rounded-full p-1", check.ready ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600")}>
+              <div key={check.key} className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 transition-all hover:shadow-sm">
+                <div className={cn("mt-0.5 rounded-full border border-border p-1.5 transition-transform hover:scale-110", check.ready ? "bg-muted" : "bg-muted")}>
                   {check.ready ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
                 </div>
-                <div><p className="font-semibold">{check.label}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{check.detail}</p></div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{check.label}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
+                </div>
               </div>
             ))}
-            {campaign.status === "review" && !approvalReady && permissions.approve && (
-              <p className="text-xs text-amber-700 dark:text-amber-300">Approval remains disabled until the complete offer, message, poster, and provider-approved template bundle is present.</p>
-            )}
           </CardContent>
         </Card>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-primary" />Audience evidence</CardTitle>
-            <CardDescription>A preview can change. Only approval creates the frozen, consented recipient snapshot.</CardDescription>
+      {/* Audience & Message Section */}
+      <section className="grid gap-8 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
+          <CardHeader className="space-y-3">
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <div className="rounded-lg border border-border bg-muted p-2">
+                <Users className="h-5 w-5" />
+              </div>
+              Audience
+            </CardTitle>
+            <CardDescription className="text-sm">Preview changes; approval creates frozen snapshot</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-3">
-              <Metric label={frozen ? "Frozen audience" : "Stored audience"} value={formatCount(campaign.audience_count)} detail={frozen ? `Frozen ${formatDate(campaign.audience_frozen_at)}` : "Not frozen before approval"} />
-              <Metric label="Current preview" value={audience ? formatCount(audience.included_count) : "Unavailable"} detail="Segment eligible; approval also filters the selected language" />
-              <Metric label="Currently excluded" value={audience ? formatCount(audience.excluded_count) : "Unavailable"} detail="Exclusion rules applied by the backend" />
+              <Metric 
+                label={frozen ? "Frozen" : "Stored"} 
+                value={formatCount(campaign.audience_count)} 
+                detail={frozen ? formatDate(campaign.audience_frozen_at) : "Not frozen"} 
+              />
+              <Metric 
+                label="Preview" 
+                value={audience ? formatCount(audience.included_count) : "—"} 
+                detail="Eligible now" 
+              />
+              <Metric 
+                label="Excluded" 
+                value={audience ? formatCount(audience.excluded_count) : "—"} 
+                detail="Backend rules" 
+              />
             </div>
-            {audience ? (
+            {audience && Object.keys(audience.exclusions).length > 0 && (
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Current exclusion breakdown</p>
-                {Object.keys(audience.exclusions).length === 0 ? (
-                  <p className="mt-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No current exclusion reason was reported.</p>
-                ) : (
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    {Object.entries(audience.exclusions).map(([reasonKey, count]) => (
-                      <div key={reasonKey} className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm">
-                        <span className="capitalize text-muted-foreground">{reasonKey.replaceAll("_", " ")}</span>
-                        <span className="font-bold">{formatCount(count)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Exclusions</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {Object.entries(audience.exclusions).map(([reasonKey, count]) => (
+                    <div key={reasonKey} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-sm transition-all hover:shadow-sm">
+                      <span className="capitalize text-muted-foreground">{reasonKey.replaceAll("_", " ")}</span>
+                      <span className="font-bold">{formatCount(count)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ) : (
-              <Alert><Info className="h-4 w-4" /><AlertDescription>Current preview is unavailable. The frozen campaign count remains the stored approval snapshot.</AlertDescription></Alert>
-            )}
-            {frozen && audience && (
-              <Alert className="border-blue-500/30 bg-blue-500/5"><LockKeyhole className="h-4 w-4 text-blue-600" /><AlertDescription>The current preview may differ from the frozen audience because consent, frequency caps, or customer activity can change after approval. Delivery rechecks safety before sending.</AlertDescription></Alert>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><MessageCircleMore className="h-5 w-5 text-primary" />Message and creative</CardTitle>
-            <CardDescription>Stored campaign copy and provider/asset references—not a delivery preview.</CardDescription>
+        <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
+          <CardHeader className="space-y-3">
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <div className="rounded-lg border border-border bg-muted p-2">
+                <MessageCircleMore className="h-5 w-5" />
+              </div>
+              Message & Creative
+            </CardTitle>
+            <CardDescription className="text-sm">Campaign copy and asset references</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-2xl border bg-muted/20 p-4">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Campaign message snapshot</p>
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{campaign.approved_message_snapshot || "Message snapshot unavailable."}</p>
+            <div className="rounded-xl border border-border bg-muted/50 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Message</p>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{campaign.approved_message_snapshot || "No message"}</p>
             </div>
-            <div className="rounded-2xl border p-4">
-              <div className="flex items-start gap-3"><MessageCircleMore className="mt-0.5 h-4 w-4 text-primary" /><div><p className="font-semibold">WhatsApp template</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{selectedTemplate ? `${selectedTemplate.whatsapp_template_name} · ${selectedTemplate.language} · provider approved` : campaign.message_template_id ? `Template #${campaign.message_template_id} is no longer in the approved template list.` : "No approved template selected."}</p></div></div>
-            </div>
-            <div className="rounded-2xl border p-4">
-              <div className="flex items-start gap-3"><FileImage className="mt-0.5 h-4 w-4 text-primary" /><div><p className="font-semibold">Poster asset</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{campaign.creative_asset_id ? `Registered asset #${campaign.creative_asset_id}${["approved", "scheduled", "sending", "completed", "paused"].includes(campaign.status) ? " · approved with campaign" : " · pending campaign approval"}` : "No stable poster asset is attached."}</p></div></div>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:shadow-sm">
+                <MessageCircleMore className="mt-0.5 h-4 w-4" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-sm">WhatsApp template</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {selectedTemplate 
+                      ? `${selectedTemplate.whatsapp_template_name} · ${selectedTemplate.language}` 
+                      : campaign.message_template_id 
+                        ? `Template #${campaign.message_template_id}` 
+                        : "No template"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:shadow-sm">
+                <FileImage className="mt-0.5 h-4 w-4" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-sm">Poster asset</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {campaign.creative_asset_id 
+                      ? `Asset #${campaign.creative_asset_id}` 
+                      : "No asset"}
+                  </p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
       </section>
 
-      <Card>
+      {/* Delivery Results Section */}
+      <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Send className="h-5 w-5 text-primary" />Delivery and attributed results</CardTitle>
-          <CardDescription>Provider states remain separate. Unknown outcomes are never counted as failures, and attributed orders are not assumed incremental.</CardDescription>
+          <div className="flex items-center justify-between">
+            <div className="space-y-3">
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <div className="rounded-lg border border-border bg-muted p-2">
+                  <Send className="h-5 w-5" />
+                </div>
+                Delivery Results
+              </CardTitle>
+              <CardDescription className="text-sm">Provider states and attributed orders</CardDescription>
+            </div>
+            {results && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void downloadCSV()}
+                disabled={busyAction === "csv"}
+                className="rounded-xl border border-border"
+              >
+                {busyAction === "csv" ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Export CSV
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {!results ? (
-            <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed p-6 text-center"><CircleDashed className="h-8 w-8 text-muted-foreground/60" /><p className="mt-2 text-sm text-muted-foreground">Results are unavailable.</p></div>
-          ) : (
-            <div className="space-y-5">
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-11">
-                <Metric label="Queued" value={formatCount(results.queued_count)} />
-                <Metric label="Sending" value={formatCount(results.sending_count)} />
-                <Metric label="Sent" value={formatCount(results.sent_count)} />
-                <Metric label="Delivered" value={formatCount(results.delivered_count)} />
-                <Metric label="Read" value={formatCount(results.read_count)} />
-                <Metric label="Failed" value={formatCount(results.failed_count)} />
-                <Metric label="Unknown" value={formatCount(results.unknown_count)} detail="Reconcile; not failed" />
-                <Metric label="Suppressed" value={formatCount(results.suppressed_count)} />
-                <Metric label="Redeemed" value={formatCount(results.redeemed_count)} />
-                <Metric label="Reversed" value={formatCount(results.reversed_count)} />
-                <Metric label="Opt-outs" value={formatCount(results.opt_out_count)} detail="Observed post-send" />
+            <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30">
+              <div className="text-center">
+                <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground/60" />
+                <p className="mt-2 text-sm text-muted-foreground">No results yet</p>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Metric label="Attributed orders" value={formatCount(results.attributed_order_count)} detail="Linked offer-code redemptions" />
-                <Metric label="Attributed revenue" value={formatMoney(results.attributed_revenue)} detail="Association, not incremental lift" />
-                <Metric label="Discount cost" value={formatMoney(results.discount_cost)} detail={results.profitability_status === "verified" ? "Cost evidence verified" : "Profit remains unverified"} />
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div>
+                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Delivery Status</p>
+                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
+                  <Metric label="Queued" value={formatCount(results.queued_count)} />
+                  <Metric label="Sending" value={formatCount(results.sending_count)} />
+                  <Metric label="Sent" value={formatCount(results.sent_count)} />
+                  <Metric label="Delivered" value={formatCount(results.delivered_count)} />
+                  <Metric label="Read" value={formatCount(results.read_count)} />
+                  <Metric label="Failed" value={formatCount(results.failed_count)} />
+                  <Metric label="Unknown" value={formatCount(results.unknown_count)} />
+                  <Metric label="Suppressed" value={formatCount(results.suppressed_count)} />
+                </div>
+              </div>
+              
+              <div>
+                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Attribution</p>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <Metric label="Redeemed" value={formatCount(results.redeemed_count)} />
+                  <Metric label="Reversed" value={formatCount(results.reversed_count)} />
+                  <Metric label="Opt-outs" value={formatCount(results.opt_out_count)} />
+                  <Metric label="Orders" value={formatCount(results.attributed_order_count)} />
+                  <Metric label="Revenue" value={formatMoney(results.attributed_revenue)} />
+                </div>
+              </div>
+              
+              <div className="rounded-xl border border-border bg-muted p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Discount Cost</p>
+                    <p className="mt-1 text-2xl font-bold">{formatMoney(results.discount_cost)}</p>
+                  </div>
+                  <div className={cn(
+                    "rounded-lg border border-border px-3 py-1.5 text-xs font-medium",
+                    results.profitability_status === "verified" 
+                      ? "bg-muted text-foreground" 
+                      : "bg-muted text-foreground"
+                  )}>
+                    {results.profitability_status === "verified" ? "Verified" : "Unverified"}
+                  </div>
+                </div>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card className="border-dashed">
+      <Card className="rounded-xl border border-dashed border-border bg-card">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="h-4 w-4 text-amber-600" />Interpretation limits</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="h-4 w-4" />Interpretation limits</CardTitle>
           <CardDescription>Yummy does not convert incomplete evidence into precise growth claims.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -558,7 +755,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
             <p className="text-sm text-muted-foreground">No additional limitation was returned. Delivery and attribution still remain observational, not proof of incremental lift.</p>
           ) : (
             <ul className="space-y-2 text-sm text-muted-foreground">
-              {limitations.map((limitation) => <li key={limitation} className="flex gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /><span>{limitation}</span></li>)}
+              {limitations.map((limitation) => <li key={limitation} className="flex gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{limitation}</span></li>)}
             </ul>
           )}
         </CardContent>

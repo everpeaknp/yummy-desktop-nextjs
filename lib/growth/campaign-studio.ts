@@ -8,7 +8,7 @@ import type {
   GrowthSegmentCode,
 } from "@/lib/api/growth-types";
 
-export type CampaignPosterTemplate = "fresh" | "warm" | "minimal";
+export type CampaignPosterTemplate = "fresh" | "warm" | "minimal" | "ticket";
 
 export function approvedImageTemplatesForLanguage(
   templates: GrowthMessageTemplate[],

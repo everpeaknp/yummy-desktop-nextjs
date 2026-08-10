@@ -2395,6 +2395,8 @@ export const GrowthApis = {
     `/growth/campaigns/${campaignId}/cancel`,
   campaignResults: (campaignId: number | string) =>
     `/growth/campaigns/${campaignId}/results`,
+  campaignResultsCsv: (campaignId: number | string) =>
+    `/growth/campaigns/${campaignId}/results.csv`,
   settings: "/growth/settings",
   brand: "/growth/brand",
   messageTemplates: "/growth/message-templates",
