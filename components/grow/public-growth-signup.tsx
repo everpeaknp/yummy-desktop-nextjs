@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import PhoneInput from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,7 +11,7 @@ import {
   MessageCircleMore,
   RefreshCw,
   ShieldCheck,
-  Sparkles,
+  HandCoins,
   Sprout,
 } from "lucide-react";
 
@@ -207,7 +209,7 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                   <h1 className="mt-3 text-3xl font-black tracking-tight">Stay connected with {displayName}</h1>
                   <p className="mt-4 text-sm leading-6 text-emerald-50/90">Join the restaurant&apos;s customer list and decide clearly whether you want relevant offers on WhatsApp.</p>
                   <div className="mt-8 space-y-3 text-sm text-emerald-50/90">
-                    <p className="flex items-start gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0" />Offers can be selected for customer groups rather than sent as generic spam.</p>
+                    <p className="flex items-start gap-2"><HandCoins className="mt-0.5 h-4 w-4 shrink-0" />Offers can be selected for customer groups rather than sent as generic spam.</p>
                     <p className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />Leaving the consent box unchecked means no WhatsApp marketing consent.</p>
                   </div>
                 </div>
@@ -234,7 +236,17 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                   </div>
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor="growth-phone">Mobile number</Label>
-                    <Input id="growth-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+977 98XXXXXXXX" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={32} required />
+                    <div className="phone-input-field">
+                      <PhoneInput
+                        id="growth-phone"
+                        defaultCountry="NP"
+                        value={phone}
+                        onChange={(value) => setPhone(value || "")}
+                        international
+                        countryCallingCodeEditable={false}
+                        withCountryCallingCode
+                      />
+                    </div>
                     <p className="text-xs text-muted-foreground">Use a number connected to WhatsApp if you choose to receive offers.</p>
                   </div>
                   <div className="space-y-2 sm:col-span-2">
