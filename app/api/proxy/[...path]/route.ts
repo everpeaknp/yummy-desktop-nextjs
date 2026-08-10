@@ -80,8 +80,10 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
   const headers = filterRequestHeaders(req);
 
   // Only attach a body for methods that support it.
+  // CRITICAL: Use req.blob() instead of req.arrayBuffer() to preserve Content-Type
+  // This ensures FormData bodies work correctly through the proxy
   const body =
-    method === "GET" || method === "HEAD" ? undefined : await req.arrayBuffer();
+    method === "GET" || method === "HEAD" ? undefined : await req.blob();
 
   try {
     const upstream = await fetch(url.toString(), {

@@ -779,7 +779,9 @@ function OnboardingPageContent() {
   // First registration only — after a restaurant exists, leave /onboarding unless admin replay.
   useEffect(() => {
     if (!user) return;
-    const hasRestaurant = Boolean(user.restaurant_id || restaurantProfile?.id);
+    
+    // Use user.restaurant_id first (from JWT) to avoid waiting for API
+    const hasRestaurant = Boolean(user.restaurant_id);
 
     if (isReplay) {
       if (!canReplayOnboarding(user)) {
@@ -791,7 +793,7 @@ function OnboardingPageContent() {
     if (hasRestaurant) {
       router.replace(resolvePostLoginRoute(user));
     }
-  }, [user, restaurantProfile?.id, isReplay, router]);
+  }, [user, isReplay, router]);
 
   if (isReplay) {
     if (!canReplayOnboarding(user)) {

@@ -8,7 +8,6 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleDashed,
-  Clock3,
   Megaphone,
   Plus,
   RefreshCw,
@@ -32,15 +31,15 @@ import { cn } from "@/lib/utils";
 type Filter = "all" | "needs_action" | "active" | "finished";
 
 const statusStyles: Record<GrowthCampaignStatus, string> = {
-  draft: "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300",
-  review: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  approved: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-  scheduled: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-  sending: "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
-  completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  paused: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300",
-  canceled: "border-border bg-muted text-muted-foreground",
-  failed: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+  draft: "border border-border bg-muted text-foreground",
+  review: "border border-border bg-muted text-foreground",
+  approved: "border border-border bg-muted text-foreground",
+  scheduled: "border border-border bg-muted text-foreground",
+  sending: "border border-border bg-muted text-foreground",
+  completed: "border border-border bg-muted text-foreground",
+  paused: "border border-border bg-muted text-foreground",
+  canceled: "border border-border bg-muted text-muted-foreground",
+  failed: "border border-border bg-muted text-foreground",
 };
 
 function formatDate(value?: string | null): string {
@@ -103,10 +102,10 @@ export function CampaignListClient() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-[1500px] space-y-5 pb-10" aria-label="Loading campaigns">
-        <Skeleton className="h-40 rounded-3xl" />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-28 rounded-2xl" />)}
+      <div className="mx-auto max-w-[1400px] space-y-8 pb-16" aria-label="Loading campaigns">
+        <Skeleton className="h-48 rounded-3xl" />
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-32 rounded-2xl" />)}
         </div>
         <Skeleton className="h-96 rounded-2xl" />
       </div>
@@ -114,29 +113,30 @@ export function CampaignListClient() {
   }
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-6 pb-10" data-tour="grow-campaigns">
-      <section className="rounded-3xl border bg-gradient-to-br from-emerald-500/10 via-card to-primary/5 p-6 shadow-sm md:p-8">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <Link href="/grow" className="text-xs font-semibold text-primary hover:underline">
-              Yummy Grow overview
+    <div className="mx-auto max-w-[1400px] space-y-8 pb-16" data-tour="grow-campaigns">
+      <section className="relative overflow-hidden rounded-2xl border border-border bg-card p-8 md:p-12">
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-2xl space-y-3">
+            <Link href="/grow" className="inline-flex items-center gap-1.5 text-sm font-medium hover:text-primary transition-colors">
+              ← Back to Overview
             </Link>
-            <div className="mt-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
-              <Megaphone className="h-4 w-4" />
-              Controlled campaigns
+            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5">
+              <Megaphone className="h-3.5 w-3.5" />
+              <span className="text-xs font-semibold tracking-wide">CAMPAIGNS</span>
             </div>
-            <h1 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">Campaign administration</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Review each offer, audience, poster, template, schedule, and result from one place. Approval freezes facts; scheduling remains a separate permissioned step.
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl">Campaign Management</h1>
+            <p className="text-base text-muted-foreground">
+              Create, review, and manage your marketing campaigns in one place.
             </p>
           </div>
+          
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => void load()}>
+            <Button variant="outline" onClick={() => void load()} className="rounded-xl border border-border">
               <RefreshCw className="mr-2 h-4 w-4" /> Refresh
             </Button>
             {hasPermission(user, "grow.campaigns.manage") && (
-              <Button asChild>
-                <Link href="/grow/campaigns/new"><Plus className="mr-2 h-4 w-4" />New campaign</Link>
+              <Button asChild className="rounded-xl border border-border shadow-sm hover:shadow transition-all">
+                <Link href="/grow/campaigns/new"><Plus className="mr-2 h-4 w-4" />New Campaign</Link>
               </Button>
             )}
           </div>
@@ -144,43 +144,45 @@ export function CampaignListClient() {
       </section>
 
       {error && (
-        <Alert className="border-amber-500/40 bg-amber-500/5">
-          <AlertCircle className="h-4 w-4 text-amber-600" />
-          <AlertTitle>Campaign list unavailable</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+        <Alert className="rounded-xl border border-border bg-card">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle className="font-semibold">Unable to load campaigns</AlertTitle>
+          <AlertDescription className="text-sm">{error}</AlertDescription>
         </Alert>
       )}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Campaign counts">
+      <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Campaign counts">
         {[
-          { label: "Awaiting review", value: counts.review, icon: ShieldCheck },
-          { label: "Approved, unscheduled", value: counts.approved, icon: CheckCircle2 },
-          { label: "Scheduled or sending", value: counts.scheduled, icon: Send },
+          { label: "Awaiting Review", value: counts.review, icon: ShieldCheck },
+          { label: "Approved", value: counts.approved, icon: CheckCircle2 },
+          { label: "Scheduled", value: counts.scheduled, icon: Send },
           { label: "Completed", value: counts.completed, icon: CheckCircle2 },
         ].map((item) => (
-          <Card key={item.label}>
-            <CardContent className="flex items-start justify-between p-5">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p>
-                <p className="mt-2 text-3xl font-black">{item.value.toLocaleString("en-NP")}</p>
+          <Card key={item.label} className="group rounded-xl border border-border bg-card transition-all hover:shadow-md">
+            <CardContent className="flex items-start justify-between p-6">
+              <div className="space-y-1">
+                <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{item.label}</p>
+                <p className="text-4xl font-bold tracking-tight">{item.value.toLocaleString("en-NP")}</p>
               </div>
-              <div className="rounded-2xl bg-primary/10 p-3 text-primary"><item.icon className="h-5 w-5" /></div>
+              <div className="shrink-0 rounded-xl border border-border bg-muted p-2.5 transition-transform group-hover:scale-110">
+                <item.icon className="h-5 w-5" />
+              </div>
             </CardContent>
           </Card>
         ))}
       </section>
 
-      <Card>
+      <Card className="rounded-xl border border-border bg-card">
         <CardHeader className="gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <CardTitle>All campaign snapshots</CardTitle>
-            <CardDescription>Open a campaign to inspect its controls and evidence. This list never sends a message.</CardDescription>
+          <div className="space-y-2">
+            <CardTitle className="text-xl">All Campaigns</CardTitle>
+            <CardDescription className="text-sm">Review and manage campaign details and schedules</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Filter campaigns">
             {([
               ["all", "All"],
-              ["needs_action", "Needs action"],
-              ["active", "Active delivery"],
+              ["needs_action", "Action Needed"],
+              ["active", "Active"],
               ["finished", "Finished"],
             ] as Array<[Filter, string]>).map(([value, label]) => (
               <Button
@@ -188,46 +190,54 @@ export function CampaignListClient() {
                 size="sm"
                 variant={filter === value ? "default" : "outline"}
                 onClick={() => setFilter(value)}
+                className={cn(
+                  "rounded-xl border border-border transition-all",
+                  filter === value ? "" : ""
+                )}
               >
                 {label}
               </Button>
             ))}
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-2">
           {visible.length === 0 ? (
-            <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed p-8 text-center">
-              <CircleDashed className="h-9 w-9 text-muted-foreground/60" />
-              <h2 className="mt-3 font-semibold">No campaigns in this view</h2>
-              <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
+              <CircleDashed className="h-10 w-10 text-muted-foreground" />
+              <h2 className="mt-4 font-semibold text-sm">No campaigns found</h2>
+              <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
                 {campaigns.length === 0
-                  ? "Create a controlled draft when a safe opportunity is available. Nothing is approved or sent automatically."
-                  : "Choose another filter to see the remaining campaign snapshots."}
+                  ? "Create your first campaign to start engaging with customers"
+                  : "Try a different filter to see other campaigns"}
               </p>
             </div>
           ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2">
               {visible.map((campaign) => (
                 <Link
                   key={campaign.id}
                   href={`/grow/campaigns/${campaign.id}`}
-                  className="group rounded-2xl border bg-muted/10 p-5 transition hover:border-primary/40 hover:bg-primary/[0.03]"
+                  className="group rounded-xl border border-border bg-card p-5 transition-all hover:shadow-md"
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <h2 className="truncate font-bold group-hover:text-primary">{campaign.name}</h2>
-                      <p className="mt-1 text-xs capitalize text-muted-foreground">
-                        {campaign.playbook_code.replaceAll("_", " ")} · {campaign.segment_code} customers
+                    <div className="min-w-0 space-y-1">
+                      <h2 className="truncate font-bold text-sm group-hover:text-primary transition-colors">{campaign.name}</h2>
+                      <p className="text-xs capitalize text-muted-foreground">
+                        {campaign.playbook_code.replaceAll("_", " ")} · {campaign.segment_code} segment
                       </p>
                     </div>
-                    <Badge variant="outline" className={cn("shrink-0", statusStyles[campaign.status])}>
+                    <Badge variant="outline" className={cn("shrink-0 text-xs", statusStyles[campaign.status])}>
                       {campaignStatusLabels[campaign.status]}
                     </Badge>
                   </div>
-                  <div className="mt-5 grid grid-cols-2 gap-3 text-xs text-muted-foreground sm:grid-cols-3">
-                    <span className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />{campaign.audience_count.toLocaleString("en-NP")} audience</span>
-                    <span className="inline-flex items-center gap-1.5"><CalendarClock className="h-3.5 w-3.5" />{formatDate(campaign.scheduled_at)}</span>
-                    <span className="inline-flex items-center justify-end gap-1 font-semibold text-primary sm:ml-auto">Inspect <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" /></span>
+                  <div className="mt-4 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />{campaign.audience_count.toLocaleString("en-NP")}</span>
+                      <span className="inline-flex items-center gap-1.5"><CalendarClock className="h-3.5 w-3.5" />{formatDate(campaign.scheduled_at)}</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1 font-semibold text-primary text-xs">
+                      View <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                    </span>
                   </div>
                 </Link>
               ))}
@@ -235,11 +245,6 @@ export function CampaignListClient() {
           )}
         </CardContent>
       </Card>
-
-      <div className="flex items-center gap-2 rounded-2xl border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-        <Clock3 className="h-4 w-4" />
-        Delivery begins only through the background worker after a separately approved campaign reaches its scheduled time.
-      </div>
     </div>
   );
 }

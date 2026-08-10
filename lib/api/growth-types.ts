@@ -244,7 +244,7 @@ export interface GrowthCreativeAsset {
 export interface GrowthCampaignPosterUploadInput {
   file: Blob;
   filename?: string;
-  template_key: "fresh" | "warm" | "minimal";
+  template_key: "fresh" | "warm" | "minimal" | "ticket";
   template_version: number;
 }
 

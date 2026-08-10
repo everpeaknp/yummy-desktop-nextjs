@@ -10,10 +10,13 @@ type AuthUser = Parameters<typeof getHomeRouteForUser>[0] & {
  * Users without a restaurant (except platform identities) go through onboarding/join.
  */
 export function resolvePostLoginRoute(user: AuthUser): string {
-  const { restaurant, selectedModule } = useRestaurant.getState();
-  if (!user?.restaurant_id && !restaurant?.id) {
+  // If user has restaurant_id in their profile, they should NOT be on onboarding
+  // even if the restaurant store hasn't loaded yet
+  if (!user?.restaurant_id) {
     return "/onboarding";
   }
+
+  const { restaurant, selectedModule } = useRestaurant.getState();
   const home = getHomeRouteForUser(user);
   if (home !== "/dashboard") return home;
 

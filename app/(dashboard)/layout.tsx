@@ -144,7 +144,8 @@ export default function DashboardLayout({
   }
 
   if (!restaurant) {
-    if (canAccessOnboarding(user)) {
+    // Show spinner only while actively loading
+    if (loading) {
       return (
         <div className="flex h-screen items-center justify-center bg-background">
           <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
@@ -152,6 +153,7 @@ export default function DashboardLayout({
       );
     }
 
+    // If we've finished loading but still have no restaurant, show error
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 p-6 text-center">
         <p className="text-sm text-muted-foreground">
