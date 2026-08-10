@@ -34,7 +34,7 @@ export function useOrderFull(orderId: string | number) {
       const [orderRes, kotsRes, eventsRes] = await Promise.allSettled([
         apiClient.get(OrderApis.getOrder(Number(orderId))),
         apiClient.get(KotApis.getKotUpdatesByOrder(Number(orderId))),
-        apiClient.get(OrderApis.getOrderEvents(Number(orderId)))
+        apiClient.get(OrderApis.getOrderEvents(Number(orderId), "group"))
       ]);
 
       // Process Order (Critical)

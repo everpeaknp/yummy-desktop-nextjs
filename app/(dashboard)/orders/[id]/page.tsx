@@ -88,6 +88,7 @@ import { EntityNotificationsCard } from "@/components/notifications/entity-notif
 import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getRecordedOrderDiscount } from "@/lib/order-totals";
+import { getKOTHeading, getKOTItemDisplay } from "@/lib/order-kot-display";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
@@ -165,7 +166,9 @@ function getKOTStatusConfig(s: string) {
     case "pending": return { label: "Pending", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" };
     case "acknowledged": return { label: "Acknowledged", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" };
     case "preparing": return { label: "Preparing", color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" };
+    case "partial": return { label: "Partially ready", color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20" };
     case "ready": return { label: "Ready", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
+    case "served": return { label: "Served", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
     case "completed": return { label: "Completed", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
     case "rejected": return { label: "Rejected", color: "text-red-600 dark:text-red-400", bg: "bg-red-500/10 border-red-500/20" };
     case "cancelled": return { label: "Cancelled", color: "text-red-600 dark:text-red-400", bg: "bg-red-500/10 border-red-500/20" };
@@ -252,7 +255,7 @@ export default function OrderDetailPage() {
     if (!orderId) return;
     setEventsLoading(true);
     try {
-      const res = await apiClient.get(OrderApis.getOrderEvents(orderId));
+      const res = await apiClient.get(OrderApis.getOrderEvents(orderId, "group"));
       if (res.data.status === "success") {
         setEvents(res.data.data);
       }
@@ -264,10 +267,17 @@ export default function OrderDetailPage() {
   }, [orderId]);
 
   useEffect(() => {
-    if (activeTab === "events" && events.length === 0) {
+    if (activeTab === "events") {
       fetchEvents();
     }
-  }, [activeTab, fetchEvents, events.length]);
+  }, [activeTab, fetchEvents]);
+
+  const handleRefresh = useCallback(() => {
+    void fetchContext();
+    if (activeTab === "events") {
+      void fetchEvents();
+    }
+  }, [activeTab, fetchContext, fetchEvents]);
 
   useEffect(() => {
     setItemOverrides({});
@@ -590,7 +600,7 @@ export default function OrderDetailPage() {
               <div className="flex items-center gap-1 mr-2 border-r border-border/40 pr-3">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" onClick={fetchContext} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
+                    <Button variant="ghost" size="icon" onClick={handleRefresh} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
                         <RefreshCw className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
@@ -1433,7 +1443,7 @@ function KOTsTab({ kots }: { kots: KOTUpdate[] }) {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-black text-sm">KOT #{kot.id}</span>
+                      <span className="font-black text-sm">{getKOTHeading(kot)}</span>
                       <Badge variant="secondary" className={cn("text-[10px] font-black uppercase tracking-wider", statusConfig.color)}>
                         {statusConfig.label}
                       </Badge>
@@ -1451,24 +1461,42 @@ function KOTsTab({ kots }: { kots: KOTUpdate[] }) {
 
               {/* KOT Items */}
               <div className="divide-y divide-border/10">
-                {kot.items.map((item) => (
-                  <div key={item.id} className="px-5 py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3 flex-1">
-                      <span className="text-sm font-medium">{item.name_snapshot}</span>
-                      {item.notes && (
-                        <span className="text-[10px] text-muted-foreground italic">({item.notes})</span>
-                      )}
+                {kot.items.map((item) => {
+                  const display = getKOTItemDisplay(item);
+                  const itemStatus = getKOTStatusConfig(item.item_status || "pending");
+                  const isDeleted = Number(item.is_deleted || 0) === 1;
+
+                  return (
+                    <div key={item.id} className="px-5 py-3 flex items-center justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={cn("text-sm font-medium", isDeleted && "line-through text-muted-foreground")}>
+                            {display.name}
+                          </span>
+                          <Badge variant="secondary" className={cn("text-[10px]", itemStatus.color)}>
+                            {isDeleted ? "Cancelled" : itemStatus.label}
+                          </Badge>
+                        </div>
+                        {item.notes && (
+                          <p className="mt-1 text-[10px] text-muted-foreground italic">Note: {item.notes}</p>
+                        )}
+                        {item.modifiers && item.modifiers.length > 0 && (
+                          <p className="mt-1 text-[10px] text-muted-foreground">
+                            {item.modifiers.map((modifier) => modifier.modifier_name_snapshot).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-3">
+                        <span className="text-sm font-bold tabular-nums">×{display.quantity}</span>
+                        {display.progressLabel && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            {display.progressLabel}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-bold tabular-nums">×{item.qty}</span>
-                      {item.fulfilled_qty !== undefined && item.fulfilled_qty > 0 && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          {item.fulfilled_qty}/{item.qty} done
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

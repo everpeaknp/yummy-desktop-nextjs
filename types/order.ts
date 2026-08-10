@@ -95,17 +95,25 @@ export interface OrderTableSummary {
 
 export interface KOTItem {
   id: number;
-  menu_item_id?: number | null;
-  name_snapshot: string;
-  qty: number;
-  fulfilled_qty?: number;
-  status?: string;
+  item_id: number;
+  item_name: string;
+  qty_change: number;
+  qty_ready: number;
+  qty_served: number;
+  item_status: string;
   notes?: string | null;
   modifiers?: OrderItemModifier[];
+  is_deleted?: number;
+  deleted_qty?: number;
+  original_qty?: number | null;
+  name_snapshot?: string;
+  qty?: number;
+  fulfilled_qty?: number;
 }
 
 export interface KOTUpdate {
   id: number;
+  kot_number?: string | null;
   order_id: number;
   type: string;
   station: string;

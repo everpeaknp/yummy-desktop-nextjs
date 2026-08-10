@@ -209,7 +209,8 @@ export const OrderApis = {
     `/orders/${orderId}/payments/${paymentId}`,
   removePayment: (orderId: number, paymentId: number) =>
     `/orders/${orderId}/payments/${paymentId}`,
-  getOrderEvents: (id: number) => `/orders/${id}/events`,
+  getOrderEvents: (id: number, scope: "order" | "group" = "order") =>
+    `/orders/${id}/events?scope=${scope}`,
   getOrderBill: (id: number) => `/orders/${id}/bill`,
   updateOrderStatus: (id: number) => `/orders/${id}/status`,
   updateOrder: (id: number) => `/orders/${id}`,
