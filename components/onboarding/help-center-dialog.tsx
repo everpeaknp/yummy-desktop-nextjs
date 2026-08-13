@@ -4,7 +4,6 @@ import Link from "next/link";
 import {
   BookOpen,
   Compass,
-  Layers,
   LayoutGrid,
   Mail,
   MessageSquare,
@@ -21,7 +20,6 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { useRestaurant } from "@/hooks/use-restaurant";
 import { canReplayOnboarding } from "@/lib/onboarding";
 import { isPathAccessible } from "@/lib/role-permissions";
 import { requestProductTour } from "@/lib/product-tour";
@@ -136,9 +134,6 @@ export function HelpCenterDialog({
   includeOnboarding?: boolean;
 }) {
   const user = useAuth((s) => s.user);
-  const restaurant = useRestaurant((s) => s.restaurant);
-  const showGateway =
-    Boolean(restaurant?.restaurant_enabled) && Boolean(restaurant?.hotel_enabled);
   const showOnboarding = canReplayOnboarding(user);
   const close = () => onOpenChange(false);
 
@@ -162,9 +157,6 @@ export function HelpCenterDialog({
   ];
 
   const shortcuts: HelpShortcut[] = [
-    ...(showGateway
-      ? [{ title: "Switch workspace", href: "/gateway", icon: Layers } satisfies HelpShortcut]
-      : []),
     { title: "Restaurant profile", href: "/manage/profile", icon: Store },
     { title: "Restaurant settings", href: "/manage/settings", icon: Settings },
     {

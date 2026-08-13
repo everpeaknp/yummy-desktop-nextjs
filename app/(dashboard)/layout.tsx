@@ -4,7 +4,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { RoleGuard } from "@/components/auth/role-guard";
 import { GlobalKotPrinter } from "@/components/receipts/global-kot-printer";
-import { useEffect, useRef, useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth, useAuthHydrated } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -22,8 +22,6 @@ export default function DashboardLayout({
   // NOTE: Selecting individual fields avoids returning a new object snapshot each time,
   // which can trigger `useSyncExternalStore` infinite-loop warnings in React 18.
   const restaurant = useRestaurant((s) => s.restaurant);
-  const selectedModule = useRestaurant((s) => s.selectedModule);
-  const setSelectedModule = useRestaurant((s) => s.setSelectedModule);
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
   const loading = useRestaurant((s) => s.loading);
   const user = useAuth((s) => s.user);
@@ -35,7 +33,6 @@ export default function DashboardLayout({
   const pathname = usePathname() || "";
   const [mounted, setMounted] = useState(false);
   const [storeHydrated, setStoreHydrated] = useState(false);
-  const gatewayRedirectedRef = useRef(false);
 
   usePermissionsSync();
 
@@ -82,44 +79,25 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!mounted || !storeHydrated) return;
     if (loading || !restaurant) return;
-    if (gatewayRedirectedRef.current) return;
-
     const hotelEnabled = restaurant.hotel_enabled;
     const restEnabled = restaurant.restaurant_enabled;
-    const bothEnabled = hotelEnabled && restEnabled;
 
-    // --- Dual Mode ---
-    if (bothEnabled) {
-      if (!selectedModule) {
-        gatewayRedirectedRef.current = true;
-        router.replace("/gateway");
-        return;
-      }
-      return;
-    }
-
-    // --- Hotel Only ---
+    // Hotel-only properties land in PMS. Dual properties keep one shared shell.
     if (hotelEnabled && !restEnabled) {
-      if (selectedModule !== "hotel") setSelectedModule("hotel");
-      // Redirect away from restaurant-only pages
       if (["/dashboard", "/gateway"].includes(pathname)) {
-        router.replace("/rooms");
+        router.replace("/hotel");
       }
       return;
     }
 
-    // --- Restaurant Only (or default) ---
-    if (selectedModule !== "restaurant") setSelectedModule("restaurant");
-    // Redirect away from hotel-only / gateway pages
-    if (["/rooms", "/gateway"].includes(pathname)) {
+    // Restaurant-only properties cannot enter hotel routes from old bookmarks.
+    if (!hotelEnabled && restEnabled && (pathname === "/hotel" || pathname.startsWith("/hotel/") || pathname === "/rooms" || pathname.startsWith("/rooms/") || pathname === "/gateway")) {
       router.replace("/dashboard");
     }
   }, [
     restaurant,
-    selectedModule,
     pathname,
     router,
-    setSelectedModule,
     loading,
     mounted,
     storeHydrated,

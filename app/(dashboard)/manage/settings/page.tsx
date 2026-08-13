@@ -61,8 +61,8 @@ type DrawerConfigForm = {
     is_active: boolean;
 };
 
-const emptyDrawerForm = (): DrawerConfigForm => ({
-    business_line: "restaurant",
+const emptyDrawerForm = (businessLine = "restaurant"): DrawerConfigForm => ({
+    business_line: businessLine,
     station: "general",
     drawer_key: "",
     name: "",
@@ -127,6 +127,7 @@ export default function RestaurantSettingsPage() {
     const [drawerLoading, setDrawerLoading] = useState(false);
     const [drawerControlsEnabled, setDrawerControlsEnabled] = useState(false);
     const [drawerControlsSaving, setDrawerControlsSaving] = useState(false);
+    const [drawerBusinessLine, setDrawerBusinessLine] = useState<"restaurant" | "hotel">("restaurant");
     const [drawerDialog, setDrawerDialog] = useState<{ open: boolean; id: number | null }>({
         open: false,
         id: null,
@@ -149,11 +150,11 @@ export default function RestaurantSettingsPage() {
             const [configRes, assignmentRes, cashierRes, controlsRes] = await Promise.all([
                 apiClient.get(DrawerSessionApis.configurations({
                     restaurantId: user.restaurant_id,
-                    businessLine: "restaurant",
+                    businessLine: drawerBusinessLine,
                 })),
                 apiClient.get(DrawerSessionApis.assignments({
                     restaurantId: user.restaurant_id,
-                    businessLine: "restaurant",
+                    businessLine: drawerBusinessLine,
                 })),
                 apiClient.get(DrawerSessionApis.cashiers({ restaurantId: user.restaurant_id })),
                 apiClient.get(DrawerSessionApis.controls({ restaurantId: user.restaurant_id })),
@@ -174,7 +175,7 @@ export default function RestaurantSettingsPage() {
         } finally {
             setDrawerLoading(false);
         }
-    }, [user?.restaurant_id]);
+    }, [user?.restaurant_id, drawerBusinessLine]);
 
     const loadBanks = useCallback(async () => {
         if (!user?.restaurant_id) return;
@@ -186,12 +187,14 @@ export default function RestaurantSettingsPage() {
         }
     }, [user?.restaurant_id]);
 
-    const drawerScopeKey = (station: string, drawerKey: string) => `${station}::${drawerKey}`;
+    const drawerScopeKey = (businessLine: string, station: string, drawerKey: string) =>
+        `${businessLine}::${station}::${drawerKey}`;
 
     const activeAssignmentsForDrawer = (drawer: DrawerConfiguration) =>
         drawerAssignments.filter(
             (assignment) =>
                 assignment.is_active &&
+                (assignment.business_line || "restaurant") === (drawer.business_line || "restaurant") &&
                 assignment.station === drawer.station &&
                 assignment.drawer_key === drawer.drawer_key,
         );
@@ -207,7 +210,7 @@ export default function RestaurantSettingsPage() {
             return;
         }
         if (!config) {
-            setDrawerForm(emptyDrawerForm());
+            setDrawerForm(emptyDrawerForm(drawerBusinessLine));
             setDrawerDialog({ open: true, id: null });
             return;
         }
@@ -255,7 +258,7 @@ export default function RestaurantSettingsPage() {
             });
             toast.success("Cash drawer saved");
             setDrawerDialog({ open: false, id: null });
-            setDrawerForm(emptyDrawerForm());
+            setDrawerForm(emptyDrawerForm(drawerBusinessLine));
             await loadDrawerConfigurations();
         } catch (err) {
             console.error("Failed to save cash drawer", err);
@@ -301,7 +304,7 @@ export default function RestaurantSettingsPage() {
             toast.error("Cash drawer assignment permission is required");
             return;
         }
-        const key = drawerScopeKey(drawer.station, drawer.drawer_key);
+        const key = drawerScopeKey(drawer.business_line || drawerBusinessLine, drawer.station, drawer.drawer_key);
         const cashierId = Number(drawerAssignSelection[key]);
         if (!cashierId) {
             toast.error("Select a cashier first");
@@ -361,7 +364,7 @@ export default function RestaurantSettingsPage() {
             setSaving(true);
             await apiClient.put(DrawerSessionApis.saveAssignment, {
                 restaurant_id: user.restaurant_id,
-                business_line: assignment.business_line || "restaurant",
+                business_line: assignment.business_line || drawerBusinessLine,
                 station: assignment.station,
                 drawer_key: assignment.drawer_key,
                 cashier_id: assignment.cashier_id,
@@ -962,7 +965,7 @@ export default function RestaurantSettingsPage() {
                                     Cash Drawers
                                 </CardTitle>
                                 <CardDescription>
-                                    Add drawer stations used by cashiers. Keep standard float at 0 for flexible daily opening cash.
+                                    Configure restaurant and hotel tills separately so cash custody and day close stay auditable.
                                 </CardDescription>
                             </div>
                             <div className="flex items-center gap-2">
@@ -1004,7 +1007,30 @@ export default function RestaurantSettingsPage() {
                                 ) : null}
                             </div>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="space-y-4">
+                            <div className="flex w-fit items-center rounded-lg border bg-muted/30 p-1">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={drawerBusinessLine === "restaurant" ? "default" : "ghost"}
+                                    onClick={() => setDrawerBusinessLine("restaurant")}
+                                >
+                                    Restaurant
+                                </Button>
+                                {restaurant?.hotel_enabled ? (
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={drawerBusinessLine === "hotel" ? "default" : "ghost"}
+                                        onClick={() => setDrawerBusinessLine("hotel")}
+                                    >
+                                        Hotel / front desk
+                                    </Button>
+                                ) : null}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                Showing {drawerBusinessLine === "hotel" ? "hotel front-desk" : "restaurant POS"} drawers and cashier assignments.
+                            </p>
                             {!canManageDrawers ? (
                                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900">
                                     Cash drawer assignment or accounting setup permission is required.
@@ -1028,7 +1054,7 @@ export default function RestaurantSettingsPage() {
                             ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {drawerConfigs.map((drawer) => {
-                                        const key = drawerScopeKey(drawer.station, drawer.drawer_key);
+                                        const key = drawerScopeKey(drawer.business_line || drawerBusinessLine, drawer.station, drawer.drawer_key);
                                         const assignments = activeAssignmentsForDrawer(drawer);
                                         const selectedCashier = drawerAssignSelection[key] || "";
                                         return (
@@ -1039,6 +1065,9 @@ export default function RestaurantSettingsPage() {
                                                     <p className="text-sm font-semibold">{drawer.name}</p>
                                                     <Badge variant={drawer.is_active ? "default" : "secondary"} className="text-[10px]">
                                                         {drawer.is_active ? "Active" : "Inactive"}
+                                                    </Badge>
+                                                    <Badge variant="outline" className="text-[10px] capitalize">
+                                                        {drawer.business_line || drawerBusinessLine}
                                                     </Badge>
                                                     {Number(drawer.standard_float || 0) === 0 && Number(drawer.opening_variance_tolerance || 0) === 0 ? (
                                                         <Badge variant="secondary" className="text-[10px]">Flexible opening</Badge>
@@ -1245,6 +1274,29 @@ export default function RestaurantSettingsPage() {
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2 md:col-span-2">
+                                <Label>Business area</Label>
+                                <Select
+                                    value={drawerForm.business_line}
+                                    disabled={drawerDialog.id !== null}
+                                    onValueChange={(value) =>
+                                        setDrawerForm({ ...drawerForm, business_line: value })
+                                    }
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select business area" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="restaurant">Restaurant POS</SelectItem>
+                                        {restaurant?.hotel_enabled ? (
+                                            <SelectItem value="hotel">Hotel / front desk</SelectItem>
+                                        ) : null}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[11px] text-muted-foreground">
+                                    Cash payments are resolved only against an open drawer in this area.
+                                </p>
+                            </div>
                             <div className="space-y-2">
                                 <Label>Drawer Name</Label>
                                 <Input

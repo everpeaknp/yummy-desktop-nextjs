@@ -54,7 +54,6 @@ export default function PurchasesPage() {
     const user = useAuth(state => state.user);
     const router = useRouter();
     const restaurant = useRestaurant((s) => s.restaurant);
-    const selectedModule = useRestaurant((s) => s.selectedModule);
     const [purchases, setPurchases] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
@@ -72,14 +71,11 @@ export default function PurchasesPage() {
         if (businessLine === "restaurant" || businessLine === "hotel") {
             return businessLine;
         }
-        if (selectedModule === "hotel" || selectedModule === "restaurant") {
-            return selectedModule;
-        }
         if (restaurant?.hotel_enabled && !restaurant?.restaurant_enabled) {
             return "hotel";
         }
         return "restaurant";
-    }, [businessLine, selectedModule, restaurant?.hotel_enabled, restaurant?.restaurant_enabled]);
+    }, [businessLine, restaurant?.hotel_enabled, restaurant?.restaurant_enabled]);
 
     useEffect(() => {
         if (!dualBusinessLines) {
@@ -88,15 +84,21 @@ export default function PurchasesPage() {
             } else {
                 setBusinessLine("restaurant");
             }
-        } else if (selectedModule === "hotel" || selectedModule === "restaurant") {
-            setBusinessLine(selectedModule);
         }
     }, [
         dualBusinessLines,
-        selectedModule,
         restaurant?.hotel_enabled,
         restaurant?.restaurant_enabled,
     ]);
+
+    const startPurchase = () => {
+        if (dualBusinessLines && businessLine === "all") {
+            toast.info("Choose Restaurant or Hotel before recording a purchase.");
+            return;
+        }
+        setSelectedPurchase(null);
+        setIsDialogOpen(true);
+    };
 
     const fetchPurchases = useCallback(async () => {
         if (!user?.restaurant_id) return;
@@ -206,7 +208,7 @@ export default function PurchasesPage() {
                     <Button variant="outline" size="icon" onClick={fetchPurchases} disabled={loading}>
                         <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
                     </Button>
-                    <Button onClick={() => { setSelectedPurchase(null); setIsDialogOpen(true); }}>
+                    <Button onClick={startPurchase}>
                         <Plus className="w-4 h-4 mr-2" />
                         Record Purchase
                     </Button>

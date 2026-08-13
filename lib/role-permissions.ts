@@ -140,6 +140,13 @@ export type PermissionKey =
   | "hotel.checkout"
   | "hotel.folio.view"
   | "hotel.folio.edit"
+  | "hotel.folio.override"
+  | "hotel.bookings.manage"
+  | "hotel.inventory.manage"
+  | "hotel.housekeeping.view"
+  | "hotel.housekeeping.manage"
+  | "hotel.rates.manage"
+  | "hotel.night_audit.run"
   // Menu & Category
   | "menu.view"
   | "menu.manage"
@@ -316,8 +323,11 @@ export function hasPermission(
   // Admin and Platform Staff bypass
   const roles = normalizeRolesForUser(user);
   if (roles.includes("admin") || (user.permissions?.includes("platform.restaurants.view") ?? false)) return true;
+  const permissions = user.permissions ?? [];
+  if (permission.startsWith("hotel.") && permissions.includes("hotel.manage")) return true;
+  if (permission === "hotel.housekeeping.view" && permissions.includes("hotel.housekeeping.manage")) return true;
   // Granular permission check (works for all custom-role users)
-  return user.permissions?.includes(permission) ?? false;
+  return permissions.includes(permission);
 }
 
 // ─── Permission checks (match Flutter RolePermissions) ──────────────────────
@@ -471,12 +481,6 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "tables.view",
   },
   {
-    title: "Rooms",
-    href: "/rooms",
-    allowedRoles: ALL_DASHBOARD_ROLES,
-    requiredPermission: "hotel.manage",
-  },
-  {
     title: "Reservations",
     href: "/reservations",
     allowedRoles: ALL_DASHBOARD_ROLES,
@@ -555,6 +559,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/discounts": "pos.order.discount.apply",
   "/customers": "customers.view",
   "/rooms": "hotel.manage",
+  "/hotel": "hotel.view",
   // Finance
   "/finance/accounting/inventory": "inventory.accounting.view",
   "/finance/accounting": "finance.accounting.view",
@@ -673,6 +678,7 @@ export function isPathAccessible(
 
 /** Hotel sidebar href → permission key (matches ROUTE_PERMISSIONS where applicable). */
 export const HOTEL_SIDEBAR_PERMISSIONS: Partial<Record<string, PermissionKey>> = {
+  "/hotel": "hotel.view",
   "/rooms": "hotel.manage",
   "/rooms/checkin": "hotel.manage",
   "/orders": "pos.view",

@@ -125,10 +125,7 @@ function LegacyActiveOrdersPage() {
         if (filter === "quick_billing" && (order.channel as string) !== "quick_billing" && (order.channel as string) !== "takeaway") return false;
         if (filter === "reservation" && (order.channel as string) !== "reservation") return false;
         if (filter === "room_service") {
-            // Show orders that are room service (either by channel or business_line)
-            const ch = (order.channel as string);
-            const bl = (order as any).business_line;
-            if (ch !== "room_service" && bl !== "hotel") return false;
+            if ((order.channel as string) !== "room_service") return false;
         }
 
         // Search filter

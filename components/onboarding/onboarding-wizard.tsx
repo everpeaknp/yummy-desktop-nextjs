@@ -152,7 +152,6 @@ export function OnboardingWizard({
   const setAuth = useAuth((s) => s.setAuth);
   const logout = useAuth((s) => s.logout);
   const setRestaurant = useRestaurant((s) => s.setRestaurant);
-  const setSelectedModule = useRestaurant((s) => s.setSelectedModule);
   const fetchRestaurant = useRestaurant((s) => s.fetchRestaurant);
   const onboardingHydrated = useOnboardingHydrated();
   const step = useOnboarding((s) => s.step);
@@ -626,13 +625,6 @@ export function OnboardingWizard({
         const restaurantEnabled =
           Boolean(created.restaurant_enabled) || flags.restaurant_enabled;
         const hotelEnabled = Boolean(created.hotel_enabled) || flags.hotel_enabled;
-
-        // Land on dashboard after finish. Dual-module defaults to restaurant POS.
-        if (!restaurantEnabled && hotelEnabled) {
-          setSelectedModule("hotel");
-        } else {
-          setSelectedModule("restaurant");
-        }
 
         setRestaurant({
           ...(created as any),

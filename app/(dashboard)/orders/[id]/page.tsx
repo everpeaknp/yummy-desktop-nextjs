@@ -520,6 +520,7 @@ export default function OrderDetailPage() {
   const isEditable = !["completed", "canceled"].includes(displayOrder.status);
   const isCancellable = !["completed", "canceled"].includes(displayOrder.status);
   const isTableOrder = displayOrder.channel === "table";
+  const isRoomServiceOrder = displayOrder.channel === "room_service";
   const assignedTables = context.tables.length > 0
     ? context.tables
     : getAssignedTableIds(displayOrder, context.tables).map((id) => ({
@@ -672,11 +673,12 @@ export default function OrderDetailPage() {
               
               <Link href={`/orders/${orderId}/checkout`}>
                 <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold">
-                  <Receipt className="h-4 w-4" /> {isFullyPaid ? "Payments" : "Checkout"}
+                  <Receipt className="h-4 w-4" />
+                  {isRoomServiceOrder ? "Mark delivered" : isFullyPaid ? "Payments" : "Checkout"}
                 </Button>
               </Link>
               
-              {isFullyPaid && order.status !== 'completed' && (
+              {!isRoomServiceOrder && isFullyPaid && order.status !== 'completed' && (
                 <Button 
                   size="sm"
                   className="gap-2 rounded-xl h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-bold"
@@ -690,7 +692,7 @@ export default function OrderDetailPage() {
             </>
           )}
           
-          {!isEditable && order.status === "completed" && (
+          {!isRoomServiceOrder && !isEditable && order.status === "completed" && (
             <Link href={`/orders/${orderId}/checkout`}>
               <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold" variant="outline">
                 <Receipt className="h-4 w-4" /> Payments & Refunds

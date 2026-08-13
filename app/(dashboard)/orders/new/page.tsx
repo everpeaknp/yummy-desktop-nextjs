@@ -1,20 +1,20 @@
 "use client";
 
 import { useState, useEffect, Suspense, useCallback } from "react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import POSSystem from "@/components/orders/pos-system";
-import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, Bed, BedDouble, Filter, Table2 } from "lucide-react";
+import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, BedDouble, Filter, Table2 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { cn, getImageUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { TableApis, TableTypeApis } from "@/lib/api/endpoints";
 import { useRouter } from "next/navigation";
 import { RoomContainer, type TableData } from "@/components/tables/room-container";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useEntitlement } from "@/hooks/use-subscription";
+import { hotelDate, hotelPmsApi } from "@/lib/hotel/api";
 
 
 interface TableType {
@@ -24,23 +24,31 @@ interface TableType {
     layout_height: number;
 }
 
+interface RoomOrderTarget {
+    assignmentId: number;
+    stayId: number;
+    roomNumber: string;
+    floorName: string;
+    guestName: string;
+    folioNumber: string;
+}
+
 export default function NewOrderPage() {
     const [activeTab, setActiveTab] = useState("tables");
     const [multiTableMode, setMultiTableMode] = useState(false);
     const [selectedTables, setSelectedTables] = useState<number[]>([]);
-    const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
     const [activePOS, setActivePOS] = useState<{
         orderId: string;
         tableId?: number;
         tableIds?: number[];
         channel?: string;
+        stayAssignmentId?: number;
+        roomOrderLabel?: string;
     } | null>(null);
     const [tables, setTables] = useState<TableData[]>([]);
-    const [rooms, setRooms] = useState<TableData[]>([]);
+    const [roomTargets, setRoomTargets] = useState<RoomOrderTarget[]>([]);
     const [tableTypes, setTableTypes] = useState<TableType[]>([]);
-    const [roomTableTypes, setRoomTableTypes] = useState<TableType[]>([]);
     const [selectedArea, setSelectedArea] = useState("All Areas");
-    const [selectedWing, setSelectedWing] = useState("All Floors");
     const [loading, setLoading] = useState(false);
     const [loadingRooms, setLoadingRooms] = useState(false);
 
@@ -124,23 +132,26 @@ export default function NewOrderPage() {
         }
     }, [user?.restaurant_id]);
 
-    // 3. Data Fetching — rooms (space_kind=room) + room table types (for floor layout_height)
+    // Room orders are created only for active PMS stay assignments.
     const fetchRooms = useCallback(async () => {
         if (!user?.restaurant_id) return;
         setLoadingRooms(true);
         try {
-            const [roomsRes, typesRes] = await Promise.all([
-                apiClient.get(`${TableApis.getTables(user.restaurant_id)}?space_kind=room`),
-                apiClient.get(`${TableTypeApis.getTableTypes(user.restaurant_id)}?space_kind=room`),
-            ]);
-            if (roomsRes.data.status === "success") {
-                setRooms(roomsRes.data.data || []);
-            }
-            if (typesRes.data.status === "success") {
-                setRoomTableTypes(typesRes.data.data || []);
-            }
+            const frontDesk = await hotelPmsApi.getFrontDesk(user.restaurant_id, hotelDate(new Date()));
+            setRoomTargets(frontDesk.in_house.flatMap((stay) =>
+                stay.assignments
+                    .filter((assignment) => !assignment.released_at)
+                    .map((assignment) => ({
+                        assignmentId: assignment.id,
+                        stayId: stay.id,
+                        roomNumber: assignment.room.number,
+                        floorName: assignment.room.floor?.name || "No floor",
+                        guestName: stay.booking.primary_guest_name,
+                        folioNumber: stay.folios[0]?.folio_number || "",
+                    })),
+            ));
         } catch (err) {
-            console.error("Failed to fetch rooms:", err);
+            console.error("Failed to fetch active PMS room assignments:", err);
         } finally {
             setLoadingRooms(false);
         }
@@ -204,47 +215,7 @@ export default function NewOrderPage() {
     });
 
     // ─── Room Floor options ───
-    const roomAreaOptions = (() => {
-        const set = new Set<string>();
-        roomTableTypes.forEach((tt) => set.add(tt.name));
-        rooms.forEach((r) => {
-            if (r.table_type_name) set.add(r.table_type_name);
-        });
-        const sorted = Array.from(set).sort();
-        return ["All Floors", ...sorted];
-    })();
-
-    const getRoomLayoutHeight = (floorName: string): number => {
-        const tt = roomTableTypes.find((t) => t.name === floorName);
-        return tt?.layout_height ?? 200;
-    };
-
     // ─── Room Filter / group ───
-    const filteredRooms =
-        selectedWing === "All Floors"
-            ? rooms
-            : rooms.filter((r) => (r.table_type_name || "General") === selectedWing);
-
-    const groupedRooms = filteredRooms.reduce(
-        (acc, room) => {
-            const floor = room.table_type_name || "General";
-            if (!acc[floor]) acc[floor] = [];
-            acc[floor].push(room);
-            return acc;
-        },
-        {} as Record<string, TableData[]>
-    );
-    const sortedRoomFloors = Object.keys(groupedRooms).sort();
-
-    const roomAreaStats = roomAreaOptions.map((floor) => {
-        const bucket =
-            floor === "All Floors"
-                ? rooms
-                : rooms.filter((r) => (r.table_type_name || "General") === floor);
-        const occupied = bucket.filter((r) => String(r.status).toLowerCase() === "occupied").length;
-        return { floor, total: bucket.length, occupied };
-    });
-
     const handleTableClick = (table: TableData) => {
         if (!multiTableMode) {
             const existingOrderId = table.active_order_ids?.[0] || 'create';
@@ -302,8 +273,7 @@ export default function NewOrderPage() {
     if (activePOS) {
         let label = "Table Order";
         if (activePOS.channel === "room_service") {
-            const roomDetails = rooms.find(r => r.id === activePOS.tableId);
-            label = `Room Service — ${roomDetails?.table_name || `Room ${activePOS.tableId}`}`;
+            label = `Room Order — ${activePOS.roomOrderLabel || "PMS stay"}`;
         } else if (activePOS.tableIds && activePOS.tableIds.length > 0) {
             const selectedNames = activePOS.tableIds
                 .map(id => tables.find(t => t.id === id)?.table_name)
@@ -332,6 +302,8 @@ export default function NewOrderPage() {
                         defaultTableId={activePOS.tableId} 
                         defaultTableIds={activePOS.tableIds}
                         defaultChannel={activePOS.channel} 
+                        hotelStayRoomAssignmentId={activePOS.stayAssignmentId}
+                        roomOrderLabel={activePOS.roomOrderLabel}
                     />
                 </Suspense>
             </div>
@@ -434,80 +406,37 @@ export default function NewOrderPage() {
             <div className="mt-4 flex flex-col">
                 {activeTab === "rooms" ? (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        {/* Floor Filter Chips */}
-                        <div className="pb-3 pt-1">
-                            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2 ml-1">
-                                <Filter className="w-3.5 h-3.5" />
-                                <span>Filter Floor</span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 mb-3 pr-2">
-                                {roomAreaStats.map(({ floor, total, occupied }) => (
-                                    <button
-                                        key={floor}
-                                        onClick={() => setSelectedWing(floor)}
-                                        className={cn(
-                                            "shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 border",
-                                            selectedWing === floor
-                                                ? "bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm ring-1 ring-blue-200/60"
-                                                : "text-muted-foreground border-transparent bg-muted/30 hover:text-foreground hover:bg-muted"
-                                        )}
-                                    >
-                                        <span>{floor}</span>
-                                        <span className="ml-2 text-xs opacity-80">{total}</span>
-                                        {occupied > 0 && (
-                                            <span className="ml-1 text-[10px] text-red-500">•{occupied}</span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Room Status Legend */}
-                        <div className="flex items-center gap-6 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-6 ml-2 shrink-0">
-                            <div className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]" />
-                                <span>Available</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]" />
-                                <span>Occupied</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.3)]" />
-                                <span>Reserved</span>
-                            </div>
-                        </div>
-
                         {loadingRooms ? (
                             <div className="h-64 flex flex-col items-center justify-center gap-4 text-muted-foreground border-2 border-dashed border-border/40 rounded-[2rem] bg-muted/5">
                                 <Loader2 className="w-10 h-10 animate-spin text-primary" />
-                                <p className="font-bold uppercase tracking-widest text-xs">Loading Rooms</p>
+                                <p className="font-bold uppercase tracking-widest text-xs">Loading in-house guests</p>
                             </div>
-                        ) : rooms.length === 0 ? (
+                        ) : roomTargets.length === 0 ? (
                             <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border/40 rounded-[2rem] gap-4 bg-muted/5">
                                 <BedDouble className="w-16 h-16 opacity-10" />
-                                <p className="font-bold uppercase tracking-widest text-xs">No rooms configured</p>
-                                <p className="text-xs text-muted-foreground">Add rooms with space_kind=room from the Rooms management page</p>
-                            </div>
-                        ) : selectedWing !== "All Floors" ? (
-                            <div className="w-full lg:w-[calc(50%-1rem)]">
-                                <RoomContainer
-                                    title={selectedWing}
-                                    tables={filteredRooms}
-                                    layoutHeight={getRoomLayoutHeight(selectedWing)}
-                                    onTableClick={(room) => setSelectedRoom(room.id)}
-                                />
+                                <p className="font-bold uppercase tracking-widest text-xs">No occupied PMS rooms</p>
+                                <p className="text-xs text-muted-foreground">Check a guest in through Hotel PMS before creating a room order.</p>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                {sortedRoomFloors.map((floorName) => (
-                                    <RoomContainer
-                                        key={floorName}
-                                        title={floorName}
-                                        tables={groupedRooms[floorName]}
-                                        layoutHeight={getRoomLayoutHeight(floorName)}
-                                        onTableClick={(room) => setSelectedRoom(room.id)}
-                                    />
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                {roomTargets.map((target) => (
+                                    <button
+                                        key={target.assignmentId}
+                                        type="button"
+                                        onClick={() => setActivePOS({
+                                            orderId: "create",
+                                            channel: "room_service",
+                                            stayAssignmentId: target.assignmentId,
+                                            roomOrderLabel: `Room ${target.roomNumber} · ${target.guestName}`,
+                                        })}
+                                        className="rounded-2xl border bg-card p-5 text-left shadow-sm transition hover:border-blue-400 hover:shadow-md"
+                                    >
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div><p className="text-lg font-black">Room {target.roomNumber}</p><p className="text-sm text-muted-foreground">{target.guestName}</p></div>
+                                            <Badge variant="secondary">In house</Badge>
+                                        </div>
+                                        <p className="mt-4 text-xs text-muted-foreground">{target.floorName} · Folio {target.folioNumber || "open"}</p>
+                                    </button>
                                 ))}
                             </div>
                         )}

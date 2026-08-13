@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE,
   CHECKOUT_OPEN_CASH_DRAWER_MESSAGE,
+  HOTEL_CHECKOUT_OPEN_CASH_DRAWER_MESSAGE,
   resolveCheckoutCashDrawerReadiness,
 } from "./checkout-cash-drawer-readiness";
 
@@ -71,5 +72,14 @@ describe("checkout cash drawer readiness", () => {
       ready: false,
       message: CHECKOUT_OPEN_CASH_DRAWER_MESSAGE,
     });
+  });
+
+  it("identifies the hotel drawer when hotel cash has no open drawer", () => {
+    expect(
+      resolveCheckoutCashDrawerReadiness(
+        { data: [] },
+        { businessLine: "hotel" },
+      ).message,
+    ).toBe(HOTEL_CHECKOUT_OPEN_CASH_DRAWER_MESSAGE);
   });
 });

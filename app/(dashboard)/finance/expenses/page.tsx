@@ -227,7 +227,6 @@ export default function ExpensesPage() {
   const me = useAuth((state) => state.me);
   const router = useRouter();
   const restaurant = useRestaurant((s) => s.restaurant);
-  const selectedModule = useRestaurant((s) => s.selectedModule);
 
   const dualBusinessLines =
     !!restaurant?.hotel_enabled && !!restaurant?.restaurant_enabled;
@@ -238,16 +237,12 @@ export default function ExpensesPage() {
     if (businessLine === "restaurant" || businessLine === "hotel") {
       return businessLine;
     }
-    if (selectedModule === "hotel" || selectedModule === "restaurant") {
-      return selectedModule;
-    }
     if (restaurant?.hotel_enabled && !restaurant?.restaurant_enabled) {
       return "hotel";
     }
     return "restaurant";
   }, [
     businessLine,
-    selectedModule,
     restaurant?.hotel_enabled,
     restaurant?.restaurant_enabled,
   ]);
@@ -363,12 +358,9 @@ export default function ExpensesPage() {
       } else {
         setBusinessLine("restaurant");
       }
-    } else if (selectedModule === "hotel" || selectedModule === "restaurant") {
-      setBusinessLine(selectedModule);
     }
   }, [
     dualBusinessLines,
-    selectedModule,
     restaurant?.hotel_enabled,
     restaurant?.restaurant_enabled,
   ]);
@@ -1079,6 +1071,10 @@ export default function ExpensesPage() {
           <Button
             className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             onClick={() => {
+              if (dualBusinessLines && businessLine === "all") {
+                toast.info("Choose Restaurant or Hotel before adding an expense.");
+                return;
+              }
               resetExpenseForm();
               setIsAddDialogOpen(true);
             }}

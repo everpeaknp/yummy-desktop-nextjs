@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
+  ArrowLeft,
   Banknote,
   BookOpen,
   CalendarCheck,
@@ -21,6 +23,10 @@ import apiClient from "@/lib/api-client";
 import { AccountingApis, DrawerSessionApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
 import { getApiErrorMessage } from "@/lib/api-error-message";
+import {
+  resolveCashDrawerBusinessLine,
+  safeCashDrawerReturnPath,
+} from "@/lib/cash-drawer-business-line";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Button } from "@/components/ui/button";
@@ -74,8 +80,19 @@ function formatMoney(value: number) {
 export default function CashDrawersPage() {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((state) => state.restaurant);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const restaurantId = user?.restaurant_id ?? restaurant?.id;
-  const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
+  const requestedBusinessLine = searchParams.get("business_line");
+  const returnTo = safeCashDrawerReturnPath(searchParams.get("return_to"));
+  const [businessLine, setBusinessLine] = useState<BusinessLine>(() =>
+    resolveCashDrawerBusinessLine({
+      requested: requestedBusinessLine,
+      restaurantEnabled: restaurant?.restaurant_enabled,
+      hotelEnabled: restaurant?.hotel_enabled,
+    }),
+  );
   const [transferMode, setTransferMode] = useState<
     CashTransferInput["transfer_mode"]
   >("pending_bank_deposit");
@@ -108,6 +125,8 @@ export default function CashDrawersPage() {
   const showBusinessLinePicker = Boolean(
     restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
   );
+  const businessLineLabel =
+    businessLine === "hotel" ? "Hotel Cash Drawers" : "Restaurant Cash Drawers";
   const activeDrawerCash =
     cashSummary?.drawer_cash ??
     drawerSummary.activeDrawerCash + drawerSummary.unopenedRetainedCash;
@@ -120,6 +139,23 @@ export default function CashDrawersPage() {
   const summaryModeLabel = cashSummary?.finance_accounting_enabled
     ? "Accounting cash balances"
     : "Operational cash view";
+
+  useEffect(() => {
+    if (!restaurant) return;
+    const resolved = resolveCashDrawerBusinessLine({
+      requested: requestedBusinessLine,
+      restaurantEnabled: restaurant.restaurant_enabled,
+      hotelEnabled: restaurant.hotel_enabled,
+    });
+    setBusinessLine((current) => (current === resolved ? current : resolved));
+  }, [requestedBusinessLine, restaurant]);
+
+  const changeBusinessLine = (value: BusinessLine) => {
+    setBusinessLine(value);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("business_line", value);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   const loadCashBalances = useCallback(async () => {
     if (!restaurantId) return;
@@ -233,11 +269,11 @@ export default function CashDrawersPage() {
             </span>
             <div>
               <h1 className="text-2xl font-semibold tracking-normal text-foreground">
-                Cash Drawers
+                {businessLineLabel}
               </h1>
               <p className="text-sm text-muted-foreground">
-                Open, count, close, settle, and review drawer cash outside
-                checkout and day close.
+                 Open, count, close, settle, and review {businessLine} cash
+                 independently from the other business line.
               </p>
             </div>
           </div>
@@ -246,7 +282,7 @@ export default function CashDrawersPage() {
           {showBusinessLinePicker ? (
             <Select
               value={businessLine}
-              onValueChange={(value) => setBusinessLine(value as BusinessLine)}
+               onValueChange={(value) => changeBusinessLine(value as BusinessLine)}
             >
               <SelectTrigger className="h-10 min-w-[190px]">
                 <SelectValue placeholder="Business line" />
@@ -256,6 +292,14 @@ export default function CashDrawersPage() {
                 <SelectItem value="hotel">Hotel drawers</SelectItem>
               </SelectContent>
             </Select>
+           ) : null}
+          {returnTo ? (
+            <Button asChild variant="outline" className="gap-2">
+              <Link href={returnTo}>
+                <ArrowLeft className="h-4 w-4" />
+                Return to hotel
+              </Link>
+            </Button>
           ) : null}
           <Button asChild variant="outline" className="gap-2">
             <Link href="/day-close">
@@ -364,8 +408,8 @@ export default function CashDrawersPage() {
             key={drawerWorkspaceKey}
             restaurantId={restaurantId}
             businessLine={businessLine}
-            title="Drawer workspace"
-            description="Use this page for opening float, drawer count, settlement decision, cash movement review, and expected cash checks."
+            title={businessLine === "hotel" ? "Hotel drawer workspace" : "Restaurant drawer workspace"}
+            description={`Use this workspace for ${businessLine} opening float, drawer count, settlement, cash movement review, and expected cash checks.`}
             footerNote="Checkout automatically uses the logged-in cashier's active drawer. Day close only verifies that drawers are closed and settled."
             includeAllActiveSessions
             onCashSummaryChange={handleDrawerCashSummary}

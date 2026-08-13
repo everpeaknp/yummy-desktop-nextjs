@@ -14,7 +14,6 @@ import {
   Bell,
   Crown,
   ChevronRight,
-  ArrowLeftRight,
   Zap,
   Settings,
   Pencil,
@@ -160,7 +159,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
-  const { restaurant, fetchRestaurant, selectedModule } = useRestaurant();
+  const { restaurant, fetchRestaurant } = useRestaurant();
   const currentSubscription = useSubscriptionStore((state) => state.current);
   const { collapsed, width, toggle, setWidth, setCollapsed } = useSidebar();
   const items = useSidebarItems();
@@ -228,7 +227,10 @@ export function Sidebar() {
     });
   }, [items, pathname]);
 
-  const homeHref = selectedModule === "hotel" ? "/rooms" : "/dashboard";
+  const homeHref =
+    restaurant?.hotel_enabled && !restaurant?.restaurant_enabled
+      ? "/hotel"
+      : "/dashboard";
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -559,12 +561,6 @@ export function Sidebar() {
                 <DropdownMenuItem onClick={() => router.push("/manage/profile")} className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground">
                   <Pencil className="h-4 w-4" /> Profile Setting
                 </DropdownMenuItem>
-
-                {restaurant?.hotel_enabled && restaurant?.restaurant_enabled && (
-                  <DropdownMenuItem onClick={() => router.push("/gateway")} className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground">
-                    <ArrowLeftRight className="h-4 w-4" /> Switch Module
-                  </DropdownMenuItem>
-                )}
 
                 <DropdownMenuItem onClick={() => router.push("/feedback")} className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground">
                   <ThumbsUp className="h-4 w-4" /> Give Feedback

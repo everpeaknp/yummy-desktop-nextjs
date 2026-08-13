@@ -17,6 +17,7 @@ export interface Restaurant {
   tax_enabled: boolean;
   receipt_template: any | null;
   kot_template: any | null;
+  kot_enabled: boolean;
   billing_mode: string;
   effective_plan: string;
   plan_state: string;
@@ -42,26 +43,22 @@ interface RestaurantState {
   restaurant: Restaurant | null;
   loading: boolean;
   error: string | null;
-  selectedModule: 'restaurant' | 'hotel' | null;
   fetchRestaurant: (force?: boolean) => Promise<void>;
   setRestaurant: (data: Restaurant | null) => void;
   clearRestaurant: () => void;
-  setSelectedModule: (module: 'restaurant' | 'hotel' | null) => void;
 }
 
 let restaurantFetchPromise: Promise<void> | null = null;
 
 export const useRestaurant = create<RestaurantState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       restaurant: null,
-      selectedModule: null,
       loading: false,
       error: null,
       
       setRestaurant: (data) => set({ restaurant: data }),
-      clearRestaurant: () => set({ restaurant: null, selectedModule: null, error: null }),
-      setSelectedModule: (module) => set({ selectedModule: module }),
+      clearRestaurant: () => set({ restaurant: null, error: null }),
 
       fetchRestaurant: async (force = false) => {
         if (restaurantFetchPromise) {
@@ -76,14 +73,6 @@ export const useRestaurant = create<RestaurantState>()(
               const nextData = response.data.data;
               console.log("[useRestaurant] Full Data received:", nextData);
               console.log("[useRestaurant] Data flags check:", { id: nextData.id, hotel: nextData.hotel_enabled, rest: nextData.restaurant_enabled });
-              const current = get().restaurant;
-
-              // If we switched to a different restaurant, clear selection
-              if (current && current.id !== nextData.id) {
-                console.log("[useRestaurant] Restaurant changed, clearing selectedModule");
-                set({ selectedModule: null });
-              }
-
               set({ restaurant: nextData, error: null });
             }
           } catch (err: any) {
@@ -91,7 +80,7 @@ export const useRestaurant = create<RestaurantState>()(
             // clear stale persisted profile for onboarding/join routing.
             const status = err.response?.status;
             if (status === 404 || status === 403) {
-              set({ restaurant: null, selectedModule: null, error: null });
+              set({ restaurant: null, error: null });
             } else {
               console.error('Failed to fetch restaurant:', err);
               set({ error: err.response?.data?.detail || 'Failed to fetch restaurant profile' });
@@ -112,7 +101,6 @@ export const useRestaurant = create<RestaurantState>()(
       name: 'restaurant-storage',
       partialize: (state) => ({ 
         restaurant: state.restaurant,
-        selectedModule: state.selectedModule 
       }),
     }
   )

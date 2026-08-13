@@ -7,7 +7,7 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis, AccountingApis } from "@/lib/api/endpoints";
+import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis, AccountingApis, HotelPmsApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,6 +74,19 @@ import {
   optionalCustomerText,
 } from "@/lib/customer-fiscal";
 import { getRecordedOrderDiscount } from "@/lib/order-totals";
+import {
+  canPostRoomOrderToFolio,
+  requiresRoomOrderKotFulfillment,
+} from "@/lib/hotel/room-order-settlement";
+import {
+  PaymentMethodGrid,
+  PaymentModeTabs,
+  STANDARD_PAYMENT_METHODS,
+} from "@/components/payments/payment-composer-controls";
+import {
+  PAYMENT_AMOUNT_STEP,
+  preventPaymentAmountWheelChange,
+} from "@/lib/payment-composer-config";
 
 function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
   if (!input) return null;
@@ -214,15 +227,17 @@ interface OrderMeta {
   number_of_guests?: number;
   notes?: string;
   created_at: string;
+  room_order_context?: {
+    stay_id: number;
+    folio_id: number;
+    room_number: string;
+    guest_name: string;
+    folio_number: string;
+    settlement_status: "unsettled" | "paid_now" | "posted_to_folio" | "voided";
+  } | null;
 }
 
-const PAYMENT_METHODS = [
-  { value: "cash", label: "Cash", icon: Banknote, color: "text-emerald-600" },
-  { value: "card", label: "Card", icon: CreditCard, color: "text-blue-600" },
-  { value: "fonepay", label: "Fonepay", icon: QrCode, color: "text-fuchsia-600" },
-  { value: "digital", label: "Digital/QR", icon: Smartphone, color: "text-purple-600" },
-  { value: "credit", label: "Credit", icon: Wallet, color: "text-orange-600" },
-];
+const PAYMENT_METHODS = STANDARD_PAYMENT_METHODS;
 
 const REFUND_PAYMENT_METHODS = REFUND_PAYMENT_METHOD_OPTIONS.map((method) => {
   const fullMethod = PAYMENT_METHODS.find((option) => option.value === method.value);
@@ -451,6 +466,15 @@ export default function CheckoutPage() {
   } = usePosBillingPermissions();
 
   const { context, loading: orderLoading, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
+  const kotFulfillmentRequired = requiresRoomOrderKotFulfillment({
+    kotEnabled: restaurant?.kot_enabled,
+    kotEntitled: restaurant?.entitlements?.["kitchen.kot.enabled"] as boolean | null | undefined,
+  });
+  const roomOrderCanPost = canPostRoomOrderToFolio({
+    kotEnabled: restaurant?.kot_enabled,
+    kotEntitled: restaurant?.entitlements?.["kitchen.kot.enabled"] as boolean | null | undefined,
+    allKotsServed,
+  });
   const [bill, setBill] = useState<OrderBill | null>(null);
   const [orderMeta, setOrderMeta] = useState<OrderMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1080,12 +1104,26 @@ export default function CheckoutPage() {
       if (returnTo) {
         router.push(returnTo);
       } else if (orderMeta?.channel === "room_service") {
-        router.push("/rooms/checkin");
+        router.push("/hotel");
       } else {
         router.push("/orders/active");
       }
     } catch (err: any) {
       console.error("Failed to complete order:", err);
+    } finally {
+      setCompleting(false);
+    }
+  };
+
+  const handlePostToRoomFolio = async () => {
+    if (!window.confirm("Mark this room-service order as delivered and add it to the guest bill?")) return;
+    setCompleting(true);
+    try {
+      await apiClient.post(HotelPmsApis.postRoomOrderToFolio(Number(orderId)));
+      toast.success("Room-service order added to the guest bill");
+      router.push("/hotel");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || err?.response?.data?.message || "Unable to complete this room-service order");
     } finally {
       setCompleting(false);
     }
@@ -1883,7 +1921,7 @@ export default function CheckoutPage() {
       {!cashDrawerControlsEnabled ? (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
           <CheckCircle className="h-4 w-4" />
-          Cash payments will post without drawer attribution.
+          Cash payments can continue without selecting a drawer.
         </div>
       ) : hasCurrentCashierDrawer ? (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
@@ -2016,9 +2054,12 @@ export default function CheckoutPage() {
   const displayGrandTotal = Number((displaySubtotal + Number(bill.service_charge || 0) - computedDiscount).toFixed(2));
   const displayBalanceDue = Math.max(0, Number((displayGrandTotal - Number(bill.total_paid || 0)).toFixed(2)));
   const displayIsFullyPaid = displayBalanceDue <= 0;
-  const showCheckoutControls = !displayIsFullyPaid
+  const isRoomServiceOrder = orderMeta?.channel === "room_service";
+  const showCheckoutControls = !isRoomServiceOrder && (
+    !displayIsFullyPaid
     || hasNcItems
-    || (guestBills?.orders?.length > 0 && guestBills?.split_group_id);
+    || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)
+  );
   const dueAmountForManualDiscount = displayBalanceDue;
   const checkoutCustomerId = selectedCheckoutCustomerId ?? orderMeta?.customer_id;
   const checkoutCustomer = checkoutCustomerId
@@ -2044,14 +2085,14 @@ export default function CheckoutPage() {
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => {
             if (returnTo) router.push(returnTo);
-            else if (orderMeta?.channel === "room_service") router.push("/rooms/checkin");
+            else if (orderMeta?.channel === "room_service") router.push("/hotel");
              else router.back();
             }} className="rounded-xl">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              {orderMeta?.channel === "room_service" ? "Room Folio & Checkout" : "Bill & Payment"}
+              {orderMeta?.channel === "room_service" ? "Room Service Delivery" : "Bill & Payment"}
             </h1>
             <p className="text-sm text-muted-foreground">{orderLabel}</p>
           </div>
@@ -2060,6 +2101,17 @@ export default function CheckoutPage() {
           <Button variant="outline" size="sm" onClick={fetchBill} className="gap-2">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
+          {orderMeta?.channel === "room_service" && !displayIsFullyPaid && orderMeta.room_order_context?.settlement_status === "unsettled" && (
+            <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/20">
+              <div><p className="font-semibold">Complete room delivery</p><p className="text-sm text-muted-foreground">Mark the food as delivered and add the unpaid amount to the guest bill.</p></div>
+              <Button className="w-full" onClick={handlePostToRoomFolio} disabled={completing || !roomOrderCanPost}>
+                {completing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wallet className="mr-2 h-4 w-4" />}
+                Mark delivered · {formatCurrency(displayBalanceDue, curr)}
+              </Button>
+              {kotFulfillmentRequired && !allKotsServed ? <p className="text-xs text-amber-700">Mark all kitchen items as served before completing this delivery.</p> : null}
+            </div>
+          )}
+
           {displayIsFullyPaid && (
             <Button variant="outline" size="sm" onClick={handlePrintReceipt} className="gap-2">
               <Printer className="h-3.5 w-3.5" /> Print
@@ -2359,7 +2411,7 @@ export default function CheckoutPage() {
 
               <div className="flex justify-between font-bold text-base">
                 <span className={displayBalanceDue > 0 ? "text-destructive" : "text-emerald-600"}>
-                  {displayBalanceDue > 0 ? "Balance Due" : "Settled"}
+                  {displayBalanceDue > 0 ? "Balance Due" : "Paid"}
                 </span>
                 <span className={cn("tabular-nums", displayBalanceDue > 0 ? "text-destructive" : "text-emerald-600")}>
                   {formatCurrency(displayBalanceDue, curr)}
@@ -2629,7 +2681,7 @@ export default function CheckoutPage() {
 
               {guestBills?.orders?.length > 0 && guestBills?.split_group_id && String(guestBills.anchor_order_id) === String(orderId) && !guestBills.orders.every((g: any) => g.is_fully_paid) && (
                 <p className="text-[11px] text-orange-600 dark:text-orange-400 text-center mt-1">
-                  Please settle individual Guest Bills above.
+                  Please pay the individual guest bills above.
                 </p>
               )}
 
@@ -2704,7 +2756,7 @@ export default function CheckoutPage() {
 
           {displayIsFullyPaid && (
             <div className="space-y-3">
-              {(allKotsServed || orderMeta?.channel === "room_service") && orderMeta?.status !== 'completed' && (
+              {allKotsServed && orderMeta?.status !== 'completed' && (
                 <Button 
                   className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
                   onClick={handleComplete}
@@ -2713,7 +2765,7 @@ export default function CheckoutPage() {
                   {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                   {ncNeedsCustomer
                     ? "Select Customer For NC"
-                    : `Complete ${orderMeta?.channel === "room_service" ? "Stay & Checkout" : "Order"}`}
+                    : "Complete Order"}
                 </Button>
               )}
 
@@ -2739,12 +2791,12 @@ export default function CheckoutPage() {
                 className="w-full h-12 text-base font-semibold gap-2"
                 onClick={() => {
                   if (returnTo) router.push(returnTo);
-                  else if (orderMeta?.channel === "room_service") router.push("/rooms/checkin");
+                  else if (orderMeta?.channel === "room_service") router.push("/hotel");
                   else router.push("/orders/active");
                 }}
               >
                 <CheckCircle className="h-4 w-4" />
-                {orderMeta?.channel === "room_service" ? "Back to Rooms" : "Back to Orders"}
+                {orderMeta?.channel === "room_service" ? "Back to Hotel PMS" : "Back to Orders"}
               </Button>
               <Button
                 variant="outline"
@@ -2805,35 +2857,18 @@ export default function CheckoutPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Toggle for Single vs Multiple */}
-          <div className="flex gap-2 border-b pb-3">
-            <button
-              type="button"
-              onClick={() => setIsMultiPayment(false)}
-              className={cn(
-                "flex-1 py-2 text-sm font-semibold border-b-2 transition-all",
-                !isMultiPayment ? "border-primary text-primary" : "border-transparent text-muted-foreground"
-              )}
-            >
-              Single Payment
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsMultiPayment(true);
+          <PaymentModeTabs
+            multiple={isMultiPayment}
+            onChange={(multiple) => {
+              setIsMultiPayment(multiple);
+              if (multiple) {
                 setMultiPayments([
                   { method: "cash", amount: (displayBalanceDue / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 },
-                  { method: "digital", amount: (displayBalanceDue / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }
+                  { method: "digital", amount: (displayBalanceDue / 2).toFixed(2), reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 },
                 ]);
-              }}
-              className={cn(
-                "flex-1 py-2 text-sm font-semibold border-b-2 transition-all",
-                isMultiPayment ? "border-primary text-primary" : "border-transparent text-muted-foreground"
-              )}
-            >
-              Multiple Payments
-            </button>
-          </div>
+              }
+            }}
+          />
 
           <div className="space-y-4 py-2 min-w-0">
             {payError && (
@@ -2847,24 +2882,11 @@ export default function CheckoutPage() {
                 {/* Payment Method */}
                 <div className="space-y-2">
                   <Label>Payment Method</Label>
-                  <div className="grid grid-cols-2 gap-2 min-w-0">
-                    {PAYMENT_METHODS.map((m) => (
-                      <button
-                        key={m.value}
-                        type="button"
-                        onClick={() => setPayMethod(m.value)}
-                        className={cn(
-                          "flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-sm font-medium min-w-0",
-                          payMethod === m.value
-                            ? "border-primary bg-primary/5 text-primary"
-                            : "border-border/50 hover:border-border text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        <m.icon className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{m.label}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <PaymentMethodGrid
+                    methods={PAYMENT_METHODS}
+                    value={payMethod}
+                    onChange={setPayMethod}
+                  />
                 </div>
 
                 {/* Customer Selection for Credit Method */}
@@ -3001,10 +3023,11 @@ export default function CheckoutPage() {
                     <Input
                       id="pay-amount"
                       type="number"
-                      step="0.01"
+                      step={PAYMENT_AMOUNT_STEP}
                       min="0"
                       value={payAmount}
                       onChange={(e) => setPayAmount(e.target.value)}
+                      onWheel={(event) => preventPaymentAmountWheelChange(event.currentTarget)}
                       className="pl-12 text-lg font-semibold tabular-nums"
                       autoFocus
                     />
@@ -3083,9 +3106,11 @@ export default function CheckoutPage() {
                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{curr}</span>
                             <Input
                               type="number"
-                              step="0.01"
+                              step={PAYMENT_AMOUNT_STEP}
+                              min="0"
                               placeholder="0.00"
                               value={row.amount}
+                              onWheel={(event) => preventPaymentAmountWheelChange(event.currentTarget)}
                               onChange={(e) => {
                                 const newRows = [...multiPayments];
                                 const newValStr = e.target.value;
@@ -3265,7 +3290,7 @@ export default function CheckoutPage() {
                     <span className="font-bold">{formatCurrency(displayBalanceDue, curr)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Allocated:</span>
+                    <span className="text-muted-foreground">Payment total:</span>
                     {(() => {
                       const totalAllocated = multiPayments.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
                       const difference = totalAllocated - displayBalanceDue;
@@ -3299,7 +3324,7 @@ export default function CheckoutPage() {
           <DialogHeader>
             <DialogTitle>Edit Payment</DialogTitle>
             <DialogDescription>
-              Update payment method/reference after settlement. Amount is fixed for this payment record.
+              Update the payment method or reference. The amount cannot be changed.
             </DialogDescription>
           </DialogHeader>
 
@@ -3314,24 +3339,11 @@ export default function CheckoutPage() {
 
             <div className="space-y-2">
               <Label>Payment Method</Label>
-              <div className="grid grid-cols-2 gap-2 min-w-0">
-                {PAYMENT_METHODS.map((m) => (
-                  <button
-                    key={`edit-${m.value}`}
-                    type="button"
-                    onClick={() => setEditPayMethod(m.value)}
-                    className={cn(
-                      "flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-sm font-medium min-w-0",
-                      editPayMethod === m.value
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border/50 hover:border-border text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <m.icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{m.label}</span>
-                  </button>
-                ))}
-              </div>
+              <PaymentMethodGrid
+                methods={PAYMENT_METHODS}
+                value={editPayMethod}
+                onChange={setEditPayMethod}
+              />
             </div>
 
             {editPayMethod === "digital" && (
@@ -3606,7 +3618,7 @@ export default function CheckoutPage() {
           <DialogHeader>
             <DialogTitle>Pay All Guest Bills</DialogTitle>
             <DialogDescription>
-              Record a single bulk payment to settle all outstanding guest bills.
+              Record one payment for all outstanding guest bills.
             </DialogDescription>
           </DialogHeader>
 

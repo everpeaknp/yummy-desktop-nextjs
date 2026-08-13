@@ -1,13 +1,5 @@
-import { EntitlementGate } from "@/components/subscription/entitlement-gate";
+import { redirect } from "next/navigation";
 
-export default function RoomsLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <EntitlementGate
-      entitlement="business.hotel.enabled"
-      legacyFallback
-      title="Hotel management is not included in your plan"
-    >
-      {children}
-    </EntitlementGate>
-  );
+export default function RoomsLayout() {
+  redirect("/hotel");
 }

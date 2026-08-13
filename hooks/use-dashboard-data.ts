@@ -12,6 +12,7 @@ import {
   preferHourlyTrends,
 } from "@/lib/analytics-dashboard-mapper"
 import { formatDateYmd, resolveDateRange } from "@/lib/dashboard-utils"
+import { useRestaurant } from "@/hooks/use-restaurant"
 
 const LIVE_POLL_MS = 30_000
 const ANALYTICS_POLL_MS = 300_000
@@ -45,6 +46,13 @@ export function useDashboardData(
   const analyticsRequestRef = useRef(0)
 
   const canViewAnalytics = hasAnalyticsViewPermission(user)
+  const restaurant = useRestaurant((state) => state.restaurant)
+  const dashboardBusinessLine =
+    restaurant?.hotel_enabled && restaurant?.restaurant_enabled
+      ? "all"
+      : restaurant?.hotel_enabled
+        ? "hotel"
+        : "restaurant"
 
   const fetchLiveData = useCallback(async () => {
     if (!user?.restaurant_id) return
@@ -59,7 +67,7 @@ export function useDashboardData(
             DashboardApis.dashboardDataV2({
               restaurantId: user.restaurant_id,
               timezone,
-              businessLine: "restaurant",
+              businessLine: dashboardBusinessLine,
             })
           )
           .catch((err) => {
@@ -92,7 +100,7 @@ export function useDashboardData(
         setError("Failed to synchronize live dashboard data.")
       }
     }
-  }, [user?.restaurant_id])
+  }, [dashboardBusinessLine, user?.restaurant_id])
 
   const fetchAnalyticsBundle = useCallback(async () => {
     if (!user?.restaurant_id) return
@@ -139,7 +147,7 @@ export function useDashboardData(
               startTime: compareStartTime,
               endTime: compareEndTime,
               timezone,
-              businessLine: "restaurant",
+              businessLine: dashboardBusinessLine,
             })
           )
           .catch((err) => {
@@ -155,7 +163,7 @@ export function useDashboardData(
               startTime,
               endTime,
               timezone,
-              businessLine: "restaurant",
+              businessLine: dashboardBusinessLine,
               include: "core,insights",
             })
           )
@@ -237,7 +245,7 @@ export function useDashboardData(
             dateFrom: prevDateFrom,
             dateTo: prevDateTo,
             timezone,
-            businessLine: "restaurant",
+            businessLine: dashboardBusinessLine,
             include: "core,insights",
           })
         )
@@ -329,7 +337,7 @@ export function useDashboardData(
         setAnalyticsError("Failed to load analytics data.")
       }
     }
-  }, [user?.restaurant_id, activeRange, date, canViewAnalytics])
+  }, [user?.restaurant_id, activeRange, date, canViewAnalytics, dashboardBusinessLine])
 
   const fetchAll = useCallback(
     async (options?: { initial?: boolean }) => {

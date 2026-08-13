@@ -19,9 +19,7 @@ import {
   Percent,
   MessageSquare,
   Zap,
-  Bed,
   BedDouble,
-  KeyRound,
   BarChart3,
   Briefcase,
   LucideIcon,
@@ -79,7 +77,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
 };
 
 const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
-  { title: "Room Overview", href: "/rooms", icon: BedDouble, section: "Hotel" },
+  { title: "Hotel PMS", href: "/hotel", icon: BedDouble, section: "Hotel" },
   { title: "Orders", href: "/orders", icon: ClipboardList, section: "Hotel" },
   {
     title: "Order History",
@@ -88,18 +86,6 @@ const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
     section: "Hotel",
   },
   { title: "New Order", href: "/orders/new", icon: Plus, section: "Hotel" },
-  {
-    title: "Check In/Out",
-    href: "/rooms/checkin",
-    icon: KeyRound,
-    section: "Hotel",
-  },
-  {
-    title: "Reservations",
-    href: "/reservations",
-    icon: Calendar,
-    section: "Hotel",
-  },
   {
     title: "Finance",
     href: "/finance/income",
@@ -151,7 +137,7 @@ function getHotelSidebarItems(
 }
 
 const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
-  { title: "Room Overview", href: "/rooms", icon: BedDouble, section: "Hotel" },
+  { title: "Hotel PMS", href: "/hotel", icon: BedDouble, section: "Hotel" },
   { title: "Orders", href: "/orders", icon: ClipboardList, section: "Hotel" },
   {
     title: "Order History",
@@ -160,12 +146,6 @@ const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
     section: "Hotel",
   },
   { title: "New Order", href: "/orders/new", icon: Plus, section: "Hotel" },
-  {
-    title: "Check In/Out",
-    href: "/rooms/checkin",
-    icon: KeyRound,
-    section: "Hotel",
-  },
   {
     title: "Finance",
     href: "/finance/income",
@@ -178,7 +158,6 @@ const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
 export function useSidebarItems(): SidebarItem[] {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((s) => s.restaurant);
-  const selectedModule = useRestaurant((s) => s.selectedModule);
   const currentSubscription = useSubscriptionStore((state) => state.current);
 
   return useMemo(() => {
@@ -191,16 +170,22 @@ export function useSidebarItems(): SidebarItem[] {
     );
     const isCashier = roles.some((r) => r === "cashier");
 
-    // --- HOTEL MODE ---
-    if (selectedModule === "hotel" && restaurant?.hotel_enabled) {
+    const hotelAvailable =
+      Boolean(restaurant?.hotel_enabled) &&
+      !isExplicitlyLocked("business.hotel.enabled");
+    const restaurantAvailable = Boolean(restaurant?.restaurant_enabled);
+
+    // Hotel-only properties keep hotel operations plus permitted shared tools.
+    if (hotelAvailable && !restaurantAvailable) {
       if (isAdminOrManager) return getHotelSidebarItems(user);
       if (isCashier)
         return filterSidebarLinksByAccess(HOTEL_CASHIER_ITEMS, user);
-      // Other staff in hotel mode see basic view
-      return [{ title: "Room Overview", href: "/rooms", icon: BedDouble }];
+      // Other hotel staff see the PMS entry point when their role permits it.
+      return [{ title: "Hotel PMS", href: "/hotel", icon: BedDouble }];
     }
 
-    // --- RESTAURANT MODE (or single-module restaurant) ---
+    // Restaurant and shared navigation. Dual properties add Hotel PMS below;
+    // there is no global workspace mode.
     const restaurantOnlyItems = [
       "/orders",
       "/orders/new",
@@ -208,14 +193,10 @@ export function useSidebarItems(): SidebarItem[] {
       "/tables",
       "/reservations",
     ];
-    const hotelOnlyHrefs = ["/rooms"];
-
     const flatItems = getSidebarItemsForRoles(roles, user)
       .filter((item) => {
         // Remove Feedback from sidebar entirely (it is accessed via profile dropdown)
         if (item.href === "/feedback") return false;
-        // Never show hotel-only items in restaurant mode
-        if (hotelOnlyHrefs.includes(item.href)) return false;
         // If restaurant not enabled, don't show restaurant-specific items
         if (
           !restaurant?.restaurant_enabled &&
@@ -407,10 +388,21 @@ export function useSidebarItems(): SidebarItem[] {
       group.subItems = subItems;
     }
 
+    if (hotelAvailable) {
+      const hotelItem = filterSidebarLinksByAccess(
+        [{ title: "Hotel PMS", href: "/hotel", icon: BedDouble, section: "Hotel" }],
+        user,
+      )[0];
+      if (hotelItem && !result.some((item) => item.href === hotelItem.href)) {
+        const dashboardIndex = result.findIndex((item) => item.href === "/dashboard");
+        result.splice(dashboardIndex >= 0 ? dashboardIndex + 1 : 0, 0, hotelItem);
+      }
+    }
+
     // Clean up empty subItems arrays
     return result.map((r) => ({
       ...r,
       subItems: r.subItems?.length ? r.subItems : undefined,
     }));
-  }, [currentSubscription, restaurant, user, selectedModule]);
+  }, [currentSubscription, restaurant, user]);
 }

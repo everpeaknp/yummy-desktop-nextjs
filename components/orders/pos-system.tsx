@@ -221,12 +221,6 @@ const CartContent = ({
                   {restaurant?.currency || "Rs."}{getItemChargeableTotal(item).toLocaleString()}
                 </div>
               </div>
-              {item.revenue_category === 'rent' && (
-                <div className="mt-1 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-[10px] text-blue-600 dark:text-blue-400 font-semibold rounded border border-blue-100 dark:border-blue-900 flex items-center gap-1">
-                  <Badge variant="outline" className="h-3 p-0 text-[8px] border-blue-400 text-blue-400">Folio</Badge>
-                  Fixed Room Charge
-                </div>
-              )}
             </div>
           ))
         )}
@@ -284,13 +278,7 @@ const CartContent = ({
           <Button 
             variant="outline" 
             onClick={() => {
-              if (orderData?.channel === 'room_service') {
-                // For hotel orders, only clear non-rent items or warn
-                setCart(cart.filter((i: CartItem) => i.revenue_category === 'rent'));
-                toast.info("Cleared menu items, kept room charges");
-              } else {
-                setCart([]);
-              }
+              setCart([]);
             }} 
             disabled={processing}
           >
@@ -324,12 +312,16 @@ export default function POSSystem({
   orderId,
   defaultTableId,
   defaultTableIds,
-  defaultChannel
+  defaultChannel,
+  hotelStayRoomAssignmentId,
+  roomOrderLabel,
 }: {
   orderId?: string;
   defaultTableId?: number;
   defaultTableIds?: number[];
   defaultChannel?: string;
+  hotelStayRoomAssignmentId?: number;
+  roomOrderLabel?: string;
 }) {
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -522,10 +514,6 @@ export default function POSSystem({
 
       return prev.map(item => {
         if (item.id === cartItemId) {
-          if (item.revenue_category === 'rent' && item.quantity + delta < 1) {
-            toast.error("Fixed folio items cannot be removed from here. Use room management if needed.");
-            return item;
-          }
           return { ...item, quantity: Math.max(0, item.quantity + delta) };
         }
         return item;
@@ -567,9 +555,20 @@ export default function POSSystem({
       const payload: any = {
         restaurant_id: user?.restaurant_id,
         channel: orderData?.channel || channelFromQuery,
-        table_id: tableData?.id || orderData?.table_id || (tableIdFromQuery ? parseInt(tableIdFromQuery) : null),
+        table_id: channelFromQuery === "room_service"
+          ? null
+          : tableData?.id || orderData?.table_id || (tableIdFromQuery ? parseInt(tableIdFromQuery) : null),
         items: cart.map(buildItemPayload)
       };
+
+      if (!isEditing && channelFromQuery === "room_service") {
+        if (!hotelStayRoomAssignmentId) {
+          toast.error("Choose an occupied PMS room before creating a room order.");
+          setProcessing(false);
+          return;
+        }
+        payload.hotel_stay_room_assignment_id = hotelStayRoomAssignmentId;
+      }
 
       if (!isEditing && defaultTableIds && defaultTableIds.length > 0) {
         payload.table_ids = defaultTableIds;
@@ -726,6 +725,12 @@ export default function POSSystem({
       setProcessing(false);
     }
   };  const tableNames = useMemo(() => {
+    if (roomOrderLabel && channelFromQuery === "room_service") {
+      return roomOrderLabel;
+    }
+    if (orderData?.room_order_context?.room_number) {
+      return `Room ${orderData.room_order_context.room_number}`;
+    }
     if (orderData?.table_name) {
       return orderData.table_name;
     }
@@ -736,7 +741,7 @@ export default function POSSystem({
         .join(", ");
     }
     return tableData?.table_name || 'No Table';
-  }, [orderData, defaultTableIds, tablesList, tableData]);
+  }, [orderData, defaultTableIds, tablesList, tableData, roomOrderLabel, channelFromQuery]);
 
   const subtotal = cart.reduce((acc, item) => acc + getItemChargeableTotal(item), 0);
   const tax = subtotal * 0.13;

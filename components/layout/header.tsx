@@ -17,7 +17,6 @@ import { useNotifications, useNotificationStore } from "@/hooks/use-notification
 import { NotificationPanel } from "@/components/notifications/notification-panel";
 import apiClient from "@/lib/api-client";
 import { DashboardApis } from "@/lib/api/endpoints";
-import { ModuleSwitcher } from "./module-switcher";
 import { hasPermission } from "@/lib/role-permissions";
 import { HelpCenterDialog } from "@/components/onboarding/help-center-dialog";
 
@@ -44,6 +43,7 @@ function getVisibleRoleLabels(user: { role?: string | null; roles?: string[] | n
 
 const LiveStats = memo(function LiveStats() {
   const user = useAuth(state => state.user);
+  const restaurant = useRestaurant((state) => state.restaurant);
   const [stats, setStats] = useState<{ activeOrders: number; kotPending: number; todaySales: number } | null>(null);
 
   const canViewAnalytics = hasPermission(user, "reports.analytics.view");
@@ -55,7 +55,12 @@ const LiveStats = memo(function LiveStats() {
       const res = await apiClient.get(
         DashboardApis.dashboardDataV2({
           restaurantId: user.restaurant_id,
-          businessLine: "restaurant",
+           businessLine:
+             restaurant?.hotel_enabled && restaurant?.restaurant_enabled
+               ? "all"
+               : restaurant?.hotel_enabled
+                 ? "hotel"
+                 : "restaurant",
           timezone,
         })
       );
@@ -74,7 +79,7 @@ const LiveStats = memo(function LiveStats() {
     } catch {
       // silently fail — stats are non-critical
     }
-  }, [user?.restaurant_id]);
+  }, [restaurant?.hotel_enabled, restaurant?.restaurant_enabled, user?.restaurant_id]);
 
   useEffect(() => {
     fetchStats();
@@ -214,7 +219,6 @@ export const Header = memo(function Header() {
             </Button>
         )}
         <LiveStats />
-        <ModuleSwitcher />
       </div>
       <div className="flex-1" />
 

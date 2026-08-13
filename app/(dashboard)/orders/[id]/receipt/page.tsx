@@ -692,7 +692,7 @@ export default function ReceiptPage() {
       if (returnTo) {
         router.push(returnTo);
       } else if (receipt?.order?.channel === "room_service") {
-        router.push("/rooms/checkin");
+        router.push("/hotel");
       } else {
         router.push("/orders/active");
       }
@@ -888,7 +888,7 @@ export default function ReceiptPage() {
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => {
               if (returnTo) router.push(returnTo);
-              else if (receipt?.order?.channel === "room_service") router.push("/rooms/checkin");
+              else if (receipt?.order?.channel === "room_service") router.push("/hotel");
               else router.back();
             }} className="rounded-xl hover:bg-muted/50">
               <ArrowLeft className="h-5 w-5" />
@@ -1005,18 +1005,18 @@ export default function ReceiptPage() {
               disabled={completing}
             >
               {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-              Complete {receipt?.order?.channel === "room_service" ? "Checkout" : "Order"}
+              Complete Order
             </Button>
           )}
           <Button
             className="flex-1 w-full sm:w-auto h-12 text-base font-bold gap-2 rounded-xl shadow-lg"
             onClick={() => {
               if (returnTo) router.push(returnTo);
-              else if (receipt?.order?.channel === "room_service") router.push("/rooms/checkin");
+              else if (receipt?.order?.channel === "room_service") router.push("/hotel");
               else router.push("/orders/active");
             }}
           >
-            <CheckCircle className="h-4 w-4" /> {receipt?.order?.channel === "room_service" ? "Back to Rooms" : "Back to Orders"}
+            <CheckCircle className="h-4 w-4" /> {receipt?.order?.channel === "room_service" ? "Back to Hotel PMS" : "Back to Orders"}
           </Button>
           <div className="flex gap-2 w-full sm:w-auto">
             <Button

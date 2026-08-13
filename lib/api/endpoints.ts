@@ -54,6 +54,45 @@ export const FiscalApis = {
   cbmsReconcile: "/fiscal/cbms/reconcile",
 };
 
+export const HotelPmsApis = {
+  settings: "/hotel/v2/settings",
+  floors: "/hotel/v2/floors",
+  roomTypes: "/hotel/v2/room-types",
+  roomType: (id: number) => `/hotel/v2/room-types/${id}`,
+  rooms: "/hotel/v2/rooms",
+  room: (id: number) => `/hotel/v2/rooms/${id}`,
+  roomStatus: (id: number) => `/hotel/v2/rooms/${id}/status`,
+  ratePlans: "/hotel/v2/rate-plans",
+  dailyRates: "/hotel/v2/daily-rates",
+  availability: "/hotel/v2/availability",
+  frontDesk: "/hotel/v2/front-desk",
+  bookings: "/hotel/v2/bookings",
+  booking: (id: number) => `/hotel/v2/bookings/${id}`,
+  assignBooking: (id: number) => `/hotel/v2/bookings/${id}/assign`,
+  cancelBooking: (id: number) => `/hotel/v2/bookings/${id}/cancel`,
+  noShowBooking: (id: number) => `/hotel/v2/bookings/${id}/no-show`,
+  checkIn: (id: number) => `/hotel/v2/bookings/${id}/check-in`,
+  bookingStay: (id: number) => `/hotel/v2/bookings/${id}/stay`,
+  stay: (id: number) => `/hotel/v2/stays/${id}`,
+  stayRoomOrders: (id: number) => `/hotel/v2/stays/${id}/room-orders`,
+  postRoomOrderToFolio: (id: number) => `/hotel/v2/room-orders/${id}/post-to-folio`,
+  roomOrderAnalytics: "/hotel/v2/room-orders/analytics/summary",
+  checkout: (id: number) => `/hotel/v2/stays/${id}/checkout`,
+  prepareCheckout: (id: number) => `/hotel/v2/stays/${id}/prepare-checkout`,
+  moveRoom: (id: number) => `/hotel/v2/stays/${id}/move-room`,
+  extendStay: (id: number) => `/hotel/v2/stays/${id}/extend`,
+  folio: (id: number) => `/hotel/v2/folios/${id}`,
+  folioEntries: (id: number) => `/hotel/v2/folios/${id}/entries`,
+  folioPayments: (id: number) => `/hotel/v2/folios/${id}/payments`,
+  folioPaymentQuote: (id: number) => `/hotel/v2/folios/${id}/payment-quote`,
+  folioDiscounts: (id: number) => `/hotel/v2/folios/${id}/discounts`,
+  stayCustomer: (id: number) => `/hotel/v2/stays/${id}/customer`,
+  housekeeping: "/hotel/v2/housekeeping",
+  housekeepingTask: (id: number) => `/hotel/v2/housekeeping/tasks/${id}`,
+  nightAuditPreview: "/hotel/v2/night-audit/preview",
+  nightAuditRun: "/hotel/v2/night-audit/run",
+};
+
 export const RestaurantJoinApis = {
   currentCode: "/restaurant-joins/code",
   rotateCode: "/restaurant-joins/code",
@@ -217,7 +256,6 @@ export const OrderApis = {
   activateReservation: (id: number) => `/orders/${id}/activate`,
   cancelOrder: (id: number) => `/orders/${id}/cancel`,
   refundOrder: (id: number) => `/orders/${id}/refund`,
-  checkinRoom: "/orders/room/checkin",
 
   // Guest Bill / Split Bill helpers
   getGuestBills: (orderId: number) => `/orders/${orderId}/guest-bills`,

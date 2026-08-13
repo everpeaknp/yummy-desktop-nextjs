@@ -4,6 +4,9 @@ export const CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE =
 export const CHECKOUT_OPEN_CASH_DRAWER_MESSAGE =
   "Open your cash drawer from Cash Drawers before taking a cash payment.";
 
+export const HOTEL_CHECKOUT_OPEN_CASH_DRAWER_MESSAGE =
+  "Open a hotel cash drawer before taking this hotel cash payment.";
+
 const PAYMENT_READY_DRAWER_STATUSES = new Set([
   "opened",
   "closing_count_required",
@@ -28,6 +31,7 @@ export function isCheckoutPaymentReadyDrawer(session: { status?: unknown }) {
 
 export function resolveCheckoutCashDrawerReadiness<TSession extends { status?: unknown }>(
   responseData: CheckoutDrawerResponse<TSession>,
+  options?: { businessLine?: "restaurant" | "hotel" },
 ): CheckoutCashDrawerReadiness<TSession> {
   const message = String(responseData?.message || "").toLowerCase();
   if (message.includes("controls are disabled")) {
@@ -64,6 +68,9 @@ export function resolveCheckoutCashDrawerReadiness<TSession extends { status?: u
     controlsEnabled: true,
     paymentReadySessions,
     ready: false,
-    message: CHECKOUT_OPEN_CASH_DRAWER_MESSAGE,
+    message:
+      options?.businessLine === "hotel"
+        ? HOTEL_CHECKOUT_OPEN_CASH_DRAWER_MESSAGE
+        : CHECKOUT_OPEN_CASH_DRAWER_MESSAGE,
   };
 }
