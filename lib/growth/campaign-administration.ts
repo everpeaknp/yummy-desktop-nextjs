@@ -75,36 +75,36 @@ export function campaignApprovalChecks(
   return [
     {
       key: "offer",
-      label: "Bounded offer",
+      label: "Offer attached",
       ready: Boolean(campaign.offer),
       detail: campaign.offer
-        ? "Offer economics are attached to this snapshot."
-        : "Attach offer economics before approval.",
+        ? "Discount and cost limit are saved."
+        : "Add an offer before sending.",
     },
     {
       key: "message",
-      label: "Message snapshot",
+      label: "Message ready",
       ready: Boolean(campaign.approved_message_snapshot?.trim()),
       detail: campaign.approved_message_snapshot?.trim()
-        ? "The reviewed copy is stored with the campaign."
-        : "Add message copy before approval.",
+        ? "Customer message is saved."
+        : "Write a message before sending.",
     },
     {
       key: "poster",
-      label: "Poster asset",
+      label: "Image uploaded",
       ready: campaign.creative_asset_id != null,
       detail:
         campaign.creative_asset_id != null
-          ? `Registered asset #${campaign.creative_asset_id}`
-          : "Upload and register a stable poster asset before approval.",
+          ? `Image #${campaign.creative_asset_id} is ready`
+          : "Upload an image before sending.",
     },
     {
       key: "template",
-      label: "WhatsApp template",
+      label: "WhatsApp ready",
       ready: Boolean(selectedTemplate && selectedTemplate.provider_status === "approved"),
       detail: selectedTemplate
         ? `${selectedTemplate.whatsapp_template_name} · ${selectedTemplate.language} · ${selectedTemplate.provider_status}`
-        : "Select an available provider-approved template before approval.",
+        : "Select an approved WhatsApp template.",
     },
   ];
 }

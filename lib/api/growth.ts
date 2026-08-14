@@ -9,6 +9,7 @@ import type {
   GrowthCampaignPosterUploadInput,
   GrowthCampaignResultSummary,
   GrowthCampaignUpdateInput,
+  GrowthChannelCode,
   GrowthCopySuggestion,
   GrowthCopySuggestionInput,
   GrowthCreativeAsset,
@@ -100,8 +101,13 @@ export const growthApi = {
     return getData(apiClient.post(GrowthApis.refreshOpportunities, {}));
   },
 
-  async previewSegment(segmentCode: GrowthSegmentCode): Promise<GrowthSegmentPreview> {
-    return getData(apiClient.get(GrowthApis.segmentPreview(segmentCode)));
+  async previewSegment(
+    segmentCode: GrowthSegmentCode,
+    channel: GrowthChannelCode = "whatsapp",
+  ): Promise<GrowthSegmentPreview> {
+    return getData(
+      apiClient.get(GrowthApis.segmentPreview(segmentCode), { params: { channel } }),
+    );
   },
 
   async listCampaigns(): Promise<GrowthCampaign[]> {
@@ -200,8 +206,12 @@ export const growthApi = {
     return getData(apiClient.patch(GrowthApis.brand, input));
   },
 
-  async listMessageTemplates(): Promise<GrowthMessageTemplate[]> {
-    return getData(apiClient.get(GrowthApis.messageTemplates));
+  async listMessageTemplates(
+    channel?: GrowthChannelCode,
+  ): Promise<GrowthMessageTemplate[]> {
+    return getData(
+      apiClient.get(GrowthApis.messageTemplates, { params: channel ? { channel } : {} }),
+    );
   },
 
   async suggestCopy(input: GrowthCopySuggestionInput): Promise<GrowthCopySuggestion> {

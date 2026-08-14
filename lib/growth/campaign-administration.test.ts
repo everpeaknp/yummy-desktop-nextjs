@@ -51,7 +51,9 @@ describe("Growth campaign administration", () => {
       {
         id: 9,
         key: "win_back_en",
+        channel: "whatsapp",
         whatsapp_template_name: "win_back_en",
+        provider_template_name: "win_back_en",
         language: "en",
         category: "marketing",
         provider_status: "approved",
