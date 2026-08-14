@@ -49,8 +49,10 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
   const [loadError, setLoadError] = useState<"unavailable" | "connection" | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [language, setLanguage] = useState<GrowthLanguage>("en");
   const [whatsappConsent, setWhatsappConsent] = useState(false);
+  const [emailConsent, setEmailConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -128,13 +130,24 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
       setFormError("Enter a valid mobile number, including the country code when needed.");
       return;
     }
+    const trimmedEmail = email.trim();
+    if (emailConsent && !trimmedEmail) {
+      setFormError("Enter an email address to receive email offers.");
+      return;
+    }
+    if (trimmedEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmedEmail)) {
+      setFormError("Enter a valid email address.");
+      return;
+    }
     setSubmitting(true);
     try {
       const result = await growthApi.joinPublicRestaurant(publicSlug, {
         name: name.trim(),
         phone: phone.trim(),
+        email: trimmedEmail || undefined,
         preferred_language: language,
         whatsapp_marketing_opt_in: whatsappConsent,
+        email_marketing_opt_in: trimmedEmail ? emailConsent : undefined,
         policy_version: restaurant.consent_policy_version,
         consent_text_hash: restaurant.consent_text_hash,
       });
@@ -250,6 +263,18 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                     <p className="text-xs text-muted-foreground">Use a number connected to WhatsApp if you choose to receive offers.</p>
                   </div>
                   <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="growth-email">Email (optional)</Label>
+                    <Input
+                      id="growth-email"
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      maxLength={254}
+                    />
+                    <p className="text-xs text-muted-foreground">Only needed if you also want email offers.</p>
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
                     <Label>Preferred language</Label>
                     <Select value={language} onValueChange={(value) => setLanguage(value as GrowthLanguage)}>
                       <SelectTrigger aria-label="Preferred language"><SelectValue /></SelectTrigger>
@@ -276,6 +301,27 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                     </div>
                   </div>
                 </div>
+
+                {email.trim() && (
+                  <div className="rounded-2xl border bg-muted/30 p-4">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        id="growth-email-consent"
+                        checked={emailConsent}
+                        onCheckedChange={(checked) => setEmailConsent(checked === true)}
+                        aria-describedby="growth-email-consent-help"
+                      />
+                      <div>
+                        <Label htmlFor="growth-email-consent" className="cursor-pointer text-sm leading-5">
+                          I agree to receive promotional offers from {displayName} by email. I can opt out at any time.
+                        </Label>
+                        <p id="growth-email-consent-help" className="mt-2 text-xs leading-5 text-muted-foreground">
+                          Separate from WhatsApp consent above -- you can choose either, both, or neither.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <Button type="submit" className="h-11 w-full" disabled={submitting}>
                   {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageCircleMore className="mr-2 h-4 w-4" />}

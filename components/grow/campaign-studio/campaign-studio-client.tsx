@@ -26,7 +26,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { CampaignPosterPreview } from "@/components/grow/campaign-studio/poster-preview";
+import { CampaignPosterPreview, templateColors } from "@/components/grow/campaign-studio/poster-preview";
+import { PosterEditorClient } from "@/components/grow/campaign-studio/poster-editor/PosterEditorClient";
+import { EmailPreview } from "@/components/grow/campaign-studio/email-preview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,7 @@ import { growthApi } from "@/lib/api/growth";
 import type {
   GrowthBrandProfile,
   GrowthCampaign,
+  GrowthChannelCode,
   GrowthLanguage,
   GrowthMessageTemplate,
   GrowthPlaybookCode,
@@ -57,7 +60,7 @@ import type {
 import { getApiErrorMessage } from "@/lib/api-error-message";
 import {
   buildCampaignCreateInput,
-  approvedImageTemplatesForLanguage,
+  approvedTemplatesForLanguageAndChannel,
   CAMPAIGN_PLAYBOOKS,
   CAMPAIGN_REVIEW_CAVEATS,
   campaignStudioActionPolicy,
@@ -82,7 +85,35 @@ const studioSteps: Array<{
   { step: 4, title: "Review without sending", shortTitle: "Review", icon: FileCheck2 },
 ];
 
+/**
+ * Feature flag for the new Fabric.js poster editor
+ * Phase 1: Default = false (keep existing HTML/CSS poster system)
+ * Set to true to enable the new Canva-like editor
+ */
+const USE_FABRIC_EDITOR = false;
+
 function readableExclusion(value: string): string {
+  // User-friendly labels for restaurant staff
+  const friendlyLabels: Record<string, string> = {
+    'missing_valid_e164': 'Invalid phone number',
+    'marketing_opted_out': 'Unsubscribed from marketing',
+    'marketing_consent_missing': 'No marketing permission',
+    'no_completed_orders': 'Never completed an order',
+    'different_segment': 'Not in target group',
+    'no_phone': 'No phone number',
+    'invalid_phone': 'Invalid phone number',
+    'no_email': 'No email address',
+    'invalid_email': 'Invalid email address',
+    'blocked': 'Blocked customer',
+    'inactive': 'Inactive customer',
+  };
+  
+  const lowercaseKey = value.toLowerCase();
+  if (friendlyLabels[lowercaseKey]) {
+    return friendlyLabels[lowercaseKey];
+  }
+  
+  // Fallback: capitalize words
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
@@ -122,6 +153,7 @@ export function CampaignStudioClient() {
   const step = useCampaignStudio((state) => state.step);
   const furthestStep = useCampaignStudio((state) => state.furthestStep);
   const playbookCode = useCampaignStudio((state) => state.playbookCode);
+  const channel = useCampaignStudio((state) => state.channel);
   const campaignName = useCampaignStudio((state) => state.campaignName);
   const nameCustomized = useCampaignStudio((state) => state.nameCustomized);
   const offer = useCampaignStudio((state) => state.offer);
@@ -132,6 +164,8 @@ export function CampaignStudioClient() {
   const terms = useCampaignStudio((state) => state.terms);
   const posterTemplate = useCampaignStudio((state) => state.posterTemplate);
   const selectedMessageTemplateId = useCampaignStudio((state) => state.selectedMessageTemplateId);
+  const emailSubject = useCampaignStudio((state) => state.emailSubject);
+  const emailBodyHtml = useCampaignStudio((state) => state.emailBodyHtml);
   const reviewAccepted = useCampaignStudio((state) => state.reviewAccepted);
   const patchDraft = useCampaignStudio((state) => state.patch);
   const setStep = useCampaignStudio((state) => state.setStep);
@@ -139,6 +173,12 @@ export function CampaignStudioClient() {
   const resetDraft = useCampaignStudio((state) => state.reset);
 
   const setPlaybookCode = (value: GrowthPlaybookCode) => patchDraft("playbookCode", value);
+  const setChannel = (value: GrowthChannelCode) => {
+    patchDraft("channel", value);
+    patchDraft("selectedMessageTemplateId", "");
+    patchDraft("reviewAccepted", false);
+    patchDraft("copyCustomized", false);  // Reset copy customization when channel changes
+  };
   const setCampaignName = (value: string) => patchDraft("campaignName", value);
   const setNameCustomized = (value: boolean) => patchDraft("nameCustomized", value);
   const setOffer = (
@@ -152,6 +192,8 @@ export function CampaignStudioClient() {
   const setPosterTemplate = (value: CampaignPosterTemplate) => patchDraft("posterTemplate", value);
   const setSelectedMessageTemplateId = (value: string) =>
     patchDraft("selectedMessageTemplateId", value);
+  const setEmailSubject = (value: string) => patchDraft("emailSubject", value);
+  const setEmailBodyHtml = (value: string) => patchDraft("emailBodyHtml", value);
   const setReviewAccepted = (value: boolean) => patchDraft("reviewAccepted", value);
 
   const [brand, setBrand] = useState<GrowthBrandProfile | null>(null);
@@ -168,8 +210,10 @@ export function CampaignStudioClient() {
   const [suggestingCopy, setSuggestingCopy] = useState(false);
   const [exportingPoster, setExportingPoster] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [posterDataUrl, setPosterDataUrl] = useState<string | null>(null);
   const audienceRequestRef = useRef(0);
   const posterRef = useRef<HTMLDivElement>(null);
+  const exportPosterRef = useRef<HTMLDivElement>(null);
 
   const playbook = useMemo(
     () => getCampaignPlaybook(playbookCode),
@@ -184,8 +228,8 @@ export function CampaignStudioClient() {
   );
   const isReadOnly = savedCampaign?.status === "review";
   const approvedMessageTemplates = useMemo(
-    () => approvedImageTemplatesForLanguage(messageTemplates, language),
-    [language, messageTemplates],
+    () => approvedTemplatesForLanguageAndChannel(messageTemplates, language, channel),
+    [channel, language, messageTemplates],
   );
   const selectedMessageTemplate = useMemo(
     () =>
@@ -202,16 +246,21 @@ export function CampaignStudioClient() {
         playbookCode,
         language,
         offer,
+        channel,
       }),
-    [language, offer, playbookCode, restaurantName],
+    [channel, language, offer, playbookCode, restaurantName],
   );
 
   useEffect(() => {
-    if (!copyCustomized) {
+    if (copyCustomized) return;
+    if (channel === "email") {
+      setEmailSubject(starterCopy.headline);
+      setEmailBodyHtml(starterCopy.message);
+    } else {
       setHeadline(starterCopy.headline);
       setMessage(starterCopy.message);
     }
-  }, [copyCustomized, starterCopy]);
+  }, [channel, copyCustomized, starterCopy]);
 
   useEffect(() => {
     if (!nameCustomized) {
@@ -243,7 +292,7 @@ export function CampaignStudioClient() {
     setTemplatesLoading(true);
     setTemplatesError(null);
     growthApi
-      .listMessageTemplates()
+      .listMessageTemplates(channel)
       .then((result) => {
         if (active) setMessageTemplates(result);
       })
@@ -251,7 +300,7 @@ export function CampaignStudioClient() {
         if (active) {
           setMessageTemplates([]);
           setTemplatesError(
-            "Approved WhatsApp templates could not be loaded. Review submission is disabled.",
+            `Approved ${channel === "email" ? "email" : "WhatsApp"} templates could not be loaded. Review submission is disabled.`,
           );
         }
       })
@@ -261,7 +310,7 @@ export function CampaignStudioClient() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [channel]);
 
   useEffect(() => {
     const stillValid =
@@ -281,7 +330,7 @@ export function CampaignStudioClient() {
     setAudienceError(null);
     setAudience(null);
     try {
-      const result = await growthApi.previewSegment(playbook.segment);
+      const result = await growthApi.previewSegment(playbook.segment, channel);
       if (requestId === audienceRequestRef.current) setAudience(result);
     } catch {
       if (requestId === audienceRequestRef.current) {
@@ -292,7 +341,75 @@ export function CampaignStudioClient() {
     } finally {
       if (requestId === audienceRequestRef.current) setAudienceLoading(false);
     }
-  }, [playbook.segment]);
+  }, [channel, playbook.segment]);
+
+  const renderPosterPng = useCallback(async (): Promise<Blob> => {
+    if (!posterRef.current) {
+      throw new Error("Campaign poster preview is unavailable");
+    }
+
+    // Wait for all images and fonts to load before capturing
+    await document.fonts.ready;
+    
+    // Ensure all images in the poster are loaded
+    const images = posterRef.current.querySelectorAll('img');
+    await Promise.all(
+      Array.from(images).map(
+        (img) =>
+          new Promise((resolve) => {
+            if (img.complete) {
+              resolve(true);
+            } else {
+              img.addEventListener('load', () => resolve(true));
+              img.addEventListener('error', () => resolve(false));
+            }
+          })
+      )
+    );
+    
+    // Give the browser extra time to render everything
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const html2canvas = (await import("html2canvas")).default;
+    
+    const posterElement = posterRef.current;
+    
+    // Force fixed 600x600px for export (matching fixedSize prop)
+    const posterSize = 600;
+    
+    // Scale to 2160x2160px output (3.6x multiplier)
+    const targetSize = 2160;
+    const scale = targetSize / posterSize;
+    
+    try {
+      const canvas = await html2canvas(posterElement, {
+        scale: scale,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: null,
+        logging: false,
+        width: posterSize,
+        height: posterSize,
+        windowWidth: posterSize,
+        windowHeight: posterSize,
+        x: 0,
+        y: 0,
+        imageTimeout: 15000,
+        removeContainer: true,
+        foreignObjectRendering: false,
+      });
+      
+      return new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob?.type === "image/png") resolve(blob);
+          else reject(new Error("The campaign poster could not be encoded as PNG"));
+        }, "image/png", 0.95);
+      });
+    } catch (error) {
+      console.error("Error rendering poster:", error);
+      throw error;
+    }
+  }, []);
 
   useEffect(() => {
     // Wait for the persisted draft to rehydrate first, otherwise this fires
@@ -300,6 +417,30 @@ export function CampaignStudioClient() {
     if (!hydrated) return;
     void loadAudience();
   }, [hydrated, loadAudience]);
+
+  // Generate poster data URL for email attachment preview
+  useEffect(() => {
+    if (channel !== "email") {
+      setPosterDataUrl(null);
+      return;
+    }
+
+    const generatePosterDataUrl = async () => {
+      try {
+        const blob = await renderPosterPng();
+        const dataUrl = URL.createObjectURL(blob);
+        setPosterDataUrl(dataUrl);
+        
+        // Cleanup function to revoke the object URL
+        return () => URL.revokeObjectURL(dataUrl);
+      } catch (error) {
+        console.error("Failed to generate poster preview:", error);
+        setPosterDataUrl(null);
+      }
+    };
+
+    void generatePosterDataUrl();
+  }, [channel, posterTemplate, headline, offer, terms, restaurantName, brand, renderPosterPng]);
 
   const updateOffer = <K extends keyof CampaignOfferDraft>(
     key: K,
@@ -325,13 +466,18 @@ export function CampaignStudioClient() {
       return;
     }
     if (step === 3) {
-      if (headline.trim().length < 3 || message.trim().length < 12) {
+      if (channel === "email") {
+        if (emailSubject.trim().length < 3 || emailBodyHtml.trim().length < 12) {
+          setPageError("Add a clear email subject and body before review.");
+          return;
+        }
+      } else if (headline.trim().length < 3 || message.trim().length < 12) {
         setPageError("Add a clear poster headline and WhatsApp message before review.");
         return;
       }
       if (!selectedMessageTemplate) {
         setPageError(
-          `No provider-approved image WhatsApp template is available for ${languageLabel(language)}. Add or approve that template before review.`,
+          `No provider-approved ${channel === "email" ? "email" : "image WhatsApp"} template is available for ${languageLabel(language)}. Add or approve that template before review.`,
         );
         return;
       }
@@ -343,9 +489,12 @@ export function CampaignStudioClient() {
     const input = buildCampaignCreateInput({
       name: campaignName,
       playbookCode,
+      channel,
       offer,
       language,
       message,
+      emailSubject,
+      emailBodyHtml,
     });
     return selectedMessageTemplate
       ? { ...input, message_template_id: Number(selectedMessageTemplate.id) }
@@ -354,7 +503,11 @@ export function CampaignStudioClient() {
 
   const persistDraft = async (announce = true): Promise<GrowthCampaign | null> => {
     setPageError(null);
-    if (campaignName.trim().length < 3 || !offerValidation.valid || message.trim().length < 12) {
+    const contentReady =
+      channel === "email"
+        ? emailSubject.trim().length >= 3 && emailBodyHtml.trim().length >= 12
+        : message.trim().length >= 12;
+    if (campaignName.trim().length < 3 || !offerValidation.valid || !contentReady) {
       setPageError("Complete the campaign name, bounded offer, and message before saving a draft.");
       return null;
     }
@@ -366,7 +519,9 @@ export function CampaignStudioClient() {
             name: campaignName.trim(),
              offer: campaignInput().offer,
              language,
-             message_body: message.trim(),
+             message_body: channel === "whatsapp" ? message.trim() : undefined,
+             email_subject: channel === "email" ? emailSubject.trim() : undefined,
+             email_body_html: channel === "email" ? emailBodyHtml.trim() : undefined,
              message_template_id: selectedMessageTemplate
                ? Number(selectedMessageTemplate.id)
                : undefined,
@@ -390,73 +545,6 @@ export function CampaignStudioClient() {
     }
   };
 
-  const renderPosterPng = async (): Promise<Blob> => {
-    if (!posterRef.current) {
-      throw new Error("Campaign poster preview is unavailable");
-    }
-
-    // Wait for all images and fonts to load before capturing
-    await document.fonts.ready;
-    
-    // Ensure all images in the poster are loaded
-    const images = posterRef.current.querySelectorAll('img');
-    await Promise.all(
-      Array.from(images).map(
-        (img) =>
-          new Promise((resolve) => {
-            if (img.complete) {
-              resolve(true);
-            } else {
-              img.addEventListener('load', () => resolve(true));
-              img.addEventListener('error', () => resolve(false));
-            }
-          })
-      )
-    );
-    
-    // Give the browser extra time to render everything
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const html2canvas = (await import("html2canvas")).default;
-    
-    const posterElement = posterRef.current;
-    
-    // Get the actual rendered size of the poster
-    const rect = posterElement.getBoundingClientRect();
-    const width = Math.min(rect.width, 600); // Cap at 600px max
-    const height = Math.min(rect.height, 600);
-    
-    // Scale to 2160x2160px output
-    const targetSize = 2160;
-    const scale = targetSize / Math.max(width, height);
-    
-    try {
-      const canvas = await html2canvas(posterElement, {
-        scale: scale,
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: null,
-        logging: false,
-        width: width,
-        height: height,
-        windowWidth: width,
-        windowHeight: height,
-        x: 0,
-        y: 0,
-      });
-      
-      return new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((blob) => {
-          if (blob?.type === "image/png") resolve(blob);
-          else reject(new Error("The campaign poster could not be encoded as PNG"));
-        }, "image/png", 0.95);
-      });
-    } catch (error) {
-      console.error("Error rendering poster:", error);
-      throw error;
-    }
-  };
-
   const submitForReview = async () => {
     setPageError(null);
     if (!reviewAccepted) {
@@ -467,13 +555,17 @@ export function CampaignStudioClient() {
       setPageError("A verified live audience with at least one eligible customer is required for review.");
       return;
     }
-    if (!offerValidation.valid || message.trim().length < 12) {
+    const contentReady =
+      channel === "email"
+        ? emailSubject.trim().length >= 3 && emailBodyHtml.trim().length >= 12
+        : message.trim().length >= 12;
+    if (!offerValidation.valid || !contentReady) {
       setPageError("Offer or message validation is incomplete.");
       return;
     }
     if (!selectedMessageTemplate) {
       setPageError(
-        `A provider-approved image WhatsApp template matching ${languageLabel(language)} is required. The campaign remains a draft.`,
+        `A provider-approved ${channel === "email" ? "email" : "image WhatsApp"} template matching ${languageLabel(language)} is required. The campaign remains a draft.`,
       );
       return;
     }
@@ -482,18 +574,26 @@ export function CampaignStudioClient() {
     try {
       const draft = await persistDraft(false);
       if (!draft) return;
-      const posterBlob = await renderPosterPng();
-      const asset = await growthApi.uploadCampaignPoster(draft.id, {
-        file: posterBlob,
-        filename: `${safeFilename(campaignName)}-whatsapp-poster.png`,
-        template_key: posterTemplate,
-        template_version: 1,
-      });
-      const reviewed = await growthApi.submitCampaignForReview(draft.id);
-      setSavedCampaign(reviewed);
-      toast.success(
-        `Poster #${asset.id} attached and submitted for manual review. It has not been approved, scheduled, or sent.`,
-      );
+      if (channel === "whatsapp") {
+        const posterBlob = await renderPosterPng();
+        const asset = await growthApi.uploadCampaignPoster(draft.id, {
+          file: posterBlob,
+          filename: `${safeFilename(campaignName)}-whatsapp-poster.png`,
+          template_key: posterTemplate,
+          template_version: 1,
+        });
+        const reviewed = await growthApi.submitCampaignForReview(draft.id);
+        setSavedCampaign(reviewed);
+        toast.success(
+          `Poster #${asset.id} attached and submitted for manual review. It has not been approved, scheduled, or sent.`,
+        );
+      } else {
+        const reviewed = await growthApi.submitCampaignForReview(draft.id);
+        setSavedCampaign(reviewed);
+        toast.success(
+          "Submitted for manual review. It has not been approved, scheduled, or sent.",
+        );
+      }
     } catch (error) {
       setPageError(
         getApiErrorMessage(
@@ -516,14 +616,24 @@ export function CampaignStudioClient() {
         offer: campaignInput().offer,
         audience_summary: `${audience?.included_count ?? 0} ${playbook.audienceLabel.toLowerCase()}`,
       });
-      setHeadline(suggestion.headline);
-      setMessage(suggestion.message_body);
+      if (channel === "email") {
+        setEmailSubject(suggestion.headline);
+        setEmailBodyHtml(suggestion.message_body);
+      } else {
+        setHeadline(suggestion.headline);
+        setMessage(suggestion.message_body);
+      }
       setCopyCustomized(true);
       if (suggestion.warnings.length) toast.info(suggestion.warnings.join(" "));
       else toast.success("Copy draft updated. Review every word before submission.");
     } catch {
-      setHeadline(starterCopy.headline);
-      setMessage(starterCopy.message);
+      if (channel === "email") {
+        setEmailSubject(starterCopy.headline);
+        setEmailBodyHtml(starterCopy.message);
+      } else {
+        setHeadline(starterCopy.headline);
+        setMessage(starterCopy.message);
+      }
       setCopyCustomized(true);
       toast.info("Copy suggestion service is unavailable; a deterministic starter was restored.");
     } finally {
@@ -568,71 +678,134 @@ export function CampaignStudioClient() {
       offerLabel={formatCampaignOffer(offer)}
       expiresOn={offer.valid_until}
       terms={terms}
-      fixedSize={false}
+      fixedSize={true}
     />
   );
 
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-8 pb-16">
-      <section className="relative overflow-hidden rounded-xl border border-border bg-card p-8">
-        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="min-w-0 max-w-4xl">
-            <Link href="/grow" className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              <ArrowLeft className="h-4 w-4" />
-              Yummy Grow
-            </Link>
-            
-            <div className="mt-4 flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1 w-fit">
-              <FilePenLine className="h-3.5 w-3.5" />
-              <span className="text-xs font-medium">Campaign Studio</span>
+      <section className="rounded-xl border border-border bg-card">
+        <div className="p-6">
+          <div className="flex items-start justify-between gap-6">
+            {/* Left: Title and description */}
+            <div className="min-w-0 flex-1">
+              <Link href="/grow" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to Yummy Grow
+              </Link>
+              
+              <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
+                Create a controlled return offer
+              </h1>
+              
+              <p className="mt-2 text-sm text-muted-foreground leading-tight">
+                Draft a V1 playbook, inspect live consented audience, bound maximum exposure, and prepare content for separate manual review.
+              </p>
             </div>
             
-            <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl">Create a controlled return offer</h1>
-            
-            <p className="mt-4 text-sm text-muted-foreground sm:text-base">
-              Draft a V1 playbook, inspect live consented audience, bound maximum exposure, and prepare content for separate manual review.
-            </p>
-          </div>
-          
-          <div className="flex flex-col items-stretch gap-2 sm:items-end">
-            <Badge variant="outline" className="w-fit border border-border bg-card px-3 py-1.5 text-xs">
-              {savedCampaign?.status === "review" ? <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> : <FilePenLine className="mr-1.5 h-3.5 w-3.5" />}
-              {savedCampaign?.status === "review" ? "Awaiting review" : savedCampaign ? "Draft saved" : "Unsaved"}
-            </Badge>
-            <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
-              <ShieldCheck className="h-4 w-4" />
-              No approval or delivery from studio
+            {/* Right: Status stack */}
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground">No approval or delivery from studio</span>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-2.5 py-1">
+                  <FilePenLine className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium">Campaign Studio</span>
+                </div>
+                
+                <Badge variant="outline" className="border-border bg-background px-2.5 py-1">
+                  {savedCampaign?.status === "review" ? (
+                    <>
+                      <CheckCircle2 className="mr-1.5 h-3 w-3 text-emerald-600" />
+                      <span className="text-xs">Awaiting review</span>
+                    </>
+                  ) : savedCampaign ? (
+                    <>
+                      <Save className="mr-1.5 h-3 w-3 text-blue-600" />
+                      <span className="text-xs">Draft saved</span>
+                    </>
+                  ) : (
+                    <>
+                      <FilePenLine className="mr-1.5 h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs">Unsaved</span>
+                    </>
+                  )}
+                </Badge>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <nav className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-card p-3 sm:grid-cols-4" aria-label="Campaign steps">
-        {studioSteps.map((item) => {
-          const Icon = item.icon;
-          const active = step === item.step;
-          const accessible = item.step <= furthestStep;
-          return (
-            <button
-              key={item.step}
-              type="button"
-              disabled={!accessible || isReadOnly}
-              onClick={() => changeStep(item.step)}
-              className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-45",
-                active ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted hover:shadow-sm",
-              )}
-            >
-              <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", active ? "bg-white/15" : "bg-muted")}>
-                <Icon className="h-4 w-4" />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-[10px] font-bold uppercase tracking-wider opacity-70">Step {item.step}</span>
-                <span className="block truncate text-sm font-semibold">{item.shortTitle}</span>
-              </span>
-            </button>
-          );
-        })}
+      <nav className="rounded-xl border border-border bg-card p-4" aria-label="Campaign steps">
+        <div className="flex items-center justify-between gap-2">
+          {studioSteps.map((item, index) => {
+            const Icon = item.icon;
+            const active = step === item.step;
+            const accessible = item.step <= furthestStep;
+            const completed = item.step < step;
+            
+            return (
+              <div key={item.step} className="flex flex-1 items-center">
+                <button
+                  type="button"
+                  disabled={!accessible || isReadOnly}
+                  onClick={() => changeStep(item.step)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-all disabled:cursor-not-allowed disabled:opacity-45",
+                    active 
+                      ? "bg-primary text-primary-foreground" 
+                      : "hover:bg-muted",
+                  )}
+                >
+                  <span 
+                    className={cn(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+                      active 
+                        ? "bg-white/20" 
+                        : completed
+                          ? "bg-primary/10"
+                          : "bg-muted"
+                    )}
+                  >
+                    {completed ? (
+                      <CheckCircle2 className={cn("h-4 w-4", "text-primary")} />
+                    ) : (
+                      <Icon className={cn(
+                        "h-4 w-4",
+                        active ? "text-primary-foreground" : "text-muted-foreground"
+                      )} />
+                    )}
+                  </span>
+                  
+                  <span className="hidden min-w-0 flex-1 sm:block">
+                    <span className={cn(
+                      "block text-[10px] font-medium uppercase tracking-wider opacity-70"
+                    )}>
+                      Step {item.step}
+                    </span>
+                    <span className={cn("block truncate text-xs font-semibold")}>
+                      {item.shortTitle}
+                    </span>
+                  </span>
+                </button>
+                
+                {/* Arrow between steps */}
+                {index < studioSteps.length - 1 && (
+                  <ArrowRight 
+                    className={cn(
+                      "mx-1 h-4 w-4 shrink-0 transition-colors",
+                      completed ? "text-primary" : "text-muted-foreground/30"
+                    )} 
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
       </nav>
 
       {pageError && (
@@ -674,6 +847,43 @@ export function CampaignStudioClient() {
                   }}
                 />
                 <p className="text-xs text-muted-foreground">Customers do not see this internal name.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Delivery channel</Label>
+                <RadioGroup
+                  value={channel}
+                  onValueChange={(value) => setChannel(value as GrowthChannelCode)}
+                  className="grid gap-3 sm:grid-cols-2"
+                  disabled={isReadOnly}
+                >
+                  <Label
+                    htmlFor="channel-whatsapp"
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-xl border border-border p-4",
+                      channel === "whatsapp" && "border-primary bg-primary/5",
+                    )}
+                  >
+                    <RadioGroupItem id="channel-whatsapp" value="whatsapp" />
+                    <span>
+                      <span className="block font-bold">WhatsApp</span>
+                      <span className="text-xs font-normal text-muted-foreground">Poster image + message</span>
+                    </span>
+                  </Label>
+                  <Label
+                    htmlFor="channel-email"
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-xl border border-border p-4",
+                      channel === "email" && "border-primary bg-primary/5",
+                    )}
+                  >
+                    <RadioGroupItem id="channel-email" value="email" />
+                    <span>
+                      <span className="block font-bold">Email</span>
+                      <span className="text-xs font-normal text-muted-foreground">Subject + HTML body</span>
+                    </span>
+                  </Label>
+                </RadioGroup>
               </div>
 
               <RadioGroup
@@ -747,7 +957,8 @@ export function CampaignStudioClient() {
                   </div>
                   {Object.keys(audience.exclusions || {}).length > 0 && (
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Exclusions</p>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Why some customers can't receive this</p>
+                      <p className="mt-1 text-xs text-muted-foreground">These customers are excluded for legal or technical reasons:</p>
                       <div className="mt-2 space-y-2">
                         {Object.entries(audience.exclusions).map(([reason, count]) => (
                           <div key={reason} className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2 text-sm">
@@ -828,22 +1039,22 @@ export function CampaignStudioClient() {
 
           <div className="space-y-4">
             <Card>
-              <CardHeader><CardTitle>Maximum offer exposure</CardTitle><CardDescription>Bounded by the per-redemption maximum and redemption limit.</CardDescription></CardHeader>
+              <CardHeader><CardTitle>Maximum Cost</CardTitle><CardDescription>Total cost if all customers use this offer</CardDescription></CardHeader>
               <CardContent>
                 <p className="text-4xl font-black">{formatMoney(offerValidation.maximum_exposure)}</p>
                 <p className="mt-3 text-sm font-semibold">{formatCampaignOffer(offer)}</p>
                 {audience && offer.redemption_limit > audience.included_count && (
                   <Alert className="mt-4 rounded-xl border border-border bg-card">
                     <TriangleAlert className="h-4 w-4" />
-                    <AlertDescription>Redemption limit exceeds the current eligible audience. This is allowed for drafting but should be reviewed.</AlertDescription>
+                    <AlertDescription>You set more redemptions than eligible customers. Double-check this number.</AlertDescription>
                   </Alert>
                 )}
               </CardContent>
             </Card>
             <Alert className="rounded-xl border border-border bg-card">
               <TriangleAlert className="h-4 w-4" />
-              <AlertTitle>Profitability is not verified in this client</AlertTitle>
-              <AlertDescription>Recipe coverage, contribution cost, current stock, and backend discount math must validate the economics. A bounded discount is not automatically a profitable offer.</AlertDescription>
+              <AlertTitle>Check if this offer is profitable</AlertTitle>
+              <AlertDescription>Make sure your menu prices and food costs can support this discount.</AlertDescription>
             </Alert>
           </div>
         </div>
@@ -854,7 +1065,14 @@ export function CampaignStudioClient() {
           <Card>
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
-                <div><CardTitle>Message and poster</CardTitle><CardDescription className="mt-1">Controlled templates use the restaurant&apos;s real logo. No synthetic food image is generated.</CardDescription></div>
+                <div>
+                  <CardTitle>{channel === "email" ? "Email content" : "Message and poster"}</CardTitle>
+                  <CardDescription className="mt-1">
+                    {channel === "email"
+                      ? "Approved templates only. No synthetic content is generated."
+                      : "Controlled templates use the restaurant's real logo. No synthetic food image is generated."}
+                  </CardDescription>
+                </div>
                 <Button variant="outline" size="sm" onClick={() => void suggestCopy()} disabled={suggestingCopy || isReadOnly}>
                   {suggestingCopy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Suggest copy
                 </Button>
@@ -872,7 +1090,7 @@ export function CampaignStudioClient() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Approved WhatsApp image template</Label>
+                <Label>Approved {channel === "email" ? "email" : "WhatsApp image"} template</Label>
                 <Select
                   value={selectedMessageTemplateId}
                   disabled={isReadOnly || templatesLoading || approvedMessageTemplates.length === 0}
@@ -880,20 +1098,20 @@ export function CampaignStudioClient() {
                 >
                   <SelectTrigger>
                     <SelectValue
-                      placeholder={templatesLoading ? "Loading approved templates…" : "No approved image template"}
+                      placeholder={templatesLoading ? "Loading approved templates…" : "No approved template"}
                     />
                   </SelectTrigger>
                   <SelectContent>
                     {approvedMessageTemplates.map((template) => (
                       <SelectItem key={template.id} value={String(template.id)}>
-                        {template.key} · {template.whatsapp_template_name}
+                        {template.key} · {template.provider_template_name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {selectedMessageTemplate && (
                   <p className="text-xs leading-5 text-muted-foreground">
-                    Provider-approved image template. Variables: {selectedMessageTemplate.variable_names.length ? selectedMessageTemplate.variable_names.join(", ") : "none"}.
+                    Provider-approved template. Variables: {selectedMessageTemplate.variable_names.length ? selectedMessageTemplate.variable_names.join(", ") : "none"}.
                   </p>
                 )}
               </div>
@@ -907,43 +1125,139 @@ export function CampaignStudioClient() {
                 <Alert className="rounded-xl border border-border bg-card">
                   <TriangleAlert className="h-4 w-4" />
                   <AlertDescription>
-                    No provider-approved image WhatsApp template matches {languageLabel(language)}. You can save a draft, but Yummy will not upload or submit this campaign for review until one is available.
+                    No provider-approved {channel === "email" ? "email" : "image WhatsApp"} template matches {languageLabel(language)}. You can save a draft, but Yummy will not submit this campaign for review until one is available.
                   </AlertDescription>
                 </Alert>
               )}
-              <div className="space-y-2">
-                <Label htmlFor="poster-headline">Poster headline</Label>
-                <Input id="poster-headline" value={headline} maxLength={90} disabled={isReadOnly} onChange={(event) => { setHeadline(event.target.value); setCopyCustomized(true); }} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="whatsapp-message">WhatsApp message</Label>
-                <Textarea id="whatsapp-message" value={message} maxLength={1024} rows={7} disabled={isReadOnly} onChange={(event) => { setMessage(event.target.value); setCopyCustomized(true); }} />
-                <div className="flex justify-between text-xs text-muted-foreground"><span><code>{"{{customer_name}}"}</code> is personalized by the backend template.</span><span>{message.length}/1024</span></div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="poster-terms">Visible terms</Label>
-                <Textarea id="poster-terms" value={terms} maxLength={240} rows={3} disabled={isReadOnly} onChange={(event) => setTerms(event.target.value)} />
-              </div>
+              {channel === "email" ? (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="email-subject">Email subject</Label>
+                    <Input id="email-subject" value={emailSubject} maxLength={255} disabled={isReadOnly} onChange={(event) => { setEmailSubject(event.target.value); setCopyCustomized(true); }} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email-body">Email body (HTML)</Label>
+                    <Textarea id="email-body" value={emailBodyHtml} maxLength={20000} rows={12} disabled={isReadOnly} onChange={(event) => { setEmailBodyHtml(event.target.value); setCopyCustomized(true); }} />
+                    <div className="flex justify-between text-xs text-muted-foreground"><span><code>{"{{customer_name}}"}</code> is personalized per recipient.</span><span>{emailBodyHtml.length}/20000</span></div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="poster-headline">Poster headline</Label>
+                    <Input id="poster-headline" value={headline} maxLength={90} disabled={isReadOnly} onChange={(event) => { setHeadline(event.target.value); setCopyCustomized(true); }} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="whatsapp-message">WhatsApp message</Label>
+                    <Textarea id="whatsapp-message" value={message} maxLength={1024} rows={7} disabled={isReadOnly} onChange={(event) => { setMessage(event.target.value); setCopyCustomized(true); }} />
+                    <div className="flex justify-between text-xs text-muted-foreground"><span><code>{"{{customer_name}}"}</code> is personalized by the backend template.</span><span>{message.length}/1024</span></div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="poster-terms">Visible terms</Label>
+                    <Textarea id="poster-terms" value={terms} maxLength={240} rows={3} disabled={isReadOnly} onChange={(event) => setTerms(event.target.value)} />
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader><div className="flex items-center justify-between gap-3"><div><CardTitle>WhatsApp-square preview</CardTitle><CardDescription>Template-based 1:1 artwork.</CardDescription></div><Button variant="outline" onClick={() => void exportPoster()} disabled={exportingPoster}>{exportingPoster ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}Export PNG</Button></div></CardHeader>
-            <CardContent className="space-y-5">
-              <div className="w-full flex justify-center">
-                {poster}
-              </div>
-              <div className="space-y-2">
-                <Label>Poster template</Label>
-                <RadioGroup value={posterTemplate} disabled={isReadOnly} onValueChange={(value) => setPosterTemplate(value as CampaignPosterTemplate)} className="grid grid-cols-4 gap-2">
-                  {(["fresh", "warm", "minimal", "ticket"] as CampaignPosterTemplate[]).map((template) => (
-                    <Label key={template} htmlFor={`poster-${template}`} className={cn("flex cursor-pointer items-center gap-2 rounded-xl border p-3 capitalize", posterTemplate === template && "border-primary bg-primary/5")}><RadioGroupItem id={`poster-${template}`} value={template} />{template}</Label>
-                  ))}
-                </RadioGroup>
-              </div>
-              <p className="text-xs leading-5 text-muted-foreground">Copy suggestions are drafts only. On review submission, Yummy renders this preview as PNG, uploads it to the campaign-scoped media folder, and attaches it to the draft before creating the review candidate.</p>
-            </CardContent>
-          </Card>
+          {channel === "email" ? (
+            <EmailPreview
+              subject={emailSubject}
+              bodyHtml={emailBodyHtml}
+              showWarning={true}
+              posterDataUrl={posterDataUrl || undefined}
+              restaurantName={restaurantName}
+              logoUrl={brand?.logo_url || getImageUrl(restaurant?.profile_picture || "")}
+            />
+          ) : (
+            <Card>
+              <CardHeader><div className="flex items-center justify-between gap-3"><div><CardTitle>WhatsApp-square preview</CardTitle><CardDescription>Template-based 1:1 artwork.</CardDescription></div><Button variant="outline" onClick={() => void exportPoster()} disabled={exportingPoster}>{exportingPoster ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}Export PNG</Button></div></CardHeader>
+              <CardContent className="space-y-5">
+                {USE_FABRIC_EDITOR ? (
+                  <>
+                    <Alert className="rounded-xl border border-emerald-200 bg-emerald-50">
+                      <Sparkles className="h-4 w-4 text-emerald-600" />
+                      <AlertTitle className="text-emerald-900">New Fabric.js Editor (Phase 1)</AlertTitle>
+                      <AlertDescription className="text-emerald-800">
+                        The new Canva-like poster editor is active. This is a preview-only foundation. Full template migration happens in Phase 2.
+                      </AlertDescription>
+                    </Alert>
+                    <div className="w-full">
+                      <PosterEditorClient
+                        templateConfig={{
+                          restaurantName: restaurantName,
+                          logoUrl: brand?.logo_url || getImageUrl(restaurant?.profile_picture || ""),
+                          primaryColor: brand?.primary_color || "#047857",
+                          secondaryColor: "#10b981",
+                          headline: headline,
+                          offerLabel: formatCampaignOffer(offer),
+                          expiresOn: offer.valid_until || "",
+                          terms: terms,
+                        }}
+                        onExport={(blob) => {
+                          const anchor = document.createElement("a");
+                          const objectUrl = URL.createObjectURL(blob);
+                          anchor.href = objectUrl;
+                          anchor.download = `${safeFilename(campaignName)}-fabric-poster.png`;
+                          anchor.click();
+                          URL.revokeObjectURL(objectUrl);
+                          toast.success("Fabric poster exported locally.");
+                        }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-full flex justify-center">
+                      {poster}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <Label className="whitespace-nowrap font-semibold">Poster template</Label>
+                      <Select value={posterTemplate} disabled={isReadOnly} onValueChange={(value) => setPosterTemplate(value as CampaignPosterTemplate)}>
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="Choose a template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <div className="px-2 pb-2">
+                            <input
+                              type="text"
+                              placeholder="Search templates..."
+                              className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                              onChange={(e) => {
+                                const search = e.target.value.toLowerCase();
+                                const items = e.target.closest('[role="listbox"]')?.querySelectorAll('[role="option"]');
+                                items?.forEach((item) => {
+                                  const text = item.textContent?.toLowerCase() || '';
+                                  (item as HTMLElement).style.display = text.includes(search) ? '' : 'none';
+                                });
+                              }}
+                              onKeyDown={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                          {(["vibrant", "fresh", "warm", "modern", "luxury", "elegant", "bold", "minimal", "ticket", "sunset", "ocean", "forest", "royal", "neon", "pastel", "midnight", "coral", "mint", "crimson", "slate", "amber", "teal", "lavender", "rose", "emerald", "sapphire", "bronze", "ruby", "platinum", "gold", "minimalist", "geometric", "artistic", "expressive", "maximalist"] as CampaignPosterTemplate[]).map((template) => (
+                            <SelectItem key={template} value={template} className="capitalize">
+                              {template}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {templateColors[posterTemplate] ? (
+                          <span className="flex items-center gap-2">
+                            <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: templateColors[posterTemplate].primary }} />
+                            <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: templateColors[posterTemplate].secondary }} />
+                            <span className="capitalize">{posterTemplate} template</span>
+                          </span>
+                        ) : null}
+                      </p>
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">Copy suggestions are drafts only. On review submission, Yummy renders this preview as PNG, uploads it to the campaign-scoped media folder, and attaches it to the draft before creating the review candidate.</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
@@ -951,16 +1265,20 @@ export function CampaignStudioClient() {
         <div className="grid gap-6 xl:grid-cols-[1fr_0.72fr]">
           <div className="space-y-5">
             <Card>
-              <CardHeader><CardTitle>Final review</CardTitle><CardDescription>This screen summarizes the proposed immutable revision. It does not approve or deliver it.</CardDescription></CardHeader>
+              <CardHeader><CardTitle>Campaign Summary</CardTitle><CardDescription>Review your campaign before submitting</CardDescription></CardHeader>
               <CardContent className="space-y-5">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Playbook</p><p className="mt-2 font-bold">{playbook.shortTitle}</p><p className="mt-1 text-sm text-muted-foreground">{playbook.audienceLabel}</p></div>
-                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Live audience</p><p className="mt-2 text-2xl font-black">{audience ? audience.included_count.toLocaleString("en-NP") : "Unverified"}</p><p className="mt-1 text-sm text-muted-foreground">Not frozen until backend approval checks</p></div>
-                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Offer</p><p className="mt-2 font-bold">{formatCampaignOffer(offer)}</p><p className="mt-1 text-sm text-muted-foreground">Exposure: {formatMoney(offerValidation.maximum_exposure)}</p></div>
-                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Content</p><p className="mt-2 font-bold">{languageLabel(language)}</p><p className="mt-1 text-sm text-muted-foreground">Poster: {posterTemplate} · WhatsApp: {selectedMessageTemplate?.key || "Unavailable"}</p></div>
+                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Target Customers</p><p className="mt-2 text-2xl font-black">{audience ? audience.included_count.toLocaleString("en-NP") : "Loading..."}</p><p className="mt-1 text-sm text-muted-foreground">Updates until approval</p></div>
+                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Discount Details</p><p className="mt-2 font-bold">{formatCampaignOffer(offer)}</p><p className="mt-1 text-sm text-muted-foreground">Max cost: {formatMoney(offerValidation.maximum_exposure)}</p></div>
+                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Content</p><p className="mt-2 font-bold">{languageLabel(language)} · {channel === "email" ? "Email" : "WhatsApp"}</p><p className="mt-1 text-sm text-muted-foreground">{channel === "email" ? `Template: ${selectedMessageTemplate?.key || "Unavailable"}` : `Poster: ${posterTemplate} · WhatsApp: ${selectedMessageTemplate?.key || "Unavailable"}`}</p></div>
                 </div>
 
-                <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Approved-copy candidate</p><p className="mt-3 font-bold">{headline}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{message}</p></div>
+                {channel === "email" ? (
+                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Message Preview</p><p className="mt-3 font-bold">{emailSubject}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{emailBodyHtml}</p></div>
+                ) : (
+                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Message Preview</p><p className="mt-3 font-bold">{headline}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{message}</p></div>
+                )}
 
                 <div className="space-y-2">
                   {CAMPAIGN_REVIEW_CAVEATS.map((caveat) => <div key={caveat} className="flex items-start gap-2 rounded-xl bg-muted/50 p-3 text-sm leading-5"><LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-primary" />{caveat}</div>)}
@@ -969,32 +1287,52 @@ export function CampaignStudioClient() {
                 {!isReadOnly && (
                     <Label htmlFor="review-acceptance" className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card p-4">
                     <Checkbox id="review-acceptance" checked={reviewAccepted} onCheckedChange={(checked) => setReviewAccepted(checked === true)} />
-                    <span><span className="block font-bold">I understand this creates an immutable review candidate, not a delivery.</span><span className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">A separate authorized approver and backend pre-delivery consent/economics checks are still required.</span></span>
+                    <span><span className="block font-bold">I understand this sends the campaign for approval</span><span className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">This does NOT send messages to customers. A manager must approve first.</span></span>
                   </Label>
                 )}
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-                <div><p className="font-bold">Manual review boundary</p><p className="mt-1 text-sm text-muted-foreground">No send action exists in this studio.</p></div>
+              <CardContent className="flex flex-col gap-3 p-5">
                 <div className="flex flex-col gap-2 sm:flex-row">
+                  {!isReadOnly && <Button variant="outline" onClick={() => changeStep(3)}><ChevronLeft className="mr-2 h-4 w-4" />Back to Creative</Button>}
                   {!isReadOnly && actionPolicy.can_save_draft && <Button variant="outline" disabled={saving || submittingReview} onClick={() => void persistDraft()}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save draft</Button>}
                   {!isReadOnly && actionPolicy.can_submit_for_review && <Button disabled={saving || submittingReview || templatesLoading || !selectedMessageTemplate || !reviewAccepted || !audience || audience.included_count <= 0} onClick={() => void submitForReview()}>{submittingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileCheck2 className="mr-2 h-4 w-4" />}Submit for manual review</Button>}
                   {isReadOnly && <Button asChild><Link href="/grow" onClick={() => resetDraft()}>Return to Grow overview</Link></Button>}
+                </div>
+                <div className="pt-2 border-t border-border">
+                  <p className="font-bold text-sm">Ready to Submit?</p>
+                  <p className="mt-1 text-sm text-muted-foreground">This will send your campaign to a manager for approval. Nothing will be sent to customers yet.</p>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          <Card className="h-fit xl:sticky xl:top-4">
-            <CardHeader><div className="flex items-center justify-between gap-2"><div><CardTitle>Poster review</CardTitle><CardDescription>Uploaded only when you submit this draft for review.</CardDescription></div><Button variant="outline" size="sm" onClick={() => void exportPoster()} disabled={exportingPoster}>{exportingPoster ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}Export</Button></div></CardHeader>
-            <CardContent>
-              <div className="w-full flex justify-center">
-                {poster}
-              </div>
-            </CardContent>
-          </Card>
+          {channel === "email" ? (
+            <Card className="h-fit xl:sticky xl:top-4">
+              <CardHeader><CardTitle>Email review</CardTitle><CardDescription>This copy becomes immutable once submitted for review.</CardDescription></CardHeader>
+              <CardContent>
+                <EmailPreview
+                  subject={emailSubject}
+                  bodyHtml={emailBodyHtml}
+                  showWarning={false}
+                  posterDataUrl={posterDataUrl || undefined}
+                  restaurantName={restaurantName}
+                  logoUrl={brand?.logo_url || getImageUrl(restaurant?.profile_picture || "")}
+                />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="h-fit xl:sticky xl:top-4">
+              <CardHeader><div className="flex items-center justify-between gap-2"><div><CardTitle>Poster review</CardTitle><CardDescription>Uploaded only when you submit this draft for review.</CardDescription></div><Button variant="outline" size="sm" onClick={() => void exportPoster()} disabled={exportingPoster}>{exportingPoster ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}Export</Button></div></CardHeader>
+              <CardContent>
+                <div className="w-full flex justify-center">
+                  {poster}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 

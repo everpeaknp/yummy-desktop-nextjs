@@ -1,6 +1,7 @@
 import type {
   GrowthCampaignCreateInput,
   GrowthCampaignStatus,
+  GrowthChannelCode,
   GrowthLanguage,
   GrowthMessageTemplate,
   GrowthOfferInput,
@@ -8,7 +9,13 @@ import type {
   GrowthSegmentCode,
 } from "@/lib/api/growth-types";
 
-export type CampaignPosterTemplate = "fresh" | "warm" | "minimal" | "ticket";
+export type CampaignPosterTemplate = 
+  | "fresh" | "warm" | "minimal" | "ticket" | "bold" | "elegant" 
+  | "modern" | "luxury" | "vibrant" | "sunset" | "ocean" | "forest" 
+  | "royal" | "neon" | "pastel" | "midnight" | "coral" | "mint"
+  | "crimson" | "slate" | "amber" | "teal" | "lavender" | "rose"
+  | "emerald" | "sapphire" | "bronze" | "ruby" | "platinum" | "gold"
+  | "minimalist" | "geometric" | "artistic" | "expressive" | "maximalist";
 
 export function approvedImageTemplatesForLanguage(
   templates: GrowthMessageTemplate[],
@@ -20,6 +27,22 @@ export function approvedImageTemplatesForLanguage(
       template.provider_status === "approved" &&
       template.media_type === "image",
   );
+}
+
+export function approvedTemplatesForLanguageAndChannel(
+  templates: GrowthMessageTemplate[],
+  language: GrowthLanguage,
+  channel: GrowthChannelCode,
+): GrowthMessageTemplate[] {
+  if (channel === "email") {
+    return templates.filter(
+      (template) =>
+        template.language === language &&
+        template.provider_status === "approved" &&
+        template.channel === "email",
+    );
+  }
+  return approvedImageTemplatesForLanguage(templates, language);
 }
 
 export interface CampaignPlaybookDefinition {
@@ -191,15 +214,39 @@ export function deterministicCampaignCopy({
   playbookCode,
   language,
   offer,
+  channel,
+  couponCode = "H8DKRT",
 }: {
   restaurantName: string;
   playbookCode: GrowthPlaybookCode;
   language: GrowthLanguage;
   offer: CampaignOfferDraft;
+  channel?: GrowthChannelCode;
+  couponCode?: string;
 }): { headline: string; message: string } {
   const playbook = getCampaignPlaybook(playbookCode);
   const offerText = formatCampaignOffer(offer);
 
+  // Email channel: Generate just the message body text (not full HTML template)
+  // The backend will wrap this in the branded template
+  if (channel === "email") {
+    const headline =
+      playbookCode === "second_visit"
+        ? "A treat from Yummy"
+        : playbookCode === "win_back"
+          ? "We've missed you"
+          : "A treat from Yummy";
+
+    //  Message body content only (backend adds the YUMMY header, coupon box, footer)
+    const messageBody = `Visit ${restaurantName} again and enjoy ${offerText}. Valid until ${offer.valid_until}. Use code ${couponCode} at checkout.`;
+
+    return {
+      headline,
+      message: messageBody,
+    };
+  }
+
+  // WhatsApp message (original logic)
   if (language === "ne") {
     const headline =
       playbookCode === "second_visit"
@@ -241,24 +288,33 @@ export function deterministicCampaignCopy({
 export function buildCampaignCreateInput({
   name,
   playbookCode,
+  channel,
   offer,
   language,
   message,
+  emailSubject,
+  emailBodyHtml,
 }: {
   name: string;
   playbookCode: GrowthPlaybookCode;
+  channel: GrowthChannelCode;
   offer: CampaignOfferDraft;
   language: GrowthLanguage;
   message: string;
+  emailSubject?: string;
+  emailBodyHtml?: string;
 }): GrowthCampaignCreateInput {
   const playbook = getCampaignPlaybook(playbookCode);
   return {
     name: name.trim(),
     playbook_code: playbook.code,
     segment_code: playbook.segment,
+    channel,
     offer: toGrowthOfferInput(offer),
     language,
-    message_body: message.trim(),
+    message_body: channel === "whatsapp" ? message.trim() : null,
+    email_subject: channel === "email" ? (emailSubject || "").trim() : null,
+    email_body_html: channel === "email" ? (emailBodyHtml || "").trim() : null,
   };
 }
 
@@ -285,8 +341,8 @@ export function campaignStudioActionPolicy(
 }
 
 export const CAMPAIGN_REVIEW_CAVEATS = [
-  "The audience preview is live and is not frozen until backend approval rules run.",
-  "Consent, frequency caps, channel status, and offer validity must be checked again before every delivery.",
-  "Offer economics and approved copy become immutable snapshots after review; material changes require a new revision.",
-  "Saving or submitting this campaign does not approve, schedule, or send any message.",
+  "Customer list updates automatically until final approval",
+  "All settings will be verified again before sending",
+  "After review, major changes need a new campaign",
+  "This does NOT send anything - approval happens separately",
 ] as const;

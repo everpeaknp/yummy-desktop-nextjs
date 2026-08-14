@@ -101,6 +101,37 @@ export function GrowthSettingsClient() {
     }
   };
 
+  const [savingWhatsapp, setSavingWhatsapp] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
+
+  const toggleWhatsapp = async (enabled: boolean) => {
+    if (!settings) return;
+    setSavingWhatsapp(true);
+    try {
+      const updated = await growthApi.updateSettings({ whatsapp_enabled: enabled });
+      setSettings(updated);
+      toast.success(enabled ? "WhatsApp delivery enabled" : "WhatsApp delivery disabled");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Unable to update WhatsApp delivery"));
+    } finally {
+      setSavingWhatsapp(false);
+    }
+  };
+
+  const toggleEmail = async (enabled: boolean) => {
+    if (!settings) return;
+    setSavingEmail(true);
+    try {
+      const updated = await growthApi.updateSettings({ email_enabled: enabled });
+      setSettings(updated);
+      toast.success(enabled ? "Email delivery enabled" : "Email delivery disabled");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Unable to update email delivery"));
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
   const downloadQr = () => {
     if (!qrDataUrl) return;
     const anchor = document.createElement("a");
@@ -141,6 +172,44 @@ export function GrowthSettingsClient() {
         Let customers join your WhatsApp marketing list by scanning a QR code at your restaurant.
         No internal restaurant details are exposed by this link.
       </p>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Delivery channels</CardTitle>
+          <CardDescription>
+            Turn a channel off to stop new sends immediately without affecting the other channel or
+            any campaign already in flight elsewhere.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">WhatsApp delivery enabled</p>
+              <p className="text-xs text-muted-foreground">
+                Required before any WhatsApp campaign can be scheduled or sent.
+              </p>
+            </div>
+            <Switch
+              checked={Boolean(settings?.whatsapp_enabled)}
+              onCheckedChange={(checked) => void toggleWhatsapp(checked)}
+              disabled={savingWhatsapp}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Email delivery enabled</p>
+              <p className="text-xs text-muted-foreground">
+                Required before any email campaign can be scheduled or sent.
+              </p>
+            </div>
+            <Switch
+              checked={Boolean(settings?.email_enabled)}
+              onCheckedChange={(checked) => void toggleEmail(checked)}
+              disabled={savingEmail}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

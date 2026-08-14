@@ -13,10 +13,10 @@ import {
 describe("Campaign Studio WhatsApp templates", () => {
   it("offers only provider-approved image templates in the selected language", () => {
     const templates: GrowthMessageTemplate[] = [
-      { id: 1, key: "en-image", whatsapp_template_name: "en_image", language: "en", category: "marketing", provider_status: "approved", variable_names: [], media_type: "image" },
-      { id: 2, key: "en-text", whatsapp_template_name: "en_text", language: "en", category: "marketing", provider_status: "approved", variable_names: [], media_type: "none" },
-      { id: 3, key: "ne-image", whatsapp_template_name: "ne_image", language: "ne", category: "marketing", provider_status: "approved", variable_names: [], media_type: "image" },
-      { id: 4, key: "pending", whatsapp_template_name: "pending", language: "en", category: "marketing", provider_status: "pending", variable_names: [], media_type: "image" },
+      { id: 1, key: "en-image", channel: "whatsapp", whatsapp_template_name: "en_image", provider_template_name: "en_image", language: "en", category: "marketing", provider_status: "approved", variable_names: [], media_type: "image" },
+      { id: 2, key: "en-text", channel: "whatsapp", whatsapp_template_name: "en_text", provider_template_name: "en_text", language: "en", category: "marketing", provider_status: "approved", variable_names: [], media_type: "none" },
+      { id: 3, key: "ne-image", channel: "whatsapp", whatsapp_template_name: "ne_image", provider_template_name: "ne_image", language: "ne", category: "marketing", provider_status: "approved", variable_names: [], media_type: "image" },
+      { id: 4, key: "pending", channel: "whatsapp", whatsapp_template_name: "pending", provider_template_name: "pending", language: "en", category: "marketing", provider_status: "pending", variable_names: [], media_type: "image" },
     ];
 
     expect(approvedImageTemplatesForLanguage([...templates], "en")).toEqual([
@@ -46,6 +46,7 @@ describe("Campaign Studio playbooks", () => {
       buildCampaignCreateInput({
         name: "August offer",
         playbookCode: playbook,
+        channel: "whatsapp",
         offer: validFixedOffer,
         language: "en",
         message: "Hi {{customer_name}}",

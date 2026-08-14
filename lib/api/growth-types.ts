@@ -3,6 +3,7 @@ export type GrowthDataStatus = "confirmed" | "estimated" | "signal" | "unavailab
 export type GrowthSegmentCode = "new" | "regular" | "lapsed";
 export type GrowthPlaybookCode = "second_visit" | "win_back" | "slow_day";
 export type GrowthLanguage = "en" | "ne" | "ne_romanized";
+export type GrowthChannelCode = "whatsapp" | "email";
 export type GrowthCampaignStatus =
   | "draft"
   | "review"
@@ -83,6 +84,7 @@ export interface GrowthCampaignSummary {
   name: string;
   playbook_code: GrowthPlaybookCode;
   segment_code: GrowthSegmentCode;
+  channel: GrowthChannelCode;
   status: GrowthCampaignStatus;
   audience_count: number;
   scheduled_at?: string | null;
@@ -190,10 +192,13 @@ export interface GrowthCampaignCreateInput {
   name: string;
   playbook_code: GrowthPlaybookCode;
   segment_code: GrowthSegmentCode;
+  channel: GrowthChannelCode;
   opportunity_id?: number | string | null;
   offer: GrowthOfferInput;
   language: GrowthLanguage;
-  message_body: string;
+  message_body?: string | null;
+  email_subject?: string | null;
+  email_body_html?: string | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
 }
@@ -203,6 +208,8 @@ export interface GrowthCampaignUpdateInput {
   offer?: GrowthOfferInput;
   language?: GrowthLanguage;
   message_body?: string;
+  email_subject?: string | null;
+  email_body_html?: string | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
 }
@@ -260,6 +267,7 @@ export interface GrowthSettings {
   sender_display_name?: string | null;
   approved_languages: GrowthLanguage[];
   whatsapp_enabled: boolean;
+  email_enabled: boolean;
   ai_copy_enabled: boolean;
   public_enrollment_enabled: boolean;
   public_enrollment_slug?: string | null;
@@ -282,6 +290,7 @@ export type GrowthSettingsUpdate = Partial<
     | "sender_display_name"
     | "approved_languages"
     | "whatsapp_enabled"
+    | "email_enabled"
     | "ai_copy_enabled"
     | "public_enrollment_enabled"
     | "consent_policy_version"
@@ -305,7 +314,9 @@ export type GrowthBrandUpdate = Partial<GrowthBrandProfile>;
 export interface GrowthMessageTemplate {
   id: number | string;
   key: string;
+  channel: GrowthChannelCode;
   whatsapp_template_name: string;
+  provider_template_name: string;
   language: GrowthLanguage;
   category: string;
   provider_status: string;
@@ -364,8 +375,10 @@ export interface PublicGrowthRestaurant {
 export interface PublicGrowthJoinInput {
   name: string;
   phone: string;
+  email?: string | null;
   preferred_language: GrowthLanguage;
   whatsapp_marketing_opt_in: boolean;
+  email_marketing_opt_in?: boolean | null;
   policy_version: string;
   consent_text_hash: string;
 }
@@ -373,13 +386,14 @@ export interface PublicGrowthJoinInput {
 export interface PublicGrowthJoinResult {
   accepted: boolean;
   preference_token: string;
+  email_preference_token?: string | null;
 }
 
 export interface PublicGrowthPreferences {
   restaurant_name: string;
   logo_url?: string | null;
   destination_masked: string;
-  channel: "whatsapp";
+  channel: GrowthChannelCode;
   purpose: "marketing";
   status: "opted_in" | "opted_out";
   preferred_language: GrowthLanguage;

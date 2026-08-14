@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { useEffect, useState } from "react";
-import type { GrowthLanguage, GrowthPlaybookCode } from "@/lib/api/growth-types";
+import type {
+  GrowthChannelCode,
+  GrowthLanguage,
+  GrowthPlaybookCode,
+} from "@/lib/api/growth-types";
 import type { CampaignOfferDraft, CampaignPosterTemplate } from "@/lib/growth/campaign-studio";
 
 export type StudioStep = 1 | 2 | 3 | 4;
@@ -34,6 +38,7 @@ interface CampaignStudioDraft {
   step: StudioStep;
   furthestStep: StudioStep;
   playbookCode: GrowthPlaybookCode;
+  channel: GrowthChannelCode;
   campaignName: string;
   nameCustomized: boolean;
   offer: CampaignOfferDraft;
@@ -44,6 +49,8 @@ interface CampaignStudioDraft {
   terms: string;
   posterTemplate: CampaignPosterTemplate;
   selectedMessageTemplateId: string;
+  emailSubject: string;
+  emailBodyHtml: string;
   reviewAccepted: boolean;
 }
 
@@ -52,6 +59,7 @@ function createInitialDraft(): CampaignStudioDraft {
     step: 1,
     furthestStep: 1,
     playbookCode: "second_visit",
+    channel: "whatsapp",
     campaignName: "Second Visit offer",
     nameCustomized: false,
     offer: defaultOffer(),
@@ -61,8 +69,10 @@ function createInitialDraft(): CampaignStudioDraft {
     copyCustomized: false,
     terms:
       "One use per eligible customer. Minimum order and campaign terms apply. Cannot be combined with another offer.",
-    posterTemplate: "fresh",
+    posterTemplate: "vibrant",
     selectedMessageTemplateId: "",
+    emailSubject: "",
+    emailBodyHtml: "",
     reviewAccepted: false,
   };
 }
@@ -100,6 +110,7 @@ export const useCampaignStudio = create<CampaignStudioState>()(
         step: state.step,
         furthestStep: state.furthestStep,
         playbookCode: state.playbookCode,
+        channel: state.channel,
         campaignName: state.campaignName,
         nameCustomized: state.nameCustomized,
         offer: state.offer,
@@ -110,6 +121,8 @@ export const useCampaignStudio = create<CampaignStudioState>()(
         terms: state.terms,
         posterTemplate: state.posterTemplate,
         selectedMessageTemplateId: state.selectedMessageTemplateId,
+        emailSubject: state.emailSubject,
+        emailBodyHtml: state.emailBodyHtml,
         reviewAccepted: state.reviewAccepted,
       }),
     },

@@ -430,6 +430,11 @@
   100% { transform: scaleX(1); opacity: 0; }
 }
 
+@keyframes shine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
 /* Day-close detail / wizard — overrides centered DialogContent; animates maximize/minimize */
 .resizable-dialog-panel {
   translate: none !important;
@@ -596,4 +601,47 @@
   display: none;
   -webkit-appearance: none;
   appearance: none;
+}
+
+/* Email Preview Dark Mode Styles */
+.email-preview-content.dark-mode-email table {
+  background-color: #1a1a1a !important;
+}
+
+.email-preview-content.dark-mode-email td[style*="background-color: #fef6f0"] {
+  background-color: #2d2416 !important;
+}
+
+.email-preview-content.dark-mode-email td[style*="background-color: #ffffff"] {
+  background-color: #1a1a1a !important;
+}
+
+.email-preview-content.dark-mode-email h1,
+.email-preview-content.dark-mode-email p {
+  color: #e5e5e5 !important;
+}
+
+.email-preview-content.dark-mode-email div[style*="color: #8b5a2b"] {
+  color: #d4a574 !important;
+}
+
+.email-preview-content.dark-mode-email div[style*="background-color: #fffbf7"] {
+  background-color: #2d2416 !important;
+  border-color: #d4a574 !important;
+}
+
+.email-preview-content.dark-mode-email div[style*="color: #1a1a1a"] {
+  color: #f5f5f5 !important;
+}
+
+.email-preview-content.dark-mode-email p[style*="color: #999999"] {
+  color: #a3a3a3 !important;
+}
+
+.email-preview-content.dark-mode-email p[style*="color: #b3b3b3"] {
+  color: #737373 !important;
+}
+
+.email-preview-content.dark-mode-email a {
+  color: #737373 !important;
 }

@@ -246,6 +246,10 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
   }, [fetchRestaurant, restaurant]);
 
   const timeZone = restaurant?.timezone?.trim() || "";
+  const channelDisabled =
+    campaign?.channel === "email"
+      ? settings?.email_enabled === false
+      : settings?.whatsapp_enabled === false;
   const schedulePayload = useMemo(() => {
     if (!scheduleLocal || !timeZone) return { value: null, error: null };
     try {
@@ -401,15 +405,15 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
   return (
     <div className="mx-auto max-w-[1400px] space-y-8 pb-16" data-tour="grow-campaign-detail">
       {/* Hero Section */}
-      <section className="relative overflow-hidden rounded-xl border border-border bg-card p-8">
-        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="min-w-0 max-w-4xl">
-            <Link href="/grow/campaigns" className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              <ArrowLeft className="h-4 w-4" />
-              Campaigns
-            </Link>
-            
-            <div className="mt-4 flex items-center gap-3">
+      <section className="relative overflow-hidden rounded-xl border border-border bg-card p-5">
+        <div className="relative space-y-4">
+          {/* Row 1: Back link, Campaign Detail label, status, and action buttons */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Link href="/grow/campaigns" className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+                <ArrowLeft className="h-4 w-4" />
+                Campaigns
+              </Link>
               <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 <span className="text-xs font-medium">Campaign Detail</span>
@@ -417,9 +421,51 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <Badge variant="outline" className={cn("text-xs", statusStyles[campaign.status])}>{campaignStatusLabels[campaign.status]}</Badge>
             </div>
             
-            <h1 className="mt-4 break-words text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl">{campaign.name}</h1>
+            {/* Action buttons */}
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => void load()} disabled={Boolean(busyAction)} className="rounded-xl border border-border">
+                <RefreshCw className="mr-2 h-4 w-4" />Refresh
+              </Button>
+              {actions.submitReview && (
+                <Button size="sm" onClick={() => void submitReview()} disabled={Boolean(busyAction)} className="rounded-xl border border-border">
+                  {busyAction === "review" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                  Submit for review
+                </Button>
+              )}
+              {actions.returnToDraft && (
+                <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("return"); }} className="rounded-xl border border-border">
+                  <RotateCcw className="mr-2 h-4 w-4" />Return to draft
+                </Button>
+              )}
+              {actions.approve && (
+                <Button size="sm" onClick={() => setApprovalOpen(true)} disabled={!approvalReady} className="rounded-xl border border-border">
+                  <LockKeyhole className="mr-2 h-4 w-4" />Approve
+                </Button>
+              )}
+              {actions.schedule && (
+                <Button size="sm" onClick={openSchedule} className="rounded-xl border border-border">
+                  <CalendarClock className="mr-2 h-4 w-4" />Schedule
+                </Button>
+              )}
+              {actions.pause && (
+                <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("pause"); }} className="rounded-xl border border-border">
+                  <Pause className="mr-2 h-4 w-4" />Pause
+                </Button>
+              )}
+              {actions.cancel && (
+                <Button size="sm" variant="destructive" onClick={() => { setReason(""); setReasonAction("cancel"); }} className="rounded-xl border border-border">
+                  <XCircle className="mr-2 h-4 w-4" />Cancel
+                </Button>
+              )}
+            </div>
+          </div>
+          
+          {/* Row 2: Campaign title */}
+          <div className="min-w-0">
+            <h1 className="break-words text-2xl font-bold tracking-tight sm:text-3xl">{campaign.name}</h1>
             
-            <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+            {/* Row 3: Campaign metadata */}
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
               <span className="capitalize">{campaign.playbook_code.replaceAll("_", " ")}</span>
               <span>•</span>
               <span>{campaign.segment_code} segment</span>
@@ -428,50 +474,13 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               {campaign.scheduled_at && (
                 <>
                   <span>•</span>
-                  <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1">
                     <CalendarClock className="h-3.5 w-3.5" />
                     {formatDate(campaign.scheduled_at)}
                   </span>
                 </>
               )}
             </div>
-          </div>
-          
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => void load()} disabled={Boolean(busyAction)} className="rounded-xl border border-border">
-              <RefreshCw className="mr-2 h-4 w-4" />Refresh
-            </Button>
-            {actions.submitReview && (
-              <Button size="sm" onClick={() => void submitReview()} disabled={Boolean(busyAction)} className="rounded-xl border border-border">
-                {busyAction === "review" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                Submit for review
-              </Button>
-            )}
-            {actions.returnToDraft && (
-              <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("return"); }} className="rounded-xl border border-border">
-                <RotateCcw className="mr-2 h-4 w-4" />Return to draft
-              </Button>
-            )}
-            {actions.approve && (
-              <Button size="sm" onClick={() => setApprovalOpen(true)} disabled={!approvalReady} className="rounded-xl border border-border">
-                <LockKeyhole className="mr-2 h-4 w-4" />Approve
-              </Button>
-            )}
-            {actions.schedule && (
-              <Button size="sm" onClick={openSchedule} className="rounded-xl border border-border">
-                <CalendarClock className="mr-2 h-4 w-4" />Schedule
-              </Button>
-            )}
-            {actions.pause && (
-              <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("pause"); }} className="rounded-xl border border-border">
-                <Pause className="mr-2 h-4 w-4" />Pause
-              </Button>
-            )}
-            {actions.cancel && (
-              <Button size="sm" variant="destructive" onClick={() => { setReason(""); setReasonAction("cancel"); }} className="rounded-xl border border-border">
-                <XCircle className="mr-2 h-4 w-4" />Cancel
-              </Button>
-            )}
           </div>
         </div>
       </section>
@@ -506,9 +515,9 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <div className="rounded-lg border border-border bg-muted p-2">
                 <Tag className="h-5 w-5" />
               </div>
-              Offer Economics
+              Offer Details
             </CardTitle>
-            <CardDescription className="text-sm">Bounded server-side with cost verification</CardDescription>
+            <CardDescription className="text-sm">What customers get and your cost limit</CardDescription>
           </CardHeader>
           <CardContent>
             {!campaign.offer ? (
@@ -526,14 +535,14 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Metric
-                    label="Maximum exposure"
-                    value={campaign.offer.maximum_exposure == null ? "Not provable" : formatMoney(Number(campaign.offer.maximum_exposure))}
-                    detail={campaign.offer.redemption_limit ? `${campaign.offer.redemption_limit.toLocaleString("en-NP")} limit` : "No limit"}
+                    label="Maximum Cost"
+                    value={campaign.offer.maximum_exposure == null ? "Not set" : formatMoney(Number(campaign.offer.maximum_exposure))}
+                    detail={campaign.offer.redemption_limit ? `${campaign.offer.redemption_limit.toLocaleString("en-NP")} uses max` : "No limit"}
                   />
                   <Metric
-                    label="Profitability"
-                    value={campaign.offer.profitability_status === "verified" ? "Verified" : "Unverified"}
-                    detail={campaign.offer.profitability_status === "verified" ? "Cost verified" : "Not verified"}
+                    label="Cost Verified"
+                    value={campaign.offer.profitability_status === "verified" ? "Yes" : "No"}
+                    detail={campaign.offer.profitability_status === "verified" ? "Checked against menu prices" : "Not checked yet"}
                   />
                 </div>
               </div>
@@ -547,9 +556,9 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <div className="rounded-lg border border-border bg-muted p-2">
                 <ShieldCheck className="h-5 w-5" />
               </div>
-              Approval Checks
+              Ready to Send?
             </CardTitle>
-            <CardDescription className="text-sm">Required before campaign approval</CardDescription>
+            <CardDescription className="text-sm">Check these before sending campaign</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {approvalChecks.map((check) => (
@@ -575,38 +584,58 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <div className="rounded-lg border border-border bg-muted p-2">
                 <Users className="h-5 w-5" />
               </div>
-              Audience
+              Who Gets This
             </CardTitle>
-            <CardDescription className="text-sm">Preview changes; approval creates frozen snapshot</CardDescription>
+            <CardDescription className="text-sm">Customer list (locked after approval)</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <Metric 
-                label={frozen ? "Frozen" : "Stored"} 
+                label={frozen ? "Locked" : "Saved"} 
                 value={formatCount(campaign.audience_count)} 
-                detail={frozen ? formatDate(campaign.audience_frozen_at) : "Not frozen"} 
+                detail={frozen ? formatDate(campaign.audience_frozen_at) : "Not locked yet"} 
               />
               <Metric 
-                label="Preview" 
+                label="Live" 
                 value={audience ? formatCount(audience.included_count) : "—"} 
-                detail="Eligible now" 
+                detail="Can receive now" 
               />
               <Metric 
-                label="Excluded" 
+                label="Can't Receive" 
                 value={audience ? formatCount(audience.excluded_count) : "—"} 
-                detail="Backend rules" 
+                detail="Blocked by rules" 
               />
             </div>
             {audience && Object.keys(audience.exclusions).length > 0 && (
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Exclusions</p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  {Object.entries(audience.exclusions).map(([reasonKey, count]) => (
-                    <div key={reasonKey} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-sm transition-all hover:shadow-sm">
-                      <span className="capitalize text-muted-foreground">{reasonKey.replaceAll("_", " ")}</span>
-                      <span className="font-bold">{formatCount(count)}</span>
-                    </div>
-                  ))}
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Why some customers can't receive this</p>
+                <p className="mt-1 text-sm text-muted-foreground">These customers are excluded for legal or technical reasons:</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {Object.entries(audience.exclusions).map(([reasonKey, count]) => {
+                    // Staff-friendly labels
+                    const staffLabels: Record<string, string> = {
+                      "missing valid e164": "No phone number",
+                      "marketing opted out": "Unsubscribed",
+                      "marketing consent missing": "No permission",
+                      "no completed orders": "Never ordered",
+                      "different segment": "Wrong group",
+                      "missing email": "No email",
+                      "invalid email": "Bad email",
+                      "duplicate email": "Duplicate email",
+                      "duplicate phone": "Duplicate phone",
+                      "test customer": "Test account",
+                      "bounced": "Email bounced",
+                      "complained": "Marked as spam"
+                    };
+                    const label = staffLabels[reasonKey] ?? reasonKey.replaceAll("_", " ");
+                    
+                    return (
+                      <div key={reasonKey} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-sm transition-all hover:shadow-sm">
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className="font-bold">{formatCount(count)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -619,9 +648,9 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <div className="rounded-lg border border-border bg-muted p-2">
                 <MessageCircleMore className="h-5 w-5" />
               </div>
-              Message & Creative
+              Message & Images
             </CardTitle>
-            <CardDescription className="text-sm">Campaign copy and asset references</CardDescription>
+            <CardDescription className="text-sm">What customers will see</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-xl border border-border bg-muted/50 p-4">
@@ -632,27 +661,29 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:shadow-sm">
                 <MessageCircleMore className="mt-0.5 h-4 w-4" />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm">WhatsApp template</p>
+                  <p className="font-semibold text-sm">{campaign.channel === "email" ? "Email template" : "WhatsApp template"}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {selectedTemplate 
-                      ? `${selectedTemplate.whatsapp_template_name} · ${selectedTemplate.language}` 
-                      : campaign.message_template_id 
-                        ? `Template #${campaign.message_template_id}` 
+                    {selectedTemplate
+                      ? `${selectedTemplate.provider_template_name} · ${selectedTemplate.language}`
+                      : campaign.message_template_id
+                        ? `Template #${campaign.message_template_id}`
                         : "No template"}
                   </p>
                 </div>
               </div>
-              <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:shadow-sm">
-                <FileImage className="mt-0.5 h-4 w-4" />
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm">Poster asset</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {campaign.creative_asset_id 
-                      ? `Asset #${campaign.creative_asset_id}` 
-                      : "No asset"}
-                  </p>
+              {campaign.channel !== "email" && (
+                <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:shadow-sm">
+                  <FileImage className="mt-0.5 h-4 w-4" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-sm">Poster asset</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {campaign.creative_asset_id
+                        ? `Asset #${campaign.creative_asset_id}`
+                        : "No asset"}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -667,9 +698,9 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
                 <div className="rounded-lg border border-border bg-muted p-2">
                   <Send className="h-5 w-5" />
                 </div>
-                Delivery Results
+                Sending Results
               </CardTitle>
-              <CardDescription className="text-sm">Provider states and attributed orders</CardDescription>
+              <CardDescription className="text-sm">How many sent and who used the offer</CardDescription>
             </div>
             {results && (
               <Button
@@ -700,13 +731,13 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
           ) : (
             <div className="space-y-6">
               <div>
-                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Delivery Status</p>
+                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Sending Status</p>
                 <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
                   <Metric label="Queued" value={formatCount(results.queued_count)} />
                   <Metric label="Sending" value={formatCount(results.sending_count)} />
                   <Metric label="Sent" value={formatCount(results.sent_count)} />
                   <Metric label="Delivered" value={formatCount(results.delivered_count)} />
-                  <Metric label="Read" value={formatCount(results.read_count)} />
+                  <Metric label="Read" value={campaign.channel === "email" ? "Not tracked" : formatCount(results.read_count)} />
                   <Metric label="Failed" value={formatCount(results.failed_count)} />
                   <Metric label="Unknown" value={formatCount(results.unknown_count)} />
                   <Metric label="Suppressed" value={formatCount(results.suppressed_count)} />
@@ -714,7 +745,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               </div>
               
               <div>
-                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Attribution</p>
+                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Offer Used</p>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <Metric label="Redeemed" value={formatCount(results.redeemed_count)} />
                   <Metric label="Reversed" value={formatCount(results.reversed_count)} />
@@ -727,7 +758,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               <div className="rounded-xl border border-border bg-muted p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Discount Cost</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Discount Given</p>
                     <p className="mt-1 text-2xl font-bold">{formatMoney(results.discount_cost)}</p>
                   </div>
                   <div className={cn(
@@ -736,7 +767,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
                       ? "bg-muted text-foreground" 
                       : "bg-muted text-foreground"
                   )}>
-                    {results.profitability_status === "verified" ? "Verified" : "Unverified"}
+                    {results.profitability_status === "verified" ? "Verified" : "Not Verified"}
                   </div>
                 </div>
               </div>
@@ -747,12 +778,12 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
 
       <Card className="rounded-xl border border-dashed border-border bg-card">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="h-4 w-4" />Interpretation limits</CardTitle>
-          <CardDescription>Yummy does not convert incomplete evidence into precise growth claims.</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="h-4 w-4" />Important Notes</CardTitle>
+          <CardDescription>What these numbers mean</CardDescription>
         </CardHeader>
         <CardContent>
           {limitations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No additional limitation was returned. Delivery and attribution still remain observational, not proof of incremental lift.</p>
+            <p className="text-sm text-muted-foreground">These numbers show what happened, but don't prove the campaign caused all the sales.</p>
           ) : (
             <ul className="space-y-2 text-sm text-muted-foreground">
               {limitations.map((limitation) => <li key={limitation} className="flex gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{limitation}</span></li>)}
@@ -806,8 +837,8 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
           <div className="space-y-5">
             {!timeZone ? (
               <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>The restaurant timezone is unavailable. Scheduling is blocked until it is configured.</AlertDescription></Alert>
-            ) : settings?.whatsapp_enabled === false ? (
-              <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>WhatsApp delivery is disabled in this restaurant&apos;s Grow settings. Enable and verify the channel before scheduling.</AlertDescription></Alert>
+            ) : channelDisabled ? (
+              <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{campaign.channel === "email" ? "Email" : "WhatsApp"} delivery is disabled in this restaurant&apos;s Grow settings. Enable and verify the channel before scheduling.</AlertDescription></Alert>
             ) : (
               <>
                 <div className="space-y-2"><Label htmlFor="growth-schedule-time">Restaurant-local date and time</Label><Input id="growth-schedule-time" type="datetime-local" value={scheduleLocal} onChange={(event) => { setScheduleLocal(event.target.value); setScheduleConfirmed(false); }} /><p className="text-xs text-muted-foreground">Authoritative timezone: <span className="font-semibold text-foreground">{timeZone}</span>{settings ? ` · Quiet hours ${settings.quiet_hours_start}–${settings.quiet_hours_end}` : " · Quiet hours will be checked by the backend"}</p></div>
@@ -816,7 +847,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
               </>
             )}
           </div>
-          <DialogFooter className="gap-2 sm:gap-2"><Button variant="outline" onClick={() => setScheduleOpen(false)} disabled={Boolean(busyAction)}>Cancel</Button><Button onClick={() => void confirmSchedule()} disabled={!schedulePayload.value || !scheduleConfirmed || settings?.whatsapp_enabled === false || Boolean(busyAction)}>{busyAction === "schedule" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarClock className="mr-2 h-4 w-4" />}Schedule delivery</Button></DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-2"><Button variant="outline" onClick={() => setScheduleOpen(false)} disabled={Boolean(busyAction)}>Cancel</Button><Button onClick={() => void confirmSchedule()} disabled={!schedulePayload.value || !scheduleConfirmed || channelDisabled || Boolean(busyAction)}>{busyAction === "schedule" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarClock className="mr-2 h-4 w-4" />}Schedule delivery</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

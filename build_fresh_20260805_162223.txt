@@ -1,0 +1,6 @@
+
+> yummy-web@0.1.5 prebuild
+> node scripts/clean-next.js
+
+[clean-next] Refusing to remove .next while Next dev/build is running for this project.
+[clean-next] Active PID 23588: "node"   "D:\everacy\yummy\frontend\node_modules\.bin\\..\next\dist\bin\next" dev

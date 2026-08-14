@@ -37,12 +37,12 @@ import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
 
 const domainLabels: Record<string, string> = {
-  sales: "Sales intelligence",
-  cash: "Cash-control intelligence",
-  expenses: "Expense intelligence",
-  inventory: "Food-cost intelligence",
-  customers: "Customer growth intelligence",
-  campaigns: "Campaign readiness",
+  sales: "Sales",
+  cash: "Cash and day-close",
+  expenses: "Expenses",
+  inventory: "Inventory and menu costing",
+  customers: "Customer identity",
+  campaigns: "Campaign delivery",
 };
 
 const campaignStatusLabels: Record<GrowthCampaignStatus, string> = {
@@ -92,6 +92,26 @@ function formatCount(value: number | null | undefined): string {
 function formatMoney(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "Not available";
   return `Rs. ${value.toLocaleString("en-NP", { maximumFractionDigits: 0 })}`;
+}
+
+function simplifyOpportunityText(text: string): string {
+  // Simplify technical opportunity descriptions for restaurant staff
+  const simplifications: Array<[RegExp, string]> = [
+    [/(\d+) consented customer\(s\) have exactly one completed visit within the configured lookback/i, "$1 customers visited once and haven't come back"],
+    [/(\d+) consented repeat customer\(s\) have no completed visit inside the configured active period/i, "$1 regular customers stopped visiting"],
+    [/On average they visited ([\d.]+) time\(s\) before going quiet/i, "They used to visit $1 times on average"],
+    [/Average time since last visit: (\d+) day\(s\)/i, "Last visit: $1 days ago"],
+    [/Average past spend per visit: ([\d,]+)/i, "Average spent: Rs. $1 per visit"],
+    [/Observed ([\d.]+) completed orders on average across (\d+) sales-active (\w+)s in the last (\d+) weeks/i, "Only $1 orders on average each $3 (checked $2 $3s)"],
+    [/within the configured lookback/gi, "recently"],
+    [/inside the configured active period/gi, "lately"],
+  ];
+
+  let simplified = text;
+  for (const [pattern, replacement] of simplifications) {
+    simplified = simplified.replace(pattern, replacement);
+  }
+  return simplified;
 }
 
 function formatDate(value?: string | null): string {
@@ -260,19 +280,25 @@ export function GrowthOverviewClient() {
               </div>
               <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Readiness</span>
             </div>
-            <CardTitle className="text-xl">Data Readiness</CardTitle>
-            <CardDescription className="text-sm">Track which data sources are ready for campaigns</CardDescription>
+            <CardTitle className="text-xl">System Setup</CardTitle>
+            <CardDescription className="text-sm">Check which features are ready to use</CardDescription>
           </CardHeader>
           <CardContent className="pt-2">
             {readinessDomains.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
                 <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground" />
-                <p className="mt-4 font-semibold text-sm">Calculating readiness...</p>
-                <p className="mt-1.5 text-sm text-muted-foreground">Data readiness will appear as information becomes available</p>
+                <p className="mt-4 font-semibold text-sm">Checking system setup...</p>
+                <p className="mt-1.5 text-sm text-muted-foreground">Setup status will show here</p>
               </div>
             ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {readinessDomains.map((domain, index) => {
+              <div className="space-y-2.5">
+                {[...readinessDomains]
+                  .sort((a, b) => {
+                    const percentA = typeof a.coverage_percent === "number" ? a.coverage_percent : 0;
+                    const percentB = typeof b.coverage_percent === "number" ? b.coverage_percent : 0;
+                    return percentB - percentA; // Sort descending: 100 -> 0
+                  })
+                  .map((domain, index) => {
                   const key = domainKey(domain);
                   const status = readinessCopy(domain.status);
                   const StatusIcon = status.icon;
@@ -280,36 +306,78 @@ export function GrowthOverviewClient() {
                     typeof domain.coverage_percent === "number"
                       ? Math.min(100, Math.max(0, domain.coverage_percent))
                       : null;
+                  const chartPercent = percent ?? 0;
+                  
                   return (
                     <div
                       key={`${key}-${index}`}
-                      className="group rounded-xl border border-border bg-card p-4 transition-all hover:shadow-md"
+                      className="group rounded-lg border border-border bg-card p-3.5 transition-all hover:border-border/80 hover:shadow-sm"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <h3 className="font-semibold text-sm">{domain.label || domainLabels[key] || "Readiness area"}</h3>
-                          {percent !== null && <p className="text-xs text-muted-foreground">{Math.round(percent)}% ready</p>}
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className={cn(
+                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+                            domain.status === "ready"
+                              ? "bg-emerald-500/10"
+                              : domain.status === "partial"
+                                ? "bg-amber-500/10"
+                                : "bg-muted"
+                          )}>
+                            <StatusIcon className={cn(
+                              "h-4 w-4",
+                              domain.status === "ready"
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : domain.status === "partial"
+                                  ? "text-amber-600 dark:text-amber-400"
+                                  : "text-muted-foreground"
+                            )} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold text-xs truncate">
+                              {domain.label || domainLabels[key] || "Setup area"}
+                            </h3>
+                            <p className="text-[10px] text-muted-foreground">
+                              {domain.status === "ready" 
+                                ? "Ready to use"
+                                : domain.status === "partial"
+                                  ? "Needs setup"
+                                  : "Not set up yet"}
+                            </p>
+                          </div>
                         </div>
-                        <Badge variant="outline" className={cn("gap-1.5 text-xs", status.className)}>
-                          <StatusIcon className="h-3 w-3" />
-                          {status.label}
-                        </Badge>
+                        
+                        <div className="text-right">
+                          <div className="text-xl font-bold tabular-nums">
+                            {Math.round(chartPercent)}%
+                          </div>
+                        </div>
                       </div>
-                      {percent !== null && (
-                        <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
+                      
+                      {/* Compact horizontal bar chart */}
+                      <div className="relative">
+                        <div className="flex h-2 overflow-hidden rounded-full bg-muted/30">
                           <div
                             className={cn(
-                              "h-full rounded-full transition-all",
+                              "relative overflow-hidden rounded-full transition-all duration-1000 ease-out",
                               domain.status === "ready"
-                                ? "bg-foreground"
+                                ? "bg-emerald-500"
                                 : domain.status === "partial"
-                                  ? "bg-muted-foreground"
-                                  : "bg-muted-foreground/40",
+                                  ? "bg-amber-500"
+                                  : "bg-slate-400"
                             )}
-                            style={{ width: `${percent}%` }}
-                          />
+                            style={{ width: `${chartPercent}%` }}
+                          >
+                            {/* Animated shine effect */}
+                            <div 
+                              className="absolute inset-0 w-full h-full"
+                              style={{
+                                background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)",
+                                animation: "shine 2s ease-in-out infinite"
+                              }}
+                            />
+                          </div>
                         </div>
-                      )}
+                      </div>
                     </div>
                   );
                 })}
@@ -326,15 +394,15 @@ export function GrowthOverviewClient() {
               </div>
               <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Opportunities</span>
             </div>
-            <CardTitle className="text-xl">Growth Opportunities</CardTitle>
-            <CardDescription className="text-sm">Customer engagement opportunities based on your data</CardDescription>
+            <CardTitle className="text-xl">Your Opportunities</CardTitle>
+            <CardDescription className="text-sm">Ways to bring back customers</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 pt-2">
             {opportunities.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
                 <Sprout className="mx-auto h-10 w-10 text-muted-foreground" />
                 <p className="mt-4 font-semibold text-sm">No opportunities yet</p>
-                <p className="mt-1.5 text-sm text-muted-foreground">Opportunities will appear as customer data grows</p>
+                <p className="mt-1.5 text-sm text-muted-foreground">Check back as more customers visit</p>
               </div>
             ) : (
               opportunities.slice(0, 4).map((opportunity) => {
@@ -344,7 +412,7 @@ export function GrowthOverviewClient() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1.5">
                         <h3 className="font-semibold text-sm leading-snug">{opportunity.title}</h3>
-                        <p className="text-xs leading-relaxed text-muted-foreground">{opportunity.explanation || opportunity.suggested_action || "Review eligible customers"}</p>
+                        <p className="text-xs leading-relaxed text-muted-foreground">{simplifyOpportunityText(opportunity.explanation || opportunity.suggested_action || "Check eligible customers")}</p>
                       </div>
                       <Badge variant="outline" className={cn("shrink-0", status.className)}>{status.label}</Badge>
                     </div>
@@ -370,8 +438,8 @@ export function GrowthOverviewClient() {
                 </div>
                 <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Campaigns</span>
               </div>
-              <CardTitle className="text-xl">Active Campaigns</CardTitle>
-              <CardDescription className="text-sm">View and manage your marketing campaigns</CardDescription>
+              <CardTitle className="text-xl">Your Campaigns</CardTitle>
+              <CardDescription className="text-sm">Manage your marketing messages</CardDescription>
             </div>
             <Button asChild size="sm" variant="outline" className="shrink-0 rounded-xl border border-border">
               <Link href="/grow/campaigns">View All</Link>
@@ -381,8 +449,8 @@ export function GrowthOverviewClient() {
             {campaigns.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
                 <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground" />
-                <p className="mt-4 font-semibold text-sm">No active campaigns</p>
-                <p className="mt-1.5 text-sm text-muted-foreground">Create your first campaign to start engaging with customers</p>
+                <p className="mt-4 font-semibold text-sm">No campaigns yet</p>
+                <p className="mt-1.5 text-sm text-muted-foreground">Create your first campaign to reach customers</p>
               </div>
             ) : (
               campaigns.slice(0, 5).map((campaign) => (
@@ -409,15 +477,15 @@ export function GrowthOverviewClient() {
               </div>
               <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Results</span>
             </div>
-            <CardTitle className="text-xl">Campaign Results</CardTitle>
-            <CardDescription className="text-sm">Performance metrics from completed campaigns</CardDescription>
+            <CardTitle className="text-xl">Results</CardTitle>
+            <CardDescription className="text-sm">How your campaigns performed</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 pt-2">
             {recentResults.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
                 <CheckCircle2 className="mx-auto h-10 w-10 text-muted-foreground" />
                 <p className="mt-4 font-semibold text-sm">No results yet</p>
-                <p className="mt-1.5 text-sm text-muted-foreground">Results will appear after campaigns are completed</p>
+                <p className="mt-1.5 text-sm text-muted-foreground">Results show after campaigns finish</p>
               </div>
             ) : (
               recentResults.slice(0, 4).map((result) => (

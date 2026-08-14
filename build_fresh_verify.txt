@@ -1,0 +1,156 @@
+
+> yummy-web@0.1.5 prebuild
+> node scripts/clean-next.js
+
+[clean-next] Removed D:\everacy\yummy\frontend\.next
+
+> yummy-web@0.1.5 build
+> next build
+
+  ▲ Next.js 14.2.15
+  - Environments: .env
+
+   Creating an optimized production build ...
+Browserslist: browsers data (caniuse-lite) is 7 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+Browserslist: caniuse-lite is outdated. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+ ✓ Compiled successfully
+   Skipping validation of types
+   Skipping linting
+   Collecting page data ...
+   Generating static pages (0/104) ...
+   Generating static pages (26/104) 
+   Generating static pages (52/104) 
+   Generating static pages (78/104) 
+ ✓ Generating static pages (104/104)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                         Size     First Load JS
+┌ ○ /                                               49.7 kB         192 kB
+├ ○ /_not-found                                     880 B          89.1 kB
+├ ○ /.well-known/apple-app-site-association         0 B                0 B
+├ ○ /.well-known/assetlinks.json                    0 B                0 B
+├ ○ /analytics                                      33.8 kB         400 kB
+├ ○ /analytics/compare                              6.04 kB         187 kB
+├ ○ /analytics/inventory                            6.11 kB         187 kB
+├ ○ /analytics/kitchen                              6.46 kB         187 kB
+├ ○ /analytics/menu                                 13.7 kB         224 kB
+├ ○ /analytics/staff                                6.25 kB         187 kB
+├ ƒ /api/attendance-proxy/[...path]                 0 B                0 B
+├ ƒ /api/notifications                              0 B                0 B
+├ ƒ /api/notifications/inventory/[inventoryItemId]  0 B                0 B
+├ ƒ /api/notifications/kots/[kotId]                 0 B                0 B
+├ ƒ /api/notifications/orders/[orderId]             0 B                0 B
+├ ƒ /api/notifications/read                         0 B                0 B
+├ ƒ /api/notifications/unread-count                 0 B                0 B
+├ ƒ /api/proxy/[...path]                            0 B                0 B
+├ ○ /apple-icon.png                                 0 B                0 B
+├ ○ /attendance                                     21.5 kB         229 kB
+├ ○ /cash-drawers                                   16.8 kB         201 kB
+├ ○ /customers                                      11.8 kB         187 kB
+├ ○ /dashboard                                      26.1 kB         221 kB
+├ ○ /dashboard/payments                             4.26 kB        99.4 kB
+├ ○ /dashboard/subscriptions                        156 B          88.3 kB
+├ ○ /day-close                                      15.8 kB         256 kB
+├ ○ /discounts                                      5.56 kB         205 kB
+├ ○ /feedback                                       5.57 kB         138 kB
+├ ○ /finance                                        1.05 kB        89.2 kB
+├ ○ /finance/accounting                             191 B           234 kB
+├ ○ /finance/accounting/ap-aging                    164 B           161 kB
+├ ○ /finance/accounting/ar-aging                    163 B           161 kB
+├ ○ /finance/accounting/balance-sheet               188 B           225 kB
+├ ○ /finance/accounting/cash-flow                   188 B           225 kB
+├ ○ /finance/accounting/chart-of-accounts           182 B           205 kB
+├ ○ /finance/accounting/customer-ledger             187 B           225 kB
+├ ○ /finance/accounting/day-closes                  10.7 kB         161 kB
+├ ○ /finance/accounting/daybook                     14.1 kB         166 kB
+├ ○ /finance/accounting/general-ledger              187 B           225 kB
+├ ○ /finance/accounting/inventory                   12.9 kB         197 kB
+├ ○ /finance/accounting/ledger-mapping              182 B           205 kB
+├ ○ /finance/accounting/opening-balances            9.07 kB         190 kB
+├ ○ /finance/accounting/period-reports              210 B           179 kB
+├ ○ /finance/accounting/periods                     9.66 kB         160 kB
+├ ○ /finance/accounting/profit-loss                 187 B           225 kB
+├ ○ /finance/accounting/settlements                 11.3 kB         192 kB
+├ ○ /finance/accounting/setup                       12.2 kB         193 kB
+├ ○ /finance/accounting/supplier-ledger             188 B           225 kB
+├ ○ /finance/accounting/trial-balance               189 B           234 kB
+├ ○ /finance/accounting/vat-export                  10.2 kB         161 kB
+├ ○ /finance/accounting/vat-summary                 188 B           225 kB
+├ ○ /finance/accounting/vouchers                    6.48 kB         198 kB
+├ ƒ /finance/accounting/vouchers/[id]               3.92 kB         176 kB
+├ ○ /finance/expenses                               14.1 kB         201 kB
+├ ○ /finance/income                                 11.5 kB         324 kB
+├ ○ /finance/reports                                176 B           206 kB
+├ ○ /finance/reports/invoices                       177 B           206 kB
+├ ○ /finance/reports/payments                       177 B           206 kB
+├ ○ /finance/reports/refunds                        178 B           206 kB
+├ ○ /finance/reports/sales-book                     178 B           206 kB
+├ ○ /finance/reports/vat-sales                      178 B           206 kB
+├ ○ /forgot-password                                5.07 kB         144 kB
+├ ○ /gateway                                        4.48 kB         130 kB
+├ ○ /hotel-close                                    5.5 kB          215 kB
+├ ○ /icon.png                                       0 B                0 B
+├ ○ /inventory                                      21.9 kB         187 kB
+├ ○ /invite                                         4.05 kB         143 kB
+├ ○ /join                                           3.85 kB         143 kB
+├ ○ /kitchen                                        14 kB           192 kB
+├ ○ /leave-restaurant                               5.45 kB         154 kB
+├ ○ /manage                                         5.71 kB         164 kB
+├ ○ /manage/additional-settings                     17.4 kB         222 kB
+├ ○ /manage/audit-logs                              8.13 kB         183 kB
+├ ○ /manage/awaiting-payments                       9.72 kB         192 kB
+├ ○ /manage/compliance                              156 B          88.3 kB
+├ ○ /manage/kot-designer                            3.36 kB         194 kB
+├ ○ /manage/profile                                 11.9 kB         278 kB
+├ ○ /manage/purchases                               9.59 kB         192 kB
+├ ○ /manage/receipt-designer                        3.73 kB         194 kB
+├ ○ /manage/roles                                   11.1 kB         187 kB
+├ ○ /manage/settings                                16.6 kB         240 kB
+├ ○ /manage/suppliers                               11 kB           184 kB
+├ ○ /manage/taxes                                   12.1 kB         185 kB
+├ ○ /menu/categories                                4.83 kB         198 kB
+├ ○ /menu/items                                     7.87 kB         206 kB
+├ ○ /menu/modifiers                                 9.05 kB         212 kB
+├ ○ /onboarding                                     28.2 kB         362 kB
+├ ○ /order-history                                  1.05 kB        89.2 kB
+├ ○ /orders                                         227 B           230 kB
+├ ƒ /orders/[id]                                    17.5 kB         206 kB
+├ ƒ /orders/[id]/checkout                           29.8 kB         218 kB
+├ ƒ /orders/[id]/edit                               538 B           186 kB
+├ ƒ /orders/[id]/receipt                            11.7 kB         179 kB
+├ ○ /orders/active                                  5.5 kB          144 kB
+├ ○ /orders/create                                  1.5 kB          199 kB
+├ ○ /orders/history                                 228 B           230 kB
+├ ○ /orders/new                                     5.47 kB         199 kB
+├ ○ /payroll                                        14.8 kB         219 kB
+├ ƒ /payroll/[id]                                   11.4 kB         204 kB
+├ ○ /payroll/create                                 12.5 kB         170 kB
+├ ○ /period-reports                                 208 B           179 kB
+├ ○ /premium                                        10.7 kB         192 kB
+├ ○ /receipts                                       7.52 kB         209 kB
+├ ○ /reservations                                   12.8 kB         301 kB
+├ ○ /rooms                                          7.55 kB         189 kB
+├ ○ /rooms/checkin                                  7.12 kB         157 kB
+├ ○ /settings                                       156 B          88.3 kB
+├ ○ /staff                                          12.5 kB         204 kB
+├ ƒ /staff/[id]                                     23.5 kB         222 kB
+├ ○ /staff/join-requests                            9.16 kB         197 kB
+├ ○ /tables                                         11 kB           211 kB
+├ ○ /transactions                                   10.2 kB         217 kB
+├ ƒ /transactions/[id]                              1.14 kB        89.3 kB
+├ ○ /welcome                                        3.5 kB          138 kB
+└ ○ /workforce                                      6.7 kB          146 kB
++ First Load JS shared by all                       88.2 kB
+  ├ chunks/2117-4243a7b22f403e60.js                 31.8 kB
+  ├ chunks/fd9d1056-5ec4d00b0a1e1220.js             53.6 kB
+  └ other shared chunks (total)                     2.79 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
