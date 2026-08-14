@@ -15,12 +15,35 @@ export interface HotelPropertySettings {
   version: number;
 }
 
-export interface HotelFloor {
+export interface HotelBuilding {
   id: number;
   restaurant_id: number;
   name: string;
+  code: string | null;
   sort_order: number;
+  pos_x: number;
+  pos_y: number;
+  layout_width: number;
+  layout_height: number;
   is_active: boolean;
+  version: number;
+  floor_count?: number;
+  room_count?: number;
+  occupied_count?: number;
+  ready_count?: number;
+  attention_count?: number;
+}
+
+export interface HotelFloor {
+  id: number;
+  restaurant_id: number;
+  building_id: number;
+  name: string;
+  sort_order: number;
+  layout_width: number;
+  layout_height: number;
+  is_active: boolean;
+  building: HotelBuilding;
 }
 
 export interface HotelRoomType {
@@ -49,6 +72,12 @@ export interface HotelRoom {
   housekeeping_status: "clean" | "dirty" | "cleaning" | "inspected";
   service_status: "in_service" | "out_of_service" | "out_of_order";
   notes: string | null;
+  pos_x: number;
+  pos_y: number;
+  layout_width: number;
+  layout_height: number;
+  door_side: "top" | "right" | "bottom" | "left";
+  door_offset: number;
   is_active: boolean;
   version: number;
   room_type: HotelRoomType;
@@ -63,8 +92,17 @@ export interface HotelRatePlan {
   meal_plan: string;
   refundable: boolean;
   cancellation_policy: string | null;
+  early_departure_policy: HotelEarlyDeparturePolicy;
+  early_departure_value: string | number;
   is_active: boolean;
 }
+
+export type HotelEarlyDeparturePolicy =
+  | "refund_unused"
+  | "charge_one_night"
+  | "charge_percentage"
+  | "charge_fixed"
+  | "retain_full";
 
 export interface HotelDailyRate {
   id: number;
@@ -84,6 +122,13 @@ export interface HotelAvailabilityRoomType {
   available_rooms: HotelRoom[];
   nightly_rates: Array<string | number>;
   stay_total: string | number;
+  rate_options: HotelAvailabilityRateOption[];
+}
+
+export interface HotelAvailabilityRateOption {
+  rate_plan: HotelRatePlan;
+  nightly_rates: Array<string | number>;
+  stay_total: string | number;
 }
 
 export interface HotelAvailability {
@@ -100,6 +145,8 @@ export interface HotelBookingNight {
   tax_amount: string | number;
   service_charge: string | number;
   posted_at: string | null;
+  status: "scheduled" | "charged" | "waived" | "retained";
+  disposition_reason: string | null;
 }
 
 export interface HotelBookingRoom {
@@ -109,10 +156,13 @@ export interface HotelBookingRoom {
   rate_plan_id: number | null;
   arrival_date: string;
   departure_date: string;
+  original_departure_date: string;
   adults: number;
   children: number;
   allocation_status: string;
   room_charge_total: string | number;
+  early_departure_policy: HotelEarlyDeparturePolicy;
+  early_departure_value: string | number;
   room_type: HotelRoomType;
   assigned_room: HotelRoom | null;
   rate_plan: HotelRatePlan | null;
@@ -141,6 +191,7 @@ export interface HotelBooking {
   primary_guest_email: string | null;
   arrival_date: string;
   departure_date: string;
+  original_departure_date: string;
   expected_checkin_at: string;
   expected_checkout_at: string;
   adults: number;
@@ -204,6 +255,10 @@ export interface HotelFolioPaymentInput {
   idempotency_key: string;
 }
 
+export interface HotelFolioRefundInput extends HotelFolioPaymentInput {
+  reason: string;
+}
+
 export interface HotelFolio {
   id: number;
   stay_id: number;
@@ -220,6 +275,41 @@ export interface HotelFolioPaymentQuote {
   posted_balance: string | number;
   unposted_room_charges: string | number;
   maximum_payment: string | number;
+}
+
+export interface HotelEarlyDepartureRoomQuote {
+  booking_room_id: number;
+  room_number: string | null;
+  policy: HotelEarlyDeparturePolicy;
+  policy_value: string | number;
+  booked_policy: HotelEarlyDeparturePolicy;
+  booked_policy_value: string | number;
+  policy_overridden: boolean;
+  original_departure_date: string;
+  departure_date: string;
+  consumed_nights: number;
+  unused_nights: number;
+  consumed_room_value: string | number;
+  unused_room_value: string | number;
+  early_departure_fee: string | number;
+}
+
+export interface HotelEarlyDepartureQuote {
+  stay_id: number;
+  currency: string;
+  original_departure_date: string;
+  departure_date: string;
+  current_balance: string | number;
+  original_booking_value: string | number;
+  consumed_room_value: string | number;
+  unused_room_value: string | number;
+  early_departure_fee: string | number;
+  final_room_value: string | number;
+  projected_balance: string | number;
+  amount_due: string | number;
+  refund_due: string | number;
+  already_applied: boolean;
+  rooms: HotelEarlyDepartureRoomQuote[];
 }
 
 export interface HotelStayRoomAssignment {
@@ -241,6 +331,15 @@ export interface HotelStay {
   expected_checkout_at: string;
   actual_checkout_at: string | null;
   checkout_override_reason: string | null;
+  early_departure_date: string | null;
+  early_departure_reason: string | null;
+  early_departure_applied_at: string | null;
+  early_departure_approved_by: number | null;
+  early_departure_override_policy: HotelEarlyDeparturePolicy | null;
+  early_departure_override_value: string | number | null;
+  early_departure_override_reason: string | null;
+  early_departure_override_approved_by: number | null;
+  early_departure_override_approved_at: string | null;
   version: number;
   booking: HotelBooking;
   folios: HotelFolio[];
@@ -343,7 +442,7 @@ export interface HotelBookingCreateInput {
   rooms: Array<{
     room_type_id: number;
     assigned_room_id?: number | null;
-    rate_plan_id?: number | null;
+    rate_plan_id: number;
     adults: number;
     children: number;
     guests?: Array<{

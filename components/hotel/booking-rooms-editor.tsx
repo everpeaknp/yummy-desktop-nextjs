@@ -18,6 +18,7 @@ import {
   UNASSIGNED_HOTEL_ROOM,
 } from "@/lib/hotel/booking-draft";
 import type { HotelAvailability } from "@/lib/hotel/types";
+import { hotelRateContractLabel } from "@/lib/hotel/rate-plan";
 import { hotelCurrency } from "./hotel-ui";
 
 interface Props {
@@ -63,6 +64,9 @@ export function BookingRoomsEditor({ availability, rooms, onChange, disabled = f
               newHotelRoomDraft(
                 `room-${Date.now()}-${rooms.length}`,
                 firstAvailable ? String(firstAvailable.room_type.id) : "",
+                firstAvailable?.rate_options[0]
+                  ? String(firstAvailable.rate_options[0].rate_plan.id)
+                  : "",
               ),
             ]);
           }}
@@ -74,6 +78,9 @@ export function BookingRoomsEditor({ availability, rooms, onChange, disabled = f
       {rooms.map((room, index) => {
         const selectedType = availability?.room_types.find(
           (row) => String(row.room_type.id) === room.roomTypeId,
+        );
+        const selectedRate = selectedType?.rate_options.find(
+          (option) => String(option.rate_plan.id) === room.ratePlanId,
         );
         const physicalRooms =
           selectedType?.available_rooms.filter(
@@ -91,7 +98,7 @@ export function BookingRoomsEditor({ availability, rooms, onChange, disabled = f
                 <div>
                   <p className="font-semibold">Room {index + 1}</p>
                   <p className="text-xs text-muted-foreground">
-                    {selectedType ? hotelCurrency(selectedType.stay_total) : "Select a room type"}
+                    {selectedRate ? hotelCurrency(selectedRate.stay_total) : "Select room and rate"}
                   </p>
                 </div>
               </div>
@@ -115,12 +122,18 @@ export function BookingRoomsEditor({ availability, rooms, onChange, disabled = f
                 <Select
                   value={room.roomTypeId}
                   disabled={disabled}
-                  onValueChange={(value) =>
+                  onValueChange={(value) => {
+                    const nextType = availability?.room_types.find(
+                      (row) => String(row.room_type.id) === value,
+                    );
                     update(room.key, {
                       roomTypeId: value,
+                      ratePlanId: nextType?.rate_options[0]
+                        ? String(nextType.rate_options[0].rate_plan.id)
+                        : "",
                       assignedRoomId: UNASSIGNED_HOTEL_ROOM,
-                    })
-                  }
+                    });
+                  }}
                 >
                   <SelectTrigger><SelectValue placeholder="Select room type" /></SelectTrigger>
                   <SelectContent>
@@ -145,7 +158,36 @@ export function BookingRoomsEditor({ availability, rooms, onChange, disabled = f
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Physical room</Label>
+                <Label>Booking option</Label>
+                <Select
+                  value={room.ratePlanId}
+                  disabled={disabled || !selectedType || selectedType.rate_options.length === 0}
+                  onValueChange={(value) => update(room.key, { ratePlanId: value })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select rate and checkout terms" /></SelectTrigger>
+                  <SelectContent>
+                    {selectedType?.rate_options.map((option) => (
+                      <SelectItem key={option.rate_plan.id} value={String(option.rate_plan.id)}>
+                        {option.rate_plan.name} · {hotelCurrency(option.stay_total)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedRate ? (
+                  <p className="text-xs text-muted-foreground">
+                    Early checkout: {hotelRateContractLabel(
+                      selectedRate.rate_plan.early_departure_policy,
+                      selectedRate.rate_plan.early_departure_value,
+                    )}
+                  </p>
+                ) : selectedType ? (
+                  <p className="text-xs text-destructive">
+                    No price is available for this room type and stay.
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <Label>Room</Label>
                 <Select
                   value={room.assignedRoomId}
                   disabled={disabled || !selectedType}
@@ -245,4 +287,3 @@ export function BookingRoomsEditor({ availability, rooms, onChange, disabled = f
     </div>
   );
 }
-

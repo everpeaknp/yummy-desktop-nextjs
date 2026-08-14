@@ -5,17 +5,24 @@ export const UNASSIGNED_HOTEL_ROOM = "unassigned";
 export interface HotelRoomBookingDraft {
   key: string;
   roomTypeId: string;
+  ratePlanId: string;
   assignedRoomId: string;
   adults: string;
   children: string;
   occupantNames: string[];
 }
 
-export function newHotelRoomDraft(key: string, roomTypeId = ""): HotelRoomBookingDraft {
+export function newHotelRoomDraft(
+  key: string,
+  roomTypeId = "",
+  ratePlanId = "",
+  assignedRoomId = UNASSIGNED_HOTEL_ROOM,
+): HotelRoomBookingDraft {
   return {
     key,
     roomTypeId,
-    assignedRoomId: UNASSIGNED_HOTEL_ROOM,
+    ratePlanId,
+    assignedRoomId,
     adults: "1",
     children: "0",
     occupantNames: [],
@@ -42,7 +49,7 @@ export function buildHotelBookingRooms(
     .map((draft) => draft.assignedRoomId)
     .filter((roomId) => roomId !== UNASSIGNED_HOTEL_ROOM);
   if (new Set(assigned).size !== assigned.length) {
-    throw new Error("A physical room can only be selected once.");
+    throw new Error("A room can only be selected once.");
   }
 
   const selectedByType = new Map<string, number>();
@@ -51,6 +58,10 @@ export function buildHotelBookingRooms(
       (candidate) => String(candidate.room_type.id) === draft.roomTypeId,
     );
     if (!row) throw new Error(`Select a room type for room ${index + 1}.`);
+    const rateOption = row.rate_options.find(
+      (candidate) => String(candidate.rate_plan.id) === draft.ratePlanId,
+    );
+    if (!rateOption) throw new Error(`Select a booking option for room ${index + 1}.`);
     const selected = (selectedByType.get(draft.roomTypeId) ?? 0) + 1;
     selectedByType.set(draft.roomTypeId, selected);
     if (selected > row.available_inventory) {
@@ -85,6 +96,7 @@ export function buildHotelBookingRooms(
 
     return {
       room_type_id: row.room_type.id,
+      rate_plan_id: rateOption.rate_plan.id,
       assigned_room_id:
         draft.assignedRoomId === UNASSIGNED_HOTEL_ROOM
           ? null

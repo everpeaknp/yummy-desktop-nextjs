@@ -7,6 +7,7 @@ import {
   hotelBillActivityAmountLabel,
   hotelBillActivityLabel,
   hotelPaymentLabel,
+  hotelPaymentReference,
 } from "@/lib/hotel/bill-summary";
 import type { HotelFolio } from "@/lib/hotel/types";
 import { hotelMoney } from "@/lib/hotel/types";
@@ -103,8 +104,8 @@ export function GuestBillCard({ folio, unpostedRoomCharges = 0 }: Props) {
 
         <section>
           <div className="mb-2 flex items-center justify-between">
-            <h5 className="font-semibold">Payments</h5>
-            <span className="text-xs text-muted-foreground">{summary.payments.length} payment(s)</span>
+            <h5 className="font-semibold">Payments and refunds</h5>
+            <span className="text-xs text-muted-foreground">{summary.payments.length} record(s)</span>
           </div>
           {summary.payments.length ? (
             <div className="overflow-hidden rounded-xl border">
@@ -114,15 +115,15 @@ export function GuestBillCard({ folio, unpostedRoomCharges = 0 }: Props) {
                     <p className="font-medium">{hotelPaymentLabel(entry)}</p>
                     <p className="text-xs text-muted-foreground">
                       {format(parseISO(entry.service_date), "d MMM yyyy")}
-                      {entry.payment?.reference ? ` · ${entry.payment.reference}` : ""}
+                      {hotelPaymentReference(entry) ? ` · ${hotelPaymentReference(entry)}` : ""}
                     </p>
                   </div>
-                  <p className="font-semibold text-emerald-600">{hotelCurrency(Math.abs(hotelMoney(entry.amount)), folio.currency)}</p>
+                  <p className={cn("font-semibold", entry.entry_type === "refund" ? "text-rose-600" : "text-emerald-600")}>{entry.entry_type === "refund" ? "- " : ""}{hotelCurrency(Math.abs(hotelMoney(entry.amount)), folio.currency)}</p>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No payments recorded yet.</p>
+            <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No payments or refunds recorded yet.</p>
           )}
         </section>
 

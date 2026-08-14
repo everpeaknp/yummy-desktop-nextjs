@@ -32,7 +32,7 @@ export function buildHotelBillSummary(
 ): HotelBillSummary {
   const activity = folio.entries.filter((entry) => entry.voided_at == null);
   const remainingRoomCharges = Math.max(0, hotelMoney(unpostedRoomCharges));
-  const payments = activity.filter((entry) => entry.entry_type === "payment");
+  const payments = activity.filter((entry) => ["payment", "refund"].includes(entry.entry_type));
   const refunds = activity.filter((entry) => entry.entry_type === "refund");
 
   const roomCharges =
@@ -64,7 +64,10 @@ export function buildHotelBillSummary(
     if (entry.entry_type === "adjustment" && entry.category === "discount") return 0;
     return -amount;
   });
-  const grossPayments = sum(payments, (entry) => Math.max(0, -hotelMoney(entry.amount)));
+  const grossPayments = sum(
+    payments,
+    (entry) => entry.entry_type === "payment" ? Math.max(0, -hotelMoney(entry.amount)) : 0,
+  );
   const refunded = sum(refunds, (entry) => Math.max(0, hotelMoney(entry.amount)));
   const amountPaid = Math.max(0, grossPayments - refunded);
   const expectedBalance = hotelMoney(folio.balance) + remainingRoomCharges;
@@ -96,7 +99,7 @@ export function unbilledBookingRoomCharges(
   booking: {
     rooms: Array<{
       nights: Array<
-        Pick<HotelBookingNight, "id" | "unit_rate" | "tax_amount" | "service_charge">
+        Pick<HotelBookingNight, "id" | "unit_rate" | "tax_amount" | "service_charge" | "status">
       >;
     }>;
   },
@@ -120,7 +123,7 @@ export function unbilledBookingRoomCharges(
       bookingTotal +
       room.nights.reduce(
         (roomTotal, night) =>
-          billedNightIds.has(String(night.id))
+          night.status !== "scheduled" || billedNightIds.has(String(night.id))
             ? roomTotal
             : roomTotal +
               hotelMoney(night.unit_rate) +
@@ -133,8 +136,11 @@ export function unbilledBookingRoomCharges(
 }
 
 export function hotelPaymentLabel(entry: HotelFolioEntry): string {
-  const instrumentName = entry.payment?.instrument_name?.trim();
-  if (instrumentName) return instrumentName;
+  const metadataInstrument = typeof entry.metadata.instrument_name === "string"
+    ? entry.metadata.instrument_name.trim()
+    : "";
+  const instrumentName = entry.payment?.instrument_name?.trim() || metadataInstrument;
+  if (instrumentName) return entry.entry_type === "refund" ? `Refund - ${instrumentName}` : instrumentName;
   const method = entry.payment?.method || entry.category;
   const labels: Record<string, string> = {
     cash: "Cash",
@@ -145,7 +151,13 @@ export function hotelPaymentLabel(entry: HotelFolioEntry): string {
     deposit: "Advance payment",
     other: "Other payment",
   };
-  return labels[method] ?? "Payment";
+  const label = labels[method] ?? "Payment";
+  return entry.entry_type === "refund" ? `Refund - ${label}` : label;
+}
+
+export function hotelPaymentReference(entry: HotelFolioEntry): string {
+  if (entry.payment?.reference) return entry.payment.reference;
+  return typeof entry.metadata.reference === "string" ? entry.metadata.reference : "";
 }
 
 export function hotelBillActivityLabel(entry: HotelFolioEntry): string {

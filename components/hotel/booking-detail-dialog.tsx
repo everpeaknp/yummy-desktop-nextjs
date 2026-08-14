@@ -33,12 +33,15 @@ import type { HotelAvailability, HotelBooking, HotelFolioPaymentQuote, HotelRoom
 import { hasUnassignedRooms, hotelMoney, isPreArrivalBooking } from "@/lib/hotel/types";
 import { HotelStatusBadge, hotelCurrency, humanizeHotelStatus, roomServiceStatusLabel } from "./hotel-ui";
 import { FolioPaymentDialog } from "./folio-payment-dialog";
+import { FolioRefundDialog } from "./folio-refund-dialog";
+import { EarlyDepartureDialog } from "./early-departure-dialog";
 import { GuestBillCard } from "./guest-bill-card";
 
 interface Permissions {
   bookings: boolean;
   checkin: boolean;
   checkout: boolean;
+  earlyDepartureOverride: boolean;
   folioEdit: boolean;
   roomOrderCreate: boolean;
 }
@@ -66,6 +69,9 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
   const [working, setWorking] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundAmount, setRefundAmount] = useState(0);
+  const [earlyDepartureOpen, setEarlyDepartureOpen] = useState(false);
   const [checkoutAfterPayment, setCheckoutAfterPayment] = useState(false);
   const [paymentQuote, setPaymentQuote] = useState<HotelFolioPaymentQuote | null>(null);
   const [billQuote, setBillQuote] = useState<HotelFolioPaymentQuote | null>(null);
@@ -206,6 +212,10 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
 
   const beginCheckout = async () => {
     if (!stay) return;
+    if (!stay.early_departure_applied_at && hotelDate(new Date()) < booking!.departure_date) {
+      setEarlyDepartureOpen(true);
+      return;
+    }
     setWorking(true);
     try {
       const prepared = await hotelPmsApi.prepareCheckout(stay.id, stay.version);
@@ -237,6 +247,33 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
     } finally {
       setWorking(false);
     }
+  };
+
+  const continueAfterEarlyDeparture = async (quote: import("@/lib/hotel/types").HotelEarlyDepartureQuote) => {
+    if (!booking) return;
+    const latestStay = await hotelPmsApi.getBookingStay(booking.id);
+    setStay(latestStay);
+    setBillQuote(null);
+    const latestFolio = latestStay.folios[0];
+    if (!latestFolio) throw new Error("The guest bill is unavailable.");
+    if (hotelMoney(quote.refund_due) > 0) {
+      if (!permissions.folioEdit) throw new Error("A user with permission to edit the hotel bill must record this refund.");
+      setRefundAmount(hotelMoney(quote.refund_due));
+      setRefundOpen(true);
+      return;
+    }
+    if (hotelMoney(quote.amount_due) > 0) {
+      if (!permissions.folioEdit) throw new Error("A user with permission to take hotel payments must complete this bill.");
+      const latestQuote = await hotelPmsApi.getFolioPaymentQuote(latestFolio.id);
+      setPaymentQuote(latestQuote);
+      setCheckoutAfterPayment(true);
+      setPaymentOpen(true);
+      return;
+    }
+    await hotelPmsApi.checkout(latestStay.id, latestStay.version);
+    toast.success("Guest checked out");
+    await load();
+    onChanged();
   };
 
   const beginPayment = async () => {
@@ -299,7 +336,7 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
                     <CardTitle className="text-base">{room.room_type.name}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
-                    <p>{room.assigned_room ? `Room ${room.assigned_room.number}` : "Physical room not assigned"}</p>
+                    <p>{room.assigned_room ? `Room ${room.assigned_room.number}` : "Room not assigned"}</p>
                     <p className="text-muted-foreground">{room.adults} adult(s) · {room.children} child(ren) · {room.nights.length} night(s)</p>
                     {roomGuests.length ? (
                       <p className="text-muted-foreground">
@@ -485,6 +522,35 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
                 } catch (error) {
                   toast.error(getApiErrorMessage(error, "Payment was recorded, but checkout still has blockers"));
                 }
+              }
+              await load();
+              onChanged();
+            }}
+          />
+        ) : null}
+        {stay && booking && stay.status !== "checked_out" ? (
+          <EarlyDepartureDialog
+            open={earlyDepartureOpen}
+            onOpenChange={setEarlyDepartureOpen}
+            stay={stay}
+            departureDate={hotelDate(new Date())}
+            canOverride={permissions.earlyDepartureOverride}
+            onPrepared={continueAfterEarlyDeparture}
+          />
+        ) : null}
+        {stay && folio ? (
+          <FolioRefundDialog
+            open={refundOpen}
+            onOpenChange={setRefundOpen}
+            restaurantId={booking?.restaurant_id ?? stay.restaurant_id}
+            folio={folio}
+            amount={refundAmount}
+            onRecorded={async () => {
+              try {
+                await hotelPmsApi.checkout(stay.id, stay.version);
+                toast.success("Refund recorded and guest checked out");
+              } catch (error) {
+                toast.error(getApiErrorMessage(error, "Refund was recorded, but checkout still has blockers"));
               }
               await load();
               onChanged();

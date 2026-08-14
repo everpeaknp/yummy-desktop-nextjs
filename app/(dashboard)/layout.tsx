@@ -147,6 +147,18 @@ export default function DashboardLayout({
     );
   }
 
+  const isHotelWorkspace = pathname === "/hotel" || pathname.startsWith("/hotel/");
+  if (isHotelWorkspace) {
+    return (
+      <div className="h-screen w-full overflow-hidden bg-background">
+        <main className="h-full overflow-hidden">
+          <RoleGuard>{children}</RoleGuard>
+        </main>
+        <GlobalKotPrinter />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full flex-col bg-background md:flex-row overflow-hidden">
       <Sidebar />

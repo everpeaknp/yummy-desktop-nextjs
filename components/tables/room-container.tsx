@@ -13,6 +13,8 @@ export interface TableData {
   current_guests?: number;
   pos_x: number;
   pos_y: number;
+  layout_width?: number;
+  layout_height?: number;
   table_type_id?: number;
   table_type_name?: string;
   active_order_ids?: number[];
@@ -29,6 +31,7 @@ interface RoomContainerProps {
   isLayoutMode?: boolean;
   onTableClick?: (table: TableData) => void;
   onTableDrop?: (tableId: number, posX: number, posY: number) => void;
+  onTableResize?: (tableId: number, width: number, height: number) => void;
   onHeightChanged?: (newHeight: number) => void;
   onAutoArrange?: (updates: Record<number, { posX: number; posY: number }>, newHeight: number) => void;
   selectedTableId?: number;
@@ -46,6 +49,7 @@ export function RoomContainer({
   isLayoutMode = false,
   onTableClick,
   onTableDrop,
+  onTableResize,
   onHeightChanged,
   onAutoArrange,
   selectedTableId,
@@ -129,6 +133,7 @@ export function RoomContainer({
             isLayoutMode={isLayoutMode}
             onTableClick={onTableClick}
             onTableDrop={onTableDrop}
+            onTableResize={onTableResize}
             selectedTableId={selectedTableId}
             selectedTableIds={selectedTableIds}
           />
@@ -160,6 +165,7 @@ function SpatialLayout({
   isLayoutMode,
   onTableClick,
   onTableDrop,
+  onTableResize,
   selectedTableId,
   selectedTableIds,
 }: {
@@ -170,6 +176,7 @@ function SpatialLayout({
   isLayoutMode?: boolean;
   onTableClick?: (table: TableData) => void;
   onTableDrop?: (tableId: number, posX: number, posY: number) => void;
+  onTableResize?: (tableId: number, width: number, height: number) => void;
   selectedTableId?: number;
   selectedTableIds?: number[];
 }) {
@@ -220,8 +227,9 @@ function SpatialLayout({
 
     const minX = Math.min(...valid.map((t) => t.pos_x));
     const minY = Math.min(...valid.map((t) => t.pos_y));
-    const maxX = Math.max(...valid.map((t) => t.pos_x + TABLE_WIDTH));
-    const maxY = Math.max(...valid.map((t) => t.pos_y + TABLE_HEIGHT));
+    const maxX = Math.max(...valid.map((t) => t.pos_x + (t.layout_width ?? TABLE_WIDTH)));
+    const canvasRatio = Math.max(0.01, layoutHeight / BASELINE_WIDTH);
+    const maxY = Math.max(...valid.map((t) => t.pos_y + (t.layout_height ?? TABLE_HEIGHT) / canvasRatio));
 
     const rangeX = Math.max(1, maxX - minX);
     const rangeY = Math.max(1, maxY - minY);
@@ -259,6 +267,8 @@ function SpatialLayout({
       {tables.map((table) => {
         const rawLeftPct = table.pos_x ?? 0;
         const rawTopPct = table.pos_y ?? 0;
+        const tableWidth = table.layout_width ?? TABLE_WIDTH;
+        const tableHeight = table.layout_height ?? TABLE_HEIGHT;
 
         const leftPct = fittedBounds
           ? 6 + ((rawLeftPct - fittedBounds.minX) / fittedBounds.rangeX) * 78
@@ -280,8 +290,8 @@ function SpatialLayout({
             style={{
               left: `${leftPct}%`,
               top: `${topPct}%`,
-              width: `${TABLE_WIDTH}%`,
-              aspectRatio: "1 / 1.15",
+              width: `${tableWidth}%`,
+              aspectRatio: `${tableWidth} / ${tableHeight}`,
               zIndex: zMap[table.id] ?? 0,
             }}
             draggable={isLayoutMode}
@@ -319,6 +329,36 @@ function SpatialLayout({
               currentGuests={table.current_guests}
               spaceKind={table.space_kind}
             />
+            {isLayoutMode && onTableResize ? (
+              <button
+                type="button"
+                draggable={false}
+                aria-label={`Resize ${table.table_name}`}
+                className="absolute bottom-0 right-0 h-5 w-5 cursor-nwse-resize rounded-md border border-orange-400 bg-card/95 shadow-sm"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const startX = event.clientX;
+                  const startY = event.clientY;
+                  const startWidth = tableWidth;
+                  const startHeight = tableHeight;
+                  const bounds = containerRef.current?.getBoundingClientRect();
+                  if (!bounds) return;
+                  const move = (pointer: PointerEvent) => {
+                    const width = Math.max(6, Math.min(45, startWidth + ((pointer.clientX - startX) / bounds.width) * 100));
+                    const height = Math.max(6, Math.min(55, startHeight + ((pointer.clientY - startY) / bounds.width) * 100));
+                    onTableResize(table.id, width, height);
+                  };
+                  const stop = () => {
+                    window.removeEventListener("pointermove", move);
+                    window.removeEventListener("pointerup", stop);
+                  };
+                  window.addEventListener("pointermove", move);
+                  window.addEventListener("pointerup", stop, { once: true });
+                }}
+                onClick={(event) => event.stopPropagation()}
+              />
+            ) : null}
           </div>
         );
       })}

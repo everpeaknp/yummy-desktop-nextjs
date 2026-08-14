@@ -25,9 +25,13 @@ beforeEach(() => {
 describe("hotelPmsApi", () => {
   it("unwraps both backend envelopes and direct payloads", () => {
     expect(
-      unwrapHotelResponse({ data: { status: "success", data: { id: 7 } } } as never),
+      unwrapHotelResponse({
+        data: { status: "success", data: { id: 7 } },
+      } as never),
     ).toEqual({ id: 7 });
-    expect(unwrapHotelResponse({ data: { id: 8 } } as never)).toEqual({ id: 8 });
+    expect(unwrapHotelResponse({ data: { id: 8 } } as never)).toEqual({
+      id: 8,
+    });
   });
 
   it("uses the authoritative front desk, booking, and availability contracts", async () => {
@@ -42,7 +46,7 @@ describe("hotelPmsApi", () => {
       primary_guest_name: "Asha Rai",
       arrival_date: "2026-08-12",
       departure_date: "2026-08-14",
-      rooms: [{ room_type_id: 4, adults: 2, children: 0 }],
+      rooms: [{ room_type_id: 4, rate_plan_id: 2, adults: 2, children: 0 }],
     });
 
     expect(mocked.get).toHaveBeenNthCalledWith(1, "/hotel/v2/front-desk", {
@@ -59,10 +63,13 @@ describe("hotelPmsApi", () => {
         exclude_booking_id: 31,
       },
     });
-    expect(mocked.post).toHaveBeenCalledWith("/hotel/v2/bookings", expect.objectContaining({
-      customer_id: 52,
-      primary_guest_name: "Asha Rai",
-    }));
+    expect(mocked.post).toHaveBeenCalledWith(
+      "/hotel/v2/bookings",
+      expect.objectContaining({
+        customer_id: 52,
+        primary_guest_name: "Asha Rai",
+      }),
+    );
   });
 
   it("sends optimistic versions for assignment, stay, and room-state mutations", async () => {
@@ -76,8 +83,29 @@ describe("hotelPmsApi", () => {
     });
     await hotelPmsApi.extendStay(44, 3, "2026-08-15");
     await hotelPmsApi.prepareCheckout(44, 4);
+    await hotelPmsApi.quoteEarlyDeparture(44, {
+      stay_version: 4,
+      departure_date: "2026-08-13",
+    });
+    await hotelPmsApi.prepareEarlyDeparture(44, {
+      stay_version: 4,
+      departure_date: "2026-08-13",
+      reason: "Travel changed",
+    });
     await hotelPmsApi.checkout(44, 4);
-    await hotelPmsApi.updateRoomStatus(13, 5, { housekeeping_status: "inspected" });
+    await hotelPmsApi.updateFloor(2, { name: "Ground floor", sort_order: 0 });
+    await hotelPmsApi.updateRoom(13, {
+      version: 5,
+      number: "201",
+      floor_id: 2,
+      room_type_id: 4,
+      capacity: 3,
+      name: "Courtyard room",
+      notes: "Extra bed available",
+    });
+    await hotelPmsApi.updateRoomStatus(13, 5, {
+      housekeeping_status: "inspected",
+    });
 
     expect(mocked.post).toHaveBeenCalledWith("/hotel/v2/bookings/21/assign", {
       version: 3,
@@ -101,13 +129,62 @@ describe("hotelPmsApi", () => {
       stay_version: 4,
       allow_unsettled: false,
     });
-    expect(mocked.post).toHaveBeenCalledWith("/hotel/v2/stays/44/prepare-checkout", {
-      stay_version: 4,
-      allow_unsettled: false,
+    expect(mocked.post).toHaveBeenCalledWith(
+      "/hotel/v2/stays/44/prepare-checkout",
+      {
+        stay_version: 4,
+        allow_unsettled: false,
+      },
+    );
+    expect(mocked.post).toHaveBeenCalledWith(
+      "/hotel/v2/stays/44/early-departure/quote",
+      {
+        stay_version: 4,
+        departure_date: "2026-08-13",
+      },
+    );
+    expect(mocked.post).toHaveBeenCalledWith(
+      "/hotel/v2/stays/44/early-departure/prepare",
+      {
+        stay_version: 4,
+        departure_date: "2026-08-13",
+        reason: "Travel changed",
+      },
+    );
+    expect(mocked.patch).toHaveBeenCalledWith("/hotel/v2/floors/2", {
+      name: "Ground floor",
+      sort_order: 0,
+    });
+    expect(mocked.patch).toHaveBeenCalledWith("/hotel/v2/rooms/13", {
+      version: 5,
+      number: "201",
+      floor_id: 2,
+      room_type_id: 4,
+      capacity: 3,
+      name: "Courtyard room",
+      notes: "Extra bed available",
     });
     expect(mocked.patch).toHaveBeenCalledWith("/hotel/v2/rooms/13/status", {
       version: 5,
       housekeeping_status: "inspected",
+    });
+  });
+
+  it("safely removes property inventory", async () => {
+    await hotelPmsApi.updateRoom(13, { version: 6, is_active: false });
+    await hotelPmsApi.updateFloor(2, { is_active: false });
+    await hotelPmsApi.updateBuilding(4, { version: 5, is_active: false });
+
+    expect(mocked.patch).toHaveBeenCalledWith("/hotel/v2/rooms/13", {
+      version: 6,
+      is_active: false,
+    });
+    expect(mocked.patch).toHaveBeenCalledWith("/hotel/v2/floors/2", {
+      is_active: false,
+    });
+    expect(mocked.patch).toHaveBeenCalledWith("/hotel/v2/buildings/4", {
+      version: 5,
+      is_active: false,
     });
   });
 
@@ -128,6 +205,12 @@ describe("hotelPmsApi", () => {
       drawer_session_id: 29,
       idempotency_key: "payment:17:one",
     });
+    await hotelPmsApi.addFolioRefund(17, {
+      method: "card",
+      amount: 500,
+      reason: "Unused room nights",
+      idempotency_key: "refund:17:one",
+    });
     await hotelPmsApi.getFolioPaymentQuote(17);
     await hotelPmsApi.applyFolioDiscount(17, {
       amount: 250,
@@ -141,15 +224,30 @@ describe("hotelPmsApi", () => {
     await hotelPmsApi.updateHousekeepingTask(71, "inspected");
     await hotelPmsApi.runNightAudit(9, "2026-08-12");
 
-    expect(mocked.put).toHaveBeenCalledWith("/hotel/v2/daily-rates", expect.objectContaining({
-      restaurant_id: 9,
-      price: 3500,
-    }));
-    expect(mocked.post).toHaveBeenCalledWith("/hotel/v2/folios/17/payments", expect.objectContaining({
-      drawer_session_id: 29,
-      idempotency_key: "payment:17:one",
-    }));
-    expect(mocked.get).toHaveBeenCalledWith("/hotel/v2/folios/17/payment-quote");
+    expect(mocked.put).toHaveBeenCalledWith(
+      "/hotel/v2/daily-rates",
+      expect.objectContaining({
+        restaurant_id: 9,
+        price: 3500,
+      }),
+    );
+    expect(mocked.post).toHaveBeenCalledWith(
+      "/hotel/v2/folios/17/payments",
+      expect.objectContaining({
+        drawer_session_id: 29,
+        idempotency_key: "payment:17:one",
+      }),
+    );
+    expect(mocked.post).toHaveBeenCalledWith(
+      "/hotel/v2/folios/17/refunds",
+      expect.objectContaining({
+        amount: 500,
+        reason: "Unused room nights",
+      }),
+    );
+    expect(mocked.get).toHaveBeenCalledWith(
+      "/hotel/v2/folios/17/payment-quote",
+    );
     expect(mocked.post).toHaveBeenCalledWith("/hotel/v2/folios/17/discounts", {
       amount: 250,
       reason: "Service recovery",
@@ -159,12 +257,19 @@ describe("hotelPmsApi", () => {
       booking_version: 7,
       customer_id: 93,
     });
-    expect(mocked.patch).toHaveBeenCalledWith("/hotel/v2/housekeeping/tasks/71", {
-      status: "inspected",
-    });
-    expect(mocked.post).toHaveBeenCalledWith("/hotel/v2/night-audit/run", undefined, {
-      params: { restaurant_id: 9, business_date: "2026-08-12" },
-    });
+    expect(mocked.patch).toHaveBeenCalledWith(
+      "/hotel/v2/housekeeping/tasks/71",
+      {
+        status: "inspected",
+      },
+    );
+    expect(mocked.post).toHaveBeenCalledWith(
+      "/hotel/v2/night-audit/run",
+      undefined,
+      {
+        params: { restaurant_id: 9, business_date: "2026-08-12" },
+      },
+    );
   });
 
   it("uses explicit PMS context for room orders and folio settlement", async () => {

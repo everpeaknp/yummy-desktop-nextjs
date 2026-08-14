@@ -27,7 +27,7 @@ import {
   newHotelRoomDraft,
 } from "@/lib/hotel/booking-draft";
 import { hotelDate, hotelPmsApi } from "@/lib/hotel/api";
-import { hotelMoney, type HotelAvailability } from "@/lib/hotel/types";
+import { hotelMoney, type HotelAvailability, type HotelRoom } from "@/lib/hotel/types";
 import { cn } from "@/lib/utils";
 import { BookingRoomsEditor } from "./booking-rooms-editor";
 import { hotelCurrency } from "./hotel-ui";
@@ -37,6 +37,9 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   restaurantId: number;
   onCreated: () => void;
+  initialRoom?: HotelRoom | null;
+  initialArrivalDate?: string;
+  initialDepartureDate?: string;
 }
 
 type CustomerOption = {
@@ -50,10 +53,10 @@ type CustomerOption = {
 const customerName = (customer: CustomerOption) =>
   customer.name || customer.full_name || "Guest";
 
-export function BookingFormDialog({ open, onOpenChange, restaurantId, onCreated }: Props) {
+export function BookingFormDialog({ open, onOpenChange, restaurantId, onCreated, initialRoom, initialArrivalDate, initialDepartureDate }: Props) {
   const today = hotelDate(new Date());
-  const [arrivalDate, setArrivalDate] = useState(today);
-  const [departureDate, setDepartureDate] = useState(hotelDate(addDays(new Date(), 1)));
+  const [arrivalDate, setArrivalDate] = useState(initialArrivalDate ?? today);
+  const [departureDate, setDepartureDate] = useState(initialDepartureDate ?? hotelDate(addDays(new Date(), 1)));
   const [availability, setAvailability] = useState<HotelAvailability | null>(null);
   const [rooms, setRooms] = useState<HotelRoomBookingDraft[]>([
     newHotelRoomDraft("room-1"),
@@ -88,6 +91,12 @@ export function BookingFormDialog({ open, onOpenChange, restaurantId, onCreated 
   }, [customerQuery, customers]);
 
   useEffect(() => {
+    if (!open) return;
+    setArrivalDate(initialArrivalDate ?? today);
+    setDepartureDate(initialDepartureDate ?? hotelDate(addDays(new Date(), 1)));
+  }, [open, initialArrivalDate, initialDepartureDate, today]);
+
+  useEffect(() => {
     if (!open || !arrivalDate || !departureDate || departureDate <= arrivalDate) return;
     let active = true;
     setLoading(true);
@@ -96,11 +105,19 @@ export function BookingFormDialog({ open, onOpenChange, restaurantId, onCreated 
       .then((data) => {
         if (!active) return;
         setAvailability(data);
-        const first = data.room_types.find((row) => row.available_inventory > 0);
+        const preferred = initialRoom
+          ? data.room_types.find((row) =>
+              row.room_type.id === initialRoom.room_type_id
+              && row.available_rooms.some((room) => room.id === initialRoom.id),
+            )
+          : null;
+        const first = preferred ?? data.room_types.find((row) => row.available_inventory > 0);
         setRooms([
           newHotelRoomDraft(
             `room-${Date.now()}`,
             first ? String(first.room_type.id) : "",
+            first?.rate_options[0] ? String(first.rate_options[0].rate_plan.id) : "",
+            preferred && initialRoom ? String(initialRoom.id) : undefined,
           ),
         ]);
       })
@@ -111,7 +128,7 @@ export function BookingFormDialog({ open, onOpenChange, restaurantId, onCreated 
     return () => {
       active = false;
     };
-  }, [open, restaurantId, arrivalDate, departureDate]);
+  }, [open, restaurantId, arrivalDate, departureDate, initialRoom]);
 
   useEffect(() => {
     if (!open) return;
@@ -173,6 +190,7 @@ export function BookingFormDialog({ open, onOpenChange, restaurantId, onCreated 
       newHotelRoomDraft(
         `room-${Date.now()}`,
         first ? String(first.room_type.id) : "",
+        first?.rate_options[0] ? String(first.rate_options[0].rate_plan.id) : "",
       ),
     ]);
     setDeposit("0");
@@ -184,6 +202,7 @@ export function BookingFormDialog({ open, onOpenChange, restaurantId, onCreated 
       !guestName.trim()
       || !availability
       || rooms.length === 0
+      || rooms.some((room) => !room.ratePlanId)
       || departureDate <= arrivalDate
       || (guestMode === "existing" && !selectedCustomerId)
     ) return;
@@ -239,15 +258,28 @@ export function BookingFormDialog({ open, onOpenChange, restaurantId, onCreated 
     const row = availability?.room_types.find(
       (candidate) => String(candidate.room_type.id) === room.roomTypeId,
     );
-    return total + hotelMoney(row?.stay_total);
+    const rate = row?.rate_options.find(
+      (option) => String(option.rate_plan.id) === room.ratePlanId,
+    );
+    return total + hotelMoney(rate?.stay_total);
   }, 0);
+  const roomsHaveRatePlans = rooms.every((room) => {
+    const row = availability?.room_types.find(
+      (candidate) => String(candidate.room_type.id) === room.roomTypeId,
+    );
+    return row?.rate_options.some(
+      (option) => String(option.rate_plan.id) === room.ratePlanId,
+    ) === true;
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>New hotel booking</DialogTitle>
-          <DialogDescription>Availability and rates are checked by the PMS before saving.</DialogDescription>
+          <DialogDescription>
+            Choose a room and booking option. We’ll show the price and early checkout terms before you confirm.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-2 md:grid-cols-2">
@@ -378,7 +410,7 @@ export function BookingFormDialog({ open, onOpenChange, restaurantId, onCreated 
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={() => void submit()} disabled={saving || loading || !guestName.trim() || !availability || rooms.length === 0 || (guestMode === "existing" && !selectedCustomerId)}>
+          <Button onClick={() => void submit()} disabled={saving || loading || !guestName.trim() || !availability || rooms.length === 0 || !roomsHaveRatePlans || (guestMode === "existing" && !selectedCustomerId)}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Create booking
           </Button>

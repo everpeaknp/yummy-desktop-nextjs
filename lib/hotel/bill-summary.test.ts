@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildHotelBillSummary,
   hasHotelPaymentDue,
+  hotelPaymentLabel,
+  hotelPaymentReference,
   unbilledBookingRoomCharges,
 } from "./bill-summary";
 import type { HotelFolio, HotelFolioEntry } from "./types";
@@ -84,6 +86,21 @@ describe("buildHotelBillSummary", () => {
     expect(summary.activity).toHaveLength(2);
   });
 
+  it("shows refunds with their instrument and nets them from amount paid", () => {
+    const refund = {
+      ...entry(2, "refund", "card", 300),
+      metadata: { instrument_name: "Visa terminal", reference: "REF-300" },
+    };
+    const summary = buildHotelBillSummary(
+      folio(700, [entry(1, "payment", "card", -1000), refund]),
+    );
+
+    expect(summary.amountPaid).toBe(700);
+    expect(summary.payments).toHaveLength(2);
+    expect(hotelPaymentLabel(refund)).toBe("Refund - Visa terminal");
+    expect(hotelPaymentReference(refund)).toBe("REF-300");
+  });
+
   it("derives missing room charges from booking nights and active bill entries", () => {
     const chargedNight = {
       ...entry(4, "charge", "room", 1000),
@@ -94,14 +111,21 @@ describe("buildHotelBillSummary", () => {
       rooms: [
         {
           nights: [
-            { id: 10, unit_rate: 1000, tax_amount: 0, service_charge: 0 },
-            { id: 11, unit_rate: 1200, tax_amount: 120, service_charge: 60 },
+            { id: 10, unit_rate: 1000, tax_amount: 0, service_charge: 0, status: "charged" as const },
+            { id: 11, unit_rate: 1200, tax_amount: 120, service_charge: 60, status: "scheduled" as const },
           ],
         },
       ],
     };
 
     expect(unbilledBookingRoomCharges(booking, folio(1000, [chargedNight]))).toBe(1380);
+  });
+
+  it("does not treat waived early-departure nights as collectible room charges", () => {
+    const booking = { rooms: [{ nights: [
+      { id: 11, unit_rate: 1200, tax_amount: 120, service_charge: 60, status: "waived" as const },
+    ] }] };
+    expect(unbilledBookingRoomCharges(booking, folio(0, []))).toBe(0);
   });
 });
 

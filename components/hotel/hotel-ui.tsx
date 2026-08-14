@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 export { humanizeHotelStatus, roomServiceStatusLabel } from "@/lib/hotel/display-labels";
 
-export function HotelStatusBadge({ value }: { value: string }) {
+export function HotelStatusBadge({ value, label }: { value: string; label?: string }) {
   const variant =
     value === "completed" || value === "inspected" || value === "clean" || value === "confirmed"
       ? "success"
@@ -15,7 +15,7 @@ export function HotelStatusBadge({ value }: { value: string }) {
           : value === "in_house" || value === "checked_in" || value === "in_progress"
             ? "info"
             : "outline";
-  return <Badge variant={variant}>{humanizeHotelStatus(value)}</Badge>;
+  return <Badge variant={variant}>{label ?? humanizeHotelStatus(value)}</Badge>;
 }
 
 export function HotelEmptyState({
@@ -37,5 +37,9 @@ export function HotelEmptyState({
 
 export function hotelCurrency(value: string | number, currency = "NPR"): string {
   const amount = Number(value);
-  return `${currency} ${Number.isFinite(amount) ? amount.toFixed(2) : "0.00"}`;
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(amount) ? amount : 0);
+  return `${currency} ${formatted}`;
 }

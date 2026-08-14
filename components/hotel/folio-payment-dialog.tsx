@@ -340,14 +340,14 @@ export function FolioPaymentDialog({
         <DialogHeader>
           <DialogTitle>{checkoutAfterPayment ? "Pay bill and check out" : "Take hotel payment"}</DialogTitle>
           <DialogDescription>
-            Amount available to pay: <strong>{hotelCurrency(collectionLimit, folio.currency)}</strong>. Single payments may be partial; multiple payments must cover the full adjusted balance.
+            Amount due now: <strong>{hotelCurrency(collectionLimit, folio.currency)}</strong>. A single payment can be partial. Split payments must cover the full amount.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
           {unpostedRoomCharges > 0 ? (
             <Alert><AlertDescription>
-              Includes {hotelCurrency(unpostedRoomCharges, folio.currency)} for remaining room nights. Current guest balance: {hotelCurrency(postedBalance, folio.currency)}.
+              This includes {hotelCurrency(unpostedRoomCharges, folio.currency)} for the remaining booked nights. The guest bill currently shows {hotelCurrency(postedBalance, folio.currency)}.
             </AlertDescription></Alert>
           ) : null}
 
@@ -382,7 +382,7 @@ export function FolioPaymentDialog({
               <Input type="number" min="0" max={discountMode === "percent" ? 100 : discountMode === "loyalty" ? availableLoyaltyPoints : collectionLimit} step={discountMode === "loyalty" ? 1 : 0.01} value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} placeholder={discountMode === "percent" ? "0–100%" : discountMode === "loyalty" ? `${availableLoyaltyPoints} points available` : "Discount amount"} />
             </div>
             {discount > 0 && discountMode !== "loyalty" ? <Textarea value={discountReason} onChange={(event) => setDiscountReason(event.target.value)} placeholder="Required discount reason" maxLength={255} /> : null}
-            <p className="text-sm">Adjusted balance: <strong>{hotelCurrency(payable, folio.currency)}</strong></p>
+            <p className="text-sm">Amount after discount: <strong>{hotelCurrency(payable, folio.currency)}</strong></p>
           </section>
 
           <section className="space-y-3 rounded-xl border p-4">

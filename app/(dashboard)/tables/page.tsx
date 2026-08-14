@@ -211,6 +211,14 @@ export default function TablesPage() {
     );
   };
 
+  const handleTableResize = (tableId: number, width: number, height: number) => {
+    setTables((prev) =>
+      prev.map((table) => table.id === tableId
+        ? { ...table, layout_width: width, layout_height: height }
+        : table)
+    );
+  };
+
   const handleAutoArrange = (
     roomName: string,
     updates: Record<number, { posX: number; posY: number }>,
@@ -231,13 +239,20 @@ export default function TablesPage() {
       // Save moved tables
       const movedTables = tables.filter((t) => {
         const orig = originalTables.find((o) => o.id === t.id);
-        return orig && (orig.pos_x !== t.pos_x || orig.pos_y !== t.pos_y);
+        return orig && (
+          orig.pos_x !== t.pos_x
+          || orig.pos_y !== t.pos_y
+          || orig.layout_width !== t.layout_width
+          || orig.layout_height !== t.layout_height
+        );
       });
 
       for (const table of movedTables) {
         await apiClient.put(TableApis.updateTable(table.id), {
           pos_x: table.pos_x,
           pos_y: table.pos_y,
+          layout_width: table.layout_width ?? 15,
+          layout_height: table.layout_height ?? 17.25,
         });
       }
 
@@ -663,6 +678,7 @@ export default function TablesPage() {
           isLayoutMode={isLayoutMode}
           onTableClick={isLayoutMode ? undefined : openEditTable}
           onTableDrop={isLayoutMode ? handleTableDrop : undefined}
+          onTableResize={isLayoutMode ? handleTableResize : undefined}
           onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(selectedArea, h) : undefined}
           onAutoArrange={isLayoutMode ? (updates, h) => handleAutoArrange(selectedArea, updates, h) : undefined}
         />
@@ -677,6 +693,7 @@ export default function TablesPage() {
               isLayoutMode={isLayoutMode}
               onTableClick={isLayoutMode ? undefined : openEditTable}
               onTableDrop={isLayoutMode ? handleTableDrop : undefined}
+              onTableResize={isLayoutMode ? handleTableResize : undefined}
               onHeightChanged={isLayoutMode ? (h) => handleHeightChanged(roomName, h) : undefined}
               onAutoArrange={isLayoutMode ? (updates, h) => handleAutoArrange(roomName, updates, h) : undefined}
             />
