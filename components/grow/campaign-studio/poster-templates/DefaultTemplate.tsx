@@ -3,7 +3,8 @@
 import { forwardRef } from "react";
 import { CalendarDays, Gift } from "lucide-react";
 import type { TemplateProps } from "./shared";
-import { baseFont, textConstraints, clampedTextStyles, getSizeConfig } from "./shared";
+import { baseFont, headlineFont, textConstraints, clampedTextStyles, getSizeConfig } from "./shared";
+import { playfairDisplay } from "./fonts";
 
 export const DefaultTemplate = forwardRef<HTMLDivElement, TemplateProps>(
   function DefaultTemplate(props, ref) {
@@ -25,8 +26,8 @@ export const DefaultTemplate = forwardRef<HTMLDivElement, TemplateProps>(
     return (
       <div
         ref={ref}
-        className={sizeClasses}
-        style={{ 
+        className={`${sizeClasses} ${playfairDisplay.variable}`}
+        style={{
           ...sizeStyles,
           fontFamily: baseFont,
           background: `linear-gradient(135deg, ${primaryColor} 0%, ${primaryColor}ee 50%, ${palette.secondary}dd 100%)`,
@@ -55,8 +56,9 @@ export const DefaultTemplate = forwardRef<HTMLDivElement, TemplateProps>(
 
           {/* Headline */}
           <div className="flex-1 flex items-center" style={{ marginBottom: "1.75rem" }}>
-            <h1 className="text-white font-black leading-tight max-w-full" style={{ 
-              fontSize: "2.75rem", 
+            <h1 className="text-white font-black leading-tight max-w-full" style={{
+              fontFamily: headlineFont,
+              fontSize: "2.75rem",
               lineHeight: "1.1",
               textShadow: "0 2px 8px rgba(0,0,0,0.6), 0 1px 3px rgba(0,0,0,0.8)",
               ...clampedTextStyles(3)
@@ -67,9 +69,10 @@ export const DefaultTemplate = forwardRef<HTMLDivElement, TemplateProps>(
           <div className="bg-white/95 backdrop-blur-lg rounded-2xl shadow-2xl" style={{ padding: "1.75rem" }}>
             <div className="text-center">
               <p className="text-gray-500 font-bold uppercase tracking-wider" style={{ fontSize: "0.625rem", marginBottom: "0.75rem" }}>SPECIAL OFFER</p>
-              <h2 className="font-black leading-none" style={{ 
-                color: primaryColor, 
-                fontSize: "2.5rem", 
+              <h2 className="font-black leading-none" style={{
+                fontFamily: headlineFont,
+                color: primaryColor,
+                fontSize: "2.5rem",
                 marginBottom: "1rem",
                 ...clampedTextStyles(2)
               }}>{offerLabel}</h2>

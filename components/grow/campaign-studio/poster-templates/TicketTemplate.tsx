@@ -3,7 +3,8 @@
 import { forwardRef } from "react";
 import { CalendarDays, Gift } from "lucide-react";
 import type { TemplateProps } from "./shared";
-import { baseFont, textConstraints, clampedTextStyles, getSizeConfig } from "./shared";
+import { baseFont, headlineFont, textConstraints, clampedTextStyles, getSizeConfig } from "./shared";
+import { playfairDisplay } from "./fonts";
 
 export const TicketTemplate = forwardRef<HTMLDivElement, TemplateProps>(
   function TicketTemplate(props, ref) {
@@ -24,8 +25,8 @@ export const TicketTemplate = forwardRef<HTMLDivElement, TemplateProps>(
     return (
       <div
         ref={ref}
-        className={sizeClasses}
-        style={{ 
+        className={`${sizeClasses} ${playfairDisplay.variable}`}
+        style={{
           ...sizeStyles,
           fontFamily: baseFont,
           background: "linear-gradient(135deg, #1f2937 0%, #111827 100%)",
@@ -85,9 +86,10 @@ export const TicketTemplate = forwardRef<HTMLDivElement, TemplateProps>(
 
             {/* Headline */}
             <div className="flex-1 flex items-center">
-              <h1 
+              <h1
                 className="font-black leading-tight"
                 style={{
+                  fontFamily: headlineFont,
                   color: "#ffffff",
                   fontSize: "1.875rem",
                   lineHeight: "1.2",
@@ -149,9 +151,10 @@ export const TicketTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                 >
                   GET
                 </p>
-                <h2 
+                <h2
                   className="font-black leading-none"
-                  style={{ 
+                  style={{
+                    fontFamily: headlineFont,
                     fontSize: "2rem",
                     color: primaryColor,
                     marginBottom: "0.75rem",

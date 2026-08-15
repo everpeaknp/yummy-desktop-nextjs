@@ -3,7 +3,8 @@
 import { forwardRef } from "react";
 import { CalendarDays } from "lucide-react";
 import type { TemplateProps } from "./shared";
-import { baseFont, textConstraints, clampedTextStyles, getSizeConfig } from "./shared";
+import { baseFont, headlineFont, textConstraints, clampedTextStyles, getSizeConfig } from "./shared";
+import { playfairDisplay } from "./fonts";
 
 export const MinimalTemplate = forwardRef<HTMLDivElement, TemplateProps>(
   function MinimalTemplate(props, ref) {
@@ -24,8 +25,8 @@ export const MinimalTemplate = forwardRef<HTMLDivElement, TemplateProps>(
     return (
       <div
         ref={ref}
-        className={sizeClasses}
-        style={{ 
+        className={`${sizeClasses} ${playfairDisplay.variable}`}
+        style={{
           ...sizeStyles,
           fontFamily: baseFont,
           backgroundColor: "#0a0a0a",
@@ -101,9 +102,10 @@ export const MinimalTemplate = forwardRef<HTMLDivElement, TemplateProps>(
 
           {/* Headline */}
           <div className="flex-1" style={{ marginBottom: "1.75rem" }}>
-            <h1 
+            <h1
               className="font-black leading-tight"
               style={{
+                fontFamily: headlineFont,
                 color: "#ffffff",
                 fontSize: "2.5rem",
                 maxWidth: "100%",
@@ -135,9 +137,10 @@ export const MinimalTemplate = forwardRef<HTMLDivElement, TemplateProps>(
             >
               SPECIAL OFFER
             </p>
-            <h2 
+            <h2
               className="font-black leading-none"
-              style={{ 
+              style={{
+                fontFamily: headlineFont,
                 fontSize: "2.5rem",
                 color: primaryColor,
                 marginBottom: "0.875rem",

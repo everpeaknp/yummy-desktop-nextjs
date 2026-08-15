@@ -8,6 +8,8 @@ import {
   FreshTemplate,
   WarmTemplate,
   MinimalTemplate,
+  PremiumTemplate,
+  GridTemplate,
   DefaultTemplate,
   templateColors,
   safeHex,
@@ -99,6 +101,10 @@ export const CampaignPosterPreview = forwardRef<HTMLDivElement, CampaignPosterPr
         return <WarmTemplate ref={ref} {...commonProps} />;
       case "minimal":
         return <MinimalTemplate ref={ref} {...commonProps} />;
+      case "premium":
+        return <PremiumTemplate ref={ref} {...commonProps} />;
+      case "grid":
+        return <GridTemplate ref={ref} {...commonProps} />;
       default:
         // All other templates use the default template for now
         // You can add more specific templates as needed

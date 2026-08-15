@@ -5,6 +5,8 @@ export const templateColors: Record<CampaignPosterTemplate, { primary: string; s
   warm: { primary: "#f59e0b", secondary: "#fb923c" },
   minimal: { primary: "#8b5cf6", secondary: "#a78bfa" },
   ticket: { primary: "#3b82f6", secondary: "#60a5fa" },
+  premium: { primary: "#c9a227", secondary: "#f2d98c" },
+  grid: { primary: "#4338ca", secondary: "#6366f1" },
   bold: { primary: "#dc2626", secondary: "#f87171" },
   elegant: { primary: "#6366f1", secondary: "#818cf8" },
   modern: { primary: "#0891b2", secondary: "#22d3ee" },
@@ -42,8 +44,17 @@ export function safeHex(value?: string | null): string | null {
   return value && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 }
 
-// Shared styles for all templates
-export const baseFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif";
+// Shared styles for all templates.
+// baseFont: clean sans body copy — reuses the Inter face already loaded
+// app-wide (see app/layout.tsx, --font-inter on <body>), so no extra font
+// load is needed here.
+// headlineFont: elegant serif for the poster's emphasis text (restaurant
+// name, headline, offer amount) — Playfair Display, loaded locally via
+// poster-templates/fonts.ts since it isn't used anywhere else in the app.
+// Matches the "premium" font treatment used in the campaign email templates
+// (frontend/lib/growth/email-poster-html.ts).
+export const baseFont = "var(--font-inter), -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif";
+export const headlineFont = "var(--font-playfair), Georgia, 'Times New Roman', serif";
 
 // Strong text shadow for white text visibility on any background
 export const whiteTextShadow = {

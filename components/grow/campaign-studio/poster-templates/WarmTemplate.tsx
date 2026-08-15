@@ -3,7 +3,8 @@
 import { forwardRef } from "react";
 import { CalendarDays, Gift } from "lucide-react";
 import type { TemplateProps } from "./shared";
-import { baseFont, textConstraints, clampedTextStyles, getSizeConfig } from "./shared";
+import { baseFont, headlineFont, textConstraints, clampedTextStyles, getSizeConfig } from "./shared";
+import { playfairDisplay } from "./fonts";
 
 export const WarmTemplate = forwardRef<HTMLDivElement, TemplateProps>(
   function WarmTemplate(props, ref) {
@@ -25,7 +26,7 @@ export const WarmTemplate = forwardRef<HTMLDivElement, TemplateProps>(
     return (
       <div
         ref={ref}
-        className={sizeClasses}
+        className={`${sizeClasses} ${playfairDisplay.variable}`}
         style={{
           ...sizeStyles,
           fontFamily: baseFont,
@@ -92,9 +93,10 @@ export const WarmTemplate = forwardRef<HTMLDivElement, TemplateProps>(
             </div>
 
             {/* Headline */}
-            <h1 
+            <h1
               className="font-black leading-tight"
               style={{
+                fontFamily: headlineFont,
                 color: "#ffffff",
                 fontSize: "2.5rem",
                 marginBottom: "1.5rem",
@@ -126,9 +128,10 @@ export const WarmTemplate = forwardRef<HTMLDivElement, TemplateProps>(
               >
                 GET
               </p>
-              <h2 
+              <h2
                 className="font-black leading-none"
-                style={{ 
+                style={{
+                  fontFamily: headlineFont,
                   fontSize: "2.25rem",
                   color: primaryColor,
                   ...clampedTextStyles(2)

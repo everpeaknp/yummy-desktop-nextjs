@@ -9,9 +9,9 @@ import type {
   GrowthSegmentCode,
 } from "@/lib/api/growth-types";
 
-export type CampaignPosterTemplate = 
-  | "fresh" | "warm" | "minimal" | "ticket" | "bold" | "elegant" 
-  | "modern" | "luxury" | "vibrant" | "sunset" | "ocean" | "forest" 
+export type CampaignPosterTemplate =
+  | "fresh" | "warm" | "minimal" | "ticket" | "premium" | "grid" | "bold" | "elegant"
+  | "modern" | "luxury" | "vibrant" | "sunset" | "ocean" | "forest"
   | "royal" | "neon" | "pastel" | "midnight" | "coral" | "mint"
   | "crimson" | "slate" | "amber" | "teal" | "lavender" | "rose"
   | "emerald" | "sapphire" | "bronze" | "ruby" | "platinum" | "gold"
