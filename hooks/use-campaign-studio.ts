@@ -48,6 +48,8 @@ interface CampaignStudioDraft {
   copyCustomized: boolean;
   terms: string;
   posterTemplate: CampaignPosterTemplate;
+  emailPosterTemplate: CampaignPosterTemplate;
+  useEmailPoster: boolean;
   selectedMessageTemplateId: string;
   emailSubject: string;
   emailBodyHtml: string;
@@ -70,6 +72,8 @@ function createInitialDraft(): CampaignStudioDraft {
     terms:
       "One use per eligible customer. Minimum order and campaign terms apply. Cannot be combined with another offer.",
     posterTemplate: "vibrant",
+    emailPosterTemplate: "vibrant",
+    useEmailPoster: false,
     selectedMessageTemplateId: "",
     emailSubject: "",
     emailBodyHtml: "",
@@ -120,6 +124,8 @@ export const useCampaignStudio = create<CampaignStudioState>()(
         copyCustomized: state.copyCustomized,
         terms: state.terms,
         posterTemplate: state.posterTemplate,
+        emailPosterTemplate: state.emailPosterTemplate,
+        useEmailPoster: state.useEmailPoster,
         selectedMessageTemplateId: state.selectedMessageTemplateId,
         emailSubject: state.emailSubject,
         emailBodyHtml: state.emailBodyHtml,

@@ -163,6 +163,8 @@ export function CampaignStudioClient() {
   const copyCustomized = useCampaignStudio((state) => state.copyCustomized);
   const terms = useCampaignStudio((state) => state.terms);
   const posterTemplate = useCampaignStudio((state) => state.posterTemplate);
+  const emailPosterTemplate = useCampaignStudio((state) => state.emailPosterTemplate);
+  const useEmailPoster = useCampaignStudio((state) => state.useEmailPoster);
   const selectedMessageTemplateId = useCampaignStudio((state) => state.selectedMessageTemplateId);
   const emailSubject = useCampaignStudio((state) => state.emailSubject);
   const emailBodyHtml = useCampaignStudio((state) => state.emailBodyHtml);
@@ -190,6 +192,8 @@ export function CampaignStudioClient() {
   const setCopyCustomized = (value: boolean) => patchDraft("copyCustomized", value);
   const setTerms = (value: string) => patchDraft("terms", value);
   const setPosterTemplate = (value: CampaignPosterTemplate) => patchDraft("posterTemplate", value);
+  const setEmailPosterTemplate = (value: CampaignPosterTemplate) => patchDraft("emailPosterTemplate", value);
+  const setUseEmailPoster = (value: boolean) => patchDraft("useEmailPoster", value);
   const setSelectedMessageTemplateId = (value: string) =>
     patchDraft("selectedMessageTemplateId", value);
   const setEmailSubject = (value: string) => patchDraft("emailSubject", value);
@@ -221,6 +225,23 @@ export function CampaignStudioClient() {
   );
   const offerValidation = useMemo(
     () => validateCampaignOffer(offer),
+    [offer],
+  );
+  // EmailPreview/renderPosterStyleEmailHtml expect camelCase field names
+  // (discountType/minimumOrderValue/percentageCap/validUntil); the draft
+  // stores snake_case (type/minimum_order_value/percentage_cap/valid_until).
+  // Without this mapping those fields are silently undefined in the email
+  // preview even though they're filled in on the Offer step.
+  const emailPreviewOffer = useMemo(
+    () => ({
+      discountType: (offer.type === "percentage" ? "percentage" : "flat_amount") as
+        | "percentage"
+        | "flat_amount",
+      value: offer.value,
+      percentageCap: offer.percentage_cap,
+      minimumOrderValue: offer.minimum_order_value,
+      validUntil: offer.valid_until,
+    }),
     [offer],
   );
   const actionPolicy = campaignStudioActionPolicy(
@@ -1140,6 +1161,11 @@ export function CampaignStudioClient() {
                     <Textarea id="email-body" value={emailBodyHtml} maxLength={20000} rows={12} disabled={isReadOnly} onChange={(event) => { setEmailBodyHtml(event.target.value); setCopyCustomized(true); }} />
                     <div className="flex justify-between text-xs text-muted-foreground"><span><code>{"{{customer_name}}"}</code> is personalized per recipient.</span><span>{emailBodyHtml.length}/20000</span></div>
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email-terms">Visible terms</Label>
+                    <Textarea id="email-terms" value={terms} maxLength={240} rows={3} disabled={isReadOnly} onChange={(event) => setTerms(event.target.value)} />
+                    <p className="text-xs text-muted-foreground">Shown in the poster-style email preview when &quot;Use poster template&quot; is enabled below.</p>
+                  </div>
                 </>
               ) : (
                 <>
@@ -1165,10 +1191,19 @@ export function CampaignStudioClient() {
             <EmailPreview
               subject={emailSubject}
               bodyHtml={emailBodyHtml}
-              showWarning={true}
-              posterDataUrl={posterDataUrl || undefined}
+              usePosterTemplate={useEmailPoster}
+              template={emailPosterTemplate}
+              offer={emailPreviewOffer}
+              terms={terms}
               restaurantName={restaurantName}
               logoUrl={brand?.logo_url || getImageUrl(restaurant?.profile_picture || "")}
+              primaryColor={brand?.primary_color}
+              couponCode="ABC123"
+              showWarning={true}
+              posterDataUrl={posterDataUrl || undefined}
+              isReadOnly={isReadOnly}
+              onUsePosterTemplateChange={setUseEmailPoster}
+              onTemplateChange={setEmailPosterTemplate}
             />
           ) : (
             <Card>
@@ -1235,7 +1270,7 @@ export function CampaignStudioClient() {
                               onKeyDown={(e) => e.stopPropagation()}
                             />
                           </div>
-                          {(["vibrant", "fresh", "warm", "modern", "luxury", "elegant", "bold", "minimal", "ticket", "sunset", "ocean", "forest", "royal", "neon", "pastel", "midnight", "coral", "mint", "crimson", "slate", "amber", "teal", "lavender", "rose", "emerald", "sapphire", "bronze", "ruby", "platinum", "gold", "minimalist", "geometric", "artistic", "expressive", "maximalist"] as CampaignPosterTemplate[]).map((template) => (
+                          {(["vibrant", "fresh", "warm", "modern", "luxury", "elegant", "bold", "minimal", "ticket", "grid", "sunset", "ocean", "forest", "royal", "neon", "pastel", "midnight", "coral", "mint", "crimson", "slate", "amber", "teal", "lavender", "rose", "emerald", "sapphire", "bronze", "ruby", "platinum", "gold", "minimalist", "geometric", "artistic", "expressive", "maximalist"] as CampaignPosterTemplate[]).map((template) => (
                             <SelectItem key={template} value={template} className="capitalize">
                               {template}
                             </SelectItem>
@@ -1316,10 +1351,19 @@ export function CampaignStudioClient() {
                 <EmailPreview
                   subject={emailSubject}
                   bodyHtml={emailBodyHtml}
-                  showWarning={false}
-                  posterDataUrl={posterDataUrl || undefined}
+                  usePosterTemplate={useEmailPoster}
+                  template={emailPosterTemplate}
+                  offer={emailPreviewOffer}
+                  terms={terms}
                   restaurantName={restaurantName}
                   logoUrl={brand?.logo_url || getImageUrl(restaurant?.profile_picture || "")}
+                  primaryColor={brand?.primary_color}
+                  couponCode="ABC123"
+                  showWarning={false}
+                  posterDataUrl={posterDataUrl || undefined}
+                  isReadOnly={isReadOnly}
+                  onUsePosterTemplateChange={setUseEmailPoster}
+                  onTemplateChange={setEmailPosterTemplate}
                 />
               </CardContent>
             </Card>
