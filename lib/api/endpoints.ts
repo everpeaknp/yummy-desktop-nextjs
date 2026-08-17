@@ -2402,6 +2402,7 @@ export const GrowthApis = {
   messageTemplates: "/growth/message-templates",
   suggestCopy: "/growth/content/suggest-copy",
   validateOffer: "/growth/offers/validate",
+  sendTestEmail: "/growth/send-test-email",
   redemptionByOrder: (orderId: number | string) =>
     `/growth/redemptions/by-order/${orderId}`,
 };

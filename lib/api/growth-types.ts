@@ -408,3 +408,26 @@ export interface PublicGrowthUnsubscribeResult {
   status: "opted_out";
   revoked_at?: string | null;
 }
+
+export interface GrowthTestEmailInput {
+  template: string;
+  recipient_email: string;
+  restaurant_name?: string;
+  headline?: string;
+  description?: string;
+  discount_type?: "percentage" | "flat_amount";
+  value?: number;
+  percentage_cap?: number | null;
+  minimum_order_value?: number | null;
+  valid_until?: string | null;
+  coupon_code?: string;
+  terms?: string;
+  logo_url?: string;
+  primary_color?: string;
+}
+
+export interface GrowthTestEmailResult {
+  success: boolean;
+  message: string;
+  recipient: string;
+}
