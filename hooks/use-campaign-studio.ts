@@ -7,6 +7,7 @@ import type {
   GrowthPlaybookCode,
 } from "@/lib/api/growth-types";
 import type { CampaignOfferDraft, CampaignPosterTemplate } from "@/lib/growth/campaign-studio";
+import type { CampaignEmailTemplate } from "@/lib/growth/email-templates";
 
 export type StudioStep = 1 | 2 | 3 | 4;
 
@@ -48,7 +49,7 @@ interface CampaignStudioDraft {
   copyCustomized: boolean;
   terms: string;
   posterTemplate: CampaignPosterTemplate;
-  emailPosterTemplate: CampaignPosterTemplate;
+  emailPosterTemplate: CampaignEmailTemplate;
   useEmailPoster: boolean;
   selectedMessageTemplateId: string;
   emailSubject: string;
@@ -72,7 +73,7 @@ function createInitialDraft(): CampaignStudioDraft {
     terms:
       "One use per eligible customer. Minimum order and campaign terms apply. Cannot be combined with another offer.",
     posterTemplate: "vibrant",
-    emailPosterTemplate: "vibrant",
+    emailPosterTemplate: "modern",
     useEmailPoster: false,
     selectedMessageTemplateId: "",
     emailSubject: "",

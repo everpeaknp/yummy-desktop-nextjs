@@ -31,6 +31,8 @@ import type {
   PublicGrowthPreferences,
   PublicGrowthRestaurant,
   PublicGrowthUnsubscribeResult,
+  GrowthTestEmailInput,
+  GrowthTestEmailResult,
 } from "@/lib/api/growth-types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -220,6 +222,10 @@ export const growthApi = {
 
   async validateOffer(input: GrowthOfferValidationInput): Promise<GrowthOfferValidationResult> {
     return getData(apiClient.post(GrowthApis.validateOffer, input));
+  },
+
+  async sendTestEmail(input: GrowthTestEmailInput): Promise<GrowthTestEmailResult> {
+    return getData(apiClient.post(GrowthApis.sendTestEmail, input));
   },
 
   async getPublicRestaurant(publicSlug: string): Promise<PublicGrowthRestaurant> {

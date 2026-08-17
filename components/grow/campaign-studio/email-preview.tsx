@@ -9,17 +9,67 @@
 import React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Mail, Info, ImageIcon, Sun, Moon } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Mail, Info, ImageIcon, Search, ChevronDown, Send, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { renderPosterStyleEmailHtml, HEADLINE_FONT, BODY_FONT, GOOGLE_FONTS_LINK, RESPONSIVE_STYLE } from "@/lib/growth/email-poster-html";
-import type { CampaignPosterTemplate } from "@/lib/growth/campaign-studio";
+import {
+  EMAIL_TEMPLATE_DEFINITIONS,
+  EMAIL_TEMPLATE_CATEGORIES,
+  getEmailTemplateDefinition,
+  type CampaignEmailTemplate,
+  type EmailTemplateDefinition,
+} from "@/lib/growth/email-templates";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { templateColors } from "@/components/grow/campaign-studio/poster-templates/shared";
-import { Search } from "lucide-react";
+import { growthApi } from "@/lib/api/growth";
+import { toast } from "sonner";
+
+/** A miniature mock-email swatch that communicates a template's palette, type, and structure at a glance. */
+function TemplateSwatch({ definition, size, full }: { definition: EmailTemplateDefinition; size: number; full?: boolean }) {
+  const fontFamily =
+    definition.swatch.font === "serif"
+      ? "'Playfair Display', Georgia, serif"
+      : definition.swatch.font === "mono"
+        ? "'Courier New', monospace"
+        : definition.swatch.font === "display"
+          ? "'Bebas Neue', Georgia, sans-serif"
+          : "var(--font-inter), sans-serif";
+
+  return (
+    <span
+      className={cn("relative flex flex-shrink-0 flex-col overflow-hidden rounded-lg", full && "w-full")}
+      style={{
+        height: size,
+        width: full ? "100%" : size,
+        background: definition.swatch.bg,
+        border: `1px solid ${definition.swatch.accent}33`,
+      }}
+    >
+      <span className="block h-[3px] w-full flex-shrink-0" style={{ background: definition.swatch.accent }} />
+      <span className="flex flex-1 flex-col items-center justify-center gap-1.5">
+        <span
+          style={{
+            fontFamily,
+            color: definition.swatch.accent,
+            fontSize: Math.round(size * 0.34),
+            lineHeight: 1,
+            fontWeight: 700,
+          }}
+        >
+          Aa
+        </span>
+        <span className="flex items-center gap-[3px]">
+          <span className="block h-[3px] w-6 rounded-full" style={{ background: definition.swatch.text, opacity: 0.22 }} />
+          <span className="block h-[3px] w-3 rounded-full" style={{ background: definition.swatch.accent, opacity: 0.55 }} />
+        </span>
+      </span>
+    </span>
+  );
+}
 
 export interface EmailPreviewProps {
   subject?: string;
@@ -30,7 +80,7 @@ export interface EmailPreviewProps {
   couponCode?: string;  // Coupon code for template
   logoUrl?: string;  // Restaurant logo URL
   usePosterTemplate?: boolean;  // Use poster-style HTML template
-  template?: CampaignPosterTemplate;  // Poster template style
+  template?: CampaignEmailTemplate;  // Email template design
   primaryColor?: string;  // Primary brand color
   offer?: {
     discountType: "percentage" | "flat_amount";
@@ -40,20 +90,13 @@ export interface EmailPreviewProps {
     validUntil?: string | null;
   };
   terms?: string;
+  heroImageUrl?: string;  // Optional real food/menu photo for templates with a hero
+  contactText?: string;  // From the restaurant's brand profile
+  footerText?: string;  // From the restaurant's brand profile
   isReadOnly?: boolean;  // Read-only mode
   onUsePosterTemplateChange?: (checked: boolean) => void;  // Callback for checkbox
-  onTemplateChange?: (template: CampaignPosterTemplate) => void;  // Callback for dropdown
+  onTemplateChange?: (template: CampaignEmailTemplate) => void;  // Callback for template picker
 }
-
-// All available templates (matching WhatsApp poster templates)
-const ALL_TEMPLATES: CampaignPosterTemplate[] = [
-  "premium", "vibrant", "fresh", "warm", "modern", "luxury", "elegant",
-  "bold", "minimal", "ticket", "grid", "sunset", "ocean", "forest",
-  "royal", "neon", "pastel", "midnight", "coral", "mint",
-  "crimson", "slate", "amber", "teal", "lavender", "rose",
-  "emerald", "sapphire", "bronze", "ruby", "platinum", "gold",
-  "minimalist", "geometric", "artistic", "expressive", "maximalist"
-];
 
 export function EmailPreview({
   subject,
@@ -64,29 +107,58 @@ export function EmailPreview({
   couponCode = "ABC123",
   logoUrl,
   usePosterTemplate = false,
-  template = "vibrant",
+  template = "modern",
   primaryColor,
   offer,
   terms,
+  heroImageUrl,
+  contactText,
+  footerText,
   isReadOnly = false,
   onUsePosterTemplateChange,
   onTemplateChange,
 }: EmailPreviewProps) {
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
-  const [templateSearch, setTemplateSearch] = React.useState("");
+  const [browserOpen, setBrowserOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const [activeCategory, setActiveCategory] = React.useState<string>("All");
+  const [testEmail, setTestEmail] = React.useState("");
+  const [sendingTest, setSendingTest] = React.useState(false);
 
   // useEffect only runs on the client, so now we can safely show the UI
   React.useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Filter templates based on search
+  const currentDefinition = getEmailTemplateDefinition(template);
+
   const filteredTemplates = React.useMemo(() => {
-    if (!templateSearch.trim()) return ALL_TEMPLATES;
-    const search = templateSearch.toLowerCase();
-    return ALL_TEMPLATES.filter(tmpl => tmpl.toLowerCase().includes(search));
-  }, [templateSearch]);
+    const q = search.trim().toLowerCase();
+    return EMAIL_TEMPLATE_DEFINITIONS.filter((def) => {
+      const matchesCategory = activeCategory === "All" || def.category === activeCategory;
+      const matchesSearch =
+        !q || def.label.toLowerCase().includes(q) || def.tagline.toLowerCase().includes(q) || def.description.toLowerCase().includes(q);
+      return matchesCategory && matchesSearch;
+    });
+  }, [search, activeCategory]);
+
+  // Grouped by category so the browser reads as curated sections rather than one long grid,
+  // except while actively filtered to a single category (the chip already says which one).
+  const groupedTemplates = React.useMemo(() => {
+    if (activeCategory !== "All") {
+      return [{ category: activeCategory, items: filteredTemplates }];
+    }
+    const byCategory = new Map<string, EmailTemplateDefinition[]>();
+    for (const def of filteredTemplates) {
+      const list = byCategory.get(def.category) ?? [];
+      list.push(def);
+      byCategory.set(def.category, list);
+    }
+    return EMAIL_TEMPLATE_CATEGORIES.map((category) => ({ category, items: byCategory.get(category) ?? [] })).filter(
+      (group) => group.items.length > 0,
+    );
+  }, [filteredTemplates, activeCategory]);
 
   const isDarkMode = mounted && theme === "dark";
 
@@ -102,6 +174,10 @@ export function EmailPreview({
         // Matches the real send: growth_campaign_delivery_service.py passes
         // the campaign's resolved email subject as `headline`.
         headline: subject || undefined,
+        // The free-text "Email body (HTML)" field doubles as this
+        // template's secondary description copy when a poster template is
+        // active — previously it was silently dropped in that mode.
+        description: bodyHtml || undefined,
         discountType: offer.discountType,
         value: offer.value,
         percentageCap: offer.percentageCap,
@@ -109,6 +185,9 @@ export function EmailPreview({
         validUntil: offer.validUntil,
         couponCode,
         terms: terms || undefined,
+        heroImageUrl: heroImageUrl || undefined,
+        contactText: contactText || undefined,
+        footerText: footerText || undefined,
       });
     }
 
@@ -171,7 +250,7 @@ export function EmailPreview({
 </body>
 </html>
     `.trim();
-  }, [usePosterTemplate, template, offer, terms, primaryColor, bodyHtml, restaurantName, couponCode, subject, logoUrl]);
+  }, [usePosterTemplate, template, offer, terms, primaryColor, bodyHtml, restaurantName, couponCode, subject, logoUrl, heroImageUrl, contactText, footerText]);
 
   // Debug logging
   React.useEffect(() => {
@@ -183,96 +262,182 @@ export function EmailPreview({
     }
   }, [mounted, theme, posterDataUrl, completeEmailHtml]);
 
+  const handleSendTestEmail = async () => {
+    if (!testEmail.trim()) {
+      toast.error("Please enter a recipient email address");
+      return;
+    }
+
+    if (!usePosterTemplate || !offer || !template) {
+      toast.error("Test emails can only be sent with poster templates and offer data");
+      return;
+    }
+
+    setSendingTest(true);
+    try {
+      await growthApi.sendTestEmail({
+        template,
+        recipient_email: testEmail.trim(),
+        restaurant_name: restaurantName,
+        headline: subject,
+        description: bodyHtml,
+        discount_type: offer.discountType,
+        value: offer.value,
+        percentage_cap: offer.percentageCap,
+        minimum_order_value: offer.minimumOrderValue,
+        valid_until: offer.validUntil,
+        coupon_code: couponCode,
+        terms,
+        logo_url: logoUrl || undefined,
+        primary_color: primaryColor || undefined,
+      });
+      toast.success(`Test email sent to ${testEmail}`);
+      setTestEmail("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send test email";
+      toast.error(message);
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-2 flex-1">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex items-center gap-2">
             <Mail className="h-5 w-5 text-muted-foreground" />
             <CardTitle>Email preview</CardTitle>
           </div>
-          
-          {/* Poster Template Controls */}
+
           {onUsePosterTemplateChange && onTemplateChange && (
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="email-preview-poster"
-                  checked={usePosterTemplate}
-                  disabled={isReadOnly}
-                  onCheckedChange={(checked) => onUsePosterTemplateChange(checked as boolean)}
-                />
-                <Label htmlFor="email-preview-poster" className="cursor-pointer text-sm font-medium whitespace-nowrap">
-                  Use poster template
-                </Label>
-              </div>
-              
-              {usePosterTemplate && (
-                <div className="flex items-center gap-2">
-                  <Select 
-                    value={template} 
-                    disabled={isReadOnly} 
-                    onValueChange={(value) => onTemplateChange(value as CampaignPosterTemplate)}
-                  >
-                    <SelectTrigger className="w-[160px] capitalize">
-                      <SelectValue placeholder="Choose style" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[400px]">
-                      {/* Search Input */}
-                      <div className="sticky top-0 z-10 bg-background p-2 border-b">
-                        <div className="relative">
-                          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            placeholder="Search templates..."
-                            value={templateSearch}
-                            onChange={(e) => setTemplateSearch(e.target.value)}
-                            className="pl-8 h-8 text-sm"
-                            onClick={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                      </div>
-                      
-                      {/* Template List */}
-                      <div className="max-h-[300px] overflow-y-auto">
-                        {filteredTemplates.length > 0 ? (
-                          filteredTemplates.map((tmpl) => (
-                            <SelectItem key={tmpl} value={tmpl} className="capitalize">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="h-4 w-4 rounded border border-border flex-shrink-0"
-                                  style={{ background: templateColors[tmpl].primary }}
-                                />
-                                {tmpl}
-                              </div>
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                            No templates found
-                          </div>
-                        )}
-                      </div>
-                    </SelectContent>
-                  </Select>
-                  <div
-                    className="h-6 w-6 rounded border border-border flex-shrink-0"
-                    style={{ background: templateColors[template].primary }}
-                    title={`${template} color`}
-                  />
-                </div>
-              )}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="email-preview-poster"
+                checked={usePosterTemplate}
+                disabled={isReadOnly}
+                onCheckedChange={(checked) => onUsePosterTemplateChange(checked as boolean)}
+              />
+              <Label htmlFor="email-preview-poster" className="cursor-pointer text-sm font-medium whitespace-nowrap">
+                Premium template
+              </Label>
             </div>
           )}
         </div>
+
+        {usePosterTemplate && onTemplateChange && (
+          <button
+            type="button"
+            disabled={isReadOnly}
+            onClick={() => setBrowserOpen(true)}
+            className={cn(
+              "mt-4 flex w-full items-center gap-3 rounded-lg border p-2 text-left transition-colors hover:border-primary/50",
+              isReadOnly && "cursor-not-allowed opacity-60"
+            )}
+          >
+            <TemplateSwatch definition={currentDefinition} size={40} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold leading-tight">{currentDefinition.label}</p>
+              <p className="truncate text-xs text-muted-foreground">{currentDefinition.tagline} · {currentDefinition.category}</p>
+            </div>
+            <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          </button>
+        )}
       </CardHeader>
+
+      {onTemplateChange && (
+        <Dialog open={browserOpen} onOpenChange={setBrowserOpen}>
+          <DialogContent className="flex max-h-[85vh] max-w-4xl flex-col overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>Choose an email design</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search styles..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8 h-9 text-sm"
+                />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {["All", ...EMAIL_TEMPLATE_CATEGORIES].map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCategory(cat)}
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors",
+                      activeCategory === cat ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"
+                    )}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="-mx-1 space-y-6 overflow-y-auto px-1 pt-1">
+              {groupedTemplates.length === 0 ? (
+                <div className="py-14 text-center text-sm text-muted-foreground">No styles match your search.</div>
+              ) : (
+                groupedTemplates.map((group) => (
+                  <div key={group.category}>
+                    {activeCategory === "All" && (
+                      <div className="sticky top-0 z-10 mb-3 flex items-center gap-2.5 bg-background/95 py-1 backdrop-blur-sm">
+                        <h3 className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          {group.category}
+                        </h3>
+                        <span className="text-[10px] text-muted-foreground/50">{group.items.length}</span>
+                        <div className="h-px flex-1 bg-border" />
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                      {group.items.map((definition) => {
+                        const selected = template === definition.id;
+                        return (
+                          <button
+                            key={definition.id}
+                            type="button"
+                            onClick={() => {
+                              onTemplateChange(definition.id);
+                              setBrowserOpen(false);
+                            }}
+                            className={cn(
+                              "group relative flex flex-col items-start gap-2.5 rounded-xl border bg-card p-3 text-left transition-all",
+                              selected
+                                ? "border-primary ring-2 ring-primary/25"
+                                : "border-border hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+                            )}
+                          >
+                            {selected && (
+                              <span className="absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
+                                <Check className="h-3 w-3" strokeWidth={3} />
+                              </span>
+                            )}
+                            <TemplateSwatch definition={definition} size={76} full />
+                            <div className="min-w-0 w-full">
+                              <p className="text-xs font-semibold leading-tight">{definition.label}</p>
+                              <p className="truncate text-[10.5px] text-muted-foreground">{definition.tagline}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
       <CardContent className="space-y-4">
         {/* Email Preview - Renders Complete Backend Template HTML */}
         {/* Container adapts to theme, but email content stays light (realistic) */}
         <div className={cn(
-          "transition-colors overflow-hidden rounded-lg",
-          isDarkMode 
-            ? "bg-gray-900/50 p-4" 
+          "transition-colors overflow-x-auto rounded-lg",
+          isDarkMode
+            ? "bg-gray-900/50 p-4"
             : "bg-gray-50 p-4"
         )}>
           {completeEmailHtml ? (
@@ -343,6 +508,62 @@ export function EmailPreview({
               alt="Printable coupon card attachment"
               className="w-full max-w-md mx-auto rounded-lg shadow-sm"
             />
+          </div>
+        )}
+
+        {/* Send Test Email */}
+        {completeEmailHtml && usePosterTemplate && !isReadOnly && (
+          <div className={cn(
+            "rounded-xl border p-4 transition-colors",
+            isDarkMode 
+              ? "border-gray-700 bg-gray-800/50" 
+              : "border-gray-300 bg-gray-50"
+          )}>
+            <div className="flex items-start gap-3">
+              <Send className={cn(
+                "h-5 w-5 mt-0.5 transition-colors",
+                isDarkMode ? "text-gray-400" : "text-gray-600"
+              )} />
+              <div className="flex-1 space-y-2">
+                <div>
+                  <p className={cn(
+                    "text-sm font-semibold transition-colors",
+                    isDarkMode ? "text-gray-300" : "text-gray-700"
+                  )}>
+                    Send Test Email
+                  </p>
+                  <p className={cn(
+                    "text-xs transition-colors",
+                    isDarkMode ? "text-gray-500" : "text-gray-500"
+                  )}>
+                    Send this email with the selected template ({template}) to yourself for testing
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    type="email"
+                    placeholder="your.email@example.com"
+                    value={testEmail}
+                    onChange={(e) => setTestEmail(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !sendingTest) {
+                        void handleSendTestEmail();
+                      }
+                    }}
+                    disabled={sendingTest}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleSendTestEmail}
+                    disabled={sendingTest || !testEmail.trim()}
+                    size="sm"
+                  >
+                    {sendingTest ? "Sending..." : "Send"}
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

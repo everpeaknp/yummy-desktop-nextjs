@@ -71,6 +71,7 @@ import {
   type CampaignOfferDraft,
   type CampaignPosterTemplate,
 } from "@/lib/growth/campaign-studio";
+import type { CampaignEmailTemplate } from "@/lib/growth/email-templates";
 import { cn, getImageUrl } from "@/lib/utils";
 
 const studioSteps: Array<{
@@ -192,7 +193,7 @@ export function CampaignStudioClient() {
   const setCopyCustomized = (value: boolean) => patchDraft("copyCustomized", value);
   const setTerms = (value: string) => patchDraft("terms", value);
   const setPosterTemplate = (value: CampaignPosterTemplate) => patchDraft("posterTemplate", value);
-  const setEmailPosterTemplate = (value: CampaignPosterTemplate) => patchDraft("emailPosterTemplate", value);
+  const setEmailPosterTemplate = (value: CampaignEmailTemplate) => patchDraft("emailPosterTemplate", value);
   const setUseEmailPoster = (value: boolean) => patchDraft("useEmailPoster", value);
   const setSelectedMessageTemplateId = (value: string) =>
     patchDraft("selectedMessageTemplateId", value);
@@ -1197,7 +1198,9 @@ export function CampaignStudioClient() {
               terms={terms}
               restaurantName={restaurantName}
               logoUrl={brand?.logo_url || getImageUrl(restaurant?.profile_picture || "")}
-              primaryColor={brand?.primary_color}
+              primaryColor={brand?.primary_color || undefined}
+              contactText={brand?.approved_contact_text || undefined}
+              footerText={brand?.approved_footer_text || undefined}
               couponCode="ABC123"
               showWarning={true}
               posterDataUrl={posterDataUrl || undefined}
@@ -1357,7 +1360,9 @@ export function CampaignStudioClient() {
                   terms={terms}
                   restaurantName={restaurantName}
                   logoUrl={brand?.logo_url || getImageUrl(restaurant?.profile_picture || "")}
-                  primaryColor={brand?.primary_color}
+                  primaryColor={brand?.primary_color || undefined}
+                  contactText={brand?.approved_contact_text || undefined}
+                  footerText={brand?.approved_footer_text || undefined}
                   couponCode="ABC123"
                   showWarning={false}
                   posterDataUrl={posterDataUrl || undefined}
