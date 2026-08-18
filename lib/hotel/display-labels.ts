@@ -22,7 +22,7 @@ const labels: Record<string, string> = {
   reserved: "Reserved",
   unsettled: "In progress",
   paid_now: "Paid separately",
-  posted_to_folio: "Added to room bill",
+  posted_to_folio: "Included in guest bill",
   settlement_pending: "Payment needed",
   voided: "Cancelled",
   settled: "Paid",
@@ -47,7 +47,7 @@ export function roomServiceStatusLabel(input: {
   settlementStatus: string;
 }): string {
   if (input.status === "canceled" || input.settlementStatus === "voided") return "Cancelled";
-  if (input.settlementStatus === "posted_to_folio") return "Added to room bill";
+  if (input.settlementStatus === "posted_to_folio") return "Included in guest bill";
   if (input.settlementStatus === "paid_now") return "Paid separately";
   if (input.status === "completed") return "Delivered";
   if (input.status === "ready") return "Ready for delivery";

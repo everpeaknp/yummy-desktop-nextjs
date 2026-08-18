@@ -272,21 +272,29 @@ describe("hotelPmsApi", () => {
     );
   });
 
-  it("uses explicit PMS context for room orders and folio settlement", async () => {
+  it("uses explicit PMS context for room orders and ledger-backed hotel finance", async () => {
     await hotelPmsApi.listStayRoomOrders(44);
-    await hotelPmsApi.postRoomOrderToFolio(73);
     await hotelPmsApi.getRoomOrderAnalytics(9, "2026-08-01", "2026-08-12");
+    await hotelPmsApi.getFinanceSummary(9, "2026-08-01", "2026-08-12");
 
     expect(mocked.get).toHaveBeenNthCalledWith(
       1,
       "/hotel/v2/stays/44/room-orders",
     );
-    expect(mocked.post).toHaveBeenCalledWith(
-      "/hotel/v2/room-orders/73/post-to-folio",
-    );
     expect(mocked.get).toHaveBeenNthCalledWith(
       2,
       "/hotel/v2/room-orders/analytics/summary",
+      {
+        params: {
+          restaurant_id: 9,
+          date_from: "2026-08-01",
+          date_to: "2026-08-12",
+        },
+      },
+    );
+    expect(mocked.get).toHaveBeenNthCalledWith(
+      3,
+      "/hotel/v2/finance/summary",
       {
         params: {
           restaurant_id: 9,

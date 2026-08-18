@@ -171,9 +171,9 @@ const sections: Array<{ title: string; items: ManageItem[] }> = [
                 iconBg: "bg-rose-50 dark:bg-rose-900/20",
             },
             {
-                title: "Payroll",
-                description: "Salary & payments",
-                href: "/payroll",
+                title: "Salary",
+                description: "Pay & balances",
+                href: "/workforce",
                 icon: UserCircle,
                 iconColor: "text-purple-600",
                 iconBg: "bg-purple-50 dark:bg-purple-900/20",

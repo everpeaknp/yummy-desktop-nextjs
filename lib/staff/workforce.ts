@@ -1,5 +1,5 @@
 import apiClient from "@/lib/api-client";
-import { PayrollApis, StaffProfileApis } from "@/lib/api/endpoints";
+import { StaffProfileApis } from "@/lib/api/endpoints";
 
 export type StaffProfile = {
   id: number;
@@ -12,6 +12,9 @@ export type StaffProfile = {
   salary_amount: number;
   weekly_hours?: number | null;
   daily_hours?: number | null;
+  discount_limit_amount?: number | null;
+  attendance_based_salary?: boolean;
+  self_discount_percent?: number | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -27,56 +30,6 @@ export type SalaryHistoryRecord = {
   daily_hours?: number | null;
   reason?: string | null;
   created_at?: string;
-};
-
-export type PayrollRunSummary = {
-  id: number;
-  restaurant_id: number;
-  date_from: string;
-  date_to: string;
-  period_days: number;
-  status: string;
-  use_approved_attendance: boolean;
-  payment_reference?: string | null;
-  payment_method?: string | null;
-  paid_at?: string | null;
-  created_at?: string;
-};
-
-export type PayrollHistoryItem = {
-  id: number;
-  payroll_run_id: number;
-  staff_id: number;
-  salary_type: string;
-  base_salary: number;
-  period_days: number;
-  daily_rate: number;
-  earned_amount: number;
-  regular_minutes: number;
-  overtime_minutes: number;
-  break_minutes: number;
-  scheduled_days: number;
-  payable_days: number;
-  absent_days: number;
-  regular_pay: number;
-  overtime_pay: number;
-  absence_deduction: number;
-  paid_leave_days: number;
-  unpaid_leave_days: number;
-  paid_holiday_days: number;
-  holiday_premium_pay: number;
-  bonus: number;
-  deduction: number;
-  tax_amount: number;
-  net_pay: number;
-  salary_history_id?: number | null;
-  salary_effective_from?: string | null;
-  policy_evidence?: Array<Record<string, unknown>>;
-};
-
-export type PayrollHistoryRecord = {
-  run: PayrollRunSummary;
-  item: PayrollHistoryItem;
 };
 
 function unwrap<T>(response: { data: { data?: T } | T }): T {
@@ -97,12 +50,6 @@ export const staffWorkforceApi = {
   async salaryHistory(staffId: number) {
     return unwrap<SalaryHistoryRecord[]>(
       await apiClient.get(StaffProfileApis.salaryHistory(staffId)),
-    );
-  },
-
-  async payrollHistory(staffId: number) {
-    return unwrap<PayrollHistoryRecord[]>(
-      await apiClient.get(PayrollApis.staffHistory(staffId)),
     );
   },
 };

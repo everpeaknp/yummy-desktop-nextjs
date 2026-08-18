@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, BarChart3, BedDouble, BookOpenCheck, Brush, CalendarDays, Hotel, MoonStar, SlidersHorizontal } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, BarChart3, BedDouble, BookOpenCheck, Brush, CalendarDays, Hotel, MoonStar, SlidersHorizontal, WalletCards } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BookingDetailDialog } from "@/components/hotel/booking-detail-dialog";
 import { BookingsPanel } from "@/components/hotel/bookings-panel";
 import { FrontDeskPanel } from "@/components/hotel/front-desk-panel";
+import { FinancePanel } from "@/components/hotel/finance-panel";
 import { HousekeepingPanel } from "@/components/hotel/housekeeping-panel";
 import { InventoryPanel } from "@/components/hotel/inventory-panel";
 import { NightAuditPanel } from "@/components/hotel/night-audit-panel";
@@ -18,6 +19,7 @@ import { hasPermission, type PermissionKey } from "@/lib/role-permissions";
 
 export default function HotelPmsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const user = useAuth((state) => state.user);
   const [tab, setTab] = useState("front-desk");
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
@@ -27,12 +29,12 @@ export default function HotelPmsPage() {
   const restaurantId = user?.restaurant_id ?? null;
   const can = (permission: PermissionKey) => hasPermission(user, permission);
   const permissions = useMemo(() => ({
-    bookings: can("hotel.bookings.manage"),
-    checkin: can("hotel.checkin"),
-    checkout: can("hotel.checkout"),
-    earlyDepartureOverride: can("hotel.early_departure.override"),
-    folioEdit: can("hotel.folio.edit"),
-    roomOrderCreate: can("pos.order.create"),
+    bookings: hasPermission(user, "hotel.bookings.manage"),
+    checkin: hasPermission(user, "hotel.checkin"),
+    checkout: hasPermission(user, "hotel.checkout"),
+    earlyDepartureOverride: hasPermission(user, "hotel.early_departure.override"),
+    folioEdit: hasPermission(user, "hotel.folio.edit"),
+    roomOrderCreate: hasPermission(user, "pos.order.create"),
   }), [user]);
 
   const changed = () => setRefreshKey((value) => value + 1);
@@ -41,15 +43,21 @@ export default function HotelPmsPage() {
     setDetailOpen(true);
   };
 
-  const navigation = [
+  const navigation = useMemo(() => [
     { value: "front-desk", label: "Front desk", icon: CalendarDays, visible: true },
     { value: "bookings", label: "Bookings", icon: BookOpenCheck, visible: true },
     { value: "inventory", label: "Rooms", icon: BedDouble, visible: true },
     { value: "rates", label: "Rates", icon: SlidersHorizontal, visible: true },
-    { value: "housekeeping", label: "Housekeeping", icon: Brush, visible: can("hotel.housekeeping.view") },
-    { value: "room-orders", label: "Room service", icon: BarChart3, visible: can("reports.analytics.view") },
-    { value: "night-audit", label: "Close day", icon: MoonStar, visible: can("hotel.night_audit.run") },
-  ].filter((item) => item.visible);
+    { value: "housekeeping", label: "Housekeeping", icon: Brush, visible: hasPermission(user, "hotel.housekeeping.view") },
+    { value: "room-orders", label: "Room service", icon: BarChart3, visible: hasPermission(user, "reports.analytics.view") },
+    { value: "finance", label: "Finance", icon: WalletCards, visible: hasPermission(user, "finance.income.view") },
+    { value: "night-audit", label: "Close day", icon: MoonStar, visible: hasPermission(user, "hotel.night_audit.run") },
+  ].filter((item) => item.visible), [user]);
+
+  useEffect(() => {
+    const requested = searchParams.get("section");
+    if (requested && navigation.some((item) => item.value === requested)) setTab(requested);
+  }, [navigation, searchParams]);
 
   if (!restaurantId) {
     return <div className="flex min-h-72 items-center justify-center text-sm text-muted-foreground">Hotel details are unavailable.</div>;
@@ -80,6 +88,7 @@ export default function HotelPmsPage() {
         <TabsContent value="rates" className="mt-5"><RatesPanel restaurantId={restaurantId} canManageRates={can("hotel.rates.manage")} canManageSettings={can("hotel.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent>
         {can("hotel.housekeeping.view") ? <TabsContent value="housekeeping" className="mt-5"><HousekeepingPanel restaurantId={restaurantId} canManage={can("hotel.housekeeping.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent> : null}
         {can("reports.analytics.view") ? <TabsContent value="room-orders" className="mt-5"><RoomOrderAnalyticsPanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
+        {can("finance.income.view") ? <TabsContent value="finance" className="mt-5"><FinancePanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
         {can("hotel.night_audit.run") ? <TabsContent value="night-audit" className="mt-5"><NightAuditPanel restaurantId={restaurantId} canRun refreshKey={refreshKey} onChanged={changed} /></TabsContent> : null}
       </Tabs>
       <BookingDetailDialog bookingId={selectedBookingId} open={detailOpen} onOpenChange={setDetailOpen} permissions={permissions} onChanged={changed} />

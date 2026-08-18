@@ -11,7 +11,7 @@ describe("hotel display language", () => {
   it("describes room service in operational language", () => {
     expect(
       roomServiceStatusLabel({ status: "completed", settlementStatus: "posted_to_folio" }),
-    ).toBe("Added to room bill");
+    ).toBe("Included in guest bill");
     expect(
       roomServiceStatusLabel({ status: "ready", settlementStatus: "unsettled" }),
     ).toBe("Ready for delivery");

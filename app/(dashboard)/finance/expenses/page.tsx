@@ -152,6 +152,8 @@ function buildFinanceExpensePaymentMethodBreakdown(
     "inventory_purchase_expensed",
     "inventory_cash_outflow",
     "supplier_payment_made",
+    "staff_salary_paid",
+    "staff_overtime_paid",
   ]);
   const totals = new Map<string, number>();
   for (const transaction of transactions ?? []) {

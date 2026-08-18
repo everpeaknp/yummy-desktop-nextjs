@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, UserPlus, Search, Filter, Mail, Phone, MoreVertical, Edit, UserX, Shield, User as UserIcon, ArrowLeft, Wallet } from "lucide-react";
+import { Loader2, UserPlus, Search, Filter, Mail, Phone, MoreVertical, Edit, UserX, Shield, User as UserIcon, ArrowLeft, Wallet, ArrowDownToLine, ArrowUpFromLine, Scale } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +24,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { hasPermission } from "@/lib/role-permissions";
+import { staffCreditApi, type StaffBalanceRow } from "@/lib/staff/credit";
+import { PayAllPreviewDialog } from "@/components/staff/pay-all-preview-dialog";
 
 type StaffProfile = {
   id: number;
@@ -39,6 +41,8 @@ export default function StaffPage() {
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<any[]>([]);
   const [staffProfilesByUserId, setStaffProfilesByUserId] = useState<Map<number, StaffProfile>>(new Map());
+  const [balancesByUserId, setBalancesByUserId] = useState<Map<number, StaffBalanceRow>>(new Map());
+  const [payAllPreviewOpen, setPayAllPreviewOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -76,6 +80,7 @@ export default function StaffPage() {
   const router = useRouter();
   const restaurant = useRestaurant((s) => s.restaurant);
   const canManageStaff = hasPermission(user, "admin.staff.manage");
+  const canManageCredit = hasPermission(user, "admin.staff.credit.manage");
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -127,6 +132,20 @@ export default function StaffPage() {
     } catch (err) {
       // Not fatal; payroll setup buttons will still work when called.
       console.warn("Failed to fetch staff profiles", err);
+    }
+  };
+
+  const fetchBalances = async () => {
+    try {
+      const rows = await staffCreditApi.balances();
+      const map = new Map<number, StaffBalanceRow>();
+      rows.forEach((row) => {
+        if (row.user_id != null) map.set(row.user_id, row);
+      });
+      setBalancesByUserId(map);
+    } catch (err) {
+      // Not fatal; the list stays usable without due-amount data.
+      console.warn("Failed to fetch staff balances", err);
     }
   };
 
@@ -236,6 +255,7 @@ export default function StaffPage() {
 
   useEffect(() => {
     fetchStaff();
+    fetchBalances();
     if (canManageStaff) {
       fetchStaffProfiles();
       fetchPermissions();
@@ -470,6 +490,17 @@ export default function StaffPage() {
     return matchesSearch && matchesRole;
   });
 
+  const money = (value: number) =>
+    `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const totalToPay = Array.from(balancesByUserId.values()).reduce(
+    (sum, row) => sum + Number(row.payroll_due || 0),
+    0,
+  );
+  const totalToReceive = Array.from(balancesByUserId.values()).reduce(
+    (sum, row) => sum + Number(row.credit_balance || 0),
+    0,
+  );
+
   const getRoleBadge = (role: string) => {
     const r = role?.toLowerCase();
     if (r === 'admin') return <Badge className="bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400 border-red-200">Admin</Badge>;
@@ -517,6 +548,27 @@ export default function StaffPage() {
         <MetricCard label="Managers" value={staff.filter(s => s.role?.toLowerCase() === 'manager' || s.role?.toLowerCase() === 'admin').length} icon={<Shield className="w-5 h-5" />} color="text-indigo-500" />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <MetricCard label="To Receive" value={money(totalToReceive)} icon={<ArrowDownToLine className="w-5 h-5" />} color="text-teal-500" />
+        <MetricCard label="To Pay" value={money(totalToPay)} icon={<ArrowUpFromLine className="w-5 h-5" />} color="text-amber-500" />
+        <MetricCard label="Net" value={money(totalToPay - totalToReceive)} icon={<Scale className="w-5 h-5" />} color="text-indigo-500" />
+      </div>
+
+      {canManageCredit && totalToPay > 0 && (
+        <div className="flex justify-end">
+          <Button onClick={() => setPayAllPreviewOpen(true)}>
+            <ArrowUpFromLine className="mr-2 h-4 w-4" />
+            Pay all outstanding salaries
+          </Button>
+        </div>
+      )}
+
+      <PayAllPreviewDialog
+        open={payAllPreviewOpen}
+        onOpenChange={setPayAllPreviewOpen}
+        onPaid={fetchBalances}
+      />
+
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
         <div className="relative w-full max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -559,13 +611,14 @@ export default function StaffPage() {
                 <TableHead>Email</TableHead>
                 <TableHead>Payroll</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Due Amount</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredStaff.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-48 text-center">
+                  <TableCell colSpan={7} className="h-48 text-center">
                     <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
                       <UserIcon className="w-8 h-8 opacity-20" />
                       <p className="font-medium">No staff members found</p>
@@ -612,6 +665,9 @@ export default function StaffPage() {
                     </TableCell>
                     <TableCell>
                       {member.is_active === false ? <Badge variant="secondary">Inactive</Badge> : <Badge variant="success" className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30">Active</Badge>}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DueAmountLabel netDue={balancesByUserId.get(member.id)?.net_due} />
                     </TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
@@ -885,6 +941,16 @@ export default function StaffPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function DueAmountLabel({ netDue }: { netDue?: number | null }) {
+  if (netDue == null || netDue === 0) return <span className="text-muted-foreground">—</span>;
+  const owedToStaff = netDue > 0;
+  return (
+    <span className={`font-semibold ${owedToStaff ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+      Rs. {Math.abs(netDue).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+    </span>
   );
 }
 

@@ -41,7 +41,7 @@ const MANAGE_ITEMS = [
     { title: "Accounting Period Reports", href: "/finance/accounting/period-reports", icon: ClipboardList, section: "Accounting / Controls" },
     { title: "Staff Management", href: "/staff", icon: Users, section: "Manage / Administration" },
     { title: "Custom Roles", href: "/manage/roles", icon: Shield, section: "Manage / Administration" },
-    { title: "Payroll", href: "/payroll", icon: UserCircle, section: "Manage / Administration" },
+    { title: "Salary", href: "/workforce", icon: UserCircle, section: "Manage / Administration" },
     { title: "Period Reports", href: "/period-reports", icon: ClipboardList, section: "Manage / Administration" },
     { title: "Customers", href: "/customers", icon: CreditCard, section: "Manage / Administration" },
     { title: "Suppliers", href: "/manage/suppliers", icon: Truck, section: "Manage / Administration" },

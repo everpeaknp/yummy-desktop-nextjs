@@ -46,10 +46,10 @@ import type {
 } from "@/lib/attendance/types";
 import {
   staffWorkforceApi,
-  type PayrollHistoryRecord,
   type SalaryHistoryRecord,
   type StaffProfile,
 } from "@/lib/staff/workforce";
+import { staffCreditApi } from "@/lib/staff/credit";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,7 +62,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { StaffPayrollBalanceCard } from "@/components/payroll/staff-payroll-balance-card";
+import { StaffSalaryCard } from "@/components/staff/staff-salary-card";
+import { StaffCreditCard } from "@/components/staff/staff-credit-card";
+import { StaffPerformanceCard } from "@/components/staff/staff-performance-card";
 
 type ScopeKey = "analytics" | "orders" | "receipts";
 type AccessScopeRow = {
@@ -202,7 +204,6 @@ export default function StaffWorkspacePage() {
   const [templates, setTemplates] = useState<AttendanceShiftTemplate[]>([]);
   const [leaves, setLeaves] = useState<AttendanceLeave[]>([]);
   const [salaryHistory, setSalaryHistory] = useState<SalaryHistoryRecord[]>([]);
-  const [payrollHistory, setPayrollHistory] = useState<PayrollHistoryRecord[]>([]);
   const [employmentHistory, setEmploymentHistory] = useState<EmploymentHistory | null>(null);
   const [rehiring, setRehiring] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -244,8 +245,8 @@ export default function StaffWorkspacePage() {
   );
   const canViewAttendance = can("attendance.view") || can("attendance.manage");
   const canManageAttendance = can("attendance.manage");
-  const canManagePayroll = can("finance.payroll.manage");
-  const canViewPayroll = can("finance.payroll.view") || can("finance.payroll.manage");
+  const canManagePayroll = can("admin.staff.credit.manage");
+  const canViewPayroll = can("admin.staff.view") || can("admin.staff.credit.manage");
   const canManageStaff = can("admin.staff.manage");
 
   const hydrateScopes = useCallback((rows: AccessScopeRow[]) => {
@@ -304,8 +305,7 @@ export default function StaffWorkspacePage() {
         setSchedules([]);
         setLeaves([]);
         setSalaryHistory([]);
-        setPayrollHistory([]);
-        warnings.push("Create the payroll profile to connect attendance, schedules, and payroll history for this staff member.");
+        warnings.push("Create the employment profile to connect attendance, schedules, and salary for this staff member.");
       } else {
         const results = await Promise.allSettled([
           canViewAttendance
@@ -321,22 +321,15 @@ export default function StaffWorkspacePage() {
             ? attendanceApi.listLeaves({ staffId: loadedProfile.id, dateFrom, dateTo })
             : Promise.resolve([] as AttendanceLeave[]),
           staffWorkforceApi.salaryHistory(loadedProfile.id),
-          canViewPayroll
-            ? staffWorkforceApi.payrollHistory(loadedProfile.id)
-            : Promise.resolve([] as PayrollHistoryRecord[]),
         ]);
-        const [entryResult, scheduleResult, templateResult, leaveResult, salaryResult, payrollResult] = results;
+        const [entryResult, scheduleResult, templateResult, leaveResult, salaryResult] = results;
         setEntries(entryResult.status === "fulfilled" ? entryResult.value : []);
         setSchedules(scheduleResult.status === "fulfilled" ? scheduleResult.value : []);
         setTemplates(templateResult.status === "fulfilled" ? templateResult.value : []);
         setLeaves(leaveResult.status === "fulfilled" ? leaveResult.value : []);
         setSalaryHistory(salaryResult.status === "fulfilled" ? salaryResult.value : []);
-        setPayrollHistory(payrollResult.status === "fulfilled" ? payrollResult.value : []);
         if (entryResult.status === "rejected" || scheduleResult.status === "rejected") {
           warnings.push("Some attendance details are unavailable for your current permission level.");
-        }
-        if (payrollResult.status === "rejected") {
-          warnings.push("Payroll history is unavailable for your current permission level or plan.");
         }
       }
       await loadScopes();
@@ -368,7 +361,6 @@ export default function StaffWorkspacePage() {
       || entries.find((entry) => entry.clock_in_at.slice(0, 10) === today)
       || null;
   }, [entries]);
-  const latestPayroll = payrollHistory[0] || null;
   const pendingLeaveCount = leaves.filter((leave) => leave.status === "pending").length;
 
   const openProfileEditor = () => {
@@ -419,7 +411,7 @@ export default function StaffWorkspacePage() {
       || Number(profile.weekly_hours || 0) !== Number(profileForm.weekly_hours || 0)
       || Number(profile.daily_hours || 0) !== Number(profileForm.daily_hours || 0);
     if (profile && salaryChanged && profileForm.salary_change_reason.trim().length < 3) {
-      toast.error("Explain the salary change so payroll keeps a useful audit history");
+      toast.error("Explain the salary change so it keeps a useful audit history");
       return;
     }
     const payload: Record<string, unknown> = {
@@ -452,6 +444,13 @@ export default function StaffWorkspacePage() {
     } finally {
       setProfileSaving(false);
     }
+  };
+
+  const updateDiscountLimit = async (value: number | null) => {
+    if (!profile) return;
+    await staffCreditApi.updateDiscountLimit(profile.id, value);
+    toast.success("Discount limit updated");
+    await loadWorkspace(true);
   };
 
   const updateAttendance = async (entry: AttendanceEntry, action: "submit" | "approve" | "reject" | "reopen") => {
@@ -648,27 +647,27 @@ export default function StaffWorkspacePage() {
           <HeroMetric icon={Clock3} label="Attendance today" value={todayEntry ? (todayEntry.status === "open" ? "Clocked in" : "Completed") : "No attendance"} tone={todayEntry ? "good" : "neutral"} />
           <HeroMetric icon={FileClock} label="Attendance review" value={totals.pending ? `${totals.pending} unresolved` : "Ready"} tone={totals.pending ? "warn" : "good"} />
           <HeroMetric icon={CalendarDays} label="Pending leave" value={pendingLeaveCount ? String(pendingLeaveCount) : "None"} tone={pendingLeaveCount ? "warn" : "neutral"} />
-          <HeroMetric icon={Banknote} label="Latest net pay" value={latestPayroll ? money(latestPayroll.item.net_pay) : "No payroll"} tone="neutral" />
+          <HeroMetric icon={WalletCards} label="Compensation" value={profile ? money(profile.salary_amount) : "Not configured"} tone="neutral" />
         </div>
       </section>
 
       {workspaceWarnings.length ? <div className="space-y-2">{workspaceWarnings.map((warning) => <div key={warning} className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /><span>{warning}</span></div>)}</div> : null}
 
-      <Tabs defaultValue={["overview", "attendance", "payroll", "employment", "access", "activity"].includes(searchParams.get("tab") || "") ? searchParams.get("tab")! : "overview"} className="space-y-5">
-        <div className="overflow-x-auto pb-1"><TabsList className="h-auto min-w-max justify-start rounded-xl bg-muted/70 p-1"><TabsTrigger value="overview">Overview</TabsTrigger>{canViewAttendance ? <TabsTrigger value="attendance">Attendance</TabsTrigger> : null}{canViewPayroll ? <TabsTrigger value="payroll">Payroll</TabsTrigger> : null}<TabsTrigger value="employment">Employment</TabsTrigger><TabsTrigger value="access">Access</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList></div>
+      <Tabs defaultValue={["overview", "attendance", "payroll", "performance", "employment", "access", "activity"].includes(searchParams.get("tab") || "") ? searchParams.get("tab")! : "overview"} className="space-y-5">
+        <div className="overflow-x-auto pb-1"><TabsList className="h-auto min-w-max justify-start rounded-xl bg-muted/70 p-1"><TabsTrigger value="overview">Overview</TabsTrigger>{canViewAttendance ? <TabsTrigger value="attendance">Attendance</TabsTrigger> : null}{canViewPayroll ? <TabsTrigger value="payroll">Financials</TabsTrigger> : null}<TabsTrigger value="performance">Performance</TabsTrigger><TabsTrigger value="employment">Employment</TabsTrigger><TabsTrigger value="access">Access</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList></div>
 
         <TabsContent value="overview" className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SummaryCard icon={Clock3} label="Regular time" value={minutes(totals.regular)} helper={`${dateFrom} to ${dateTo}`} />
             <SummaryCard icon={History} label="Overtime" value={minutes(totals.overtime)} helper={`${entries.length} attendance records`} />
             <SummaryCard icon={AlertTriangle} label="Exceptions" value={String(totals.exceptions)} helper={totals.exceptions ? "Needs manager attention" : "No recorded exceptions"} />
-            <SummaryCard icon={WalletCards} label="Compensation" value={profile ? money(profile.salary_amount) : "Not configured"} helper={profile ? `${profile.salary_type} • effective salary history enabled` : "Create a payroll profile"} />
+            <SummaryCard icon={WalletCards} label="Compensation" value={profile ? money(profile.salary_amount) : "Not configured"} helper={profile ? `${profile.salary_type} • effective salary history enabled` : "Create a compensation profile"} />
           </div>
           <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
             <Card><CardHeader><CardTitle className="text-base">Recent attendance</CardTitle><CardDescription>Latest staff-specific records and approval state.</CardDescription></CardHeader><CardContent><AttendanceList entries={entries.slice(0, 5)} canManage={canManageAttendance} onAction={updateAttendance} onCorrect={openAttendanceCorrection} compact /></CardContent></Card>
             <div className="space-y-5">
               <Card><CardHeader><CardTitle className="text-base">Current employment</CardTitle></CardHeader><CardContent className="space-y-3"><InfoLine icon={Mail} label="Email" value={staff.email || "Not set"} /><InfoLine icon={Phone} label="Phone" value={profile?.phone || "Not set"} /><InfoLine icon={MapPin} label="Address" value={profile?.address || "Not set"} /><InfoLine icon={WalletCards} label="Account" value={profile?.account_number || "Not configured"} /></CardContent></Card>
-              <Card><CardHeader><CardTitle className="text-base">Payroll readiness</CardTitle><CardDescription>Quick signal; payroll preview remains the authoritative check.</CardDescription></CardHeader><CardContent><div className={`rounded-xl border p-4 ${profile && totals.pending === 0 && schedules.length > 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="flex items-center gap-2 font-semibold">{profile && totals.pending === 0 && schedules.length > 0 ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-amber-600" />}{profile && totals.pending === 0 && schedules.length > 0 ? "No obvious staff blockers" : "Setup or review required"}</div><p className="mt-2 text-sm text-muted-foreground">{!profile ? "Create a compensation profile." : totals.pending ? "Resolve draft, pending, or correction-required attendance." : schedules.length === 0 && profile.salary_type !== "hourly" ? "Assign an effective work schedule." : "Run payroll preview to validate salary dates, leave, holidays, and period overlap."}</p></div></CardContent></Card>
+              <Card><CardHeader><CardTitle className="text-base">Attendance status</CardTitle><CardDescription>Quick signal for outstanding attendance review.</CardDescription></CardHeader><CardContent><div className={`rounded-xl border p-4 ${profile && totals.pending === 0 && schedules.length > 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="flex items-center gap-2 font-semibold">{profile && totals.pending === 0 && schedules.length > 0 ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-amber-600" />}{profile && totals.pending === 0 && schedules.length > 0 ? "No obvious staff blockers" : "Setup or review required"}</div><p className="mt-2 text-sm text-muted-foreground">{!profile ? "Create a compensation profile." : totals.pending ? "Resolve draft, pending, or correction-required attendance." : schedules.length === 0 && profile.salary_type !== "hourly" ? "Assign an effective work schedule." : "Attendance looks up to date."}</p></div></CardContent></Card>
             </div>
           </div>
         </TabsContent>
@@ -683,12 +682,32 @@ export default function StaffWorkspacePage() {
         </TabsContent> : null}
 
         {canViewPayroll ? <TabsContent value="payroll" className="space-y-5">
-          {profile ? <StaffPayrollBalanceCard staffId={profile.id} canManage={canManagePayroll} payrollHistory={payrollHistory} /> : null}
+          {profile ? (
+            <StaffSalaryCard
+              staffId={profile.id}
+              canManage={canManagePayroll}
+              attendanceBasedSalary={profile.attendance_based_salary ?? false}
+              selfDiscountPercent={profile.self_discount_percent}
+              onSettingsChanged={() => loadWorkspace(true)}
+            />
+          ) : null}
+          {profile ? (
+            <StaffCreditCard
+              staffId={profile.id}
+              canManage={canManagePayroll}
+              discountLimitAmount={profile.discount_limit_amount}
+              onDiscountLimitChanged={updateDiscountLimit}
+            />
+          ) : null}
           <div className="grid gap-5 lg:grid-cols-[.75fr_1.25fr]">
-            <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Current compensation</CardTitle><CardDescription>Effective salary used for new payroll periods.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent>{profile ? <div className="space-y-3"><div className="rounded-2xl bg-primary/10 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{profile.salary_type}</p><p className="mt-1 text-2xl font-bold">{money(profile.salary_amount)}</p></div><InfoRow label="Weekly hours" value={profile.weekly_hours == null ? "—" : String(profile.weekly_hours)} /><InfoRow label="Daily hours" value={profile.daily_hours == null ? "—" : String(profile.daily_hours)} /><InfoRow label="Salary records" value={String(salaryHistory.length)} /></div> : <EmptyState title="No compensation profile" description="Create a payroll profile before this employee can be included in payroll." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
+            <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Current compensation</CardTitle><CardDescription>Effective salary used to calculate daily and hourly accrual.</CardDescription></div>{canManageStaff ? <Button size="sm" variant="outline" onClick={openProfileEditor}><Edit3 className="mr-2 h-4 w-4" />Edit</Button> : null}</CardHeader><CardContent>{profile ? <div className="space-y-3"><div className="rounded-2xl bg-primary/10 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{profile.salary_type}</p><p className="mt-1 text-2xl font-bold">{money(profile.salary_amount)}</p></div><InfoRow label="Weekly hours" value={profile.weekly_hours == null ? "—" : String(profile.weekly_hours)} /><InfoRow label="Daily hours" value={profile.daily_hours == null ? "—" : String(profile.daily_hours)} /><InfoRow label="Salary records" value={String(salaryHistory.length)} /></div> : <EmptyState title="No compensation profile" description="Create an employment profile before this employee can be paid." action={canManageStaff ? <Button onClick={openProfileEditor}>Create profile</Button> : null} />}</CardContent></Card>
             <Card><CardHeader><CardTitle>Salary history</CardTitle><CardDescription>Effective-dated compensation changes; periods crossing a change must be split.</CardDescription></CardHeader><CardContent><div className="space-y-3">{salaryHistory.length ? salaryHistory.map((record) => <div key={record.id} className="flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold capitalize">{record.salary_type} • {money(record.salary_amount)}</p><p className="text-sm text-muted-foreground">{dateOnly(record.effective_from)} to {record.effective_to ? dateOnly(record.effective_to) : "Current"}</p></div><div className="sm:text-right"><Badge variant={record.effective_to ? "outline" : "default"}>{record.effective_to ? "Historical" : "Current"}</Badge><p className="mt-1 text-xs text-muted-foreground">{record.reason || "No change reason"}</p></div></div>) : <EmptyState title="No salary history" description="A salary record will appear after the profile is created." />}</div></CardContent></Card>
           </div>
         </TabsContent> : null}
+
+        <TabsContent value="performance" className="space-y-5">
+          <StaffPerformanceCard userId={userId} />
+        </TabsContent>
 
         <TabsContent value="employment" className="space-y-5">
           <div className="grid gap-5 lg:grid-cols-2">
@@ -704,7 +723,7 @@ export default function StaffWorkspacePage() {
           <div className="grid gap-5 lg:grid-cols-3">{scopeKeys.map((key) => { const draft = scopeDrafts[key]; const active = Boolean(scopesByKey[key]); return <Card key={key}><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-base capitalize">{key}</CardTitle><Badge variant={active ? "default" : "outline"}>{active ? "Scoped" : "Full access"}</Badge></div><CardDescription>Limit historical visibility for this module.</CardDescription></CardHeader><CardContent className="space-y-3"><div><Label>Maximum lookback days</Label><Input inputMode="numeric" placeholder="Example: 30" value={draft.max_lookback_days} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], max_lookback_days: event.target.value } }))} /></div><div className="grid grid-cols-2 gap-2"><div><Label>Start</Label><Input type="date" value={draft.window_start} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], window_start: event.target.value } }))} /></div><div><Label>End</Label><Input type="date" value={draft.window_end} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], window_end: event.target.value } }))} /></div></div>{canManageStaff ? <div className="flex gap-2"><Button className="flex-1" disabled={scopeBusy === key} onClick={() => void saveScope(key)}>{scopeBusy === key ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save</Button><Button variant="outline" disabled={!active || scopeBusy === key} onClick={() => void removeScope(key)}>Remove</Button></div> : null}</CardContent></Card>; })}</div>
         </TabsContent>
 
-        <TabsContent value="activity"><Card><CardHeader><CardTitle>Workforce activity</CardTitle><CardDescription>Real staff-specific events from attendance, salary history, and payroll.</CardDescription></CardHeader><CardContent><ActivityTimeline entries={entries} salaryHistory={salaryHistory} payrollHistory={payrollHistory} /></CardContent></Card></TabsContent>
+        <TabsContent value="activity"><Card><CardHeader><CardTitle>Workforce activity</CardTitle><CardDescription>Real staff-specific events from attendance and salary history.</CardDescription></CardHeader><CardContent><ActivityTimeline entries={entries} salaryHistory={salaryHistory} /></CardContent></Card></TabsContent>
       </Tabs>
 
       <Dialog open={Boolean(correctionEntry)} onOpenChange={(open) => { if (!open && !correctionSaving) setCorrectionEntry(null); }}><DialogContent><DialogHeader><DialogTitle>Correct attendance time</DialogTitle><DialogDescription>The record will return to draft and must be reviewed again before payroll.</DialogDescription></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2"><FormField label="Clock in"><Input type="datetime-local" value={correctionForm.clockIn} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockIn: event.target.value }))} /></FormField><FormField label="Clock out"><Input type="datetime-local" value={correctionForm.clockOut} onChange={(event) => setCorrectionForm((current) => ({ ...current, clockOut: event.target.value }))} /></FormField><div className="sm:col-span-2"><FormField label="Correction reason"><Textarea value={correctionForm.reason} onChange={(event) => setCorrectionForm((current) => ({ ...current, reason: event.target.value }))} placeholder="For example: employee forgot to clock out" /></FormField></div></div><DialogFooter><Button variant="outline" disabled={correctionSaving} onClick={() => setCorrectionEntry(null)}>Cancel</Button><Button disabled={correctionSaving} onClick={saveAttendanceCorrection}>{correctionSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save correction</Button></DialogFooter></DialogContent></Dialog>
@@ -756,12 +775,11 @@ function LeaveCard({ leaves }: { leaves: AttendanceLeave[] }) {
   return <Card><CardHeader><CardTitle className="text-base">Leave</CardTitle><CardDescription>Paid and unpaid requests in this period.</CardDescription></CardHeader><CardContent className="space-y-2">{leaves.length ? leaves.map((leave) => <div key={leave.id} className="rounded-lg border p-3"><div className="flex items-center justify-between gap-3"><p className="font-medium capitalize">{leave.leave_type} leave</p><Badge variant={leave.status === "approved" ? "default" : "secondary"}>{leave.status}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{dateOnly(leave.date_from)} to {dateOnly(leave.date_to)} • {leave.day_fraction === 0.5 ? "Half day" : "Full day"}</p><p className="mt-1 text-sm">{leave.reason}</p></div>) : <EmptyState title="No leave records" description="No leave overlaps the selected period." />}</CardContent></Card>;
 }
 
-function ActivityTimeline({ entries, salaryHistory, payrollHistory }: { entries: AttendanceEntry[]; salaryHistory: SalaryHistoryRecord[]; payrollHistory: PayrollHistoryRecord[] }) {
+function ActivityTimeline({ entries, salaryHistory }: { entries: AttendanceEntry[]; salaryHistory: SalaryHistoryRecord[] }) {
   const events = [
     ...entries.map((entry) => ({ key: `attendance-${entry.id}`, at: entry.updated_at || entry.clock_in_at, icon: Clock3, title: `Attendance ${entry.approval_status.replaceAll("_", " ")}`, detail: `${dateTime(entry.clock_in_at)} • ${minutes(entry.regular_minutes)} regular` })),
     ...salaryHistory.map((record) => ({ key: `salary-${record.id}`, at: record.created_at || record.effective_from, icon: WalletCards, title: `Salary ${money(record.salary_amount)} / ${record.salary_type}`, detail: `Effective ${dateOnly(record.effective_from)}${record.reason ? ` • ${record.reason}` : ""}` })),
-    ...payrollHistory.map(({ run, item }) => ({ key: `payroll-${item.id}`, at: run.paid_at || run.created_at || run.date_to, icon: Banknote, title: `Payroll ${run.status}`, detail: `${dateOnly(run.date_from)}–${dateOnly(run.date_to)} • ${money(item.net_pay)} net` })),
   ].sort((left, right) => new Date(right.at || 0).getTime() - new Date(left.at || 0).getTime()).slice(0, 30);
-  if (!events.length) return <EmptyState title="No workforce activity" description="Attendance, salary, and payroll events will appear here." />;
+  if (!events.length) return <EmptyState title="No workforce activity" description="Attendance and salary events will appear here." />;
   return <div className="space-y-1">{events.map((event, index) => { const Icon = event.icon; return <div key={event.key} className="relative flex gap-4 pb-5 last:pb-0">{index < events.length - 1 ? <div className="absolute left-5 top-10 h-[calc(100%-1.5rem)] w-px bg-border" /> : null}<div className="z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-background text-primary"><Icon className="h-4 w-4" /></div><div className="pt-1"><p className="font-semibold capitalize">{event.title}</p><p className="text-sm text-muted-foreground">{event.detail}</p><p className="mt-1 text-xs text-muted-foreground">{dateTime(event.at)}</p></div></div>; })}</div>;
 }

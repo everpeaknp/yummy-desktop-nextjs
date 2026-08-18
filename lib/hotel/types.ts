@@ -12,6 +12,7 @@ export interface HotelPropertySettings {
   currency: string;
   allow_overbooking: boolean;
   require_clean_room_for_checkin: boolean;
+  current_business_date: string;
   version: number;
 }
 
@@ -401,14 +402,6 @@ export interface HotelRoomOrder {
   room_order_context: HotelRoomOrderContext;
 }
 
-export interface HotelRoomOrderSettlement {
-  order_id: number;
-  settlement_status: HotelRoomOrderContext["settlement_status"];
-  folio_id: number;
-  folio_entry_id: number | null;
-  settled_amount: string | number;
-}
-
 export interface HotelRoomOrderAnalytics {
   order_count: number;
   completed_order_count: number;
@@ -423,6 +416,27 @@ export interface HotelRoomOrderAnalytics {
     order_count: number;
     gross_sales: string | number;
   }>;
+}
+
+export interface HotelFinanceSummary {
+  restaurant_id: number;
+  date_from: string;
+  date_to: string;
+  currency: string;
+  gross_room_revenue: string | number;
+  hotel_service_revenue: string | number;
+  discounts: string | number;
+  net_hotel_revenue: string | number;
+  payments_collected: string | number;
+  customer_credit_used: string | number;
+  advance_payments_received: string | number;
+  refunds: string | number;
+  room_service_charges: string | number;
+  outstanding_guest_balances: string | number;
+  guest_credit_balances: string | number;
+  open_guest_bills: number;
+  payment_methods: Record<string, string | number>;
+  daily: Array<Record<string, string | number>>;
 }
 
 export interface HotelBookingCreateInput {

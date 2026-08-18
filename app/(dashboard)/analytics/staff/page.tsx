@@ -28,9 +28,19 @@ type StaffDetail = {
   id: number;
   name: string;
   email: string;
+  /** Orders this staff member created, and their revenue. */
   revenue: number;
   orders_count: number;
   avg_order_value: number;
+  /** Orders this staff member *completed* (collected final payment on) --
+   * can be a different person than whoever created the order, e.g. a
+   * cashier closing out a table a waiter opened. */
+  orders_completed: number;
+  revenue_as_completer: number;
+  /** Order lines added to an already-created order. An activity count, not
+   * revenue -- items don't have a clean dollar amount separate from the
+   * order they belong to. */
+  items_added: number;
 };
 
 type StaffDetailsResponse = {
@@ -148,7 +158,10 @@ export default function AnalyticsStaffPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Staff Analytics</h1>
-            <p className="text-muted-foreground">Revenue and orders by staff.</p>
+            <p className="text-muted-foreground">
+              Orders created, orders completed, and items added by staff — tracked
+              separately since one order can involve more than one person.
+            </p>
           </div>
         </div>
         <Button variant="outline" onClick={fetchDetails} disabled={loading}>
@@ -267,22 +280,25 @@ export default function AnalyticsStaffPage() {
             <TableRow>
               <TableHead>Staff</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead className="text-right">Orders</TableHead>
+              <TableHead className="text-right">Created</TableHead>
               <TableHead className="text-right">Avg Order</TableHead>
-              <TableHead className="text-right">Revenue</TableHead>
+              <TableHead className="text-right">Revenue (Created)</TableHead>
+              <TableHead className="text-right">Completed</TableHead>
+              <TableHead className="text-right">Revenue (Completed)</TableHead>
+              <TableHead className="text-right">Items Added</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && !data ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-40 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-40 text-center text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                   Loading...
                 </TableCell>
               </TableRow>
             ) : (visibleRows?.length || 0) === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-40 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-40 text-center text-muted-foreground">
                   No results found for the selected range.
                 </TableCell>
               </TableRow>
@@ -295,6 +311,13 @@ export default function AnalyticsStaffPage() {
                   <TableCell className="text-right">Rs. {money.format(Number(s.avg_order_value || 0))}</TableCell>
                   <TableCell className="text-right font-semibold text-emerald-700 dark:text-emerald-400">
                     Rs. {money.format(Number(s.revenue || 0))}
+                  </TableCell>
+                  <TableCell className="text-right">{Number(s.orders_completed || 0).toLocaleString()}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    Rs. {money.format(Number(s.revenue_as_completer || 0))}
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {Number(s.items_added || 0).toLocaleString()}
                   </TableCell>
                 </TableRow>
               ))

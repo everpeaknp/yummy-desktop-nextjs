@@ -30,15 +30,11 @@ describe("staffWorkforceApi", () => {
     expect(profile?.id).toBe(9);
   });
 
-  it("loads effective salary and payroll history by staff id", async () => {
-    mocked.get
-      .mockResolvedValueOnce({ data: { data: [{ id: 1, staff_id: 9 }] } })
-      .mockResolvedValueOnce({ data: { data: [{ run: { id: 4 }, item: { id: 7, staff_id: 9 } }] } });
+  it("loads effective salary history by staff id", async () => {
+    mocked.get.mockResolvedValueOnce({ data: { data: [{ id: 1, staff_id: 9 }] } });
 
     await staffWorkforceApi.salaryHistory(9);
-    await staffWorkforceApi.payrollHistory(9);
 
     expect(mocked.get).toHaveBeenNthCalledWith(1, "/staff/9/salary-history");
-    expect(mocked.get).toHaveBeenNthCalledWith(2, "/payroll/staff/9/history");
   });
 });

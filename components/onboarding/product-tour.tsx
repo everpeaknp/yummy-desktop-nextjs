@@ -125,7 +125,7 @@ const TOUR_COPY: Record<string, { title: string; text: string }> = {
   },
   "nav-group-workforce": {
     title: "Workforce",
-    text: "Staff, attendance, and payroll.",
+    text: "Staff, attendance, and salary.",
   },
   "nav-group-settings": {
     title: "Settings",
@@ -193,7 +193,7 @@ const TOUR_COPY: Record<string, { title: string; text: string }> = {
   },
   "nav-workforce": {
     title: "Workforce",
-    text: "Staff, attendance, and payroll hub.",
+    text: "Staff, attendance, and salary hub.",
   },
   "nav-staff": {
     title: "Staff",
@@ -202,10 +202,6 @@ const TOUR_COPY: Record<string, { title: string; text: string }> = {
   "nav-attendance": {
     title: "Attendance",
     text: "QR check-in and attendance devices.",
-  },
-  "nav-payroll": {
-    title: "Payroll",
-    text: "Salary runs and staff payments.",
   },
   "nav-customers": {
     title: "Customers",

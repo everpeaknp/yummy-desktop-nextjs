@@ -7,7 +7,7 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis, AccountingApis, HotelPmsApis } from "@/lib/api/endpoints";
+import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis, AccountingApis, StaffProfileApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -224,6 +224,7 @@ interface OrderMeta {
   customer_name?: string;
   customer_phone?: string;
   customer_id?: number;
+  staff_order_for_id?: number | null;
   number_of_guests?: number;
   notes?: string;
   created_at: string;
@@ -290,6 +291,12 @@ function readPaymentInstrument(payment: BillPayment | null | undefined) {
   }
   return null;
 }
+
+type StaffOption = {
+  id: number;
+  user_name?: string | null;
+  account_number?: string | null;
+};
 
 type CustomerOption = {
   id: number;
@@ -432,6 +439,106 @@ function CustomerSearchSelect({
         <p className="text-xs text-muted-foreground">{helperText}</p>
       )}
     </div>
+  );
+}
+
+function staffDisplayName(staff: StaffOption) {
+  const name = staff.user_name?.trim();
+  return name && name.length > 0 ? name : `Staff #${staff.id}`;
+}
+
+function StaffSearchSelect({
+  staff,
+  value,
+  onValueChange,
+}: {
+  staff: StaffOption[];
+  value: string;
+  onValueChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = staff.find((s) => String(s.id) === value);
+  const selectedLabel = selected
+    ? staffDisplayName(selected)
+    : "Select staff member";
+
+  const filteredStaff = staff.filter((s) => {
+    const haystack = [staffDisplayName(s), s.account_number, String(s.id)]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(query.trim().toLowerCase());
+  });
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full justify-between gap-3 h-11 pr-3 font-normal"
+        >
+          <span className="min-w-0 flex-1 truncate text-left">
+            {selectedLabel}
+          </span>
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(92vw,420px)] p-0" align="start">
+        <div className="border-b border-border/40 p-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search staff..."
+              autoFocus
+              className="pl-9"
+            />
+          </div>
+        </div>
+        <ScrollArea className="max-h-72">
+          <div className="p-1">
+            {filteredStaff.length === 0 ? (
+              <div className="px-3 py-6 text-sm text-muted-foreground">No staff found.</div>
+            ) : (
+              filteredStaff.map((s) => {
+                const label = staffDisplayName(s);
+                const isSelected = String(s.id) === value;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      onValueChange(String(s.id));
+                      setOpen(false);
+                      setQuery("");
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
+                      isSelected
+                        ? "bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
+                        : "hover:bg-muted/70 text-foreground"
+                    )}
+                  >
+                    <span className="block min-w-0 flex-1 truncate" title={label}>
+                      {label}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -589,11 +696,15 @@ export default function CheckoutPage() {
 
   // Discount dialog
   const [discountOpen, setDiscountOpen] = useState(false);
-  const [discountType, setDiscountType] = useState<"code" | "manual">("code");
+  const [discountType, setDiscountType] = useState<"code" | "manual" | "staff">("code");
   const [discountCode, setDiscountCode] = useState("");
   const [manualDiscountAmount, setManualDiscountAmount] = useState("");
   const [manualDiscountPercent, setManualDiscountPercent] = useState("");
   const [discountSubmitting, setDiscountSubmitting] = useState(false);
+
+  // Staff self-purchase discount ("this order is for staff member X")
+  const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
 
   const hasNcItems = Boolean(
     (context?.order?.items || bill?.items || []).some((item: any) => Boolean(item?.is_nc))
@@ -1016,6 +1127,23 @@ export default function CheckoutPage() {
     }
   }, [fetchCustomers, user?.restaurant_id]);
 
+  const fetchStaffOptions = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get(StaffProfileApis.list({ limit: 500 }));
+      if (data.status === "success") {
+        setStaffOptions((data.data || []) as StaffOption[]);
+      }
+    } catch (err) {
+      console.error("Failed to load staff:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user?.restaurant_id) {
+      fetchStaffOptions();
+    }
+  }, [fetchStaffOptions, user?.restaurant_id]);
+
   // ── Auto-navigate on full payment ─────────────────
   useEffect(() => {
     if (bill?.is_fully_paid && shouldAutoRedirectAfterPayment) {
@@ -1110,20 +1238,6 @@ export default function CheckoutPage() {
       }
     } catch (err: any) {
       console.error("Failed to complete order:", err);
-    } finally {
-      setCompleting(false);
-    }
-  };
-
-  const handlePostToRoomFolio = async () => {
-    if (!window.confirm("Mark this room-service order as delivered and add it to the guest bill?")) return;
-    setCompleting(true);
-    try {
-      await apiClient.post(HotelPmsApis.postRoomOrderToFolio(Number(orderId)));
-      toast.success("Room-service order added to the guest bill");
-      router.push("/hotel");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || err?.response?.data?.message || "Unable to complete this room-service order");
     } finally {
       setCompleting(false);
     }
@@ -1957,6 +2071,16 @@ export default function CheckoutPage() {
         await apiClient.patch(OrderApis.updateOrder(orderId), {
           discount_code: discountCode.trim(),
         });
+      } else if (discountType === "staff") {
+        const staffId = parseInt(selectedStaffId, 10);
+        if (!staffId) {
+          setDiscountError("Select a staff member");
+          setDiscountSubmitting(false);
+          return;
+        }
+        await apiClient.patch(OrderApis.updateOrder(orderId), {
+          staff_order_for_id: staffId,
+        });
       } else {
         const dueAmountForManualDiscount = Math.max(0, Number(bill?.balance_due || 0));
         const amt = parseFloat(manualDiscountAmount);
@@ -1978,6 +2102,7 @@ export default function CheckoutPage() {
       setDiscountCode("");
       setManualDiscountAmount("");
       setManualDiscountPercent("");
+      setSelectedStaffId("");
       await fetchBill();
     } catch (err: any) {
       setDiscountError(err?.response?.data?.detail || "Failed to apply discount");
@@ -1994,9 +2119,12 @@ export default function CheckoutPage() {
     }
 
     try {
-      await apiClient.patch(OrderApis.updateOrder(orderId), {
-        discount_code: "",
-      });
+      await apiClient.patch(
+        OrderApis.updateOrder(orderId),
+        orderMeta?.staff_order_for_id
+          ? { staff_order_for_id: 0 }
+          : { discount_code: "" },
+      );
       await fetchBill();
     } catch (err: any) {
       console.error("Failed to remove discount:", err);
@@ -2034,6 +2162,12 @@ export default function CheckoutPage() {
 
   const computedDiscount = getRecordedOrderDiscount(bill);
   const hasDiscount = computedDiscount > 0;
+  const discountStaffMember = orderMeta?.staff_order_for_id
+    ? staffOptions.find((s) => s.id === orderMeta.staff_order_for_id)
+    : undefined;
+  const discountLabel = orderMeta?.staff_order_for_id
+    ? `Staff discount${discountStaffMember ? ` (${staffDisplayName(discountStaffMember)})` : ""}`
+    : "Discount";
   const displayBillItems = bill.items.map((item) => {
     const overrides = itemOverrides[item.id] || {};
     const displayItem = {
@@ -2101,18 +2235,18 @@ export default function CheckoutPage() {
           <Button variant="outline" size="sm" onClick={fetchBill} className="gap-2">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
-          {orderMeta?.channel === "room_service" && !displayIsFullyPaid && orderMeta.room_order_context?.settlement_status === "unsettled" && (
+          {orderMeta?.channel === "room_service" && !["completed", "canceled"].includes(orderMeta.status) && (
             <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/20">
-              <div><p className="font-semibold">Complete room delivery</p><p className="text-sm text-muted-foreground">Mark the food as delivered and add the unpaid amount to the guest bill.</p></div>
-              <Button className="w-full" onClick={handlePostToRoomFolio} disabled={completing || !roomOrderCanPost}>
-                {completing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wallet className="mr-2 h-4 w-4" />}
-                Mark delivered · {formatCurrency(displayBalanceDue, curr)}
+              <div><p className="font-semibold">Complete room delivery</p><p className="text-sm text-muted-foreground">This order is already included in room {orderMeta.room_order_context?.room_number || "the guest"}&apos;s bill. Mark it delivered when service is complete.</p></div>
+              <Button className="w-full" onClick={handleComplete} disabled={completing || !roomOrderCanPost}>
+                {completing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+                Mark delivered
               </Button>
               {kotFulfillmentRequired && !allKotsServed ? <p className="text-xs text-amber-700">Mark all kitchen items as served before completing this delivery.</p> : null}
             </div>
           )}
 
-          {displayIsFullyPaid && (
+          {displayIsFullyPaid && !isRoomServiceOrder && (
             <Button variant="outline" size="sm" onClick={handlePrintReceipt} className="gap-2">
               <Printer className="h-3.5 w-3.5" /> Print
             </Button>
@@ -2121,7 +2255,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* ── Fully Paid Banner ── */}
-      {displayIsFullyPaid && (!guestBills?.split_group_id || guestBills.orders.every((g: any) => g.is_fully_paid)) && (
+      {displayIsFullyPaid && !isRoomServiceOrder && (!guestBills?.split_group_id || guestBills.orders.every((g: any) => g.is_fully_paid)) && (
         <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl">
           <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
           <div>
@@ -2382,7 +2516,7 @@ export default function CheckoutPage() {
                 <div className="flex justify-between text-sm items-center">
                   <div className="flex items-center gap-1.5">
                     <Percent className="h-3.5 w-3.5 text-emerald-600" />
-                    <span className="text-emerald-600 font-medium">Discount</span>
+                    <span className="text-emerald-600 font-medium">{discountLabel}</span>
                     {!displayIsFullyPaid && canApplyDiscount && (
                       <button onClick={handleRemoveDiscount} className="text-destructive hover:text-destructive/80 ml-1">
                         <X className="h-3.5 w-3.5" />
@@ -3962,7 +4096,7 @@ export default function CheckoutPage() {
           <DialogHeader>
             <DialogTitle>{hasDiscount ? "Change Discount" : "Apply Discount"}</DialogTitle>
             <DialogDescription>
-              Apply a promo code or manual discount to this order.
+              Apply a promo code, manual discount, or staff purchase discount to this order.
             </DialogDescription>
           </DialogHeader>
 
@@ -3999,9 +4133,35 @@ export default function CheckoutPage() {
                 <Percent className="h-4 w-4 inline mr-2" />
                 Manual Amount
               </button>
+              <button
+                type="button"
+                onClick={() => setDiscountType("staff")}
+                className={cn(
+                  "flex-1 p-3 rounded-xl border-2 text-sm font-medium transition-all",
+                  discountType === "staff"
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "border-border/50 text-muted-foreground hover:border-border"
+                )}
+              >
+                <User className="h-4 w-4 inline mr-2" />
+                Staff
+              </button>
             </div>
 
-            {discountType === "code" ? (
+            {discountType === "staff" ? (
+              <div className="space-y-2">
+                <Label>Staff member</Label>
+                <StaffSearchSelect
+                  staff={staffOptions}
+                  value={selectedStaffId}
+                  onValueChange={setSelectedStaffId}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Their staff purchase discount applies automatically and replaces any other
+                  discount on this order.
+                </p>
+              </div>
+            ) : discountType === "code" ? (
               <div className="space-y-2">
                 <Label htmlFor="discount-code">Discount Code</Label>
                 <Input

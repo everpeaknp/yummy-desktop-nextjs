@@ -10,6 +10,7 @@ import type {
   HotelBuilding,
   HotelDailyRate,
   HotelFloor,
+  HotelFinanceSummary,
   HotelFolio,
   HotelFolioEntryInput,
   HotelFolioPaymentInput,
@@ -24,7 +25,6 @@ import type {
   HotelRoom,
   HotelRoomOrder,
   HotelRoomOrderAnalytics,
-  HotelRoomOrderSettlement,
   HotelRoomType,
   HotelStay,
 } from "./types";
@@ -531,14 +531,6 @@ export const hotelPmsApi = {
     );
   },
 
-  async postRoomOrderToFolio(
-    orderId: number,
-  ): Promise<HotelRoomOrderSettlement> {
-    return unwrapHotelResponse(
-      await apiClient.post(HotelPmsApis.postRoomOrderToFolio(orderId)),
-    );
-  },
-
   async getRoomOrderAnalytics(
     restaurantId: number,
     dateFrom: string,
@@ -546,6 +538,22 @@ export const hotelPmsApi = {
   ): Promise<HotelRoomOrderAnalytics> {
     return unwrapHotelResponse(
       await apiClient.get(HotelPmsApis.roomOrderAnalytics, {
+        params: {
+          restaurant_id: restaurantId,
+          date_from: dateFrom,
+          date_to: dateTo,
+        },
+      }),
+    );
+  },
+
+  async getFinanceSummary(
+    restaurantId: number,
+    dateFrom: string,
+    dateTo: string,
+  ): Promise<HotelFinanceSummary> {
+    return unwrapHotelResponse(
+      await apiClient.get(HotelPmsApis.financeSummary, {
         params: {
           restaurant_id: restaurantId,
           date_from: dateFrom,

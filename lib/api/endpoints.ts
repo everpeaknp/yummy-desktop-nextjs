@@ -78,8 +78,8 @@ export const HotelPmsApis = {
   bookingStay: (id: number) => `/hotel/v2/bookings/${id}/stay`,
   stay: (id: number) => `/hotel/v2/stays/${id}`,
   stayRoomOrders: (id: number) => `/hotel/v2/stays/${id}/room-orders`,
-  postRoomOrderToFolio: (id: number) => `/hotel/v2/room-orders/${id}/post-to-folio`,
   roomOrderAnalytics: "/hotel/v2/room-orders/analytics/summary",
+  financeSummary: "/hotel/v2/finance/summary",
   checkout: (id: number) => `/hotel/v2/stays/${id}/checkout`,
   prepareCheckout: (id: number) => `/hotel/v2/stays/${id}/prepare-checkout`,
   earlyDepartureQuote: (id: number) => `/hotel/v2/stays/${id}/early-departure/quote`,
@@ -2002,6 +2002,32 @@ export const StaffProfileApis = {
   employmentHistory: (userId: number) =>
     `/staff/users/${userId}/employment-history`,
   rehire: (staffId: number) => `/staff/${staffId}/rehire`,
+  profile: (staffId: number) => `/staff/${staffId}/profile`,
+  balances: () => `/staff/balances`,
+  discountLimit: (staffId: number) => `/staff/${staffId}/discount-limit`,
+};
+
+export const StaffCreditApis = {
+  balance: (staffId: number) => `/staff/${staffId}/credit/balance`,
+  transactions: (staffId: number) => `/staff/${staffId}/credit/transactions`,
+  advance: (staffId: number) => `/staff/${staffId}/credit/advance`,
+  repay: (staffId: number) => `/staff/${staffId}/credit/repay`,
+  reverse: (staffId: number, transactionId: number) =>
+    `/staff/${staffId}/credit/transactions/${transactionId}/reverse`,
+};
+
+export const StaffSalaryApis = {
+  balance: (staffId: number) => `/staff/${staffId}/salary/balance`,
+  pay: (staffId: number) => `/staff/${staffId}/salary/pay`,
+  deduct: (staffId: number) => `/staff/${staffId}/salary/deduct`,
+  payAll: () => `/staff/salary/pay-all`,
+  payAllPreview: () => `/staff/salary/pay-all/preview`,
+  overtime: (staffId: number) => `/staff/${staffId}/salary/overtime`,
+  resolveOvertime: (staffId: number) =>
+    `/staff/${staffId}/salary/overtime/resolve`,
+  selfDiscount: (staffId: number) => `/staff/${staffId}/self-discount`,
+  attendanceBasedSalary: (staffId: number) =>
+    `/staff/${staffId}/attendance-based-salary`,
 };
 
 export const AttendanceApis = {
@@ -2046,54 +2072,6 @@ export const AttendanceApis = {
   connectorPunches: "/attendance/connectors/punches",
   revokeConnector: (credentialId: string) =>
     "/attendance/connectors/" + credentialId + "/revoke",
-};
-
-export const PayrollApis = {
-  listRuns: (statuses?: string[]) => {
-    const params = new URLSearchParams();
-    if (statuses) statuses.forEach((s) => params.append("statuses", s));
-    const q = params.toString();
-    return q ? `/payroll/runs?${q}` : "/payroll/runs";
-  },
-  getRun: (id: number) => `/payroll/runs/${id}`,
-  createRun: "/payroll/runs",
-  previewRun: "/payroll/runs/preview",
-  approveRun: (id: number) => `/payroll/runs/${id}/approve`,
-  markPaid: (id: number) => `/payroll/runs/${id}/paid`,
-  cancelRun: (id: number) => `/payroll/runs/${id}/cancel`,
-  addAdjustments: (id: number) => `/payroll/runs/${id}/adjustments`,
-  deleteAdjustment: (adjustmentId: number) =>
-    `/payroll/adjustments/${adjustmentId}`,
-  runPdf: (id: number) => `/payroll/runs/${id}/pdf`,
-  staffHistory: (staffId: number) => `/payroll/staff/${staffId}/history`,
-  dueSummary: (asOf?: string) =>
-    asOf
-      ? `/payroll/due-summary?as_of=${encodeURIComponent(asOf)}`
-      : "/payroll/due-summary",
-  staffBalance: (staffId: number, asOf?: string) =>
-    asOf
-      ? `/payroll/staff/${staffId}/balance?as_of=${encodeURIComponent(asOf)}`
-      : `/payroll/staff/${staffId}/balance`,
-  setupReadiness: (asOf?: string) =>
-    asOf
-      ? `/payroll/setup-readiness?as_of=${encodeURIComponent(asOf)}`
-      : "/payroll/setup-readiness",
-  bulkPrepare: "/payroll/runs/bulk-prepare",
-  schedules: "/payroll/schedules",
-  payments: (staffId?: number) =>
-    staffId ? `/payroll/payments?staff_id=${staffId}` : "/payroll/payments",
-  recordPayment: "/payroll/payments",
-  reversePayment: (paymentId: number) =>
-    `/payroll/payments/${paymentId}/reverse`,
-  taxLiability: (asOf?: string) =>
-    asOf
-      ? `/payroll/tax-liability?as_of=${encodeURIComponent(asOf)}`
-      : "/payroll/tax-liability",
-  taxRemittances: (limit = 100) =>
-    `/payroll/tax-remittances?limit=${encodeURIComponent(String(limit))}`,
-  recordTaxRemittance: "/payroll/tax-remittances",
-  reverseTaxRemittance: (remittanceId: number) =>
-    `/payroll/tax-remittances/${remittanceId}/reverse`,
 };
 
 export const PeriodCloseApis = {

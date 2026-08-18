@@ -233,6 +233,8 @@ export type PermissionKey =
   | "finance.expenses.approve"
   | "finance.payroll.view"
   | "finance.payroll.manage"
+  // Admin & Settings (staff financial ledger)
+  | "admin.staff.credit.manage"
   // Attendance
   | "attendance.view"
   | "attendance.manage"
@@ -596,7 +598,6 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/manage": ADMIN_MANAGER,
   "/manage/additional-settings": ADMIN_MANAGER,
   "/staff": ADMIN_MANAGER,
-  "/payroll": ["admin", "cashier"],
   "/attendance": ADMIN_MANAGER,
   "/workforce": ADMIN_MANAGER,
   "/period-reports": ADMIN_MANAGER,

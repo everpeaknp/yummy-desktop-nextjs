@@ -66,7 +66,6 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/customers": Users,
   "/attendance": Fingerprint,
   "/staff": Users,
-  "/payroll": Banknote,
   "/workforce": Briefcase,
   "/tables": Armchair,
   "/reservations": Calendar,
@@ -207,7 +206,6 @@ export function useSidebarItems(): SidebarItem[] {
           "/inventory": "inventory.enabled",
           "/manage/suppliers": "inventory.suppliers.enabled",
           "/reservations": "reservations.enabled",
-          "/payroll": "payroll.enabled",
           "/finance/accounting": "finance.accounting.enabled",
           "/menu/modifiers": "menu.modifiers.enabled",
           "/finance/income": "finance.income_expense.enabled",
@@ -249,7 +247,7 @@ export function useSidebarItems(): SidebarItem[] {
     };
 
     flatItems.forEach((item) => {
-      if (["/staff", "/attendance", "/payroll"].includes(item.href)) {
+      if (["/staff", "/attendance"].includes(item.href)) {
         // Workforce is assembled as one owner-oriented workflow below.
         return;
       } else if (item.href === "/orders/history") {
@@ -324,17 +322,6 @@ export function useSidebarItems(): SidebarItem[] {
         title: "Attendance",
         href: "/attendance",
         icon: Fingerprint,
-        isNestedChild: true,
-      });
-    }
-    if (
-      hasPermission(user, "finance.payroll.view") &&
-      !isExplicitlyLocked("payroll.enabled")
-    ) {
-      workforceItems.push({
-        title: "Payroll",
-        href: "/payroll",
-        icon: Banknote,
         isNestedChild: true,
       });
     }
