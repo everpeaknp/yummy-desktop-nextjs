@@ -10,7 +10,6 @@ import {
   Clock3,
   Mail,
   Megaphone,
-  MessageCircle,
   MessageCircleMore,
   RefreshCw,
   Settings,
@@ -19,6 +18,7 @@ import {
   TriangleAlert,
   Users,
 } from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -552,7 +552,7 @@ export function GrowthOverviewClient() {
                             : "bg-blue-500/10 border-blue-500/20 text-blue-600"
                         )}>
                           {campaign.channel === "whatsapp" ? (
-                            <MessageCircle className="h-4 w-4" />
+                            <FaWhatsapp className="h-4 w-4" />
                           ) : (
                             <Mail className="h-4 w-4" />
                           )}
