@@ -13,6 +13,8 @@ import {
   FileCheck2,
   FilePenLine,
   ImageIcon,
+  Info,
+  Lightbulb,
   Loader2,
   LockKeyhole,
   RefreshCw,
@@ -23,6 +25,8 @@ import {
   TriangleAlert,
   Users,
   WalletCards,
+  Wand2,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,6 +71,7 @@ import {
   deterministicCampaignCopy,
   formatCampaignOffer,
   getCampaignPlaybook,
+  PREVIEW_COUPON_CODE,
   validateCampaignOffer,
   type CampaignOfferDraft,
   type CampaignPosterTemplate,
@@ -517,6 +522,7 @@ export function CampaignStudioClient() {
       message,
       emailSubject,
       emailBodyHtml,
+      emailTemplate: emailPosterTemplate,
     });
     return selectedMessageTemplate
       ? { ...input, message_template_id: Number(selectedMessageTemplate.id) }
@@ -544,6 +550,7 @@ export function CampaignStudioClient() {
              message_body: channel === "whatsapp" ? message.trim() : undefined,
              email_subject: channel === "email" ? emailSubject.trim() : undefined,
              email_body_html: channel === "email" ? emailBodyHtml.trim() : undefined,
+             email_template: channel === "email" ? emailPosterTemplate : undefined,
              message_template_id: selectedMessageTemplate
                ? Number(selectedMessageTemplate.id)
                : undefined,
@@ -631,7 +638,34 @@ export function CampaignStudioClient() {
   const suggestCopy = async () => {
     setSuggestingCopy(true);
     setPageError(null);
+    
     try {
+      // Check if AI copy is enabled in settings
+      const settings = await growthApi.getSettings();
+      
+      if (!settings.ai_copy_enabled) {
+        // AI is disabled - use system templates directly
+        const freshCopy = deterministicCampaignCopy({
+          restaurantName,
+          playbookCode,
+          language,
+          offer,
+          channel,
+        });
+        if (channel === "email") {
+          setEmailSubject(freshCopy.headline);
+          setEmailBodyHtml(freshCopy.message);
+        } else {
+          setHeadline(freshCopy.headline);
+          setMessage(freshCopy.message);
+        }
+        setCopyCustomized(true);
+        toast.success("System template applied! Click again for another variation.");
+        setSuggestingCopy(false);
+        return;
+      }
+      
+      // AI is enabled - try to use AI
       const suggestion = await growthApi.suggestCopy({
         playbook_code: playbookCode,
         language,
@@ -647,17 +681,25 @@ export function CampaignStudioClient() {
       }
       setCopyCustomized(true);
       if (suggestion.warnings.length) toast.info(suggestion.warnings.join(" "));
-      else toast.success("Copy draft updated. Review every word before submission.");
+      else toast.success("AI-generated copy applied. Review every word before submission.");
     } catch {
+      // AI failed or errored - fallback to system templates
+      const freshCopy = deterministicCampaignCopy({
+        restaurantName,
+        playbookCode,
+        language,
+        offer,
+        channel,
+      });
       if (channel === "email") {
-        setEmailSubject(starterCopy.headline);
-        setEmailBodyHtml(starterCopy.message);
+        setEmailSubject(freshCopy.headline);
+        setEmailBodyHtml(freshCopy.message);
       } else {
-        setHeadline(starterCopy.headline);
-        setMessage(starterCopy.message);
+        setHeadline(freshCopy.headline);
+        setMessage(freshCopy.message);
       }
       setCopyCustomized(true);
-      toast.info("Copy suggestion service is unavailable; a deterministic starter was restored.");
+      toast.success("Template applied! Click again for another variation.");
     } finally {
       setSuggestingCopy(false);
     }
@@ -705,64 +747,42 @@ export function CampaignStudioClient() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-8 pb-16">
-      <section className="rounded-xl border border-border bg-card">
-        <div className="p-6">
-          <div className="flex items-start justify-between gap-6">
-            {/* Left: Title and description */}
-            <div className="min-w-0 flex-1">
-              <Link href="/grow" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back to Yummy Grow
-              </Link>
-              
-              <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
-                Create a controlled return offer
-              </h1>
-              
-              <p className="mt-2 text-sm text-muted-foreground leading-tight">
-                Draft a V1 playbook, inspect live consented audience, bound maximum exposure, and prepare content for separate manual review.
-              </p>
-            </div>
-            
-            {/* Right: Status stack */}
-            <div className="flex shrink-0 flex-col items-end gap-2">
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-                <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground">No approval or delivery from studio</span>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-2.5 py-1">
-                  <FilePenLine className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs font-medium">Campaign Studio</span>
-                </div>
-                
-                <Badge variant="outline" className="border-border bg-background px-2.5 py-1">
-                  {savedCampaign?.status === "review" ? (
-                    <>
-                      <CheckCircle2 className="mr-1.5 h-3 w-3 text-emerald-600" />
-                      <span className="text-xs">Awaiting review</span>
-                    </>
-                  ) : savedCampaign ? (
-                    <>
-                      <Save className="mr-1.5 h-3 w-3 text-blue-600" />
-                      <span className="text-xs">Draft saved</span>
-                    </>
-                  ) : (
-                    <>
-                      <FilePenLine className="mr-1.5 h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs">Unsaved</span>
-                    </>
-                  )}
-                </Badge>
-              </div>
-            </div>
+    <div className="dashboard-ui relative flex flex-col gap-10 max-w-full xl:max-w-[1600px] mx-auto pb-20 px-4 overflow-x-hidden">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-3 mb-2">
+            <Link href="/grow" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Yummy Grow
+            </Link>
           </div>
+          <h1 className="dc-page-title">Create Campaign</h1>
+          <p className="dc-page-subtitle">
+            Draft a playbook, inspect audience, bound offer, and prepare content for review
+          </p>
         </div>
-      </section>
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge variant="outline" className={cn(
+            "text-xs font-semibold gap-1.5",
+            savedCampaign?.status === "review" 
+              ? "border-green-500/20 bg-green-500/10 text-green-600"
+              : savedCampaign
+                ? "border-blue-500/20 bg-blue-500/10 text-blue-600"
+                : "border-border bg-muted text-muted-foreground"
+          )}>
+            {savedCampaign?.status === "review" ? (
+              <><CheckCircle2 className="h-3.5 w-3.5" />Awaiting review</>
+            ) : savedCampaign ? (
+              <><Save className="h-3.5 w-3.5" />Draft saved</>
+            ) : (
+              <><FilePenLine className="h-3.5 w-3.5" />Unsaved</>
+            )}
+          </Badge>
+        </div>
+      </div>
 
-      <nav className="rounded-xl border border-border bg-card p-4" aria-label="Campaign steps">
+      <nav className="dc-card p-4" aria-label="Campaign steps">
         <div className="flex items-center justify-between gap-2">
           {studioSteps.map((item, index) => {
             const Icon = item.icon;
@@ -849,7 +869,7 @@ export function CampaignStudioClient() {
       )}
 
       {step === 1 && (
-        <div className="grid gap-8 xl:grid-cols-[1.05fr_0.95fr]">
+        <div className="grid gap-8 xl:grid-cols-[1.05fr_0.95fr] overflow-x-hidden">
           <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
             <CardHeader className="space-y-3">
               <CardTitle className="text-xl">Choose one V1 playbook</CardTitle>
@@ -999,7 +1019,7 @@ export function CampaignStudioClient() {
       )}
 
       {step === 2 && (
-        <div className="grid gap-6 xl:grid-cols-[1fr_0.75fr]">
+        <div className="grid gap-6 xl:grid-cols-[1fr_0.75fr] overflow-x-hidden">
           <Card>
             <CardHeader>
               <CardTitle>Offer rules</CardTitle>
@@ -1066,24 +1086,26 @@ export function CampaignStudioClient() {
                 <p className="text-4xl font-black">{formatMoney(offerValidation.maximum_exposure)}</p>
                 <p className="mt-3 text-sm font-semibold">{formatCampaignOffer(offer)}</p>
                 {audience && offer.redemption_limit > audience.included_count && (
-                  <Alert className="mt-4 rounded-xl border border-border bg-card">
-                    <TriangleAlert className="h-4 w-4" />
-                    <AlertDescription>You set more redemptions than eligible customers. Double-check this number.</AlertDescription>
+                  <Alert className="mt-4 rounded-xl border-amber-500/40 bg-amber-500/5">
+                    <TriangleAlert className="h-4 w-4 text-amber-600" />
+                    <AlertDescription className="text-amber-800 dark:text-amber-300">You set more redemptions than eligible customers. Double-check this number.</AlertDescription>
                   </Alert>
                 )}
               </CardContent>
             </Card>
-            <Alert className="rounded-xl border border-border bg-card">
-              <TriangleAlert className="h-4 w-4" />
-              <AlertTitle>Check if this offer is profitable</AlertTitle>
-              <AlertDescription>Make sure your menu prices and food costs can support this discount.</AlertDescription>
-            </Alert>
+            <div className="flex gap-2.5 rounded-xl border border-dashed border-border px-3.5 py-3 text-muted-foreground">
+              <Info className="h-4 w-4 shrink-0 translate-y-0.5" />
+              <p className="text-xs leading-relaxed">
+                <span className="font-medium text-foreground">Check if this offer is profitable.</span>{" "}
+                Make sure your menu prices and food costs can support this discount.
+              </p>
+            </div>
           </div>
         </div>
       )}
 
       {step === 3 && (
-        <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr] overflow-x-hidden">
           <Card>
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
@@ -1096,7 +1118,7 @@ export function CampaignStudioClient() {
                   </CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => void suggestCopy()} disabled={suggestingCopy || isReadOnly}>
-                  {suggestingCopy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Suggest copy
+                  {suggestingCopy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lightbulb className="mr-2 h-4 w-4" />}Suggest copy
                 </Button>
               </div>
             </CardHeader>
@@ -1201,7 +1223,7 @@ export function CampaignStudioClient() {
               primaryColor={brand?.primary_color || undefined}
               contactText={brand?.approved_contact_text || undefined}
               footerText={brand?.approved_footer_text || undefined}
-              couponCode="ABC123"
+              couponCode={PREVIEW_COUPON_CODE}
               showWarning={true}
               posterDataUrl={posterDataUrl || undefined}
               isReadOnly={isReadOnly}
@@ -1300,51 +1322,102 @@ export function CampaignStudioClient() {
       )}
 
       {step === 4 && (
-        <div className="grid gap-6 xl:grid-cols-[1fr_0.72fr]">
-          <div className="space-y-5">
+        <div className="grid gap-6 xl:grid-cols-[1fr_0.72fr] overflow-x-hidden">
+          <div className="space-y-5 min-w-0">
             <Card>
-              <CardHeader><CardTitle>Campaign Summary</CardTitle><CardDescription>Review your campaign before submitting</CardDescription></CardHeader>
-              <CardContent className="space-y-5">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Playbook</p><p className="mt-2 font-bold">{playbook.shortTitle}</p><p className="mt-1 text-sm text-muted-foreground">{playbook.audienceLabel}</p></div>
-                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Target Customers</p><p className="mt-2 text-2xl font-black">{audience ? audience.included_count.toLocaleString("en-NP") : "Loading..."}</p><p className="mt-1 text-sm text-muted-foreground">Updates until approval</p></div>
-                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Discount Details</p><p className="mt-2 font-bold">{formatCampaignOffer(offer)}</p><p className="mt-1 text-sm text-muted-foreground">Max cost: {formatMoney(offerValidation.maximum_exposure)}</p></div>
-                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Content</p><p className="mt-2 font-bold">{languageLabel(language)} · {channel === "email" ? "Email" : "WhatsApp"}</p><p className="mt-1 text-sm text-muted-foreground">{channel === "email" ? `Template: ${selectedMessageTemplate?.key || "Unavailable"}` : `Poster: ${posterTemplate} · WhatsApp: ${selectedMessageTemplate?.key || "Unavailable"}`}</p></div>
+              <CardHeader>
+                <CardTitle>Campaign Summary</CardTitle>
+                <CardDescription>Review your campaign before submitting</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-6 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Campaign Type</p>
+                    <p className="text-lg font-semibold">{playbook.shortTitle}</p>
+                    <p className="text-sm text-muted-foreground">{playbook.audienceLabel}</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Who Will Receive</p>
+                    <p className="text-2xl font-bold tabular-nums">{audience ? audience.included_count.toLocaleString("en-NP") : "..."}</p>
+                    <p className="text-sm text-muted-foreground">customers</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Offer</p>
+                    <p className="text-lg font-semibold">{formatCampaignOffer(offer)}</p>
+                    <p className="text-sm text-muted-foreground">Max cost: {formatMoney(offerValidation.maximum_exposure)}</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Language & Channel</p>
+                    <p className="text-lg font-semibold">{languageLabel(language)} · {channel === "email" ? "Email" : "WhatsApp"}</p>
+                    <p className="text-sm text-muted-foreground">{channel === "email" ? selectedMessageTemplate?.key || "No template" : `${posterTemplate} poster`}</p>
+                  </div>
                 </div>
 
-                {channel === "email" ? (
-                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Message Preview</p><p className="mt-3 font-bold">{emailSubject}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{emailBodyHtml}</p></div>
-                ) : (
-                  <div className="rounded-xl border border-border bg-card p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Message Preview</p><p className="mt-3 font-bold">{headline}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{message}</p></div>
-                )}
+                <div className="border-t pt-6 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Message Preview</p>
+                  {channel === "email" ? (
+                    <div className="space-y-2">
+                      <p className="text-base font-semibold">{emailSubject}</p>
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{emailBodyHtml}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-base font-semibold">{headline}</p>
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{message}</p>
+                    </div>
+                  )}
+                </div>
 
                 <div className="space-y-2">
-                  {CAMPAIGN_REVIEW_CAVEATS.map((caveat) => <div key={caveat} className="flex items-start gap-2 rounded-xl bg-muted/50 p-3 text-sm leading-5"><LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-primary" />{caveat}</div>)}
+                  {CAMPAIGN_REVIEW_CAVEATS.map((caveat) => (
+                    <div key={caveat} className="flex items-start gap-3 rounded-lg bg-muted/40 p-3.5 text-sm leading-relaxed">
+                      <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <span className="text-muted-foreground">{caveat}</span>
+                    </div>
+                  ))}
                 </div>
 
                 {!isReadOnly && (
-                    <Label htmlFor="review-acceptance" className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card p-4">
+                  <Label htmlFor="review-acceptance" className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4 hover:bg-muted/20 transition-colors">
                     <Checkbox id="review-acceptance" checked={reviewAccepted} onCheckedChange={(checked) => setReviewAccepted(checked === true)} />
-                    <span><span className="block font-bold">I understand this sends the campaign for approval</span><span className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">This does NOT send messages to customers. A manager must approve first.</span></span>
+                    <span className="space-y-1">
+                      <span className="block font-semibold text-sm">I understand this sends the campaign for approval</span>
+                      <span className="block text-sm text-muted-foreground">This does NOT send messages to customers. A manager must approve first.</span>
+                    </span>
                   </Label>
                 )}
               </CardContent>
             </Card>
 
-            <Card>
-              <CardContent className="flex flex-col gap-3 p-5">
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  {!isReadOnly && <Button variant="outline" onClick={() => changeStep(3)}><ChevronLeft className="mr-2 h-4 w-4" />Back to Creative</Button>}
-                  {!isReadOnly && actionPolicy.can_save_draft && <Button variant="outline" disabled={saving || submittingReview} onClick={() => void persistDraft()}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save draft</Button>}
-                  {!isReadOnly && actionPolicy.can_submit_for_review && <Button disabled={saving || submittingReview || templatesLoading || !selectedMessageTemplate || !reviewAccepted || !audience || audience.included_count <= 0} onClick={() => void submitForReview()}>{submittingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileCheck2 className="mr-2 h-4 w-4" />}Submit for manual review</Button>}
-                  {isReadOnly && <Button asChild><Link href="/grow" onClick={() => resetDraft()}>Return to Grow overview</Link></Button>}
+            {!isReadOnly ? (
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+                <Button variant="outline" onClick={() => changeStep(3)}>
+                  <ChevronLeft className="mr-2 h-4 w-4" />
+                  Back to Creative
+                </Button>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  {actionPolicy.can_save_draft && (
+                    <Button variant="outline" disabled={saving || submittingReview} onClick={() => void persistDraft()}>
+                      {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                      Save draft
+                    </Button>
+                  )}
+                  {actionPolicy.can_submit_for_review && (
+                    <Button 
+                      disabled={saving || submittingReview || templatesLoading || !selectedMessageTemplate || !reviewAccepted || !audience || audience.included_count <= 0} 
+                      onClick={() => void submitForReview()}
+                    >
+                      {submittingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileCheck2 className="mr-2 h-4 w-4" />}
+                      Submit for manual review
+                    </Button>
+                  )}
                 </div>
-                <div className="pt-2 border-t border-border">
-                  <p className="font-bold text-sm">Ready to Submit?</p>
-                  <p className="mt-1 text-sm text-muted-foreground">This will send your campaign to a manager for approval. Nothing will be sent to customers yet.</p>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            ) : (
+              <Button asChild>
+                <Link href="/grow" onClick={() => resetDraft()}>Return to Grow overview</Link>
+              </Button>
+            )}
           </div>
 
           {channel === "email" ? (
@@ -1363,7 +1436,7 @@ export function CampaignStudioClient() {
                   primaryColor={brand?.primary_color || undefined}
                   contactText={brand?.approved_contact_text || undefined}
                   footerText={brand?.approved_footer_text || undefined}
-                  couponCode="ABC123"
+                  couponCode={PREVIEW_COUPON_CODE}
                   showWarning={false}
                   posterDataUrl={posterDataUrl || undefined}
                   isReadOnly={isReadOnly}

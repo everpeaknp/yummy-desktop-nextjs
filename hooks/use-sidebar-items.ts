@@ -32,6 +32,7 @@ import {
   BookOpenCheck,
   BadgeDollarSign,
   Sprout,
+  Megaphone,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -51,6 +52,9 @@ export interface SidebarItem {
   externalUrl?: string;
   subItems?: SidebarItem[];
   isNestedChild?: boolean;
+  /** Inline quick-create link rendered to the right of this item's label. */
+  quickCreateHref?: string;
+  quickCreateLabel?: string;
 }
 
 const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
@@ -81,6 +85,8 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/finance/operations": Banknote,
   "/customers": Users,
   "/grow": Sprout,
+  "/grow/campaigns": Megaphone,
+  "/grow/subscribers": Users,
   "/attendance": Fingerprint,
   "/staff": Users,
   "/workforce": Briefcase,
@@ -276,6 +282,17 @@ export function useSidebarItems(): SidebarItem[] {
       } else if (item.href === "/orders") {
         result.push(item);
       } else if (item.href === "/orders/new") {
+        result.push({ ...item, isNestedChild: true });
+      } else if (item.href === "/grow") {
+        result.push({
+          ...item,
+          ...(hasPermission(user, "grow.campaigns.manage")
+            ? { quickCreateHref: "/grow/campaigns/new", quickCreateLabel: "New campaign" }
+            : {}),
+        });
+      } else if (item.href === "/grow/campaigns") {
+        result.push({ ...item, isNestedChild: true });
+      } else if (item.href === "/grow/subscribers") {
         result.push({ ...item, isNestedChild: true });
       } else if (
         ["/menu/items", "/menu/categories", "/menu/modifiers"].includes(
@@ -578,16 +595,19 @@ export function useSidebarItems(): SidebarItem[] {
       }
     }
 
+    // Keep the optional Grow product grouped after the current operational,
+    // finance, and hotel navigation.
+    const isGrow = (item: SidebarItem) => item.href === "/grow" || item.href.startsWith("/grow/");
     const orderedResult = [
-      ...result.filter((item) => item.href !== "/grow"),
-      ...result.filter((item) => item.href === "/grow"),
+      ...result.filter((item) => !isGrow(item)),
+      ...result.filter(isGrow),
     ];
 
     // Ensure Settings is always at the end of the operational navigation,
     // immediately before the separately labelled Grow product.
     const cleaned = orderedResult.map((r) => ({
       ...r,
-      section: r.href === "/grow" ? "Yummy Grow" : "Yummy Operations",
+      section: isGrow(r) ? "Yummy Grow" : "Yummy Operations",
       subItems: r.subItems?.length
         ? r.subItems.map((subItem) => ({
             ...subItem,

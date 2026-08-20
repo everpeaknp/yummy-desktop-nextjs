@@ -80,17 +80,23 @@ import {
 } from "@/lib/growth/campaign-administration";
 import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
+import { CampaignAnalyticsDashboard } from "@/components/grow/campaign-analytics/campaign-analytics-dashboard";
+import { TemplatePreview } from "@/components/grow/campaign-analytics/template-preview";
 
+// Every status previously rendered as the same neutral gray, so the badge
+// gave no at-a-glance signal about campaign state. Color now tracks meaning:
+// neutral while still editable, blue while in motion toward sending, amber
+// for anything needing attention, green for a clean finish, red for failure.
 const statusStyles: Record<GrowthCampaignStatus, string> = {
-  draft: "border border-border bg-muted text-foreground",
-  review: "border border-border bg-muted text-foreground",
-  approved: "border border-border bg-muted text-foreground",
-  scheduled: "border border-border bg-muted text-foreground",
-  sending: "border border-border bg-muted text-foreground",
-  completed: "border border-border bg-muted text-foreground",
-  paused: "border border-border bg-muted text-foreground",
-  canceled: "border border-border bg-muted text-muted-foreground",
-  failed: "border border-border bg-muted text-foreground",
+  draft: "border-border bg-muted text-foreground",
+  review: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-400",
+  approved: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-400",
+  scheduled: "border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
+  sending: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  completed: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  paused: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  canceled: "border-border bg-muted text-muted-foreground",
+  failed: "border-destructive/40 bg-destructive/10 text-destructive",
 };
 
 type ReasonAction = "return" | "pause" | "cancel";
@@ -139,9 +145,25 @@ function localInputForZone(timeZone: string): string {
   }
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+const metricToneStyles = {
+  default: "border-border bg-card",
+  success: "border-emerald-500/30 bg-emerald-500/5",
+  warning: "border-amber-500/30 bg-amber-500/5",
+} as const;
+
+function Metric({
+  label,
+  value,
+  detail,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  tone?: keyof typeof metricToneStyles;
+}) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4 transition-all hover:shadow-sm">
+    <div className={cn("rounded-xl border p-4", metricToneStyles[tone])}>
       <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="mt-1 text-xl font-black">{value}</p>
       {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
@@ -151,9 +173,9 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 
 function DetailSkeleton() {
   return (
-    <div className="mx-auto max-w-[1400px] space-y-8 pb-16" aria-label="Loading campaign detail">
-      <Skeleton className="h-48 rounded-2xl" />
-      <div className="grid gap-8 xl:grid-cols-2">
+    <div className="dashboard-ui relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4" aria-label="Loading campaign detail">
+      <Skeleton className="h-32 rounded-2xl" />
+      <div className="grid gap-6 xl:grid-cols-2">
         <Skeleton className="h-80 rounded-2xl" />
         <Skeleton className="h-80 rounded-2xl" />
       </div>
@@ -403,236 +425,205 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-8 pb-16" data-tour="grow-campaign-detail">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden rounded-xl border border-border bg-card p-5">
-        <div className="relative space-y-4">
-          {/* Row 1: Back link, Campaign Detail label, status, and action buttons */}
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Link href="/grow/campaigns" className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-                <ArrowLeft className="h-4 w-4" />
-                Campaigns
-              </Link>
-              <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                <span className="text-xs font-medium">Campaign Detail</span>
-              </div>
-              <Badge variant="outline" className={cn("text-xs", statusStyles[campaign.status])}>{campaignStatusLabels[campaign.status]}</Badge>
-            </div>
-            
-            {/* Action buttons */}
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => void load()} disabled={Boolean(busyAction)} className="rounded-xl border border-border">
-                <RefreshCw className="mr-2 h-4 w-4" />Refresh
-              </Button>
-              {actions.submitReview && (
-                <Button size="sm" onClick={() => void submitReview()} disabled={Boolean(busyAction)} className="rounded-xl border border-border">
-                  {busyAction === "review" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                  Submit for review
-                </Button>
-              )}
-              {actions.returnToDraft && (
-                <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("return"); }} className="rounded-xl border border-border">
-                  <RotateCcw className="mr-2 h-4 w-4" />Return to draft
-                </Button>
-              )}
-              {actions.approve && (
-                <Button size="sm" onClick={() => setApprovalOpen(true)} disabled={!approvalReady} className="rounded-xl border border-border">
-                  <LockKeyhole className="mr-2 h-4 w-4" />Approve
-                </Button>
-              )}
-              {actions.schedule && (
-                <Button size="sm" onClick={openSchedule} className="rounded-xl border border-border">
-                  <CalendarClock className="mr-2 h-4 w-4" />Schedule
-                </Button>
-              )}
-              {actions.pause && (
-                <Button size="sm" variant="outline" onClick={() => { setReason(""); setReasonAction("pause"); }} className="rounded-xl border border-border">
-                  <Pause className="mr-2 h-4 w-4" />Pause
-                </Button>
-              )}
-              {actions.cancel && (
-                <Button size="sm" variant="destructive" onClick={() => { setReason(""); setReasonAction("cancel"); }} className="rounded-xl border border-border">
-                  <XCircle className="mr-2 h-4 w-4" />Cancel
-                </Button>
-              )}
-            </div>
+    <div className="dashboard-ui relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4" data-tour="grow-campaign-detail">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-3 mb-2">
+            <Link href="/grow/campaigns" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Campaigns
+            </Link>
           </div>
-          
-          {/* Row 2: Campaign title */}
-          <div className="min-w-0">
-            <h1 className="break-words text-2xl font-bold tracking-tight sm:text-3xl">{campaign.name}</h1>
-            
-            {/* Row 3: Campaign metadata */}
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-              <span className="capitalize">{campaign.playbook_code.replaceAll("_", " ")}</span>
-              <span>•</span>
-              <span>{campaign.segment_code} segment</span>
-              <span>•</span>
-              <span>Campaign #{campaign.id}</span>
-              {campaign.scheduled_at && (
-                <>
-                  <span>•</span>
-                  <span className="inline-flex items-center gap-1">
-                    <CalendarClock className="h-3.5 w-3.5" />
-                    {formatDate(campaign.scheduled_at)}
-                  </span>
-                </>
-              )}
-            </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="dc-page-title">{campaign.name}</h1>
+            <Badge variant="outline" className={cn("text-xs font-semibold", statusStyles[campaign.status])}>{campaignStatusLabels[campaign.status]}</Badge>
           </div>
+          <p className="dc-page-subtitle">
+            {campaign.playbook_code.replaceAll("_", " ")} · {campaign.segment_code} segment · Campaign #{campaign.id}
+            {campaign.scheduled_at && ` · Scheduled ${formatDate(campaign.scheduled_at)}`}
+          </p>
         </div>
-      </section>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => void load()} 
+            disabled={Boolean(busyAction)} 
+            className="dc-filter-refresh h-9 gap-2 rounded-2xl px-4"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+          {actions.submitReview && (
+            <Button size="sm" onClick={() => void submitReview()} disabled={Boolean(busyAction)} className="dc-btn-close-day h-9 gap-2 rounded-2xl px-4 font-medium">
+              {busyAction === "review" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              Submit for review
+            </Button>
+          )}
+          {actions.returnToDraft && (
+            <Button size="sm" variant="ghost" onClick={() => { setReason(""); setReasonAction("return"); }} className="dc-filter-refresh h-9 gap-2 rounded-2xl px-4">
+              <RotateCcw className="h-4 w-4" />Return to draft
+            </Button>
+          )}
+          {actions.approve && (
+            <Button size="sm" onClick={() => setApprovalOpen(true)} disabled={!approvalReady} className="dc-btn-close-day h-9 gap-2 rounded-2xl px-4 font-medium">
+              <LockKeyhole className="h-4 w-4" />Approve
+            </Button>
+          )}
+          {actions.schedule && (
+            <Button size="sm" onClick={openSchedule} className="dc-btn-close-day h-9 gap-2 rounded-2xl px-4 font-medium">
+              <CalendarClock className="h-4 w-4" />Schedule
+            </Button>
+          )}
+          {actions.pause && (
+            <Button size="sm" variant="ghost" onClick={() => { setReason(""); setReasonAction("pause"); }} className="dc-filter-refresh h-9 gap-2 rounded-2xl px-4">
+              <Pause className="h-4 w-4" />Pause
+            </Button>
+          )}
+          {actions.cancel && (
+            <Button size="sm" variant="destructive" onClick={() => { setReason(""); setReasonAction("cancel"); }} className="h-9 gap-2 rounded-2xl px-4">
+              <XCircle className="h-4 w-4" />Cancel
+            </Button>
+          )}
+        </div>
+      </div>
 
       {secondaryWarnings.length > 0 && (
-        <Alert className="rounded-xl border border-border bg-card">
-          <TriangleAlert className="h-4 w-4" />
-          <AlertTitle>Partial data</AlertTitle>
-          <AlertDescription>{secondaryWarnings.join(" ")}</AlertDescription>
+        <Alert className="dc-card border-amber-500/30 bg-amber-500/5">
+          <TriangleAlert className="h-4 w-4 text-amber-600" />
+          <AlertTitle className="font-semibold text-amber-700 dark:text-amber-400">Partial data</AlertTitle>
+          <AlertDescription className="text-amber-600 dark:text-amber-300 text-xs">{secondaryWarnings.join(" ")}</AlertDescription>
         </Alert>
       )}
 
       {campaign.failure_reason ? (
-        <Alert variant="destructive" className="rounded-xl">
-          <ShieldAlert className="h-4 w-4" />
-          <AlertTitle>Campaign failed</AlertTitle>
-          <AlertDescription>{campaign.failure_reason}</AlertDescription>
+        <Alert className="dc-card border-destructive/30 bg-destructive/5">
+          <ShieldAlert className="h-4 w-4 text-destructive" />
+          <AlertTitle className="font-semibold text-destructive">Campaign failed</AlertTitle>
+          <AlertDescription className="text-destructive/80 text-xs">{campaign.failure_reason}</AlertDescription>
         </Alert>
       ) : campaign.pause_reason ? (
-        <Alert className="rounded-xl border border-border bg-card">
-          <Pause className="h-4 w-4" />
-          <AlertTitle>Campaign paused</AlertTitle>
-          <AlertDescription>{campaign.pause_reason}</AlertDescription>
+        <Alert className="dc-card border-amber-500/30 bg-amber-500/5">
+          <Pause className="h-4 w-4 text-amber-600" />
+          <AlertTitle className="font-semibold text-amber-700 dark:text-amber-400">Campaign paused</AlertTitle>
+          <AlertDescription className="text-amber-600 dark:text-amber-300 text-xs">{campaign.pause_reason}</AlertDescription>
         </Alert>
       ) : null}
 
-      {/* Offer & Approval Section */}
-      <section className="grid gap-8 xl:grid-cols-2">
-        <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
-          <CardHeader className="space-y-3">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <div className="rounded-lg border border-border bg-muted p-2">
-                <Tag className="h-5 w-5" />
+      {/* Compact 3-column grid */}
+      <section className="grid gap-6 xl:grid-cols-3">
+        {/* Offer Details */}
+        <Card className="dc-card">
+          <CardHeader className="pb-3 border-b border-black/[0.08] dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
+                <Tag className="h-3.5 w-3.5 text-primary" />
               </div>
-              Offer Details
-            </CardTitle>
-            <CardDescription className="text-sm">What customers get and your cost limit</CardDescription>
+              <CardTitle className="text-sm font-semibold">Offer Details</CardTitle>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-4 space-y-3">
             {!campaign.offer ? (
-              <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30">
-                <p className="text-sm text-muted-foreground">No offer available</p>
-              </div>
+              <p className="text-xs text-muted-foreground text-center py-6">No offer available</p>
             ) : (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-border bg-muted p-5">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Customer Offer</p>
-                  <p className="mt-2 text-2xl font-bold">{formatOffer(campaign.offer)}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Min order {formatMoney(Number(campaign.offer.minimum_order_value ?? 0))} · Valid until {formatDate(campaign.offer.valid_until)}
+              <>
+                <div className="rounded-lg bg-muted/50 p-3 border border-black/[0.08] dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Customer Gets</p>
+                  <p className="mt-1.5 text-base font-bold">{formatOffer(campaign.offer)}</p>
+                  <p className="mt-1.5 text-[10px] text-muted-foreground">
+                    Min order {formatMoney(Number(campaign.offer.minimum_order_value ?? 0))}
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Metric
-                    label="Maximum Cost"
-                    value={campaign.offer.maximum_exposure == null ? "Not set" : formatMoney(Number(campaign.offer.maximum_exposure))}
-                    detail={campaign.offer.redemption_limit ? `${campaign.offer.redemption_limit.toLocaleString("en-NP")} uses max` : "No limit"}
-                  />
-                  <Metric
-                    label="Cost Verified"
-                    value={campaign.offer.profitability_status === "verified" ? "Yes" : "No"}
-                    detail={campaign.offer.profitability_status === "verified" ? "Checked against menu prices" : "Not checked yet"}
-                  />
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Max Cost</p>
+                    <p className="mt-1 font-bold text-xs">{campaign.offer.maximum_exposure == null ? "Not set" : formatMoney(Number(campaign.offer.maximum_exposure))}</p>
+                  </div>
+                  <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Status</p>
+                    <p className="mt-1 font-bold text-xs">{campaign.offer.profitability_status === "verified" ? "Verified" : "Pending"}</p>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </CardContent>
         </Card>
 
-        <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
-          <CardHeader className="space-y-3">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <div className="rounded-lg border border-border bg-muted p-2">
-                <ShieldCheck className="h-5 w-5" />
+        {/* Audience */}
+        <Card className="dc-card">
+          <CardHeader className="pb-3 border-b border-black/[0.08] dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
+                <Users className="h-3.5 w-3.5 text-blue-500" />
               </div>
-              Ready to Send?
-            </CardTitle>
-            <CardDescription className="text-sm">Check these before sending campaign</CardDescription>
+              <CardTitle className="text-sm font-semibold">Audience</CardTitle>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {approvalChecks.map((check) => (
-              <div key={check.key} className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 transition-all hover:shadow-sm">
-                <div className={cn("mt-0.5 rounded-full border border-border p-1.5 transition-transform hover:scale-110", check.ready ? "bg-muted" : "bg-muted")}>
-                  {check.ready ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{check.label}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
-                </div>
+          <CardContent className="pt-4 space-y-3">
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{frozen ? "Locked" : "Saved"}</p>
+                <p className="mt-1 font-bold text-xs">{formatCount(campaign.audience_count)}</p>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* Audience & Message Section */}
-      <section className="grid gap-8 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
-          <CardHeader className="space-y-3">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <div className="rounded-lg border border-border bg-muted p-2">
-                <Users className="h-5 w-5" />
+              <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Live</p>
+                <p className="mt-1 font-bold text-xs">{audience ? formatCount(audience.included_count) : "—"}</p>
               </div>
-              Who Gets This
-            </CardTitle>
-            <CardDescription className="text-sm">Customer list (locked after approval)</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Metric 
-                label={frozen ? "Locked" : "Saved"} 
-                value={formatCount(campaign.audience_count)} 
-                detail={frozen ? formatDate(campaign.audience_frozen_at) : "Not locked yet"} 
-              />
-              <Metric 
-                label="Live" 
-                value={audience ? formatCount(audience.included_count) : "—"} 
-                detail="Can receive now" 
-              />
-              <Metric 
-                label="Can't Receive" 
-                value={audience ? formatCount(audience.excluded_count) : "—"} 
-                detail="Blocked by rules" 
-              />
+              <div className="rounded-lg border border-black/[0.08] dark:border-white/10 bg-card p-2">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Blocked</p>
+                <p className="mt-1 font-bold text-xs">{audience ? formatCount(audience.excluded_count) : "—"}</p>
+              </div>
             </div>
             {audience && Object.keys(audience.exclusions).length > 0 && (
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Why some customers can't receive this</p>
-                <p className="mt-1 text-sm text-muted-foreground">These customers are excluded for legal or technical reasons:</p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {Object.entries(audience.exclusions).map(([reasonKey, count]) => {
-                    // Staff-friendly labels
-                    const staffLabels: Record<string, string> = {
-                      "missing valid e164": "No phone number",
-                      "marketing opted out": "Unsubscribed",
-                      "marketing consent missing": "No permission",
-                      "no completed orders": "Never ordered",
-                      "different segment": "Wrong group",
-                      "missing email": "No email",
-                      "invalid email": "Bad email",
-                      "duplicate email": "Duplicate email",
-                      "duplicate phone": "Duplicate phone",
-                      "test customer": "Test account",
+              <div className="rounded-lg bg-muted/30 p-2 border border-black/[0.08] dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Why Excluded</p>
+                <div className="space-y-1">
+                  {Object.entries(audience.exclusions).slice(0, 3).map(([reasonKey, count]) => {
+                    // Channel-specific labels: WhatsApp needs phone, Email needs email
+                    const isEmail = campaign.channel === "email";
+                    const friendlyLabels: Record<string, string> = {
+                      // Phone-related (WhatsApp) - but show as "No contact" for email
+                      "missing valid e164": isEmail ? "No email" : "No phone number",
+                      "missing_valid_e164": isEmail ? "No email" : "No phone number",
+                      "no phone": isEmail ? "No email" : "No phone number",
+                      "no_phone": isEmail ? "No email" : "No phone number",
+                      "invalid phone": isEmail ? "Invalid email" : "Invalid phone number",
+                      "invalid_phone": isEmail ? "Invalid email" : "Invalid phone number",
+                      
+                      // Email-related (Email) - but show as "No contact" for WhatsApp
+                      "missing email": isEmail ? "No email address" : "No phone",
+                      "missing_email": isEmail ? "No email address" : "No phone",
+                      "no email": isEmail ? "No email address" : "No phone",
+                      "no_email": isEmail ? "No email address" : "No phone",
+                      "invalid email": isEmail ? "Invalid email address" : "Bad phone",
+                      "invalid_email": isEmail ? "Invalid email address" : "Bad phone",
                       "bounced": "Email bounced",
-                      "complained": "Marked as spam"
+                      "complained": "Marked as spam",
+                      
+                      // Common to both
+                      "marketing opted out": "Unsubscribed",
+                      "marketing_opted_out": "Unsubscribed",
+                      "marketing consent missing": "No permission",
+                      "marketing_consent_missing": "No permission",
+                      "no completed orders": "Never ordered",
+                      "no_completed_orders": "Never ordered",
+                      "different segment": "Wrong group",
+                      "different_segment": "Wrong group",
+                      "blocked": "Blocked",
+                      "inactive": "Inactive",
+                      "test customer": "Test account",
+                      "test_customer": "Test account",
+                      "duplicate phone": "Duplicate",
+                      "duplicate_phone": "Duplicate",
+                      "duplicate email": "Duplicate",
+                      "duplicate_email": "Duplicate",
                     };
-                    const label = staffLabels[reasonKey] ?? reasonKey.replaceAll("_", " ");
-                    
+                    const label = friendlyLabels[reasonKey.toLowerCase()] ?? reasonKey.replaceAll("_", " ");
                     return (
-                      <div key={reasonKey} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-sm transition-all hover:shadow-sm">
-                        <span className="text-muted-foreground">{label}</span>
-                        <span className="font-bold">{formatCount(count)}</span>
+                      <div key={reasonKey} className="flex items-center justify-between text-[10px]">
+                        <span className="text-muted-foreground truncate">{label}</span>
+                        <span className="font-semibold ml-2">{formatCount(count)}</span>
                       </div>
                     );
                   })}
@@ -642,155 +633,111 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
           </CardContent>
         </Card>
 
-        <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
-          <CardHeader className="space-y-3">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <div className="rounded-lg border border-border bg-muted p-2">
-                <MessageCircleMore className="h-5 w-5" />
+        {/* Ready to Send Checklist - Vertical */}
+        <Card className="dc-card">
+          <CardHeader className="pb-3 border-b border-black/[0.08] dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
+                <ShieldCheck className="h-3.5 w-3.5 text-green-500" />
               </div>
-              Message & Images
-            </CardTitle>
-            <CardDescription className="text-sm">What customers will see</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-xl border border-border bg-muted/50 p-4">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Message</p>
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{campaign.approved_message_snapshot || "No message"}</p>
+              <CardTitle className="text-sm font-semibold">Ready to Send?</CardTitle>
             </div>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:shadow-sm">
-                <MessageCircleMore className="mt-0.5 h-4 w-4" />
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm">{campaign.channel === "email" ? "Email template" : "WhatsApp template"}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {selectedTemplate
-                      ? `${selectedTemplate.provider_template_name} · ${selectedTemplate.language}`
-                      : campaign.message_template_id
-                        ? `Template #${campaign.message_template_id}`
-                        : "No template"}
-                  </p>
-                </div>
-              </div>
-              {campaign.channel !== "email" && (
-                <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:shadow-sm">
-                  <FileImage className="mt-0.5 h-4 w-4" />
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="space-y-2">
+              {approvalChecks.map((check) => (
+                <div
+                  key={check.key}
+                  className={cn(
+                    "flex items-start gap-3 rounded-lg border p-3",
+                    check.ready ? "border-border bg-card" : "border-amber-500/30 bg-amber-500/5",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "mt-0.5 rounded-full border p-1 shrink-0",
+                      check.ready
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+                    )}
+                  >
+                    {check.ready ? <Check className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-sm">Poster asset</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {campaign.creative_asset_id
-                        ? `Asset #${campaign.creative_asset_id}`
-                        : "No asset"}
-                    </p>
+                    <p className="font-semibold text-xs">{check.label}</p>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">{check.detail}</p>
                   </div>
                 </div>
-              )}
+              ))}
             </div>
           </CardContent>
         </Card>
       </section>
 
-      {/* Delivery Results Section */}
-      <Card className="rounded-xl border border-border bg-card transition-all hover:shadow-md">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="space-y-3">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <div className="rounded-lg border border-border bg-muted p-2">
-                  <Send className="h-5 w-5" />
-                </div>
-                Sending Results
-              </CardTitle>
-              <CardDescription className="text-sm">How many sent and who used the offer</CardDescription>
+{/* Template Preview - Show what customers will see */}
+      {selectedTemplate && (
+        <TemplatePreview campaign={campaign} template={selectedTemplate} />
+      )}
+
+      {/* Campaign Performance Analytics */}
+      {results ? (
+        <CampaignAnalyticsDashboard 
+          campaign={campaign} 
+          results={results} 
+          onDownloadCSV={downloadCSV}
+          isDownloading={busyAction === "csv"}
+        />
+      ) : (
+        <Card className="dc-card">
+          <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
+                <Send className="h-4 w-4 text-primary" />
+              </div>
+              <span className="dc-eyebrow">Performance</span>
             </div>
-            {results && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void downloadCSV()}
-                disabled={busyAction === "csv"}
-                className="rounded-xl border border-border"
-              >
-                {busyAction === "csv" ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="mr-2 h-4 w-4" />
-                )}
-                Export CSV
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {!results ? (
+            <CardTitle className="dc-card-title">Campaign Performance</CardTitle>
+            <CardDescription className="text-xs text-muted-foreground mt-1">
+              Analytics will appear after campaign is sent
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6">
             <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30">
               <div className="text-center">
                 <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground/60" />
-                <p className="mt-2 text-sm text-muted-foreground">No results yet</p>
+                <p className="mt-2 text-sm text-muted-foreground">No analytics data yet</p>
+                <p className="mt-1 text-xs text-muted-foreground">Send this campaign to see performance metrics</p>
               </div>
             </div>
-          ) : (
-            <div className="space-y-6">
-              <div>
-                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Sending Status</p>
-                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
-                  <Metric label="Queued" value={formatCount(results.queued_count)} />
-                  <Metric label="Sending" value={formatCount(results.sending_count)} />
-                  <Metric label="Sent" value={formatCount(results.sent_count)} />
-                  <Metric label="Delivered" value={formatCount(results.delivered_count)} />
-                  <Metric label="Read" value={campaign.channel === "email" ? "Not tracked" : formatCount(results.read_count)} />
-                  <Metric label="Failed" value={formatCount(results.failed_count)} />
-                  <Metric label="Unknown" value={formatCount(results.unknown_count)} />
-                  <Metric label="Suppressed" value={formatCount(results.suppressed_count)} />
-                </div>
-              </div>
-              
-              <div>
-                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Offer Used</p>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                  <Metric label="Redeemed" value={formatCount(results.redeemed_count)} />
-                  <Metric label="Reversed" value={formatCount(results.reversed_count)} />
-                  <Metric label="Opt-outs" value={formatCount(results.opt_out_count)} />
-                  <Metric label="Orders" value={formatCount(results.attributed_order_count)} />
-                  <Metric label="Revenue" value={formatMoney(results.attributed_revenue)} />
-                </div>
-              </div>
-              
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Discount Given</p>
-                    <p className="mt-1 text-2xl font-bold">{formatMoney(results.discount_cost)}</p>
-                  </div>
-                  <div className={cn(
-                    "rounded-lg border border-border px-3 py-1.5 text-xs font-medium",
-                    results.profitability_status === "verified" 
-                      ? "bg-muted text-foreground" 
-                      : "bg-muted text-foreground"
-                  )}>
-                    {results.profitability_status === "verified" ? "Verified" : "Not Verified"}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      <Card className="rounded-xl border border-dashed border-border bg-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="h-4 w-4" />Important Notes</CardTitle>
-          <CardDescription>What these numbers mean</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {limitations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">These numbers show what happened, but don't prove the campaign caused all the sales.</p>
-          ) : (
+      {/* Important Attribution Notes */}
+      {limitations.length > 0 && (
+        <Card className="dc-card border-dashed">
+          <CardHeader className="pb-4">
+            <CardTitle className="dc-card-title flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              Important Notes
+            </CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">
+              What these numbers mean
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              {limitations.map((limitation) => <li key={limitation} className="flex gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{limitation}</span></li>)}
+              {limitations.map((limitation) => (
+                <li key={limitation} className="flex gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{limitation}</span>
+                </li>
+              ))}
             </ul>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
 
       <AlertDialog open={approvalOpen} onOpenChange={setApprovalOpen}>
         <AlertDialogContent>
