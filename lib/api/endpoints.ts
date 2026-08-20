@@ -2147,6 +2147,7 @@ export const GrowthApis = {
   suggestCopy: "/growth/content/suggest-copy",
   validateOffer: "/growth/offers/validate",
   sendTestEmail: "/growth/send-test-email",
+  subscribers: "/growth/subscribers",
   redemptionByOrder: (orderId: number | string) =>
     `/growth/redemptions/by-order/${orderId}`,
 };

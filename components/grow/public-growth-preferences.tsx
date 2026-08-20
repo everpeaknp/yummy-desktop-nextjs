@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FaWhatsapp } from "react-icons/fa";
+import { MdEmail } from "react-icons/md";
 import {
   AlertCircle,
   CheckCircle2,
   Loader2,
   MonitorCog,
-  MessageCircleMore,
   MessageCircleOff,
   RefreshCw,
   ShieldCheck,
@@ -17,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { growthApi } from "@/lib/api/growth";
-import type { PublicGrowthPreferences } from "@/lib/api/growth-types";
+import type { PublicGrowthPreferences, PublicGrowthPreferenceItem } from "@/lib/api/growth-types";
 
 function unavailableError(error: unknown): boolean {
   const status = (error as { response?: { status?: number } })?.response?.status;
@@ -36,7 +37,7 @@ export function PublicGrowthPreferencesClient({ signedToken }: { signedToken: st
   const [preferences, setPreferences] = useState<PublicGrowthPreferences | null>(null);
   const [loading, setLoading] = useState(Boolean(signedToken));
   const [loadError, setLoadError] = useState<"unavailable" | "connection" | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingToken, setSubmittingToken] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const loadPreferences = async () => {
@@ -80,27 +81,37 @@ export function PublicGrowthPreferencesClient({ signedToken }: { signedToken: st
     };
   }, [signedToken]);
 
-  const unsubscribe = async () => {
-    if (!signedToken || !preferences || preferences.status === "opted_out") return;
-    setSubmitting(true);
+  const unsubscribe = async (preferenceToken: string, channel: string) => {
+    if (!preferenceToken) return;
+    setSubmittingToken(preferenceToken);
     setActionError(null);
     try {
-      const result = await growthApi.unsubscribePublicPreferences(signedToken);
-      if (result.unsubscribed) {
+      const result = await growthApi.unsubscribePublicPreferences(preferenceToken);
+      if (result.unsubscribed && preferences) {
+        // Update the specific preference status
         setPreferences({
           ...preferences,
-          status: result.status,
-          revoked_at: result.revoked_at ?? preferences.revoked_at,
+          preferences: preferences.preferences.map((pref) =>
+            pref.preference_token === preferenceToken
+              ? { ...pref, status: result.status, revoked_at: result.revoked_at ?? pref.revoked_at }
+              : pref
+          ),
         });
       }
     } catch {
-      setActionError("Your preference could not be updated. You remain subscribed for now; please try again.");
+      setActionError(`Your ${channel} preference could not be updated. You remain subscribed for now; please try again.`);
     } finally {
-      setSubmitting(false);
+      setSubmittingToken(null);
     }
   };
 
-  const maskedDestination = safelyMaskedDestination(preferences?.destination_masked);
+  const getChannelIcon = (channel: string) => {
+    return channel === "email" ? MdEmail : FaWhatsapp;
+  };
+
+  const getChannelLabel = (channel: string) => {
+    return channel === "email" ? "Email" : "WhatsApp";
+  };
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-primary/10 via-background to-emerald-500/10 p-4 sm:p-8">
@@ -120,14 +131,23 @@ export function PublicGrowthPreferencesClient({ signedToken }: { signedToken: st
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 {loadError === "connection"
                   ? "The preference page could not be loaded. Check your connection and try again."
-                  : "The link may be incomplete or expired. Ask the restaurant for a current preference link. No preference was changed."}
+                  : "The link may be incomplete or expired. Request a new preference link to manage your communication settings."}
               </p>
-              {loadError === "connection" && signedToken && (
-                <Button className="mt-6" variant="outline" onClick={() => void loadPreferences()}>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Try again
-                </Button>
-              )}
+              <div className="mt-6 flex flex-col gap-3">
+                {loadError === "connection" && signedToken && (
+                  <Button variant="outline" onClick={() => void loadPreferences()}>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Try again
+                  </Button>
+                )}
+                {loadError === "unavailable" && (
+                  <Button asChild>
+                    <a href="/grow/request-link">
+                      Request New Preference Link
+                    </a>
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
         ) : preferences ? (
@@ -148,41 +168,77 @@ export function PublicGrowthPreferencesClient({ signedToken }: { signedToken: st
                 </Alert>
               )}
 
-              <div className="rounded-2xl border bg-muted/25 p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">WhatsApp marketing</p>
-                    <p className="mt-1 font-semibold">{maskedDestination || "Saved WhatsApp contact"}</p>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className={preferences.status === "opted_in" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-border bg-muted text-muted-foreground"}
-                  >
-                    {preferences.status === "opted_in" ? "Offers on" : "Offers off"}
-                  </Badge>
-                </div>
-              </div>
+              {preferences.preferences.map((pref) => {
+                const ChannelIcon = getChannelIcon(pref.channel);
+                const channelLabel = getChannelLabel(pref.channel);
+                const maskedDestination = safelyMaskedDestination(pref.destination_masked);
+                const isOptedOut = pref.status === "opted_out";
 
-              {preferences.status === "opted_out" ? (
-                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5 text-center">
-                  <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600" />
-                  <h2 className="mt-3 font-bold">WhatsApp offers are off</h2>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">This restaurant should not include this contact in WhatsApp marketing campaigns.</p>
-                </div>
-              ) : (
-                <div>
-                  <h2 className="font-bold">Stop promotional WhatsApp messages?</h2>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">This turns off marketing offers from this restaurant. It does not remove fiscal receipts, past orders, or legally required restaurant records.</p>
-                  <Button type="button" variant="destructive" className="mt-4 w-full" disabled={submitting} onClick={() => void unsubscribe()}>
-                    {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageCircleOff className="mr-2 h-4 w-4" />}
-                    Stop WhatsApp offers
-                  </Button>
-                </div>
-              )}
+                return (
+                  <div key={pref.channel} className="space-y-4 rounded-2xl border bg-muted/10 p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                          <ChannelIcon className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            {channelLabel} marketing
+                          </p>
+                          <p className="mt-0.5 font-semibold">{maskedDestination || `Saved ${channelLabel} contact`}</p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={
+                          isOptedOut
+                            ? "border-border bg-muted text-muted-foreground"
+                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        }
+                      >
+                        {isOptedOut ? "Offers off" : "Offers on"}
+                      </Badge>
+                    </div>
+
+                    {isOptedOut ? (
+                      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-center">
+                        <CheckCircle2 className="mx-auto h-7 w-7 text-emerald-600" />
+                        <h3 className="mt-2 font-semibold">{channelLabel} offers are off</h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          This restaurant should not include this contact in {channelLabel} marketing campaigns.
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <h3 className="font-semibold">Stop promotional {channelLabel} messages?</h3>
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                          This turns off marketing offers from this restaurant via {channelLabel}. It does not remove fiscal
+                          receipts, past orders, or legally required restaurant records.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="mt-3 w-full"
+                          disabled={submittingToken === pref.preference_token}
+                          onClick={() => pref.preference_token && void unsubscribe(pref.preference_token, channelLabel)}
+                        >
+                          {submittingToken === pref.preference_token ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <MessageCircleOff className="mr-2 h-4 w-4" />
+                          )}
+                          Stop {channelLabel} offers
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
               <div className="flex items-start gap-2 rounded-xl bg-muted/40 p-3 text-xs leading-5 text-muted-foreground">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                This signed page only manages WhatsApp marketing consent for this restaurant. It does not expose your customer profile.
+                This signed page only manages marketing consent for this restaurant. It does not expose your customer profile.
               </div>
             </CardContent>
           </Card>

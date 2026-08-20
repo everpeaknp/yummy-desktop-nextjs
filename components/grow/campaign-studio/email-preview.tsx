@@ -39,16 +39,69 @@ function TemplateSwatch({ definition, size, full }: { definition: EmailTemplateD
           ? "'Bebas Neue', Georgia, sans-serif"
           : "var(--font-inter), sans-serif";
 
+  const outerStyle = {
+    height: size,
+    width: full ? "100%" : size,
+    background: definition.swatch.bg,
+    border: `1px solid ${definition.swatch.accent}33`,
+  };
+  const outerClassName = cn("relative flex flex-shrink-0 overflow-hidden rounded-lg", full && "w-full");
+
+  // These two styles are about depth/overlap and image mosaics respectively —
+  // the shared "Aa" glyph swatch reads identically for every template and
+  // doesn't hint at either, so they get a small representative mock instead.
+  if (definition.id === "dimensional") {
+    return (
+      <span className={outerClassName} style={outerStyle}>
+        <span className="relative flex flex-1 items-center justify-center">
+          <span
+            className="absolute rounded-md"
+            style={{
+              width: "56%",
+              height: "56%",
+              top: "20%",
+              left: "16%",
+              background: definition.swatch.text,
+              opacity: 0.16,
+              boxShadow: "0 6px 10px -4px rgba(0,0,0,0.55)",
+            }}
+          />
+          <span
+            className="absolute rounded-md"
+            style={{
+              width: "38%",
+              height: "34%",
+              bottom: "16%",
+              right: "14%",
+              background: definition.swatch.accent,
+              boxShadow: "0 6px 12px -4px rgba(0,0,0,0.5)",
+            }}
+          />
+        </span>
+      </span>
+    );
+  }
+
+  if (definition.id === "collage") {
+    return (
+      <span className={cn(outerClassName, "gap-[3px] p-[3px]")} style={outerStyle}>
+        <span
+          className="flex-1 rounded-md"
+          style={{ background: definition.swatch.accent, opacity: 0.85, transform: "rotate(-2deg)" }}
+        />
+        <span className="flex flex-1 flex-col gap-[3px]">
+          <span
+            className="flex-1 rounded-md"
+            style={{ background: definition.swatch.text, opacity: 0.28, transform: "rotate(2deg)" }}
+          />
+          <span className="flex-1 rounded-md" style={{ background: definition.swatch.accent, opacity: 0.55 }} />
+        </span>
+      </span>
+    );
+  }
+
   return (
-    <span
-      className={cn("relative flex flex-shrink-0 flex-col overflow-hidden rounded-lg", full && "w-full")}
-      style={{
-        height: size,
-        width: full ? "100%" : size,
-        background: definition.swatch.bg,
-        border: `1px solid ${definition.swatch.accent}33`,
-      }}
-    >
+    <span className={cn(outerClassName, "flex-col")} style={outerStyle}>
       <span className="block h-[3px] w-full flex-shrink-0" style={{ background: definition.swatch.accent }} />
       <span className="flex flex-1 flex-col items-center justify-center gap-1.5">
         <span
@@ -319,7 +372,7 @@ export function EmailPreview({
                 onCheckedChange={(checked) => onUsePosterTemplateChange(checked as boolean)}
               />
               <Label htmlFor="email-preview-poster" className="cursor-pointer text-sm font-medium whitespace-nowrap">
-                Premium template
+                Use template
               </Label>
             </div>
           )}
@@ -351,8 +404,8 @@ export function EmailPreview({
             <DialogHeader>
               <DialogTitle>Choose an email design</DialogTitle>
             </DialogHeader>
-            <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center">
-              <div className="relative flex-1">
+            <div className="flex flex-col gap-3 border-b pb-4">
+              <div className="relative w-full">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Search styles..."
@@ -519,49 +572,47 @@ export function EmailPreview({
               ? "border-gray-700 bg-gray-800/50" 
               : "border-gray-300 bg-gray-50"
           )}>
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-4">
               <Send className={cn(
-                "h-5 w-5 mt-0.5 transition-colors",
+                "h-5 w-5 mt-0.5 transition-colors shrink-0",
                 isDarkMode ? "text-gray-400" : "text-gray-600"
               )} />
-              <div className="flex-1 space-y-2">
-                <div>
-                  <p className={cn(
-                    "text-sm font-semibold transition-colors",
-                    isDarkMode ? "text-gray-300" : "text-gray-700"
-                  )}>
-                    Send Test Email
-                  </p>
-                  <p className={cn(
-                    "text-xs transition-colors",
-                    isDarkMode ? "text-gray-500" : "text-gray-500"
-                  )}>
-                    Send this email with the selected template ({template}) to yourself for testing
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    type="email"
-                    placeholder="your.email@example.com"
-                    value={testEmail}
-                    onChange={(e) => setTestEmail(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !sendingTest) {
-                        void handleSendTestEmail();
-                      }
-                    }}
-                    disabled={sendingTest}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    onClick={handleSendTestEmail}
-                    disabled={sendingTest || !testEmail.trim()}
-                    size="sm"
-                  >
-                    {sendingTest ? "Sending..." : "Send"}
-                  </Button>
-                </div>
+              <div className="flex-1">
+                <p className={cn(
+                  "text-sm font-semibold transition-colors",
+                  isDarkMode ? "text-gray-300" : "text-gray-700"
+                )}>
+                  Send Test Email
+                </p>
+                <p className={cn(
+                  "text-xs transition-colors mt-1",
+                  isDarkMode ? "text-gray-500" : "text-gray-500"
+                )}>
+                  Send this email with the selected template ({template}) to yourself for testing
+                </p>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Input
+                  type="email"
+                  placeholder="your.email@example.com"
+                  value={testEmail}
+                  onChange={(e) => setTestEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !sendingTest) {
+                      void handleSendTestEmail();
+                    }
+                  }}
+                  disabled={sendingTest}
+                  className="w-64"
+                />
+                <Button
+                  type="button"
+                  onClick={handleSendTestEmail}
+                  disabled={sendingTest || !testEmail.trim()}
+                  size="sm"
+                >
+                  {sendingTest ? "Sending..." : "Send"}
+                </Button>
               </div>
             </div>
           </div>

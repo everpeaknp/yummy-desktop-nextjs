@@ -72,7 +72,11 @@ export function campaignApprovalChecks(
   const selectedTemplate = templates.find(
     (template) => String(template.id) === String(campaign.message_template_id),
   );
-  return [
+  
+  const isEmail = campaign.channel === "email";
+  
+  // Base checks that apply to all channels
+  const checks: CampaignApprovalCheck[] = [
     {
       key: "offer",
       label: "Offer attached",
@@ -89,24 +93,43 @@ export function campaignApprovalChecks(
         ? "Customer message is saved."
         : "Write a message before sending.",
     },
-    {
-      key: "poster",
-      label: "Image uploaded",
-      ready: campaign.creative_asset_id != null,
-      detail:
-        campaign.creative_asset_id != null
-          ? `Image #${campaign.creative_asset_id} is ready`
-          : "Upload an image before sending.",
-    },
-    {
+  ];
+  
+  // Add channel-specific checks
+  if (isEmail) {
+    // Email campaigns need template approval but not poster
+    checks.push({
       key: "template",
-      label: "WhatsApp ready",
+      label: "Email ready",
       ready: Boolean(selectedTemplate && selectedTemplate.provider_status === "approved"),
       detail: selectedTemplate
-        ? `${selectedTemplate.whatsapp_template_name} · ${selectedTemplate.language} · ${selectedTemplate.provider_status}`
-        : "Select an approved WhatsApp template.",
-    },
-  ];
+        ? `${selectedTemplate.provider_template_name || 'Template'} · ${selectedTemplate.language} · ${selectedTemplate.provider_status}`
+        : "Select an approved email template.",
+    });
+  } else {
+    // WhatsApp campaigns need both poster and template
+    checks.push(
+      {
+        key: "poster",
+        label: "Image uploaded",
+        ready: campaign.creative_asset_id != null,
+        detail:
+          campaign.creative_asset_id != null
+            ? `Image #${campaign.creative_asset_id} is ready`
+            : "Upload an image before sending.",
+      },
+      {
+        key: "template",
+        label: "WhatsApp ready",
+        ready: Boolean(selectedTemplate && selectedTemplate.provider_status === "approved"),
+        detail: selectedTemplate
+          ? `${selectedTemplate.whatsapp_template_name || selectedTemplate.provider_template_name || 'Template'} · ${selectedTemplate.language} · ${selectedTemplate.provider_status}`
+          : "Select an approved WhatsApp template.",
+      }
+    );
+  }
+  
+  return checks;
 }
 
 export function isCampaignApprovalReady(checks: CampaignApprovalCheck[]): boolean {

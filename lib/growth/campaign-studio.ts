@@ -209,13 +209,20 @@ export function formatCampaignOffer(offer: CampaignOfferDraft): string {
   return `${offer.value}% off above Rs. ${offer.minimum_order_value.toLocaleString("en-NP")}${cap}`;
 }
 
+// Real offer codes are generated per-recipient only when a campaign is
+// approved, so drafting/preview has nothing real to show yet. This is the
+// one placeholder every preview surface (starter copy text and the poster
+// template's coupon box) shares, so they never show two different fake
+// codes side by side.
+export const PREVIEW_COUPON_CODE = "H8DKRT";
+
 export function deterministicCampaignCopy({
   restaurantName,
   playbookCode,
   language,
   offer,
   channel,
-  couponCode = "H8DKRT",
+  couponCode = PREVIEW_COUPON_CODE,
 }: {
   restaurantName: string;
   playbookCode: GrowthPlaybookCode;
@@ -227,26 +234,81 @@ export function deterministicCampaignCopy({
   const playbook = getCampaignPlaybook(playbookCode);
   const offerText = formatCampaignOffer(offer);
 
+  // Use timestamp to ensure variety on each call (now supports 6 templates)
+  const randomIndex = Math.floor((Date.now() / 1000) % 6);
+
   // Email channel: Generate just the message body text (not full HTML template)
   // The backend will wrap this in the branded template
   if (channel === "email") {
-    const headline =
-      playbookCode === "second_visit"
-        ? "A treat from Yummy"
-        : playbookCode === "win_back"
-          ? "We've missed you"
-          : "A treat from Yummy";
+    let headline = "";
+    let messageBody = "";
 
-    //  Message body content only (backend adds the YUMMY header, coupon box, footer)
-    const messageBody = `Visit ${restaurantName} again and enjoy ${offerText}. Valid until ${offer.valid_until}. Use code ${couponCode} at checkout.`;
+    if (playbookCode === "second_visit") {
+      // New customer - encourage second visit
+      const headlines = [
+        "Thanks for trying us out!",
+        "We'd love to see you again",
+        "Come back and taste more",
+        "Your next meal is on us",
+        "Ready for round two?",
+        "Welcome back for more flavors",
+      ];
+      const messages = [
+        `Thanks for trying ${restaurantName}! Enjoy ${offerText}, valid for the next 30 days. Use the coupon code shown below at checkout.`,
+        `We loved having you at ${restaurantName}. Here's ${offerText} for your next visit, valid until ${offer.valid_until}. Show this coupon at checkout.`,
+        `As one of our newest guests, enjoy ${offerText} on your next order at ${restaurantName}. Valid until ${offer.valid_until}. Present the coupon code during checkout.`,
+        `Hope you enjoyed your first meal! Come back and try more with ${offerText} at ${restaurantName}, valid until ${offer.valid_until}. Show the coupon below at checkout.`,
+        `We noticed you tried us recently - thanks! Here's ${offerText} to bring you back to ${restaurantName}. Valid until ${offer.valid_until}. Use the code shown below.`,
+        `Your first visit was just the beginning! Explore more of our menu with ${offerText}, valid until ${offer.valid_until}. Present this coupon during your next visit.`,
+      ];
+      headline = headlines[randomIndex];
+      messageBody = messages[randomIndex];
+    } else if (playbookCode === "win_back") {
+      // Lapsed customer - win them back
+      const headlines = [
+        "We miss you!",
+        "It's been too long",
+        "Ready to come back?",
+        "Your table is waiting",
+        "We haven't forgotten you",
+        "Time to reconnect over a meal",
+      ];
+      const messages = [
+        `We haven't seen you at ${restaurantName} in a while and we miss you! Here's ${offerText} to welcome you back, valid until ${offer.valid_until}. Use the coupon code below at checkout.`,
+        `It's been a while since your last visit to ${restaurantName}. Come back and enjoy ${offerText}, valid until ${offer.valid_until}. Show this coupon during checkout.`,
+        `We'd love to have you back at ${restaurantName}! Enjoy ${offerText} on your return visit, valid until ${offer.valid_until}. Present the coupon code shown below at checkout.`,
+        `Your favorite dishes are waiting for you at ${restaurantName}! Come back with ${offerText}, valid until ${offer.valid_until}. Use the code shown below.`,
+        `We noticed it's been a while since we've seen you. Here's ${offerText} to welcome you back to ${restaurantName}, valid until ${offer.valid_until}. Show this coupon at checkout.`,
+        `Life gets busy, we understand. When you're ready to return, enjoy ${offerText} at ${restaurantName}, valid until ${offer.valid_until}. Present the coupon code below.`,
+      ];
+      headline = headlines[randomIndex];
+      messageBody = messages[randomIndex];
+    } else {
+      // Slow day - regular customers
+      const headlines = [
+        "A midweek treat, just for our regulars",
+        "Special offer during our quiet hours",
+        "Your favorite table is waiting",
+        "Beat the rush with this exclusive offer",
+        "Enjoy a peaceful meal on us",
+        "Our quiet hours are better with you",
+      ];
+      const messages = [
+        `As one of our regulars, enjoy ${offerText} at ${restaurantName} during our quieter hours, valid until ${offer.valid_until}. Use the coupon code below at checkout.`,
+        `We have some quiet spots to fill and thought of you! Here's ${offerText}, valid until ${offer.valid_until}. Show this coupon during checkout.`,
+        `Skip the rush hour crowd and enjoy ${offerText} during our quiet period at ${restaurantName}. Valid until ${offer.valid_until}. Present the coupon code shown below.`,
+        `Thanks for being a regular! Enjoy ${offerText} when you visit during our quieter hours, valid until ${offer.valid_until}. Use the code shown below at checkout.`,
+        `Want to avoid the crowds? Come during our quiet hours and get ${offerText} at ${restaurantName}, valid until ${offer.valid_until}. Show this coupon.`,
+        `We appreciate your loyalty! Here's ${offerText} for visits during our off-peak times, valid until ${offer.valid_until}. Present the coupon code below.`,
+      ];
+      headline = headlines[randomIndex];
+      messageBody = messages[randomIndex];
+    }
 
-    return {
-      headline,
-      message: messageBody,
-    };
+    return { headline, message: messageBody };
   }
 
-  // WhatsApp message (original logic)
+  // WhatsApp message (original logic with slight enhancements)
   if (language === "ne") {
     const headline =
       playbookCode === "second_visit"
@@ -294,6 +356,7 @@ export function buildCampaignCreateInput({
   message,
   emailSubject,
   emailBodyHtml,
+  emailTemplate,
 }: {
   name: string;
   playbookCode: GrowthPlaybookCode;
@@ -303,6 +366,7 @@ export function buildCampaignCreateInput({
   message: string;
   emailSubject?: string;
   emailBodyHtml?: string;
+  emailTemplate?: string;
 }): GrowthCampaignCreateInput {
   const playbook = getCampaignPlaybook(playbookCode);
   return {
@@ -315,6 +379,7 @@ export function buildCampaignCreateInput({
     message_body: channel === "whatsapp" ? message.trim() : null,
     email_subject: channel === "email" ? (emailSubject || "").trim() : null,
     email_body_html: channel === "email" ? (emailBodyHtml || "").trim() : null,
+    email_template: channel === "email" ? (emailTemplate || "").trim() || null : null,
   };
 }
 

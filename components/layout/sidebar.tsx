@@ -26,6 +26,7 @@ import {
   User,
   DollarSign,
   HelpCircle,
+  Plus,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/hooks/use-auth";
@@ -120,6 +121,30 @@ function SidebarNavLink({
       <button onClick={onToggle} className={cn(classes, "w-full text-left")} {...tourAttr}>
         {content}
       </button>
+    );
+  }
+
+  if (!collapsed && item.quickCreateHref) {
+    return (
+      <div className={cn(classes, "gap-1 pr-1.5")}>
+        <Link
+          href={item.href}
+          onClick={() => sessionStorage.removeItem("fromManage")}
+          className="flex flex-1 min-w-0 items-center gap-3"
+          {...tourAttr}
+        >
+          {content}
+        </Link>
+        <Link
+          href={item.quickCreateHref}
+          title={item.quickCreateLabel || "Create new"}
+          aria-label={item.quickCreateLabel || "Create new"}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/15 hover:text-primary"
+          data-tour={`nav-${item.href.replace(/^\//, "").replace(/\//g, "-")}-quick-create`}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Link>
+      </div>
     );
   }
 

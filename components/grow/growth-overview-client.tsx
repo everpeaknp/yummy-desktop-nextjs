@@ -8,7 +8,9 @@ import {
   CheckCircle2,
   CircleDashed,
   Clock3,
+  Mail,
   Megaphone,
+  MessageCircle,
   MessageCircleMore,
   RefreshCw,
   Settings,
@@ -28,6 +30,7 @@ import { GrowthSettingsClient } from "@/components/grow/growth-settings-client";
 import { useAuth } from "@/hooks/use-auth";
 import { growthApi } from "@/lib/api/growth";
 import type {
+  GrowthCampaign,
   GrowthCampaignStatus,
   GrowthReadinessDomain,
   GrowthReadinessStatus,
@@ -126,9 +129,9 @@ function formatDate(value?: string | null): string {
 
 function OverviewSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-8 pb-16" aria-label="Loading Yummy Grow overview">
-      <Skeleton className="h-48 w-full rounded-3xl" />
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="dashboard-ui relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4" aria-label="Loading Yummy Grow overview">
+      <Skeleton className="h-32 w-full rounded-2xl" />
+      <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
         {[0, 1, 2, 3].map((item) => (
           <Skeleton key={item} className="h-32 rounded-2xl" />
         ))}
@@ -148,20 +151,45 @@ function OverviewSkeleton() {
 export function GrowthOverviewClient() {
   const user = useAuth((state) => state.user);
   const [overview, setOverview] = useState<NormalizedGrowthOverview | null>(null);
+  const [allCampaigns, setAllCampaigns] = useState<GrowthCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadOverview = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setOverview(await growthApi.getOverview());
+      const [overviewData, campaignsData] = await Promise.all([
+        growthApi.getOverview(),
+        growthApi.listCampaigns()
+      ]);
+      setOverview(overviewData);
+      setAllCampaigns(campaignsData);
     } catch {
       setOverview(null);
+      setAllCampaigns([]);
       setError("Unable to load growth data. Please check your connection and try again.");
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const [overviewData, campaignsData] = await Promise.all([
+        growthApi.getOverview(),
+        growthApi.listCampaigns()
+      ]);
+      setOverview(overviewData);
+      setAllCampaigns(campaignsData);
+    } catch {
+      setError("Unable to load growth data. Please check your connection and try again.");
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
@@ -174,116 +202,152 @@ export function GrowthOverviewClient() {
   const summary = overview?.summary ?? {};
   const readinessDomains = overview?.readiness.domains ?? [];
   const opportunities = overview?.opportunities ?? [];
-  const campaigns = overview?.active_campaigns ?? [];
   const recentResults = overview?.recent_results ?? [];
+  
+  // Show latest 10 campaigns (all channels, all statuses, sorted by date)
+  const latestCampaigns = allCampaigns
+    .sort((a, b) => {
+      const dateA = a.scheduled_at || a.created_at;
+      const dateB = b.scheduled_at || b.created_at;
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
+    })
+    .slice(0, 10);
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-8 pb-16" data-tour="grow-overview">
-      <section className="relative overflow-hidden rounded-2xl border border-border bg-card p-8 md:p-12">
-        {hasPermission(user, "grow.settings.manage") && (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Grow settings"
-            onClick={() => setSettingsOpen(true)}
-            className="absolute right-6 top-6 z-10 h-10 w-10 rounded-xl border border-border bg-background hover:bg-accent transition-all"
+    <div className="dashboard-ui relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4" data-tour="grow-overview">
+      {refreshing ? (
+        <div className="pointer-events-none absolute right-4 top-0 z-10 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+          <RefreshCw className="h-3 w-3 animate-spin" />
+          Refreshing…
+        </div>
+      ) : null}
+
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="dc-page-title">Grow Your Customer Base</h1>
+          <p className="dc-page-subtitle">
+            Create targeted campaigns to engage customers and drive repeat visits
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => void refresh()} 
+            className="dc-filter-refresh h-9 gap-2 rounded-2xl px-4"
+            disabled={refreshing}
           >
-            <Settings className="h-4 w-4" />
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+            Refresh
           </Button>
-        )}
-        
-        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-2xl space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5">
-              <Sprout className="h-3.5 w-3.5 text-foreground" />
-              <span className="text-xs font-semibold tracking-wide text-foreground">YUMMY GROW</span>
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl">Grow Your Customer Base</h1>
-            <p className="text-base text-muted-foreground">
-              Create targeted campaigns to engage customers and drive repeat visits.
-            </p>
-          </div>
-          
+          {hasPermission(user, "grow.settings.manage") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSettingsOpen(true)}
+              className="dc-filter-refresh h-9 gap-2 rounded-2xl px-4"
+            >
+              <Settings className="h-4 w-4" />
+              Settings
+            </Button>
+          )}
           {hasPermission(user, "grow.campaigns.manage") && (
-            <Button asChild size="lg" className="h-12 rounded-xl border border-border px-6 shadow-sm hover:shadow transition-all">
+            <Button 
+              asChild 
+              className="dc-btn-close-day h-9 gap-2 rounded-2xl px-4 font-medium"
+            >
               <Link href="/grow/campaigns/new">
-                <Megaphone className="mr-2 h-4 w-4" />
+                <Megaphone className="h-4 w-4" />
                 Create Campaign
               </Link>
             </Button>
           )}
         </div>
-      </section>
+      </div>
 
       {error && (
-        <Alert className="rounded-xl border border-border bg-card">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle className="font-semibold">Unable to load data</AlertTitle>
-          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-sm">There was an error loading the overview. Please try again.</span>
-            <Button variant="outline" size="sm" onClick={() => void loadOverview()} className="shrink-0 rounded-xl border border-border">
-              <RefreshCw className="mr-2 h-3.5 w-3.5" />
-              Retry
-            </Button>
+        <Alert className="dc-card border-destructive/30 bg-destructive/5">
+          <AlertCircle className="h-4 w-4 text-destructive" />
+          <AlertTitle className="font-semibold text-destructive">Unable to load data</AlertTitle>
+          <AlertDescription className="text-sm text-destructive/80">
+            There was an error loading the overview. Please try again.
           </AlertDescription>
         </Alert>
       )}
 
-      <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Growth summary">
+      <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4" aria-label="Growth summary">
         {[
           {
             label: "Total Customers",
             value: summary.identified_customer_count,
             detail: "From completed orders",
             icon: Users,
+            color: "text-blue-500",
+            bgColor: "bg-blue-500/5",
           },
           {
             label: "Opted-In Contacts",
             value: summary.consented_customer_count,
             detail: "Ready for campaigns",
             icon: MessageCircleMore,
+            color: "text-green-500",
+            bgColor: "bg-green-500/5",
           },
           {
             label: "Opportunities",
             value: summary.open_opportunity_count ?? (overview ? opportunities.length : undefined),
             detail: "Growth opportunities",
             icon: Sprout,
+            color: "text-emerald-500",
+            bgColor: "bg-emerald-500/5",
           },
           {
             label: "Active Campaigns",
-            value: summary.active_campaign_count ?? (overview ? campaigns.length : undefined),
-            detail: "Currently running",
+            value: summary.active_campaign_count ?? (overview ? overview.active_campaigns?.length : allCampaigns.length),
+            detail: `${allCampaigns.length} total campaigns`,
             icon: Megaphone,
+            color: "text-purple-500",
+            bgColor: "bg-purple-500/5",
           },
         ].map((item) => (
-          <Card key={item.label} className="group rounded-xl border border-border bg-card transition-all hover:shadow-md">
-            <CardContent className="flex items-start justify-between p-6">
-              <div className="space-y-1">
-                <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{item.label}</p>
-                <p className="text-4xl font-bold tracking-tight">{formatCount(item.value)}</p>
-                <p className="text-xs text-muted-foreground">{item.detail}</p>
+          <div key={item.label} className="group relative overflow-hidden dc-card min-h-[108px] p-5 flex items-center justify-between transition-all duration-300 hover:-translate-y-1">
+            <div className={cn("absolute top-0 right-0 w-28 h-28 rounded-bl-[100px] -mr-4 -mt-4 transition-transform group-hover:scale-110", item.bgColor)} />
+            <div className="flex items-center gap-4 relative z-10">
+              <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center border shadow-sm transition-colors", 
+                item.color.replace("text-", "bg-") + "/10",
+                item.color.replace("text-", "border-") + "/20",
+                "group-hover:" + item.color.replace("text-", "bg-") + "/15"
+              )}>
+                <item.icon className={cn("h-6 w-6", item.color)} />
               </div>
-              <div className="shrink-0 rounded-xl border border-border bg-muted p-2.5 transition-transform group-hover:scale-110">
-                <item.icon className="h-5 w-5" />
+              <div>
+                <p className="dc-metric-label mb-1">{item.label}</p>
+                <p className="text-2xl font-black tracking-tight tabular-nums">{formatCount(item.value)}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{item.detail}</p>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         ))}
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card className="rounded-xl border border-border bg-card">
-          <CardHeader className="space-y-3 pb-4">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg border border-border bg-muted p-1.5">
-                <ShieldCheck className="h-4 w-4" />
+        <Card className="dc-card">
+          <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
+                <ShieldCheck className="h-4 w-4 text-primary" />
               </div>
-              <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Readiness</span>
+              <span className="dc-eyebrow">Readiness</span>
             </div>
-            <CardTitle className="text-xl">System Setup</CardTitle>
-            <CardDescription className="text-sm">Check which features are ready to use</CardDescription>
+            <CardTitle className="dc-card-title">System Setup</CardTitle>
+            <CardDescription className="text-xs text-muted-foreground mt-1">
+              Check which features are ready to use
+            </CardDescription>
           </CardHeader>
-          <CardContent className="pt-2">
+          <CardContent className="pt-6">
             {readinessDomains.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
                 <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground" />
@@ -386,18 +450,20 @@ export function GrowthOverviewClient() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-xl border border-border bg-card">
-          <CardHeader className="space-y-3 pb-4">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg border border-border bg-muted p-1.5">
-                <Sprout className="h-4 w-4" />
+        <Card className="dc-card">
+          <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
+                <Sprout className="h-4 w-4 text-emerald-500" />
               </div>
-              <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Opportunities</span>
+              <span className="dc-eyebrow">Opportunities</span>
             </div>
-            <CardTitle className="text-xl">Your Opportunities</CardTitle>
-            <CardDescription className="text-sm">Ways to bring back customers</CardDescription>
+            <CardTitle className="dc-card-title">Your Opportunities</CardTitle>
+            <CardDescription className="text-xs text-muted-foreground mt-1">
+              Ways to bring back customers
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 pt-2">
+          <CardContent className="space-y-3 pt-6">
             {opportunities.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
                 <Sprout className="mx-auto h-10 w-10 text-muted-foreground" />
@@ -408,17 +474,17 @@ export function GrowthOverviewClient() {
               opportunities.slice(0, 4).map((opportunity) => {
                 const status = readinessCopy(opportunity.readiness_status);
                 return (
-                  <article key={opportunity.id} className="group rounded-xl border border-border bg-card p-4 transition-all hover:shadow-md">
+                  <article key={opportunity.id} className="group dc-card p-4 transition-all duration-300 hover:-translate-y-1">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1.5">
                         <h3 className="font-semibold text-sm leading-snug">{opportunity.title}</h3>
                         <p className="text-xs leading-relaxed text-muted-foreground">{simplifyOpportunityText(opportunity.explanation || opportunity.suggested_action || "Check eligible customers")}</p>
                       </div>
-                      <Badge variant="outline" className={cn("shrink-0", status.className)}>{status.label}</Badge>
+                      <Badge variant="outline" className={cn("shrink-0 text-xs font-semibold", status.className)}>{status.label}</Badge>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t border-black/[0.08] dark:border-white/10">
                       <Users className="h-3.5 w-3.5" />
-                      <span>{formatCount(opportunity.eligible_customer_count)} eligible</span>
+                      <span className="font-medium">{formatCount(opportunity.eligible_customer_count)} eligible</span>
                     </div>
                   </article>
                 );
@@ -429,58 +495,119 @@ export function GrowthOverviewClient() {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-2">
-        <Card className="rounded-xl border border-border bg-card">
-          <CardHeader className="flex-row items-start justify-between space-y-0 pb-4">
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="rounded-lg border border-border bg-muted p-1.5">
-                  <Megaphone className="h-4 w-4" />
+        <Card className="dc-card">
+          <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
+                    <Megaphone className="h-4 w-4 text-purple-500" />
+                  </div>
+                  <span className="dc-eyebrow">Campaigns</span>
                 </div>
-                <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Campaigns</span>
+                <CardTitle className="dc-card-title">Your Campaigns</CardTitle>
+                <CardDescription className="text-xs text-muted-foreground mt-1">
+                  Manage your marketing messages
+                </CardDescription>
               </div>
-              <CardTitle className="text-xl">Your Campaigns</CardTitle>
-              <CardDescription className="text-sm">Manage your marketing messages</CardDescription>
+              <Button asChild size="sm" variant="ghost" className="dc-filter-refresh shrink-0 rounded-xl h-8 px-3 text-xs">
+                <Link href="/grow/campaigns">View All</Link>
+              </Button>
             </div>
-            <Button asChild size="sm" variant="outline" className="shrink-0 rounded-xl border border-border">
-              <Link href="/grow/campaigns">View All</Link>
-            </Button>
           </CardHeader>
-          <CardContent className="space-y-3 pt-2">
-            {campaigns.length === 0 ? (
+          <CardContent className="pt-5">
+            {latestCampaigns.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
                 <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground" />
                 <p className="mt-4 font-semibold text-sm">No campaigns yet</p>
                 <p className="mt-1.5 text-sm text-muted-foreground">Create your first campaign to reach customers</p>
               </div>
             ) : (
-              campaigns.slice(0, 5).map((campaign) => (
-                <Link key={campaign.id} href={`/grow/campaigns/${campaign.id}`} className="group flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-4 transition-all hover:shadow-md">
-                  <div className="min-w-0 space-y-1.5">
-                    <p className="truncate font-semibold text-sm">{campaign.name}</p>
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                      <span>{formatCount(campaign.audience_count)} recipients</span>
-                      {campaign.scheduled_at && <span className="inline-flex items-center gap-1"><CalendarClock className="h-3.5 w-3.5" />{formatDate(campaign.scheduled_at)}</span>}
-                    </div>
-                  </div>
-                  <Badge variant="secondary" className="shrink-0 border border-border text-xs">{campaignStatusLabels[campaign.status]}</Badge>
-                </Link>
-              ))
+              <div className="space-y-2.5">
+                {latestCampaigns.map((campaign) => {
+                  const statusColors: Record<string, string> = {
+                    draft: "border-amber-500/20 bg-amber-500/10 text-amber-600",
+                    review: "border-blue-500/20 bg-blue-500/10 text-blue-600",
+                    approved: "border-green-500/20 bg-green-500/10 text-green-600",
+                    scheduled: "border-purple-500/20 bg-purple-500/10 text-purple-600",
+                    sending: "border-primary/20 bg-primary/10 text-primary",
+                    completed: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600",
+                    paused: "border-orange-500/20 bg-orange-500/10 text-orange-600",
+                    canceled: "border-border bg-muted text-muted-foreground",
+                    failed: "border-destructive/20 bg-destructive/10 text-destructive",
+                  };
+                  
+                  return (
+                    <Link 
+                      key={campaign.id} 
+                      href={`/grow/campaigns/${campaign.id}`} 
+                      className="group block rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80 hover:shadow-sm hover:-translate-y-0.5"
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Channel Icon */}
+                        <div className={cn(
+                          "w-9 h-9 rounded-lg flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105",
+                          campaign.channel === "whatsapp" 
+                            ? "bg-green-500/10 border-green-500/20 text-green-600"
+                            : "bg-blue-500/10 border-blue-500/20 text-blue-600"
+                        )}>
+                          {campaign.channel === "whatsapp" ? (
+                            <MessageCircle className="h-4 w-4" />
+                          ) : (
+                            <Mail className="h-4 w-4" />
+                          )}
+                        </div>
+                        
+                        {/* Campaign Info */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <h3 className="font-semibold text-sm leading-snug group-hover:text-primary transition-colors line-clamp-1">
+                              {campaign.name}
+                            </h3>
+                            <Badge 
+                              variant="outline" 
+                              className={cn("shrink-0 text-[10px] font-semibold px-1.5 py-0 h-5", statusColors[campaign.status])}
+                            >
+                              {campaignStatusLabels[campaign.status]}
+                            </Badge>
+                          </div>
+                          
+                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                            <span className="inline-flex items-center gap-1.5">
+                              <Users className="h-3 w-3" />
+                              <span className="font-medium tabular-nums">{formatCount(campaign.audience_count)}</span>
+                            </span>
+                            {campaign.scheduled_at && (
+                              <span className="inline-flex items-center gap-1.5">
+                                <Clock3 className="h-3 w-3" />
+                                <span className="font-medium">{formatDate(campaign.scheduled_at)}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
             )}
           </CardContent>
         </Card>
 
-        <Card className="rounded-xl border border-border bg-card">
-          <CardHeader className="space-y-3 pb-4">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg border border-border bg-muted p-1.5">
-                <CheckCircle2 className="h-4 w-4" />
+        <Card className="dc-card">
+          <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
               </div>
-              <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Results</span>
+              <span className="dc-eyebrow">Results</span>
             </div>
-            <CardTitle className="text-xl">Results</CardTitle>
-            <CardDescription className="text-sm">How your campaigns performed</CardDescription>
+            <CardTitle className="dc-card-title">Results</CardTitle>
+            <CardDescription className="text-xs text-muted-foreground mt-1">
+              How your campaigns performed
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 pt-2">
+          <CardContent className="space-y-3 pt-6">
             {recentResults.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center">
                 <CheckCircle2 className="mx-auto h-10 w-10 text-muted-foreground" />
@@ -489,29 +616,29 @@ export function GrowthOverviewClient() {
               </div>
             ) : (
               recentResults.slice(0, 4).map((result) => (
-                <div key={result.campaign_id} className="rounded-xl border border-border bg-card p-4">
-                  <div className="flex items-start justify-between gap-3">
+                <div key={result.campaign_id} className="dc-card p-4">
+                  <div className="flex items-start justify-between gap-3 mb-4">
                     <div className="space-y-1">
                       <p className="font-semibold text-sm">{result.campaign_name}</p>
                       <p className="text-xs text-muted-foreground">{formatCount(result.redeemed_count)} redeemed · {formatCount(result.opt_out_count)} opt-outs</p>
                     </div>
                     <div className="text-right space-y-0.5">
                       <p className="text-lg font-bold">{formatMoney(result.attributed_revenue)}</p>
-                      <p className="text-[10px] tracking-wide uppercase text-muted-foreground">Revenue</p>
+                      <p className="dc-eyebrow">Revenue</p>
                     </div>
                   </div>
-                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-lg border border-border bg-muted p-2.5 space-y-0.5">
+                  <div className="grid grid-cols-3 gap-2 text-center pt-3 border-t border-black/[0.08] dark:border-white/10">
+                    <div className="rounded-lg bg-muted/50 p-2.5 space-y-0.5">
                       <span className="block text-sm font-bold">{formatCount(result.sent_count)}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Sent</span>
+                      <span className="dc-eyebrow">Sent</span>
                     </div>
-                    <div className="rounded-lg border border-border bg-muted p-2.5 space-y-0.5">
+                    <div className="rounded-lg bg-muted/50 p-2.5 space-y-0.5">
                       <span className="block text-sm font-bold">{formatCount(result.delivered_count)}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Delivered</span>
+                      <span className="dc-eyebrow">Delivered</span>
                     </div>
-                    <div className="rounded-lg border border-border bg-muted p-2.5 space-y-0.5">
+                    <div className="rounded-lg bg-muted/50 p-2.5 space-y-0.5">
                       <span className="block text-sm font-bold">{formatCount(result.failed_count)}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Failed</span>
+                      <span className="dc-eyebrow">Failed</span>
                     </div>
                   </div>
                 </div>

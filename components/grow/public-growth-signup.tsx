@@ -4,11 +4,12 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
+import { FaWhatsapp } from "react-icons/fa";
+import { MdEmail } from "react-icons/md";
 import {
   AlertCircle,
   CheckCircle2,
   Loader2,
-  MessageCircleMore,
   RefreshCw,
   ShieldCheck,
   HandCoins,
@@ -122,23 +123,33 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
     event.preventDefault();
     if (!restaurant || !publicSlug) return;
     setFormError(null);
+    
+    // Name validation
     if (name.trim().length < 2) {
       setFormError("Enter your name so the restaurant can recognize your membership.");
       return;
     }
-    if ((phone.match(/\d/g) ?? []).length < 7) {
-      setFormError("Enter a valid mobile number, including the country code when needed.");
+    
+    // Phone validation - must be exactly 10 digits (excluding country code)
+    const phoneDigits = phone.replace(/\D/g, ""); // Remove all non-digits
+    const localPhoneDigits = phoneDigits.replace(/^977/, ""); // Remove Nepal country code if present
+    
+    if (localPhoneDigits.length < 10) {
+      setFormError("Phone number must be 10 digits.");
       return;
     }
+    
+    // Email validation
     const trimmedEmail = email.trim();
     if (emailConsent && !trimmedEmail) {
       setFormError("Enter an email address to receive email offers.");
       return;
     }
-    if (trimmedEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmedEmail)) {
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setFormError("Enter a valid email address.");
       return;
     }
+    
     setSubmitting(true);
     try {
       const result = await growthApi.joinPublicRestaurant(publicSlug, {
@@ -153,10 +164,16 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
       });
       setPreferenceToken(result.preference_token || null);
       setSubmitted(true);
-    } catch {
-      setFormError(
-        "Your preference could not be saved right now. Nothing was changed. Please try again.",
-      );
+    } catch (error: any) {
+      // Handle duplicate error from backend
+      const errorMessage = error?.response?.data?.message || error?.message;
+      if (errorMessage && (errorMessage.includes("duplicate") || errorMessage.includes("already exists") || errorMessage.includes("already registered"))) {
+        setFormError("This phone number or email is already registered. Please use a different one.");
+      } else {
+        setFormError(
+          "Your preference could not be saved right now. Nothing was changed. Please try again.",
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -215,15 +232,26 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
               <section className="relative overflow-hidden bg-gradient-to-br from-emerald-600 to-emerald-800 p-7 text-white sm:p-10">
                 <div className="absolute -bottom-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
                 <div className="relative">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 backdrop-blur">
-                    <Sprout className="h-7 w-7" />
-                  </div>
+                  {restaurant.logo_url ? (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white overflow-hidden">
+                      <img 
+                        src={restaurant.logo_url} 
+                        alt={`${displayName} logo`}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 backdrop-blur">
+                      <Sprout className="h-7 w-7" />
+                    </div>
+                  )}
                   <p className="mt-8 text-xs font-bold uppercase tracking-[0.2em] text-emerald-100">Powered by Yummy Grow</p>
-                  <h1 className="mt-3 text-3xl font-black tracking-tight">Stay connected with {displayName}</h1>
-                  <p className="mt-4 text-sm leading-6 text-emerald-50/90">Join the restaurant&apos;s customer list and decide clearly whether you want relevant offers on WhatsApp.</p>
+                  <h1 className="mt-3 text-3xl font-black tracking-tight">Join {displayName} rewards</h1>
+                  <p className="mt-4 text-sm leading-6 text-emerald-50/90">Get exclusive offers on WhatsApp and email. Choose your preferred channels and control what you receive.</p>
                   <div className="mt-8 space-y-3 text-sm text-emerald-50/90">
-                    <p className="flex items-start gap-2"><HandCoins className="mt-0.5 h-4 w-4 shrink-0" />Offers can be selected for customer groups rather than sent as generic spam.</p>
-                    <p className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />Leaving the consent box unchecked means no WhatsApp marketing consent.</p>
+                    <p className="flex items-start gap-2"><FaWhatsapp className="mt-0.5 h-4 w-4 shrink-0" />WhatsApp offers sent to your mobile number</p>
+                    <p className="flex items-start gap-2"><MdEmail className="mt-0.5 h-4 w-4 shrink-0" />Email deals available too (optional)</p>
+                    <p className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />Your choice, unsubscribe anytime</p>
                   </div>
                 </div>
               </section>
@@ -234,35 +262,33 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                   <p className="mt-1 text-sm text-muted-foreground">Only share details you want this restaurant to keep for its customer program.</p>
                 </div>
 
-                {formError && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Could not save</AlertTitle>
-                    <AlertDescription>{formError}</AlertDescription>
-                  </Alert>
-                )}
-
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
+                  <div className="space-y-2">
                     <Label htmlFor="growth-name">Name</Label>
                     <Input id="growth-name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required />
                   </div>
-                  <div className="space-y-2 sm:col-span-2">
+                  <div className="space-y-2">
                     <Label htmlFor="growth-phone">Mobile number</Label>
                     <div className="phone-input-field">
                       <PhoneInput
                         id="growth-phone"
                         defaultCountry="NP"
                         value={phone}
-                        onChange={(value) => setPhone(value || "")}
+                        onChange={(value) => {
+                          // Limit to 10 digits (excluding country code)
+                          const digits = (value || "").replace(/\D/g, "");
+                          const localDigits = digits.replace(/^977/, "");
+                          if (localDigits.length <= 10) {
+                            setPhone(value || "");
+                          }
+                        }}
                         international
                         countryCallingCodeEditable={false}
                         withCountryCallingCode
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">Use a number connected to WhatsApp if you choose to receive offers.</p>
                   </div>
-                  <div className="space-y-2 sm:col-span-2">
+                  <div className="space-y-2">
                     <Label htmlFor="growth-email">Email (optional)</Label>
                     <Input
                       id="growth-email"
@@ -272,9 +298,8 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                       onChange={(event) => setEmail(event.target.value)}
                       maxLength={254}
                     />
-                    <p className="text-xs text-muted-foreground">Only needed if you also want email offers.</p>
                   </div>
-                  <div className="space-y-2 sm:col-span-2">
+                  <div className="space-y-2">
                     <Label>Preferred language</Label>
                     <Select value={language} onValueChange={(value) => setLanguage(value as GrowthLanguage)}>
                       <SelectTrigger aria-label="Preferred language"><SelectValue /></SelectTrigger>
@@ -296,8 +321,12 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                       aria-describedby="growth-consent-help"
                     />
                     <div>
-                      <Label htmlFor="growth-whatsapp-consent" className="cursor-pointer text-sm leading-5">{consentText}</Label>
-                      <p id="growth-consent-help" className="mt-2 text-xs leading-5 text-muted-foreground">Optional and unchecked by default. Joining the customer program does not require WhatsApp marketing consent.</p>
+                      <Label htmlFor="growth-whatsapp-consent" className="cursor-pointer text-sm leading-5 font-medium">
+                        Yes, send me exclusive offers on WhatsApp
+                      </Label>
+                      <p id="growth-consent-help" className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                        Completely optional. You can unsubscribe anytime with one tap.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -312,20 +341,34 @@ export function PublicGrowthSignup({ publicSlug }: { publicSlug: string | null }
                         aria-describedby="growth-email-consent-help"
                       />
                       <div>
-                        <Label htmlFor="growth-email-consent" className="cursor-pointer text-sm leading-5">
-                          I agree to receive promotional offers from {displayName} by email. I can opt out at any time.
+                        <Label htmlFor="growth-email-consent" className="cursor-pointer text-sm leading-5 font-medium">
+                          Yes, send me special deals by email too
                         </Label>
-                        <p id="growth-email-consent-help" className="mt-2 text-xs leading-5 text-muted-foreground">
-                          Separate from WhatsApp consent above -- you can choose either, both, or neither.
+                        <p id="growth-email-consent-help" className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                          Get notified about promotions. Unsubscribe anytime.
                         </p>
                       </div>
                     </div>
                   </div>
                 )}
 
+                {formError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Could not save</AlertTitle>
+                    <AlertDescription>{formError}</AlertDescription>
+                  </Alert>
+                )}
+
                 <Button type="submit" className="h-11 w-full" disabled={submitting}>
-                  {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageCircleMore className="mr-2 h-4 w-4" />}
-                  Save my preference
+                  {submitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save my preference"
+                  )}
                 </Button>
                 <p className="text-center text-[11px] leading-5 text-muted-foreground">Consent policy version {restaurant.consent_policy_version}. The restaurant controls its customer records; Yummy processes this choice for the restaurant.</p>
               </form>

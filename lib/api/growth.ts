@@ -248,6 +248,10 @@ export const growthApi = {
   ): Promise<PublicGrowthUnsubscribeResult> {
     return getData(apiClient.post(PublicGrowthApis.unsubscribe(signedToken), {}));
   },
+
+  async getSubscribers(restaurantId: number): Promise<any[]> {
+    return getData(apiClient.get(GrowthApis.subscribers));
+  },
 };
 
 export type GrowthApi = typeof growthApi;

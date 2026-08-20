@@ -199,6 +199,7 @@ export interface GrowthCampaignCreateInput {
   message_body?: string | null;
   email_subject?: string | null;
   email_body_html?: string | null;
+  email_template?: string | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
 }
@@ -210,6 +211,7 @@ export interface GrowthCampaignUpdateInput {
   message_body?: string;
   email_subject?: string | null;
   email_body_html?: string | null;
+  email_template?: string | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
 }
@@ -217,6 +219,8 @@ export interface GrowthCampaignUpdateInput {
 export interface GrowthCampaign extends GrowthCampaignSummary {
   offer?: GrowthOffer | null;
   approved_message_snapshot?: string | null;
+  email_subject?: string | null;
+  email_template?: string | null;
   creative_asset_id?: number | string | null;
   message_template_id?: number | string | null;
   language?: GrowthLanguage | null;
@@ -389,9 +393,7 @@ export interface PublicGrowthJoinResult {
   email_preference_token?: string | null;
 }
 
-export interface PublicGrowthPreferences {
-  restaurant_name: string;
-  logo_url?: string | null;
+export interface PublicGrowthPreferenceItem {
   destination_masked: string;
   channel: GrowthChannelCode;
   purpose: "marketing";
@@ -399,8 +401,15 @@ export interface PublicGrowthPreferences {
   preferred_language: GrowthLanguage;
   captured_at?: string | null;
   revoked_at?: string | null;
+  preference_token?: string | null;
+}
+
+export interface PublicGrowthPreferences {
+  restaurant_name: string;
+  logo_url?: string | null;
   consent_policy_version?: string | null;
   consent_text?: string | null;
+  preferences: PublicGrowthPreferenceItem[];
 }
 
 export interface PublicGrowthUnsubscribeResult {

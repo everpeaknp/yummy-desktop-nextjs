@@ -103,6 +103,7 @@ export function GrowthSettingsClient() {
 
   const [savingWhatsapp, setSavingWhatsapp] = useState(false);
   const [savingEmail, setSavingEmail] = useState(false);
+  const [savingAiCopy, setSavingAiCopy] = useState(false);
 
   const toggleWhatsapp = async (enabled: boolean) => {
     if (!settings) return;
@@ -129,6 +130,20 @@ export function GrowthSettingsClient() {
       toast.error(getApiErrorMessage(error, "Unable to update email delivery"));
     } finally {
       setSavingEmail(false);
+    }
+  };
+
+  const toggleAiCopy = async (enabled: boolean) => {
+    if (!settings) return;
+    setSavingAiCopy(true);
+    try {
+      const updated = await growthApi.updateSettings({ ai_copy_enabled: enabled });
+      setSettings(updated);
+      toast.success(enabled ? "AI copy generation enabled" : "AI copy generation disabled. System templates will be used.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Unable to update AI copy setting"));
+    } finally {
+      setSavingAiCopy(false);
     }
   };
 
@@ -208,6 +223,19 @@ export function GrowthSettingsClient() {
               disabled={savingEmail}
             />
           </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">AI copy generation enabled</p>
+              <p className="text-xs text-muted-foreground">
+                When enabled, uses AI to suggest campaign copy. When disabled, uses system templates.
+              </p>
+            </div>
+            <Switch
+              checked={Boolean(settings?.ai_copy_enabled)}
+              onCheckedChange={(checked) => void toggleAiCopy(checked)}
+              disabled={savingAiCopy}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -231,16 +259,16 @@ export function GrowthSettingsClient() {
             <Switch
               checked={Boolean(settings?.public_enrollment_enabled)}
               onCheckedChange={(checked) => void toggleEnrollment(checked)}
-              disabled={savingEnrollment || !settings?.public_enrollment_slug}
+              disabled={savingEnrollment}
             />
           </div>
 
           {!settings?.public_enrollment_slug ? (
             <Alert>
               <ShieldAlert className="h-4 w-4" />
-              <AlertTitle>No sign-up link yet</AlertTitle>
+              <AlertTitle>Loading sign-up link...</AlertTitle>
               <AlertDescription>
-                A sign-up link hasn&apos;t been generated for this restaurant yet.
+                The sign-up link is being initialized. Please refresh the page.
               </AlertDescription>
             </Alert>
           ) : (

@@ -514,6 +514,18 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "grow.view",
   },
   {
+    title: "Campaigns",
+    href: "/grow/campaigns",
+    allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "grow.view",
+  },
+  {
+    title: "Subscribers",
+    href: "/grow/subscribers",
+    allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "grow.view",
+  },
+  {
     title: "Feedback",
     href: "/feedback",
     allowedRoles: ALL_DASHBOARD_ROLES,
@@ -569,6 +581,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/customers": "customers.view",
   "/grow/campaigns/new": "grow.campaigns.manage",
   "/grow/campaigns": "grow.view",
+  "/grow/subscribers": "grow.view",
   "/grow": "grow.view",
   "/rooms": "hotel.manage",
   // Finance
