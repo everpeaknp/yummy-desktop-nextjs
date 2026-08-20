@@ -747,7 +747,7 @@ export function CampaignStudioClient() {
   );
 
   return (
-    <div className="dashboard-ui relative flex flex-col gap-10 max-w-full xl:max-w-[1600px] mx-auto pb-20 px-4 overflow-x-hidden">
+    <div className="dashboard-ui relative flex flex-col gap-10 max-w-full xl:max-w-[1600px] mx-auto pb-32 px-4 overflow-x-hidden">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
@@ -1322,7 +1322,7 @@ export function CampaignStudioClient() {
       )}
 
       {step === 4 && (
-        <div className="grid gap-6 xl:grid-cols-[1fr_0.72fr] overflow-x-hidden">
+        <div className="grid gap-6 xl:grid-cols-[1fr_0.72fr] overflow-x-hidden pb-8">
           <div className="space-y-5 min-w-0">
             <Card>
               <CardHeader>
@@ -1330,25 +1330,25 @@ export function CampaignStudioClient() {
                 <CardDescription>Review your campaign before submitting</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-2">
-                  <div className="space-y-1.5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Campaign Type</p>
-                    <p className="text-lg font-semibold">{playbook.shortTitle}</p>
+                    <p className="text-xl font-bold">{playbook.shortTitle}</p>
                     <p className="text-sm text-muted-foreground">{playbook.audienceLabel}</p>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Who Will Receive</p>
-                    <p className="text-2xl font-bold tabular-nums">{audience ? audience.included_count.toLocaleString("en-NP") : "..."}</p>
+                    <p className="text-3xl font-bold tabular-nums">{audience ? audience.included_count.toLocaleString("en-NP") : "..."}</p>
                     <p className="text-sm text-muted-foreground">customers</p>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Offer</p>
-                    <p className="text-lg font-semibold">{formatCampaignOffer(offer)}</p>
+                    <p className="text-lg font-bold">{formatCampaignOffer(offer)}</p>
                     <p className="text-sm text-muted-foreground">Max cost: {formatMoney(offerValidation.maximum_exposure)}</p>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Language & Channel</p>
-                    <p className="text-lg font-semibold">{languageLabel(language)} · {channel === "email" ? "Email" : "WhatsApp"}</p>
+                    <p className="text-lg font-bold">{languageLabel(language)} · {channel === "email" ? "Email" : "WhatsApp"}</p>
                     <p className="text-sm text-muted-foreground">{channel === "email" ? selectedMessageTemplate?.key || "No template" : `${posterTemplate} poster`}</p>
                   </div>
                 </div>
@@ -1390,10 +1390,10 @@ export function CampaignStudioClient() {
             </Card>
 
             {!isReadOnly ? (
-              <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between relative z-10 bg-background">
                 <Button variant="outline" onClick={() => changeStep(3)}>
                   <ChevronLeft className="mr-2 h-4 w-4" />
-                  Back to Creative
+                  Back
                 </Button>
                 <div className="flex flex-col sm:flex-row gap-2">
                   {actionPolicy.can_save_draft && (
@@ -1408,7 +1408,7 @@ export function CampaignStudioClient() {
                       onClick={() => void submitForReview()}
                     >
                       {submittingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileCheck2 className="mr-2 h-4 w-4" />}
-                      Submit for manual review
+                      Submit for review
                     </Button>
                   )}
                 </div>
@@ -1421,7 +1421,7 @@ export function CampaignStudioClient() {
           </div>
 
           {channel === "email" ? (
-            <Card className="h-fit xl:sticky xl:top-4">
+            <Card className="h-fit">
               <CardHeader><CardTitle>Email review</CardTitle><CardDescription>This copy becomes immutable once submitted for review.</CardDescription></CardHeader>
               <CardContent>
                 <EmailPreview
@@ -1446,7 +1446,7 @@ export function CampaignStudioClient() {
               </CardContent>
             </Card>
           ) : (
-            <Card className="h-fit xl:sticky xl:top-4">
+            <Card className="h-fit">
               <CardHeader><div className="flex items-center justify-between gap-2"><div><CardTitle>Poster review</CardTitle><CardDescription>Uploaded only when you submit this draft for review.</CardDescription></div><Button variant="outline" size="sm" onClick={() => void exportPoster()} disabled={exportingPoster}>{exportingPoster ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}Export</Button></div></CardHeader>
               <CardContent>
                 <div className="w-full flex justify-center">

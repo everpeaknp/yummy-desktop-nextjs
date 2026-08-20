@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { FileImage, Mail, MessageCircle, ZoomIn, Loader2 } from "lucide-react";
+import { FileImage, Mail, ZoomIn, Loader2 } from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -91,7 +92,7 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
         <CardHeader className="pb-4 border-b border-black/[0.08] dark:border-white/10">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted border border-black/[0.08] dark:border-white/15">
-              {isEmail ? <Mail className="h-4 w-4 text-blue-500" /> : <MessageCircle className="h-4 w-4 text-green-500" />}
+              {isEmail ? <Mail className="h-4 w-4 text-blue-500" /> : <FaWhatsapp className="h-4 w-4 text-green-500" />}
             </div>
             <div>
               <CardTitle className="dc-card-title">Campaign Content</CardTitle>
@@ -300,7 +301,7 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
                   <div className="mx-auto max-w-md">
                     <div className="rounded-xl border border-border bg-gradient-to-br from-green-50 to-white p-6">
                       <div className="flex items-center gap-2 mb-4">
-                        <MessageCircle className="h-5 w-5 text-green-600" />
+                        <FaWhatsapp className="h-5 w-5 text-green-600" />
                         <span className="font-semibold text-green-700">WhatsApp Message</span>
                       </div>
                       

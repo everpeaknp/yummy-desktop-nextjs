@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Loader2,
   Mail,
-  MessageCircle,
   Package,
   Send,
   ShoppingCart,
@@ -14,6 +13,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -223,7 +223,7 @@ export function CampaignAnalyticsDashboard({ campaign, results, onDownloadCSV, i
               {campaign.channel === "email" ? (
                 <Mail className="h-3.5 w-3.5 text-blue-500" />
               ) : (
-                <MessageCircle className="h-3.5 w-3.5 text-green-500" />
+                <FaWhatsapp className="h-3.5 w-3.5 text-green-500" />
               )}
             </div>
             <div>
