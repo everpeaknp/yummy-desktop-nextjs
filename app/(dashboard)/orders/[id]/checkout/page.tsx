@@ -77,6 +77,8 @@ import {
   Pencil,
   Plus,
   Minus,
+  Mail,
+  MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
@@ -787,6 +789,10 @@ export default function CheckoutPage() {
     business_name: "",
     pan_number: "",
     billing_address: "",
+  });
+  const [quickAddMarketingConsent, setQuickAddMarketingConsent] = useState({
+    email: false,
+    whatsapp: false,
   });
 
   // Discount dialog
@@ -1581,6 +1587,27 @@ export default function CheckoutPage() {
       const created = res.data?.data;
       await fetchCustomers();
       if (created?.id) setSelectedCustomerId(String(created.id));
+      if (
+        created?.id &&
+        (quickAddMarketingConsent.email || quickAddMarketingConsent.whatsapp)
+      ) {
+        try {
+          await apiClient.post(
+            GrowthApis.staffConsentCapture,
+            {},
+            {
+              params: {
+                customer_id: created.id,
+                restaurant_id: user.restaurant_id,
+                email_opted_in: quickAddMarketingConsent.email,
+                whatsapp_opted_in: quickAddMarketingConsent.whatsapp,
+              },
+            },
+          );
+        } catch (consentError) {
+          console.warn("Customer created, but consent capture failed", consentError);
+        }
+      }
 
       setQuickAddForm({
         name: "",
@@ -1590,6 +1617,7 @@ export default function CheckoutPage() {
         pan_number: "",
         billing_address: "",
       });
+      setQuickAddMarketingConsent({ email: false, whatsapp: false });
       setQuickAddOpen(false);
     } catch (err: any) {
       const backendDetail =
@@ -5264,6 +5292,44 @@ export default function CheckoutPage() {
                 }
                 placeholder="customer@example.com"
               />
+            </div>
+            <div className="rounded-lg border bg-muted/40 p-3">
+              <p className="text-sm font-semibold">Marketing offers (optional)</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Record only the channels the customer explicitly agrees to.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quickAddMarketingConsent.email}
+                    onChange={(event) =>
+                      setQuickAddMarketingConsent((current) => ({
+                        ...current,
+                        email: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-input accent-primary"
+                  />
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  Email
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quickAddMarketingConsent.whatsapp}
+                    onChange={(event) =>
+                      setQuickAddMarketingConsent((current) => ({
+                        ...current,
+                        whatsapp: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-input accent-primary"
+                  />
+                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                  WhatsApp
+                </label>
+              </div>
             </div>
             <div className="rounded-lg border p-3 space-y-3">
               <p className="text-sm font-semibold">

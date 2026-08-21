@@ -335,7 +335,7 @@ export function EmailPreview({
         template,
         recipient_email: testEmail.trim(),
         restaurant_name: restaurantName,
-        restaurant_address: restaurantAddress,
+        ...(restaurantAddress && { restaurant_address: restaurantAddress }),
         headline: subject,
         description: bodyHtml,
         discount_type: offer.discountType,
