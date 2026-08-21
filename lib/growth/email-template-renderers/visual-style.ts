@@ -65,7 +65,7 @@ export function renderMonochromatic(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 20px 36px 0;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: ${dark};">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, dark, dark, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, dark, dark, options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: light, content: table });
 }
 
@@ -98,7 +98,7 @@ export function renderPastel(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 34px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #a855f7;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#a855f7", "#7e22ce", options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#a855f7", "#7e22ce", options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#f3e8ff", content: table });
 }
 
@@ -136,7 +136,7 @@ export function renderDarkMode(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 26px 36px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.7; color: #6f6a5e;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#6f6a5e", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#6f6a5e", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Exclusive offer`, bg: "#000000", content: table });
 }
 
@@ -173,7 +173,7 @@ export function renderGlassmorphism(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 32px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: rgba(255,255,255,0.75);">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "rgba(255,255,255,0.75)", "#ffffff", options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "rgba(255,255,255,0.75)", "#ffffff", options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#4338ca", content: table });
 }
 
@@ -208,7 +208,7 @@ export function renderNeomorphism(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 34px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #94a3b8;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#94a3b8", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#94a3b8", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#e8ecf1", content: table });
 }
 
@@ -243,7 +243,7 @@ export function renderFlatDesign(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 20px 32px 26px;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #9ca3af;">${nl2br(terms)}</p></td></tr>` : `<tr><td style="padding: 0 0 12px;"></td></tr>`}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#9ca3af", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#9ca3af", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#f3f4f6", content: table });
 }
 
@@ -282,7 +282,7 @@ export function renderDimensional(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 30px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #6b7280;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#6b7280", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#6b7280", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#000000", content: table });
 }
 
@@ -334,7 +334,7 @@ export function renderCollage(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 30px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #9a5b3a;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#9a5b3a", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#9a5b3a", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - A collection`, bg: "#ffedd5", content: table });
 }
 
@@ -376,6 +376,6 @@ export function renderAsymmetric(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 20px 32px 0;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #6b8f8c;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#6b8f8c", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#6b8f8c", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#eef0ec", content: table });
 }

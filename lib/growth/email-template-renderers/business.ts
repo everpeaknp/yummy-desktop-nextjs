@@ -54,7 +54,7 @@ export function renderProfessional(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 24px 32px 32px;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #94a3b8;">${nl2br(terms)}</p></td></tr>` : `<tr><td style="padding: 0 0 12px;"></td></tr>`}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#94a3b8", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#94a3b8", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Notice`, bg: "#f1f5f9", content: table });
 }
 
@@ -87,7 +87,7 @@ export function renderCorporate(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 28px 40px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #94a3b8;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#94a3b8", accent, options.socialLinks, );
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#94a3b8", accent, options.socialLinks, );
   return shell({ title: `${restaurantName} - Notice`, bg: "#f8fafc", content: table });
 }
 
@@ -95,17 +95,19 @@ export function renderCorporate(options: EmailPosterOptions): string {
 // Brutalist — raw, huge type, sharp borders, high contrast
 // ---------------------------------------------------------------------------
 export function renderBrutalist(options: EmailPosterOptions): string {
-  const { restaurantName, headline, couponCode, terms, contactText, footerText } = options;
+  const { restaurantName, logoUrl, headline, description, couponCode, terms, contactText, footerText } = options;
   const accent = options.primaryColor || "#ff0000";
   const offerSummary = formatOfferSummary(options);
   const expiry = formatValidUntil(options.validUntil);
 
   let table = `        <table role="presentation" width="600" class="yg-container" cellspacing="0" cellpadding="0" style="width: 600px; max-width: 600px; background: #ffffff; border: 4px solid #000000;">
           <tr><td style="padding: 20px 24px; background: #000000;">
+            ${logoUrl ? `<img src="${escAttr(logoUrl)}" alt="" style="display: inline-block; width: 24px; height: 24px; border-radius: 4px; object-fit: cover; vertical-align: middle; margin-right: 10px;">` : ""}
             <span style="font-family: 'Courier New', monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.05em; color: #ffffff; text-transform: uppercase;">${esc(restaurantName)} // OFFER.TXT</span>
           </td></tr>
           <tr><td style="padding: 36px 28px 0;">
             <h1 class="yg-h1" style="margin: 0; font-family: 'Courier New', monospace; font-size: 46px; font-weight: 700; line-height: 0.98; color: #000000; text-transform: uppercase;">${esc(headline) || "Get the offer"}</h1>
+            ${description ? `<p style="margin: 18px 0 0; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: #525252;">${nl2br(description)}</p>` : ""}
           </td></tr>
           <tr><td style="padding: 26px 28px 0;">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border: 3px solid #000000;"><tr>
@@ -124,7 +126,7 @@ export function renderBrutalist(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 28px 0;"><p style="margin: 0; font-family: 'Courier New', monospace; font-size: 10px; line-height: 1.6; color: #525252;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#525252", "#000000", options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#525252", "#000000", options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#f5f5f5", content: table, bodyStyle: `font-family: 'Courier New', monospace;` });
 }
 
@@ -164,7 +166,7 @@ export function renderOrganic(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 24px 36px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.7; color: #9aa38f;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#9aa38f", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#9aa38f", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - A fresh offer`, bg: "#f5f1e6", content: table });
 }
 
@@ -203,7 +205,7 @@ export function renderFuturistic(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 24px 34px 0;"><p style="margin: 0; font-family: 'Courier New', monospace; font-size: 10px; line-height: 1.6; color: #475569;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#475569", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#475569", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#000000", content: table });
 }
 
@@ -239,7 +241,7 @@ export function renderRetro(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 24px 36px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #8a7862;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#8a7862", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#8a7862", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#e9dcc4", content: table });
 }
 
@@ -274,7 +276,7 @@ export function renderVintage(options: EmailPosterOptions): string {
           </td></tr>
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#8a7c62", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#8a7c62", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - A classic offer`, bg: "#e7dcc3", content: table });
 }
 
@@ -312,6 +314,6 @@ export function renderArtDeco(options: EmailPosterOptions): string {
           </td></tr>
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#8a7f68", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#8a7f68", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - A privilege`, bg: "#080f11", content: table });
 }

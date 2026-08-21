@@ -130,6 +130,7 @@ export interface EmailPreviewProps {
   showWarning?: boolean;
   posterDataUrl?: string;  // Optional poster image to show as attachment
   restaurantName?: string;  // Restaurant name for template
+  restaurantAddress?: string;  // Restaurant address for template footer
   couponCode?: string;  // Coupon code for template
   logoUrl?: string;  // Restaurant logo URL
   usePosterTemplate?: boolean;  // Use poster-style HTML template
@@ -157,6 +158,7 @@ export function EmailPreview({
   showWarning = true,
   posterDataUrl,
   restaurantName = "Your Restaurant",
+  restaurantAddress,
   couponCode = "ABC123",
   logoUrl,
   usePosterTemplate = false,
@@ -222,6 +224,7 @@ export function EmailPreview({
       return renderPosterStyleEmailHtml({
         template,
         restaurantName,
+        restaurantAddress,
         logoUrl,
         primaryColor,
         // Matches the real send: growth_campaign_delivery_service.py passes
@@ -332,6 +335,7 @@ export function EmailPreview({
         template,
         recipient_email: testEmail.trim(),
         restaurant_name: restaurantName,
+        restaurant_address: restaurantAddress,
         headline: subject,
         description: bodyHtml,
         discount_type: offer.discountType,
