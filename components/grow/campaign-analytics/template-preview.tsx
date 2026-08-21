@@ -36,13 +36,23 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
 
   const isEmail = campaign.channel === "email";
 
-  // The backend already flattens the approved snapshot to a plain string for
-  // both channels (the email body HTML, or the WhatsApp message text) -- it
-  // is never sent as an object with nested fields.
-  const snapshot = campaign.approved_message_snapshot || "";
-  const emailSubject = campaign.email_subject || "";
-  const emailBody = snapshot;
-  const messageBody = snapshot;
+  // The approved_message_snapshot is stored as a JSONB object with keys like
+  // email_subject, email_body_html, email_template, etc. We need to extract
+  // the actual values from this object, not treat it as a plain string.
+  const snapshot: any = campaign.approved_message_snapshot || {};
+  const isSnapshotObject = typeof snapshot === 'object' && snapshot !== null && !Array.isArray(snapshot);
+  
+  const emailSubject = isSnapshotObject 
+    ? (snapshot.email_subject || campaign.email_subject || "")
+    : (campaign.email_subject || "");
+    
+  const emailBody = isSnapshotObject
+    ? (snapshot.email_body_html || "")
+    : (typeof snapshot === 'string' ? snapshot : "");
+    
+  const messageBody = isSnapshotObject
+    ? (snapshot.whatsapp_message_text || snapshot.email_body_html || "")
+    : (typeof snapshot === 'string' ? snapshot : "");
   const emailTemplateId = (campaign.email_template as CampaignEmailTemplate) || DEFAULT_EMAIL_TEMPLATE;
   const emailDesign = getEmailTemplateDefinition(emailTemplateId);
 
@@ -54,6 +64,7 @@ export function TemplatePreview({ campaign, template }: TemplatePreviewProps) {
     return renderPosterStyleEmailHtml({
       template: emailTemplateId,
       restaurantName: restaurant?.name || "Your restaurant",
+      restaurantAddress: restaurant?.address || undefined,
       logoUrl: restaurant?.profile_picture ? getImageUrl(restaurant.profile_picture) : undefined,
       headline: emailSubject || undefined,
       description: emailBody || undefined,

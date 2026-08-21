@@ -58,7 +58,7 @@ export function renderPromotional(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 32px 0;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #94a3b8; text-align: center;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#94a3b8", "#64748b", options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#94a3b8", "#64748b", options.socialLinks);
   return shell({ title: `${restaurantName} - Special offer`, bg: "#f1f5f9", content: table });
 }
 
@@ -94,7 +94,7 @@ export function renderConversionFocused(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 28px 36px 32px; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #86efac;">${nl2br(terms)}</p></td></tr>` : `<tr><td style="padding: 0 0 16px;"></td></tr>`}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#86efac", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#86efac", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#f7fee7", content: table });
 }
 
@@ -127,7 +127,7 @@ export function renderProductShowcase(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 34px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #a8a29e;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#a8a29e", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#a8a29e", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - New dish`, bg: "#f5f5f4", content: table });
 }
 
@@ -135,8 +135,10 @@ export function renderProductShowcase(options: EmailPosterOptions): string {
 // Announcement — huge headline, short message, one CTA
 // ---------------------------------------------------------------------------
 export function renderAnnouncement(options: EmailPosterOptions): string {
-  const { restaurantName, logoUrl, headline, description, heroImageUrl, contactText, footerText, terms } = options;
+  const { restaurantName, logoUrl, headline, description, couponCode, heroImageUrl, contactText, footerText, terms } = options;
   const accent = options.primaryColor || "#2563eb";
+  const offerSummary = formatOfferSummary(options);
+  const expiry = formatValidUntil(options.validUntil);
 
   let table = `        <table role="presentation" width="600" class="yg-container" cellspacing="0" cellpadding="0" style="width: 600px; max-width: 600px; background: #ffffff;">
           <tr><td class="yg-pad" style="padding: 40px 40px 0; text-align: center;">
@@ -146,11 +148,19 @@ export function renderAnnouncement(options: EmailPosterOptions): string {
             ${description ? `<p style="margin: 16px 0 0; font-family: ${BODY_FONT}; font-size: 15px; line-height: 1.75; color: #475569;">${nl2br(description)}</p>` : ""}
           </td></tr>
           ${heroImageUrl ? `<tr><td style="padding: 30px 40px 0;">${heroImage({ url: heroImageUrl, height: 260, radius: "12px", fallbackBg: "" })}</td></tr>` : ""}
+          ${couponCode ? `<tr><td class="yg-pad" style="padding: 28px 40px 0; text-align: center;">
+            <p style="margin: 0 0 12px; font-family: ${BODY_FONT}; font-size: 16px; font-weight: 700; color: #1e3a8a;">${esc(offerSummary)}</p>
+            ${expiry ? `<p style="margin: 0 0 14px; font-family: ${BODY_FONT}; font-size: 12px; color: #64748b;">Valid until ${esc(expiry)}</p>` : ""}
+            <div style="display: inline-block; background: #eff6ff; border: 2px dashed ${accent}; border-radius: 8px; padding: 16px 32px;">
+              <p style="margin: 0 0 4px; font-family: ${BODY_FONT}; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b;">Coupon Code</p>
+              <p style="margin: 0; font-family: 'Courier New', monospace; font-size: 24px; font-weight: 700; letter-spacing: 0.16em; color: ${accent};">${esc(couponCode)}</p>
+            </div>
+          </td></tr>` : ""}
           <tr><td style="padding: 30px 40px 0; text-align: center;">${divider({ color: `${accent}30`, width: "48px", margin: "0 auto" })}</td></tr>
           ${terms ? `<tr><td style="padding: 22px 40px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #94a3b8;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#94a3b8", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#94a3b8", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Announcement`, bg: "#eff6ff", content: table });
 }
 
@@ -189,7 +199,7 @@ export function renderNewsletter(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 20px 32px 0;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #94a3b8;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#94a3b8", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#94a3b8", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Newsletter`, bg: "#f8fafc", content: table });
 }
 
@@ -222,7 +232,7 @@ export function renderStorytelling(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 24px 44px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #a8703f;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#a8703f", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#a8703f", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Our story`, bg: "#f6ead6", content: table });
 }
 
@@ -258,7 +268,7 @@ export function renderFestival(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 26px 40px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.7; color: #b98f6b;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#b98f6b", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#b98f6b", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Festive offer`, bg: "#1f0509", content: table });
 }
 
@@ -289,7 +299,7 @@ export function renderSeasonal(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 34px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #65a30d;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#65a30d", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#65a30d", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Seasonal offer`, bg: "#eef6ee", content: table });
 }
 
@@ -297,7 +307,7 @@ export function renderSeasonal(options: EmailPosterOptions): string {
 // Flash Sale — urgent, huge numeral, countdown-style expiry, dual CTA
 // ---------------------------------------------------------------------------
 export function renderFlashSale(options: EmailPosterOptions): string {
-  const { restaurantName, logoUrl, headline, couponCode, terms, contactText, footerText } = options;
+  const { restaurantName, logoUrl, headline, description, couponCode, terms, contactText, footerText } = options;
   const accent = options.primaryColor || "#ff4d29";
   const offerSummary = formatOfferSummary(options);
   const offerHeadline = formatOfferHeadline(options);
@@ -316,6 +326,7 @@ export function renderFlashSale(options: EmailPosterOptions): string {
           <tr><td style="padding: 18px 32px 0; text-align: center;">
             <p class="yg-h2" style="margin: 0; font-family: ${HEADLINE_FONT}; font-size: 78px; font-weight: 700; line-height: 1; color: #ffffff;">${esc(offerHeadline)}</p>
             <p style="margin: 8px 0 0; font-family: ${BODY_FONT}; font-size: 15px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: ${accent};">Off ${esc(headline) || "your next order"}</p>
+            ${description ? `<p style="margin: 16px 0 0; font-family: ${BODY_FONT}; font-size: 13px; line-height: 1.7; color: #d9c9c0;">${nl2br(description)}</p>` : ""}
           </td></tr>
           <tr><td style="padding: 22px 32px 0; text-align: center;">
             <p style="margin: 0; font-family: ${BODY_FONT}; font-size: 13px; color: #d9c9c0;">${esc(offerSummary)}</p>
@@ -329,7 +340,7 @@ export function renderFlashSale(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 26px 32px 32px; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #8a7568;">${nl2br(terms)}</p></td></tr>` : `<tr><td style="padding: 0 0 16px;"></td></tr>`}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#8a7568", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#8a7568", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Flash sale`, bg: "#0d0906", content: table });
 }
 
@@ -361,7 +372,7 @@ export function renderPersonalized(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 20px 40px 0;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #c2410c;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#c2410c", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#c2410c", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - A note for you`, bg: "#fef1e7", content: table });
 }
 
@@ -400,7 +411,7 @@ export function renderRestaurantMenu(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 36px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #a8a29e;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#a8a29e", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#a8a29e", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Menu`, bg: "#f5ead6", content: table });
 }
 
@@ -428,7 +439,7 @@ export function renderInvitation(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 24px 44px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #8a7f68;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#8a7f68", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#8a7f68", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - You're invited`, bg: "#000000", content: table });
 }
 
@@ -459,6 +470,6 @@ export function renderThankYou(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 24px 44px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #be123c;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#be123c", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#be123c", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Thank you`, bg: "#fee2e2", content: table });
 }

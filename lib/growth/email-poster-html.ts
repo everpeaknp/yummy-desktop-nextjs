@@ -35,10 +35,13 @@ import * as foundational from "./email-template-renderers/foundational";
 import * as business from "./email-template-renderers/business";
 import * as visualStyle from "./email-template-renderers/visual-style";
 import * as purpose from "./email-template-renderers/purpose";
+import * as modernTrends from "./email-template-renderers/modern-trends";
+import * as nepaliCultural from "./email-template-renderers/nepali-cultural";
 
 export interface EmailPosterOptions {
   template?: CampaignEmailTemplate;
   restaurantName: string;
+  restaurantAddress?: string;
   logoUrl?: string;
   primaryColor?: string;
   // Shown as the big headline text. Mirrors the backend's real send
@@ -184,6 +187,7 @@ ${opts.content}
 /** A shared footer row — appended via wrapFooterRow() into a template's outer table. */
 export function footerBlock(opts: {
   restaurantName: string;
+  restaurantAddress?: string;
   contactText?: string;
   footerText?: string;
   socialLinks?: { label: string; url: string }[];
@@ -200,8 +204,20 @@ export function footerBlock(opts: {
           .map((s) => `<a href="${escAttr(s.url)}" style="color: ${opts.linkColor}; text-decoration: underline; margin: 0 6px;">${esc(s.label)}</a>`)
           .join(" · ")}</p>`
       : "";
+  
+  // Address section (above "Visible terms" footer text)
+  const addressSection = opts.restaurantAddress
+    ? `<p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:${opts.textColor};font-weight:600;">${esc(opts.restaurantName)}</p>
+    <p style="margin:0 0 20px;font-size:13px;line-height:1.5;">
+      <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(opts.restaurantAddress)}" style="color:${opts.linkColor};text-decoration:none;" target="_blank">
+        📍 ${esc(opts.restaurantAddress)}
+      </a>
+    </p>`
+    : "";
+
   return `<tr>
   <td style="padding: ${opts.padding ?? "18px 12px 4px"}; text-align: center;">
+    ${addressSection}
     <p style="margin: 0 0 6px 0; font-size: 12px; line-height: 1.6; color: ${opts.textColor};">${opts.footerText ? esc(opts.footerText) : line}</p>
     ${opts.contactText ? `<p style="margin: 0 0 6px 0; font-size: 12px; color: ${opts.textColor};">${esc(opts.contactText)}</p>` : ""}
     ${social}
@@ -218,13 +234,14 @@ export function footerBlock(opts: {
 export function wrapFooterRow(
   tableHtml: string,
   restaurantName: string,
+  restaurantAddress: string | undefined,
   contactText: string | undefined,
   footerText: string | undefined,
   textColor: string,
   linkColor: string,
   socialLinks?: { label: string; url: string }[],
 ): string {
-  const row = footerBlock({ restaurantName, contactText, footerText, socialLinks, textColor, linkColor });
+  const row = footerBlock({ restaurantName, restaurantAddress, contactText, footerText, socialLinks, textColor, linkColor });
   const closeIdx = tableHtml.lastIndexOf("</table>");
   if (closeIdx === -1) return tableHtml;
   return `${tableHtml.slice(0, closeIdx)}${row}${tableHtml.slice(closeIdx)}`;
@@ -333,6 +350,23 @@ const RENDERERS: Record<CampaignEmailTemplate, (options: EmailPosterOptions) => 
   "restaurant-menu": purpose.renderRestaurantMenu,
   invitation: purpose.renderInvitation,
   "thank-you": purpose.renderThankYou,
+  // Modern Trends (2026)
+  "gradient-hero": modernTrends.renderGradientHero,
+  "card-stack": modernTrends.renderCardStack,
+  "split-screen": modernTrends.renderSplitScreen,
+  "countdown-urgency": modernTrends.renderCountdownUrgency,
+  "social-proof": modernTrends.renderSocialProof,
+  "photo-grid": modernTrends.renderPhotoGrid,
+  "reward-milestone": modernTrends.renderRewardMilestone,
+  "ultra-minimal": modernTrends.renderUltraMinimal,
+  "bold-typography": modernTrends.renderBoldTypography,
+  "story-timeline": modernTrends.renderStoryTimeline,
+  // Nepali Cultural
+  "dashain-red": nepaliCultural.renderDashainRed,
+  "tihar-lights": nepaliCultural.renderTiharLights,
+  "mandala-harmony": nepaliCultural.renderMandalaHarmony,
+  "himalayan-peaks": nepaliCultural.renderHimalayanPeaks,
+  "rangoli-pattern": nepaliCultural.renderRangoliPattern,
 };
 
 export function renderPosterStyleEmailHtml(options: EmailPosterOptions): string {

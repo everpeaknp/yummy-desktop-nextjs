@@ -1219,6 +1219,7 @@ export function CampaignStudioClient() {
               offer={emailPreviewOffer}
               terms={terms}
               restaurantName={restaurantName}
+              restaurantAddress={restaurant?.address}
               logoUrl={brand?.logo_url || getImageUrl(restaurant?.profile_picture || "")}
               primaryColor={brand?.primary_color || undefined}
               contactText={brand?.approved_contact_text || undefined}
@@ -1432,6 +1433,7 @@ export function CampaignStudioClient() {
                   offer={emailPreviewOffer}
                   terms={terms}
                   restaurantName={restaurantName}
+                  restaurantAddress={restaurant?.address}
                   logoUrl={brand?.logo_url || getImageUrl(restaurant?.profile_picture || "")}
                   primaryColor={brand?.primary_color || undefined}
                   contactText={brand?.approved_contact_text || undefined}

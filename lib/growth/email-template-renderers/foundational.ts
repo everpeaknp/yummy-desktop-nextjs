@@ -48,7 +48,7 @@ export function renderMinimalist(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 34px 40px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.7; color: #a3a3a3;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#a3a3a3", "#737373", options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#a3a3a3", "#737373", options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#ffffff", content: table });
 }
 
@@ -98,7 +98,7 @@ export function renderMaximalist(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 28px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #4c1d95;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#78350f", "#1e1b4b", options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#78350f", "#1e1b4b", options.socialLinks);
   return shell({ title: `${restaurantName} - A lot going on`, bg: "#fde68a", content: table });
 }
 
@@ -137,7 +137,7 @@ export function renderModern(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 20px 36px 0;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #94a3b8;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#94a3b8", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#94a3b8", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Offer`, bg: "#f1f5f9", content: table });
 }
 
@@ -215,7 +215,7 @@ export function renderEditorial(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 30px 40px 0;"><div style="border-top: 1px solid #dedad0; margin-bottom: 16px;"></div><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.7; color: #9a9284;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#9a9284", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#9a9284", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Feature offer`, bg: "#efece4", content: table });
 }
 
@@ -223,7 +223,7 @@ export function renderEditorial(options: EmailPosterOptions): string {
 // Bold — huge headline, strong contrast, one CTA, minimal supporting copy
 // ---------------------------------------------------------------------------
 export function renderBold(options: EmailPosterOptions): string {
-  const { restaurantName, headline, couponCode, terms, contactText, footerText } = options;
+  const { restaurantName, logoUrl, headline, description, couponCode, terms, contactText, footerText } = options;
   const accent = options.primaryColor || "#facc15";
   const offerHeadline = formatOfferHeadline(options);
   const offerSummary = formatOfferSummary(options);
@@ -231,9 +231,11 @@ export function renderBold(options: EmailPosterOptions): string {
 
   let table = `        <table role="presentation" width="600" class="yg-container" cellspacing="0" cellpadding="0" style="width: 600px; max-width: 600px; background: #000000;">
           <tr><td class="yg-pad" style="padding: 40px 36px 0; text-align: center;">
+            ${logoUrl ? `<img src="${escAttr(logoUrl)}" alt="" style="display: block; margin: 0 auto 16px; width: 36px; height: 36px; border-radius: 6px; object-fit: cover;">` : ""}
             <p style="margin: 0 0 18px; font-family: ${BODY_FONT}; font-size: 12px; font-weight: 800; letter-spacing: 0.24em; text-transform: uppercase; color: #ffffff;">${esc(restaurantName)}</p>
             <p class="yg-h2" style="margin: 0; font-family: ${HEADLINE_FONT}; font-size: 84px; font-weight: 700; line-height: 0.95; color: ${accent};">${esc(offerHeadline)}</p>
             <h1 class="yg-h1" style="margin: 10px 0 0; font-family: ${BODY_FONT}; font-size: 24px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.3; color: #ffffff;">${esc(headline) || "Off your next order"}</h1>
+            ${description ? `<p style="margin: 14px 0 0; font-family: ${BODY_FONT}; font-size: 14px; line-height: 1.65; color: #d4d4d4;">${nl2br(description)}</p>` : ""}
           </td></tr>
           <tr><td style="padding: 22px 36px 0; text-align: center;">
             <p style="margin: 0; font-family: ${BODY_FONT}; font-size: 14px; color: #d4d4d4;">${esc(offerSummary)}${expiry ? ` · Ends ${esc(expiry)}` : ""}</p>
@@ -246,7 +248,7 @@ export function renderBold(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 24px 36px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #737373;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#737373", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#737373", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - Big offer`, bg: "#000000", content: table });
 }
 
@@ -278,7 +280,7 @@ export function renderElegant(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 30px 46px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.7; color: #b3a894;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#b3a894", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#b3a894", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - An invitation`, bg: "#f7f4ef", content: table });
 }
 
@@ -316,6 +318,6 @@ export function renderPlayful(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 22px 32px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.6; color: #be185d;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  table = wrapFooterRow(table, restaurantName, contactText, footerText, "#be185d", accent, options.socialLinks);
+  table = wrapFooterRow(table, restaurantName, options.restaurantAddress, contactText, footerText, "#be185d", accent, options.socialLinks);
   return shell({ title: `${restaurantName} - A treat for you`, bg: "#ffe4e6", content: table });
 }

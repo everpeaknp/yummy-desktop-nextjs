@@ -14,7 +14,9 @@ export type EmailTemplateCategory =
   | "Elegant & Refined"
   | "Warm & Character"
   | "Conversion & Offers"
-  | "Relationship & Content";
+  | "Relationship & Content"
+  | "Modern Trends (2026)"
+  | "Nepali Cultural";
 
 export type CampaignEmailTemplate =
   // Clean & Minimal
@@ -24,6 +26,7 @@ export type CampaignEmailTemplate =
   | "professional"
   | "corporate"
   | "monochromatic"
+  | "ultra-minimal"
   // Bold & Expressive
   | "maximalist"
   | "bold"
@@ -34,6 +37,7 @@ export type CampaignEmailTemplate =
   | "dimensional"
   | "collage"
   | "asymmetric"
+  | "bold-typography"
   // Elegant & Refined
   | "luxury"
   | "elegant"
@@ -54,13 +58,28 @@ export type CampaignEmailTemplate =
   | "flash-sale"
   | "product-showcase"
   | "announcement"
+  | "countdown-urgency"
   // Relationship & Content
   | "newsletter"
   | "storytelling"
   | "personalized"
   | "restaurant-menu"
   | "invitation"
-  | "thank-you";
+  | "thank-you"
+  | "story-timeline"
+  // Modern Trends (2026)
+  | "gradient-hero"
+  | "card-stack"
+  | "split-screen"
+  | "social-proof"
+  | "photo-grid"
+  | "reward-milestone"
+  // Nepali Cultural
+  | "dashain-red"
+  | "tihar-lights"
+  | "mandala-harmony"
+  | "himalayan-peaks"
+  | "rangoli-pattern";
 
 export interface EmailTemplateDefinition {
   id: CampaignEmailTemplate;
@@ -406,6 +425,134 @@ export const EMAIL_TEMPLATE_DEFINITIONS: readonly EmailTemplateDefinition[] = [
     description: "A short, personal thank-you with a soft CTA — loyalty and post-visit follow-up.",
     swatch: { bg: "#fef2f2", accent: "#e11d48", text: "#4c0519", font: "serif" },
   },
+
+  // ---------------------------------------------------------------------
+  // Modern Trends (2026)
+  // ---------------------------------------------------------------------
+  {
+    id: "gradient-hero",
+    label: "Gradient Hero",
+    category: "Modern Trends (2026)",
+    tagline: "Modern vibrant gradient",
+    description: "Email-safe gradient background with white card overlay — major 2026 trend for restaurants.",
+    swatch: { bg: "#f59e0b", accent: "#ec4899", text: "#ffffff", font: "sans" },
+  },
+  {
+    id: "card-stack",
+    label: "Card Stack",
+    category: "Modern Trends (2026)",
+    tagline: "Mobile-first cards",
+    description: "Stacked card layout optimized for mobile — digestible sections with smooth scrolling.",
+    swatch: { bg: "#fafafa", accent: "#8b5cf6", text: "#18181b", font: "sans" },
+  },
+  {
+    id: "split-screen",
+    label: "Split Screen",
+    category: "Modern Trends (2026)",
+    tagline: "Dual-column hero",
+    description: "50/50 image and content split — high-converting layout that showcases food photography.",
+    swatch: { bg: "#ffffff", accent: "#0891b2", text: "#111827", font: "sans" },
+  },
+  {
+    id: "countdown-urgency",
+    label: "Countdown Urgency",
+    category: "Modern Trends (2026)",
+    tagline: "Time-sensitive timer",
+    description: "Urgency-driven design with countdown visual — proven to boost immediate conversions.",
+    swatch: { bg: "#fff1f2", accent: "#dc2626", text: "#991b1b", font: "display" },
+  },
+  {
+    id: "social-proof",
+    label: "Social Proof",
+    category: "Modern Trends (2026)",
+    tagline: "Testimonial-focused",
+    description: "5-star reviews and customer testimonials front and center — builds trust instantly.",
+    swatch: { bg: "#ffffff", accent: "#059669", text: "#111827", font: "sans" },
+  },
+  {
+    id: "photo-grid",
+    label: "Photo Grid",
+    category: "Modern Trends (2026)",
+    tagline: "Instagram-style showcase",
+    description: "3-image grid layout perfect for food photography — engaging visual feast.",
+    swatch: { bg: "#fafafa", accent: "#c026d3", text: "#18181b", font: "sans" },
+  },
+  {
+    id: "reward-milestone",
+    label: "Reward Milestone",
+    category: "Modern Trends (2026)",
+    tagline: "Gamification progress",
+    description: "Progress bar and milestone visualization — loyalty program engagement driver.",
+    swatch: { bg: "#faf5ff", accent: "#7c3aed", text: "#3b0764", font: "sans" },
+  },
+  {
+    id: "ultra-minimal",
+    label: "Ultra Minimal",
+    category: "Modern Trends (2026)",
+    tagline: "Maximum whitespace",
+    description: "Premium minimalist with extreme whitespace — Apple-level sophistication.",
+    swatch: { bg: "#ffffff", accent: "#171717", text: "#171717", font: "serif" },
+  },
+  {
+    id: "bold-typography",
+    label: "Bold Typography",
+    category: "Modern Trends (2026)",
+    tagline: "Type-driven impact",
+    description: "Massive typography on dark background — arresting attention with pure type hierarchy.",
+    swatch: { bg: "#0a0a0a", accent: "#eab308", text: "#ffffff", font: "display" },
+  },
+  {
+    id: "story-timeline",
+    label: "Story Timeline",
+    category: "Modern Trends (2026)",
+    tagline: "Progressive narrative",
+    description: "Visual steps with timeline connectors — guides customers through their journey.",
+    swatch: { bg: "#f8fafc", accent: "#0284c7", text: "#0c4a6e", font: "sans" },
+  },
+
+  // ---------------------------------------------------------------------
+  // Nepali Cultural
+  // ---------------------------------------------------------------------
+  {
+    id: "dashain-red",
+    label: "Dashain Red",
+    category: "Nepali Cultural",
+    tagline: "Crimson tika tradition",
+    description: "Nepal's biggest festival with crimson red and deep blue from the national flag. Traditional tika-inspired design.",
+    swatch: { bg: "#fff8f0", accent: "#c41e3a", text: "#5c3317", font: "serif" },
+  },
+  {
+    id: "tihar-lights",
+    label: "Tihar Lights",
+    category: "Nepali Cultural",
+    tagline: "Festival of lights",
+    description: "Marigold orange with diyo (oil lamp) patterns. Celebrates Nepal's festival of lights with warm glowing colors.",
+    swatch: { bg: "#2d1810", accent: "#ff9933", text: "#ffd700", font: "sans" },
+  },
+  {
+    id: "mandala-harmony",
+    label: "Mandala Harmony",
+    category: "Nepali Cultural",
+    tagline: "Sacred geometry",
+    description: "Circular mandala patterns inspired by Nepali thangka art. Blue for wisdom, red for transformation, gold accents.",
+    swatch: { bg: "#fefbf3", accent: "#1e40af", text: "#78350f", font: "serif" },
+  },
+  {
+    id: "himalayan-peaks",
+    label: "Himalayan Peaks",
+    category: "Nepali Cultural",
+    tagline: "Mountain majesty",
+    description: "Mountain peak silhouettes with Nepal flag colors (crimson and deep blue). Represents permanence and strength.",
+    swatch: { bg: "#f8fafc", accent: "#003893", text: "#c41e3a", font: "sans" },
+  },
+  {
+    id: "rangoli-pattern",
+    label: "Rangoli Pattern",
+    category: "Nepali Cultural",
+    tagline: "Colorful floor art",
+    description: "Vibrant dots and patterns inspired by rangoli decorations during Tihar. Multiple sacred colors in harmony.",
+    swatch: { bg: "#ffffff", accent: "#ec4899", text: "#1f2937", font: "sans" },
+  },
 ] as const;
 
 export const EMAIL_TEMPLATE_CATEGORIES: readonly EmailTemplateCategory[] = [
@@ -415,6 +562,8 @@ export const EMAIL_TEMPLATE_CATEGORIES: readonly EmailTemplateCategory[] = [
   "Warm & Character",
   "Conversion & Offers",
   "Relationship & Content",
+  "Modern Trends (2026)",
+  "Nepali Cultural",
 ];
 
 export const DEFAULT_EMAIL_TEMPLATE: CampaignEmailTemplate = "modern";
