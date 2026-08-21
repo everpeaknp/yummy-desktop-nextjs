@@ -2150,6 +2150,7 @@ export const GrowthApis = {
   subscribers: "/growth/subscribers",
   redemptionByOrder: (orderId: number | string) =>
     `/growth/redemptions/by-order/${orderId}`,
+  staffConsentCapture: "/growth/consent/staff-capture",
 };
 
 export const PublicGrowthApis = {

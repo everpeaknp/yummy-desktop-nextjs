@@ -1,16 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Loader2, Mail } from "lucide-react";
+import { Loader2, Mail } from "lucide-react";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import apiClient from "@/lib/api-client";
-import { CustomerApis } from "@/lib/api/endpoints";
-import { useAuth } from "@/hooks/use-auth";
+import { CustomerApis, GrowthApis } from "@/lib/api/endpoints";
 import {
   customerPanValidationMessage,
   optionalCustomerText,
@@ -28,15 +27,21 @@ const WhatsAppIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-interface AddCustomerDialogProps {
-  onCustomerAdded: () => void;
+interface QuickAddCustomerFormProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCustomerAdded: (customerId?: number) => void;
+  restaurantId: number;
 }
 
-export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
-  const [open, setOpen] = useState(false);
+export function QuickAddCustomerForm({ 
+  open, 
+  onOpenChange, 
+  onCustomerAdded,
+  restaurantId 
+}: QuickAddCustomerFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const user = useAuth((state) => state.user);
   
   const [formData, setFormData] = useState({
     name: "",
@@ -59,7 +64,8 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.restaurant_id) return;
+    if (!restaurantId) return;
+    
     const panError = customerPanValidationMessage(formData.pan_number);
     if (panError) {
       setError(panError);
@@ -76,7 +82,7 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
         business_name: optionalCustomerText(formData.business_name),
         pan_number: optionalCustomerText(formData.pan_number),
         billing_address: optionalCustomerText(formData.billing_address),
-        restaurant_id: user.restaurant_id,
+        restaurant_id: restaurantId,
         is_active: true
       };
 
@@ -87,18 +93,37 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
         // Capture marketing consent if customer was created successfully
         if (customerId && (marketingConsent.email || marketingConsent.whatsapp)) {
           try {
-            await apiClient.post(
-              `/growth/consent/staff-capture?customer_id=${customerId}&restaurant_id=${user.restaurant_id}` +
-              (marketingConsent.email !== null ? `&email_opted_in=${marketingConsent.email}` : '') +
-              (marketingConsent.whatsapp !== null ? `&whatsapp_opted_in=${marketingConsent.whatsapp}` : '')
+            console.log("Capturing marketing consent for customer:", customerId, {
+              email: marketingConsent.email,
+              whatsapp: marketingConsent.whatsapp,
+              restaurantId
+            });
+            
+            const consentResponse = await apiClient.post(
+              GrowthApis.staffConsentCapture,
+              {},
+              {
+                params: {
+                  customer_id: customerId,
+                  email_opted_in: marketingConsent.email,
+                  whatsapp_opted_in: marketingConsent.whatsapp,
+                  restaurant_id: restaurantId,
+                },
+              }
             );
-          } catch (consentError) {
-            console.warn("Failed to capture marketing consent:", consentError);
+            
+            console.log("Marketing consent captured successfully:", consentResponse.data);
+          } catch (consentError: any) {
+            console.error("Failed to capture marketing consent:", {
+              error: consentError,
+              response: consentError?.response?.data,
+              status: consentError?.response?.status,
+            });
             // Don't block customer creation if consent capture fails
           }
         }
         
-        setOpen(false);
+        onOpenChange(false);
         setFormData({
           name: "",
           phone: "",
@@ -108,7 +133,7 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
           billing_address: "",
         });
         setMarketingConsent({ email: false, whatsapp: false });
-        onCustomerAdded();
+        onCustomerAdded(customerId);
       }
     } catch (requestError: any) {
       console.error("Failed to create customer:", requestError);
@@ -126,18 +151,13 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
+        onOpenChange(nextOpen);
         if (nextOpen) setError(null);
       }}
     >
-      <DialogTrigger asChild>
-        <Button className="bg-orange-600 hover:bg-orange-700 text-white">
-          <Plus className="w-4 h-4 mr-2" /> Add Customer
-        </Button>
-      </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[900px]">
         <DialogHeader>
-          <DialogTitle>Add New Customer</DialogTitle>
+          <DialogTitle>Quick Add Customer</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="py-4">
           {error && (
@@ -150,9 +170,9 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
             {/* Left Column - Basic Info & Marketing */}
             <div className="grid gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="qa-name">Full Name</Label>
                 <Input
-                  id="name"
+                  id="qa-name"
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
@@ -161,10 +181,10 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="phone">Phone Number</Label>
+                <Label htmlFor="qa-phone">Phone Number</Label>
                 <div className="phone-input-field">
                   <PhoneInput
-                    id="phone"
+                    id="qa-phone"
                     international
                     defaultCountry="NP"
                     value={formData.phone}
@@ -175,9 +195,9 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="email">Email (Optional)</Label>
+                <Label htmlFor="qa-email">Email (Optional)</Label>
                 <Input
-                  id="email"
+                  id="qa-email"
                   name="email"
                   type="email"
                   value={formData.email}
@@ -225,9 +245,9 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
               </p>
               <div className="grid gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="business_name">Business Name</Label>
+                  <Label htmlFor="qa-business-name">Business Name</Label>
                   <Input
-                    id="business_name"
+                    id="qa-business-name"
                     name="business_name"
                     value={formData.business_name}
                     onChange={handleChange}
@@ -235,28 +255,28 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="pan_number">PAN Number</Label>
+                  <Label htmlFor="qa-pan-number">PAN Number</Label>
                   <Input
-                    id="pan_number"
+                    id="qa-pan-number"
                     name="pan_number"
                     inputMode="numeric"
                     maxLength={9}
                     value={formData.pan_number}
                     onChange={handleChange}
                     placeholder="9 digits"
-                    aria-describedby="pan-number-help"
+                    aria-describedby="qa-pan-number-help"
                   />
                   <p
-                    id="pan-number-help"
+                    id="qa-pan-number-help"
                     className="text-xs text-muted-foreground"
                   >
                     Required on the tax invoice when billing a VAT/PAN customer.
                   </p>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="billing_address">Billing Address</Label>
+                  <Label htmlFor="qa-billing-address">Billing Address</Label>
                   <Input
-                    id="billing_address"
+                    id="qa-billing-address"
                     name="billing_address"
                     value={formData.billing_address}
                     onChange={handleChange}
@@ -268,10 +288,10 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
           </div>
 
           <DialogFooter className="mt-6">
-             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
              <Button type="submit" disabled={loading} className="bg-orange-600 hover:bg-orange-700">
                {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-               Create Customer
+               Add Customer
              </Button>
           </DialogFooter>
         </form>

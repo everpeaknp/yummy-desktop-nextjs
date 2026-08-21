@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Grid3x3, List, Phone, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight } from "lucide-react";
+import Image from "next/image";
+import QRCode from "qrcode";
+import { Grid3x3, List, Phone, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight, Share2, Copy, Check, ExternalLink, Download, QrCode as QrCodeIcon } from "lucide-react";
 import { FaWhatsapp } from "react-icons/fa";
 import { MdEmail } from "react-icons/md";
 import { Badge } from "@/components/ui/badge";
@@ -24,15 +26,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
 import { growthApi } from "@/lib/api/growth";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { useRestaurant } from "@/hooks/use-restaurant";
+import type { GrowthSettings } from "@/lib/api/growth-types";
 
 interface Subscriber {
   customer_id: number;
   name: string;
   phone?: string;
   email?: string;
+  preferred_language?: string;
   whatsapp_subscribed: boolean;
   email_subscribed: boolean;
   created_at: string;
@@ -41,8 +55,30 @@ interface Subscriber {
 type ViewMode = "table" | "grid";
 type ChannelFilter = "all" | "whatsapp" | "email" | "both";
 
+function resolveGrowPublicBaseUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_GROW_PUBLIC_BASE_URL?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, "");
+  }
+  return typeof window !== "undefined" ? window.location.origin : "";
+}
+
+function safeFileName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "restaurant";
+}
+
+function getLanguageLabel(lang?: string): string {
+  const languageMap: Record<string, string> = {
+    en: "English",
+    ne: "Nepali",
+    ne_romanized: "Nepali (Romanized)",
+  };
+  return languageMap[lang || "en"] || "English";
+}
+
 export function SubscribersClient() {
   const user = useAuth((state) => state.user);
+  const { restaurant } = useRestaurant();
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [filteredSubscribers, setFilteredSubscribers] = useState<Subscriber[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +88,11 @@ export function SubscribersClient() {
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
+  const [settings, setSettings] = useState<GrowthSettings | null>(null);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState("");
 
   const loadSubscribers = async () => {
     if (!user?.restaurant_id) return;
@@ -70,8 +111,21 @@ export function SubscribersClient() {
     }
   };
 
+  const loadSettings = async () => {
+    try {
+      setLoadingSettings(true);
+      const data = await growthApi.getSettings();
+      setSettings(data);
+    } catch (err) {
+      console.error("Failed to load growth settings:", err);
+    } finally {
+      setLoadingSettings(false);
+    }
+  };
+
   useEffect(() => {
     void loadSubscribers();
+    void loadSettings();
   }, [user?.restaurant_id]);
 
   useEffect(() => {
@@ -124,6 +178,65 @@ export function SubscribersClient() {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
+  const signupUrl = 
+    settings?.public_enrollment_slug
+      ? `${resolveGrowPublicBaseUrl()}/grow/join?restaurant=${encodeURIComponent(settings.public_enrollment_slug)}`
+      : "";
+
+  useEffect(() => {
+    if (!signupUrl) {
+      setQrDataUrl("");
+      return;
+    }
+    QRCode.toDataURL(signupUrl, {
+      width: 520,
+      margin: 2,
+      color: { dark: "#111827", light: "#ffffff" },
+      errorCorrectionLevel: "H",
+    })
+      .then(setQrDataUrl)
+      .catch(() => toast.error("Failed to render the sign-up QR code"));
+  }, [signupUrl]);
+
+  const copyToClipboard = async () => {
+    if (!signupUrl) return;
+    try {
+      await navigator.clipboard.writeText(signupUrl);
+      setCopied(true);
+      toast.success("Link copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  };
+
+  const shareNative = async () => {
+    if (!signupUrl) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Join our rewards program",
+          text: "Sign up to receive exclusive offers and deals!",
+          url: signupUrl,
+        });
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          toast.error("Failed to share");
+        }
+      }
+    } else {
+      await copyToClipboard();
+    }
+  };
+
+  const downloadQr = () => {
+    if (!qrDataUrl) return;
+    const anchor = document.createElement("a");
+    anchor.href = qrDataUrl;
+    anchor.download = `${safeFileName(restaurant?.name || "restaurant")}-grow-signup-qr.png`;
+    anchor.click();
+  };
+
   return (
     <div className="flex flex-col gap-6 max-w-[1600px] mx-auto pb-20 px-4">
       {/* Header */}
@@ -135,6 +248,100 @@ export function SubscribersClient() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {signupUrl && (
+            <>
+              <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <Share2 className="h-4 w-4" />
+                    Share Sign-up Page
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Share Public Sign-up Page</DialogTitle>
+                    <DialogDescription>
+                      Share this link or QR code with customers so they can join your rewards program
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    {/* QR Code Display */}
+                    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed bg-muted/20 p-4">
+                      {qrDataUrl ? (
+                        <Image
+                          src={qrDataUrl}
+                          width={200}
+                          height={200}
+                          alt="Growth sign-up QR code"
+                          unoptimized
+                          className="h-[200px] w-[200px] rounded bg-white p-2"
+                        />
+                      ) : (
+                        <div className="flex h-[200px] w-[200px] items-center justify-center text-muted-foreground">
+                          <QrCodeIcon className="h-12 w-12" />
+                        </div>
+                      )}
+                      <Button
+                        onClick={downloadQr}
+                        disabled={!qrDataUrl}
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Download QR Code
+                      </Button>
+                    </div>
+
+                    {/* URL Display and Copy */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Sign-up Link</label>
+                      <div className="flex items-center gap-2">
+                        <Input 
+                          value={signupUrl} 
+                          readOnly 
+                          className="flex-1 font-mono text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void copyToClipboard()}
+                          className="shrink-0"
+                        >
+                          {copied ? (
+                            <Check className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Button
+                        className="flex-1 gap-2"
+                        onClick={() => void shareNative()}
+                      >
+                        <Share2 className="h-4 w-4" />
+                        Share Link
+                      </Button>
+                      <Button
+                        className="flex-1 gap-2"
+                        variant="outline"
+                        asChild
+                      >
+                        <a href={signupUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                          Open Page
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </>
+          )}
           <div className="flex items-center border rounded-lg p-1">
             <Button
               variant={viewMode === "table" ? "default" : "ghost"}
@@ -288,6 +495,7 @@ export function SubscribersClient() {
                     <TableHead>Name</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>Email</TableHead>
+                    <TableHead>Preferred Language</TableHead>
                     <TableHead>Channels</TableHead>
                     <TableHead className="text-right">Subscribed</TableHead>
                   </TableRow>
@@ -317,18 +525,19 @@ export function SubscribersClient() {
                         )}
                       </TableCell>
                       <TableCell>
+                        <span className="text-sm">{getLanguageLabel(subscriber.preferred_language)}</span>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex items-center gap-2">
                           {subscriber.whatsapp_subscribed && (
-                            <Badge variant="outline" className="gap-1.5">
-                              <FaWhatsapp className="h-3 w-3" />
-                              WhatsApp
-                            </Badge>
+                            <div className="p-1.5 rounded bg-green-500/10">
+                              <FaWhatsapp className="h-4 w-4 text-green-600" />
+                            </div>
                           )}
                           {subscriber.email_subscribed && (
-                            <Badge variant="outline" className="gap-1.5">
-                              <MdEmail className="h-3 w-3" />
-                              Email
-                            </Badge>
+                            <div className="p-1.5 rounded bg-blue-500/10">
+                              <MdEmail className="h-4 w-4 text-blue-600" />
+                            </div>
                           )}
                         </div>
                       </TableCell>
@@ -364,20 +573,22 @@ export function SubscribersClient() {
                           {subscriber.email}
                         </div>
                       )}
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="font-medium">Language:</span>
+                        <span>{getLanguageLabel(subscriber.preferred_language)}</span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
                     {subscriber.whatsapp_subscribed && (
-                      <Badge variant="outline" className="gap-1.5">
-                        <FaWhatsapp className="h-3 w-3" />
-                        WhatsApp
-                      </Badge>
+                      <div className="p-1.5 rounded bg-green-500/10" title="WhatsApp">
+                        <FaWhatsapp className="h-4 w-4 text-green-600" />
+                      </div>
                     )}
                     {subscriber.email_subscribed && (
-                      <Badge variant="outline" className="gap-1.5">
-                        <MdEmail className="h-3 w-3" />
-                        Email
-                      </Badge>
+                      <div className="p-1.5 rounded bg-blue-500/10" title="Email">
+                        <MdEmail className="h-4 w-4 text-blue-600" />
+                      </div>
                     )}
                   </div>
                   {subscriber.created_at && (

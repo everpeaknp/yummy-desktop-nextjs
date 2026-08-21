@@ -14,6 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { QuickAddCustomerForm } from "@/components/customers/quick-add-customer-form";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -552,16 +554,6 @@ export default function CheckoutPage() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [quickAddSubmitting, setQuickAddSubmitting] = useState(false);
-  const [quickAddError, setQuickAddError] = useState<string | null>(null);
-  const [quickAddForm, setQuickAddForm] = useState({
-    name: "",
-    phone: "",
-    email: "",
-    business_name: "",
-    pan_number: "",
-    billing_address: "",
-  });
 
   // Discount dialog
   const [discountOpen, setDiscountOpen] = useState(false);
@@ -1091,85 +1083,7 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleQuickAddCustomer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user?.restaurant_id) return;
 
-    setQuickAddSubmitting(true);
-    setQuickAddError(null);
-    try {
-      const panError = customerPanValidationMessage(quickAddForm.pan_number);
-      if (panError) {
-        setQuickAddError(panError);
-        return;
-      }
-      const phone = quickAddForm.phone.trim();
-      const email = quickAddForm.email.trim();
-      const payload = {
-        name: quickAddForm.name.trim(),
-        phone,
-        email: email || undefined,
-        business_name: optionalCustomerText(quickAddForm.business_name),
-        pan_number: optionalCustomerText(quickAddForm.pan_number),
-        billing_address: optionalCustomerText(
-          quickAddForm.billing_address,
-        ),
-        restaurant_id: user.restaurant_id,
-        is_active: true,
-      };
-      const res = await apiClient.post(CustomerApis.createCustomer, payload);
-      if (res.data?.status !== "success") {
-        throw new Error(res.data?.message || "Failed to create customer");
-      }
-
-      const created = res.data?.data;
-      await fetchCustomers();
-      if (created?.id) setSelectedCustomerId(String(created.id));
-
-      setQuickAddForm({
-        name: "",
-        phone: "",
-        email: "",
-        business_name: "",
-        pan_number: "",
-        billing_address: "",
-      });
-      setQuickAddOpen(false);
-    } catch (err: any) {
-      const backendDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to add customer";
-      const duplicateCustomer = typeof backendDetail === "string" && /already exists/i.test(backendDetail);
-      if (duplicateCustomer) {
-        const refreshedCustomers = await fetchCustomers();
-        const phoneDigits = normalizeCustomerPhone(quickAddForm.phone);
-        const emailLower = quickAddForm.email.trim().toLowerCase();
-        const existing = (refreshedCustomers || customers).find((customer) => {
-          const candidatePhone = normalizeCustomerPhone(customer.phone);
-          const candidateEmail = String(customer.email || "").trim().toLowerCase();
-          return (
-            (phoneDigits && candidatePhone && candidatePhone === phoneDigits) ||
-            (emailLower && candidateEmail && candidateEmail === emailLower)
-          );
-        });
-        if (existing?.id) {
-          setSelectedCustomerId(String(existing.id));
-          setQuickAddForm({
-            name: "",
-            phone: "",
-            email: "",
-            business_name: "",
-            pan_number: "",
-            billing_address: "",
-          });
-          setQuickAddOpen(false);
-          toast.info("Customer already exists, selected them instead.");
-          return;
-        }
-      }
-      setQuickAddError(backendDetail);
-    } finally {
-      setQuickAddSubmitting(false);
-    }
-  };
 
   const handleStartFonepay = useCallback(async () => {
     if (!canProcessPayment) {
@@ -3901,113 +3815,16 @@ export default function CheckoutPage() {
       </Dialog>
 
       {/* ── Quick Add Customer Dialog ── */}
-      <Dialog open={quickAddOpen} onOpenChange={setQuickAddOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Quick Add Customer</DialogTitle>
-            <DialogDescription>
-              Add a new customer and attach credit payment quickly.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleQuickAddCustomer} className="space-y-4 py-2">
-            {quickAddError && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
-                {quickAddError}
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="qa-name">Full Name</Label>
-              <Input
-                id="qa-name"
-                value={quickAddForm.name}
-                onChange={(e) => setQuickAddForm((s) => ({ ...s, name: e.target.value }))}
-                placeholder="Customer name"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="qa-phone">Phone Number</Label>
-              <Input
-                id="qa-phone"
-                value={quickAddForm.phone}
-                onChange={(e) => setQuickAddForm((s) => ({ ...s, phone: e.target.value }))}
-                placeholder="+977 98..."
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="qa-email">Email (Optional)</Label>
-              <Input
-                id="qa-email"
-                type="email"
-                value={quickAddForm.email}
-                onChange={(e) => setQuickAddForm((s) => ({ ...s, email: e.target.value }))}
-                placeholder="customer@example.com"
-              />
-            </div>
-            <div className="rounded-lg border p-3 space-y-3">
-              <p className="text-sm font-semibold">
-                Business billing (optional)
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="qa-business-name">Business Name</Label>
-                <Input
-                  id="qa-business-name"
-                  value={quickAddForm.business_name}
-                  onChange={(e) =>
-                    setQuickAddForm((state) => ({
-                      ...state,
-                      business_name: e.target.value,
-                    }))
-                  }
-                  placeholder="Customer business or legal name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="qa-pan-number">PAN Number</Label>
-                <Input
-                  id="qa-pan-number"
-                  inputMode="numeric"
-                  maxLength={9}
-                  value={quickAddForm.pan_number}
-                  onChange={(e) =>
-                    setQuickAddForm((state) => ({
-                      ...state,
-                      pan_number: e.target.value,
-                    }))
-                  }
-                  placeholder="9 digits"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="qa-billing-address">
-                  Billing Address
-                </Label>
-                <Input
-                  id="qa-billing-address"
-                  value={quickAddForm.billing_address}
-                  onChange={(e) =>
-                    setQuickAddForm((state) => ({
-                      ...state,
-                      billing_address: e.target.value,
-                    }))
-                  }
-                  placeholder="Registered billing address"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setQuickAddOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={quickAddSubmitting} className="gap-2">
-                {quickAddSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {quickAddSubmitting ? "Adding..." : "Add Customer"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <QuickAddCustomerForm
+        open={quickAddOpen}
+        onOpenChange={setQuickAddOpen}
+        onCustomerAdded={async (customerId) => {
+          await fetchCustomers();
+          if (customerId) setSelectedCustomerId(String(customerId));
+          toast.success("Customer added successfully");
+        }}
+        restaurantId={restaurant?.id || 0}
+      />
 
       {/* ── Discount Dialog ── */}
       <Dialog open={discountOpen} onOpenChange={setDiscountOpen}>
