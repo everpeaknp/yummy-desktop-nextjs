@@ -77,6 +77,7 @@ import {
   campaignStatusLabels,
   formatOffer,
   isCampaignApprovalReady,
+  segmentLabels,
 } from "@/lib/growth/campaign-administration";
 import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
@@ -440,7 +441,7 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
             <Badge variant="outline" className={cn("text-xs font-semibold", statusStyles[campaign.status])}>{campaignStatusLabels[campaign.status]}</Badge>
           </div>
           <p className="dc-page-subtitle">
-            {campaign.playbook_code.replaceAll("_", " ")} · {campaign.segment_code} segment · Campaign #{campaign.id}
+            {campaign.playbook_code.replaceAll("_", " ")} · {segmentLabels[campaign.segment_code] || campaign.segment_code} · Campaign #{campaign.id}
             {campaign.scheduled_at && ` · Scheduled ${formatDate(campaign.scheduled_at)}`}
           </p>
         </div>
@@ -742,20 +743,19 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
       <AlertDialog open={approvalOpen} onOpenChange={setApprovalOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Approve and freeze this campaign?</AlertDialogTitle>
+            <AlertDialogTitle>Approve this campaign?</AlertDialogTitle>
             <AlertDialogDescription>
-              Approval freezes the currently eligible, consented, language-matched audience and approves the offer, poster, template, and message snapshot together. It does not schedule or send anything.
+              This will lock the campaign details and {audience ? `${formatCount(audience.included_count)} customers` : "customer list"}. You can schedule it after approval. No messages will be sent yet.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="rounded-xl border bg-muted/30 p-3 text-sm"><span className="font-semibold">Current preview:</span> {audience ? `${formatCount(audience.included_count)} segment-eligible before selected-language filtering` : "backend will determine the authoritative audience"}</div>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep under review</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               disabled={!approvalReady || Boolean(busyAction)}
               onClick={() => void transition("approve", "Campaign approved and audience frozen. It has not been scheduled or sent.", () => growthApi.approveCampaign(campaign.id))}
             >
-              {busyAction === "approve" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LockKeyhole className="mr-2 h-4 w-4" />}
-              Approve snapshot
+              {busyAction === "approve" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Approve
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -776,25 +776,59 @@ export function CampaignDetailClient({ campaignId }: { campaignId: string }) {
       </Dialog>
 
       <Dialog open={scheduleOpen} onOpenChange={(open) => { if (!busyAction) setScheduleOpen(open); }}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Schedule approved delivery</DialogTitle>
-            <DialogDescription>This creates future delivery jobs for the frozen audience. There is deliberately no send-now action.</DialogDescription>
+            <DialogTitle>Schedule campaign</DialogTitle>
+            <DialogDescription>Choose when to send this campaign to customers.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-5">
+          <div className="space-y-4">
             {!timeZone ? (
-              <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>The restaurant timezone is unavailable. Scheduling is blocked until it is configured.</AlertDescription></Alert>
+              <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>Restaurant timezone is not configured. Please set it up first.</AlertDescription></Alert>
             ) : channelDisabled ? (
-              <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{campaign.channel === "email" ? "Email" : "WhatsApp"} delivery is disabled in this restaurant&apos;s Grow settings. Enable and verify the channel before scheduling.</AlertDescription></Alert>
+              <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{campaign.channel === "email" ? "Email" : "WhatsApp"} is disabled. Please enable it in Grow settings first.</AlertDescription></Alert>
             ) : (
               <>
-                <div className="space-y-2"><Label htmlFor="growth-schedule-time">Restaurant-local date and time</Label><Input id="growth-schedule-time" type="datetime-local" value={scheduleLocal} onChange={(event) => { setScheduleLocal(event.target.value); setScheduleConfirmed(false); }} /><p className="text-xs text-muted-foreground">Authoritative timezone: <span className="font-semibold text-foreground">{timeZone}</span>{settings ? ` · Quiet hours ${settings.quiet_hours_start}–${settings.quiet_hours_end}` : " · Quiet hours will be checked by the backend"}</p></div>
-                {schedulePayload.error ? <p className="text-sm text-destructive">{schedulePayload.error}</p> : schedulePayload.value ? <div className="rounded-xl border bg-muted/30 p-3 text-xs"><p className="font-semibold">Explicit offset sent to backend</p><code className="mt-1 block break-all text-muted-foreground">{schedulePayload.value.scheduled_at}</code></div> : null}
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-sm"><input type="checkbox" checked={scheduleConfirmed} onChange={(event) => setScheduleConfirmed(event.target.checked)} className="mt-1 h-4 w-4 rounded border-border accent-primary" /><span><span className="font-semibold">I confirm this future schedule.</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">The backend will recheck entitlement, quota, quiet hours, consent, and delivery safety. This action queues work; it does not send synchronously.</span></span></label>
+                <div className="space-y-2">
+                  <Label htmlFor="growth-schedule-time">Send date and time</Label>
+                  <Input 
+                    id="growth-schedule-time" 
+                    type="datetime-local" 
+                    value={scheduleLocal} 
+                    onChange={(event) => { 
+                      setScheduleLocal(event.target.value); 
+                      setScheduleConfirmed(false); 
+                    }} 
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Timezone: {timeZone}
+                    {settings ? ` • Quiet hours: ${settings.quiet_hours_start}–${settings.quiet_hours_end}` : ""}
+                  </p>
+                </div>
+                {schedulePayload.error && <p className="text-sm text-destructive">{schedulePayload.error}</p>}
+                <label className="flex items-start gap-3 rounded-lg border p-3 text-sm cursor-pointer hover:bg-muted/50">
+                  <input 
+                    type="checkbox" 
+                    checked={scheduleConfirmed} 
+                    onChange={(event) => setScheduleConfirmed(event.target.checked)} 
+                    className="mt-0.5 h-4 w-4 rounded border-border accent-primary" 
+                  />
+                  <span className="text-muted-foreground">I confirm the schedule above is correct</span>
+                </label>
               </>
             )}
           </div>
-          <DialogFooter className="gap-2 sm:gap-2"><Button variant="outline" onClick={() => setScheduleOpen(false)} disabled={Boolean(busyAction)}>Cancel</Button><Button onClick={() => void confirmSchedule()} disabled={!schedulePayload.value || !scheduleConfirmed || channelDisabled || Boolean(busyAction)}>{busyAction === "schedule" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarClock className="mr-2 h-4 w-4" />}Schedule delivery</Button></DialogFooter>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScheduleOpen(false)} disabled={Boolean(busyAction)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => void confirmSchedule()} 
+              disabled={!schedulePayload.value || !scheduleConfirmed || channelDisabled || Boolean(busyAction)}
+            >
+              {busyAction === "schedule" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Schedule
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

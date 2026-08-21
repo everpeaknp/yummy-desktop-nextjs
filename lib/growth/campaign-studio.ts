@@ -72,7 +72,7 @@ export const CAMPAIGN_PLAYBOOKS: readonly CampaignPlaybookDefinition[] = [
     shortTitle: "Win Back",
     description: "Reach repeat customers who have not completed an order within the configured lapse period.",
     observedFact: "These customers previously met the repeat threshold and have been absent.",
-    audienceLabel: "Lapsed customers",
+    audienceLabel: "Inactive customers",
   },
   {
     code: "slow_day",
@@ -214,7 +214,7 @@ export function formatCampaignOffer(offer: CampaignOfferDraft): string {
 // one placeholder every preview surface (starter copy text and the poster
 // template's coupon box) shares, so they never show two different fake
 // codes side by side.
-export const PREVIEW_COUPON_CODE = "H8DKRT";
+export const PREVIEW_COUPON_CODE = "XXXXXX";
 
 export function deterministicCampaignCopy({
   restaurantName,
@@ -264,7 +264,7 @@ export function deterministicCampaignCopy({
       headline = headlines[randomIndex];
       messageBody = messages[randomIndex];
     } else if (playbookCode === "win_back") {
-      // Lapsed customer - win them back
+      // Inactive customer - win them back
       const headlines = [
         "We miss you!",
         "It's been too long",
