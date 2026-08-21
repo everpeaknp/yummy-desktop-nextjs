@@ -7,7 +7,7 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
-import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis, AccountingApis } from "@/lib/api/endpoints";
+import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis, AccountingApis, GrowthApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1916,9 +1916,73 @@ export default function CheckoutPage() {
           setDiscountSubmitting(false);
           return;
         }
-        await apiClient.patch(OrderApis.updateOrder(orderId), {
-          discount_code: discountCode.trim(),
-        });
+        
+        // Try Growth offer validation first
+        try {
+          // First, attach customer if one is selected but not yet assigned to order
+          let currentCustomerId = orderMeta?.customer_id;
+          if (selectedCustomerId && String(currentCustomerId || "") !== selectedCustomerId) {
+            await apiClient.patch(OrderApis.updateOrder(orderId), {
+              customer_id: parseInt(selectedCustomerId, 10),
+            });
+            currentCustomerId = parseInt(selectedCustomerId, 10);
+            setOrderMeta((prev) => (
+              prev ? { ...prev, customer_id: currentCustomerId } : prev
+            ));
+          }
+
+          const validateRes = await apiClient.post(GrowthApis.validateOffer, {
+            order_id: orderId,
+            offer_code: discountCode.trim(),
+            customer_id: currentCustomerId || null,
+          });
+          
+          if (validateRes.data?.data?.valid) {
+            // Apply as Growth offer
+            await apiClient.patch(OrderApis.updateOrder(orderId), {
+              growth_offer_code: discountCode.trim(),
+            });
+            toast.success(`Growth offer applied: ${validateRes.data.data.offer_name || 'Discount'}`);
+          } else {
+            const errorMsg = validateRes.data?.data?.message || "Invalid offer code";
+            // Enhance customer mismatch error with helpful instruction
+            if (validateRes.data?.data?.reason === "customer_mismatch") {
+              setDiscountError(`${errorMsg} Please select the correct customer from the "Loyalty & Customer" section above before applying this coupon.`);
+            } else {
+              setDiscountError(errorMsg);
+            }
+            setDiscountSubmitting(false);
+            return;
+          }
+        } catch (growthErr: any) {
+          // If Growth validation fails, try as legacy discount code
+          const growthStatus = growthErr?.response?.status;
+          const errorData = growthErr?.response?.data?.data;
+          
+          // Enhanced error message for customer mismatch
+          if (errorData?.reason === "customer_mismatch") {
+            setDiscountError(`${errorData.message || "This offer belongs to a different customer."} Please select the correct customer from the "Loyalty & Customer" section above before applying this coupon.`);
+            setDiscountSubmitting(false);
+            return;
+          }
+          
+          if (growthStatus === 403 || growthStatus === 404) {
+            // Grow might not be enabled, try legacy discount
+            try {
+              await apiClient.patch(OrderApis.updateOrder(orderId), {
+                discount_code: discountCode.trim(),
+              });
+            } catch (legacyErr: any) {
+              setDiscountError(extractApiErrorMessage(legacyErr, "Invalid discount code"));
+              setDiscountSubmitting(false);
+              return;
+            }
+          } else {
+            setDiscountError(extractApiErrorMessage(growthErr, "Failed to validate offer code"));
+            setDiscountSubmitting(false);
+            return;
+          }
+        }
       } else {
         const dueAmountForManualDiscount = Math.max(0, Number(bill?.balance_due || 0));
         const amt = parseFloat(manualDiscountAmount);
@@ -1958,6 +2022,7 @@ export default function CheckoutPage() {
     try {
       await apiClient.patch(OrderApis.updateOrder(orderId), {
         discount_code: "",
+        growth_offer_code: "",
       });
       await fetchBill();
     } catch (err: any) {

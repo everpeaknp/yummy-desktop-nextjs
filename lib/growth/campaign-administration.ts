@@ -4,6 +4,7 @@ import type {
   GrowthMessageTemplate,
   GrowthOffer,
   GrowthScheduleInput,
+  GrowthSegmentCode,
 } from "@/lib/api/growth-types";
 
 export interface GrowthCampaignPermissions {
@@ -32,6 +33,12 @@ export const campaignStatusLabels: Record<GrowthCampaignStatus, string> = {
   paused: "Paused",
   canceled: "Canceled",
   failed: "Failed",
+};
+
+export const segmentLabels: Record<GrowthSegmentCode, string> = {
+  new: "New Customers",
+  regular: "Regular Customers",
+  lapsed: "Inactive Customers",
 };
 
 export function campaignActions(

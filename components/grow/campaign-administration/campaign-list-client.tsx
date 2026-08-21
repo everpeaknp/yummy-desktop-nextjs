@@ -35,13 +35,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { growthApi } from "@/lib/api/growth";
 import type { GrowthCampaign, GrowthCampaignStatus } from "@/lib/api/growth-types";
-import { campaignStatusLabels } from "@/lib/growth/campaign-administration";
+import { campaignStatusLabels, segmentLabels } from "@/lib/growth/campaign-administration";
 import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "needs_action" | "active" | "finished";
 type ChannelFilter = "all" | "whatsapp" | "email";
+type PlaybookFilter = "all" | "second_visit" | "win_back" | "slow_day";
+type SegmentFilter = "all" | "new" | "regular" | "lapsed";
 type ViewMode = "grid" | "list";
+type SortBy = "scheduled_desc" | "scheduled_asc" | "created_desc" | "created_asc";
 
 const statusStyles: Record<GrowthCampaignStatus, string> = {
   draft: "border-amber-500/20 bg-amber-500/10 text-amber-600",
@@ -55,6 +58,24 @@ const statusStyles: Record<GrowthCampaignStatus, string> = {
   failed: "border-destructive/20 bg-destructive/10 text-destructive",
 };
 
+const statusStylesTable: Record<GrowthCampaignStatus, string> = {
+  draft: "border-amber-500/30 text-amber-600",
+  review: "border-blue-500/30 text-blue-600",
+  approved: "border-green-500/30 text-green-600",
+  scheduled: "border-purple-500/30 text-purple-600",
+  sending: "border-primary/30 text-primary",
+  completed: "border-emerald-500/30 text-emerald-600",
+  paused: "border-orange-500/30 text-orange-600",
+  canceled: "border-border text-muted-foreground",
+  failed: "border-destructive/30 text-destructive",
+};
+
+const playbookLabels: Record<string, string> = {
+  second_visit: "Second Visit",
+  win_back: "Win Back",
+  slow_day: "Slow Day",
+};
+
 function formatDate(value?: string | null): string {
   if (!value) return "Not scheduled";
   const date = new Date(value);
@@ -65,7 +86,14 @@ function formatDate(value?: string | null): string {
   }).format(date);
 }
 
-function filterCampaigns(campaigns: GrowthCampaign[], filter: Filter, channelFilter: ChannelFilter, searchQuery: string): GrowthCampaign[] {
+function filterCampaigns(
+  campaigns: GrowthCampaign[], 
+  filter: Filter, 
+  channelFilter: ChannelFilter, 
+  playbookFilter: PlaybookFilter,
+  segmentFilter: SegmentFilter,
+  searchQuery: string
+): GrowthCampaign[] {
   let filtered = campaigns;
   
   // Apply status filter
@@ -82,6 +110,16 @@ function filterCampaigns(campaigns: GrowthCampaign[], filter: Filter, channelFil
     filtered = filtered.filter((campaign) => campaign.channel === "whatsapp");
   } else if (channelFilter === "email") {
     filtered = filtered.filter((campaign) => campaign.channel === "email");
+  }
+  
+  // Apply playbook filter
+  if (playbookFilter !== "all") {
+    filtered = filtered.filter((campaign) => campaign.playbook_code === playbookFilter);
+  }
+  
+  // Apply segment filter
+  if (segmentFilter !== "all") {
+    filtered = filtered.filter((campaign) => campaign.segment_code === segmentFilter);
   }
   
   // Apply search filter
@@ -102,7 +140,10 @@ export function CampaignListClient() {
   const [campaigns, setCampaigns] = useState<GrowthCampaign[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
+  const [playbookFilter, setPlaybookFilter] = useState<PlaybookFilter>("all");
+  const [segmentFilter, setSegmentFilter] = useState<SegmentFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("scheduled_desc");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -141,16 +182,34 @@ export function CampaignListClient() {
   }, [load]);
 
   const visible = useMemo(() => {
-    const filtered = filterCampaigns(campaigns, filter, channelFilter, searchQuery);
-    // Sort by most recent first (scheduled_at or created_at)
+    const filtered = filterCampaigns(campaigns, filter, channelFilter, playbookFilter, segmentFilter, searchQuery);
+    
+    // Sort based on selected sort option
     return filtered.sort((a, b) => {
-      const dateA = a.scheduled_at || a.created_at;
-      const dateB = b.scheduled_at || b.created_at;
-      if (!dateA) return 1;
-      if (!dateB) return -1;
-      return new Date(dateB).getTime() - new Date(dateA).getTime();
+      switch (sortBy) {
+        case "scheduled_desc": {
+          const dateA = a.scheduled_at || a.created_at;
+          const dateB = b.scheduled_at || b.created_at;
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          return new Date(dateB).getTime() - new Date(dateA).getTime();
+        }
+        case "scheduled_asc": {
+          const dateA = a.scheduled_at || a.created_at;
+          const dateB = b.scheduled_at || b.created_at;
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          return new Date(dateA).getTime() - new Date(dateB).getTime();
+        }
+        case "created_desc":
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case "created_asc":
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        default:
+          return 0;
+      }
     });
-  }, [campaigns, filter, channelFilter, searchQuery]);
+  }, [campaigns, filter, channelFilter, playbookFilter, segmentFilter, searchQuery, sortBy]);
   
   // Pagination calculations
   const totalPages = Math.ceil(visible.length / itemsPerPage);
@@ -161,7 +220,7 @@ export function CampaignListClient() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, channelFilter, searchQuery]);
+  }, [filter, channelFilter, playbookFilter, segmentFilter, searchQuery, sortBy]);
   const counts = useMemo(
     () => ({
       review: campaigns.filter((campaign) => campaign.status === "review").length,
@@ -170,6 +229,12 @@ export function CampaignListClient() {
       completed: campaigns.filter((campaign) => campaign.status === "completed").length,
       whatsapp: campaigns.filter((campaign) => campaign.channel === "whatsapp").length,
       email: campaigns.filter((campaign) => campaign.channel === "email").length,
+      second_visit: campaigns.filter((campaign) => campaign.playbook_code === "second_visit").length,
+      win_back: campaigns.filter((campaign) => campaign.playbook_code === "win_back").length,
+      slow_day: campaigns.filter((campaign) => campaign.playbook_code === "slow_day").length,
+      new: campaigns.filter((campaign) => campaign.segment_code === "new").length,
+      regular: campaigns.filter((campaign) => campaign.segment_code === "regular").length,
+      lapsed: campaigns.filter((campaign) => campaign.segment_code === "lapsed").length,
     }),
     [campaigns],
   );
@@ -286,10 +351,10 @@ export function CampaignListClient() {
                 </div>
               </div>
               
-              {/* Filters, Search, and View Toggle Toolbar */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                {/* Search Input */}
-                <div className="relative flex-1 min-w-[200px]">
+              {/* Filters, Search, Sort, and View Toggle - All in One Row */}
+              <div className="flex items-center gap-3 overflow-x-auto">
+                {/* Search Input - Increased width */}
+                <div className="relative w-[240px]">
                   <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     type="text"
@@ -300,9 +365,9 @@ export function CampaignListClient() {
                   />
                 </div>
 
-                {/* Status Filter Dropdown */}
+                {/* Status Filter */}
                 <Select value={filter} onValueChange={(value) => setFilter(value as Filter)}>
-                  <SelectTrigger className="w-full sm:w-[180px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
+                  <SelectTrigger className="w-[130px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -313,30 +378,62 @@ export function CampaignListClient() {
                   </SelectContent>
                 </Select>
 
-                {/* Channel Filter Dropdown */}
+                {/* Channel Filter */}
                 <Select value={channelFilter} onValueChange={(value) => setChannelFilter(value as ChannelFilter)}>
-                  <SelectTrigger className="w-full sm:w-[180px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
+                  <SelectTrigger className="w-[120px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
                     <SelectValue placeholder="Channel" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Channels</SelectItem>
-                    <SelectItem value="whatsapp">
-                      <span className="flex items-center gap-2">
-                        <FaWhatsapp className="h-3.5 w-3.5" />
-                        WhatsApp ({counts.whatsapp})
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="email">
-                      <span className="flex items-center gap-2">
-                        <Mail className="h-3.5 w-3.5" />
-                        Email ({counts.email})
-                      </span>
-                    </SelectItem>
+                    <SelectItem value="whatsapp">WhatsApp ({counts.whatsapp})</SelectItem>
+                    <SelectItem value="email">Email ({counts.email})</SelectItem>
                   </SelectContent>
                 </Select>
 
+                {/* Playbook Filter */}
+                <Select value={playbookFilter} onValueChange={(value) => setPlaybookFilter(value as PlaybookFilter)}>
+                  <SelectTrigger className="w-[120px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
+                    <SelectValue placeholder="Playbook" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Playbooks</SelectItem>
+                    <SelectItem value="second_visit">Second Visit ({counts.second_visit})</SelectItem>
+                    <SelectItem value="win_back">Win Back ({counts.win_back})</SelectItem>
+                    <SelectItem value="slow_day">Slow Day ({counts.slow_day})</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Segment Filter */}
+                <Select value={segmentFilter} onValueChange={(value) => setSegmentFilter(value as SegmentFilter)}>
+                  <SelectTrigger className="w-[130px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
+                    <SelectValue placeholder="Segment" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Segments</SelectItem>
+                    <SelectItem value="new">New ({counts.new})</SelectItem>
+                    <SelectItem value="regular">Regular ({counts.regular})</SelectItem>
+                    <SelectItem value="lapsed">Inactive ({counts.lapsed})</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Sort By */}
+                <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+                  <SelectTrigger className="w-[150px] h-9 rounded-2xl border-black/[0.08] dark:border-white/10 text-xs font-medium">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="scheduled_desc">Newest First</SelectItem>
+                    <SelectItem value="scheduled_asc">Oldest First</SelectItem>
+                    <SelectItem value="created_desc">Recently Created</SelectItem>
+                    <SelectItem value="created_asc">First Created</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Spacer - Reduced */}
+                <div className="flex-1 min-w-[10px]"></div>
+
                 {/* View Mode Toggle */}
-                <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-2xl border border-black/[0.08] dark:border-white/10">
+                <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-2xl border border-black/[0.08] dark:border-white/10 shrink-0">
                   <Button
                     size="sm"
                     variant="ghost"
@@ -395,13 +492,28 @@ export function CampaignListClient() {
                         <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
                         <div className="relative z-10">
                           <div className="flex items-start justify-between gap-4 mb-3">
-                            <div className="min-w-0 flex-1">
-                              <h2 className="truncate font-bold text-base mb-1 group-hover:text-primary transition-colors">
-                                {campaign.name}
-                              </h2>
-                              <p className="text-xs capitalize text-muted-foreground">
-                                {campaign.playbook_code.replaceAll("_", " ")} · {campaign.segment_code} segment
-                              </p>
+                            <div className="min-w-0 flex-1 flex items-start gap-3">
+                              {/* Channel Icon */}
+                              <div className={cn(
+                                "w-9 h-9 rounded-lg flex items-center justify-center border shrink-0 transition-colors",
+                                campaign.channel === "whatsapp" 
+                                  ? "bg-green-500/10 border-green-500/20 text-green-600 group-hover:bg-green-500/15"
+                                  : "bg-blue-500/10 border-blue-500/20 text-blue-600 group-hover:bg-blue-500/15"
+                              )}>
+                                {campaign.channel === "whatsapp" ? (
+                                  <FaWhatsapp className="h-4 w-4" />
+                                ) : (
+                                  <Mail className="h-4 w-4" />
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <h2 className="truncate font-bold text-base mb-1 group-hover:text-primary transition-colors">
+                                  {campaign.name}
+                                </h2>
+                                <p className="text-xs text-muted-foreground">
+                                  {playbookLabels[campaign.playbook_code] || campaign.playbook_code} · {segmentLabels[campaign.segment_code] || campaign.segment_code}
+                                </p>
+                              </div>
                             </div>
                             <Badge variant="outline" className={cn("shrink-0 text-xs font-semibold", statusStyles[campaign.status])}>
                               {campaignStatusLabels[campaign.status]}
@@ -427,60 +539,99 @@ export function CampaignListClient() {
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-3">
-                    {paginatedCampaigns.map((campaign) => (
-                      <Link
-                        key={campaign.id}
-                        href={`/grow/campaigns/${campaign.id}`}
-                        className="group relative overflow-hidden dc-card p-4 transition-all duration-200 hover:-translate-y-0.5"
-                      >
-                        <div className="flex items-center gap-4">
-                          {/* Channel Icon */}
-                          <div className={cn(
-                            "w-10 h-10 rounded-lg flex items-center justify-center border shrink-0",
-                            campaign.channel === "whatsapp" 
-                              ? "bg-green-500/10 border-green-500/20 text-green-600"
-                              : "bg-blue-500/10 border-blue-500/20 text-blue-600"
-                          )}>
-                            {campaign.channel === "whatsapp" ? (
-                              <FaWhatsapp className="h-4 w-4" />
-                            ) : (
-                              <Mail className="h-4 w-4" />
-                            )}
-                          </div>
+                  <div className="rounded-xl border border-black/[0.08] dark:border-white/10 overflow-x-auto">
+                    {/* Table */}
+                    <table className="w-full">
+                      {/* Table Header */}
+                      <thead>
+                        <tr className="bg-muted/30 border-b border-black/[0.08] dark:border-white/10">
+                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Channel</th>
+                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Campaign Name</th>
+                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Playbook</th>
+                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Segment</th>
+                          <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Audience</th>
+                          <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scheduled</th>
+                          <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                          <th className="px-3 py-2.5 w-8"></th>
+                        </tr>
+                      </thead>
+                      
+                      {/* Table Body */}
+                      <tbody className="divide-y divide-black/[0.08] dark:divide-white/10">
+                        {paginatedCampaigns.map((campaign) => (
+                          <tr
+                            key={campaign.id}
+                            className="group transition-colors hover:bg-muted/50 cursor-pointer"
+                            onClick={() => window.location.href = `/grow/campaigns/${campaign.id}`}
+                          >
+                            {/* Channel Icon */}
+                            <td className="px-3 py-2.5">
+                              <div className={cn(
+                                "w-8 h-8 rounded-lg flex items-center justify-center border",
+                                campaign.channel === "whatsapp" 
+                                  ? "bg-green-500/10 border-green-500/20 text-green-600"
+                                  : "bg-blue-500/10 border-blue-500/20 text-blue-600"
+                              )}>
+                                {campaign.channel === "whatsapp" ? (
+                                  <FaWhatsapp className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Mail className="h-3.5 w-3.5" />
+                                )}
+                              </div>
+                            </td>
 
-                          {/* Campaign Info */}
-                          <div className="min-w-0 flex-1">
-                            <h2 className="truncate font-bold text-sm mb-0.5 group-hover:text-primary transition-colors">
-                              {campaign.name}
-                            </h2>
-                            <p className="text-[10px] capitalize text-muted-foreground">
-                              {campaign.playbook_code.replaceAll("_", " ")} · {campaign.segment_code} segment
-                            </p>
-                          </div>
+                            {/* Campaign Name */}
+                            <td className="px-3 py-2.5">
+                              <span className="font-bold text-sm group-hover:text-primary transition-colors">
+                                {campaign.name}
+                              </span>
+                            </td>
 
-                          {/* Metrics */}
-                          <div className="hidden sm:flex items-center gap-4 text-xs text-muted-foreground shrink-0">
-                            <span className="inline-flex items-center gap-1.5">
-                              <Users className="h-3.5 w-3.5" />
-                              <span className="font-medium tabular-nums">{campaign.audience_count.toLocaleString("en-NP")}</span>
-                            </span>
-                            <span className="inline-flex items-center gap-1.5">
-                              <CalendarClock className="h-3.5 w-3.5" />
-                              <span className="font-medium">{formatDate(campaign.scheduled_at)}</span>
-                            </span>
-                          </div>
+                            {/* Playbook */}
+                            <td className="px-3 py-2.5">
+                              <span className="text-xs text-muted-foreground">
+                                {playbookLabels[campaign.playbook_code] || campaign.playbook_code}
+                              </span>
+                            </td>
 
-                          {/* Status Badge */}
-                          <Badge variant="outline" className={cn("shrink-0 text-[10px] font-semibold", statusStyles[campaign.status])}>
-                            {campaignStatusLabels[campaign.status]}
-                          </Badge>
+                            {/* Segment */}
+                            <td className="px-3 py-2.5">
+                              <span className="text-xs text-muted-foreground">
+                                {segmentLabels[campaign.segment_code] || campaign.segment_code}
+                              </span>
+                            </td>
 
-                          {/* Arrow */}
-                          <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-                        </div>
-                      </Link>
-                    ))}
+                            {/* Audience Count */}
+                            <td className="px-3 py-2.5 text-right">
+                              <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Users className="h-3 w-3" />
+                                <span className="font-medium tabular-nums">{campaign.audience_count.toLocaleString("en-NP")}</span>
+                              </div>
+                            </td>
+
+                            {/* Scheduled Time */}
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+                                <CalendarClock className="h-3 w-3 shrink-0" />
+                                <span className="font-medium">{formatDate(campaign.scheduled_at)}</span>
+                              </div>
+                            </td>
+
+                            {/* Status Badge */}
+                            <td className="px-3 py-2.5 text-center">
+                              <Badge variant="outline" className={cn("text-[10px] font-semibold whitespace-nowrap bg-transparent", statusStylesTable[campaign.status])}>
+                                {campaignStatusLabels[campaign.status]}
+                              </Badge>
+                            </td>
+
+                            {/* Arrow */}
+                            <td className="px-3 py-2.5">
+                              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 
