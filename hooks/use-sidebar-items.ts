@@ -23,10 +23,13 @@ import {
   BarChart3,
   Briefcase,
   LucideIcon,
-  Layers,
   Banknote,
   Fingerprint,
   FileText,
+  ShoppingCart,
+  Truck,
+  BookOpenCheck,
+  BadgeDollarSign,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -62,7 +65,17 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/menu/items": UtensilsCrossed,
   "/kitchen": ChefHat,
   "/inventory": Package,
+  "/suppliers": Truck,
   "/finance/income": CreditCard,
+  "/finance": CreditCard,
+  "/finance/sales": Receipt,
+  "/finance/purchases": ShoppingCart,
+  "/inventory/purchases": ShoppingCart,
+  "/finance/income-expenses": CreditCard,
+  "/finance/transactions": ArrowDownUp,
+  "/finance/reports": FileText,
+  "/finance/setup": Settings,
+  "/finance/operations": Banknote,
   "/customers": Users,
   "/attendance": Fingerprint,
   "/staff": Users,
@@ -204,6 +217,7 @@ export function useSidebarItems(): SidebarItem[] {
           return false;
         const entitlementByRoute: Record<string, string> = {
           "/inventory": "inventory.enabled",
+          "/suppliers": "inventory.suppliers.enabled",
           "/manage/suppliers": "inventory.suppliers.enabled",
           "/reservations": "reservations.enabled",
           "/finance/accounting": "finance.accounting.enabled",
@@ -277,6 +291,7 @@ export function useSidebarItems(): SidebarItem[] {
         group.subItems!.push(item);
       } else if (
         [
+          "/cash-drawers",
           "/finance/income",
           "/finance/expenses",
           "/finance/accounting",
@@ -294,9 +309,10 @@ export function useSidebarItems(): SidebarItem[] {
       } else if (["/manage", "/settings"].includes(item.href)) {
         const group = getGroup("settings", "Settings", Settings, "/manage");
         if (item.href !== "/manage") group.subItems!.push(item);
-      } else if (["/inventory", "/manage/suppliers"].includes(item.href)) {
-        const group = getGroup("inventory", "Inventory", Package, "/inventory");
-        if (item.href !== "/inventory") group.subItems!.push(item);
+      } else if (item.href === "/inventory") {
+        result.push(item);
+      } else if (["/suppliers", "/manage/suppliers"].includes(item.href)) {
+        result.push({ ...item, title: "Suppliers", href: "/suppliers", icon: Truck });
       } else {
         result.push(item);
       }
@@ -331,6 +347,32 @@ export function useSidebarItems(): SidebarItem[] {
     }
 
     if (
+      ([
+        "finance.daybook.view",
+        "finance.drawer.transfer.to_safe",
+        "finance.cash.transfer.to_bank",
+      ] as const).some((permission) => hasPermission(user, permission))
+    ) {
+      const group = getGroup(
+        "finance",
+        "Finance",
+        CreditCard,
+        "/finance/operations",
+      );
+      group.href = "/finance/operations";
+      const subItems = group.subItems ?? [];
+      if (!subItems.some((item) => item.href === "/finance/operations")) {
+        subItems.unshift({
+          title: "Cash & Banks",
+          href: "/finance/operations",
+          icon: Banknote,
+          isNestedChild: true,
+        });
+      }
+      group.subItems = subItems;
+    }
+
+    if (
       hasPermission(user, "finance.income.view") &&
       !isExplicitlyLocked("finance.income_expense.enabled")
     ) {
@@ -360,19 +402,89 @@ export function useSidebarItems(): SidebarItem[] {
           isNestedChild: true,
         });
       }
-      if (
-        isFinanceFeatureEnabled(restaurant, "accounting") &&
-        !isExplicitlyLocked("finance.accounting.enabled") &&
-        !subItems.some((item) => item.href === "/finance/accounting")
-      ) {
+      group.subItems = subItems;
+    }
+
+    if (hasPermission(user, "finance.coa.view")) {
+      const group = getGroup(
+        "finance",
+        "Finance",
+        CreditCard,
+        "/finance/heads",
+      );
+      const subItems = group.subItems ?? [];
+      if (!subItems.some((item) => item.href === "/finance/heads")) {
         subItems.push({
-          title: "Accounting",
-          href: "/finance/accounting",
-          icon: Layers,
+          title: "Financial Categories",
+          href: "/finance/heads",
+          icon: FileText,
           isNestedChild: true,
         });
       }
       group.subItems = subItems;
+    }
+
+    // Finance navigation names the document/register being opened. Receivables
+    // belong to Customers and payables belong to Suppliers, so those party
+    // balances are not duplicated as Finance sidebar destinations.
+    const financeGroup = groups.finance;
+    if (financeGroup && hasPermission(user, "finance.income.view")) {
+      const financeItems: SidebarItem[] = [
+        { title: "Overview", href: "/finance", icon: CreditCard, isNestedChild: true },
+        { title: "Sales", href: "/finance/sales", icon: Receipt, isNestedChild: true },
+        { title: "Purchases", href: "/inventory/purchases", icon: ShoppingCart, isNestedChild: true },
+        { title: "Other Income", href: "/finance/other-income", icon: CreditCard, isNestedChild: true },
+        { title: "Expenses", href: "/finance/expenses", icon: CreditCard, isNestedChild: true },
+        { title: "Payments", href: "/finance/payments", icon: BadgeDollarSign, isNestedChild: true },
+        { title: "Transactions", href: "/finance/transactions", icon: ArrowDownUp, isNestedChild: true },
+      ];
+
+      if (
+        ([
+          "finance.daybook.view",
+          "finance.drawer.transfer.to_safe",
+          "finance.cash.transfer.to_bank",
+        ] as const).some((permission) => hasPermission(user, permission))
+      ) {
+        financeItems.splice(6, 0, {
+          title: "Cash & Banks",
+          href: "/finance/operations",
+          icon: Banknote,
+          isNestedChild: true,
+        });
+      }
+
+      if (hasPermission(user, "finance.journal.view")) {
+        financeItems.push({
+          title: "Journal Vouchers",
+          href: "/finance/journals",
+          icon: BookOpenCheck,
+          isNestedChild: true,
+        });
+      }
+
+      if (isFinanceFeatureEnabled(restaurant, "reports")) {
+        financeItems.push({
+          title: "Reports",
+          href: "/finance/reports",
+          icon: FileText,
+          isNestedChild: true,
+        });
+      }
+      if (
+        hasPermission(user, "finance.coa.view") ||
+        hasPermission(user, "finance.payment_instruments.manage")
+      ) {
+        financeItems.push({
+          title: "Setup",
+          href: "/finance/setup",
+          icon: Settings,
+          isNestedChild: true,
+        });
+      }
+
+      financeGroup.href = "/finance";
+      financeGroup.subItems = financeItems;
     }
 
     if (hotelAvailable) {

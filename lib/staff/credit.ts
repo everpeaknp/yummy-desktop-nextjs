@@ -99,7 +99,7 @@ export const staffCreditApi = {
 
   async recordAdvance(
     staffId: number,
-    payload: { amount: number; payment_method?: string; reason?: string },
+    payload: { amount: number; payment_method?: string; reason?: string; account_type: "drawer" | "bank"; account_id: number },
   ) {
     return normalizeTransaction(
       unwrap<StaffCreditTransaction>(
@@ -110,7 +110,7 @@ export const staffCreditApi = {
 
   async recordRepayment(
     staffId: number,
-    payload: { amount: number; payment_method?: string; reason?: string },
+    payload: { amount: number; payment_method?: string; reason?: string; account_type: "drawer" | "bank"; account_id: number },
   ) {
     return normalizeTransaction(
       unwrap<StaffCreditTransaction>(

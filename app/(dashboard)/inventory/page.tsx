@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { AwaitingPaymentApis, DrawerSessionApis, InventoryApis, SupplierApis } from "@/lib/api/endpoints";
+import { DrawerSessionApis, InventoryApis, SupplierApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Plus, Package, AlertTriangle, ArrowUpDown, Loader2, Filter, History, CheckCircle2, XCircle, Utensils } from "lucide-react";
+import { Search, Plus, Package, AlertTriangle, ArrowUpDown, Loader2, Filter, History, Utensils } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -31,9 +31,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { InventoryConsumptionDialog } from "@/components/inventory/inventory-consumption-dialog";
 import { InventoryActivityPanel } from "@/components/inventory/inventory-activity-panel";
+import { CashBankAccountSelect, type CashBankAccountOption } from "@/components/finance/cash-bank-account-select";
+import { ReasonCodeSelect } from "@/components/inventory/reason-code-select";
+import { InventoryItemDetailsSheet } from "@/components/inventory/inventory-item-details-sheet";
+import { StationPicker } from "@/components/stations/station-picker";
 
 export default function InventoryPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -44,29 +53,44 @@ export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [valuation, setValuation] = useState<any | null>(null);
 
-  // Advanced ops: ledger + adjustments
+  // Item details sheet -- opened by clicking a row; quick summary +
+  // shortcuts into Add/Reduce/Count Stock and the full ledger.
+  const [detailsItem, setDetailsItem] = useState<any | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  // Advanced ops: ledger history
   const [opsOpen, setOpsOpen] = useState(false);
   const [opsItem, setOpsItem] = useState<any | null>(null);
-  const [opsTab, setOpsTab] = useState<"ledger" | "adjustments">("ledger");
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledger, setLedger] = useState<{ movements: any[]; total: number } | null>(null);
-  const [adjustmentsLoading, setAdjustmentsLoading] = useState(false);
-  const [adjustments, setAdjustments] = useState<any[]>([]);
-  const [awaitingByAdjustmentId, setAwaitingByAdjustmentId] = useState<Map<number, any>>(new Map());
-  const [adjustmentActionLoading, setAdjustmentActionLoading] = useState<Set<number>>(new Set());
-  
-  // Adjustment Modal State
-  const [adjustingItem, setAdjustingItem] = useState<any>(null);
-  const [adjustForm, setAdjustForm] = useState({
-    type: "add",
+
+  // Add Stock modal state -- never creates a purchase, expense, supplier
+  // payable, payment, or supplier ledger entry, only a stock movement.
+  const [addStockItem, setAddStockItem] = useState<any>(null);
+  const [addStockForm, setAddStockForm] = useState({
     quantity: "",
-    reason: "",
-    cost: "",
-    supplier_id: "none",
-    payment_status: "pending",
-    payment_method: "cash",
+    reason_code: "stock_count_correction",
+    unit_cost: "",
+    notes: "",
   });
-  const [adjustSubmitting, setAdjustSubmitting] = useState(false);
+  const [addStockSubmitting, setAddStockSubmitting] = useState(false);
+
+  // Reduce Stock modal state -- never creates a purchase return, expense,
+  // or supplier transaction, only a stock movement.
+  const [reduceStockItem, setReduceStockItem] = useState<any>(null);
+  const [reduceStockForm, setReduceStockForm] = useState({
+    quantity: "",
+    reason_code: "waste",
+    notes: "",
+    allow_negative: false,
+  });
+  const [reduceStockSubmitting, setReduceStockSubmitting] = useState(false);
+
+  // Count Stock modal state -- records the delta between system and
+  // counted quantity as a single Add/Reduce Stock movement.
+  const [countStockItem, setCountStockItem] = useState<any>(null);
+  const [countStockForm, setCountStockForm] = useState({ counted_quantity: "", notes: "" });
+  const [countStockSubmitting, setCountStockSubmitting] = useState(false);
 
   // Add/Edit Modal State
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -74,6 +98,7 @@ export default function InventoryPage() {
   const [itemForm, setItemForm] = useState({
     name: "",
     station: "general",
+    station_id: null as number | null,
     description: "",
     unit: "",
     current_stock: "",
@@ -87,6 +112,7 @@ export default function InventoryPage() {
     is_active: true,
   });
   const [itemSubmitting, setItemSubmitting] = useState(false);
+  const [openingPaymentAccount, setOpeningPaymentAccount] = useState<CashBankAccountOption | null>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] = useState(false);
   const [cashDrawerSessions, setCashDrawerSessions] = useState<any[]>([]);
@@ -281,30 +307,8 @@ export default function InventoryPage() {
 
   const timezone = typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
 
-  const normalizePaymentStatus = (raw: any): "paid" | "pending" | "rejected" | "unknown" => {
-    if (raw === null || raw === undefined) return "unknown";
-
-    if (typeof raw === "boolean") return raw ? "paid" : "pending";
-
-    if (typeof raw === "number") {
-      // Some backends represent paid/pending as 1/0.
-      if (raw === 1) return "paid";
-      if (raw === 0) return "pending";
-    }
-
-    const s = String(raw).trim().toLowerCase();
-    if (!s) return "unknown";
-
-    if (["paid", "success", "completed", "settled", "true", "yes", "1"].includes(s)) return "paid";
-    if (["pending", "unpaid", "awaiting", "due", "false", "no", "0"].includes(s)) return "pending";
-    if (["rejected", "declined", "failed", "cancelled", "canceled"].includes(s)) return "rejected";
-
-    return "unknown";
-  };
-
-  const openOps = (item: any, tab: "ledger" | "adjustments" = "ledger") => {
+  const openOps = (item: any) => {
     setOpsItem(item);
-    setOpsTab(tab);
     setOpsOpen(true);
   };
 
@@ -334,266 +338,117 @@ export default function InventoryPage() {
     }
   };
 
-  const fetchAdjustments = async (itemId: number) => {
-    setAdjustmentsLoading(true);
-    try {
-      const res = await apiClient.get(InventoryApis.getAdjustments(itemId), {
-        params: { skip: 0, limit: 200, timezone, include: "payment_status" },
-      });
-      if (res.data?.status === "success") {
-        const data = res.data?.data;
-        const raw = Array.isArray(data)
-          ? data
-          : (data?.items || data?.adjustments || []);
-        const rows = Array.isArray(raw) ? raw : [];
-        setAdjustments(rows);
-
-        // Map active awaiting-payments to adjustments so "Mark Paid" works correctly.
-        // Backend requires using awaiting-payments endpoints for unpaid inventory adjustments.
-        try {
-          const restaurantId = user?.restaurant_id;
-          if (restaurantId) {
-            const ap = await apiClient.get(AwaitingPaymentApis.list(restaurantId, { status: "active", limit: 200 }));
-            const items = ap.data?.data?.items || [];
-            const ids = new Set(rows.map((r: any) => Number(r?.id)).filter(Boolean));
-            const map = new Map<number, any>();
-            for (const r of items) {
-              const adjId = Number(r?.inventory_adjustment_id);
-              if (!adjId) continue;
-              if (ids.has(adjId) || Number(r?.inventory_item_id) === Number(itemId)) {
-                map.set(adjId, r);
-              }
-            }
-            setAwaitingByAdjustmentId(map);
-          } else {
-            setAwaitingByAdjustmentId(new Map());
-          }
-        } catch {
-          setAwaitingByAdjustmentId(new Map());
-        }
-      } else {
-        setAdjustments([]);
-        setAwaitingByAdjustmentId(new Map());
-      }
-    } catch (err: any) {
-      toast({
-        title: "Adjustments Failed",
-        description: err.response?.data?.detail || "Could not load adjustments.",
-        variant: "destructive",
-      });
-      setAdjustments([]);
-      setAwaitingByAdjustmentId(new Map());
-    } finally {
-      setAdjustmentsLoading(false);
-    }
-  };
-
-  const markAwaitingPaymentPaidForAdjustment = async (adjId: number) => {
-    const restaurantId = user?.restaurant_id;
-    if (!restaurantId) return;
-
-    const awaiting = awaitingByAdjustmentId.get(adjId);
-    if (!awaiting?.id) {
-      toast({
-        title: "Cannot Mark Paid",
-        description: "No awaiting-payment record found for this adjustment.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setAdjustmentActionLoading((prev) => new Set(prev).add(adjId));
-    try {
-      const amount = Number(awaiting.amount || 0);
-      const paid = Number(awaiting.paid_amount || 0);
-      const remaining = Math.max(0, amount - paid);
-      const drawerSessionId = drawerSessionIdForCashPayment();
-      if (drawerSessionId === null) return;
-
-      const res = await apiClient.post(
-        AwaitingPaymentApis.markPaid(Number(awaiting.id), restaurantId),
-        {
-          paid_amount: remaining || undefined,
-          payment_method: "cash",
-          ...(drawerSessionId ? { drawer_session_id: drawerSessionId } : {}),
-        }
-      );
-
-      if (res.data?.status === "success") {
-        toast({ title: "Marked Paid", description: "Payment converted to expense successfully." });
-        if (opsItem?.id) fetchAdjustments(opsItem.id);
-      } else {
-        toast({ title: "Failed", description: res.data?.message || "Could not mark paid.", variant: "destructive" });
-      }
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.response?.data?.detail || "Could not mark paid.", variant: "destructive" });
-    } finally {
-      setAdjustmentActionLoading((prev) => {
-        const n = new Set(prev);
-        n.delete(adjId);
-        return n;
-      });
-    }
-  };
-
-  const rejectAwaitingPaymentForAdjustment = async (adjId: number) => {
-    const restaurantId = user?.restaurant_id;
-    if (!restaurantId) return;
-
-    const awaiting = awaitingByAdjustmentId.get(adjId);
-    if (!awaiting?.id) {
-      toast({
-        title: "Cannot Reject",
-        description: "No awaiting-payment record found for this adjustment.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setAdjustmentActionLoading((prev) => new Set(prev).add(adjId));
-    try {
-      const res = await apiClient.post(
-        AwaitingPaymentApis.reject(Number(awaiting.id), restaurantId),
-        { note: "Rejected from inventory history" }
-      );
-      if (res.data?.status === "success") {
-        toast({ title: "Rejected", description: "Awaiting payment rejected (stock may be reverted)." });
-        if (opsItem?.id) fetchAdjustments(opsItem.id);
-      } else {
-        toast({ title: "Failed", description: res.data?.message || "Could not reject.", variant: "destructive" });
-      }
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.response?.data?.detail || "Could not reject.", variant: "destructive" });
-    } finally {
-      setAdjustmentActionLoading((prev) => {
-        const n = new Set(prev);
-        n.delete(adjId);
-        return n;
-      });
-    }
-  };
-
-  const markAdjustmentPaid = async (adjId: number) => {
-    setAdjustmentActionLoading((prev) => new Set(prev).add(adjId));
-    try {
-      const res = await apiClient.patch(InventoryApis.markAdjustmentPayment(adjId), { payment_status: "paid" });
-      if (res.data?.status === "success") {
-        toast({ title: "Marked Paid", description: "Payment status updated." });
-        if (opsItem?.id) fetchAdjustments(opsItem.id);
-      } else {
-        toast({ title: "Failed", description: res.data?.message || "Could not mark paid.", variant: "destructive" });
-      }
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.response?.data?.detail || "Could not mark paid.", variant: "destructive" });
-    } finally {
-      setAdjustmentActionLoading((prev) => {
-        const n = new Set(prev);
-        n.delete(adjId);
-        return n;
-      });
-    }
-  };
-
-  const rejectAdjustmentPayment = async (adjId: number) => {
-    setAdjustmentActionLoading((prev) => new Set(prev).add(adjId));
-    try {
-      const res = await apiClient.post(InventoryApis.rejectAdjustmentPayment(adjId));
-      if (res.data?.status === "success") {
-        toast({ title: "Rejected", description: "Adjustment payment was rejected." });
-        if (opsItem?.id) fetchAdjustments(opsItem.id);
-      } else {
-        toast({ title: "Failed", description: res.data?.message || "Could not reject.", variant: "destructive" });
-      }
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.response?.data?.detail || "Could not reject.", variant: "destructive" });
-    } finally {
-      setAdjustmentActionLoading((prev) => {
-        const n = new Set(prev);
-        n.delete(adjId);
-        return n;
-      });
-    }
-  };
-
   useEffect(() => {
     if (!opsOpen || !opsItem?.id) return;
-    if (opsTab === "ledger") fetchLedger(opsItem.id);
-    if (opsTab === "adjustments") fetchAdjustments(opsItem.id);
+    fetchLedger(opsItem.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opsOpen, opsItem?.id, opsTab]);
+  }, [opsOpen, opsItem?.id]);
 
 
-  const handleAdjust = async (e: React.FormEvent) => {
+  const handleAddStock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adjustingItem || !adjustForm.quantity) return;
+    if (!addStockItem || !addStockForm.quantity) return;
 
-    const selectedPayment = normalizePaymentStatus((adjustForm as any).payment_status);
-    const selectedSupplierId = (adjustForm as any).supplier_id;
-    const isUnpaidStockAdd =
-      adjustForm.type === "add" &&
-      Number(adjustForm.cost || 0) > 0 &&
-      selectedPayment !== "paid";
-
-    if (isUnpaidStockAdd && (!selectedSupplierId || selectedSupplierId === "none")) {
-      toast({
-        title: "Supplier Required",
-        description: "Supplier is required for unpaid inventory purchases.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setAdjustSubmitting(true);
+    setAddStockSubmitting(true);
     try {
       const payload: any = {
-        adjustment_type: adjustForm.type,
-        quantity: Number(adjustForm.quantity),
-        reason: adjustForm.reason.trim() || undefined,
-        cost: adjustForm.cost ? Number(adjustForm.cost) : undefined,
+        quantity: Number(addStockForm.quantity),
+        reason_code: addStockForm.reason_code,
+        notes: addStockForm.notes.trim() || undefined,
+        unit_cost: addStockForm.unit_cost ? Number(addStockForm.unit_cost) : undefined,
       };
+      const response = await apiClient.post(InventoryApis.addStock(addStockItem.id), payload);
+      const result = response.data?.data;
 
-      if (adjustForm.type === 'add') {
-        payload.payment_status = (adjustForm as any).payment_status || 'pending';
-        if (payload.payment_status === "paid") {
-          payload.payment_method = (adjustForm as any).payment_method || "cash";
-          if (payload.payment_method === "cash") {
-            const drawerSessionId = drawerSessionIdForCashPayment();
-            if (drawerSessionId === null) return;
-            if (drawerSessionId) payload.drawer_session_id = drawerSessionId;
-          }
-        }
-        if ((adjustForm as any).supplier_id && (adjustForm as any).supplier_id !== "none") {
-          payload.supplier_id = Number((adjustForm as any).supplier_id);
-        }
-      }
-
-      await apiClient.post(InventoryApis.adjustInventory(adjustingItem.id), payload);
-      
       toast({
-        title: "Success",
-        description: `Successfully adjusted stock for ${adjustingItem.name}`,
+        title: "Stock added",
+        description: result
+          ? `${addStockItem.name}: ${result.previous_stock} → ${result.new_stock} ${addStockItem.unit}`
+          : `Successfully added stock for ${addStockItem.name}`,
       });
-      
-      setAdjustingItem(null);
-      setAdjustForm({
-        type: "add",
-        quantity: "",
-        reason: "",
-        cost: "",
-        supplier_id: "none",
-        payment_status: "pending",
-        payment_method: "cash",
-      });
-      
+
+      setAddStockItem(null);
+      setAddStockForm({ quantity: "", reason_code: "stock_count_correction", unit_cost: "", notes: "" });
       await fetchInventory();
     } catch (err: any) {
       toast({
-        title: "Adjustment Failed",
-        description: err.response?.data?.detail || "Could not adjust stock level.",
+        title: "Add Stock Failed",
+        description: err.response?.data?.detail || "Could not add stock.",
         variant: "destructive",
       });
     } finally {
-      setAdjustSubmitting(false);
+      setAddStockSubmitting(false);
+    }
+  };
+
+  const handleReduceStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reduceStockItem || !reduceStockForm.quantity) return;
+
+    setReduceStockSubmitting(true);
+    try {
+      const payload: any = {
+        quantity: Number(reduceStockForm.quantity),
+        reason_code: reduceStockForm.reason_code,
+        notes: reduceStockForm.notes.trim() || undefined,
+        allow_negative: reduceStockForm.allow_negative,
+      };
+      const response = await apiClient.post(InventoryApis.reduceStock(reduceStockItem.id), payload);
+      const result = response.data?.data;
+
+      toast({
+        title: "Stock reduced",
+        description: result
+          ? `${reduceStockItem.name}: ${result.previous_stock} → ${result.new_stock} ${reduceStockItem.unit}`
+          : `Successfully reduced stock for ${reduceStockItem.name}`,
+      });
+
+      setReduceStockItem(null);
+      setReduceStockForm({ quantity: "", reason_code: "waste", notes: "", allow_negative: false });
+      await fetchInventory();
+    } catch (err: any) {
+      toast({
+        title: "Reduce Stock Failed",
+        description: err.response?.data?.detail || "Could not reduce stock.",
+        variant: "destructive",
+      });
+    } finally {
+      setReduceStockSubmitting(false);
+    }
+  };
+
+  const handleCountStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!countStockItem || countStockForm.counted_quantity === "") return;
+
+    setCountStockSubmitting(true);
+    try {
+      const payload: any = {
+        counted_quantity: Number(countStockForm.counted_quantity),
+        notes: countStockForm.notes.trim() || undefined,
+        allow_negative: canOverrideNegativeStock,
+      };
+      const response = await apiClient.post(InventoryApis.stockCountCorrection(countStockItem.id), payload);
+      const result = response.data?.data;
+
+      toast({
+        title: result ? "Stock count recorded" : "No variance",
+        description: result
+          ? `${countStockItem.name}: ${result.previous_stock} → ${result.new_stock} ${countStockItem.unit}`
+          : "Counted quantity matches system quantity -- nothing to record.",
+      });
+
+      setCountStockItem(null);
+      setCountStockForm({ counted_quantity: "", notes: "" });
+      await fetchInventory();
+    } catch (err: any) {
+      toast({
+        title: "Stock Count Failed",
+        description: err.response?.data?.detail || "Could not record stock count.",
+        variant: "destructive",
+      });
+    } finally {
+      setCountStockSubmitting(false);
     }
   };
 
@@ -603,16 +458,15 @@ export default function InventoryPage() {
 
     const openingQuantity = Number(itemForm.current_stock || 0);
     const openingCost = Number(itemForm.opening_stock_total_cost || 0);
-    const isUnpaidOpeningStock =
+    const isCostedOpeningStock =
       !editingItem &&
       openingQuantity > 0 &&
-      openingCost > 0 &&
-      itemForm.opening_stock_payment_status !== "paid";
+      openingCost > 0;
 
-    if (isUnpaidOpeningStock && (!itemForm.supplier_id || itemForm.supplier_id === "none")) {
+    if (isCostedOpeningStock && (!itemForm.supplier_id || itemForm.supplier_id === "none")) {
       toast({
         title: "Supplier Required",
-        description: "Supplier is required for unpaid inventory purchases.",
+        description: "Supplier is required for every costed inventory purchase.",
         variant: "destructive",
       });
       return;
@@ -621,44 +475,53 @@ export default function InventoryPage() {
     setItemSubmitting(true);
     try {
       if (editingItem) {
+        const isCapitalized =
+          editingItem.accounting_profile?.treatment === "inventory_asset" ||
+          Number(editingItem.book_quantity || 0) !== 0 ||
+          Number(editingItem.book_unit_cost || 0) !== 0;
         const updatePayload = {
           name: itemForm.name,
           unit: itemForm.unit,
           description: itemForm.description || null,
           min_stock_level: Number(itemForm.min_stock_level),
-          cost_per_unit: itemForm.cost_per_unit ? Number(itemForm.cost_per_unit) : null,
+          ...(!isCapitalized && itemForm.cost_per_unit
+            ? { cost_per_unit: Number(itemForm.cost_per_unit) }
+            : {}),
           supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
-          location: itemForm.location || null,
+          storage_location: itemForm.location || null,
           station: itemForm.station,
+          station_id: itemForm.station_id,
           is_active: itemForm.is_active,
         };
         await apiClient.patch(InventoryApis.updateInventoryItem(editingItem.id), updatePayload);
       } else {
-        let openingDrawerSessionId: number | undefined;
-        if (
-          itemForm.opening_stock_payment_status === "paid" &&
-          itemForm.opening_stock_payment_method === "cash"
-        ) {
-          const drawerSessionId = drawerSessionIdForCashPayment();
-          if (drawerSessionId === null) return;
-          if (drawerSessionId) openingDrawerSessionId = drawerSessionId;
+        if (isCostedOpeningStock && itemForm.opening_stock_payment_status === "paid") {
+          if (!openingPaymentAccount) {
+            toast({ title: "Account Required", description: "Select the account used to pay for the opening stock.", variant: "destructive" });
+            return;
+          }
         }
         const createPayload = {
           restaurant_id: user.restaurant_id,
           name: itemForm.name,
           station: itemForm.station,
+          station_id: itemForm.station_id,
           description: itemForm.description || null,
           unit: itemForm.unit,
           current_stock: Number(itemForm.current_stock),
           min_stock_level: Number(itemForm.min_stock_level),
           opening_stock_total_cost: itemForm.opening_stock_total_cost ? Number(itemForm.opening_stock_total_cost) : null,
           opening_stock_payment_status: itemForm.opening_stock_payment_status,
-          opening_stock_payment_method: itemForm.opening_stock_payment_status === "paid"
-            ? itemForm.opening_stock_payment_method
-            : null,
-          opening_stock_drawer_session_id: openingDrawerSessionId,
+          opening_stock_account_type:
+            isCostedOpeningStock && itemForm.opening_stock_payment_status === "paid"
+              ? openingPaymentAccount?.account_type ?? null
+              : null,
+          opening_stock_account_id:
+            isCostedOpeningStock && itemForm.opening_stock_payment_status === "paid"
+              ? openingPaymentAccount?.id ?? null
+              : null,
           supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
-          location: itemForm.location || null,
+          storage_location: itemForm.location || null,
           is_active: itemForm.is_active,
         };
         await apiClient.post(InventoryApis.createInventoryItem, createPayload);
@@ -683,24 +546,28 @@ export default function InventoryPage() {
     }
   };
 
-  const openAdjust = (item: any) => {
-    setAdjustingItem(item);
-    setAdjustForm({ 
-        type: "add", 
-        quantity: "", 
-        reason: "", 
-        cost: "",
-        payment_status: "pending",
-        payment_method: "cash",
-        supplier_id: item.supplier_id?.toString() || "none",
-    });
+  const openAddStock = (item: any) => {
+    setAddStockItem(item);
+    setAddStockForm({ quantity: "", reason_code: "stock_count_correction", unit_cost: "", notes: "" });
+  };
+
+  const openReduceStock = (item: any) => {
+    setReduceStockItem(item);
+    setReduceStockForm({ quantity: "", reason_code: "waste", notes: "", allow_negative: false });
+  };
+
+  const openCountStock = (item: any) => {
+    setCountStockItem(item);
+    setCountStockForm({ counted_quantity: String(item.current_stock ?? ""), notes: "" });
   };
 
   const openAdd = () => {
     setEditingItem(null);
+    setOpeningPaymentAccount(null);
     setItemForm({
       name: "",
       station: "general",
+      station_id: null,
       description: "",
       unit: "",
       current_stock: "",
@@ -718,9 +585,11 @@ export default function InventoryPage() {
 
   const openEdit = (item: any) => {
     setEditingItem(item);
+    setOpeningPaymentAccount(null);
     setItemForm({
       name: item.name || "",
       station: item.station || "general",
+      station_id: item.station_id ?? null,
       description: item.description || "",
       unit: item.unit || "",
       current_stock: item.current_stock?.toString() || "0",
@@ -730,7 +599,7 @@ export default function InventoryPage() {
       opening_stock_payment_status: "paid",
       opening_stock_payment_method: "cash",
       supplier_id: item.supplier_id?.toString() || "none",
-      location: item.location || "",
+      location: item.storage_location || "",
       is_active: item.is_active ?? true,
     });
     setIsAddDialogOpen(true);
@@ -787,21 +656,22 @@ export default function InventoryPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card className="rounded-lg">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">Inventory asset value</p>
+            <p className="text-xs font-medium text-muted-foreground">Book inventory value</p>
             <p className="mt-1 text-xl font-semibold">
               Rs. {Number(valuation?.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </p>
+            <p className="mt-1 text-[11px] text-muted-foreground">Reconciles to the inventory asset in finance reports.</p>
           </CardContent>
         </Card>
         <Card className="rounded-lg">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">Valued stock items</p>
+            <p className="text-xs font-medium text-muted-foreground">Book-valued stock items</p>
             <p className="mt-1 text-xl font-semibold">{Number(valuation?.valued_items || 0)}</p>
           </CardContent>
         </Card>
         <Card className="rounded-lg">
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">Missing cost valuation</p>
+            <p className="text-xs font-medium text-muted-foreground">Missing book valuation</p>
             <p className={cn("mt-1 text-xl font-semibold", Number(valuation?.unvalued_items || 0) > 0 && "text-amber-600") }>
               {Number(valuation?.unvalued_items || 0)}
             </p>
@@ -844,8 +714,8 @@ export default function InventoryPage() {
                 <th className="px-6 py-4">Station</th>
                 <th className="px-6 py-4">Unit</th>
                 <th className="px-6 py-4">Stock Level</th>
-                <th className="px-6 py-4">Cost</th>
-                <th className="px-6 py-4">Value</th>
+                <th className="px-6 py-4">Book cost</th>
+                <th className="px-6 py-4">Book value</th>
                 <th className="px-6 py-4 text-right">Actions</th>
 
               </tr>
@@ -856,7 +726,14 @@ export default function InventoryPage() {
                 const q = searchQuery.toLowerCase();
                 return (item.name || "").toLowerCase().includes(q) || (item.category || "").toLowerCase().includes(q);
               }).map((item) => (
-                <tr key={item.id} className="hover:bg-muted/50 transition-colors">
+                <tr
+                  key={item.id}
+                  className="hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => {
+                    setDetailsItem(item);
+                    setDetailsOpen(true);
+                  }}
+                >
                   <td className="px-6 py-4 font-medium text-foreground">
                     <div className="flex flex-col">
                       <div className="flex items-center">
@@ -872,8 +749,8 @@ export default function InventoryPage() {
                           </Badge>
                         )}
                       </div>
-                      {item.location && (
-                        <span className="text-[10px] text-muted-foreground">Loc: {item.location}</span>
+                      {item.storage_location && (
+                        <span className="text-[10px] text-muted-foreground">Loc: {item.storage_location}</span>
                       )}
                     </div>
                   </td>
@@ -889,17 +766,19 @@ export default function InventoryPage() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-muted-foreground">Rs. {item.cost_per_unit || 0}</td>
+                  <td className="px-6 py-4 text-muted-foreground">
+                    Rs. {Number(valuationByItemId.get(Number(item.id))?.book_unit_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </td>
                   <td className="px-6 py-4 font-medium">
                     Rs. {Number(valuationByItemId.get(Number(item.id))?.inventory_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="px-6 py-4 text-right space-x-2">
+                  <td className="px-6 py-4 text-right space-x-2" onClick={(e) => e.stopPropagation()}>
                     <Button
                       variant="ghost"
                       size="sm"
                       className="h-8 text-muted-foreground hover:text-foreground"
-                      onClick={() => openOps(item, "ledger")}
-                      title="View ledger & adjustments"
+                      onClick={() => openOps(item)}
+                      title="View ledger"
                     >
                       <History className="w-4 h-4 mr-1.5" />
                       History
@@ -912,14 +791,28 @@ export default function InventoryPage() {
                     >
                       Edit
                     </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 text-primary hover:text-primary/80"
-                      onClick={() => openAdjust(item)}
-                    >
-                      Adjust
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-primary hover:text-primary/80"
+                        >
+                          Stock
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openAddStock(item)}>
+                          Add Stock
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openReduceStock(item)}>
+                          Reduce Stock
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openCountStock(item)}>
+                          Count Stock
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
 
@@ -943,187 +836,257 @@ export default function InventoryPage() {
         />
       ) : null}
 
-      {/* Adjust Stock Dialog */}
-      <Dialog open={!!adjustingItem} onOpenChange={(open) => !open && setAdjustingItem(null)}>
+      {/* Add Stock Dialog */}
+      <Dialog open={!!addStockItem} onOpenChange={(open) => !open && setAddStockItem(null)}>
         <DialogContent className="sm:max-w-[425px]">
-          <form onSubmit={handleAdjust}>
+          <form onSubmit={handleAddStock}>
             <DialogHeader>
-              <DialogTitle>Adjust Stock: {adjustingItem?.name}</DialogTitle>
+              <DialogTitle>Add Stock: {addStockItem?.name}</DialogTitle>
               <DialogDescription>
-                Update stock level and record the reason for this change.
+                Use this only for a verified count surplus or genuinely free stock. It updates
+                inventory value and posts the matching variance or inventory-gain entry. Stock
+                received from a supplier must be recorded in Purchases.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-4 bg-muted/50 p-3 rounded-lg border border-border">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-muted-foreground">Current Stock:</span>
-                  <span className="text-sm font-bold">{adjustingItem?.current_stock} {adjustingItem?.unit}</span>
+                  <span className="text-sm font-bold">{addStockItem?.current_stock} {addStockItem?.unit}</span>
                 </div>
-                {adjustForm.quantity && (
+                {addStockForm.quantity && (
                   <div className="flex justify-between items-center pt-2 border-t border-border">
                     <span className="text-sm font-medium text-muted-foreground">New Total:</span>
-                    <span className={cn(
-                      "text-sm font-bold",
-                      (adjustForm.type === 'correction' 
-                        ? Number(adjustForm.quantity) 
-                        : (Number(adjustingItem?.current_stock) + (adjustForm.type === 'add' ? Number(adjustForm.quantity) : -Number(adjustForm.quantity)))) >= (adjustingItem?.min_stock_level || 0) 
-                        ? "text-emerald-600" 
-                        : "text-red-500"
-                    )}>
-                      {adjustForm.type === 'correction' 
-                        ? Number(adjustForm.quantity) 
-                        : (Number(adjustingItem?.current_stock) + (adjustForm.type === 'add' ? Number(adjustForm.quantity) : -Number(adjustForm.quantity)))} {adjustingItem?.unit}
+                    <span className="text-sm font-bold text-emerald-600">
+                      {Number(addStockItem?.current_stock || 0) + Number(addStockForm.quantity)} {addStockItem?.unit}
                     </span>
                   </div>
                 )}
               </div>
-
-
               <div className="grid gap-2">
-                <Label htmlFor="type">Adjustment Type</Label>
-                <Select 
-                  value={adjustForm.type} 
-                  onValueChange={(v) => setAdjustForm({ ...adjustForm, type: v })}
-                >
-                  <SelectTrigger id="type">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="add">Add Stock (Purchase)</SelectItem>
-                    <SelectItem value="waste">Waste / Damage</SelectItem>
-                    <SelectItem value="return">Return to Supplier</SelectItem>
-                    <SelectItem value="correction">Set New Total (Correction)</SelectItem>
-                  </SelectContent>
-                </Select>
-                {adjustForm.type === 'correction' && (
-                  <p className="text-[10px] text-muted-foreground italic">
-                    Use this to set the exact physical count if system count is wrong.
-                  </p>
-                )}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="quantity">
-                  {adjustForm.type === 'correction' ? 'New Total Count' : 'Adjust Quantity'} ({adjustingItem?.unit})
-                </Label>
+                <Label htmlFor="add_quantity">Quantity ({addStockItem?.unit})</Label>
                 <Input
-                  id="quantity"
+                  id="add_quantity"
                   type="number"
-                  step="0.01"
+                  step="0.001"
+                  min="0.001"
                   required
                   placeholder="0.00"
-                  value={adjustForm.quantity}
-                  onChange={(e) => setAdjustForm({ ...adjustForm, quantity: e.target.value })}
+                  value={addStockForm.quantity}
+                  onChange={(e) => setAddStockForm({ ...addStockForm, quantity: e.target.value })}
                 />
               </div>
-              {adjustForm.type === 'add' && (
-                <>
-                  <div className="grid gap-2">
-                    <Label htmlFor="cost">Total Cost (NPR)</Label>
-                    <Input
-                      id="cost"
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={adjustForm.cost}
-                      onChange={(e) => setAdjustForm({ ...adjustForm, cost: e.target.value })}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                        <Label htmlFor="adjust_supplier">
-                          Supplier {adjustForm.payment_status !== "paid" ? "*" : ""}
-                        </Label>
-                        <Select 
-                            value={(adjustForm as any).supplier_id || "none"} 
-                            onValueChange={(v) => setAdjustForm({ ...adjustForm, supplier_id: v } as any)}
-                        >
-                            <SelectTrigger id="adjust_supplier">
-                                <SelectValue placeholder="Select supplier" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="none" disabled={adjustForm.payment_status !== "paid"}>
-                                  No Supplier
-                                </SelectItem>
-                                {Array.isArray(suppliers) && suppliers.map((s) => (
-                                    <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="grid gap-2">
-                        <Label htmlFor="payment_status">Payment Status</Label>
-                        <Select 
-                            value={(adjustForm as any).payment_status || "pending"} 
-                            onValueChange={(v) => setAdjustForm({ ...adjustForm, payment_status: v } as any)}
-                        >
-                            <SelectTrigger id="payment_status">
-                                <SelectValue placeholder="Select status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="paid">Paid Now</SelectItem>
-                                <SelectItem value="pending">Unpaid / Supplier Payable</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                  </div>
-                  {adjustForm.payment_status === "paid" && (
-                    <div className="grid gap-2">
-                      <Label htmlFor="adjust_payment_method">Payment Method</Label>
-                      <Select
-                        value={(adjustForm as any).payment_method || "cash"}
-                        onValueChange={(v) => setAdjustForm({ ...adjustForm, payment_method: v } as any)}
-                      >
-                        <SelectTrigger id="adjust_payment_method">
-                          <SelectValue placeholder="Select payment method" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PAYMENT_METHOD_OPTIONS.map((method) => (
-                            <SelectItem key={method.value} value={method.value}>
-                              {method.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  {adjustForm.payment_status === "paid" && adjustForm.payment_method === "cash" && (
-                    <div className="md:col-span-2">
-                      {renderCashDrawerSelect("adjust_cash_drawer")}
-                    </div>
-                  )}
-                </>
-              )}
+              <ReasonCodeSelect
+                operation="add"
+                value={addStockForm.reason_code}
+                onChange={(v) => setAddStockForm({ ...addStockForm, reason_code: v })}
+              />
               <div className="grid gap-2">
-                <Label htmlFor="reason">Reason / Note</Label>
+                <Label htmlFor="add_unit_cost">Unit Cost (NPR, optional)</Label>
                 <Input
-                  id="reason"
-                  placeholder="e.g. Monthly restock, broken bottle..."
-                  value={adjustForm.reason}
-                  onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value })}
+                  id="add_unit_cost"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={addStockForm.unit_cost}
+                  onChange={(e) => setAddStockForm({ ...addStockForm, unit_cost: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used for valuation only -- does not create an expense or payment.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="add_notes">Notes</Label>
+                <Input
+                  id="add_notes"
+                  placeholder="e.g. Complimentary sample from supplier"
+                  value={addStockForm.notes}
+                  onChange={(e) => setAddStockForm({ ...addStockForm, notes: e.target.value })}
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button 
-                variant="outline" 
-                type="button" 
-                onClick={() => setAdjustingItem(null)}
-                disabled={adjustSubmitting}
-              >
+              <Button variant="outline" type="button" onClick={() => setAddStockItem(null)} disabled={addStockSubmitting}>
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
-                className="bg-orange-600 hover:bg-orange-700 text-white"
-                disabled={adjustSubmitting}
-              >
-                {adjustSubmitting ? (
+              <Button type="submit" className="bg-orange-600 hover:bg-orange-700 text-white" disabled={addStockSubmitting}>
+                {addStockSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Saving...
                   </>
                 ) : (
-                  adjustForm.type === 'add' ? 'Receive Stock' : 'Save Adjustment'
+                  "Add Stock"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reduce Stock Dialog */}
+      <Dialog open={!!reduceStockItem} onOpenChange={(open) => !open && setReduceStockItem(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <form onSubmit={handleReduceStock}>
+            <DialogHeader>
+              <DialogTitle>Reduce Stock: {reduceStockItem?.name}</DialogTitle>
+              <DialogDescription>
+                Use this only for waste, damage, expiry, or a verified count shortage. It reduces
+                inventory value and records the matching expense or variance. Preparation, staff
+                meals, complimentary items, and testing belong in Consume stock.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-4 bg-muted/50 p-3 rounded-lg border border-border">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-muted-foreground">Current Stock:</span>
+                  <span className="text-sm font-bold">{reduceStockItem?.current_stock} {reduceStockItem?.unit}</span>
+                </div>
+                {reduceStockForm.quantity && (
+                  <div className="flex justify-between items-center pt-2 border-t border-border">
+                    <span className="text-sm font-medium text-muted-foreground">New Total:</span>
+                    <span className={cn(
+                      "text-sm font-bold",
+                      Number(reduceStockItem?.current_stock || 0) - Number(reduceStockForm.quantity) >= 0
+                        ? "text-emerald-600"
+                        : "text-red-500"
+                    )}>
+                      {Number(reduceStockItem?.current_stock || 0) - Number(reduceStockForm.quantity)} {reduceStockItem?.unit}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="reduce_quantity">Quantity ({reduceStockItem?.unit})</Label>
+                <Input
+                  id="reduce_quantity"
+                  type="number"
+                  step="0.001"
+                  min="0.001"
+                  required
+                  placeholder="0.00"
+                  value={reduceStockForm.quantity}
+                  onChange={(e) => setReduceStockForm({ ...reduceStockForm, quantity: e.target.value })}
+                />
+              </div>
+              <ReasonCodeSelect
+                operation="reduce"
+                value={reduceStockForm.reason_code}
+                onChange={(v) => setReduceStockForm({ ...reduceStockForm, reason_code: v })}
+              />
+              <div className="grid gap-2">
+                <Label htmlFor="reduce_notes">Notes</Label>
+                <Input
+                  id="reduce_notes"
+                  placeholder="e.g. Bottle broken during service"
+                  value={reduceStockForm.notes}
+                  onChange={(e) => setReduceStockForm({ ...reduceStockForm, notes: e.target.value })}
+                />
+              </div>
+              {canOverrideNegativeStock && (
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="reduce_allow_negative">Allow negative stock</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Requires the restaurant's negative-stock setting to be enabled too.
+                    </p>
+                  </div>
+                  <Switch
+                    id="reduce_allow_negative"
+                    checked={reduceStockForm.allow_negative}
+                    onCheckedChange={(checked) => setReduceStockForm({ ...reduceStockForm, allow_negative: checked })}
+                  />
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => setReduceStockItem(null)} disabled={reduceStockSubmitting}>
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-orange-600 hover:bg-orange-700 text-white" disabled={reduceStockSubmitting}>
+                {reduceStockSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Reduce Stock"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Count Stock Dialog */}
+      <Dialog open={!!countStockItem} onOpenChange={(open) => !open && setCountStockItem(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <form onSubmit={handleCountStock}>
+            <DialogHeader>
+              <DialogTitle>Count Stock: {countStockItem?.name}</DialogTitle>
+              <DialogDescription>
+                Enter the physical counted quantity. The system records the
+                difference as an Add Stock or Reduce Stock movement -- it never
+                silently overwrites the current quantity.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-4 bg-muted/50 p-3 rounded-lg border border-border">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-muted-foreground">System Quantity:</span>
+                  <span className="text-sm font-bold">{countStockItem?.current_stock} {countStockItem?.unit}</span>
+                </div>
+                {countStockForm.counted_quantity !== "" && (
+                  <div className="flex justify-between items-center pt-2 border-t border-border">
+                    <span className="text-sm font-medium text-muted-foreground">Variance:</span>
+                    <span className={cn(
+                      "text-sm font-bold",
+                      Number(countStockForm.counted_quantity) - Number(countStockItem?.current_stock || 0) >= 0
+                        ? "text-emerald-600"
+                        : "text-red-500"
+                    )}>
+                      {Number(countStockForm.counted_quantity) - Number(countStockItem?.current_stock || 0) >= 0 ? "+" : ""}
+                      {Number(countStockForm.counted_quantity) - Number(countStockItem?.current_stock || 0)} {countStockItem?.unit}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="counted_quantity">Counted Quantity ({countStockItem?.unit})</Label>
+                <Input
+                  id="counted_quantity"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  required
+                  placeholder="0.00"
+                  value={countStockForm.counted_quantity}
+                  onChange={(e) => setCountStockForm({ ...countStockForm, counted_quantity: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="count_notes">Notes</Label>
+                <Input
+                  id="count_notes"
+                  placeholder="e.g. Monthly physical count"
+                  value={countStockForm.notes}
+                  onChange={(e) => setCountStockForm({ ...countStockForm, notes: e.target.value })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => setCountStockItem(null)} disabled={countStockSubmitting}>
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-orange-600 hover:bg-orange-700 text-white" disabled={countStockSubmitting}>
+                {countStockSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Record Count"
                 )}
               </Button>
             </DialogFooter>
@@ -1168,6 +1131,16 @@ export default function InventoryPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="grid gap-2">
+                {user?.restaurant_id && (
+                  <StationPicker
+                    label="Station (cost centre)"
+                    restaurantId={user.restaurant_id}
+                    value={itemForm.station_id}
+                    onChange={(stationId) => setItemForm({ ...itemForm, station_id: stationId })}
+                  />
+                )}
+              </div>
               <div className="grid gap-2 md:col-span-2">
                 <Label htmlFor="description">Description (Optional)</Label>
                 <Input
@@ -1201,47 +1174,40 @@ export default function InventoryPage() {
                       onChange={(e) => setItemForm({ ...itemForm, opening_stock_total_cost: e.target.value })}
                     />
                   </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="opening_payment_status">Opening Stock Payment</Label>
-                    <Select 
-                      value={itemForm.opening_stock_payment_status} 
-                      onValueChange={(v) => setItemForm({ ...itemForm, opening_stock_payment_status: v })}
-                    >
-                      <SelectTrigger id="opening_payment_status">
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="paid">Paid Now</SelectItem>
-                        <SelectItem value="pending">Unpaid / Supplier Payable</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {itemForm.opening_stock_payment_status === "paid" && (
-                    <div className="grid gap-2">
-                      <Label htmlFor="opening_payment_method">Opening Payment Method</Label>
-                      <Select
-                        value={itemForm.opening_stock_payment_method}
-                        onValueChange={(v) => setItemForm({ ...itemForm, opening_stock_payment_method: v })}
-                      >
-                        <SelectTrigger id="opening_payment_method">
-                          <SelectValue placeholder="Select payment method" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PAYMENT_METHOD_OPTIONS.map((method) => (
-                            <SelectItem key={method.value} value={method.value}>
-                              {method.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  {itemForm.opening_stock_payment_status === "paid" &&
-                    itemForm.opening_stock_payment_method === "cash" && (
-                      <div className="md:col-span-2">
-                        {renderCashDrawerSelect("opening_cash_drawer")}
+                  {Number(itemForm.opening_stock_total_cost || 0) > 0 && (
+                    <>
+                      <div className="grid gap-2">
+                        <Label htmlFor="opening_payment_status">Opening stock settlement</Label>
+                        <Select
+                          value={itemForm.opening_stock_payment_status}
+                          onValueChange={(v) => setItemForm({ ...itemForm, opening_stock_payment_status: v })}
+                        >
+                          <SelectTrigger id="opening_payment_status">
+                            <SelectValue placeholder="Select settlement" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="paid">Paid now</SelectItem>
+                            <SelectItem value="pending">Unpaid - supplier payable</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          This is a stock purchase. A payment method is derived from its custody account and is not selected separately.
+                        </p>
                       </div>
-                    )}
+                      {itemForm.opening_stock_payment_status === "paid" && (
+                        <div className="md:col-span-2">
+                          <CashBankAccountSelect
+                            label="Paid from account"
+                            value={openingPaymentAccount}
+                            onChange={setOpeningPaymentAccount}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Choose the drawer, safe, bank, or owner account that paid for this stock. The selected account—not a payment method—will be reduced.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </>
               )}
               <div className="grid gap-2">
@@ -1276,7 +1242,7 @@ export default function InventoryPage() {
 
               <div className="grid gap-2">
                 <Label htmlFor="supplier">
-                  Supplier {!editingItem && itemForm.opening_stock_payment_status !== "paid" ? "*" : ""}
+                  Supplier {!editingItem && Number(itemForm.current_stock || 0) > 0 && Number(itemForm.opening_stock_total_cost || 0) > 0 ? "*" : ""}
                 </Label>
                 <Select 
                   value={itemForm.supplier_id || "none"} 
@@ -1288,7 +1254,7 @@ export default function InventoryPage() {
                   <SelectContent>
                     <SelectItem
                       value="none"
-                      disabled={!editingItem && itemForm.opening_stock_payment_status !== "paid"}
+                      disabled={!editingItem && Number(itemForm.current_stock || 0) > 0 && Number(itemForm.opening_stock_total_cost || 0) > 0}
                     >
                       No Supplier
                     </SelectItem>
@@ -1309,15 +1275,31 @@ export default function InventoryPage() {
               </div>
               {editingItem && (
                 <div className="grid gap-2">
-                  <Label htmlFor="cost_per_unit">Cost per Unit (NPR)</Label>
-                  <Input
-                    id="cost_per_unit"
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={itemForm.cost_per_unit}
-                    onChange={(e) => setItemForm({ ...itemForm, cost_per_unit: e.target.value })}
-                  />
+                  {editingItem.accounting_profile?.treatment === "inventory_asset" ||
+                  Number(editingItem.book_quantity || 0) !== 0 ||
+                  Number(editingItem.book_unit_cost || 0) !== 0 ? (
+                    <div className="rounded-lg border border-border bg-muted/30 p-3">
+                      <p className="text-sm font-medium">Inventory cost: Rs. {Number(editingItem.book_unit_cost || 0).toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        This weighted-average cost is derived from received purchases and approved valuation corrections.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <Label htmlFor="cost_per_unit">Reference cost per unit (NPR)</Label>
+                      <Input
+                        id="cost_per_unit"
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={itemForm.cost_per_unit}
+                        onChange={(e) => setItemForm({ ...itemForm, cost_per_unit: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Used for recipe and waste estimates only. This direct-expense item has no Balance Sheet value.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
               <div className="flex items-center justify-between pt-4 md:col-span-2 border-t border-border mt-2">
@@ -1363,7 +1345,33 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Inventory Advanced Ops: Ledger + Adjustments */}
+      <InventoryItemDetailsSheet
+        item={detailsItem}
+        value={valuationByItemId.get(Number(detailsItem?.id))?.inventory_value}
+        open={detailsOpen}
+        onOpenChange={(open) => {
+          setDetailsOpen(open);
+          if (!open) setDetailsItem(null);
+        }}
+        onAddStock={(target) => {
+          setDetailsOpen(false);
+          openAddStock(target);
+        }}
+        onReduceStock={(target) => {
+          setDetailsOpen(false);
+          openReduceStock(target);
+        }}
+        onCountStock={(target) => {
+          setDetailsOpen(false);
+          openCountStock(target);
+        }}
+        onViewLedger={(target) => {
+          setDetailsOpen(false);
+          openOps(target);
+        }}
+      />
+
+      {/* Inventory Advanced Ops: Ledger */}
       <Dialog
         open={opsOpen}
         onOpenChange={(open) => {
@@ -1371,7 +1379,6 @@ export default function InventoryPage() {
           if (!open) {
             setOpsItem(null);
             setLedger(null);
-            setAdjustments([]);
           }
         }}
       >
@@ -1381,189 +1388,64 @@ export default function InventoryPage() {
               Inventory History
             </DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
-              Ledger movements and adjustment payment status for <span className="font-semibold text-foreground">{opsItem?.name || "item"}</span>.
+              Ledger movements for <span className="font-semibold text-foreground">{opsItem?.name || "item"}</span>.
             </DialogDescription>
           </DialogHeader>
 
           <div className="p-6 flex-1 min-h-0 overflow-auto">
-            <Tabs value={opsTab} onValueChange={(v) => setOpsTab(v as any)} className="w-full">
-              <TabsList className="bg-muted/30 border border-border/60 rounded-2xl p-1 h-11">
-                <TabsTrigger value="ledger" className="rounded-xl px-4 font-bold">Ledger</TabsTrigger>
-                <TabsTrigger value="adjustments" className="rounded-xl px-4 font-bold">Adjustments</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="ledger" className="mt-5">
-                {ledgerLoading ? (
-                  <div className="h-48 flex items-center justify-center text-muted-foreground">
-                    <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading ledger…
-                  </div>
-                ) : (ledger?.movements || []).length === 0 ? (
-                  <div className="h-48 flex items-center justify-center text-muted-foreground border border-dashed border-border rounded-2xl bg-muted/10">
-                    No ledger movements found.
-                  </div>
-                ) : (
-                  <div className="border border-border/60 rounded-2xl overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                      <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border">
-                        <tr>
-                          <th className="px-5 py-3">Time</th>
-                          <th className="px-5 py-3">Source</th>
-                          <th className="px-5 py-3">Reason</th>
-                          <th className="px-5 py-3 text-right">Delta</th>
-                          <th className="px-5 py-3 text-right">Balance</th>
-                          <th className="px-5 py-3 text-right">Cost</th>
+            {ledgerLoading ? (
+              <div className="h-48 flex items-center justify-center text-muted-foreground">
+                <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading ledger…
+              </div>
+            ) : (ledger?.movements || []).length === 0 ? (
+              <div className="h-48 flex items-center justify-center text-muted-foreground border border-dashed border-border rounded-2xl bg-muted/10">
+                No ledger movements found.
+              </div>
+            ) : (
+              <div className="border border-border/60 rounded-2xl overflow-hidden">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border">
+                    <tr>
+                      <th className="px-5 py-3">Time</th>
+                      <th className="px-5 py-3">Source</th>
+                      <th className="px-5 py-3">Reason</th>
+                      <th className="px-5 py-3 text-right">Delta</th>
+                      <th className="px-5 py-3 text-right">Balance</th>
+                      <th className="px-5 py-3 text-right">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(ledger?.movements || []).map((m, idx) => {
+                      const delta = Number(m.qty_delta ?? 0);
+                      const neg = !!m.is_negative || delta < 0;
+                      const balance = m.resulting_balance ?? m.resultingBalance;
+                      const unitCost = m.unit_cost ?? m.unitCost ?? m.unit_cost_snapshot;
+                      const totalCost = m.total_cost ?? m.totalCost ?? m.value_delta_snapshot;
+                      return (
+                        <tr key={m.id || idx} className="hover:bg-muted/20 transition-colors">
+                          <td className="px-5 py-3 font-semibold">
+                            {m.created_at ? new Date(m.created_at).toLocaleString() : "—"}
+                          </td>
+                          <td className="px-5 py-3 text-muted-foreground">{m.source_type || "—"}</td>
+                          <td className="px-5 py-3 text-muted-foreground">{m.reason || "—"}</td>
+                          <td className={cn("px-5 py-3 text-right font-bold", neg ? "text-red-500" : "text-emerald-500")}>
+                            {delta.toLocaleString()}
+                          </td>
+                          <td className="px-5 py-3 text-right font-bold">{Number(balance ?? 0).toLocaleString()}</td>
+                          <td className="px-5 py-3 text-right text-muted-foreground">
+                            {totalCost != null
+                              ? `Rs. ${Number(totalCost).toLocaleString()}`
+                              : unitCost != null
+                              ? `Rs. ${Number(unitCost).toLocaleString()}/unit`
+                              : "—"}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {(ledger?.movements || []).map((m, idx) => {
-                          const delta = Number(m.qty_delta ?? 0);
-                          const neg = !!m.is_negative || delta < 0;
-                          const balance = m.resulting_balance ?? m.resultingBalance;
-                          const unitCost = m.unit_cost ?? m.unitCost;
-                          const totalCost = m.total_cost ?? m.totalCost;
-                          return (
-                            <tr key={m.id || idx} className="hover:bg-muted/20 transition-colors">
-                              <td className="px-5 py-3 font-semibold">
-                                {m.created_at ? new Date(m.created_at).toLocaleString() : "—"}
-                              </td>
-                              <td className="px-5 py-3 text-muted-foreground">{m.source_type || "—"}</td>
-                              <td className="px-5 py-3 text-muted-foreground">{m.reason || "—"}</td>
-                              <td className={cn("px-5 py-3 text-right font-bold", neg ? "text-red-500" : "text-emerald-500")}>
-                                {delta.toLocaleString()}
-                              </td>
-                              <td className="px-5 py-3 text-right font-bold">{Number(balance ?? 0).toLocaleString()}</td>
-                              <td className="px-5 py-3 text-right text-muted-foreground">
-                                {totalCost != null
-                                  ? `Rs. ${Number(totalCost).toLocaleString()}`
-                                  : unitCost != null
-                                  ? `Rs. ${Number(unitCost).toLocaleString()}/unit`
-                                  : "—"}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="adjustments" className="mt-5">
-                {cashDrawerControlsEnabled && adjustments.some((a) => awaitingByAdjustmentId.get(Number(a.id))?.id) && (
-                  <div className="mb-4 max-w-md rounded-2xl border border-border/60 bg-muted/20 p-4">
-                    {renderCashDrawerSelect("history_cash_drawer")}
-                  </div>
-                )}
-                {adjustmentsLoading ? (
-                  <div className="h-48 flex items-center justify-center text-muted-foreground">
-                    <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading adjustments…
-                  </div>
-                ) : adjustments.length === 0 ? (
-                  <div className="h-48 flex items-center justify-center text-muted-foreground border border-dashed border-border rounded-2xl bg-muted/10">
-                    No adjustments found.
-                  </div>
-                ) : (
-                  <div className="border border-border/60 rounded-2xl overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                      <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border">
-                        <tr>
-                          <th className="px-5 py-3">Time</th>
-                          <th className="px-5 py-3">Type</th>
-                          <th className="px-5 py-3">Qty</th>
-                          <th className="px-5 py-3">Stock</th>
-                          <th className="px-5 py-3">Cost</th>
-                          <th className="px-5 py-3">Payment</th>
-                          <th className="px-5 py-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-	                      <tbody className="divide-y divide-border">
-	                        {adjustments.map((a) => {
-	                          const awaiting = awaitingByAdjustmentId.get(Number(a.id));
-	                          const rawPaymentStatus =
-	                            a.payment_status ??
-	                            (a as any).paymentStatus ??
-	                            (a as any).source_payment_status ??
-	                            (a as any).sourcePaymentStatus ??
-	                            (a as any).awaiting_payment_status ??
-	                            (a as any).awaitingPaymentStatus ??
-	                            (a as any).awaiting_payment?.payment_status ??
-	                            (a as any).awaitingPayment?.payment_status ??
-	                            (a as any).payment?.status ??
-	                            (a as any).paid ??
-	                            (a as any).is_paid ??
-	                            (a as any).isPaid ??
-	                            (a as any).paid_at ??
-	                            (a as any).paidAt;
-
-	                          const payment = normalizePaymentStatus(rawPaymentStatus);
-	                          const awaitingStatus = awaiting?.payment_status ? String(awaiting.payment_status).toLowerCase() : "";
-	                          const isPaid = payment === "paid";
-	                          const isRejected = payment === "rejected";
-	                          const isPending = !isPaid && (awaiting ? true : (payment === "pending" || payment === "unknown"));
-	                          const canAct = Boolean(awaiting?.id) && isPending;
-	                          const busy = adjustmentActionLoading.has(Number(a.id));
-	                          return (
-	                            <tr key={a.id} className="hover:bg-muted/20 transition-colors">
-                              <td className="px-5 py-3 font-semibold">
-                                {a.created_at ? new Date(a.created_at).toLocaleString() : "—"}
-                              </td>
-                              <td className="px-5 py-3 text-muted-foreground capitalize">{a.adjustment_type || "—"}</td>
-                              <td className="px-5 py-3 font-bold">{Number(a.quantity ?? 0).toLocaleString()}</td>
-                              <td className="px-5 py-3 text-muted-foreground">
-                                {Number(a.previous_stock ?? 0).toLocaleString()} →{" "}
-                                <span className="font-bold text-foreground">{Number(a.new_stock ?? 0).toLocaleString()}</span>
-                              </td>
-                              <td className="px-5 py-3 text-muted-foreground">
-                                {a.cost != null ? `Rs. ${Number(a.cost).toLocaleString()}` : "—"}
-	                              </td>
-	                              <td className="px-5 py-3">
-	                                {isPaid ? (
-	                                  <Badge className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-500 border-none">Paid</Badge>
-	                                ) : isRejected ? (
-	                                  <Badge className="bg-red-500/10 text-red-700 dark:text-red-500 border-none">Rejected</Badge>
-	                                ) : awaitingStatus === "unpaid" ? (
-	                                  <Badge className="bg-red-500/10 text-red-700 dark:text-red-500 border-none">Unpaid</Badge>
-	                                ) : awaitingStatus === "partial" ? (
-	                                  <Badge className="bg-amber-500/10 text-amber-700 dark:text-amber-500 border-none">Partial</Badge>
-	                                ) : (
-	                                  <Badge className="bg-amber-500/10 text-amber-700 dark:text-amber-500 border-none">Pending</Badge>
-	                                )}
-	                              </td>
-	                              <td className="px-5 py-3 text-right">
-	                                {canAct ? (
-	                                  <div className="flex items-center justify-end gap-2">
-	                                    <Button
-	                                      size="sm"
-	                                      className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white"
-	                                      onClick={() => markAwaitingPaymentPaidForAdjustment(Number(a.id))}
-	                                      disabled={busy}
-	                                    >
-	                                      {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
-	                                      Mark Paid
-	                                    </Button>
-	                                    <Button
-	                                      size="sm"
-	                                      variant="outline"
-	                                      className="h-9 rounded-xl border-red-500/20 text-red-600 hover:bg-red-500/10"
-	                                      onClick={() => rejectAwaitingPaymentForAdjustment(Number(a.id))}
-	                                      disabled={busy}
-	                                    >
-	                                      <XCircle className="w-4 h-4 mr-1" /> Reject
-	                                    </Button>
-	                                  </div>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">—</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="p-6 border-t border-border/60 bg-muted/20">

@@ -475,6 +475,7 @@ export function DrawerSessionPanel({
       "safe_transfer",
       "pending_bank_deposit",
       "immediate_bank_deposit",
+      "multi_account_transfer",
     ]).has(String(correctionSession.settlement_mode || ""));
     setCorrectionBusy(true);
     try {
@@ -712,7 +713,7 @@ export function DrawerSessionPanel({
                         <div>
                           <div className="font-semibold">This drawer is closed and settled for {effectiveBusinessDate}.</div>
                           <div className="mt-1 text-xs opacity-80">
-                            Counted {formatDayCloseCurrency(settledSession.counted_closing_cash ?? 0)}; retained {formatDayCloseCurrency(settledSession.retained_float ?? 0)}; {sourceLabel(settledSession.settlement_mode)} {formatDayCloseCurrency(settledSession.settlement_amount ?? 0)}.
+                            Counted {formatDayCloseCurrency(settledSession.counted_closing_cash ?? 0)}; retained {formatDayCloseCurrency(settledSession.retained_float ?? 0)}; {settledSession.settlement_lines?.length ? `transferred to ${settledSession.settlement_lines.length} account${settledSession.settlement_lines.length === 1 ? "" : "s"}` : `${sourceLabel(settledSession.settlement_mode)} ${formatDayCloseCurrency(settledSession.settlement_amount ?? 0)}`}.
                           </div>
                           <div className="mt-1 text-xs opacity-80">
                             If the count or settlement was wrong, correct this session. Start a new session only for a genuinely new shift.

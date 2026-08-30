@@ -40,6 +40,7 @@ import {
   ChefHat,
   Boxes,
   ArrowLeftRight,
+  Banknote,
   Star,
   Clock,
   Check,
@@ -360,8 +361,10 @@ export default function AnalyticsPage() {
         const dates = getActiveDates();
         const url = AnalyticsApis.menuDetails({
           restaurantId: user.restaurant_id!,
-          dateFrom: dates.dateFrom,
-          dateTo: dates.dateTo,
+          dateFrom: dates.startTime ? undefined : dates.dateFrom,
+          dateTo: dates.startTime ? undefined : dates.dateTo,
+          startTime: dates.startTime,
+          endTime: dates.endTime,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           page: menuPage,
           pageSize: menuPageSize,
@@ -403,8 +406,10 @@ export default function AnalyticsPage() {
         const dates = getActiveDates();
         const url = AnalyticsApis.staffDetails({
           restaurantId: user.restaurant_id!,
-          dateFrom: dates.dateFrom,
-          dateTo: dates.dateTo,
+          dateFrom: dates.startTime ? undefined : dates.dateFrom,
+          dateTo: dates.startTime ? undefined : dates.dateTo,
+          startTime: dates.startTime,
+          endTime: dates.endTime,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           page: staffPage,
           pageSize: staffPageSize,
@@ -943,8 +948,10 @@ export default function AnalyticsPage() {
 
   // today snapshot (Flutter: todayIncome / todayExpense)
   const todaySnapshot = data?.tabs?.overview?.today_snapshot || {};
-  const todayIncome = todaySnapshot.income ?? 0;
   const todayExpense = todaySnapshot.expense ?? 0;
+  const todayGrossSales = todaySnapshot.gross_sales ?? 0;
+  const todayRefunds = todaySnapshot.refunds ?? 0;
+  const todayNetSales = todaySnapshot.net_sales ?? 0;
 
   // executive summary metrics
   const v2 = useMemo(() => {
@@ -1240,16 +1247,16 @@ export default function AnalyticsPage() {
     data?.tabs?.menu?.menu_snapshot?.top_items ||
     [];
   const menuLowItems = data?.tabs?.menu?.low_items?.items || [];
-  const menuSummaryMetrics =
-    data?.tabs?.menu?.performance_summary?.metrics || [];
   const menuSnapshotTopItem = menuTopItems[0];
 
   // ── Staff tab data ────────────────────────────────────────────────────────
-  const staffLeaderboard = data?.tabs?.staff?.leaderboard?.items || [];
-  const staffTopPerformer = data?.tabs?.staff?.top_performer || {};
-  const staffSummaryMetrics =
-    data?.tabs?.staff?.productivity_summary?.metrics || [];
-  const topStaff = staffLeaderboard[0] || staffTopPerformer;
+  // Sourced from the dedicated /analytics/staff/details fetch (staffData),
+  // not data.tabs.staff -- that section is starved under the dashboard's
+  // include=core fast path (same root cause as the Menu tab's summary
+  // cards), so it always returns an empty leaderboard.
+  const staffLeaderboard = staffData?.staff || [];
+  const staffTopPerformer = staffLeaderboard[0] || {};
+  const topStaff = staffTopPerformer;
 
   // ── NC tab data ───────────────────────────────────────────────────────────
   const ncTab = data?.tabs?.nc || {};
@@ -1736,13 +1743,29 @@ export default function AnalyticsPage() {
               <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">
                 Today Snapshot
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <SnapshotCard
-                  label="CURRENT INCOME"
+                  label="GROSS SALES"
+                  value={todayGrossSales}
+                  icon={<Banknote className="w-4 h-4" />}
+                  color="text-blue-500"
+                  bgColor="bg-blue-500/10"
+                  borderColor="border-blue-500/20"
+                />
+                <SnapshotCard
+                  label="REFUNDS"
+                  value={todayRefunds}
+                  icon={<ArrowDownRight className="w-4 h-4" />}
+                  color="text-red-500"
+                  bgColor="bg-red-500/10"
+                  borderColor="border-red-500/20"
+                />
+                <SnapshotCard
+                  label="NET SALES"
                   value={
                     dayCloseAlignedToday && dayCloseNetSalesOverride != null
                       ? dayCloseNetSalesOverride
-                      : todayIncome
+                      : todayNetSales
                   }
                   icon={<Wallet className="w-4 h-4" />}
                   color="text-orange-500"
@@ -2406,13 +2429,26 @@ export default function AnalyticsPage() {
                 <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">
                   Finance Summary
                 </h3>
-                <p className="text-[11px] font-semibold text-muted-foreground">
-                  {financeSummaryScopeLabel}
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className="text-[11px] font-semibold text-muted-foreground">
+                    {financeSummaryScopeLabel}
+                  </p>
+                  <Link href="/finance/operations">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full gap-2 h-8 text-xs font-semibold"
+                    >
+                      <Banknote className="w-3.5 h-3.5" /> Cash &amp; Banks
+                    </Button>
+                  </Link>
+                </div>
               </div>
-              <FinanceMetricGroup title="Sales Earned">
+
+              {/* Today's Snapshot -- the only numbers most owners/staff need */}
+              <FinanceMetricGroup title="Today's Snapshot">
                 <BigMetricCard
-                  label="Net Sales"
+                  label="Sales"
                   value={v2?.netSales ?? currentIncome}
                   icon={<Wallet className="w-4.5 h-4.5" />}
                   color="text-emerald-500"
@@ -2424,110 +2460,7 @@ export default function AnalyticsPage() {
                   }
                 />
                 <BigMetricCard
-                  label="Discounts"
-                  value={v2?.discountTotal ?? currentDiscounts}
-                  icon={<Tag className="w-4.5 h-4.5" />}
-                  color="text-amber-500"
-                  tagColor="bg-amber-500/10 text-amber-500"
-                />
-                <BigMetricCard
-                  label="Refunds"
-                  value={v2?.refundTotal ?? currentRefunds}
-                  icon={<TrendingDown className="w-4.5 h-4.5" />}
-                  color="text-red-500"
-                  tagColor="bg-red-500/10 text-red-500"
-                />
-                <BigMetricCard
-                  label="Operating Profit"
-                  value={v2?.netProfit ?? currentProfit}
-                  icon={<TrendingUp className="w-4.5 h-4.5" />}
-                  color="text-blue-500"
-                  trend={v2?.netProfitDelta ?? compProfitDelta}
-                  tagColor={
-                    Number(v2?.netProfitDelta ?? compProfitDelta) >= 0
-                      ? "bg-emerald-500/10 text-emerald-500"
-                      : "bg-red-500/10 text-red-500"
-                  }
-                />
-              </FinanceMetricGroup>
-              <FinanceMetricGroup title="Money Collected">
-                <BigMetricCard
-                  label="Collections"
-                  value={v2?.collectionsTotal ?? currentIncome}
-                  icon={<CreditCard className="w-4.5 h-4.5" />}
-                  color="text-indigo-500"
-                  tagColor="bg-indigo-500/10 text-indigo-500"
-                />
-                <BigMetricCard
-                  label="Manual Income"
-                  value={v2?.manualIncomeTotal ?? 0}
-                  icon={<DollarSign className="w-4.5 h-4.5" />}
-                  color="text-emerald-500"
-                  tagColor="bg-emerald-500/10 text-emerald-500"
-                />
-                <BigMetricCard
-                  label="Cash Expected"
-                  value={v2?.cashExpected ?? 0}
-                  icon={<Wallet className="w-4.5 h-4.5" />}
-                  color="text-cyan-500"
-                  tagColor="bg-cyan-500/10 text-cyan-500"
-                />
-              </FinanceMetricGroup>
-              {!hasConcreteCashControlScope ? (
-                <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  Select Restaurant or Hotel to view drawer cash custody.
-                </div>
-              ) : accountingMode && cashControlSummary ? (
-                <FinanceMetricGroup title="Cash Control">
-                  <BigMetricCard
-                    label="Cash in Drawers"
-                    value={cashControlSummary?.drawer_cash ?? 0}
-                    icon={<Wallet className="w-4.5 h-4.5" />}
-                    color="text-emerald-500"
-                    tagColor="bg-emerald-500/10 text-emerald-500"
-                  />
-                  <BigMetricCard
-                    label="Main Safe"
-                    value={cashControlSummary?.safe_cash ?? 0}
-                    icon={<CreditCard className="w-4.5 h-4.5" />}
-                    color="text-blue-500"
-                    tagColor="bg-blue-500/10 text-blue-500"
-                  />
-                  <BigMetricCard
-                    label="Cash in Transit"
-                    value={cashControlSummary?.cash_in_transit ?? 0}
-                    icon={<ArrowLeftRight className="w-4.5 h-4.5" />}
-                    color="text-amber-500"
-                    tagColor="bg-amber-500/10 text-amber-500"
-                  />
-                  <BigMetricCard
-                    label="Controlled Cash"
-                    value={cashControlSummary?.total_controlled_cash ?? 0}
-                    icon={<DollarSign className="w-4.5 h-4.5" />}
-                    color="text-cyan-500"
-                    tagColor="bg-cyan-500/10 text-cyan-500"
-                  />
-                </FinanceMetricGroup>
-              ) : null}
-              <FinanceMetricGroup title="Money Owed">
-                <BigMetricCard
-                  label="Credit Sales"
-                  value={v2?.creditSales ?? receivables.credit_sales ?? 0}
-                  icon={<ReceiptText className="w-4.5 h-4.5" />}
-                  color="text-blue-500"
-                  tagColor="bg-blue-500/10 text-blue-500"
-                />
-                <BigMetricCard
-                  label="Refund Liabilities"
-                  value={v2?.refundLiabilities ?? 0}
-                  icon={<AlertCircle className="w-4.5 h-4.5" />}
-                  color="text-orange-500"
-                  tagColor="bg-orange-500/10 text-orange-500"
-                />
-              </FinanceMetricGroup>
-              <FinanceMetricGroup title="Costs">
-                <BigMetricCard
-                  label="Operating Expenses"
+                  label="Expenses"
                   value={
                     v2
                       ? v2.manualOperatingExpense +
@@ -2548,10 +2481,75 @@ export default function AnalyticsPage() {
                 />
                 <BigMetricCard
                   label={
-                    accountingMode
-                      ? "Inventory Cash Outflow"
-                      : "Inventory Purchases"
+                    Number(v2?.netProfit ?? currentProfit) < 0
+                      ? "Loss"
+                      : "Profit"
                   }
+                  value={Math.abs(Number(v2?.netProfit ?? currentProfit))}
+                  icon={
+                    Number(v2?.netProfit ?? currentProfit) < 0 ? (
+                      <TrendingDown className="w-4.5 h-4.5" />
+                    ) : (
+                      <TrendingUp className="w-4.5 h-4.5" />
+                    )
+                  }
+                  color={
+                    Number(v2?.netProfit ?? currentProfit) < 0
+                      ? "text-red-500"
+                      : "text-blue-500"
+                  }
+                  trend={v2?.netProfitDelta ?? compProfitDelta}
+                  tagColor={
+                    Number(v2?.netProfitDelta ?? compProfitDelta) >= 0
+                      ? "bg-emerald-500/10 text-emerald-500"
+                      : "bg-red-500/10 text-red-500"
+                  }
+                />
+                {hasConcreteCashControlScope && cashControlSummary ? (
+                  <BigMetricCard
+                    label="Cash in Hand"
+                    value={cashControlSummary?.total_controlled_cash ?? 0}
+                    icon={<DollarSign className="w-4.5 h-4.5" />}
+                    color="text-cyan-500"
+                    tagColor="bg-cyan-500/10 text-cyan-500"
+                  />
+                ) : null}
+                <BigMetricCard
+                  label="Customers Owe Us"
+                  value={receivables.total_outstanding ?? 0}
+                  icon={<CreditCard className="w-4.5 h-4.5" />}
+                  color="text-orange-500"
+                  tagColor="bg-orange-500/10 text-orange-500"
+                />
+              </FinanceMetricGroup>
+              {!hasConcreteCashControlScope && (
+                <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  Select Restaurant or Hotel to view drawer cash custody.
+                </div>
+              )}
+
+              {/* A supplier-payable running balance isn't fetched on this page
+                  yet -- "We Owe Suppliers" is intentionally omitted from the
+                  snapshot above rather than shown with a wrong or approximate
+                  number. */}
+
+              <FinanceMetricGroup title="Discounts, Refunds & Purchases">
+                <BigMetricCard
+                  label="Discounts"
+                  value={v2?.discountTotal ?? currentDiscounts}
+                  icon={<Tag className="w-4.5 h-4.5" />}
+                  color="text-amber-500"
+                  tagColor="bg-amber-500/10 text-amber-500"
+                />
+                <BigMetricCard
+                  label="Refunds"
+                  value={v2?.refundTotal ?? currentRefunds}
+                  icon={<TrendingDown className="w-4.5 h-4.5" />}
+                  color="text-red-500"
+                  tagColor="bg-red-500/10 text-red-500"
+                />
+                <BigMetricCard
+                  label="Inventory Purchases"
                   value={
                     accountingMode
                       ? (v2?.inventoryCashOutflow ?? 0)
@@ -2561,31 +2559,6 @@ export default function AnalyticsPage() {
                   color="text-orange-500"
                   tagColor="bg-orange-500/10 text-orange-500"
                 />
-                {accountingMode ? (
-                  <>
-                    <BigMetricCard
-                      label="COGS"
-                      value={v2?.inventoryCogs ?? 0}
-                      icon={<Boxes className="w-4.5 h-4.5" />}
-                      color="text-amber-500"
-                      tagColor="bg-amber-500/10 text-amber-500"
-                    />
-                    <BigMetricCard
-                      label="Wastage"
-                      value={v2?.inventoryWastage ?? 0}
-                      icon={<TrendingDown className="w-4.5 h-4.5" />}
-                      color="text-red-500"
-                      tagColor="bg-red-500/10 text-red-500"
-                    />
-                    <BigMetricCard
-                      label="Variance"
-                      value={v2?.inventoryVariance ?? 0}
-                      icon={<ArrowLeftRight className="w-4.5 h-4.5" />}
-                      color="text-purple-500"
-                      tagColor="bg-purple-500/10 text-purple-500"
-                    />
-                  </>
-                ) : null}
               </FinanceMetricGroup>
               <FinanceMetricGroup title="Exceptions">
                 <BigMetricCard
@@ -2612,70 +2585,133 @@ export default function AnalyticsPage() {
                   tagColor="bg-red-500/10 text-red-500"
                 />
               </FinanceMetricGroup>
-              <SalesToCashReconciliation
-                netSales={v2?.netSales ?? currentIncome}
-                collectionsTotal={v2?.collectionsTotal ?? currentIncome}
-                creditSales={v2?.creditSales ?? receivables.credit_sales ?? 0}
-                currentPeriodSalesCollected={
-                  v2?.currentPeriodSalesCollected ?? 0
-                }
-                priorPeriodPaymentsApplied={v2?.priorPeriodPaymentsApplied ?? 0}
-                postPeriodPaymentsApplied={v2?.postPeriodPaymentsApplied ?? 0}
-                collectionsForOtherPeriodSales={
-                  v2?.collectionsForOtherPeriodSales ?? 0
-                }
-                uncollectedSalesBalance={v2?.uncollectedSalesBalance ?? 0}
-                salesCollectionGap={v2?.salesCollectionGap ?? 0}
-              />
+
+              <FinanceMetricGroup title="Sales Breakdown">
+                <BigMetricCard
+                  label="Gross Sales"
+                  value={
+                    (v2?.netSales ?? currentIncome) +
+                    (v2?.refundTotal ?? currentRefunds ?? 0) +
+                    (v2?.discountTotal ?? currentDiscounts ?? 0)
+                  }
+                  icon={<DollarSign className="w-4.5 h-4.5" />}
+                  color="text-emerald-500"
+                  tagColor="bg-emerald-500/10 text-emerald-500"
+                />
+                <BigMetricCard
+                  label="Collections"
+                  value={v2?.collectionsTotal ?? currentIncome}
+                  icon={<CreditCard className="w-4.5 h-4.5" />}
+                  color="text-indigo-500"
+                  tagColor="bg-indigo-500/10 text-indigo-500"
+                />
+                <BigMetricCard
+                  label="Manual Income"
+                  value={v2?.manualIncomeTotal ?? 0}
+                  icon={<DollarSign className="w-4.5 h-4.5" />}
+                  color="text-emerald-500"
+                  tagColor="bg-emerald-500/10 text-emerald-500"
+                />
+                <BigMetricCard
+                  label="Net Cash Movement (Today)"
+                  value={v2?.cashExpected ?? 0}
+                  icon={<Wallet className="w-4.5 h-4.5" />}
+                  color="text-cyan-500"
+                  tagColor="bg-cyan-500/10 text-cyan-500"
+                />
+              </FinanceMetricGroup>
+              <FinanceMetricGroup title="Expense Breakdown">
+                <BigMetricCard
+                  label="Operating Expenses"
+                  value={v2?.manualOperatingExpense ?? 0}
+                  icon={<TrendingDown className="w-4.5 h-4.5" />}
+                  color="text-rose-500"
+                  tagColor="bg-rose-500/10 text-rose-500"
+                />
+                <BigMetricCard
+                  label="Inventory Direct Expense"
+                  value={v2?.inventoryDirectExpense ?? 0}
+                  icon={<Package className="w-4.5 h-4.5" />}
+                  color="text-orange-500"
+                  tagColor="bg-orange-500/10 text-orange-500"
+                />
+                {accountingMode && (
+                  <>
+                    <BigMetricCard
+                      label="COGS"
+                      value={v2?.inventoryCogs ?? 0}
+                      icon={<Boxes className="w-4.5 h-4.5" />}
+                      color="text-amber-500"
+                      tagColor="bg-amber-500/10 text-amber-500"
+                    />
+                    <BigMetricCard
+                      label="Wastage"
+                      value={v2?.inventoryWastage ?? 0}
+                      icon={<TrendingDown className="w-4.5 h-4.5" />}
+                      color="text-red-500"
+                      tagColor="bg-red-500/10 text-red-500"
+                    />
+                    <BigMetricCard
+                      label="Variance"
+                      value={v2?.inventoryVariance ?? 0}
+                      icon={<ArrowLeftRight className="w-4.5 h-4.5" />}
+                      color="text-purple-500"
+                      tagColor="bg-purple-500/10 text-purple-500"
+                    />
+                  </>
+                )}
+              </FinanceMetricGroup>
             </section>
 
-            {/* Receivables */}
+            {/* Receivables detail -- the headline "Customers Owe Us" number
+                already shows in Today's Snapshot; this card is the
+                breakdown behind it. */}
             <Card className="bg-card border-border shadow-sm">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base font-bold flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-blue-500" /> Receivables
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
-                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
-                      Credit Sales
-                    </span>
-                    <span className="text-lg font-bold text-foreground">
-                      {fmtShort(receivables.credit_sales ?? 0)}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground font-medium">
-                      {receivables.credit_orders_count ?? 0} credit orders
-                    </span>
+                  <CardTitle className="text-base font-bold flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-blue-500" /> Receivables
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
+                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                        Credit Sales
+                      </span>
+                      <span className="text-lg font-bold text-foreground">
+                        {fmtShort(receivables.credit_sales ?? 0)}
+                      </span>
+                      <span className="text-[9px] text-muted-foreground font-medium">
+                        {receivables.credit_orders_count ?? 0} credit orders
+                      </span>
+                    </div>
+                    <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3.5 flex flex-col gap-1">
+                      <span className="text-[10px] font-black text-red-500 uppercase tracking-wider">
+                        Outstanding (All Time)
+                      </span>
+                      <span className="text-lg font-bold text-foreground">
+                        {fmtShort(receivables.total_outstanding ?? 0)}
+                      </span>
+                      <span className="text-[9px] text-muted-foreground font-medium">
+                        Total unpaid credit bills, not limited to the selected date range
+                      </span>
+                    </div>
+                    <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
+                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                        Cash vs Credit
+                      </span>
+                      <span className="text-lg font-bold text-foreground">
+                        {grossSalesVal > 0
+                          ? `${Math.round(((receivables.credit_sales ?? 0) / grossSalesVal) * 100)}%`
+                          : "0%"}
+                      </span>
+                      <span className="text-[9px] text-muted-foreground font-medium">
+                        of sales on credit
+                      </span>
+                    </div>
                   </div>
-                  <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3.5 flex flex-col gap-1">
-                    <span className="text-[10px] font-black text-red-500 uppercase tracking-wider">
-                      Outstanding
-                    </span>
-                    <span className="text-lg font-bold text-foreground">
-                      {fmtShort(receivables.total_outstanding ?? 0)}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground font-medium">
-                      Unpaid credit bills
-                    </span>
-                  </div>
-                  <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
-                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
-                      Cash vs Credit
-                    </span>
-                    <span className="text-lg font-bold text-foreground">
-                      {grossSalesVal > 0
-                        ? `${Math.round(((receivables.credit_sales ?? 0) / grossSalesVal) * 100)}%`
-                        : "0%"}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground font-medium">
-                      of sales on credit
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
             {/* Non-Chargeable (NC) Snapshot */}
             {ncTotalItems > 0 && (
@@ -2892,7 +2928,7 @@ export default function AnalyticsPage() {
               <CardContent className="space-y-3">
                 {[
                   {
-                    label: "Income",
+                    label: "Net Sales",
                     val: currentIncome,
                     delta: compIncomeDelta,
                     positive: Number(compIncomeDelta) >= 0,
@@ -3339,16 +3375,13 @@ export default function AnalyticsPage() {
             )}
 
             {/* Menu Summary Cards */}
-            {menuSummaryMetrics.length > 0 && (
+            {menuData != null && (
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">
                   Menu Summary
                 </h3>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <MenuSummaryCards
-                    metrics={menuSummaryMetrics}
-                    topItems={menuTopItems}
-                  />
+                  <MenuSummaryCards menuData={menuData} />
                 </div>
               </section>
             )}
@@ -3543,7 +3576,7 @@ export default function AnalyticsPage() {
                               {fmtShort(item.revenue || 0)}
                             </TableCell>
                             <TableCell className="text-right text-muted-foreground text-xs">
-                              {fmtShort(item.avg_price || item.avgPrice || 0)}
+                              {fmtShort(item.avg_sale_price ?? 0)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -3739,7 +3772,7 @@ export default function AnalyticsPage() {
             </Card>
 
             {/* Staff details from dedicated API */}
-            {staffData?.items?.length > 0 && (
+            {staffData?.staff?.length > 0 && (
               <Card className="bg-card border-border shadow-sm">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base font-bold flex items-center gap-2">
@@ -3762,7 +3795,7 @@ export default function AnalyticsPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {staffData.items.map((staff: any, i: number) => (
+                        {staffData.staff.map((staff: any, i: number) => (
                           <TableRow
                             key={staff.id ?? i}
                             className="hover:bg-muted/10"
@@ -3937,139 +3970,10 @@ function FinanceMetricGroup({
       <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">
         {title}
       </h4>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(200px,1fr))]">
         {children}
       </div>
     </section>
-  );
-}
-
-function SalesToCashReconciliation({
-  netSales,
-  collectionsTotal,
-  creditSales,
-  currentPeriodSalesCollected,
-  priorPeriodPaymentsApplied,
-  postPeriodPaymentsApplied,
-  collectionsForOtherPeriodSales,
-  uncollectedSalesBalance,
-  salesCollectionGap,
-}: {
-  netSales: number;
-  collectionsTotal: number;
-  creditSales: number;
-  currentPeriodSalesCollected: number;
-  priorPeriodPaymentsApplied: number;
-  postPeriodPaymentsApplied: number;
-  collectionsForOtherPeriodSales: number;
-  uncollectedSalesBalance: number;
-  salesCollectionGap: number;
-}) {
-  const fmtMoney = (value: number) =>
-    `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const rows = [
-    {
-      label: "Collected from this period's sales",
-      value: currentPeriodSalesCollected,
-      tone: "text-emerald-600 dark:text-emerald-400",
-    },
-    {
-      label: "Credit sales from this period",
-      value: creditSales,
-      tone: "text-blue-600 dark:text-blue-400",
-    },
-    {
-      label: "Prior-period payments applied",
-      value: priorPeriodPaymentsApplied,
-      tone: "text-amber-600 dark:text-amber-400",
-    },
-    {
-      label: "Later payments applied",
-      value: postPeriodPaymentsApplied,
-      tone: "text-violet-600 dark:text-violet-400",
-    },
-    {
-      label: "Collections for other-period sales",
-      value: collectionsForOtherPeriodSales,
-      tone: "text-indigo-600 dark:text-indigo-400",
-    },
-    {
-      label: "Uncollected sales balance",
-      value: uncollectedSalesBalance,
-      tone:
-        Number(uncollectedSalesBalance || 0) > 0
-          ? "text-red-600 dark:text-red-400"
-          : "text-muted-foreground",
-    },
-  ];
-
-  return (
-    <Card className="bg-card border-border shadow-sm">
-      <CardContent className="p-4 space-y-3">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h4 className="text-sm font-black uppercase tracking-wider text-foreground">
-              Sales to Cash Reconciliation
-            </h4>
-            <p className="text-xs text-muted-foreground">
-              Net sales and collections use different timing rules. This bridge
-              explains the gap.
-            </p>
-          </div>
-          <div className="text-left sm:text-right">
-            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-              Net Sales - Collections
-            </p>
-            <p className="text-lg font-black text-foreground">
-              {fmtMoney(salesCollectionGap)}
-            </p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-              Net Sales
-            </p>
-            <p className="text-xl font-black text-foreground">
-              {fmtMoney(netSales)}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-              Collections
-            </p>
-            <p className="text-xl font-black text-foreground">
-              {fmtMoney(collectionsTotal)}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-              Current Sales Collected
-            </p>
-            <p className="text-xl font-black text-foreground">
-              {fmtMoney(currentPeriodSalesCollected)}
-            </p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-          {rows.map((row) => (
-            <div
-              key={row.label}
-              className="flex items-center justify-between gap-3 rounded-md border border-border/40 px-3 py-2"
-            >
-              <span className="text-xs font-semibold text-muted-foreground">
-                {row.label}
-              </span>
-              <span
-                className={cn("text-sm font-black whitespace-nowrap", row.tone)}
-              >
-                {fmtMoney(row.value)}
-              </span>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -4142,28 +4046,11 @@ function HeroMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MenuSummaryCards({
-  metrics,
-  topItems,
-}: {
-  metrics: any[];
-  topItems: any[];
-}) {
-  const getVal = (keys: string[]) => {
-    for (const key of keys) {
-      const m = metrics.find((m: any) => m?.key === key);
-      if (m && typeof m.value === "number") return m.value;
-    }
-    return 0;
-  };
-
-  const menuRevenue = getVal(["menu_revenue", "sales", "income"]);
-  const soldQty = topItems.reduce(
-    (s: number, i: any) => s + (i.quantity_sold || i.quantitySold || 0),
-    0,
-  );
+function MenuSummaryCards({ menuData }: { menuData: any }) {
+  const menuRevenue = menuData?.total_revenue ?? 0;
+  const soldQty = menuData?.total_quantity_sold ?? 0;
   const avgPrice = soldQty > 0 ? menuRevenue / soldQty : 0;
-  const itemCount = topItems.length;
+  const itemCount = menuData?.total_items ?? 0;
 
   return (
     <>

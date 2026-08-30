@@ -35,6 +35,7 @@ import { DrawerSessionApis, RestaurantApis, AccountingApis } from "@/lib/api/end
 import { getPaymentBankDescription, getPaymentBankLabel, isReviewBank } from "@/lib/payment-banks";
 import { hasPermission } from "@/lib/role-permissions";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import type { DrawerAssignment, DrawerCashier, DrawerConfiguration } from "@/types/day-close";
@@ -661,7 +662,21 @@ export default function RestaurantSettingsPage() {
 
                 {/* Payments Content */}
                 <TabsContent value="payments" className="space-y-6">
-                    <Card>
+                    <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader>
+                            <CardTitle>Finance setup has moved</CardTitle>
+                            <CardDescription>
+                                Bank and custom accounts, checkout payment methods, and cash drawers are financial controls. Manage them from Finance so balances, custody, and settlement stay together.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-wrap gap-2">
+                            <Button asChild><Link href="/finance/operations">Cash &amp; Banks</Link></Button>
+                            <Button asChild variant="outline"><Link href="/finance/operations">Payment Instruments</Link></Button>
+                            <Button asChild variant="outline"><Link href="/cash-drawers">Cash Drawers</Link></Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="hidden" aria-hidden="true">
                         <CardHeader className="border-b border-border p-4">
                             <CardTitle className="flex items-center justify-between gap-3 text-base">
                                 <span>Payment banks</span>
@@ -733,7 +748,7 @@ export default function RestaurantSettingsPage() {
                                 FonePay Integration
                             </CardTitle>
                             <CardDescription>
-                                Set up automated QR payments for your POS.
+                                Set up automated QR payments for your POS. Then connect one FonePay Dynamic QR instrument to its settlement account in <Link className="underline" href="/finance/operations">Finance → Payment Instruments</Link>.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -803,7 +818,7 @@ export default function RestaurantSettingsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card className="hidden" aria-hidden="true">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
                             <div className="space-y-1">
                                 <CardTitle className="flex items-center gap-2">
@@ -879,7 +894,7 @@ export default function RestaurantSettingsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card className="hidden" aria-hidden="true">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
                             <div className="space-y-1">
                                 <CardTitle className="flex items-center gap-2">
@@ -957,7 +972,7 @@ export default function RestaurantSettingsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card id="cash-drawers">
+                    <Card id="cash-drawers" className="hidden" aria-hidden="true">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
                             <div className="space-y-1">
                                 <CardTitle className="flex items-center gap-2">

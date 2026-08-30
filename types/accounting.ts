@@ -1130,8 +1130,11 @@ export type InventoryAdoptionLine = {
   profile_name?: string | null;
   treatment?: InventoryAccountingTreatment | null;
   quantity_snapshot: number;
+  reference_unit_cost: number;
   unit_book_value: number;
   total_book_value: number;
+  cost_variance: number;
+  requires_cost_variance_confirmation: boolean;
   legacy_status: string;
   note?: string | null;
 };

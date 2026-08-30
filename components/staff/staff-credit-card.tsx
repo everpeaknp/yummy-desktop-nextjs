@@ -42,6 +42,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  CashBankAccountSelect,
+  type CashBankAccountOption,
+} from "@/components/finance/cash-bank-account-select";
 
 function money(value: number | string | null | undefined) {
   return `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -56,8 +60,6 @@ function message(error: any) {
     "Request failed"
   );
 }
-
-const paymentMethods = ["cash", "card", "upi", "bank_transfer", "other"];
 
 export function StaffCreditCard({
   staffId,
@@ -76,9 +78,9 @@ export function StaffCreditCard({
 
   const [entryOpen, setEntryOpen] = useState<"advance" | "repay" | null>(null);
   const [entryAmount, setEntryAmount] = useState("");
-  const [entryMethod, setEntryMethod] = useState("cash");
   const [entryReason, setEntryReason] = useState("");
   const [entrySaving, setEntrySaving] = useState(false);
+  const [entryAccount, setEntryAccount] = useState<CashBankAccountOption | null>(null);
 
   const [reversing, setReversing] = useState<StaffCreditTransaction | null>(null);
   const [reversalReason, setReversalReason] = useState("");
@@ -111,8 +113,8 @@ export function StaffCreditCard({
   const openEntry = (kind: "advance" | "repay") => {
     setEntryOpen(kind);
     setEntryAmount("");
-    setEntryMethod("cash");
     setEntryReason("");
+    setEntryAccount(null);
   };
 
   const submitEntry = async () => {
@@ -121,12 +123,17 @@ export function StaffCreditCard({
       toast.error("Enter a valid amount");
       return;
     }
+    if (!entryAccount) {
+      toast.error("Select a Cash & Banks account");
+      return;
+    }
     setEntrySaving(true);
     try {
       const payload = {
         amount,
-        payment_method: entryMethod || undefined,
         reason: entryReason.trim() || undefined,
+        account_type: entryAccount.account_type,
+        account_id: entryAccount.id,
       };
       if (entryOpen === "advance") await staffCreditApi.recordAdvance(staffId, payload);
       else await staffCreditApi.recordRepayment(staffId, payload);
@@ -216,6 +223,12 @@ export function StaffCreditCard({
                 Above this, applying a manual discount needs a manager override.
               </p>
             </div>
+            <CashBankAccountSelect
+              value={entryAccount}
+              onChange={setEntryAccount}
+              disabled={entrySaving}
+              label={entryOpen === "advance" ? "Pay from" : "Receive into"}
+            />
             {canManage ? (
               <Button size="sm" variant="outline" onClick={openLimitEditor}>
                 <Edit3 className="mr-2 h-4 w-4" />
@@ -291,19 +304,6 @@ export function StaffCreditCard({
               />
             </div>
             <div>
-              <Label>Payment method</Label>
-              <Select value={entryMethod} onValueChange={setEntryMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {paymentMethods.map((methodValue) => (
-                    <SelectItem key={methodValue} value={methodValue} className="capitalize">
-                      {methodValue.replaceAll("_", " ")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
               <Label>Reason (optional)</Label>
               <Input
                 value={entryReason}
@@ -316,7 +316,7 @@ export function StaffCreditCard({
             <Button variant="outline" onClick={() => setEntryOpen(null)} disabled={entrySaving}>
               Cancel
             </Button>
-            <Button onClick={submitEntry} disabled={entrySaving}>
+            <Button onClick={submitEntry} disabled={entrySaving || !entryAccount}>
               {entrySaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {entryOpen === "advance" ? "Record advance" : "Record repayment"}
             </Button>

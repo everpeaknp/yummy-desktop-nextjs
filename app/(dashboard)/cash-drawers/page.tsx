@@ -575,7 +575,7 @@ function DrawerHistoryCard({
     }
     setReopening(true);
     try {
-      const transferSettlement = ["safe_transfer", "pending_bank_deposit", "immediate_bank_deposit"].includes(
+      const transferSettlement = ["safe_transfer", "pending_bank_deposit", "immediate_bank_deposit", "multi_account_transfer"].includes(
         String(reopenSession.settlement_mode || ""),
       );
       await apiClient.post(

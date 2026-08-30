@@ -15,10 +15,11 @@ export function getImageUrl(path?: string) {
   return path;
 }
 
-export function formatCurrency(amount: number | string) {
+export function formatCurrency(amount: number | string | null | undefined) {
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
-  return `Rs. ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+  const safeNum = typeof num === "number" && Number.isFinite(num) ? num : 0;
+  return `Rs. ${safeNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+ }
 
 export function formatDate(dateStr: string | Date) {
   if (!dateStr) return "";

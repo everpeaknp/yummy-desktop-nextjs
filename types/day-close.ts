@@ -93,10 +93,23 @@ export interface DrawerVarianceApprovalInput {
 export interface DrawerSettlementDecisionInput {
   reason: string;
   retained_float: number;
-  settlement_mode: "safe_transfer" | "pending_bank_deposit" | "immediate_bank_deposit" | "retain_all" | string;
-  settlement_amount: number;
-  settlement_destination?: string | null;
-  settlement_reference?: string | null;
+  settlement_lines: DrawerSettlementLineInput[];
+}
+
+export interface DrawerSettlementLineInput {
+  destination_account_id: number;
+  amount: number;
+  reference?: string | null;
+}
+
+export interface DrawerSettlementLine {
+  id: number;
+  destination_account_id: number;
+  amount: number;
+  reference?: string | null;
+  destination_name: string;
+  destination_type: string;
+  sort_order: number;
 }
 
 export interface DrawerMovement {
@@ -166,7 +179,9 @@ export interface DrawerSession {
   settlement_mode?: string | null;
   settlement_amount?: number | null;
   settlement_destination?: string | null;
+  settlement_destination_id?: number | null;
   settlement_reference?: string | null;
+  settlement_lines?: DrawerSettlementLine[];
   opened_at?: string | null;
   closed_at?: string | null;
   approved_at?: string | null;

@@ -29,6 +29,7 @@ interface Category {
   id: number;
   name: string;
   type: string;
+  station_id?: number | null;
 }
 
 export default function CategoriesPage() {
@@ -70,7 +71,7 @@ export default function CategoriesPage() {
     fetchCategories();
   }, [fetchCategories]);
 
-  const handleCreate = async (data: { name: string; type: string }) => {
+  const handleCreate = async (data: { name: string; type: string; station_id?: number | null }) => {
     if (!restaurantId) return;
     try {
       await apiClient.post(ItemCategoryApis.createItemCategory(restaurantId), data);
@@ -82,7 +83,7 @@ export default function CategoriesPage() {
     }
   };
 
-  const handleUpdate = async (data: { name: string; type: string }) => {
+  const handleUpdate = async (data: { name: string; type: string; station_id?: number | null }) => {
     if (!editingCategory) return;
     try {
       await apiClient.put(ItemCategoryApis.updateItemCategory(editingCategory.id), data);
@@ -215,12 +216,15 @@ export default function CategoriesPage() {
         </CardContent>
       </Card>
 
-      <CategoryDialog 
-        open={dialogOpen} 
-        onOpenChange={setDialogOpen} 
-        onSubmit={editingCategory ? handleUpdate : handleCreate}
-        initialData={editingCategory}
-      />
+      {restaurantId && (
+        <CategoryDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onSubmit={editingCategory ? handleUpdate : handleCreate}
+          initialData={editingCategory}
+          restaurantId={restaurantId}
+        />
+      )}
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>

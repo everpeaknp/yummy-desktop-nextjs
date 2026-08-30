@@ -9,8 +9,8 @@
   },
   "main": "main.js",
   "scripts": {
-    "predev": "node scripts/clean-next.js",
     "dev": "next dev",
+    "dev:clean": "node scripts/clean-next.js && next dev",
     "prebuild": "node scripts/clean-next.js",
     "build": "next build",
     "start": "next start",

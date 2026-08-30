@@ -30,16 +30,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { StationPicker } from "@/components/stations/station-picker";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
   type: z.enum(["kitchen", "bar", "cafe"]),
+  station_id: z.number().nullable().optional(),
 });
 
 interface Category {
   id: number;
   name: string;
   type: string;
+  station_id?: number | null;
 }
 
 interface CategoryDialogProps {
@@ -47,6 +50,7 @@ interface CategoryDialogProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: z.infer<typeof formSchema>) => Promise<void>;
   initialData?: Category | null;
+  restaurantId: number;
 }
 
 export function CategoryDialog({
@@ -54,12 +58,14 @@ export function CategoryDialog({
   onOpenChange,
   onSubmit,
   initialData,
+  restaurantId,
 }: CategoryDialogProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
       type: "kitchen",
+      station_id: null,
     },
   });
 
@@ -68,11 +74,13 @@ export function CategoryDialog({
       form.reset({
         name: initialData.name,
         type: initialData.type as any,
+        station_id: initialData.station_id ?? null,
       });
     } else {
       form.reset({
         name: "",
         type: "kitchen",
+        station_id: null,
       });
     }
   }, [initialData, form, open]);
@@ -128,6 +136,21 @@ export function CategoryDialog({
                       <SelectItem value="cafe">Cafe</SelectItem>
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="station_id"
+              render={({ field }) => (
+                <FormItem>
+                  <StationPicker
+                    restaurantId={restaurantId}
+                    value={field.value ?? null}
+                    onChange={(stationId) => field.onChange(stationId)}
+                    label="Station (optional)"
+                  />
                   <FormMessage />
                 </FormItem>
               )}

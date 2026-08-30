@@ -174,7 +174,7 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
                             )}
                             {(showOrderId || showDate) && (
                                 <div className="flex justify-between">
-                                    {showOrderId && <span>{config.order_label || 'Ref'}: #{order.restaurant_order_id || order.id}</span>}
+                                    {showOrderId && <span>{config.order_label || 'Daily order'}: #{order.restaurant_order_id || order.id}</span>}
                                     {showDate && <span className="text-right">{config.date_label || 'DATE'}: {dateStr}</span>}
                                 </div>
                             )}
@@ -193,12 +193,12 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
                     ) : (
                         <>
                             <div className="flex justify-between">
-                                <span>{config.bill_label || 'BILL'} #{order.restaurant_order_id || order.id}</span>
+                                <span>{config.bill_label || 'INVOICE'} {order.invoice_number || `POS-${String(order.id).padStart(8, '0')}`}</span>
                                 <span className="text-right">{dateStr}</span>
                             </div>
                             {showOrderId && (
                                 <div>
-                                    <span>{config.order_label || 'Order'} #{order.id}</span>
+                                    <span>{config.order_label || 'Daily order'} #{order.restaurant_order_id || order.id}</span>
                                 </div>
                             )}
                             {showTable && (
@@ -351,7 +351,7 @@ function resolveReceiptPlaceholders(text: string, data: ReceiptData) {
         .replace(/\{\{restaurant_address\}\}/g, restaurant?.address || "")
         .replace(/\{\{restaurant_phone\}\}/g, restaurant?.phone || "")
         .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "")
-        .replace(/\{\{bill_no\}\}/g, String(order?.restaurant_order_id || order?.id || ""))
+        .replace(/\{\{bill_no\}\}/g, String(order?.invoice_number || (order?.id ? `POS-${String(order.id).padStart(8, "0")}` : "")))
         .replace(/\{\{order_id\}\}/g, String(order?.id || ""))
         .replace(/\{\{table\}\}/g, order?.table_name || "-")
         .replace(/\{\{customer_name\}\}/g, order?.customer_name || "")

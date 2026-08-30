@@ -298,22 +298,21 @@ test("general purchase dialog submits backend payment status values", () => {
   assert.doesNotMatch(source, /payment_status: "unpaid"/);
 });
 
-test("unpaid inventory and purchases require a supplier before submit", () => {
-  const inventorySource = read("app/(dashboard)/inventory/page.tsx");
+test("unpaid general purchases require a supplier before submit", () => {
   const purchaseSource = read(
     "components/manage/purchases/purchase-dialog.tsx",
   );
 
-  assert.match(
-    inventorySource,
-    /Supplier is required for unpaid inventory purchases\./,
-  );
-  assert.match(inventorySource, /opening_stock_payment_status/);
-  assert.match(inventorySource, /payment_status/);
-
   assert.match(purchaseSource, /Supplier is required for unpaid purchases\./);
   assert.match(purchaseSource, /payment_status/);
   assert.match(purchaseSource, /supplier_id/);
+});
+
+test("inventory opening stock payment status is captured on the item form", () => {
+  const inventorySource = read("app/(dashboard)/inventory/page.tsx");
+
+  assert.match(inventorySource, /opening_stock_payment_status/);
+  assert.match(inventorySource, /payment_status/);
 });
 
 test("expense page exposes edit and delete actions for recorded expenses", () => {
@@ -387,23 +386,27 @@ test("payable payment dialog submits selected payment instruments", () => {
   assert.match(source, /No card instruments configured/);
 });
 
-test("inventory paid receipts require explicit cash-out payment method", () => {
+test("inventory item opening stock requires an explicit cash-out account when paid", () => {
   const source = read("app/(dashboard)/inventory/page.tsx");
 
+  assert.match(source, /opening_stock_account_type/);
+  assert.match(source, /opening_stock_account_id/);
+  assert.match(source, /openingPaymentAccount/);
   assert.match(
     source,
-    /CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS/,
+    /isCostedOpeningStock && itemForm\.opening_stock_payment_status === "paid"/,
   );
-  assert.match(source, /opening_stock_payment_method/);
+});
+
+test("paid purchase receipts require an explicit cash-out account, and every purchase requires a supplier", () => {
+  const source = read("app/(dashboard)/inventory/purchases/page.tsx");
+
+  assert.match(source, /CashBankAccountSelect/);
   assert.match(
     source,
-    /payload\.payment_method = \(adjustForm as any\)\.payment_method/,
+    /receivePaymentStatus === "paid" && !receiveAccount/,
   );
-  assert.match(
-    source,
-    /opening_stock_payment_method:[\s\S]*itemForm\.opening_stock_payment_method/,
-  );
-  assert.match(source, /Supplier is required for unpaid inventory purchases\./);
+  assert.match(source, /!user\?\.restaurant_id \|\| !createForm\.supplier_id/);
 });
 
 test("refund payout methods exclude customer credit", () => {

@@ -39,6 +39,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  CashBankAccountSelect,
+  type CashBankAccountOption,
+} from "@/components/finance/cash-bank-account-select";
 
 function money(value: number | string | null | undefined) {
   return `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -102,8 +106,6 @@ function message(error: any) {
   );
 }
 
-const paymentMethods = ["cash", "card", "upi", "bank_transfer", "other"];
-
 export function StaffSalaryCard({
   staffId,
   canManage,
@@ -124,14 +126,15 @@ export function StaffSalaryCard({
 
   const [entryOpen, setEntryOpen] = useState<"pay" | "deduct" | null>(null);
   const [entryAmount, setEntryAmount] = useState("");
-  const [entryMethod, setEntryMethod] = useState("cash");
   const [entryReason, setEntryReason] = useState("");
   const [entryReference, setEntryReference] = useState("");
   const [entrySaving, setEntrySaving] = useState(false);
+  const [entryAccount, setEntryAccount] = useState<CashBankAccountOption | null>(null);
 
   const [overtimeRateOpen, setOvertimeRateOpen] = useState(false);
   const [overtimeRate, setOvertimeRate] = useState("");
   const [overtimeSaving, setOvertimeSaving] = useState(false);
+  const [overtimeAccount, setOvertimeAccount] = useState<CashBankAccountOption | null>(null);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
 
   const [discountOpen, setDiscountOpen] = useState(false);
@@ -173,9 +176,9 @@ export function StaffSalaryCard({
   const openEntry = (kind: "pay" | "deduct") => {
     setEntryOpen(kind);
     setEntryAmount(kind === "pay" && balance ? String(balance.balance) : "");
-    setEntryMethod("cash");
     setEntryReason("");
     setEntryReference("");
+    setEntryAccount(null);
   };
 
   const submitEntry = async () => {
@@ -188,14 +191,19 @@ export function StaffSalaryCard({
       toast.error("Explain why this salary is being deducted");
       return;
     }
+    if (entryOpen === "pay" && !entryAccount) {
+      toast.error("Select the account paying this salary");
+      return;
+    }
     setEntrySaving(true);
     try {
       if (entryOpen === "pay") {
         await staffSalaryApi.pay(staffId, {
           amount,
-          payment_method: entryMethod || undefined,
           reason: entryReason.trim() || undefined,
           reference: entryReference.trim() || undefined,
+          account_type: entryAccount!.account_type,
+          account_id: entryAccount!.id,
         });
       } else {
         await staffSalaryApi.deduct(staffId, {
@@ -220,11 +228,17 @@ export function StaffSalaryCard({
       toast.error("Enter a valid hourly rate");
       return;
     }
+    if (!overtimeAccount) {
+      toast.error("Select the account paying this overtime");
+      return;
+    }
     setOvertimeSaving(true);
     try {
       await staffSalaryApi.resolveOvertime(staffId, {
         action: "pay",
         hourly_rate: rate,
+        account_type: overtimeAccount.account_type,
+        account_id: overtimeAccount.id,
       });
       toast.success("Overtime paid");
       setOvertimeRateOpen(false);
@@ -372,6 +386,7 @@ export function StaffSalaryCard({
                     variant="outline"
                     onClick={() => {
                       setOvertimeRate("");
+                      setOvertimeAccount(null);
                       setOvertimeRateOpen(true);
                     }}
                   >
@@ -448,19 +463,13 @@ export function StaffSalaryCard({
               />
             </div>
             {entryOpen === "pay" ? (
-              <div>
-                <Label>Payment method</Label>
-                <select
-                  className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs capitalize"
-                  value={entryMethod}
-                  onChange={(event) => setEntryMethod(event.target.value)}
-                >
-                  {paymentMethods.map((methodValue) => (
-                    <option key={methodValue} value={methodValue}>
-                      {methodValue.replaceAll("_", " ")}
-                    </option>
-                  ))}
-                </select>
+              <div className="space-y-4">
+                <CashBankAccountSelect
+                  value={entryAccount}
+                  onChange={setEntryAccount}
+                  disabled={entrySaving}
+                  label="Pay from"
+                />
               </div>
             ) : null}
             <div>
@@ -488,7 +497,7 @@ export function StaffSalaryCard({
             <Button variant="outline" onClick={() => setEntryOpen(null)} disabled={entrySaving}>
               Cancel
             </Button>
-            <Button onClick={submitEntry} disabled={entrySaving}>
+            <Button onClick={submitEntry} disabled={entrySaving || (entryOpen === "pay" && !entryAccount)}>
               {entrySaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {entryOpen === "pay" ? "Pay salary" : "Deduct salary"}
             </Button>
@@ -515,6 +524,12 @@ export function StaffSalaryCard({
               onChange={(event) => setOvertimeRate(event.target.value)}
               placeholder="0.00"
             />
+            <CashBankAccountSelect
+              value={overtimeAccount}
+              onChange={setOvertimeAccount}
+              disabled={overtimeSaving}
+              label="Pay from"
+            />
           </div>
           <DialogFooter>
             <Button
@@ -524,7 +539,7 @@ export function StaffSalaryCard({
             >
               Cancel
             </Button>
-            <Button onClick={payOvertime} disabled={overtimeSaving}>
+            <Button onClick={payOvertime} disabled={overtimeSaving || !overtimeAccount}>
               {overtimeSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Pay
             </Button>

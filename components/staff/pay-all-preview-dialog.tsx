@@ -18,12 +18,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  CashBankAccountSelect,
+  type CashBankAccountOption,
+} from "@/components/finance/cash-bank-account-select";
 
 function money(value: number) {
   return `Rs. ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
-
-const payAllMethods = ["cash", "card", "upi", "bank_transfer", "other"];
 
 /**
  * Shown before "Pay all outstanding salaries" actually pays anyone -- lists
@@ -44,16 +46,16 @@ export function PayAllPreviewDialog({
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<StaffPayAllPreviewItem[]>([]);
   const [paying, setPaying] = useState(false);
-  const [method, setMethod] = useState("cash");
   const [reference, setReference] = useState("");
   const [reason, setReason] = useState("");
+  const [account, setAccount] = useState<CashBankAccountOption | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    setMethod("cash");
     setReference("");
     setReason("");
+    setAccount(null);
     staffSalaryApi
       .previewPayAll()
       .then(setItems)
@@ -67,12 +69,17 @@ export function PayAllPreviewDialog({
   const total = items.reduce((sum, item) => sum + item.amount, 0);
 
   const confirmPayAll = async () => {
+    if (!account) {
+      toast.error("Select the account paying these salaries");
+      return;
+    }
     setPaying(true);
     try {
       const result = await staffSalaryApi.payAll({
-        payment_method: method || undefined,
         reference: reference.trim() || undefined,
         reason: reason.trim() || undefined,
+        account_type: account.account_type,
+        account_id: account.id,
       });
       toast.success(`Paid ${result.paid_count} staff member(s).`);
       onOpenChange(false);
@@ -127,20 +134,12 @@ export function PayAllPreviewDialog({
               <span className="font-semibold">Total: {money(total)}</span>
             </div>
             <div className="space-y-3 border-t pt-3">
-              <div>
-                <Label>Payment method (applied to all)</Label>
-                <select
-                  className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs capitalize"
-                  value={method}
-                  onChange={(event) => setMethod(event.target.value)}
-                >
-                  {payAllMethods.map((value) => (
-                    <option key={value} value={value}>
-                      {value.replaceAll("_", " ")}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <CashBankAccountSelect
+                value={account}
+                onChange={setAccount}
+                disabled={paying}
+                label="Pay from"
+              />
               <div>
                 <Label>Reason (optional)</Label>
                 <Input
@@ -165,7 +164,7 @@ export function PayAllPreviewDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={paying}>
             Cancel
           </Button>
-          <Button onClick={confirmPayAll} disabled={paying || loading || items.length === 0}>
+          <Button onClick={confirmPayAll} disabled={paying || loading || items.length === 0 || !account}>
             {paying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Pay all · {money(total)}
           </Button>

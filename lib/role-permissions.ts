@@ -209,7 +209,16 @@ export type PermissionKey =
   | "finance.variance.approve"
   | "finance.daybook.view"
   | "finance.ledger.view"
+  | "finance.coa.view"
   | "finance.coa.manage"
+  | "finance.coa.group.manage"
+  | "finance.coa.opening_balances.manage"
+  | "finance.sales.view"
+  | "finance.sales.create"
+  | "finance.sales.return"
+  | "finance.journal.view"
+  | "finance.journal.manage"
+  | "finance.journal.reverse"
   | "finance.mapping.manage"
   | "finance.accounting.adjust"
   | "finance.payment_instruments.manage"
@@ -460,6 +469,12 @@ export const SIDEBAR_ROLE_MAP: SidebarItemDef[] = [
     requiredPermission: "inventory.view",
   },
   {
+    title: "Suppliers",
+    href: "/suppliers",
+    allowedRoles: ADMIN_MANAGER,
+    requiredPermission: "inventory.suppliers.manage",
+  },
+  {
     title: "Finance",
     href: "/finance/income",
     allowedRoles: ADMIN_SHELL_ROLES,
@@ -557,6 +572,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   // Management
   "/menu": "menu.view",
   "/inventory": "inventory.view",
+  "/suppliers": "inventory.suppliers.manage",
   "/tables": "tables.view",
   "/reservations": "tables.reservation.view",
   "/discounts": "pos.order.discount.apply",
@@ -564,6 +580,10 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionKey> = {
   "/rooms": "hotel.manage",
   "/hotel": "hotel.view",
   // Finance
+  "/finance/heads": "finance.coa.view",
+  "/finance/sales/returns": "finance.sales.return",
+  "/finance/sales": "finance.sales.view",
+  "/finance/journals": "finance.journal.view",
   "/finance/accounting/inventory": "inventory.accounting.view",
   "/finance/accounting": "finance.accounting.view",
   "/finance": "finance.income.view",
@@ -588,6 +608,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/menu": ADMIN_MANAGER,
   "/kitchen": KITCHEN_ROLES,
   "/inventory": ADMIN_MANAGER,
+  "/finance/heads": ADMIN_SHELL_ROLES,
   "/finance/income": ADMIN_SHELL_ROLES,
   "/finance/expenses": ADMIN_SHELL_ROLES,
   "/customers": ADMIN_SHELL_ROLES,

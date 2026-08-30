@@ -119,6 +119,8 @@ export const staffSalaryApi = {
       payment_method?: string;
       reason?: string;
       reference?: string;
+      account_type: "drawer" | "bank";
+      account_id: number;
     },
   ) {
     return normalizeTransaction(
@@ -148,9 +150,9 @@ export const staffSalaryApi = {
     return data.staff.map(normalizePreviewItem);
   },
 
-  async payAll(payload?: { payment_method?: string; reference?: string; reason?: string }) {
+  async payAll(payload: { payment_method?: string; reference?: string; reason?: string; account_type: "drawer" | "bank"; account_id: number }) {
     return unwrap<{ paid_count: number; total_paid: string; staff: unknown[] }>(
-      await apiClient.post(StaffSalaryApis.payAll(), payload ?? {}),
+      await apiClient.post(StaffSalaryApis.payAll(), payload),
     );
   },
 
@@ -162,7 +164,7 @@ export const staffSalaryApi = {
 
   async resolveOvertime(
     staffId: number,
-    payload: { action: "pay" | "discard"; hourly_rate?: number },
+    payload: { action: "pay" | "discard"; hourly_rate?: number; account_type?: "drawer" | "bank"; account_id?: number },
   ) {
     return unwrap<{
       staff_id: number;

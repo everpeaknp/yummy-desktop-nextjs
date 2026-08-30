@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import {
-  DrawerSessionApis,
+  CashAndBanksApis,
+  CustomerApis,
   ExpenseApis,
   FinanceApis,
+  StaffProfileApis,
+  SupplierApis,
 } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,23 +28,18 @@ import {
   TrendingDown,
   Receipt,
   Download,
-  ArrowLeft,
   Plus,
   Calendar,
   TrendingUp,
   DollarSign,
   Utensils,
   Hotel,
-  CheckCircle2,
-  XCircle,
-  Clock,
   Pencil,
   Trash2,
   PackageSearch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import {
   Dialog,
@@ -55,17 +54,13 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
 import Link from "next/link";
-import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
+import { AllocationLinesEditor, AllocationLineItem, EligibleHead } from "@/components/finance/allocation-lines-editor";
+import { StationPicker } from "@/components/stations/station-picker";
+import { financeReportingApi } from "@/lib/api/finance-reporting-api";
 import type {
   FinanceExpensesResponse,
   FinanceTransactionRow,
 } from "@/types/finance";
-import { CASH_OUT_PAYMENT_METHOD_OPTIONS as PAYMENT_METHOD_OPTIONS } from "@/lib/payment-method-options";
-import {
-  buildCashExpenseDrawerPayload,
-  parseActiveCashDrawers,
-  type ActiveCashDrawerSession,
-} from "@/lib/cash-expense-drawer-selection";
 import {
   financeStationOptions,
   isFinanceStationAvailable,
@@ -99,6 +94,17 @@ function shouldUseFinanceEventMetrics(
 }
 
 type BusinessLineFilter = "all" | "restaurant" | "hotel";
+
+interface CashBankAccount {
+  account_type: "drawer" | "bank";
+  id: number;
+  name: string;
+  current_balance: number | string;
+  drawer_session_id?: number | null;
+}
+
+type ExpensePartyType = "none" | "supplier" | "staff" | "customer";
+type ExpenseParty = { id: number; name: string };
 
 function normalizeExpensePaymentMethod(raw: string | null | undefined): string {
   const value = String(raw ?? "")
@@ -190,8 +196,6 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [expenseTotalCount, setExpenseTotalCount] = useState(0);
   const [expenseSummaryTotal, setExpenseSummaryTotal] = useState(0);
-  const [candidates, setCandidates] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState("approved");
   const [financeExpenses, setFinanceExpenses] =
     useState<FinanceExpensesResponse | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
@@ -202,23 +206,28 @@ export default function ExpensesPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
+  const [eligibleExpenseHeads, setEligibleExpenseHeads] = useState<EligibleHead[]>([]);
+  const [allocationLines, setAllocationLines] = useState<AllocationLineItem[]>([]);
   const [newExpense, setNewExpense] = useState({
     amount: "",
     description: "",
     station: "general",
+    station_id: null as number | null,
     category_id: "",
     payment_method: "cash",
+    payment_status: "paid" as "paid" | "unpaid" | "partial",
+    paid_amount: "",
   });
-  const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] =
-    useState(false);
-  const [cashDrawerSessions, setCashDrawerSessions] = useState<
-    ActiveCashDrawerSession[]
-  >([]);
-  const [selectedCashDrawerSessionId, setSelectedCashDrawerSessionId] =
-    useState("");
-  const [cashDrawerLoading, setCashDrawerLoading] = useState(false);
-  const [cashDrawerResolved, setCashDrawerResolved] = useState(false);
-  const [cashDrawerError, setCashDrawerError] = useState<string | null>(null);
+  const [partyType, setPartyType] = useState<ExpensePartyType>("none");
+  const [partyId, setPartyId] = useState("");
+  const [parties, setParties] = useState<Record<Exclude<ExpensePartyType, "none">, ExpenseParty[]>>({
+    supplier: [], staff: [], customer: [],
+  });
+  const [partiesLoading, setPartiesLoading] = useState(false);
+  const [accounts, setAccounts] = useState<CashBankAccount[]>([]);
+  const [selectedAccountKey, setSelectedAccountKey] = useState("");
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [customStartTime, setCustomStartTime] = useState("00:00");
@@ -229,6 +238,7 @@ export default function ExpensesPage() {
   const me = useAuth((state) => state.me);
   const router = useRouter();
   const restaurant = useRestaurant((s) => s.restaurant);
+  const canManageCoa = hasPermission(user, "finance.coa.manage");
 
   const dualBusinessLines =
     !!restaurant?.hotel_enabled && !!restaurant?.restaurant_enabled;
@@ -288,61 +298,47 @@ export default function ExpensesPage() {
   useEffect(() => {
     let cancelled = false;
 
-    const resetDrawerState = () => {
-      setCashDrawerControlsEnabled(false);
-      setCashDrawerSessions([]);
-      setSelectedCashDrawerSessionId("");
-      setCashDrawerResolved(false);
-      setCashDrawerError(null);
+    const resetAccountState = () => {
+      setAccounts([]);
+      setSelectedAccountKey("");
+      setAccountsError(null);
     };
 
-    const loadCashDrawers = async () => {
+    const loadAccounts = async () => {
       if (!isAddDialogOpen || editingExpense || !user?.restaurant_id) {
-        resetDrawerState();
+        resetAccountState();
         return;
       }
 
-      setCashDrawerLoading(true);
-      setCashDrawerResolved(false);
-      setCashDrawerError(null);
+      setAccountsLoading(true);
+      setAccountsError(null);
       try {
         const response = await apiClient.get(
-          DrawerSessionApis.active({
-            restaurantId: Number(user.restaurant_id),
-            businessLine: createBusinessLine,
-          }),
+          CashAndBanksApis.list(Number(user.restaurant_id), createBusinessLine),
         );
         if (cancelled) return;
-
-        const result = parseActiveCashDrawers(response.data);
-        setCashDrawerControlsEnabled(result.controlsEnabled);
-        setCashDrawerSessions(result.sessions);
-        setCashDrawerResolved(true);
-        setSelectedCashDrawerSessionId((current) => {
-          if (
-            current &&
-            result.sessions.some((session) => String(session.id) === current)
-          ) {
-            return current;
-          }
-          return result.sessions[0]?.id ? String(result.sessions[0].id) : "";
-        });
+        const rows = Array.isArray(response.data?.data)
+          ? (response.data.data as CashBankAccount[])
+          : [];
+        const available = rows.filter(
+          (account) => account.account_type === "bank" || account.drawer_session_id,
+        );
+        setAccounts(available);
+        setSelectedAccountKey(
+          available[0] ? `${available[0].account_type}:${available[0].id}` : "",
+        );
       } catch (error) {
         if (cancelled) return;
-        console.error("Failed to load active cash drawers", error);
-        setCashDrawerControlsEnabled(true);
-        setCashDrawerSessions([]);
-        setSelectedCashDrawerSessionId("");
-        setCashDrawerResolved(false);
-        setCashDrawerError(
-          "Unable to load open cash drawers. Refresh and try again.",
-        );
+        console.error("Failed to load Cash & Banks accounts", error);
+        setAccounts([]);
+        setSelectedAccountKey("");
+        setAccountsError("Unable to load Cash & Banks accounts.");
       } finally {
-        if (!cancelled) setCashDrawerLoading(false);
+        if (!cancelled) setAccountsLoading(false);
       }
     };
 
-    void loadCashDrawers();
+    void loadAccounts();
     return () => {
       cancelled = true;
     };
@@ -352,6 +348,53 @@ export default function ExpensesPage() {
     isAddDialogOpen,
     user?.restaurant_id,
   ]);
+
+  useEffect(() => {
+    if (!isAddDialogOpen || !user?.restaurant_id) return;
+    let cancelled = false;
+    financeReportingApi
+      .getEligibleLeaves(user.restaurant_id, {
+        head_type: "expense" as any,
+        business_line: createBusinessLine,
+      })
+      .then((res: any) => {
+        if (!cancelled) {
+          setEligibleExpenseHeads(res || []);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch eligible expense heads", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [createBusinessLine, isAddDialogOpen, user?.restaurant_id]);
+
+  useEffect(() => {
+    if (!isAddDialogOpen || editingExpense || !user?.restaurant_id) return;
+    let cancelled = false;
+    setPartiesLoading(true);
+    Promise.all([
+      apiClient.get(SupplierApis.listSuppliers(Number(user.restaurant_id), true)),
+      apiClient.get(StaffProfileApis.list({ limit: 200 })),
+      apiClient.get(CustomerApis.listCustomers(Number(user.restaurant_id))),
+    ]).then(([supplierRes, staffRes, customerRes]) => {
+      if (cancelled) return;
+      const supplierRows = supplierRes.data?.data?.suppliers ?? [];
+      const staffRows = staffRes.data?.data ?? [];
+      const customerRows = customerRes.data?.data?.customers ?? [];
+      setParties({
+        supplier: supplierRows.map((row: any) => ({ id: Number(row.id), name: String(row.name ?? "Supplier") })),
+        staff: staffRows.map((row: any) => ({ id: Number(row.id), name: String(row.user_name ?? row.name ?? "Staff") })),
+        customer: customerRows.map((row: any) => ({ id: Number(row.id), name: String(row.name ?? row.business_name ?? "Customer") })),
+      });
+    }).catch((error) => {
+      console.error("Failed to load expense parties", error);
+    }).finally(() => {
+      if (!cancelled) setPartiesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [editingExpense, isAddDialogOpen, user?.restaurant_id]);
 
   useEffect(() => {
     if (!dualBusinessLines) {
@@ -484,7 +527,7 @@ export default function ExpensesPage() {
         business_line: listBusinessLineParam,
         timezone: tz,
       };
-      const [res, summaryRes, financeRes, candidatesRes] = await Promise.all([
+      const [res, summaryRes, financeRes] = await Promise.all([
         apiClient.get(ExpenseApis.list, {
           params: {
             ...expenseListParams,
@@ -495,16 +538,6 @@ export default function ExpensesPage() {
           params: expenseListParams,
         }),
         apiClient.get(financeExpensesUrl).catch(() => null),
-        apiClient
-          .get(ExpenseApis.pendingCandidates, {
-            params: {
-              restaurant_id: user.restaurant_id,
-              status: "pending",
-              include: "adjustment",
-              limit: 100,
-            },
-          })
-          .catch(() => null),
       ]);
       if (res.data.status === "success") {
         setExpenses(res.data.data.expenses || []);
@@ -521,9 +554,6 @@ export default function ExpensesPage() {
         setFinanceExpenses(financeRes.data.data);
       } else {
         setFinanceExpenses(null);
-      }
-      if (candidatesRes?.data?.status === "success") {
-        setCandidates(candidatesRes.data.data || []);
       }
     } catch (err) {
       console.error("Failed to fetch expenses:", err);
@@ -550,34 +580,80 @@ export default function ExpensesPage() {
       toast.error("Please fill in required fields");
       return;
     }
+    if (partyType !== "none" && !partyId) {
+      toast.error("Select the expense party");
+      return;
+    }
+    const paidNow =
+      newExpense.payment_status === "paid"
+        ? Number(newExpense.amount)
+        : newExpense.payment_status === "unpaid"
+          ? 0
+          : Number(newExpense.paid_amount);
+    if (!Number.isFinite(paidNow) || paidNow < 0 || paidNow > Number(newExpense.amount)) {
+      toast.error("Enter a valid amount paid now");
+      return;
+    }
+    if (newExpense.payment_status === "partial" && paidNow <= 0) {
+      toast.error("A partial expense needs an amount paid now");
+      return;
+    }
+
+    if (!editingExpense) {
+      if (allocationLines.length === 0) {
+        toast.error("Please allocate 100% of the expense amount to reporting heads.");
+        return;
+      }
+      const targetCents = Math.round(parseFloat(newExpense.amount) * 100);
+      const linesCents = allocationLines.reduce(
+        (sum, l) => sum + Math.round((Number(l.amount) || 0) * 100),
+        0
+      );
+      if (targetCents !== linesCents) {
+        toast.error(
+          "Allocation lines must sum to exactly 100% of the total expense amount."
+        );
+        return;
+      }
+    }
 
     setSaving(true);
     try {
-      if (
-        !editingExpense &&
-        newExpense.payment_method === "cash" &&
-        !cashDrawerResolved
-      ) {
-        throw new Error(
-          cashDrawerError || "Wait for open cash drawers to finish loading.",
-        );
+      const selectedAccount = accounts.find(
+        (account) =>
+          `${account.account_type}:${account.id}` === selectedAccountKey,
+      );
+      if (!editingExpense && paidNow > 0 && !selectedAccount) {
+        throw new Error(accountsError || "Select a Cash & Banks account.");
       }
-      const drawerPayload = editingExpense
-        ? {}
-        : buildCashExpenseDrawerPayload({
-            paymentMethod: newExpense.payment_method,
-            controlsEnabled: cashDrawerControlsEnabled,
-            selectedDrawerSessionId: selectedCashDrawerSessionId,
-          });
       const payload = {
         restaurant_id: user.restaurant_id,
         amount: parseFloat(newExpense.amount),
         description: newExpense.description,
         category_id: parseInt(newExpense.category_id, 10),
-        payment_method: newExpense.payment_method,
+        payment_method: editingExpense
+          ? newExpense.payment_method
+          : selectedAccount?.account_type === "drawer"
+            ? "cash"
+            : "bank_transfer",
         station: toFinanceAttributionStation(newExpense.station),
+        station_id: newExpense.station_id,
         business_line: expenseWriteBusinessLine,
-        ...drawerPayload,
+        payment_status: newExpense.payment_status,
+        paid_amount: paidNow,
+        ...(allocationLines.length > 0 ? { lines: allocationLines } : {}),
+        ...(partyType !== "none"
+          ? { party_type: partyType, party_id: Number(partyId) }
+          : {}),
+        ...(!editingExpense && paidNow > 0 && selectedAccount
+          ? {
+              account_type: selectedAccount.account_type,
+              account_id: selectedAccount.id,
+              ...(selectedAccount.account_type === "drawer"
+                ? { drawer_session_id: selectedAccount.drawer_session_id }
+                : {}),
+            }
+          : {}),
       };
 
       const res = editingExpense
@@ -607,33 +683,6 @@ export default function ExpensesPage() {
       toast.error(message);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleApproveCandidate = async (id: number) => {
-    try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const res = await apiClient.post(ExpenseApis.approveCandidate(id), null, {
-        params: { timezone: tz },
-      });
-      if (res.data.status === "success") {
-        toast.success("Expense approved");
-        void fetchData();
-      }
-    } catch {
-      toast.error("Failed to approve expense");
-    }
-  };
-
-  const handleRejectCandidate = async (id: number) => {
-    try {
-      const res = await apiClient.post(ExpenseApis.rejectCandidate(id));
-      if (res.data.status === "success") {
-        toast.success("Expense rejected");
-        void fetchData();
-      }
-    } catch {
-      toast.error("Failed to reject expense");
     }
   };
 
@@ -684,7 +733,6 @@ export default function ExpensesPage() {
     financeExpenseMetrics?.inventory_cash_outflow ?? 0;
   const simpleInventoryPurchases =
     inventoryDirectExpense + inventoryCashOutflow;
-  const supplierPayables = financeExpenseMetrics?.supplier_payables ?? 0;
   const inventoryCogs = financeExpenseMetrics?.inventory_cogs ?? 0;
   const inventoryWastage = financeExpenseMetrics?.inventory_wastage ?? 0;
   const inventoryVariance = financeExpenseMetrics?.inventory_variance ?? 0;
@@ -701,22 +749,32 @@ export default function ExpensesPage() {
         (acc: number, curr: any) => acc + (Number(curr.amount) || 0),
         0,
       );
+  const manualExpenseCount = filteredExpenses.filter(
+    (expense) => !isFinanceEventExpense(expense),
+  ).length;
+  const sourceManagedExpenseCount = filteredExpenses.filter(
+    (expense) => isFinanceEventExpense(expense),
+  ).length;
 
   const resetExpenseForm = () => {
     setEditingExpense(null);
+    setAllocationLines([]);
     setNewExpense({
       amount: "",
       description: "",
       station: "general",
+      station_id: null,
       category_id: "",
       payment_method: "cash",
+      payment_status: "paid",
+      paid_amount: "",
     });
-    setCashDrawerControlsEnabled(false);
-    setCashDrawerSessions([]);
-    setSelectedCashDrawerSessionId("");
-    setCashDrawerLoading(false);
-    setCashDrawerResolved(false);
-    setCashDrawerError(null);
+    setPartyType("none");
+    setPartyId("");
+    setAccounts([]);
+    setSelectedAccountKey("");
+    setAccountsLoading(false);
+    setAccountsError(null);
   };
 
   const handleEditExpense = (expense: any) => {
@@ -725,8 +783,11 @@ export default function ExpensesPage() {
       amount: String(expense.amount ?? ""),
       description: expense.description || "",
       station: toFinanceAttributionStation(expense.station),
+      station_id: expense.station_id ?? null,
       category_id: expense.category_id ? String(expense.category_id) : "",
       payment_method: expense.payment_method || "cash",
+      payment_status: expense.payment_status || "paid",
+      paid_amount: expense.paid_amount == null ? "" : String(expense.paid_amount),
     });
     setIsAddDialogOpen(true);
   };
@@ -773,29 +834,14 @@ export default function ExpensesPage() {
       <div className="flex flex-col gap-4 w-full">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full">
           <div className="flex items-center gap-4">
-            <Link href="/manage">
-              <Button variant="ghost" size="icon" className="rounded-full">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-red-600 dark:text-red-500">
                 Expenses
               </h1>
-              <p className="text-muted-foreground whitespace-nowrap">
-                Manage and track your operational costs.
+              <p className="text-muted-foreground">
+                Recognized costs from manual entries and source-owned workflows. Supplier payments are managed from Suppliers and are not counted again.
               </p>
             </div>
-            <Link href="/finance/income">
-              <Button
-                variant="outline"
-                size="sm"
-                className="hidden sm:flex border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600 dark:border-emerald-900/30 dark:hover:bg-emerald-950/20 gap-2"
-              >
-                <TrendingUp className="h-4 w-4" />
-                View Income
-              </Button>
-            </Link>
           </div>
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end">
             {dualBusinessLines ? (
@@ -872,8 +918,6 @@ export default function ExpensesPage() {
           </div>
         </div>
 
-        <FinanceSectionTabs />
-
         {dateFilter === "custom" && (
           <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end w-full animate-in fade-in slide-in-from-top-1 duration-200 bg-muted/30 p-3 rounded-xl border border-border">
             <span className="text-xs font-semibold text-muted-foreground mr-1">
@@ -910,52 +954,26 @@ export default function ExpensesPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MetricCard
-          label="Operating Expenses"
+          label="Recognized Expenses"
           value={operatingExpenseTotal}
           icon={<TrendingDown className="w-5 h-5" />}
           color="text-red-500"
           bg="bg-red-50 dark:bg-red-950/20"
+          caption="Excludes supplier purchases (see Suppliers)"
         />
-        {accountingMode ? (
-          <>
-            <MetricCard
-              label="Inventory Direct Expense"
-              value={inventoryDirectExpense}
-              icon={<TrendingUp className="w-5 h-5" />}
-              color="text-orange-500"
-              bg="bg-orange-50 dark:bg-orange-950/20"
-            />
-            <MetricCard
-              label="Inventory Cash Outflow"
-              value={inventoryCashOutflow}
-              icon={<DollarSign className="w-5 h-5" />}
-              color="text-emerald-500"
-              bg="bg-emerald-50 dark:bg-emerald-950/20"
-            />
-          </>
-        ) : (
-          <MetricCard
-            label="Inventory Purchases"
-            value={simpleInventoryPurchases}
-            icon={<TrendingUp className="w-5 h-5" />}
-            color="text-orange-500"
-            bg="bg-orange-50 dark:bg-orange-950/20"
-          />
-        )}
-        {accountingMode ? (
-          <MetricCard
-            label="Supplier Payable"
-            value={supplierPayables}
-            icon={<Receipt className="w-5 h-5" />}
-            color="text-blue-500"
-            bg="bg-blue-50 dark:bg-blue-950/20"
-          />
-        ) : null}
         <MetricCard
-          label="Expense Entries"
-          value={expenseTotalCount || filteredExpenses.length}
+          label="Manual Entries"
+          value={manualExpenseCount}
+          isStringValue
+          icon={<Receipt className="w-5 h-5" />}
+          color="text-blue-500"
+          bg="bg-blue-50 dark:bg-blue-950/20"
+        />
+        <MetricCard
+          label="From Other Workflows"
+          value={sourceManagedExpenseCount}
           isStringValue
           icon={<Receipt className="w-5 h-5" />}
           color="text-amber-500"
@@ -963,87 +981,12 @@ export default function ExpensesPage() {
         />
       </div>
 
-      {accountingMode ? (
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="font-bold text-sm text-foreground">
-                  Accounting expense detail
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Expense recognition and payment movement are separated for
-                  ledger review.
-                </p>
-              </div>
-              <Link href="/finance/accounting/inventory">
-                <Button variant="outline" size="sm">
-                  Inventory accounting
-                </Button>
-              </Link>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <MiniMetric label="COGS" value={inventoryCogs} />
-              <MiniMetric label="Wastage" value={inventoryWastage} />
-              <MiniMetric
-                label="Inventory variance"
-                value={inventoryVariance}
-              />
-              <MiniMetric
-                label="Paid to suppliers"
-                value={financeExpenseMetrics?.supplier_payments ?? 0}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="p-5 text-sm text-muted-foreground">
-            Inventory purchases are shown as normal expenses. Use the
-            payment-method breakdown below to see whether they were paid by
-            cash, card, digital, Fonepay, or left unpaid.
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="bg-card border-border shadow-sm">
-        <CardContent className="p-6 space-y-4">
-          <div className="flex justify-between items-center pb-2 border-b border-border/40">
-            <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-              <TrendingDown className="w-4 h-4 text-red-500" />
-              Expenses by Payment Method
-            </h3>
-            <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
-              Outflow split
-            </span>
-          </div>
-          <div className="space-y-2">
-            {paymentMethodBreakdown.map((pm) => (
-              <div
-                key={pm.method}
-                className="flex justify-between items-center text-xs py-1 border-b border-border/10 last:border-0"
-              >
-                <span className="capitalize text-muted-foreground font-medium">
-                  {pm.method}
-                </span>
-                <div className="flex items-center gap-4">
-                  <span className="font-bold text-red-600 dark:text-red-500">
-                    Rs. {Number(pm.amount).toLocaleString()}
-                  </span>
-                  <span className="text-[10px] bg-muted px-2 py-0.5 rounded text-muted-foreground font-bold">
-                    {Math.round(pm.percentage * 100)}%
-                  </span>
-                </div>
-              </div>
-            ))}
-            {paymentMethodBreakdown.length === 0 && (
-              <div className="text-center py-4 text-xs text-muted-foreground">
-                No expense payment-method data for this period.
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+        <span>Supplier bills and payments belong to the supplier ledger.</span>
+        <Link href="/suppliers" className="font-semibold text-primary hover:underline">Open Suppliers</Link>
+        <span>·</span>
+        <Link href="/finance/purchases" className="font-semibold text-primary hover:underline">Open Purchases</Link>
+      </div>
 
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2">
@@ -1152,9 +1095,23 @@ export default function ExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="grid grid-cols-4 items-start gap-4">
+              <div />
+              <div className="col-span-3">
+                {user?.restaurant_id && (
+                  <StationPicker
+                    label="Station (cost centre)"
+                    restaurantId={user.restaurant_id}
+                    value={newExpense.station_id}
+                    onChange={(stationId) => setNewExpense({ ...newExpense, station_id: stationId })}
+                    disabled={Boolean(editingExpense)}
+                  />
+                )}
+              </div>
+            </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="category" className="text-right">
-                Category*
+                Expense head*
               </Label>
               <Select
                 value={newExpense.category_id}
@@ -1164,7 +1121,7 @@ export default function ExpensesPage() {
                 }
               >
                 <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select Category" />
+                  <SelectValue placeholder="Select expense head" />
                 </SelectTrigger>
                 <SelectContent>
                   {categories
@@ -1183,29 +1140,68 @@ export default function ExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="method" className="text-right">
-                Payment
-              </Label>
-              <Select
-                value={newExpense.payment_method}
-                onValueChange={(val) =>
-                  setNewExpense({ ...newExpense, payment_method: val })
-                }
-                disabled={Boolean(editingExpense)}
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Method" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_METHOD_OPTIONS.map((method) => (
-                    <SelectItem key={method.value} value={method.value}>
-                      {method.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {editingExpense ? (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Payment</Label>
+                <p className="col-span-3 text-sm capitalize">
+                  {String(newExpense.payment_method || "-").replaceAll("_", " ")}
+                </p>
+              </div>
+            ) : null}
+            {!editingExpense && (
+              <>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="expense-party-type" className="text-right">Party</Label>
+                  <Select
+                    value={partyType}
+                    onValueChange={(value) => {
+                      const nextPartyType = value as ExpensePartyType;
+                      setPartyType(nextPartyType);
+                      setPartyId("");
+                      if (nextPartyType !== "supplier") {
+                        setNewExpense((current) => ({ ...current, payment_status: "paid", paid_amount: current.amount }));
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="expense-party-type" className="col-span-3"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No linked party</SelectItem>
+                      <SelectItem value="supplier">Supplier</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
+                      <SelectItem value="customer">Customer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {partyType !== "none" && (
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="expense-party" className="text-right">{partyType[0].toUpperCase() + partyType.slice(1)}*</Label>
+                    <Select value={partyId} onValueChange={setPartyId} disabled={partiesLoading}>
+                      <SelectTrigger id="expense-party" className="col-span-3"><SelectValue placeholder={partiesLoading ? "Loading parties..." : `Select ${partyType}`} /></SelectTrigger>
+                      <SelectContent>
+                        {parties[partyType].map((party) => <SelectItem key={party.id} value={String(party.id)}>{party.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="expense-payment-status" className="text-right">Payment</Label>
+                  <Select value={newExpense.payment_status} onValueChange={(payment_status: "paid" | "unpaid" | "partial") => setNewExpense({ ...newExpense, payment_status, paid_amount: payment_status === "paid" ? newExpense.amount : payment_status === "unpaid" ? "" : newExpense.paid_amount })}>
+                    <SelectTrigger id="expense-payment-status" className="col-span-3"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="paid">Paid in full</SelectItem>
+                      {partyType === "supplier" && <SelectItem value="partial">Partially paid</SelectItem>}
+                      {partyType === "supplier" && <SelectItem value="unpaid">Unpaid (supplier payable)</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {newExpense.payment_status === "partial" && (
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="expense-paid-now" className="text-right">Paid now*</Label>
+                    <Input id="expense-paid-now" type="number" min="0" max={newExpense.amount || undefined} className="col-span-3" value={newExpense.paid_amount} onChange={(event) => setNewExpense({ ...newExpense, paid_amount: event.target.value })} />
+                  </div>
+                )}
+              </>
+            )}
             {editingExpense && (
               <p className="col-start-2 col-span-3 -mt-2 text-xs text-muted-foreground">
                 Amount, station, category, payment method, and posting date are
@@ -1213,65 +1209,66 @@ export default function ExpensesPage() {
                 make an audited financial correction.
               </p>
             )}
-            {!editingExpense &&
-              newExpense.payment_method === "cash" &&
-              cashDrawerControlsEnabled && (
-                <div className="grid grid-cols-4 items-start gap-4">
-                  <Label htmlFor="cash-drawer" className="pt-2 text-right">
-                    Cash Drawer*
-                  </Label>
-                  <div className="col-span-3 space-y-1.5">
-                    <Select
-                      value={selectedCashDrawerSessionId}
-                      onValueChange={setSelectedCashDrawerSessionId}
-                      disabled={
-                        cashDrawerLoading || cashDrawerSessions.length === 0
-                      }
-                    >
-                      <SelectTrigger id="cash-drawer">
-                        <SelectValue
-                          placeholder={
-                            cashDrawerLoading
-                              ? "Loading open drawers..."
-                              : "Select open cash drawer"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {cashDrawerSessions.length === 0 ? (
-                          <SelectItem value="none" disabled>
-                            No open cash drawers
-                          </SelectItem>
-                        ) : (
-                          cashDrawerSessions.map((session) => (
-                            <SelectItem
-                              key={session.id}
-                              value={String(session.id)}
-                            >
-                              {`${session.name || session.drawer_key || "Drawer"} · ${session.station || "general"}${session.business_date ? ` · ${session.business_date}` : ""}`}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {cashDrawerError ? (
-                      <p className="text-xs text-destructive">
-                        {cashDrawerError}
-                      </p>
-                    ) : cashDrawerSessions.length === 0 &&
-                      !cashDrawerLoading ? (
-                      <p className="text-xs text-destructive">
-                        Open a cash drawer before recording a cash expense.
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        This expense will reduce the selected drawer&apos;s
-                        expected cash.
-                      </p>
-                    )}
-                  </div>
+            {!editingExpense && newExpense.payment_status !== "unpaid" && (
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="expense-account" className="pt-2 text-right">
+                  Account*
+                </Label>
+                <div className="col-span-3 space-y-1.5">
+                  <Select
+                    value={selectedAccountKey}
+                    onValueChange={setSelectedAccountKey}
+                    disabled={accountsLoading || accounts.length === 0}
+                  >
+                    <SelectTrigger id="expense-account">
+                      <SelectValue
+                        placeholder={
+                          accountsLoading ? "Loading accounts..." : "Select account"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((account) => (
+                        <SelectItem
+                          key={`${account.account_type}:${account.id}`}
+                          value={`${account.account_type}:${account.id}`}
+                        >
+                          {account.name} · Rs. {Number(account.current_balance || 0).toLocaleString()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {accountsError ? (
+                    <p className="text-xs text-destructive">{accountsError}</p>
+                  ) : !accountsLoading && accounts.length === 0 ? (
+                    <p className="text-xs text-destructive">
+                      Add or open an account under Cash & Banks first.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      The expense reduces this account. Drawers record cash;
+                      bank accounts record a bank transfer.
+                    </p>
+                  )}
                 </div>
-              )}
+              </div>
+            )}
+            {!editingExpense && Number(newExpense.amount) > 0 && (
+              <AllocationLinesEditor
+                totalAmount={parseFloat(newExpense.amount) || 0}
+                eligibleHeads={eligibleExpenseHeads}
+                lines={allocationLines}
+                onChange={setAllocationLines}
+                headTypeLabel="Expense"
+                disabled={saving}
+                restaurantId={user?.restaurant_id ?? undefined}
+                headType="expense"
+                canCreateHead={canManageCoa}
+                onHeadCreated={(head) =>
+                  setEligibleExpenseHeads((prev) => [head, ...prev])
+                }
+              />
+            )}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="desc" className="text-right">
                 Notes
@@ -1297,10 +1294,8 @@ export default function ExpensesPage() {
               disabled={
                 saving ||
                 (!editingExpense &&
-                  newExpense.payment_method === "cash" &&
-                  (!cashDrawerResolved ||
-                    (cashDrawerControlsEnabled &&
-                      (cashDrawerLoading || !selectedCashDrawerSessionId))))
+                  newExpense.payment_status !== "unpaid" &&
+                  (accountsLoading || accounts.length === 0 || !selectedAccountKey))
               }
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
@@ -1310,27 +1305,7 @@ export default function ExpensesPage() {
         </DialogContent>
       </Dialog>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="approved" className="gap-2">
-            <CheckCircle2 className="w-4 h-4" />
-            Approved Expenses
-          </TabsTrigger>
-          <TabsTrigger value="pending" className="gap-2">
-            <Clock className="w-4 h-4" />
-            Pending Approvals
-            {candidates.length > 0 && (
-              <Badge
-                variant="destructive"
-                className="ml-1 px-1.5 py-0 min-w-[20px] text-center"
-              >
-                {candidates.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="approved" className="mt-0">
+      <div className="w-full">
           {loading ? (
             <div className="h-64 flex items-center justify-center">
               <Loader2 className="w-8 h-8 animate-spin text-red-500" />
@@ -1349,6 +1324,7 @@ export default function ExpensesPage() {
                       <tr>
                         <th className="px-6 py-4">Description</th>
                         <th className="px-6 py-4">Category</th>
+                        <th className="px-6 py-4">Party</th>
                         <th className="px-6 py-4">Amount</th>
                         <th className="px-6 py-4">Date</th>
                         <th className="px-6 py-4">Status</th>
@@ -1372,6 +1348,9 @@ export default function ExpensesPage() {
                             </td>
                             <td className="px-6 py-4 text-muted-foreground">
                               {expense.category?.name || "General"}
+                            </td>
+                            <td className="px-6 py-4 text-muted-foreground">
+                              {expense.party_name || (expense.party_type ? `${expense.party_type} #${expense.party_id}` : "—")}
                             </td>
                             <td className={cn("px-6 py-4 font-bold text-red-600 dark:text-red-500", superseded && "text-muted-foreground line-through dark:text-muted-foreground")}>
                               - Rs. {Number(expense.amount).toLocaleString()}
@@ -1453,77 +1432,7 @@ export default function ExpensesPage() {
               </CardContent>
             </Card>
           )}
-        </TabsContent>
-
-        <TabsContent value="pending" className="mt-0">
-          <Card className="border-border">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                {candidates.length === 0 ? (
-                  <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/20">
-                    <CheckCircle2 className="w-12 h-12 mb-4 opacity-20" />
-                    <p>No pending expenses to approve.</p>
-                  </div>
-                ) : (
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
-                      <tr>
-                        <th className="px-6 py-4">Description</th>
-                        <th className="px-6 py-4">Source</th>
-                        <th className="px-6 py-4">Amount</th>
-                        <th className="px-6 py-4">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {candidates.map((candidate: any) => (
-                        <tr
-                          key={candidate.id}
-                          className="hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="px-6 py-4 font-medium">
-                            {candidate.description || "Untitled"}
-                          </td>
-                          <td className="px-6 py-4 text-muted-foreground capitalize">
-                            {candidate.source_type}
-                          </td>
-                          <td className="px-6 py-4 font-bold text-orange-600 dark:text-orange-500">
-                            Rs. {Number(candidate.amount).toLocaleString()}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-900/50"
-                                onClick={() =>
-                                  handleApproveCandidate(candidate.id)
-                                }
-                              >
-                                <CheckCircle2 className="w-4 h-4 mr-1" />{" "}
-                                Approve
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-destructive hover:bg-destructive/10 border-destructive/20"
-                                onClick={() =>
-                                  handleRejectCandidate(candidate.id)
-                                }
-                              >
-                                <XCircle className="w-4 h-4 mr-1" /> Reject
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      </div>
     </div>
   );
 }
@@ -1536,6 +1445,7 @@ function MetricCard({
   bg,
   href,
   isStringValue,
+  caption,
 }: any) {
   const content = (
     <Card
@@ -1555,6 +1465,9 @@ function MetricCard({
                 ? value
                 : `Rs. ${Number(value || 0).toLocaleString()}`}
             </h3>
+            {caption && (
+              <p className="mt-1 text-xs text-muted-foreground">{caption}</p>
+            )}
           </div>
           <div className={`p-3 rounded-xl ${bg} ${color}`}>{icon}</div>
         </div>

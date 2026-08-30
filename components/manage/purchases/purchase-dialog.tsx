@@ -107,8 +107,8 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
         e.preventDefault();
         if (!user?.restaurant_id) return;
 
-        if (formData.payment_status !== "paid" && !formData.supplier_id) {
-            toast.error("Supplier is required for unpaid purchases.");
+        if (!formData.supplier_id) {
+            toast.error("Supplier is required for every purchase.");
             return;
         }
 
@@ -124,7 +124,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                 restaurant_id: user.restaurant_id,
                 business_line: resolvedBusinessLine,
                 total_cost: parseFloat(formData.total_cost),
-                supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
+                supplier_id: parseInt(formData.supplier_id),
                 payment_method: formData.payment_status === "paid" ? formData.payment_method : null,
                 purchased_date: formData.purchased_date + "T00:00:00Z"
             };
@@ -209,7 +209,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="supplier_id">Supplier</Label>
+                            <Label htmlFor="supplier_id">Supplier*</Label>
                             <Select 
                                 value={formData.supplier_id} 
                                 onValueChange={(val) => setFormData({ ...formData, supplier_id: val })}

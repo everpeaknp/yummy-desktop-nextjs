@@ -211,9 +211,9 @@ const sections: Array<{ title: string; items: ManageItem[] }> = [
                 iconBg: "bg-blue-50 dark:bg-blue-900/20",
             },
             {
-                title: "General Purchases",
-                description: "Equipment & supplies",
-                href: "/manage/purchases",
+                title: "Expenses",
+                description: "Equipment, supplies & other non-inventory costs",
+                href: "/finance/expenses",
                 icon: ShoppingCart,
                 iconColor: "text-violet-500",
                 iconBg: "bg-violet-50 dark:bg-violet-900/20",

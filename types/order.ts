@@ -53,6 +53,7 @@ export interface Order {
   id: number;
   restaurant_id: number;
   restaurant_order_id?: number | null;
+  invoice_number?: string | null;
   channel: OrderType;
   status: OrderStatus;
   table_id?: number | null;
@@ -134,6 +135,9 @@ export interface OrderFullContext {
 // ── Order Bill (from /orders/{id}/bill) ─────────────
 export interface OrderBill {
   order_id: number;
+  invoice_number?: string | null;
+  daily_order_number?: number | null;
+  fiscal_document_number?: string | null;
   items: OrderItem[];
   payments: OrderPayment[];
   subtotal: number;

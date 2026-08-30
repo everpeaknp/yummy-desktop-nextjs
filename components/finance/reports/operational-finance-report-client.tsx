@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
 import {
   BadgeDollarSign,
@@ -19,7 +19,6 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { FinanceReportApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
-import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +36,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FinanceSectionTabs } from "@/components/finance/finance-section-tabs";
+import { FinanceReportNavigation } from "@/components/finance/reports/finance-report-navigation";
+import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
 import type {
   FinanceReportTotals,
   InvoiceReportResponse,
@@ -69,15 +69,9 @@ type ReportResponse =
 
 type OperationalFinanceReportClientProps = {
   mode: ReportMode;
+  showReportNavigation?: boolean;
+  workspace?: "sales";
 };
-
-const reportLinks: Array<{ href: string; label: string; mode: ReportMode }> = [
-  { href: "/finance/reports/sales-book", label: "Sales Book", mode: "sales-book" },
-  { href: "/finance/reports/invoices", label: "Invoices", mode: "invoices" },
-  { href: "/finance/reports/payments", label: "Payments", mode: "payments" },
-  { href: "/finance/reports/refunds", label: "Refunds", mode: "refunds" },
-  { href: "/finance/reports/vat-sales", label: "VAT Sales", mode: "vat-sales" },
-];
 
 const reportMeta: Record<ReportMode, { title: string; description: string }> = {
   "sales-book": {
@@ -93,8 +87,8 @@ const reportMeta: Record<ReportMode, { title: string; description: string }> = {
     description: "Successful payment collections by business date, method, instrument, and invoice.",
   },
   refunds: {
-    title: "Refunds",
-    description: "Refund and reversal payments by refund date, method, customer, and invoice.",
+    title: "Sales returns & refunds",
+    description: "Refunds created from completed orders, with the original invoice and settlement method.",
   },
   "vat-sales": {
     title: "VAT Sales",
@@ -232,6 +226,7 @@ function SalesLikeTable({
             {includeSettlement && <TableHead className="text-right">Paid</TableHead>}
             {includeSettlement && <TableHead className="text-right">Balance</TableHead>}
             {includeSettlement && <TableHead className="min-w-[130px]">Settlement</TableHead>}
+            {mode === "invoices" && <TableHead className="text-right">Action</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -258,6 +253,13 @@ function SalesLikeTable({
               )}
               {includeSettlement && "settlement_status" in row && (
                 <TableCell className="capitalize">{settlementLabel(row)}</TableCell>
+              )}
+              {mode === "invoices" && (
+                <TableCell className="text-right">
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/orders/${row.order_id}`}>Open invoice</Link>
+                  </Button>
+                </TableCell>
               )}
             </TableRow>
           ))}
@@ -324,11 +326,14 @@ function PaymentTable({
   );
 }
 
-export function OperationalFinanceReportClient({ mode }: OperationalFinanceReportClientProps) {
+export function OperationalFinanceReportClient({
+  mode,
+  showReportNavigation = true,
+  workspace,
+}: OperationalFinanceReportClientProps) {
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
   const router = useRouter();
-  const pathname = usePathname();
   const [dateFrom, setDateFrom] = useState(defaultStartDate);
   const [dateTo, setDateTo] = useState(() => yyyyMmDd(new Date()));
   const [datePreset, setDatePreset] = useState<DateRangePreset>("last30");
@@ -461,30 +466,20 @@ export function OperationalFinanceReportClient({ mode }: OperationalFinanceRepor
             <FileText className="hidden h-6 w-6 text-muted-foreground md:block" />
           )}
         </div>
-        <FinanceSectionTabs />
-        <div className="overflow-x-auto">
-          <div className="flex min-w-max gap-2">
-            {reportLinks.map((link) => {
-              const active =
-                pathname === link.href ||
-                (link.href === "/finance/reports/sales-book" && pathname === "/finance/reports");
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    "inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors",
-                    active
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
+        {showReportNavigation ? <FinanceReportNavigation /> : null}
+        {workspace === "sales" ? (
+          <FinanceWorkspaceNav
+            links={[
+              { label: "Invoices", href: "/finance/sales" },
+              { label: "Sales returns", href: "/finance/sales/returns" },
+            ]}
+            action={
+              mode === "refunds"
+                ? { label: "Select invoice", href: "/finance/sales" }
+                : { label: "New sale", href: "/orders/new" }
+            }
+          />
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-3 border-y border-border bg-muted/20 px-4 py-3 lg:flex-row lg:items-end lg:justify-between">

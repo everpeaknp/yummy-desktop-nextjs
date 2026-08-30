@@ -254,6 +254,7 @@ export const OrderApis = {
     `/orders/${orderId}/payments/${paymentId}`,
   removePayment: (orderId: number, paymentId: number) =>
     `/orders/${orderId}/payments/${paymentId}`,
+  replaceSettlement: (orderId: number) => `/orders/${orderId}/settlement`,
   getOrderEvents: (id: number, scope: "order" | "group" = "order") =>
     `/orders/${id}/events?scope=${scope}`,
   getOrderBill: (id: number) => `/orders/${id}/bill`,
@@ -419,6 +420,18 @@ export const InventoryApis = {
   deleteInventoryItem: (id: number) => `/inventory/items/${id}`,
   lowStockInventory: "/inventory/items/low-stock",
   adjustInventory: (id: number) => `/inventory/items/${id}/adjust`,
+  addStock: (id: number) => `/inventory/items/${id}/add-stock`,
+  reduceStock: (id: number) => `/inventory/items/${id}/reduce-stock`,
+  stockCountCorrection: (id: number) =>
+    `/inventory/items/${id}/stock-count-correction`,
+  searchDuplicateItems: ({
+    restaurantId,
+    q,
+  }: {
+    restaurantId: number;
+    q: string;
+  }) =>
+    `/inventory-items/search-duplicates?restaurant_id=${restaurantId}&q=${encodeURIComponent(q)}`,
   getAdjustments: (id: number) => `/inventory/items/${id}/adjustments`,
   getAdjustment: (id: number) => `/inventory/adjustments/${id}`,
   markAdjustmentPayment: (id: number) => `/inventory/adjustments/${id}/payment`,
@@ -490,6 +503,68 @@ export const InventoryApis = {
   rejectAwaitingPayment: (id: number) => `/awaiting-payments/${id}/reject`,
 };
 
+// Inventory-linked purchases: posting one increases inventory and creates
+// its own Expense. Distinct from the older, non-inventory GeneralPurchaseApis
+// below (kept live during the Phase 2 frontend transition).
+export const PurchaseApis = {
+  create: "/purchases",
+  list: ({
+    restaurantId,
+    status,
+    skip = 0,
+    limit = 50,
+  }: {
+    restaurantId: number;
+    status?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+    if (status) params.append("status", status);
+    return `/purchases?${params.toString()}`;
+  },
+  get: (id: number, restaurantId: number) =>
+    `/purchases/${id}?restaurant_id=${restaurantId}`,
+  update: (id: number, restaurantId: number) =>
+    `/purchases/${id}?restaurant_id=${restaurantId}`,
+  delete: (id: number, restaurantId: number) =>
+    `/purchases/${id}?restaurant_id=${restaurantId}`,
+  markOrdered: (id: number, restaurantId: number) =>
+    `/purchases/${id}/mark-ordered?restaurant_id=${restaurantId}`,
+  receive: (id: number, restaurantId: number) =>
+    `/purchases/${id}/receive?restaurant_id=${restaurantId}`,
+  void: (id: number, restaurantId: number) =>
+    `/purchases/${id}/void?restaurant_id=${restaurantId}`,
+};
+
+export const PurchaseReturnApis = {
+  create: "/purchase-returns",
+  list: ({
+    restaurantId,
+    skip = 0,
+    limit = 50,
+  }: {
+    restaurantId: number;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+    return `/purchase-returns?${params.toString()}`;
+  },
+  get: (id: number, restaurantId: number) =>
+    `/purchase-returns/${id}?restaurant_id=${restaurantId}`,
+  void: (id: number, restaurantId: number) =>
+    `/purchase-returns/${id}/void?restaurant_id=${restaurantId}`,
+};
+
 export const AwaitingPaymentApis = {
   list: (restaurantId: number, params: any) => {
     const qv = new URLSearchParams({
@@ -502,6 +577,49 @@ export const AwaitingPaymentApis = {
     `/awaiting-payments/${id}/mark-paid?restaurant_id=${restaurantId}`,
   reject: (id: number, restaurantId: number) =>
     `/awaiting-payments/${id}/reject?restaurant_id=${restaurantId}`,
+};
+
+export const CashAndBanksApis = {
+  list: (restaurantId: number, businessLine = "restaurant") => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    return `/cash-and-banks?${params.toString()}`;
+  },
+};
+
+export const BalanceTransferApis = {
+  list: (restaurantId: number, businessLine = "restaurant") => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    return `/balance-transfers?${params.toString()}`;
+  },
+  create: "/balance-transfers",
+};
+
+export const DayBookApis = {
+  list: ({
+    restaurantId,
+    businessLine = "restaurant",
+    dateFrom,
+    dateTo,
+  }: {
+    restaurantId: number;
+    businessLine?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      business_line: businessLine,
+    });
+    if (dateFrom) params.append("date_from", dateFrom);
+    if (dateTo) params.append("date_to", dateTo);
+    return `/day-book?${params.toString()}`;
+  },
 };
 
 export const AnalyticsApis = {
@@ -611,6 +729,8 @@ export const AnalyticsApis = {
     restaurantId,
     dateFrom,
     dateTo,
+    startTime,
+    endTime,
     timezone,
     page = 1,
     pageSize = 20,
@@ -621,8 +741,10 @@ export const AnalyticsApis = {
     businessLine,
   }: {
     restaurantId: number;
-    dateFrom: string;
-    dateTo: string;
+    dateFrom?: string;
+    dateTo?: string;
+    startTime?: string;
+    endTime?: string;
     timezone?: string;
     page?: number;
     pageSize?: number;
@@ -635,13 +757,18 @@ export const AnalyticsApis = {
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
-      date_from: dateFrom,
-      date_to: dateTo,
       page: page.toString(),
       page_size: pageSize.toString(),
       sort_by: sortBy,
       sort_dir: sortDir,
     });
+    if (startTime && endTime) {
+      params.append("start_time", startTime);
+      params.append("end_time", endTime);
+    } else {
+      if (dateFrom) params.append("date_from", dateFrom);
+      if (dateTo) params.append("date_to", dateTo);
+    }
     if (timezone) params.append("timezone", timezone);
     if (search) params.append("search", search);
     if (category) params.append("category", category);
@@ -757,14 +884,18 @@ export const AnalyticsApis = {
     restaurantId,
     dateFrom,
     dateTo,
+    startTime,
+    endTime,
     timezone,
     page = 1,
     pageSize = 20,
     businessLine,
   }: {
     restaurantId: number;
-    dateFrom: string;
-    dateTo: string;
+    dateFrom?: string;
+    dateTo?: string;
+    startTime?: string;
+    endTime?: string;
     timezone?: string;
     page?: number;
     pageSize?: number;
@@ -772,11 +903,16 @@ export const AnalyticsApis = {
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
-      date_from: dateFrom,
-      date_to: dateTo,
       page: page.toString(),
       page_size: pageSize.toString(),
     });
+    if (startTime && endTime) {
+      params.append("start_time", startTime);
+      params.append("end_time", endTime);
+    } else {
+      if (dateFrom) params.append("date_from", dateFrom);
+      if (dateTo) params.append("date_to", dateTo);
+    }
     if (timezone) params.append("timezone", timezone);
     if (businessLine) params.append("business_line", businessLine);
     return `/analytics/staff/details?${params.toString()}`;
@@ -822,6 +958,8 @@ export const AnalyticsApis = {
     restaurantId,
     dateFrom,
     dateTo,
+    startTime,
+    endTime,
     timezone,
     page = 1,
     pageSize = 20,
@@ -831,6 +969,8 @@ export const AnalyticsApis = {
     restaurantId: number;
     dateFrom: string;
     dateTo: string;
+    startTime?: string;
+    endTime?: string;
     timezone?: string;
     page?: number;
     pageSize?: number;
@@ -844,6 +984,8 @@ export const AnalyticsApis = {
       page: page.toString(),
       page_size: pageSize.toString(),
     });
+    if (startTime) params.append("start_time", startTime);
+    if (endTime) params.append("end_time", endTime);
     if (timezone) params.append("timezone", timezone);
     if (businessLine) params.append("business_line", businessLine);
     if (category) params.append("category", category);
@@ -853,6 +995,8 @@ export const AnalyticsApis = {
     restaurantId,
     dateFrom,
     dateTo,
+    startTime,
+    endTime,
     timezone,
     page = 1,
     pageSize = 20,
@@ -862,6 +1006,8 @@ export const AnalyticsApis = {
     restaurantId: number;
     dateFrom: string;
     dateTo: string;
+    startTime?: string;
+    endTime?: string;
     timezone?: string;
     page?: number;
     pageSize?: number;
@@ -876,6 +1022,8 @@ export const AnalyticsApis = {
       page_size: pageSize.toString(),
       view,
     });
+    if (startTime) params.append("start_time", startTime);
+    if (endTime) params.append("end_time", endTime);
     if (timezone) params.append("timezone", timezone);
     if (businessLine) params.append("business_line", businessLine);
     return `/analytics/inventory/details?${params.toString()}`;
@@ -1403,17 +1551,19 @@ export const AccountingApis = {
     if (paymentMethod) query.append("payment_method", paymentMethod);
     if (activeOnly !== undefined)
       query.append("active_only", String(activeOnly));
-    return `/accounting/payment-instruments?${query.toString()}`;
+    return `/finance/payment-instruments?${query.toString()}`;
   },
-  createPaymentInstrument: () => "/accounting/payment-instruments",
+  createPaymentInstrument: () => "/finance/payment-instruments",
+  migrateLegacyPaymentInstruments: (restaurantId: number, businessLine: string) =>
+    `/finance/payment-instruments/migrate-legacy?restaurant_id=${restaurantId}&business_line=${businessLine}`,
   updatePaymentInstrument: (instrumentId: number) =>
-    `/accounting/payment-instruments/${instrumentId}`,
+    `/finance/payment-instruments/${instrumentId}`,
   deactivatePaymentInstrument: (instrumentId: number) =>
-    `/accounting/payment-instruments/${instrumentId}/deactivate`,
+    `/finance/payment-instruments/${instrumentId}/deactivate`,
   paymentBanks: (restaurantId: number) =>
-    `/accounting/payment-banks?restaurant_id=${restaurantId}`,
-  createPaymentBank: () => "/accounting/payment-banks",
-  updatePaymentBank: (bankId: number) => `/accounting/payment-banks/${bankId}`,
+    `/finance/payment-banks?restaurant_id=${restaurantId}`,
+  createPaymentBank: () => "/finance/payment-banks",
+  updatePaymentBank: (bankId: number) => `/finance/payment-banks/${bankId}`,
   createCashTransfer: () => "/accounting/cash-transfers",
   previewSettlement: () => "/accounting/settlements/preview",
   createSettlement: () => "/accounting/settlements",
@@ -1966,11 +2116,51 @@ export const SupplierApis = {
   },
   getSupplier: (id: number, restaurantId: number) =>
     `/suppliers/${id}?restaurant_id=${restaurantId}`,
+  transactions: (id: number, restaurantId: number) => {
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+      skip: "0",
+      limit: "200",
+    });
+    return `/suppliers/${id}/transactions?${params.toString()}`;
+  },
+  settleTransaction: (
+    supplierId: number,
+    transactionId: number,
+    restaurantId: number,
+  ) =>
+    `/suppliers/${supplierId}/transactions/${transactionId}/settle?restaurant_id=${restaurantId}`,
   createSupplier: "/suppliers",
   updateSupplier: (id: number, restaurantId: number) =>
     `/suppliers/${id}?restaurant_id=${restaurantId}`,
   deleteSupplier: (id: number, restaurantId: number) =>
     `/suppliers/${id}?restaurant_id=${restaurantId}`,
+};
+
+export const StationApis = {
+  list: (options: {
+    restaurantId: number;
+    isActive?: boolean;
+    search?: string;
+    skip?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams({
+      restaurant_id: options.restaurantId.toString(),
+    });
+    if (options.isActive !== undefined) params.append("is_active", options.isActive.toString());
+    if (options.search) params.append("search", options.search);
+    if (options.skip !== undefined) params.append("skip", options.skip.toString());
+    if (options.limit !== undefined) params.append("limit", options.limit.toString());
+    return `/stations?${params.toString()}`;
+  },
+  getStation: (id: number, restaurantId: number) =>
+    `/stations/${id}?restaurant_id=${restaurantId}`,
+  createStation: "/stations",
+  updateStation: (id: number, restaurantId: number) =>
+    `/stations/${id}?restaurant_id=${restaurantId}`,
+  deleteStation: (id: number, restaurantId: number) =>
+    `/stations/${id}?restaurant_id=${restaurantId}`,
 };
 
 export const StaffApis = {

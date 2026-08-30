@@ -87,6 +87,7 @@ import {
   PAYMENT_AMOUNT_STEP,
   preventPaymentAmountWheelChange,
 } from "@/lib/payment-composer-config";
+import { CompletedSettlementCorrectionDialog } from "@/components/orders/completed-settlement-correction-dialog";
 
 function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
   if (!input) return null;
@@ -198,6 +199,9 @@ interface BillPayment {
 
 interface OrderBill {
   order_id: number;
+  invoice_number?: string | null;
+  daily_order_number?: number | null;
+  fiscal_document_number?: string | null;
   items: BillItem[];
   payments: BillPayment[];
   subtotal: number;
@@ -216,6 +220,7 @@ interface OrderBill {
 interface OrderMeta {
   id: number;
   restaurant_order_id?: number;
+  invoice_number?: string | null;
   table_name?: string;
   table_id?: number;
   table_category_name?: string;
@@ -678,6 +683,7 @@ export default function CheckoutPage() {
   const [refundReference, setRefundReference] = useState("");
   const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [refundError, setRefundError] = useState<string | null>(null);
+  const [settlementCorrectionOpen, setSettlementCorrectionOpen] = useState(false);
 
   // Customer selection for Credit
   const [customers, setCustomers] = useState<any[]>([]);
@@ -1401,6 +1407,10 @@ export default function CheckoutPage() {
 
   const openEditPaymentDialog = useCallback(
     (payment: BillPayment) => {
+      if (orderEditLocked) {
+        toast.error("Completed payments cannot be edited individually. Correct the full settlement instead.");
+        return;
+      }
       if (!canEditPayment) {
         toast.error("You do not have permission to edit payments.");
         return;
@@ -1422,7 +1432,7 @@ export default function CheckoutPage() {
       setEditPayError(null);
       setEditPaymentOpen(true);
     },
-    [canEditPayment, staticPaymentCards, staticPaymentQrs],
+    [canEditPayment, orderEditLocked, staticPaymentCards, staticPaymentQrs],
   );
 
   const handleUpdatePayment = useCallback(async () => {
@@ -1492,6 +1502,10 @@ export default function CheckoutPage() {
   ]);
 
   const handleRemovePayment = useCallback(async (payment: BillPayment) => {
+    if (orderEditLocked) {
+      toast.error("Completed payments cannot be removed. Correct the full settlement or create a sales return.");
+      return;
+    }
     if (!canDeletePayment) {
       toast.error("You do not have permission to remove payments.");
       return;
@@ -1527,6 +1541,7 @@ export default function CheckoutPage() {
     fetchContext,
     fetchCustomers,
     orderId,
+    orderEditLocked,
     removingPaymentId,
   ]);
 
@@ -2590,7 +2605,7 @@ export default function CheckoutPage() {
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="font-semibold tabular-nums">{formatCurrency(p.amount, curr)}</span>
-                        {canEditPayment && (
+                        {canEditPayment && !orderEditLocked && (
                           <Button
                             type="button"
                             variant="outline"
@@ -2602,7 +2617,7 @@ export default function CheckoutPage() {
                             Edit
                           </Button>
                         )}
-                        {canDeletePayment && (
+                        {canDeletePayment && !orderEditLocked && (
                           <Button
                             type="button"
                             variant="outline"
@@ -2819,23 +2834,6 @@ export default function CheckoutPage() {
                 </p>
               )}
 
-              {canProcessRefund && bill.total_paid > 0 && !displayIsFullyPaid && (
-                <Button
-                  variant="destructive"
-                  className="w-full h-12 text-base font-semibold shadow-lg gap-2 mt-3"
-                  onClick={() => {
-                    setRefundAmount("");
-                    setRefundReason("");
-                    setRefundReference("");
-                    setRefundError(null);
-                    setRefundOpen(true);
-                  }}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Issue Refund
-                </Button>
-              )}
-
               <div className="grid grid-cols-2 gap-3 mt-3">
                 {canApplyDiscount && (
                   <Button
@@ -2907,16 +2905,21 @@ export default function CheckoutPage() {
                 <Button
                   variant="destructive"
                   className="w-full h-12 text-base font-semibold shadow-lg gap-2"
-                  onClick={() => {
-                    setRefundAmount("");
-                    setRefundReason("");
-                    setRefundReference("");
-                    setRefundError(null);
-                    setRefundOpen(true);
-                  }}
+                  onClick={() => router.push(`/finance/sales/returns?order_id=${orderId}`)}
                 >
                   <RefreshCw className="h-4 w-4" />
-                  Issue Refund
+                  Return items / issue credit note
+                </Button>
+              )}
+
+              {canEditPayment && orderMeta?.status === "completed" && (
+                <Button
+                  variant="outline"
+                  className="w-full h-12 text-base font-semibold gap-2"
+                  onClick={() => setSettlementCorrectionOpen(true)}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Correct payment allocation
                 </Button>
               )}
 
@@ -4255,7 +4258,20 @@ export default function CheckoutPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Issue Refund Dialog ── */}
+      {bill ? (
+        <CompletedSettlementCorrectionDialog
+          open={settlementCorrectionOpen}
+          onOpenChange={setSettlementCorrectionOpen}
+          orderId={orderId}
+          total={bill.grand_total}
+          payments={bill.payments}
+          onCorrected={async () => {
+            await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
+          }}
+        />
+      ) : null}
+
+      {/* Legacy pre-completion refund dialog. Completed sales use the credit-note workflow above. */}
       <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

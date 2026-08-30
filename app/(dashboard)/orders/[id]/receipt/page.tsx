@@ -88,7 +88,8 @@ function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: 
   if (header.show_phone !== false && restaurant?.phone) lines.push(`${header.phone_label || "Contact"}: ${restaurant.phone}`);
 
   lines.push("---------------------------");
-  lines.push(`Order: #${order?.restaurant_order_id || order?.id || orderId}`);
+  lines.push(`Invoice: ${order?.invoice_number || `POS-${String(order?.id || orderId).padStart(8, "0")}`}`);
+  lines.push(`Daily order: #${order?.restaurant_order_id || order?.id || orderId}`);
   lines.push(`Table: ${order?.table_name || "-"}`);
   lines.push(`Date: ${new Date(order?.created_at || Date.now()).toLocaleString()}`);
   lines.push("---------------------------");

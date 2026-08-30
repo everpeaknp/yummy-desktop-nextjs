@@ -181,7 +181,9 @@ export function ReceiptDetailSheet({
         <SheetHeader className="p-4 bg-slate-50 dark:bg-slate-900/50 border-b print:hidden">
           <SheetTitle className="text-lg font-bold">Receipt Details</SheetTitle>
           <SheetDescription>
-            Order #{receipt?.restaurant_order_id || receipt?.order_id || orderId}
+            {receipt?.order?.invoice_number
+              ? `Invoice ${receipt.order.invoice_number} · Daily order #${receipt.order.restaurant_order_id || receipt.order.id}`
+              : `Daily order #${receipt?.restaurant_order_id || receipt?.order_id || orderId}`}
           </SheetDescription>
         </SheetHeader>
 
@@ -248,7 +250,7 @@ export function ReceiptDetailSheet({
                </div>
                
                <div className="text-center pb-12 opacity-40">
-                 <p className="text-[10px] font-mono tracking-tighter">TRANS ID: {receipt.order?.restaurant_order_id || receipt.order?.id}</p>
+                 <p className="text-[10px] font-mono tracking-tighter">INVOICE: {receipt.order?.invoice_number || `POS-${String(receipt.order?.id).padStart(8, "0")}`}</p>
                  <p className="text-[9px] uppercase font-bold mt-1">Digital Receipt Record</p>
                </div>
             </div>
