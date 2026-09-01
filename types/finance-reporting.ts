@@ -197,6 +197,18 @@ export interface FinanceReportingProfitLossRead {
   inventory_reconciliation: FinanceReportingInventoryReconciliation;
 }
 
+export interface FinanceReportingDepartment {
+  station: string;
+  total_income: FinanceReportingMoney;
+  total_expenses: FinanceReportingMoney;
+  net_profit: FinanceReportingMoney;
+}
+
+export interface FinanceReportingDepartmentBreakdownRead {
+  period: FinanceReportingReportPeriod;
+  departments: FinanceReportingDepartment[];
+}
+
 export interface FinanceReportingTrialBalanceRow {
   head_id: number;
   code: string;
@@ -228,14 +240,6 @@ export interface FinanceReportingTrialBalanceRead {
   is_balanced: boolean;
 }
 
-export interface FinanceReportingLedgerHead {
-  id: number;
-  code: string;
-  name: string;
-  head_type: FinanceHeadType;
-  normal_side: FinanceNormalSide;
-}
-
 export interface FinanceReportingLedgerLine {
   line_id: number;
   entry_id: number;
@@ -248,6 +252,11 @@ export interface FinanceReportingLedgerLine {
   description: string | null;
   party_type: string | null;
   party_id: number | null;
+  party_name: string | null;
+  order_reference: string | null;
+  order_channel: string | null;
+  order_customer_name: string | null;
+  payment_method: string | null;
   debit: FinanceReportingMoney;
   credit: FinanceReportingMoney;
   running_balance: FinanceReportingMoney;
@@ -255,7 +264,7 @@ export interface FinanceReportingLedgerLine {
 }
 
 export interface FinanceReportingAccountLedgerRead {
-  head: FinanceReportingLedgerHead;
+  head: FinanceReportingHeadRead;
   period: FinanceReportingReportPeriod;
   closure: FinanceReportingClosureSummary;
   opening_balance: FinanceReportingMoney;

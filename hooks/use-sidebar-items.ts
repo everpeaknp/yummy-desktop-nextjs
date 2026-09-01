@@ -415,7 +415,7 @@ export function useSidebarItems(): SidebarItem[] {
       const subItems = group.subItems ?? [];
       if (!subItems.some((item) => item.href === "/finance/heads")) {
         subItems.push({
-          title: "Financial Categories",
+          title: "Chart of Accounts",
           href: "/finance/heads",
           icon: FileText,
           isNestedChild: true,
@@ -449,6 +449,19 @@ export function useSidebarItems(): SidebarItem[] {
         financeItems.splice(6, 0, {
           title: "Cash & Banks",
           href: "/finance/operations",
+          icon: Banknote,
+          isNestedChild: true,
+        });
+      }
+
+      if (
+        hasPermission(user, "day_close.drawer.open") &&
+        !isExplicitlyLocked("finance.cash_drawer.enabled")
+      ) {
+        const cashBanksIndex = financeItems.findIndex((item) => item.href === "/finance/operations");
+        financeItems.splice(cashBanksIndex >= 0 ? cashBanksIndex + 1 : financeItems.length, 0, {
+          title: "Cash Drawers",
+          href: "/cash-drawers",
           icon: Banknote,
           isNestedChild: true,
         });

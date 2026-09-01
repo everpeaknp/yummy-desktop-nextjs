@@ -42,7 +42,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
-import { PrinterApis, RestaurantApis } from "@/lib/api/endpoints";
+import { PrinterApis, RestaurantApis, StationApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
 import { 
@@ -66,14 +66,11 @@ interface Printer {
     is_default: boolean;
 }
 
-interface StationConfigItem {
-    id: string;
+interface DynamicStation {
+    id: number;
     name: string;
     printer_id: number | null;
-}
-
-interface StationConfig {
-    stations: StationConfigItem[];
+    is_active: boolean;
 }
 
 interface PrinterManagementProps {
@@ -83,7 +80,8 @@ interface PrinterManagementProps {
 export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
     const restaurant = useRestaurant((s) => s.restaurant);
     const [printers, setPrinters] = useState<Printer[]>([]);
-    const [stations, setStations] = useState<StationConfigItem[]>([]);
+    const [stations, setStations] = useState<DynamicStation[]>([]);
+    const [receiptPrinterId, setReceiptPrinterId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [unauthorized, setUnauthorized] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -102,31 +100,24 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
             setLoading(true);
             setUnauthorized(false);
             const printersRes = await apiClient.get(PrinterApis.list(restaurantId));
-            
+
             if (printersRes.data.status === 'success') {
                 setPrinters(printersRes.data.data);
             }
 
-            // First prefer station config already present in restaurant payload.
-            // If this field exists, trust it even when the list is empty.
-            // We use getState() to avoid adding 'restaurant' to the dependency array, which would cause an infinite refetch loop when the store updates.
-            const currentRestaurant = useRestaurant.getState().restaurant;
-            const hasEmbeddedConfig = !!currentRestaurant && Object.prototype.hasOwnProperty.call(currentRestaurant as any, "kot_station_config");
-            if (hasEmbeddedConfig) {
-                const embeddedStations = (currentRestaurant as any)?.kot_station_config?.stations;
-                setStations(Array.isArray(embeddedStations) ? embeddedStations : []);
-                return;
+            // Station.printer_id is the source of truth for KOT routing (see
+            // app/services/printer_service.py::get_printer_for_kot) -- fetch
+            // the restaurant's real dynamic stations, not the deprecated
+            // kot_station_config blob.
+            const stationsRes = await apiClient.get(StationApis.list({ restaurantId, isActive: true, limit: 200 }));
+            if (stationsRes.data.status === 'success') {
+                setStations(stationsRes.data.data?.stations || []);
             }
 
-            // Fallback: dedicated station-config endpoint.
-            const stationRes = await apiClient.get(PrinterApis.stationConfig(restaurantId), {
-                headers: {
-                    "x-restaurant-id": String(restaurantId),
-                },
-            });
-            if (stationRes.data.status === 'success') {
-                setStations(stationRes.data.data.stations || []);
-            }
+            // Receipt printing is not a station -- it's a dedicated field on
+            // the restaurant (see Restaurant.receipt_printer_id).
+            const currentRestaurant = useRestaurant.getState().restaurant;
+            setReceiptPrinterId((currentRestaurant as any)?.receipt_printer_id ?? null);
         } catch (err: any) {
             const status = err?.response?.status;
             if (status === 401 || status === 403) {
@@ -298,26 +289,30 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
         }
     };
 
-    const handleUpdateStationConfig = async (stationId: string, printerId: string) => {
+    const handleUpdateStationPrinter = async (stationId: number, printerId: string) => {
+        const newPrinterId = printerId === 'none' ? null : parseInt(printerId);
         try {
-            const updatedStations = stations.map(s => 
-                String(s.id) === String(stationId) ? { ...s, printer_id: printerId === 'none' ? null : parseInt(printerId) } : s
-            );
-
-            const payload = { stations: updatedStations };
-
-            // Persist station routing via restaurant settings payload.
-            // This avoids unstable/unauthorized station-config endpoint behavior in current backend gateway.
-            await apiClient.put(RestaurantApis.update(restaurantId), {
-                kot_station_config: payload,
+            await apiClient.patch(StationApis.updateStation(stationId, restaurantId), {
+                printer_id: newPrinterId,
             });
-            setStations(updatedStations);
-            toast.success("Station configuration updated");
-            
-            // Refetch the restaurant to update the Zustand store so the cached kot_station_config isn't stale
+            setStations(prev => prev.map(s => s.id === stationId ? { ...s, printer_id: newPrinterId } : s));
+            toast.success("Station printer updated");
+        } catch (err) {
+            toast.error("Failed to update station printer");
+        }
+    };
+
+    const handleUpdateReceiptPrinter = async (printerId: string) => {
+        const newPrinterId = printerId === 'none' ? null : parseInt(printerId);
+        try {
+            await apiClient.put(RestaurantApis.update(restaurantId), {
+                receipt_printer_id: newPrinterId,
+            });
+            setReceiptPrinterId(newPrinterId);
+            toast.success("Receipt printer updated");
             useRestaurant.getState().fetchRestaurant();
         } catch (err) {
-            toast.error("Failed to update station config");
+            toast.error("Failed to update receipt printer");
         }
     };
 
@@ -496,9 +491,9 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
                                         </div>
                                     </TableCell>
                                     <TableCell className="py-2.5">
-                                        <Select 
+                                        <Select
                                             value={station.printer_id?.toString() || 'none'}
-                                            onValueChange={(val) => handleUpdateStationConfig(station.id, val)}
+                                            onValueChange={(val) => handleUpdateStationPrinter(station.id, val)}
                                         >
                                             <SelectTrigger className="h-8 w-[240px] text-[11px] font-bold border-border/40 bg-background/50 uppercase">
                                                 <SelectValue placeholder="Select Printer" />
@@ -538,6 +533,40 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
                             )}
                         </TableBody>
                     </Table>
+                </div>
+            </div>
+
+            {/* Receipt Printer -- deliberately separate from station routing
+                above: a receipt has no revenue/menu-item/inventory meaning,
+                it's purely a print target, so it isn't a Station. */}
+            <div className="space-y-3 pt-4 border-t border-border/20">
+                <div className="space-y-0.5">
+                    <h2 className="text-[11px] font-black tracking-[0.2em] text-purple-500 uppercase">Receipt Printer</h2>
+                    <p className="text-sm font-bold tracking-tight">Which printer prints the whole-order receipt</p>
+                </div>
+                <div className="rounded-xl border border-border/40 bg-card/50 p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center shrink-0">
+                            <Printer className="w-4 h-4" />
+                        </div>
+                        <span className="font-bold text-sm tracking-tight uppercase">Receipt</span>
+                    </div>
+                    <Select
+                        value={receiptPrinterId?.toString() || 'none'}
+                        onValueChange={handleUpdateReceiptPrinter}
+                    >
+                        <SelectTrigger className="h-8 w-[240px] text-[11px] font-bold border-border/40 bg-background/50 uppercase">
+                            <SelectValue placeholder="Select Printer" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="none" className="text-[11px] font-bold uppercase">None (Use Default Printer)</SelectItem>
+                            {printers.filter(p => p.enabled).map(p => (
+                                <SelectItem key={p.id} value={p.id.toString()} className="text-[11px] font-bold uppercase">
+                                    {p.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
             </div>
 

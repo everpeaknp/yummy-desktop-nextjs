@@ -58,6 +58,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
 import { Badge } from "@/components/ui/badge";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useCustomFinanceStations } from "@/hooks/use-custom-finance-stations";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
 import { entitlementLimit } from "@/lib/subscription/entitlements";
 import {
@@ -185,6 +186,7 @@ export default function AnalyticsPage() {
   const subscriptionEntitlements = useSubscriptionStore((state) => state.current?.entitlements);
   const historyDays = entitlementLimit(subscriptionEntitlements, "finance.history_days");
   const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
+  const customFinanceStations = useCustomFinanceStations(user?.restaurant_id);
 
   const [station, setStation] = useState<string | undefined>();
   const stationOptions = useMemo(
@@ -192,19 +194,21 @@ export default function AnalyticsPage() {
       financeStationOptions({
         businessLine: businessLine ?? "all",
         hotelEnabled: Boolean(restaurant?.hotel_enabled),
+        customStations: customFinanceStations,
       }),
-    [businessLine, restaurant?.hotel_enabled],
+    [businessLine, restaurant?.hotel_enabled, customFinanceStations],
   );
   useEffect(() => {
     if (
       !isFinanceStationAvailable(station, {
         businessLine: businessLine ?? "all",
         hotelEnabled: Boolean(restaurant?.hotel_enabled),
+        customStations: customFinanceStations,
       })
     ) {
       setStation(undefined);
     }
-  }, [businessLine, restaurant?.hotel_enabled, station]);
+  }, [businessLine, restaurant?.hotel_enabled, station, customFinanceStations]);
   // Revenue Trends card: selected day (triggers refetch for that specific day's hourly data)
   const [revenueCardDay, setRevenueCardDay] = useState<string | null>(null);
   const [revenueCardDayLabel, setRevenueCardDayLabel] = useState<string | null>(
@@ -600,7 +604,7 @@ export default function AnalyticsPage() {
     }
 
     parts.push(`Business line: ${dates.businessLine || "all"}`);
-    parts.push(`Station: ${financeStationLabel(station)}`);
+    parts.push(`Station: ${financeStationLabel(station, customFinanceStations)}`);
 
     return parts.join(" | ");
   }, [
@@ -610,6 +614,7 @@ export default function AnalyticsPage() {
     dayCloseAlignedTodaySession,
     formatSessionCoveredRange,
     station,
+    customFinanceStations,
   ]);
 
   const applyAllowedAnalyticsRange = useCallback(() => {
@@ -806,6 +811,7 @@ export default function AnalyticsPage() {
           : toFinanceStationParam(station, {
               businessLine: queryBusinessLine ?? "all",
               hotelEnabled: Boolean(restaurant?.hotel_enabled),
+              customStations: customFinanceStations,
             });
         const dashboardUrl = AnalyticsApis.dashboard({
           restaurantId: user.restaurant_id,
@@ -917,6 +923,7 @@ export default function AnalyticsPage() {
     restaurant?.hotel_enabled,
     historyDays,
     selectedDayCloseSession,
+    customFinanceStations,
   ]);
 
   useEffect(() => {
@@ -1588,6 +1595,7 @@ export default function AnalyticsPage() {
                   toFinanceStationParam(val, {
                     businessLine: businessLine ?? "all",
                     hotelEnabled: Boolean(restaurant?.hotel_enabled),
+                    customStations: customFinanceStations,
                   }),
                 );
               }}
@@ -1596,7 +1604,7 @@ export default function AnalyticsPage() {
               <SelectTrigger className="h-10 rounded-xl bg-card border-border/60 font-medium">
                 <SelectValue placeholder="Station: All">
                   {station
-                    ? `Station: ${financeStationLabel(station)}`
+                    ? `Station: ${financeStationLabel(station, customFinanceStations)}`
                     : "Station: All"}
                 </SelectValue>
               </SelectTrigger>

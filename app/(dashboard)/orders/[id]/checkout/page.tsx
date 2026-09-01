@@ -830,11 +830,11 @@ export default function CheckoutPage() {
     return [...mergedLegacy, ...activeOnly];
   }, [activeCardInstruments, legacyPaymentCards]);
   const cardConfigHelpText = activeCardInstruments.length > 0
-    ? "No active card instrument available for checkout. Align Finance / Accounting / Setup with this restaurant's card settings."
-    : "No card account configured. Add one in Manage / Settings / Payments & POS.";
+    ? "The configured card instrument isn't marked available at checkout. Edit it in Finance / Cash & Banks / Payment Instruments and turn on \"Available at checkout\"."
+    : "No card account configured. Add one in Finance / Cash & Banks / Payment Instruments.";
   const qrConfigHelpText = activeStaticQrInstruments.length > 0
-    ? "No active static QR instrument with payload is available for checkout. Align Finance / Accounting / Setup with Manage / Settings / Payments & POS."
-    : "No static QR configured. Add one in Manage / Settings / Payments & POS.";
+    ? "The configured static QR instrument is missing its payment payload. Edit it in Finance / Cash & Banks / Payment Instruments and add the QR payload."
+    : "No static QR configured. Add one in Finance / Cash & Banks / Payment Instruments.";
   const hasUnsyncedLegacyCards = staticPaymentCards.some((card) => !card.isSelectable);
   const hasUnsyncedLegacyQrs = staticPaymentQrs.some((qr) => !qr.isSelectable);
   const availableCashDrawerSessions = drawerSessions;

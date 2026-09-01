@@ -13,6 +13,7 @@ import { useRestaurant } from "@/hooks/use-restaurant";
 import { AllocationLinesEditor, type AllocationLineItem, type EligibleHead } from "@/components/finance/allocation-lines-editor";
 import { CashBankAccountSelect, type CashBankAccountOption } from "@/components/finance/cash-bank-account-select";
 import { StationPicker } from "@/components/stations/station-picker";
+import { legacyStationBucketForStationName } from "@/lib/finance-station-scope";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -56,6 +57,7 @@ export function OtherIncomeClient() {
   const [businessLine, setBusinessLine] = useState<"restaurant" | "hotel">("restaurant");
   const [account, setAccount] = useState<CashBankAccountOption | null>(null);
   const [stationId, setStationId] = useState<number | null>(null);
+  const [stationName, setStationName] = useState<string | null>(null);
   const [heads, setHeads] = useState<EligibleHead[]>([]);
   const [lines, setLines] = useState<AllocationLineItem[]>([]);
   const [saving, setSaving] = useState(false);
@@ -98,6 +100,7 @@ export function OtherIncomeClient() {
     setAccount(null);
     setLines([]);
     setStationId(null);
+    setStationName(null);
     setDialogOpen(true);
   };
 
@@ -125,7 +128,7 @@ export function OtherIncomeClient() {
         paid_at: new Date().toISOString(),
         description: description.trim() || null,
         business_line: businessLine,
-        station: businessLine === "hotel" ? "rooms" : "general",
+        station: legacyStationBucketForStationName(stationName, businessLine),
         station_id: stationId,
         account_type: account.account_type,
         account_id: account.id,
@@ -164,10 +167,12 @@ export function OtherIncomeClient() {
             <CashBankAccountSelect value={account} onChange={setAccount} businessLine={businessLine} label="Receive into" />
             {user?.restaurant_id && (
               <StationPicker
-                label="Station (cost centre)"
                 restaurantId={user.restaurant_id}
                 value={stationId}
-                onChange={setStationId}
+                onChange={(id, station) => {
+                  setStationId(id);
+                  setStationName(station?.name ?? null);
+                }}
               />
             )}
             <div className="grid gap-2"><Label>Description</Label><Textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What was this income for?" /></div>

@@ -10,6 +10,7 @@ import {
   FinanceReportingEntryRead,
   FinanceHeadType,
   FinanceReportingAccountLedgerRead,
+  FinanceReportingDepartmentBreakdownRead,
   FinanceReportingProfitLossRead,
   FinanceReportingTrialBalanceRead,
   FinanceCustodyReconciliationRead,
@@ -203,6 +204,18 @@ export const financeReportingApi = {
   }): Promise<FinanceReportingProfitLossRead> => {
     const res = await apiClient.get<ApiResponse<FinanceReportingProfitLossRead>>(
       "/finance/reporting-reports/profit-and-loss",
+      { params }
+    );
+    return res.data.data;
+  },
+
+  getDepartmentBreakdown: async (params?: {
+    date_from?: string;
+    date_to?: string;
+    business_line?: string;
+  }): Promise<FinanceReportingDepartmentBreakdownRead> => {
+    const res = await apiClient.get<ApiResponse<FinanceReportingDepartmentBreakdownRead>>(
+      "/finance/reporting-reports/department-breakdown",
       { params }
     );
     return res.data.data;

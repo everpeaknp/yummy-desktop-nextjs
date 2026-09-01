@@ -23,25 +23,16 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { StationPicker } from "@/components/stations/station-picker";
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  type: z.enum(["kitchen", "bar", "cafe"]),
-  station_id: z.number().nullable().optional(),
+  station_id: z.number({ required_error: "Station is required" }),
 });
 
 interface Category {
   id: number;
   name: string;
-  type: string;
   station_id?: number | null;
 }
 
@@ -64,8 +55,7 @@ export function CategoryDialog({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
-      type: "kitchen",
-      station_id: null,
+      station_id: undefined,
     },
   });
 
@@ -73,14 +63,12 @@ export function CategoryDialog({
     if (initialData) {
       form.reset({
         name: initialData.name,
-        type: initialData.type as any,
-        station_id: initialData.station_id ?? null,
+        station_id: initialData.station_id ?? undefined,
       });
     } else {
       form.reset({
         name: "",
-        type: "kitchen",
-        station_id: null,
+        station_id: undefined,
       });
     }
   }, [initialData, form, open]);
@@ -120,37 +108,19 @@ export function CategoryDialog({
             />
             <FormField
               control={form.control}
-              name="type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Type</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category type" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="kitchen">Kitchen</SelectItem>
-                      <SelectItem value="bar">Bar</SelectItem>
-                      <SelectItem value="cafe">Cafe</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
               name="station_id"
               render={({ field }) => (
                 <FormItem>
                   <StationPicker
                     restaurantId={restaurantId}
                     value={field.value ?? null}
-                    onChange={(stationId) => field.onChange(stationId)}
-                    label="Station (optional)"
+                    onChange={(stationId) => field.onChange(stationId ?? undefined)}
+                    label="Station"
+                    placeholder="Select a station"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Attributes this category to a cost centre for KOT routing and reporting.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}

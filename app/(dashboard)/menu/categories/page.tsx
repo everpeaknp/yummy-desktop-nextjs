@@ -12,7 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ItemCategoryApis } from "@/lib/api/endpoints";
+import { ItemCategoryApis, StationApis } from "@/lib/api/endpoints";
 import { CategoryDialog } from "@/components/menu/category-dialog";
 import {
   AlertDialog,
@@ -28,12 +28,12 @@ import {
 interface Category {
   id: number;
   name: string;
-  type: string;
   station_id?: number | null;
 }
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
+  const [stationNames, setStationNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const restaurantId = useAuth((s) => s.user?.restaurant_id);
@@ -51,9 +51,18 @@ export default function CategoriesPage() {
       return;
     }
     try {
-      const response = await apiClient.get(ItemCategoryApis.getItemCategories(restaurantId));
-      if (response.data.status === "success") {
-        setCategories(response.data.data);
+      const [categoriesRes, stationsRes] = await Promise.all([
+        apiClient.get(ItemCategoryApis.getItemCategories(restaurantId)),
+        apiClient.get(StationApis.list({ restaurantId, isActive: true, limit: 200 })),
+      ]);
+      if (categoriesRes.data.status === "success") {
+        setCategories(categoriesRes.data.data);
+      }
+      if (stationsRes.data.status === "success") {
+        const stations = stationsRes.data.data?.stations || [];
+        setStationNames(
+          Object.fromEntries(stations.map((s: { id: number; name: string }) => [s.id, s.name])),
+        );
       }
     } catch (err) {
       console.error("Failed to fetch categories:", err);
@@ -71,7 +80,7 @@ export default function CategoriesPage() {
     fetchCategories();
   }, [fetchCategories]);
 
-  const handleCreate = async (data: { name: string; type: string; station_id?: number | null }) => {
+  const handleCreate = async (data: { name: string; station_id: number }) => {
     if (!restaurantId) return;
     try {
       await apiClient.post(ItemCategoryApis.createItemCategory(restaurantId), data);
@@ -83,7 +92,7 @@ export default function CategoriesPage() {
     }
   };
 
-  const handleUpdate = async (data: { name: string; type: string; station_id?: number | null }) => {
+  const handleUpdate = async (data: { name: string; station_id: number }) => {
     if (!editingCategory) return;
     try {
       await apiClient.put(ItemCategoryApis.updateItemCategory(editingCategory.id), data);
@@ -156,7 +165,7 @@ export default function CategoriesPage() {
               <TableRow>
                 <TableHead className="w-[50px]"></TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
+                <TableHead>Station</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -185,15 +194,20 @@ export default function CategoriesPage() {
                 categories.filter((c) => {
                   if (!searchQuery.trim()) return true;
                   const q = searchQuery.toLowerCase();
-                  return c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q);
+                  const stationName = c.station_id != null ? stationNames[c.station_id] : undefined;
+                  return c.name.toLowerCase().includes(q) || (stationName || "").toLowerCase().includes(q);
                 }).map((category) => (
                   <TableRow key={category.id}>
                     <TableCell>
                       <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
                     </TableCell>
                     <TableCell className="font-medium">{category.name}</TableCell>
-                    <TableCell className="capitalize">
-                      <Badge variant="secondary" className="font-normal">{category.type}</Badge>
+                    <TableCell>
+                      <Badge variant="secondary" className="font-normal">
+                        {category.station_id != null
+                          ? stationNames[category.station_id] || `Station #${category.station_id}`
+                          : "Unassigned"}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="font-normal border-green-500 text-green-500">Active</Badge>

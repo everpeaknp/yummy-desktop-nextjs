@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { FinanceReportNavigation } from "@/components/finance/reports/finance-report-navigation";
+import { AccountLedgerPanel } from "@/components/finance/reports/account-ledger-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,7 +52,6 @@ import type {
   FinanceReportingCashFlowRead,
   FinanceReportingClosureSummary,
   FinanceReportingHeadAmount,
-  FinanceReportingHeadRead,
   FinanceReportingMoney,
   FinanceReportingProfitLossRead,
   FinanceReportingHeadActivityRead,
@@ -92,8 +92,8 @@ const modeMeta: Record<
     description: "Opening, period, and closing debit and credit balances across the reporting hierarchy.",
   },
   "account-ledger": {
-    title: "Account Ledger",
-    description: "Entry-by-entry activity for one postable account head, with source and party context.",
+    title: "Accounts",
+    description: "Every account with its opening, period, and closing balances. Click one to see its full ledger.",
   },
   "custody-reconciliation": {
     title: "Custody Reconciliation",
@@ -450,76 +450,73 @@ function TrialBalanceView({
   );
 }
 
-function AccountLedgerView({
+function AccountLedgerListView({
   report,
-  offset,
-  onOffsetChange,
+  search,
+  onSelectHead,
 }: {
-  report: FinanceReportingAccountLedgerRead;
-  offset: number;
-  onOffsetChange: (offset: number) => void;
+  report: FinanceReportingHeadActivityRead;
+  search: string;
+  onSelectHead: (headId: number) => void;
 }) {
-  const start = report.total === 0 ? 0 : report.offset + 1;
-  const end = Math.min(report.offset + report.lines.length, report.total);
+  const query = search.trim().toLowerCase();
+  const rows = query
+    ? report.rows.filter((row) => `${row.code} ${row.name}`.toLowerCase().includes(query))
+    : report.rows;
+  const postableRows = rows.filter((row) => row.is_postable);
+
   return (
     <div className="space-y-4">
       <ClosureNotice closure={report.closure} />
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline" className="font-mono">{report.head.code}</Badge>
-        <h2 className="font-semibold">{report.head.name}</h2>
-        <Badge variant="secondary">{humanize(report.head.head_type)}</Badge>
-        <span className="text-xs text-muted-foreground">Normal side: {humanize(report.head.normal_side)}</span>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Opening balance" value={money(report.opening_balance)} />
-        <MetricCard label="Total debit" value={money(report.total_debit)} />
-        <MetricCard label="Total credit" value={money(report.total_credit)} />
-        <MetricCard label="Closing balance" value={money(report.closing_balance)} />
-      </div>
-      {report.lines.length === 0 ? (
-        <EmptyReport message="This account head has no posted activity for the selected filters." />
+      <p className="text-sm text-muted-foreground">
+        {postableRows.length} account{postableRows.length === 1 ? "" : "s"}
+        {query ? ` matching "${search.trim()}"` : ""}
+      </p>
+      {postableRows.length === 0 ? (
+        <EmptyReport message="No accounts match your search or filters." />
       ) : (
         <Card>
           <CardContent className="overflow-x-auto p-0">
             <Table>
-              <TableHeader><TableRow>
-                <TableHead className="min-w-36">Business date</TableHead>
-                <TableHead className="min-w-48">Source</TableHead>
-                <TableHead className="min-w-52">Description / party</TableHead>
-                <TableHead className="text-right">Debit</TableHead>
-                <TableHead className="text-right">Credit</TableHead>
-                <TableHead className="text-right">Running balance</TableHead>
-              </TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-64">Account</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Opening</TableHead>
+                  <TableHead className="text-right">Debit</TableHead>
+                  <TableHead className="text-right">Credit</TableHead>
+                  <TableHead className="text-right">Closing</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
-                {report.lines.map((line) => (
-                  <TableRow key={line.line_id}>
-                    <TableCell><div>{line.business_date}</div><div className="text-xs text-muted-foreground">{dateTime(line.occurred_at)}</div></TableCell>
-                    <TableCell>
-                      <div className="font-medium">{humanize(line.source_type)}</div>
-                      <div className="font-mono text-xs text-muted-foreground">{line.source_id ? `#${line.source_id}` : line.source_key}</div>
-                      {line.entry_status === "reversed" ? <Badge className="mt-1" variant="destructive">Reversed</Badge> : null}
-                    </TableCell>
-                    <TableCell>
-                      <div>{line.description || "—"}</div>
-                      {line.party_type ? <div className="text-xs text-muted-foreground">{humanize(line.party_type)} {line.party_id ? `#${line.party_id}` : ""}</div> : null}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">{asNumber(line.debit) ? money(line.debit) : "—"}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">{asNumber(line.credit) ? money(line.credit) : "—"}</TableCell>
-                    <TableCell className="text-right font-mono font-semibold tabular-nums">{money(line.running_balance)}</TableCell>
-                  </TableRow>
-                ))}
+                {postableRows.map((row) => {
+                  const opening = asNumber(row.opening_debit) - asNumber(row.opening_credit);
+                  const closing = asNumber(row.closing_debit) - asNumber(row.closing_credit);
+                  return (
+                    <TableRow
+                      key={row.head_id}
+                      className="cursor-pointer"
+                      onClick={() => onSelectHead(row.head_id)}
+                    >
+                      <TableCell>
+                        <span className="font-medium hover:text-primary hover:underline">
+                          <span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span>
+                          {row.name}
+                        </span>
+                      </TableCell>
+                      <TableCell><Badge variant="outline">{humanize(row.head_type)}</Badge></TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{money(opening)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums text-emerald-600">{row.period_debit && asNumber(row.period_debit) ? money(row.period_debit) : "—"}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums text-rose-600">{row.period_credit && asNumber(row.period_credit) ? money(row.period_credit) : "—"}</TableCell>
+                      <TableCell className="text-right font-mono font-semibold tabular-nums">{money(closing)}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
       )}
-      <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-        <span>Showing {start}–{end} of {report.total}</span>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={offset <= 0} onClick={() => onOffsetChange(Math.max(0, offset - report.limit))}>Previous</Button>
-          <Button variant="outline" size="sm" disabled={offset + report.limit >= report.total} onClick={() => onOffsetChange(offset + report.limit)}>Next</Button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -762,7 +759,6 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
   const searchParams = useSearchParams();
   const meta = modeMeta[mode];
   const canView = hasPermission(user, "finance.coa.view");
-  const restaurantId = user?.restaurant_id;
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("date_from") || firstDayOfMonth());
   const [dateTo, setDateTo] = useState(() => searchParams.get("date_to") || localDate(new Date()));
   const [businessLine, setBusinessLine] = useState(
@@ -770,15 +766,11 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
   );
   const [includeZero, setIncludeZero] = useState(false);
   const [partyType, setPartyType] = useState(searchParams.get("party_type") || "all");
-  const [partyId, setPartyId] = useState(searchParams.get("party_id") || "");
-  const [sourceType, setSourceType] = useState("");
-  const [headSearch, setHeadSearch] = useState("");
-  const [heads, setHeads] = useState<FinanceReportingHeadRead[]>([]);
-  const [headId, setHeadId] = useState<number | null>(() => {
+  const [accountSearch, setAccountSearch] = useState("");
+  const [selectedHeadId, setSelectedHeadId] = useState<number | null>(() => {
     const value = Number(searchParams.get("head_id"));
     return Number.isInteger(value) && value > 0 ? value : null;
   });
-  const [offset, setOffset] = useState(0);
   const [report, setReport] = useState<ReportingLedgerReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -792,24 +784,6 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
     void restore();
   }, [me, router, user]);
 
-  useEffect(() => {
-    if (mode !== "account-ledger" || !restaurantId || !canView) return;
-    let active = true;
-    financeReportingApi.listHeads(restaurantId, { is_active: true, is_postable: true })
-      .then((items) => {
-        if (!active) return;
-        const sorted = [...items].sort((left, right) => left.code.localeCompare(right.code));
-        setHeads(sorted);
-        setHeadId((current) => current || sorted[0]?.id || null);
-      })
-      .catch((requestError: unknown) => {
-        if (active) setError(readError(requestError));
-      });
-    return () => { active = false; };
-  }, [canView, mode, restaurantId]);
-
-  useEffect(() => { setOffset(0); }, [dateFrom, dateTo, businessLine, headId, partyId, partyType, sourceType]);
-
   const params = useMemo(() => ({
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
@@ -817,7 +791,7 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
   }), [businessLine, dateFrom, dateTo]);
 
   const load = useCallback(async () => {
-    if (!user || !canView || (mode === "account-ledger" && !headId)) return;
+    if (!user || !canView) return;
     setLoading(true);
     setError(null);
     setReport(null);
@@ -827,15 +801,11 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
         data = await financeReportingApi.getProfitAndLoss(params);
       } else if (mode === "trial-balance") {
         data = await financeReportingApi.getTrialBalance({ ...params, include_zero: includeZero });
-      } else if (mode === "account-ledger" && headId) {
-        data = await financeReportingApi.getAccountLedger(headId, {
-          ...params,
-          party_type: partyType === "all" ? undefined : partyType,
-          party_id: Number(partyId) > 0 ? Number(partyId) : undefined,
-          source_type: sourceType.trim() || undefined,
-          limit: 100,
-          offset,
-        });
+      } else if (mode === "account-ledger") {
+        // "Account Ledger" is now the accounts list -- every postable head's
+        // opening/period/closing balances in one bulk call. Opening a single
+        // account's entry-by-entry activity happens in the shared panel.
+        data = await financeReportingApi.getHeadActivity({ ...params, include_zero: true });
       } else if (mode === "custody-reconciliation") {
         data = await financeReportingApi.getCustodyReconciliation({ business_line: params.business_line });
       } else if (mode === "balance-sheet") {
@@ -861,15 +831,9 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
     } finally {
       setLoading(false);
     }
-  }, [canView, dateTo, headId, includeZero, mode, offset, params, partyId, partyType, sourceType, user]);
+  }, [canView, dateTo, includeZero, mode, params, user]);
 
   useEffect(() => { void load(); }, [load]);
-
-  const filteredHeads = useMemo(() => {
-    const query = headSearch.trim().toLowerCase();
-    if (!query) return heads;
-    return heads.filter((head) => `${head.code} ${head.name} ${head.hierarchy_path || ""}`.toLowerCase().includes(query));
-  }, [headSearch, heads]);
 
   if (!user) {
     return <div className="flex min-h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>;
@@ -920,13 +884,15 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
             <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Party type</Label><Select value={partyType} onValueChange={setPartyType}><SelectTrigger className="w-40 bg-background"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All parties</SelectItem><SelectItem value="customer">Customers</SelectItem><SelectItem value="supplier">Suppliers</SelectItem><SelectItem value="staff">Staff</SelectItem></SelectContent></Select></div>
           ) : null}
           {mode === "account-ledger" ? (
-            <>
-              <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Find account</Label><Input value={headSearch} onChange={(event) => setHeadSearch(event.target.value)} placeholder="Code or name" className="w-44 bg-background" /></div>
-              <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Account head</Label><Select value={headId ? String(headId) : undefined} onValueChange={(value) => setHeadId(Number(value))}><SelectTrigger className="w-72 bg-background"><SelectValue placeholder="Select account head" /></SelectTrigger><SelectContent>{filteredHeads.map((head) => <SelectItem key={head.id} value={String(head.id)}><span className="font-mono text-xs">{head.code}</span> · {head.name}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Party type</Label><Select value={partyType} onValueChange={setPartyType}><SelectTrigger className="w-36 bg-background"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All parties</SelectItem><SelectItem value="customer">Customer</SelectItem><SelectItem value="supplier">Supplier</SelectItem><SelectItem value="staff">Staff</SelectItem></SelectContent></Select></div>
-              {partyType !== "all" ? <div className="space-y-1.5"><Label htmlFor="ledger-party-id" className="text-xs text-muted-foreground">Party ID</Label><Input id="ledger-party-id" type="number" min="1" value={partyId} onChange={(event) => setPartyId(event.target.value)} placeholder="All" className="w-28 bg-background" /></div> : null}
-              <div className="space-y-1.5"><Label htmlFor="source-type" className="text-xs text-muted-foreground">Source type</Label><Input id="source-type" value={sourceType} onChange={(event) => setSourceType(event.target.value)} placeholder="All sources" className="w-40 bg-background" /></div>
-            </>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Find account</Label>
+              <Input
+                value={accountSearch}
+                onChange={(event) => setAccountSearch(event.target.value)}
+                placeholder="Code or name"
+                className="w-56 bg-background"
+              />
+            </div>
           ) : null}
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading}><RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />Refresh</Button>
@@ -936,11 +902,16 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
         <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Could not load {meta.title.toLowerCase()}</AlertTitle><AlertDescription className="flex flex-wrap items-center justify-between gap-3"><span>{error}</span><Button size="sm" variant="outline" onClick={() => void load()}>Try again</Button></AlertDescription></Alert>
       ) : null}
       {loading && !report ? <LoadingReport /> : null}
-      {!loading && !error && mode === "account-ledger" && heads.length === 0 ? <EmptyReport message="Create an active postable account head before opening an account ledger." /> : null}
 
       {report && mode === "profit-and-loss" ? <ProfitAndLossView report={report as FinanceReportingProfitLossRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
       {report && mode === "trial-balance" ? <TrialBalanceView report={report as FinanceReportingTrialBalanceRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
-      {report && mode === "account-ledger" ? <AccountLedgerView report={report as FinanceReportingAccountLedgerRead} offset={offset} onOffsetChange={setOffset} /> : null}
+      {report && mode === "account-ledger" ? (
+        <AccountLedgerListView
+          report={report as FinanceReportingHeadActivityRead}
+          search={accountSearch}
+          onSelectHead={setSelectedHeadId}
+        />
+      ) : null}
       {report && mode === "custody-reconciliation" ? <CustodyReconciliationView report={report as FinanceCustodyReconciliationRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
       {report && mode === "balance-sheet" ? <BalanceSheetView report={report as FinanceReportingBalanceSheetRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
       {report && mode === "party-balances" ? <PartyBalancesView report={report as FinanceReportingPartyBalancesRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
@@ -952,6 +923,8 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
         <span className="flex items-center gap-1.5"><Scale className="h-3.5 w-3.5" />Balanced debit and credit postings</span>
         <span className="flex items-center gap-1.5"><ArrowUpRight className="h-3.5 w-3.5" /><ArrowDownRight className="h-3.5 w-3.5" />Drill down from statements to entries</span>
       </div>
+
+      <AccountLedgerPanel headId={selectedHeadId} onOpenChange={(open) => !open && setSelectedHeadId(null)} />
     </div>
   );
 }

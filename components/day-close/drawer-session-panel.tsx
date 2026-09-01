@@ -535,7 +535,7 @@ export function DrawerSessionPanel({
                 Drawer controls are disabled for this restaurant. Enable them in Cash Drawers settings first, then return here to open drawers, count cash, and submit settlement evidence.
               </div>
               <Button asChild size="sm" variant="outline" className="self-start">
-                <Link href="/manage/settings?tab=payments#cash-drawers">Open Cash Drawer Settings</Link>
+                <Link href="/finance/operations?tab=cash-drawers">Open Cash Drawer Settings</Link>
               </Button>
             </div>
           </div>

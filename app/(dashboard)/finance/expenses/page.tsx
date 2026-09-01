@@ -41,6 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useCustomFinanceStations } from "@/hooks/use-custom-finance-stations";
 import {
   Dialog,
   DialogContent,
@@ -64,6 +65,7 @@ import type {
 import {
   financeStationOptions,
   isFinanceStationAvailable,
+  legacyStationBucketForStationName,
   toFinanceAttributionStation,
   toFinanceStationParam,
 } from "@/lib/finance-station-scope";
@@ -202,7 +204,8 @@ export default function ExpensesPage() {
   const [dateFilter, setDateFilter] = useState("this_month");
   const [businessLine, setBusinessLine] = useState<BusinessLineFilter>("all");
   const [selectedStation, setSelectedStation] = useState("all");
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedReportingHeadId, setSelectedReportingHeadId] = useState("all");
+  const [expenseHeadFilterOptions, setExpenseHeadFilterOptions] = useState<EligibleHead[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
@@ -236,6 +239,7 @@ export default function ExpensesPage() {
 
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
+  const customFinanceStations = useCustomFinanceStations(user?.restaurant_id);
   const router = useRouter();
   const restaurant = useRestaurant((s) => s.restaurant);
   const canManageCoa = hasPermission(user, "finance.coa.manage");
@@ -274,17 +278,19 @@ export default function ExpensesPage() {
       !isFinanceStationAvailable(selectedStation, {
         businessLine,
         hotelEnabled: Boolean(restaurant?.hotel_enabled),
+        customStations: customFinanceStations,
       })
     ) {
       setSelectedStation("all");
     }
-  }, [businessLine, restaurant?.hotel_enabled, selectedStation]);
+  }, [businessLine, restaurant?.hotel_enabled, selectedStation, customFinanceStations]);
 
   useEffect(() => {
     if (
       !isFinanceStationAvailable(newExpense.station, {
         businessLine: expenseWriteBusinessLine,
         hotelEnabled: Boolean(restaurant?.hotel_enabled),
+        customStations: customFinanceStations,
       })
     ) {
       setNewExpense((current) => ({
@@ -293,7 +299,42 @@ export default function ExpensesPage() {
         category_id: "",
       }));
     }
-  }, [expenseWriteBusinessLine, newExpense.station, restaurant?.hotel_enabled]);
+  }, [
+    expenseWriteBusinessLine,
+    newExpense.station,
+    restaurant?.hotel_enabled,
+    customFinanceStations,
+  ]);
+
+  // Legacy ExpenseCategory is compatibility analytics data only (see
+  // FINANCE_PRODUCT_UX_BLUEPRINT.md 10.2) -- real classification now happens
+  // through the Allocation Lines editor below. New expenses silently get a
+  // sensible default category (the business line's generic "Others" bucket)
+  // instead of forcing a second, redundant-looking classification choice.
+  useEffect(() => {
+    if (editingExpense) return;
+    const scoped = categories.filter(
+      (cat: any) =>
+        String(cat.business_line ?? "restaurant").toLowerCase() ===
+        expenseWriteBusinessLine,
+    );
+    if (scoped.length === 0) return;
+    const current = scoped.find(
+      (cat: any) => String(cat.id) === newExpense.category_id,
+    );
+    if (current) return;
+    const exactOthers = scoped.find(
+      (cat: any) => String(cat.name ?? "").trim().toLowerCase() === "others",
+    );
+    const byOtherType = scoped.find(
+      (cat: any) => String(cat.type ?? "").trim().toLowerCase() === "other",
+    );
+    const fallback = exactOthers ?? byOtherType ?? scoped[0];
+    setNewExpense((current) => ({
+      ...current,
+      category_id: String(fallback.id),
+    }));
+  }, [categories, expenseWriteBusinessLine, editingExpense, newExpense.category_id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -369,6 +410,26 @@ export default function ExpensesPage() {
       cancelled = true;
     };
   }, [createBusinessLine, isAddDialogOpen, user?.restaurant_id]);
+
+  // Independent of the Add/Edit dialog -- powers the list page's "Expense
+  // head" filter, which replaced the legacy Category filter (see
+  // FINANCE_PRODUCT_UX_BLUEPRINT.md 10.2: forms and reporting use reporting
+  // heads, not ExpenseCategory).
+  useEffect(() => {
+    if (!user?.restaurant_id) return;
+    let cancelled = false;
+    financeReportingApi
+      .getEligibleLeaves(user.restaurant_id, { head_type: "expense" as any })
+      .then((res: any) => {
+        if (!cancelled) setExpenseHeadFilterOptions(res || []);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch expense head filter options", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.restaurant_id]);
 
   useEffect(() => {
     if (!isAddDialogOpen || editingExpense || !user?.restaurant_id) return;
@@ -446,7 +507,7 @@ export default function ExpensesPage() {
   }, [user?.restaurant_id, fetchCategories]);
 
   useEffect(() => {
-    setSelectedCategory("all");
+    setSelectedReportingHeadId("all");
   }, [businessLine]);
 
   const getDateRange = () => {
@@ -480,6 +541,7 @@ export default function ExpensesPage() {
     const stationParam = toFinanceStationParam(selectedStation, {
       businessLine,
       hotelEnabled: Boolean(restaurant?.hotel_enabled),
+      customStations: customFinanceStations,
     });
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     let startTimeVal: string | undefined = undefined;
@@ -523,7 +585,8 @@ export default function ExpensesPage() {
         date_from: start,
         date_to: end,
         station: stationParam,
-        category_id: selectedCategory === "all" ? undefined : selectedCategory,
+        reporting_head_id:
+          selectedReportingHeadId === "all" ? undefined : selectedReportingHeadId,
         business_line: listBusinessLineParam,
         timezone: tz,
       };
@@ -563,7 +626,7 @@ export default function ExpensesPage() {
   }, [
     user?.restaurant_id,
     selectedStation,
-    selectedCategory,
+    selectedReportingHeadId,
     recentLimit,
     listBusinessLineParam,
     businessLine,
@@ -573,10 +636,11 @@ export default function ExpensesPage() {
     customEndDate,
     customStartTime,
     customEndTime,
+    customFinanceStations,
   ]);
 
   const handleAddExpense = async () => {
-    if (!user?.restaurant_id || !newExpense.amount || !newExpense.category_id) {
+    if (!user?.restaurant_id || !newExpense.amount) {
       toast.error("Please fill in required fields");
       return;
     }
@@ -630,7 +694,9 @@ export default function ExpensesPage() {
         restaurant_id: user.restaurant_id,
         amount: parseFloat(newExpense.amount),
         description: newExpense.description,
-        category_id: parseInt(newExpense.category_id, 10),
+        category_id: newExpense.category_id
+          ? parseInt(newExpense.category_id, 10)
+          : undefined,
         payment_method: editingExpense
           ? newExpense.payment_method
           : selectedAccount?.account_type === "drawer"
@@ -894,6 +960,7 @@ export default function ExpensesPage() {
                 {financeStationOptions({
                   businessLine,
                   hotelEnabled: restaurant?.hotel_enabled,
+                  customStations: customFinanceStations,
                 }).map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
@@ -990,16 +1057,19 @@ export default function ExpensesPage() {
 
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Category:</span>
-          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="All Categories" />
+          <span className="text-sm text-muted-foreground">Expense head:</span>
+          <Select
+            value={selectedReportingHeadId}
+            onValueChange={setSelectedReportingHeadId}
+          >
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="All Expense Heads" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((cat: any) => (
-                <SelectItem key={cat.id} value={cat.id.toString()}>
-                  {cat.name}
+              <SelectItem value="all">All Expense Heads</SelectItem>
+              {expenseHeadFilterOptions.map((head) => (
+                <SelectItem key={head.id} value={head.id.toString()}>
+                  {head.path || head.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1036,7 +1106,7 @@ export default function ExpensesPage() {
           if (!open) resetExpenseForm();
         }}
       >
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingExpense ? "Edit Expense" : "Add New Expense"}
@@ -1047,16 +1117,13 @@ export default function ExpensesPage() {
                 : "Record a new business expense. Required fields are marked with *."}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="amount" className="text-right">
-                Amount*
-              </Label>
+          <div className="grid gap-5 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="amount">Amount*</Label>
               <Input
                 id="amount"
                 type="number"
                 placeholder="0.00"
-                className="col-span-3"
                 value={newExpense.amount}
                 disabled={Boolean(editingExpense)}
                 onChange={(e) =>
@@ -1064,94 +1131,48 @@ export default function ExpensesPage() {
                 }
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="station" className="text-right">
-                Station
-              </Label>
-              <Select
-                value={newExpense.station}
+
+            {user?.restaurant_id && (
+              <StationPicker
+                restaurantId={user.restaurant_id}
+                value={newExpense.station_id}
                 disabled={Boolean(editingExpense)}
-                onValueChange={(val) =>
+                onChange={(stationId, station) =>
                   setNewExpense({
                     ...newExpense,
-                    station: val,
-                    category_id: "",
+                    station_id: stationId,
+                    station: legacyStationBucketForStationName(
+                      station?.name,
+                      expenseWriteBusinessLine,
+                      newExpense.station,
+                    ),
                   })
                 }
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select Station" />
-                </SelectTrigger>
-                <SelectContent>
-                  {financeStationOptions({
-                    businessLine: expenseWriteBusinessLine,
-                    hotelEnabled: restaurant?.hotel_enabled,
-                    includeAll: false,
-                  }).map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-start gap-4">
-              <div />
-              <div className="col-span-3">
-                {user?.restaurant_id && (
-                  <StationPicker
-                    label="Station (cost centre)"
-                    restaurantId={user.restaurant_id}
-                    value={newExpense.station_id}
-                    onChange={(stationId) => setNewExpense({ ...newExpense, station_id: stationId })}
-                    disabled={Boolean(editingExpense)}
-                  />
-                )}
+              />
+            )}
+
+            {editingExpense && (
+              <div className="grid gap-2">
+                <Label>Category</Label>
+                <p className="text-sm text-muted-foreground">
+                  {categories.find(
+                    (cat: any) => String(cat.id) === newExpense.category_id,
+                  )?.name || "General"}
+                </p>
               </div>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="category" className="text-right">
-                Expense head*
-              </Label>
-              <Select
-                value={newExpense.category_id}
-                disabled={Boolean(editingExpense)}
-                onValueChange={(val) =>
-                  setNewExpense({ ...newExpense, category_id: val })
-                }
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select expense head" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories
-                    .filter(
-                      (cat: any) =>
-                        String(cat.business_line ?? "restaurant").toLowerCase() ===
-                          expenseWriteBusinessLine &&
-                        toFinanceAttributionStation(cat.type) ===
-                          newExpense.station,
-                    )
-                    .map((cat: any) => (
-                      <SelectItem key={cat.id} value={cat.id.toString()}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
+            )}
+
             {editingExpense ? (
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">Payment</Label>
-                <p className="col-span-3 text-sm capitalize">
+              <div className="grid gap-2">
+                <Label>Payment</Label>
+                <p className="text-sm capitalize">
                   {String(newExpense.payment_method || "-").replaceAll("_", " ")}
                 </p>
               </div>
-            ) : null}
-            {!editingExpense && (
+            ) : (
               <>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="expense-party-type" className="text-right">Party</Label>
+                <div className="grid gap-2">
+                  <Label htmlFor="expense-party-type">Party</Label>
                   <Select
                     value={partyType}
                     onValueChange={(value) => {
@@ -1163,7 +1184,7 @@ export default function ExpensesPage() {
                       }
                     }}
                   >
-                    <SelectTrigger id="expense-party-type" className="col-span-3"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="expense-party-type"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">No linked party</SelectItem>
                       <SelectItem value="supplier">Supplier</SelectItem>
@@ -1173,20 +1194,20 @@ export default function ExpensesPage() {
                   </Select>
                 </div>
                 {partyType !== "none" && (
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="expense-party" className="text-right">{partyType[0].toUpperCase() + partyType.slice(1)}*</Label>
+                  <div className="grid gap-2">
+                    <Label htmlFor="expense-party">{partyType[0].toUpperCase() + partyType.slice(1)}*</Label>
                     <Select value={partyId} onValueChange={setPartyId} disabled={partiesLoading}>
-                      <SelectTrigger id="expense-party" className="col-span-3"><SelectValue placeholder={partiesLoading ? "Loading parties..." : `Select ${partyType}`} /></SelectTrigger>
+                      <SelectTrigger id="expense-party"><SelectValue placeholder={partiesLoading ? "Loading parties..." : `Select ${partyType}`} /></SelectTrigger>
                       <SelectContent>
                         {parties[partyType].map((party) => <SelectItem key={party.id} value={String(party.id)}>{party.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
                 )}
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="expense-payment-status" className="text-right">Payment</Label>
+                <div className="grid gap-2">
+                  <Label htmlFor="expense-payment-status">Payment</Label>
                   <Select value={newExpense.payment_status} onValueChange={(payment_status: "paid" | "unpaid" | "partial") => setNewExpense({ ...newExpense, payment_status, paid_amount: payment_status === "paid" ? newExpense.amount : payment_status === "unpaid" ? "" : newExpense.paid_amount })}>
-                    <SelectTrigger id="expense-payment-status" className="col-span-3"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="expense-payment-status"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="paid">Paid in full</SelectItem>
                       {partyType === "supplier" && <SelectItem value="partial">Partially paid</SelectItem>}
@@ -1195,65 +1216,64 @@ export default function ExpensesPage() {
                   </Select>
                 </div>
                 {newExpense.payment_status === "partial" && (
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="expense-paid-now" className="text-right">Paid now*</Label>
-                    <Input id="expense-paid-now" type="number" min="0" max={newExpense.amount || undefined} className="col-span-3" value={newExpense.paid_amount} onChange={(event) => setNewExpense({ ...newExpense, paid_amount: event.target.value })} />
+                  <div className="grid gap-2">
+                    <Label htmlFor="expense-paid-now">Paid now*</Label>
+                    <Input id="expense-paid-now" type="number" min="0" max={newExpense.amount || undefined} value={newExpense.paid_amount} onChange={(event) => setNewExpense({ ...newExpense, paid_amount: event.target.value })} />
                   </div>
                 )}
               </>
             )}
+
             {editingExpense && (
-              <p className="col-start-2 col-span-3 -mt-2 text-xs text-muted-foreground">
+              <p className="-mt-3 text-xs text-muted-foreground">
                 Amount, station, category, payment method, and posting date are
                 immutable after posting. Delete and recreate the expense to
                 make an audited financial correction.
               </p>
             )}
+
             {!editingExpense && newExpense.payment_status !== "unpaid" && (
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="expense-account" className="pt-2 text-right">
-                  Account*
-                </Label>
-                <div className="col-span-3 space-y-1.5">
-                  <Select
-                    value={selectedAccountKey}
-                    onValueChange={setSelectedAccountKey}
-                    disabled={accountsLoading || accounts.length === 0}
-                  >
-                    <SelectTrigger id="expense-account">
-                      <SelectValue
-                        placeholder={
-                          accountsLoading ? "Loading accounts..." : "Select account"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((account) => (
-                        <SelectItem
-                          key={`${account.account_type}:${account.id}`}
-                          value={`${account.account_type}:${account.id}`}
-                        >
-                          {account.name} · Rs. {Number(account.current_balance || 0).toLocaleString()}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {accountsError ? (
-                    <p className="text-xs text-destructive">{accountsError}</p>
-                  ) : !accountsLoading && accounts.length === 0 ? (
-                    <p className="text-xs text-destructive">
-                      Add or open an account under Cash & Banks first.
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      The expense reduces this account. Drawers record cash;
-                      bank accounts record a bank transfer.
-                    </p>
-                  )}
-                </div>
+              <div className="grid gap-2">
+                <Label htmlFor="expense-account">Account*</Label>
+                <Select
+                  value={selectedAccountKey}
+                  onValueChange={setSelectedAccountKey}
+                  disabled={accountsLoading || accounts.length === 0}
+                >
+                  <SelectTrigger id="expense-account">
+                    <SelectValue
+                      placeholder={
+                        accountsLoading ? "Loading accounts..." : "Select account"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((account) => (
+                      <SelectItem
+                        key={`${account.account_type}:${account.id}`}
+                        value={`${account.account_type}:${account.id}`}
+                      >
+                        {account.name} · Rs. {Number(account.current_balance || 0).toLocaleString()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {accountsError ? (
+                  <p className="text-xs text-destructive">{accountsError}</p>
+                ) : !accountsLoading && accounts.length === 0 ? (
+                  <p className="text-xs text-destructive">
+                    Add or open an account under Cash & Banks first.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    The expense reduces this account. Drawers record cash;
+                    bank accounts record a bank transfer.
+                  </p>
+                )}
               </div>
             )}
-            {!editingExpense && Number(newExpense.amount) > 0 && (
+
+            {!editingExpense && (
               <AllocationLinesEditor
                 totalAmount={parseFloat(newExpense.amount) || 0}
                 eligibleHeads={eligibleExpenseHeads}
@@ -1269,14 +1289,12 @@ export default function ExpensesPage() {
                 }
               />
             )}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="desc" className="text-right">
-                Notes
-              </Label>
+
+            <div className="grid gap-2">
+              <Label htmlFor="desc">Notes</Label>
               <Textarea
                 id="desc"
                 placeholder="What was this for?"
-                className="col-span-3"
                 value={newExpense.description}
                 onChange={(e) =>
                   setNewExpense({ ...newExpense, description: e.target.value })

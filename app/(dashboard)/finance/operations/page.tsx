@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 
 import { PaymentInstrumentsPanel } from "@/components/finance/payment-instruments-panel";
+import { CashDrawerConfigPanel } from "@/components/finance/cash-drawer-config-panel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -144,7 +145,7 @@ function readList<T>(response: { data?: { data?: unknown } }): T[] {
 export default function FinanceOperationsPage() {
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const initialTab = ["accounts", "transfers", "day-book", "payment-instruments"].includes(requestedTab || "")
+  const initialTab = ["accounts", "transfers", "day-book", "payment-instruments", "cash-drawers"].includes(requestedTab || "")
     ? requestedTab!
     : "accounts";
   const user = useAuth((state) => state.user);
@@ -392,7 +393,7 @@ export default function FinanceOperationsPage() {
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuItem asChild>
-                  <Link href="/cash-drawers">Configure cash drawers</Link>
+                  <Link href="/finance/operations?tab=cash-drawers">Configure cash drawers</Link>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -429,6 +430,7 @@ export default function FinanceOperationsPage() {
               <TabsTrigger value="transfers">Transfers</TabsTrigger>
               <TabsTrigger value="day-book">Day Book</TabsTrigger>
               <TabsTrigger value="payment-instruments">Payment Instruments</TabsTrigger>
+              <TabsTrigger value="cash-drawers">Cash Drawers</TabsTrigger>
             </TabsList>
 
             <TabsContent value="accounts" className="space-y-5">
@@ -530,6 +532,18 @@ export default function FinanceOperationsPage() {
                 />
               ) : (
                 <Empty text="Select a restaurant to manage payment instruments." />
+              )}
+            </TabsContent>
+
+            <TabsContent value="cash-drawers" id="drawer-configuration">
+              {restaurantId ? (
+                <CashDrawerConfigPanel
+                  restaurantId={restaurantId}
+                  hotelEnabled={supportsHotel}
+                  businessLine={businessLine}
+                />
+              ) : (
+                <Empty text="Select a restaurant to configure cash drawers." />
               )}
             </TabsContent>
 

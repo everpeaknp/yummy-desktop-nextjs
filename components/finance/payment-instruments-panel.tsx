@@ -193,6 +193,13 @@ export function PaymentInstrumentsPanel({
       toast.error("Select the FonePay settlement account.");
       return;
     }
+    if (!isDynamicFonepay && isCheckoutQr && checkoutEnabled && !checkoutDetail.trim()) {
+      toast.error(
+        "Add the QR payment payload before saving -- checkout needs it to render the QR code. " +
+          "Turn off \"Available at checkout\" instead if it's not ready yet.",
+      );
+      return;
+    }
     setSaving(true);
     try {
       const payload = {

@@ -18,7 +18,6 @@ import {
   RefreshCw,
   Search,
   Settings2,
-  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,9 +41,10 @@ import {
   FinanceReportingHeadRead,
   FinanceReportingTreeNode,
 } from "@/types/finance-reporting";
-import { AccountHeadDialog } from "./account-head-dialog";
+import { AccountHeadDialog, TYPE_LABELS } from "./account-head-dialog";
 import { AccountGroupDialog } from "./account-group-dialog";
 import { OpeningBalanceWizard } from "./opening-balance-wizard";
+import { AccountLedgerPanel } from "@/components/finance/reports/account-ledger-panel";
 
 const TYPE_COLORS: Record<FinanceHeadType, { badge: string; text: string; bg: string }> = {
   asset: {
@@ -117,7 +117,11 @@ export function AccountHeadsClient() {
   const [openingBalanceOpen, setOpeningBalanceOpen] = useState(false);
   const [initialParentId, setInitialParentId] = useState<number | null>(null);
   const [editingHead, setEditingHead] = useState<FinanceReportingHeadRead | null>(null);
+  // Groups open the metadata sheet below; categories (postable heads) open
+  // the shared Account Ledger panel -- the same one Reports > Accounts uses,
+  // so both screens show identical, fully-built ledger detail.
   const [detailHead, setDetailHead] = useState<FinanceReportingHeadRead | null>(null);
+  const [ledgerHeadId, setLedgerHeadId] = useState<number | null>(null);
 
   const loadData = async () => {
     if (!restaurantId) return;
@@ -148,7 +152,7 @@ export function AccountHeadsClient() {
       });
       setExpandedNodeIds(defaultExpanded);
     } catch (err: any) {
-      toast.error(err.message || "Failed to load account heads hierarchy");
+      toast.error(err.message || "Couldn't load categories");
     } finally {
       setLoading(false);
     }
@@ -168,22 +172,6 @@ export function AccountHeadsClient() {
       }
       return next;
     });
-  };
-
-  const handleSeedDefaults = async () => {
-    if (!confirm("Seed or update the standard Chart of Accounts skeleton for this restaurant?")) {
-      return;
-    }
-    setLoading(true);
-    try {
-      const result = await financeReportingApi.seedDefaultHeads();
-      toast.success(`Standard Chart of Accounts verified (${result.length} nodes active)`);
-      await loadData();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to seed default accounts");
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleCreateUnderParent = (parent: FinanceReportingHeadRead, isGroup: boolean) => {
@@ -206,7 +194,7 @@ export function AccountHeadsClient() {
 
   const displayName = (head: FinanceReportingHeadRead) =>
     workspaceView === "setup" && FALLBACK_CUSTODY_ROLES.has(head.system_role || "")
-      ? `System fallback — ${head.name}`
+      ? `Built-in — ${head.name}`
       : head.name;
 
   // Filter tree nodes based on the selected workspace, search, type and posting filters.
@@ -300,7 +288,9 @@ export function AccountHeadsClient() {
 
             <button
               type="button"
-              onClick={() => setDetailHead(head)}
+              onClick={() =>
+                head.is_postable ? setLedgerHeadId(head.id) : setDetailHead(head)
+              }
               className="truncate text-sm font-medium hover:underline text-left text-foreground"
             >
               {displayName(head)}
@@ -312,7 +302,7 @@ export function AccountHeadsClient() {
                 className="text-[10px] bg-primary/5 text-primary border-primary/20 shrink-0 gap-0.5 py-0"
               >
                 <Lock className="h-2.5 w-2.5" />
-                {head.system_role}
+                Built-in
               </Badge>
             )}
 
@@ -326,23 +316,12 @@ export function AccountHeadsClient() {
           {/* Right: Badges & Actions */}
           <div className="flex items-center gap-3 shrink-0">
             <div className="hidden sm:flex items-center gap-1.5">
-              <Badge variant="outline" className={`capitalize text-[11px] py-0 ${colors.badge}`}>
-                {head.head_type}
+              <Badge variant="outline" className={`text-[11px] py-0 ${colors.badge}`}>
+                {TYPE_LABELS[head.head_type]}
               </Badge>
-              {detailsVisible ? (
-                <>
-                  <Badge variant="secondary" className="font-mono text-[10px] uppercase py-0">
-                    {head.normal_side === "debit" ? "Dr" : "Cr"}
-                  </Badge>
-                  <span className="text-[11px] text-muted-foreground font-mono">
-                    {head.is_postable ? "Leaf" : "Group"}
-                  </span>
-                </>
-              ) : (
-                <span className="text-[11px] text-muted-foreground">
-                  {head.is_postable ? "Use in transactions" : "Category"}
-                </span>
-              )}
+              <span className="text-[11px] text-muted-foreground">
+                {head.is_postable ? "Category" : "Group"}
+              </span>
             </div>
 
             {/* Actions */}
@@ -353,7 +332,7 @@ export function AccountHeadsClient() {
                     variant="ghost"
                     size="sm"
                     className="h-7 gap-1 px-2 text-primary hover:bg-primary/10"
-                    title="Add a usable category under this section"
+                    title="Add a category in this group"
                     onClick={() => handleCreateUnderParent(head, false)}
                   >
                     <Plus className="h-3.5 w-3.5" />
@@ -366,11 +345,11 @@ export function AccountHeadsClient() {
                     variant="ghost"
                     size="sm"
                     className="h-7 gap-1 px-2 text-amber-600 hover:bg-amber-500/10"
-                    title="Add a section under this category"
+                    title="Add a group inside this group"
                     onClick={() => handleCreateUnderParent(head, true)}
                   >
                     <FolderPlus className="h-3.5 w-3.5" />
-                    <span className="hidden xl:inline">Add section</span>
+                    <span className="hidden xl:inline">Add group</span>
                   </Button>
                 )}
 
@@ -379,7 +358,7 @@ export function AccountHeadsClient() {
                     variant="ghost"
                     size="sm"
                     className="h-7 gap-1 px-2 text-muted-foreground hover:text-foreground"
-                    title="Edit account head"
+                    title="Edit category"
                     onClick={() => handleEditHead(head)}
                   >
                     <Settings2 className="h-3.5 w-3.5" />
@@ -408,10 +387,10 @@ export function AccountHeadsClient() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <FolderTree className="h-6 w-6 text-primary" />
-            Financial Categories
+            Chart of Accounts
           </h1>
           <p className="text-sm text-muted-foreground">
-            Organize income, expenses, money and obligations for reports. Choose a category when recording a transaction; accounting details stay available when needed.
+            Organize the categories you use when recording income and expenses.
           </p>
         </div>
 
@@ -435,21 +414,8 @@ export function AccountHeadsClient() {
             className="gap-1.5 text-xs"
           >
             <Info className="h-3.5 w-3.5" />
-            {detailsVisible ? "Accounting details shown" : "Accounting details"}
+            {detailsVisible ? "More details shown" : "Show more details"}
           </Button>
-
-          {canManageGroups && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSeedDefaults}
-              disabled={loading}
-              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-              Seed Defaults
-            </Button>
-          )}
 
           {canManageOpeningBalances && (
             <Button
@@ -459,7 +425,7 @@ export function AccountHeadsClient() {
               className="gap-1.5 text-xs border-emerald-600/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
             >
               <Layers className="h-3.5 w-3.5" />
-              Opening Balances
+              Starting Balances
             </Button>
           )}
 
@@ -475,7 +441,7 @@ export function AccountHeadsClient() {
               className="gap-1.5 text-xs"
             >
               <FolderPlus className="h-3.5 w-3.5" />
-              Add Section
+              Add Group
             </Button>
           )}
 
@@ -496,21 +462,21 @@ export function AccountHeadsClient() {
         </div>
       </div>
 
-      {/* Workspace views keep daily work separate from the complete setup template. */}
+      {/* Workspace views keep daily work separate from the complete list. */}
       <div className="rounded-xl border bg-card p-3">
-        <Tabs value={workspaceView} onValueChange={(value) => setWorkspaceView(value as "in-use" | "available" | "setup")}> 
+        <Tabs value={workspaceView} onValueChange={(value) => setWorkspaceView(value as "in-use" | "available" | "setup")}>
           <TabsList className="h-auto w-full justify-start gap-1 bg-transparent p-0">
             <TabsTrigger value="in-use" className="px-3 py-2 text-xs">In use</TabsTrigger>
             <TabsTrigger value="available" className="px-3 py-2 text-xs">Available categories</TabsTrigger>
-            <TabsTrigger value="setup" className="px-3 py-2 text-xs">Accounting setup</TabsTrigger>
+            <TabsTrigger value="setup" className="px-3 py-2 text-xs">Full list</TabsTrigger>
           </TabsList>
         </Tabs>
         <p className="mt-2 text-xs text-muted-foreground">
           {workspaceView === "in-use"
-            ? "Only categories that have ledger activity or are linked to a real bank, safe, or cash drawer."
+            ? "Categories you've actually used, or that are linked to a real bank, safe, or cash drawer."
             : workspaceView === "available"
-              ? "Categories available for transactions. Legacy fallback accounts are hidden."
-              : "Full reporting structure, including protected compatibility fallbacks and accounting codes."}
+              ? "All categories you can choose from when recording a transaction."
+              : "The complete list, including built-in categories and their codes."}
         </p>
       </div>
 
@@ -559,42 +525,31 @@ export function AccountHeadsClient() {
       {/* Hierarchy Tree Container */}
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
         <div className="flex items-center justify-between bg-muted/40 border-b px-4 py-2 text-xs font-semibold text-muted-foreground">
-          <span>{detailsVisible ? "Hierarchy & Account Names" : "Financial categories"}</span>
+          <span>Name</span>
           <div className="hidden sm:flex items-center gap-8 pr-12">
-            <span>{detailsVisible ? "Classification" : "Type"}</span>
-            <span>{detailsVisible ? "Posting Type" : "Use"}</span>
+            <span>Type</span>
+            <span>Use</span>
           </div>
         </div>
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
             <Loader2 className="h-7 w-7 animate-spin text-primary" />
-            <p className="text-xs">Loading account heads hierarchy...</p>
+            <p className="text-xs">Loading categories...</p>
           </div>
         ) : filteredTree.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground gap-3">
             <FolderTree className="h-10 w-10 text-muted-foreground/40" />
             <div>
               <p className="text-sm font-semibold text-foreground">
-                No account heads found
+                No categories found
               </p>
               <p className="text-xs max-w-sm mt-0.5">
                 {searchQuery
-                  ? "Try clearing your search query or adjusting your filters."
-                  : "Click 'Seed Defaults' or 'Add Account Head' to begin building your Chart of Accounts."}
+                  ? "Try clearing your search or adjusting your filters."
+                  : "Try a different tab, or click 'Add Category' above to create one."}
               </p>
             </div>
-            {canManageGroups && !searchQuery && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSeedDefaults}
-                className="gap-1.5 text-xs mt-2"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                Seed Standard COA Skeleton
-              </Button>
-            )}
           </div>
         ) : (
           <div className="divide-y divide-border/20">
@@ -624,20 +579,8 @@ export function AccountHeadsClient() {
                 <div className="grid grid-cols-2 gap-3 rounded-lg border p-3 bg-muted/20">
                   <div>
                     <span className="text-muted-foreground">Type:</span>
-                    <p className="font-semibold capitalize mt-0.5">
-                      {detailHead.head_type}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Normal Side:</span>
-                    <p className="font-semibold font-mono uppercase mt-0.5">
-                      {detailHead.normal_side}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Node Class:</span>
                     <p className="font-semibold mt-0.5">
-                      {detailHead.is_postable ? "Postable Leaf" : "Roll-up Group"}
+                      {TYPE_LABELS[detailHead.head_type]}
                     </p>
                   </div>
                   <div>
@@ -651,20 +594,18 @@ export function AccountHeadsClient() {
                 {detailHead.system_role && (
                   <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
                     <span className="font-semibold text-primary flex items-center gap-1.5">
-                      <Lock className="h-3.5 w-3.5" /> Protected System Role
+                      <Lock className="h-3.5 w-3.5" /> Built-in category
                     </span>
-                    <p className="font-mono text-xs text-foreground mt-1">
-                      {detailHead.system_role}
-                    </p>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                      This head is bound to automated financial events (e.g. cash, receivables, payables).
+                      This category is used automatically by the system (for example: cash,
+                      amounts owed to you, or amounts you owe) and can't be deleted.
                     </p>
                   </div>
                 )}
 
                 {detailHead.description && (
                   <div className="rounded-lg border p-3">
-                    <span className="text-muted-foreground">Description / Notes:</span>
+                    <span className="text-muted-foreground">Notes:</span>
                     <p className="mt-1 text-foreground leading-relaxed">
                       {detailHead.description}
                     </p>
@@ -673,16 +614,16 @@ export function AccountHeadsClient() {
 
                 {(detailHead.business_line_scope || detailHead.station_scope) && (
                   <div className="rounded-lg border p-3 space-y-2">
-                    <span className="text-muted-foreground font-medium">Scope Restrictions:</span>
+                    <span className="text-muted-foreground font-medium">Applies to:</span>
                     {detailHead.business_line_scope && (
                       <p>
-                        <span className="text-muted-foreground">Business Line: </span>
-                        <span className="font-semibold">{detailHead.business_line_scope}</span>
+                        <span className="text-muted-foreground">Business: </span>
+                        <span className="font-semibold capitalize">{detailHead.business_line_scope}</span>
                       </p>
                     )}
                     {detailHead.station_scope && (
                       <p>
-                        <span className="text-muted-foreground">Station: </span>
+                        <span className="text-muted-foreground">Department: </span>
                         <span className="font-semibold">{detailHead.station_scope}</span>
                       </p>
                     )}
@@ -701,7 +642,7 @@ export function AccountHeadsClient() {
                         handleEditHead(h);
                       }}
                     >
-                      Edit Metadata
+                      Edit
                     </Button>
                     {!detailHead.is_postable && (
                       <Button
@@ -713,7 +654,7 @@ export function AccountHeadsClient() {
                           handleCreateUnderParent(h, false);
                         }}
                       >
-                        Add Leaf
+                        Add category
                       </Button>
                     )}
                   </div>
@@ -723,6 +664,21 @@ export function AccountHeadsClient() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Category detail: shared with Reports > Accounts */}
+      <AccountLedgerPanel
+        headId={ledgerHeadId}
+        onOpenChange={(open) => !open && setLedgerHeadId(null)}
+        onEdit={
+          canManageCoa
+            ? () => {
+                const h = allHeads.find((head) => head.id === ledgerHeadId);
+                setLedgerHeadId(null);
+                if (h) handleEditHead(h);
+              }
+            : undefined
+        }
+      />
 
       {/* Leaf Head Dialog */}
       <AccountHeadDialog

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useCustomFinanceStations } from "@/hooks/use-custom-finance-stations";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { KotApis } from "@/lib/api/endpoints";
@@ -84,7 +85,7 @@ interface KotActivityItem {
 
 type KotStatus = "PENDING" | "PREPARING" | "READY" | "SERVED" | "REJECTED";
 const ALL_STATUSES: KotStatus[] = ["PENDING", "PREPARING", "READY", "SERVED", "REJECTED"];
-const STATIONS = ["All", "Kitchen", "Bar", "Cafe"];
+const FIXED_STATIONS = ["All", "Kitchen", "Bar", "Cafe"];
 
 // ── Helpers ────────────────────────────────────────────────────────────
 function nextStatus(s: string): KotStatus | null {
@@ -222,6 +223,14 @@ export default function KitchenPage() {
   const elapsedTick = useElapsedTick();
 
   const restaurantId = user?.restaurant_id;
+  const customStations = useCustomFinanceStations(restaurantId);
+  const STATIONS = useMemo(() => {
+    const fixedLower = new Set(FIXED_STATIONS.map((s) => s.toLowerCase()));
+    const extra = customStations
+      .map((s) => s.name.trim())
+      .filter((name) => name && !fixedLower.has(name.toLowerCase()));
+    return [...FIXED_STATIONS, ...Array.from(new Set(extra))];
+  }, [customStations]);
 
   // ── Auth guard ─────────────────────────────────────────────────────
   useEffect(() => {

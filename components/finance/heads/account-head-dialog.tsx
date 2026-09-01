@@ -25,12 +25,23 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { StationPicker } from "@/components/stations/station-picker";
 import { financeReportingApi } from "@/lib/api/finance-reporting-api";
 import {
+  FinanceHeadType,
   FinanceReportingHeadRead,
   FinanceReportingHeadCreate,
   FinanceReportingHeadUpdate,
 } from "@/types/finance-reporting";
+
+export const TYPE_LABELS: Record<FinanceHeadType, string> = {
+  asset: "Asset",
+  liability: "Liability",
+  equity: "Equity",
+  income: "Income",
+  contra_income: "Income Adjustment",
+  expense: "Expense",
+};
 
 interface AccountHeadDialogProps {
   open: boolean;
@@ -59,10 +70,11 @@ export function AccountHeadDialog({
   const [parentId, setParentId] = useState<string>("");
   const [businessLineScope, setBusinessLineScope] = useState<string>("all");
   const [stationScope, setStationScope] = useState("");
+  const [stationScopeId, setStationScopeId] = useState<number | null>(null);
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
 
-  // Eligible parent nodes (non-postable groups)
+  // Only groups (not individual categories) can contain a new category.
   const eligibleParents = parentOptions.filter((h) => !h.is_postable && h.is_active);
 
   const selectedParent = eligibleParents.find((p) => String(p.id) === parentId);
@@ -75,6 +87,7 @@ export function AccountHeadDialog({
         setParentId(editHead.parent_id ? String(editHead.parent_id) : "");
         setBusinessLineScope(editHead.business_line_scope || "all");
         setStationScope(editHead.station_scope || "");
+        setStationScopeId(null);
         setDescription(editHead.description || "");
         setIsActive(editHead.is_active);
       } else {
@@ -83,6 +96,7 @@ export function AccountHeadDialog({
         setParentId(initialParentId ? String(initialParentId) : eligibleParents[0] ? String(eligibleParents[0].id) : "");
         setBusinessLineScope("all");
         setStationScope("");
+        setStationScopeId(null);
         setDescription("");
         setIsActive(true);
       }
@@ -92,12 +106,12 @@ export function AccountHeadDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      toast.error("Account head name is required");
+      toast.error("Please enter a name");
       return;
     }
 
     if (!isEditing && !parentId) {
-      toast.error("Parent group is required");
+      toast.error("Please choose a group");
       return;
     }
 
@@ -112,7 +126,7 @@ export function AccountHeadDialog({
           is_active: isActive,
         };
         await financeReportingApi.updateHead(editHead.id, updatePayload);
-        toast.success(`Account head "${name.trim()}" updated`);
+        toast.success(`"${name.trim()}" updated`);
       } else {
         const createPayload: FinanceReportingHeadCreate = {
           name: name.trim(),
@@ -123,12 +137,12 @@ export function AccountHeadDialog({
           description: description.trim() || null,
         };
         await financeReportingApi.createHead(createPayload);
-        toast.success(`Account head "${name.trim()}" created successfully`);
+        toast.success(`"${name.trim()}" added`);
       }
       onOpenChange(false);
       onSuccess();
     } catch (err: any) {
-      const msg = err.response?.data?.detail || err.message || "Failed to save account head";
+      const msg = err.response?.data?.detail || err.message || "Couldn't save this category";
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -141,12 +155,12 @@ export function AccountHeadDialog({
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>
-              {isEditing ? "Edit Account Head" : "Create Account Head"}
+              {isEditing ? "Edit Category" : "Add Category"}
             </DialogTitle>
             <DialogDescription>
               {isEditing
-                ? "Update account head metadata, scope, and active status."
-                : "Add a new postable account head under an active report group."}
+                ? "Update this category's details."
+                : "Add a category you can pick when recording income, expenses, or other transactions."}
             </DialogDescription>
           </DialogHeader>
 
@@ -154,17 +168,14 @@ export function AccountHeadDialog({
             {/* Parent Selection (Only for creation) */}
             {!isEditing && (
               <div className="grid gap-1.5">
-                <Label htmlFor="parent">Parent Report Group *</Label>
+                <Label htmlFor="parent">Which group is this in? *</Label>
                 <Select value={parentId} onValueChange={setParentId} required>
                   <SelectTrigger id="parent">
-                    <SelectValue placeholder="Select parent group..." />
+                    <SelectValue placeholder="Choose a group" />
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
                     {eligibleParents.map((p) => (
                       <SelectItem key={p.id} value={String(p.id)}>
-                        <span className="font-mono text-xs text-muted-foreground mr-2">
-                          {p.code}
-                        </span>
                         <span>{p.hierarchy_path || p.name}</span>
                       </SelectItem>
                     ))}
@@ -173,37 +184,24 @@ export function AccountHeadDialog({
               </div>
             )}
 
-            {/* Derived Type & Normal Side indicator */}
+            {/* Derived Type indicator */}
             {(selectedParent || editHead) && (
-              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Type:</span>
-                  <Badge variant="outline" className="capitalize font-semibold">
-                    {editHead?.head_type || selectedParent?.head_type}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Normal Side:</span>
-                  <Badge variant="secondary" className="capitalize font-mono">
-                    {editHead?.normal_side || selectedParent?.normal_side}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px]">
-                    Postable Leaf
-                  </Badge>
-                </div>
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">Type:</span>
+                <Badge variant="outline" className="font-semibold">
+                  {TYPE_LABELS[(editHead?.head_type || selectedParent?.head_type) as FinanceHeadType]}
+                </Badge>
               </div>
             )}
 
             {/* Name */}
             <div className="grid gap-1.5">
-              <Label htmlFor="name">Head Name *</Label>
+              <Label htmlFor="name">Name *</Label>
               <Input
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Kitchen Electricity Expense"
+                placeholder="e.g. Kitchen Electricity"
                 required
                 autoFocus
               />
@@ -212,9 +210,9 @@ export function AccountHeadDialog({
             {/* Code */}
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between">
-                <Label htmlFor="code">Account Code</Label>
+                <Label htmlFor="code">Code (optional)</Label>
                 <span className="text-[11px] text-muted-foreground">
-                  {isEditing ? "Immutable once posted" : "Leave empty to auto-generate from parent"}
+                  {isEditing ? "Can't be changed once used" : "Leave blank to generate automatically"}
                 </span>
               </div>
               <Input
@@ -229,43 +227,54 @@ export function AccountHeadDialog({
             {/* Business Line Scope */}
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label htmlFor="bline">Business Line Scope</Label>
+                <Label htmlFor="bline">Applies to</Label>
                 <Select
                   value={businessLineScope}
                   onValueChange={setBusinessLineScope}
                 >
                   <SelectTrigger id="bline">
-                    <SelectValue placeholder="All" />
+                    <SelectValue placeholder="Everywhere" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Lines</SelectItem>
-                    <SelectItem value="restaurant">Restaurant Only</SelectItem>
-                    <SelectItem value="hotel">Hotel Only</SelectItem>
+                    <SelectItem value="all">Everywhere</SelectItem>
+                    <SelectItem value="restaurant">Restaurant only</SelectItem>
+                    <SelectItem value="hotel">Hotel only</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               {/* Station Scope */}
               <div className="grid gap-1.5">
-                <Label htmlFor="station">Station Scope (Optional)</Label>
-                <Input
-                  id="station"
-                  value={stationScope}
-                  onChange={(e) => setStationScope(e.target.value)}
-                  placeholder="e.g. kitchen, bar, reception"
+                <StationPicker
+                  restaurantId={restaurantId}
+                  value={stationScopeId}
+                  onChange={(id, station) => {
+                    setStationScopeId(id);
+                    setStationScope(station?.name ?? "");
+                  }}
+                  onStationsLoaded={(stations) => {
+                    if (!stationScopeId && stationScope) {
+                      const match = stations.find(
+                        (s) => s.name.toLowerCase() === stationScope.toLowerCase(),
+                      );
+                      if (match) setStationScopeId(match.id);
+                    }
+                  }}
+                  label="Department (optional)"
+                  placeholder="No specific department"
                 />
               </div>
             </div>
 
             {/* Description */}
             <div className="grid gap-1.5">
-              <Label htmlFor="desc">Description / Purpose (Optional)</Label>
+              <Label htmlFor="desc">Notes (optional)</Label>
               <Textarea
                 id="desc"
                 rows={2}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief note for accounting team or auditors..."
+                placeholder="What this category is for..."
               />
             </div>
 
@@ -273,9 +282,9 @@ export function AccountHeadDialog({
             {isEditing && (
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div className="space-y-0.5">
-                  <Label htmlFor="is-active">Active Status</Label>
+                  <Label htmlFor="is-active">Active</Label>
                   <p className="text-xs text-muted-foreground">
-                    Inactive heads remain in history but cannot receive new entries.
+                    Turn off to hide this category from new transactions. Past records are kept.
                   </p>
                 </div>
                 <Switch
@@ -298,7 +307,7 @@ export function AccountHeadDialog({
             </Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Save Changes" : "Create Head"}
+              {isEditing ? "Save Changes" : "Add Category"}
             </Button>
           </DialogFooter>
         </form>

@@ -13,6 +13,7 @@ import {
 } from "@/lib/finance-station-scope";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useAnalyticsViewAccess } from "@/hooks/use-analytics-view-access";
+import { useCustomFinanceStations } from "@/hooks/use-custom-finance-stations";
 import {
   AnalyticsAccessDenied,
   AnalyticsAccessLoading,
@@ -42,6 +43,7 @@ export default function AnalyticsComparePage() {
 
   const restaurantId = restaurant?.id || user?.restaurant_id || null;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
+  const customFinanceStations = useCustomFinanceStations(restaurantId ?? undefined);
 
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -63,8 +65,9 @@ export default function AnalyticsComparePage() {
       financeStationOptions({
         businessLine,
         hotelEnabled: Boolean(restaurant?.hotel_enabled),
+        customStations: customFinanceStations,
       }),
-    [businessLine, restaurant?.hotel_enabled],
+    [businessLine, restaurant?.hotel_enabled, customFinanceStations],
   );
 
   const money = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }), []);
@@ -89,6 +92,7 @@ export default function AnalyticsComparePage() {
         station: toFinanceStationParam(station, {
           businessLine,
           hotelEnabled: Boolean(restaurant?.hotel_enabled),
+          customStations: customFinanceStations,
         }),
         businessLine: showBusinessLine ? businessLine : "all",
       });
@@ -117,17 +121,27 @@ export default function AnalyticsComparePage() {
       !isFinanceStationAvailable(station, {
         businessLine,
         hotelEnabled: Boolean(restaurant?.hotel_enabled),
+        customStations: customFinanceStations,
       })
     ) {
       setStation("all");
     }
-  }, [businessLine, restaurant?.hotel_enabled, station]);
+  }, [businessLine, restaurant?.hotel_enabled, station, customFinanceStations]);
 
   useEffect(() => {
     if (!ready || !canViewAnalytics || !restaurantId) return;
     fetchCompare();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, canViewAnalytics, restaurantId, dateFrom, dateTo, station, businessLine]);
+  }, [
+    ready,
+    canViewAnalytics,
+    restaurantId,
+    dateFrom,
+    dateTo,
+    station,
+    businessLine,
+    customFinanceStations,
+  ]);
 
   const Delta = ({ value }: { value: number }) => {
     const positive = value >= 0;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, ShieldAlert } from "lucide-react";
+import { FolderPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -26,9 +26,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { financeReportingApi } from "@/lib/api/finance-reporting-api";
 import {
+  FinanceHeadType,
   FinanceReportingHeadRead,
   FinanceReportingGroupCreate,
 } from "@/types/finance-reporting";
+import { TYPE_LABELS } from "./account-head-dialog";
 
 interface AccountGroupDialogProps {
   open: boolean;
@@ -55,7 +57,7 @@ export function AccountGroupDialog({
   const [stationScope, setStationScope] = useState("");
   const [description, setDescription] = useState("");
 
-  // Only non-postable groups can be parents of groups (Roots or Subgroups)
+  // Only other groups (not individual categories) can contain a new group.
   const eligibleParents = parentOptions.filter((h) => !h.is_postable && h.is_active);
   const selectedParent = eligibleParents.find((p) => String(p.id) === parentId);
 
@@ -79,11 +81,11 @@ export function AccountGroupDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      toast.error("Group name is required");
+      toast.error("Please enter a name");
       return;
     }
     if (!parentId) {
-      toast.error("Parent group is required");
+      toast.error("Please choose a group");
       return;
     }
 
@@ -98,12 +100,12 @@ export function AccountGroupDialog({
         description: description.trim() || null,
       };
       await financeReportingApi.createGroup(payload);
-      toast.success(`Report group "${name.trim()}" created`);
+      toast.success(`"${name.trim()}" added`);
       onOpenChange(false);
       onSuccess();
     } catch (err: any) {
       const msg =
-        err.response?.data?.detail || err.message || "Failed to create group";
+        err.response?.data?.detail || err.message || "Couldn't add this group";
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -116,29 +118,26 @@ export function AccountGroupDialog({
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <ShieldAlert className="h-5 w-5 text-amber-500" />
-              <DialogTitle>Create Roll-up Group</DialogTitle>
+              <FolderPlus className="h-5 w-5 text-amber-500" />
+              <DialogTitle>Add Group</DialogTitle>
             </div>
             <DialogDescription>
-              Create a non-postable hierarchy category for grouping leaves and
-              structuring financial reports.
+              Groups organize related categories together in your reports.
+              You can't record a transaction directly against a group.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
             {/* Parent Selection */}
             <div className="grid gap-1.5">
-              <Label htmlFor="group-parent">Parent Category / Root *</Label>
+              <Label htmlFor="group-parent">Which group is this in? *</Label>
               <Select value={parentId} onValueChange={setParentId} required>
                 <SelectTrigger id="group-parent">
-                  <SelectValue placeholder="Select parent category..." />
+                  <SelectValue placeholder="Choose a group" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
                   {eligibleParents.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>
-                      <span className="font-mono text-xs text-muted-foreground mr-2">
-                        {p.code}
-                      </span>
                       <span>{p.hierarchy_path || p.name}</span>
                     </SelectItem>
                   ))}
@@ -148,28 +147,17 @@ export function AccountGroupDialog({
 
             {/* Derived Indicator */}
             {selectedParent && (
-              <div className="flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Type:</span>
-                  <Badge variant="outline" className="capitalize font-semibold">
-                    {selectedParent.head_type}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Normal Side:</span>
-                  <Badge variant="secondary" className="capitalize font-mono">
-                    {selectedParent.normal_side}
-                  </Badge>
-                </div>
-                <Badge variant="outline" className="text-amber-600 border-amber-300">
-                  Non-postable Group
+              <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">Type:</span>
+                <Badge variant="outline" className="font-semibold">
+                  {TYPE_LABELS[selectedParent.head_type as FinanceHeadType]}
                 </Badge>
               </div>
             )}
 
             {/* Name */}
             <div className="grid gap-1.5">
-              <Label htmlFor="group-name">Group Name *</Label>
+              <Label htmlFor="group-name">Name *</Label>
               <Input
                 id="group-name"
                 value={name}
@@ -183,9 +171,9 @@ export function AccountGroupDialog({
             {/* Code */}
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between">
-                <Label htmlFor="group-code">Group Code (Optional)</Label>
+                <Label htmlFor="group-code">Code (optional)</Label>
                 <span className="text-[11px] text-muted-foreground">
-                  Leave empty to auto-generate
+                  Leave blank to generate automatically
                 </span>
               </div>
               <Input
@@ -198,13 +186,13 @@ export function AccountGroupDialog({
 
             {/* Description */}
             <div className="grid gap-1.5">
-              <Label htmlFor="group-desc">Description (Optional)</Label>
+              <Label htmlFor="group-desc">Notes (optional)</Label>
               <Textarea
                 id="group-desc"
                 rows={2}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Audit notes or criteria for accounts grouped here..."
+                placeholder="What this group is for..."
               />
             </div>
           </div>
@@ -220,7 +208,7 @@ export function AccountGroupDialog({
             </Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Group
+              Add Group
             </Button>
           </DialogFooter>
         </form>

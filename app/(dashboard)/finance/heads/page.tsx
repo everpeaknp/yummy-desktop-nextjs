@@ -2,9 +2,9 @@ import { Metadata } from "next";
 import { AccountHeadsClient } from "@/components/finance/heads/account-heads-client";
 
 export const metadata: Metadata = {
-  title: "Account Heads | Yummy Finance",
+  title: "Chart of Accounts | Yummy Finance",
   description:
-    "Manage Chart of Accounts reporting heads, groups, and opening balances.",
+    "Manage the categories you use when recording income and expenses.",
 };
 
 export default function AccountHeadsPage() {

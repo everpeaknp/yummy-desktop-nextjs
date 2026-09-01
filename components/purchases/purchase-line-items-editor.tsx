@@ -201,29 +201,19 @@ export function PurchaseLineItemsEditor({
               </div>
 
               {line.mode === "existing" ? (
-                <>
-                  <InventoryItemSelect
-                    restaurantId={restaurantId}
-                    value={line.inventoryItemId}
-                    onChange={(itemId, item) =>
-                      updateLine(index, {
-                        inventoryItemId: itemId,
-                        purchaseUnit: line.purchaseUnit || item?.unit || "",
-                      })
-                    }
-                    excludeIds={usedItemIds}
-                    disabled={disabled}
-                    label="Item"
-                  />
-                  <StationPicker
-                    label="Station (optional override, defaults to item's own)"
-                    restaurantId={restaurantId}
-                    value={line.stationId}
-                    onChange={(stationId) => updateLine(index, { stationId })}
-                    disabled={disabled}
-                    placeholder="Inherit from item"
-                  />
-                </>
+                <InventoryItemSelect
+                  restaurantId={restaurantId}
+                  value={line.inventoryItemId}
+                  onChange={(itemId, item) =>
+                    updateLine(index, {
+                      inventoryItemId: itemId,
+                      purchaseUnit: line.purchaseUnit || item?.unit || "",
+                    })
+                  }
+                  excludeIds={usedItemIds}
+                  disabled={disabled}
+                  label="Item"
+                />
               ) : (
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">

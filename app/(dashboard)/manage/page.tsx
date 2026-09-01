@@ -112,6 +112,14 @@ const sections: Array<{ title: string; items: ManageItem[] }> = [
                 iconColor: "text-rose-500",
                 iconBg: "bg-rose-50 dark:bg-rose-900/20",
             },
+            {
+                title: "Stations",
+                description: "Departments & printers",
+                href: "/manage/stations",
+                icon: LayoutGrid,
+                iconColor: "text-teal-500",
+                iconBg: "bg-teal-50 dark:bg-teal-900/20",
+            },
         ],
     },
     {

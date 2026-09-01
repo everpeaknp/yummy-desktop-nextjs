@@ -14,6 +14,7 @@ export const reportGroups: FinanceReportGroup[] = [
     label: "Business performance",
     reports: [
       { href: "/finance/reports/profit-and-loss", label: "Profit & Loss", description: "Income, costs, and operating result." },
+      { href: "/finance/reports/department-breakdown", label: "Performance by Department", description: "Revenue, cost, and margin per station (Kitchen, Bar, Cafe, etc.)." },
       { href: "/finance/reports/cash-flow", label: "Cash Flow", description: "Where cash came from and where it went." },
     ],
   },

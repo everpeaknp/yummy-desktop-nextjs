@@ -1115,26 +1115,9 @@ export default function InventoryPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="station">Station *</Label>
-                <Select 
-                  value={itemForm.station} 
-                  onValueChange={(v) => setItemForm({ ...itemForm, station: v })}
-                >
-                  <SelectTrigger id="station">
-                    <SelectValue placeholder="Select station" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="general">General</SelectItem>
-                    <SelectItem value="kitchen">Kitchen</SelectItem>
-                    <SelectItem value="bar">Bar</SelectItem>
-                    <SelectItem value="cafe">Cafe</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
                 {user?.restaurant_id && (
                   <StationPicker
-                    label="Station (cost centre)"
+                    label="Station"
                     restaurantId={user.restaurant_id}
                     value={itemForm.station_id}
                     onChange={(stationId) => setItemForm({ ...itemForm, station_id: stationId })}
