@@ -76,9 +76,7 @@ export function buildCashExpenseDrawerPayload({
 
   const drawerSessionId = Number(selectedDrawerSessionId);
   if (!Number.isInteger(drawerSessionId) || drawerSessionId <= 0) {
-    throw new Error(
-      "Select an open cash drawer before recording this cash expense.",
-    );
+    return {};
   }
 
   return { drawer_session_id: drawerSessionId };

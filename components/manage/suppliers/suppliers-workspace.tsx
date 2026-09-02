@@ -40,7 +40,6 @@ import { SupplierApis } from "@/lib/api/endpoints";
 import { SupplierDialog } from "@/components/manage/suppliers/supplier-dialog";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/utils";
-import { SupplierTransactionsDialog } from "@/components/manage/suppliers/supplier-transactions-dialog";
 
 export function SuppliersWorkspace({
     financeMode = false,
@@ -57,7 +56,6 @@ export function SuppliersWorkspace({
     const [totalPayable, setTotalPayable] = useState(0);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [selectedSupplier, setSelectedSupplier] = useState<any>(null);
-    const [ledgerSupplier, setLedgerSupplier] = useState<any>(null);
 
     const fetchSuppliers = useCallback(async () => {
         if (!user?.restaurant_id) return;
@@ -212,7 +210,7 @@ export function SuppliersWorkspace({
                             </TableRow>
                         ) : (
                             filteredSuppliers.map((supplier) => (
-                                <TableRow key={supplier.id}>
+                                <TableRow key={supplier.id} className="cursor-pointer" onClick={() => router.push(`/suppliers/${supplier.id}`)}>
                                     <TableCell>
                                         <div className="flex flex-col">
                                             <span className="font-semibold">{supplier.name}</span>
@@ -257,13 +255,13 @@ export function SuppliersWorkspace({
                                             {supplier.is_active ? "Active" : "Inactive"}
                                         </Badge>
                                     </TableCell>
-                                    <TableCell className="text-right">
+                                    <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
                                         <div className="flex justify-end gap-1">
                                             <Button
                                                 type="button"
                                                 size="sm"
                                                 variant={supplier.payable_amount > 0 ? "default" : "outline"}
-                                                onClick={() => setLedgerSupplier(supplier)}
+                                                onClick={() => router.push(`/suppliers/${supplier.id}`)}
                                             >
                                                 <Wallet className="mr-1.5 h-3.5 w-3.5" />
                                                 {supplier.payable_amount > 0 ? "Pay supplier" : "View ledger"}
@@ -275,7 +273,7 @@ export function SuppliersWorkspace({
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => setLedgerSupplier(supplier)}>
+                                                    <DropdownMenuItem onClick={() => router.push(`/suppliers/${supplier.id}`)}>
                                                         <Eye className="w-4 h-4 mr-2" />
                                                         View Ledger
                                                     </DropdownMenuItem>
@@ -306,12 +304,6 @@ export function SuppliersWorkspace({
                 onOpenChange={setIsDialogOpen} 
                 supplier={selectedSupplier}
                 onSuccess={fetchSuppliers}
-            />
-            <SupplierTransactionsDialog
-                supplier={ledgerSupplier}
-                open={Boolean(ledgerSupplier)}
-                onOpenChange={(open) => { if (!open) setLedgerSupplier(null); }}
-                onSettled={fetchSuppliers}
             />
         </div>
     );

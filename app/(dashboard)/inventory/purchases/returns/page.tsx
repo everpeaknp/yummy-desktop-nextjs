@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, ChevronLeft, Loader2, MoreVertical, Ban } from "lucide-react";
 
@@ -46,6 +46,10 @@ import {
   CashBankAccountSelect,
   type CashBankAccountOption,
 } from "@/components/finance/cash-bank-account-select";
+import {
+  TransactionDetailSheet,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import apiClient from "@/lib/api-client";
 import { PurchaseApis, PurchaseReturnApis, SupplierApis } from "@/lib/api/endpoints";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -76,6 +80,61 @@ function statusBadge(status: string) {
   }
 }
 
+function purchaseReturnDetail(entry: any): TransactionDetailModel {
+  const settlement = String(entry.settlement_type || "supplier_credit").replaceAll("_", " ");
+  return {
+    eyebrow: "Purchase return",
+    title: `Purchase return #${entry.id}`,
+    reference: entry.purchase_id ? `Linked purchase #${entry.purchase_id}` : "Purchase return",
+    subtitle: entry.supplier_name ? `Return to ${entry.supplier_name}` : "Supplier return",
+    occurredAt: entry.posted_at || entry.created_at || entry.return_date,
+    status: entry.status,
+    amount: entry.total_cost,
+    amountLabel: entry.settlement_type === "refund_received" ? "Refund received" : "Supplier credit",
+    amountTone: "in",
+    badges: [settlement],
+    sections: [
+      {
+        title: "Return overview",
+        fields: [
+          { label: "Return date", value: entry.return_date },
+          { label: "Supplier", value: entry.supplier_name || "Supplier" },
+          { label: "Original purchase", value: entry.purchase_id ? `Purchase #${entry.purchase_id}` : "Not recorded" },
+          { label: "Settlement", value: settlement },
+          { label: "Reason", value: String(entry.reason_code || "other").replaceAll("_", " "), fullWidth: true },
+          { label: "Stock outcome", value: entry.goods_physically_returned ? "Goods returned to the supplier" : "Financial credit only" },
+          ...(entry.void_reason ? [{ label: "Void reason", value: entry.void_reason, fullWidth: true }] : []),
+        ],
+      },
+      {
+        title: "Returned items",
+        description: "Quantities and values removed from the original purchase.",
+        table: {
+          columns: ["Item", "Quantity", "Unit", "Rate", "Amount"],
+          rows: (entry.lines || []).map((line: any) => [
+            line.item_name || "Inventory item",
+            Number(line.quantity || 0).toLocaleString(),
+            line.unit || "-",
+            formatCurrency(line.unit_cost),
+            <span key={`purchase-return-line-${line.id}`} className="font-medium tabular-nums">{formatCurrency(line.line_total)}</span>,
+          ]),
+        },
+        emptyText: "No return lines were recorded.",
+      },
+      {
+        title: "Settlement impact",
+        fields: [{
+          label: "What happened",
+          value: entry.settlement_type === "refund_received"
+            ? "The supplier refund increased the selected cash or bank account."
+            : "A supplier credit was created against the linked purchase bill.",
+          fullWidth: true,
+        }],
+      },
+    ],
+  };
+}
+
 interface ReturnLineDraft {
   key: string;
   purchase_line_id: number | null;
@@ -97,6 +156,11 @@ function newReturnLine(): ReturnLineDraft {
 export default function InventoryPurchaseReturnsPage() {
   const user = useAuth((state) => state.user);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedPurchaseId = searchParams.get("purchase_id");
+  const requestedSupplierId = searchParams.get("supplier_id");
+  const requestedSettlement = searchParams.get("settlement");
+  const requestedReturnId = searchParams.get("return_id");
 
   const [returns, setReturns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,8 +183,9 @@ export default function InventoryPurchaseReturnsPage() {
   const [voidReturn, setVoidReturn] = useState<any | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [voidSubmitting, setVoidSubmitting] = useState(false);
+  const [detailReturn, setDetailReturn] = useState<any | null>(null);
 
-  const fetchReturns = async () => {
+  const fetchReturns = useCallback(async () => {
     if (!user?.restaurant_id) return;
     setLoading(true);
     try {
@@ -133,9 +198,9 @@ export default function InventoryPurchaseReturnsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.restaurant_id]);
 
-  const fetchSuppliers = async () => {
+  const fetchSuppliers = useCallback(async () => {
     if (!user?.restaurant_id) return;
     try {
       const response = await apiClient.get(SupplierApis.listSuppliers(user.restaurant_id, true));
@@ -143,9 +208,9 @@ export default function InventoryPurchaseReturnsPage() {
     } catch (err) {
       console.error("Failed to fetch suppliers:", err);
     }
-  };
+  }, [user?.restaurant_id]);
 
-  const fetchPostedPurchases = async () => {
+  const fetchPostedPurchases = useCallback(async () => {
     if (!user?.restaurant_id) return;
     try {
       const response = await apiClient.get(PurchaseApis.list({ restaurantId: user.restaurant_id, status: "posted" }));
@@ -153,15 +218,35 @@ export default function InventoryPurchaseReturnsPage() {
     } catch (err) {
       console.error("Failed to fetch posted purchases:", err);
     }
-  };
+  }, [user?.restaurant_id]);
 
   useEffect(() => {
     fetchReturns();
     fetchSuppliers();
     fetchPostedPurchases();
-  }, [user?.restaurant_id]);
+  }, [fetchPostedPurchases, fetchReturns, fetchSuppliers]);
+
+  useEffect(() => {
+    if (!requestedReturnId || !user?.restaurant_id) return;
+    let active = true;
+    void apiClient
+      .get(PurchaseReturnApis.get(Number(requestedReturnId), user.restaurant_id))
+      .then((response) => {
+        if (active && response.data.status === "success") {
+          setDetailReturn(response.data.data);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to fetch purchase return detail:", error);
+        if (active) toast.error("Could not load this purchase return.");
+      });
+    return () => { active = false; };
+  }, [requestedReturnId, user?.restaurant_id]);
 
   const selectedPurchase = postedPurchases.find((p) => String(p.id) === createForm.purchase_id) || null;
+  const eligiblePurchases = createForm.supplier_id
+    ? postedPurchases.filter((purchase) => String(purchase.supplier_id) === createForm.supplier_id)
+    : postedPurchases;
 
   const openCreate = () => {
     setCreateForm({
@@ -199,6 +284,45 @@ export default function InventoryPurchaseReturnsPage() {
     }
   };
 
+  // Opening a return from a posted purchase brings its receipted lines into
+  // the form. Returns always stay linked to their original purchase bill.
+  useEffect(() => {
+    if (!requestedPurchaseId || !postedPurchases.length) return;
+    const purchase = postedPurchases.find((row) => String(row.id) === requestedPurchaseId);
+    if (!purchase || createForm.purchase_id === requestedPurchaseId) return;
+
+    setCreateForm((current) => ({
+      ...current,
+      purchase_id: requestedPurchaseId,
+      supplier_id: String(purchase.supplier_id || ""),
+    }));
+    setCreateLines(
+      (purchase.lines || [])
+        .filter((line: any) => Number(line.received_quantity || 0) > 0)
+        .map((line: any) => ({
+          key: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+          purchase_line_id: line.id,
+          inventory_item_id: line.inventory_item_id,
+          quantity: "",
+          unit_cost: String(line.unit_cost ?? ""),
+        })),
+    );
+    setCreateOpen(true);
+  }, [createForm.purchase_id, postedPurchases, requestedPurchaseId]);
+
+  // A supplier workspace can start a return/refund without forcing the user
+  // through an unfiltered purchase list. A linked purchase still takes
+  // precedence because it is the strongest audit trail for returned stock.
+  useEffect(() => {
+    if (!requestedSupplierId || requestedPurchaseId) return;
+    setCreateForm((current) => ({
+      ...current,
+      supplier_id: requestedSupplierId,
+      settlement_type: requestedSettlement === "refund_received" ? "refund_received" : current.settlement_type,
+    }));
+    setCreateOpen(true);
+  }, [requestedPurchaseId, requestedSettlement, requestedSupplierId]);
+
   const updateLine = (index: number, patch: Partial<ReturnLineDraft>) => {
     const updated = [...createLines];
     updated[index] = { ...updated[index], ...patch };
@@ -209,6 +333,10 @@ export default function InventoryPurchaseReturnsPage() {
     e.preventDefault();
     if (!user?.restaurant_id || !createForm.supplier_id) {
       toast.error("Select a supplier before saving.");
+      return;
+    }
+    if (!createForm.purchase_id) {
+      toast.error("Select the original purchase bill being returned.");
       return;
     }
     const lines = createLines.filter((l) => l.inventory_item_id != null && Number(l.quantity) > 0);
@@ -226,7 +354,7 @@ export default function InventoryPurchaseReturnsPage() {
       const payload = {
         restaurant_id: user.restaurant_id,
         supplier_id: Number(createForm.supplier_id),
-        purchase_id: createForm.purchase_id ? Number(createForm.purchase_id) : undefined,
+        purchase_id: Number(createForm.purchase_id),
         return_date: createForm.return_date,
         reason_code: createForm.reason_code,
         settlement_type: createForm.settlement_type,
@@ -318,13 +446,25 @@ export default function InventoryPurchaseReturnsPage() {
               </TableRow>
             ) : (
               returns.map((r) => (
-                <TableRow key={r.id}>
+                <TableRow
+                  key={r.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setDetailReturn(r)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setDetailReturn(r);
+                    }
+                  }}
+                  className="cursor-pointer transition-colors hover:bg-muted/40 focus-visible:bg-muted/40"
+                >
                   <TableCell>{formatDate(r.return_date)}</TableCell>
                   <TableCell>{r.supplier_name || "Unknown"}</TableCell>
                   <TableCell className="capitalize">{r.reason_code?.replace(/_/g, " ")}</TableCell>
                   <TableCell className="font-medium">{formatCurrency(r.total_cost)}</TableCell>
                   <TableCell>{statusBadge(r.status)}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
                     {r.status === "posted" && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -360,20 +500,20 @@ export default function InventoryPurchaseReturnsPage() {
             <DialogHeader>
               <DialogTitle>Record Purchase Return</DialogTitle>
               <DialogDescription>
-                Preferably reference the original purchase so eligible quantities are
-                validated automatically.
+                Select the original purchase bill. This keeps returned stock and the
+                supplier credit or refund linked to the correct document.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Original purchase (optional)</Label>
+                  <Label>Original purchase *</Label>
                   <Select value={createForm.purchase_id} onValueChange={handlePurchaseSelect}>
                     <SelectTrigger>
-                      <SelectValue placeholder="No specific purchase" />
+                      <SelectValue placeholder="Select the bill being returned" />
                     </SelectTrigger>
                     <SelectContent>
-                      {postedPurchases.map((p) => (
+                      {eligiblePurchases.map((p) => (
                         <SelectItem key={p.id} value={String(p.id)}>
                           #{p.id} · {p.supplier_name} · {formatDate(p.purchase_date)}
                         </SelectItem>
@@ -385,7 +525,7 @@ export default function InventoryPurchaseReturnsPage() {
                   <Label>Supplier *</Label>
                   <Select
                     value={createForm.supplier_id}
-                    onValueChange={(v) => setCreateForm({ ...createForm, supplier_id: v })}
+                    onValueChange={(v) => setCreateForm({ ...createForm, supplier_id: v, purchase_id: "" })}
                     disabled={!!selectedPurchase}
                   >
                     <SelectTrigger>
@@ -551,6 +691,13 @@ export default function InventoryPurchaseReturnsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <TransactionDetailSheet
+        open={detailReturn != null}
+        onOpenChange={(open) => !open && setDetailReturn(null)}
+        detail={detailReturn ? purchaseReturnDetail(detailReturn) : null}
+        actionHref={detailReturn?.supplier_id ? `/suppliers/${detailReturn.supplier_id}` : null}
+        actionLabel="Open supplier"
+      />
     </div>
   );
 }

@@ -82,8 +82,10 @@ export const HotelPmsApis = {
   financeSummary: "/hotel/v2/finance/summary",
   checkout: (id: number) => `/hotel/v2/stays/${id}/checkout`,
   prepareCheckout: (id: number) => `/hotel/v2/stays/${id}/prepare-checkout`,
-  earlyDepartureQuote: (id: number) => `/hotel/v2/stays/${id}/early-departure/quote`,
-  prepareEarlyDeparture: (id: number) => `/hotel/v2/stays/${id}/early-departure/prepare`,
+  earlyDepartureQuote: (id: number) =>
+    `/hotel/v2/stays/${id}/early-departure/quote`,
+  prepareEarlyDeparture: (id: number) =>
+    `/hotel/v2/stays/${id}/early-departure/prepare`,
   moveRoom: (id: number) => `/hotel/v2/stays/${id}/move-room`,
   extendStay: (id: number) => `/hotel/v2/stays/${id}/extend`,
   folio: (id: number) => `/hotel/v2/folios/${id}`,
@@ -379,6 +381,7 @@ export const CustomerApis = {
   deleteCustomer: (id: number) => `/customers/${id}`,
   redeemLoyaltyPoints: (id: number) => `/customers/${id}/loyalty/redeem`,
   repayCredit: (id: number) => `/customers/${id}/credit/repay`,
+  payOut: (id: number) => `/customers/${id}/payments-out`,
   getCreditHistory: (id: number) => `/customers/${id}/credit/history`,
 };
 
@@ -509,12 +512,14 @@ export const InventoryApis = {
 export const PurchaseApis = {
   create: "/purchases",
   list: ({
-    restaurantId,
-    status,
+      restaurantId,
+      supplierId,
+      status,
     skip = 0,
     limit = 50,
   }: {
-    restaurantId: number;
+      restaurantId: number;
+      supplierId?: number;
     status?: string;
     skip?: number;
     limit?: number;
@@ -524,19 +529,12 @@ export const PurchaseApis = {
       skip: skip.toString(),
       limit: limit.toString(),
     });
-    if (status) params.append("status", status);
+      if (status) params.append("status", status);
+      if (supplierId) params.append("supplier_id", supplierId.toString());
     return `/purchases?${params.toString()}`;
   },
   get: (id: number, restaurantId: number) =>
     `/purchases/${id}?restaurant_id=${restaurantId}`,
-  update: (id: number, restaurantId: number) =>
-    `/purchases/${id}?restaurant_id=${restaurantId}`,
-  delete: (id: number, restaurantId: number) =>
-    `/purchases/${id}?restaurant_id=${restaurantId}`,
-  markOrdered: (id: number, restaurantId: number) =>
-    `/purchases/${id}/mark-ordered?restaurant_id=${restaurantId}`,
-  receive: (id: number, restaurantId: number) =>
-    `/purchases/${id}/receive?restaurant_id=${restaurantId}`,
   void: (id: number, restaurantId: number) =>
     `/purchases/${id}/void?restaurant_id=${restaurantId}`,
 };
@@ -544,11 +542,13 @@ export const PurchaseApis = {
 export const PurchaseReturnApis = {
   create: "/purchase-returns",
   list: ({
-    restaurantId,
+      restaurantId,
+      supplierId,
     skip = 0,
     limit = 50,
   }: {
-    restaurantId: number;
+      restaurantId: number;
+      supplierId?: number;
     skip?: number;
     limit?: number;
   }) => {
@@ -556,7 +556,8 @@ export const PurchaseReturnApis = {
       restaurant_id: restaurantId.toString(),
       skip: skip.toString(),
       limit: limit.toString(),
-    });
+      });
+      if (supplierId) params.append("supplier_id", supplierId.toString());
     return `/purchase-returns?${params.toString()}`;
   },
   get: (id: number, restaurantId: number) =>
@@ -1105,6 +1106,8 @@ export const ExpenseApis = {
 export const IncomeApis = {
   summary: "/income/summary",
   recent: "/income/recent",
+  detail: (id: number, restaurantId: number) =>
+    `/income/${id}?restaurant_id=${restaurantId}`,
   bySource: "/income/by-source",
   byPaymentMethod: "/income/by-payment-method",
   manual: "/income/manual",
@@ -1180,6 +1183,9 @@ type AccountingLedgerParams = AccountingCoreParams & {
 
 type AccountingDaybookParams = AccountingCoreParams & {
   businessDate: string;
+  periodStartAt?: string;
+  periodEndAt?: string;
+  dayCloseId?: number;
 };
 
 type AccountingSettlementParams = Pick<
@@ -1419,6 +1425,11 @@ export const AccountingApis = {
   daybook: (params: AccountingDaybookParams) => {
     const query = buildAccountingQuery(params);
     query.append("business_date", params.businessDate);
+    if (params.periodStartAt)
+      query.append("period_start_at", params.periodStartAt);
+    if (params.periodEndAt) query.append("period_end_at", params.periodEndAt);
+    if (params.dayCloseId !== undefined)
+      query.append("day_close_id", params.dayCloseId.toString());
     return `/accounting/daybook?${query.toString()}`;
   },
   dayCloses: (
@@ -1554,7 +1565,10 @@ export const AccountingApis = {
     return `/finance/payment-instruments?${query.toString()}`;
   },
   createPaymentInstrument: () => "/finance/payment-instruments",
-  migrateLegacyPaymentInstruments: (restaurantId: number, businessLine: string) =>
+  migrateLegacyPaymentInstruments: (
+    restaurantId: number,
+    businessLine: string,
+  ) =>
     `/finance/payment-instruments/migrate-legacy?restaurant_id=${restaurantId}&business_line=${businessLine}`,
   updatePaymentInstrument: (instrumentId: number) =>
     `/finance/payment-instruments/${instrumentId}`,
@@ -2124,17 +2138,31 @@ export const SupplierApis = {
     });
     return `/suppliers/${id}/transactions?${params.toString()}`;
   },
-  settleTransaction: (
+    settleTransaction: (
     supplierId: number,
     transactionId: number,
     restaurantId: number,
   ) =>
-    `/suppliers/${supplierId}/transactions/${transactionId}/settle?restaurant_id=${restaurantId}`,
+      `/suppliers/${supplierId}/transactions/${transactionId}/settle?restaurant_id=${restaurantId}`,
+    pay: (supplierId: number, restaurantId: number) =>
+      `/suppliers/${supplierId}/payments?restaurant_id=${restaurantId}`,
+    receive: (supplierId: number, restaurantId: number) =>
+      `/suppliers/${supplierId}/receipts?restaurant_id=${restaurantId}`,
   createSupplier: "/suppliers",
   updateSupplier: (id: number, restaurantId: number) =>
     `/suppliers/${id}?restaurant_id=${restaurantId}`,
   deleteSupplier: (id: number, restaurantId: number) =>
     `/suppliers/${id}?restaurant_id=${restaurantId}`,
+};
+
+/** Immutable open-item statements used by customer and supplier balances. */
+export const PartyLedgerApis = {
+  statement: (
+    partyType: "customer" | "supplier",
+    partyId: number,
+    restaurantId: number,
+  ) =>
+    `/party-ledger/${partyType}/${partyId}/statement?restaurant_id=${restaurantId}`,
 };
 
 export const StationApis = {
@@ -2148,10 +2176,13 @@ export const StationApis = {
     const params = new URLSearchParams({
       restaurant_id: options.restaurantId.toString(),
     });
-    if (options.isActive !== undefined) params.append("is_active", options.isActive.toString());
+    if (options.isActive !== undefined)
+      params.append("is_active", options.isActive.toString());
     if (options.search) params.append("search", options.search);
-    if (options.skip !== undefined) params.append("skip", options.skip.toString());
-    if (options.limit !== undefined) params.append("limit", options.limit.toString());
+    if (options.skip !== undefined)
+      params.append("skip", options.skip.toString());
+    if (options.limit !== undefined)
+      params.append("limit", options.limit.toString());
     return `/stations?${params.toString()}`;
   },
   getStation: (id: number, restaurantId: number) =>

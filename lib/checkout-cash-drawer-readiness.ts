@@ -2,10 +2,10 @@ export const CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE =
   "Multiple active cash drawers are available to you. Close or reassign one before taking cash.";
 
 export const CHECKOUT_OPEN_CASH_DRAWER_MESSAGE =
-  "Open your cash drawer from Cash Drawers before taking a cash payment.";
+  "The cash drawer will open automatically when this payment is recorded.";
 
 export const HOTEL_CHECKOUT_OPEN_CASH_DRAWER_MESSAGE =
-  "Open a hotel cash drawer before taking this hotel cash payment.";
+  "The hotel cash drawer will open automatically when this payment is recorded.";
 
 const PAYMENT_READY_DRAWER_STATUSES = new Set([
   "opened",
@@ -22,6 +22,7 @@ export type CheckoutCashDrawerReadiness<TSession> = {
   controlsEnabled: boolean;
   paymentReadySessions: TSession[];
   ready: boolean;
+  autoOpenOnPayment: boolean;
   message: string;
 };
 
@@ -39,6 +40,7 @@ export function resolveCheckoutCashDrawerReadiness<TSession extends { status?: u
       controlsEnabled: false,
       paymentReadySessions: [],
       ready: true,
+      autoOpenOnPayment: false,
       message: "",
     };
   }
@@ -51,6 +53,7 @@ export function resolveCheckoutCashDrawerReadiness<TSession extends { status?: u
       controlsEnabled: true,
       paymentReadySessions,
       ready: true,
+      autoOpenOnPayment: false,
       message: "",
     };
   }
@@ -60,6 +63,7 @@ export function resolveCheckoutCashDrawerReadiness<TSession extends { status?: u
       controlsEnabled: true,
       paymentReadySessions,
       ready: false,
+      autoOpenOnPayment: false,
       message: CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE,
     };
   }
@@ -67,7 +71,8 @@ export function resolveCheckoutCashDrawerReadiness<TSession extends { status?: u
   return {
     controlsEnabled: true,
     paymentReadySessions,
-    ready: false,
+    ready: true,
+    autoOpenOnPayment: true,
     message:
       options?.businessLine === "hotel"
         ? HOTEL_CHECKOUT_OPEN_CASH_DRAWER_MESSAGE

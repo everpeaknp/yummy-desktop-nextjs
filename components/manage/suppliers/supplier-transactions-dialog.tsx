@@ -15,11 +15,18 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CashBankAccountSelect, type CashBankAccountOption } from "@/components/finance/cash-bank-account-select";
+import {
+  CashBankAccountSelect,
+  type CashBankAccountOption,
+} from "@/components/finance/cash-bank-account-select";
 import { useAuth } from "@/hooks/use-auth";
 import apiClient from "@/lib/api-client";
-import { SupplierApis } from "@/lib/api/endpoints";
+import { PartyLedgerApis, SupplierApis } from "@/lib/api/endpoints";
 import { cn, formatCurrency } from "@/lib/utils";
+import {
+  TransactionDetailSheet,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
 
 interface SupplierTransaction {
   id: number;
@@ -36,6 +43,20 @@ interface SupplierTransaction {
   paid_on: string;
 }
 
+interface PartyStatement {
+  total_debt_open: number | string;
+  total_credit_open: number | string;
+  net_open: number | string;
+  entries: Array<{
+    id: number;
+    entry_side: "debt" | "credit";
+    display_name: string;
+    source_reference?: string | null;
+    open_amount: number | string;
+    business_date: string;
+  }>;
+}
+
 export function SupplierTransactionsDialog({
   supplier,
   open,
@@ -50,26 +71,120 @@ export function SupplierTransactionsDialog({
   const restaurantId = useAuth((state) => state.user?.restaurant_id);
   const [transactions, setTransactions] = useState<SupplierTransaction[]>([]);
   const [currentPayable, setCurrentPayable] = useState(0);
+  const [statement, setStatement] = useState<PartyStatement | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paymentTransaction, setPaymentTransaction] =
     useState<SupplierTransaction | null>(null);
-  const [paymentAccount, setPaymentAccount] = useState<CashBankAccountOption | null>(null);
+  const [paymentAccount, setPaymentAccount] =
+    useState<CashBankAccountOption | null>(null);
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<SupplierTransaction | null>(null);
+
+  const transactionDetail: TransactionDetailModel | null = selectedTransaction
+    ? {
+        eyebrow: "Supplier ledger entry",
+        title:
+          selectedTransaction.description ||
+          label(selectedTransaction.source_type || "expense"),
+        reference:
+          selectedTransaction.reference ||
+          `Supplier transaction ${selectedTransaction.id}`,
+        subtitle: supplier?.name || "Supplier",
+        occurredAt: selectedTransaction.paid_on,
+        status:
+          selectedTransaction.status === "reversed"
+            ? "reversed"
+            : selectedTransaction.payment_status,
+        amount: Math.abs(Number(selectedTransaction.signed_amount || 0)),
+        amountLabel:
+          selectedTransaction.transaction_direction === "credit"
+            ? "Supplier credit"
+            : "Purchase / payable",
+        amountTone:
+          selectedTransaction.transaction_direction === "credit" ? "in" : "out",
+        badges: [
+          selectedTransaction.source_type,
+          selectedTransaction.business_line,
+        ].filter(Boolean) as string[],
+        sections: [
+          {
+            title: "Entry overview",
+            fields: [
+              { label: "Supplier", value: supplier?.name || "—" },
+              {
+                label: "Source",
+                value: label(selectedTransaction.source_type || "expense"),
+              },
+              {
+                label: "Direction",
+                value: label(selectedTransaction.transaction_direction),
+              },
+              {
+                label: "Business",
+                value: label(selectedTransaction.business_line || "restaurant"),
+              },
+              {
+                label: "Description",
+                value: selectedTransaction.description || "—",
+                fullWidth: true,
+              },
+            ],
+          },
+          {
+            title: "Settlement position",
+            fields: [
+              {
+                label: "Original amount",
+                value: formatCurrency(
+                  Math.abs(Number(selectedTransaction.signed_amount || 0)),
+                ),
+              },
+              {
+                label: "Paid",
+                value: formatCurrency(selectedTransaction.paid_amount),
+              },
+              {
+                label: "Remaining",
+                value: formatCurrency(selectedTransaction.remaining_amount),
+              },
+              {
+                label: "Payment status",
+                value: label(selectedTransaction.payment_status),
+              },
+              {
+                label: "Ledger status",
+                value: label(selectedTransaction.status),
+              },
+              {
+                label: "Reference",
+                value: selectedTransaction.reference || "—",
+              },
+            ],
+          },
+        ],
+      }
+    : null;
 
   const load = useCallback(async () => {
     if (!open || !supplier?.id || !restaurantId) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await apiClient.get(
-        SupplierApis.transactions(supplier.id, restaurantId),
-      );
+      const [response, statementResponse] = await Promise.all([
+        apiClient.get(SupplierApis.transactions(supplier.id, restaurantId)),
+        apiClient.get(PartyLedgerApis.statement("supplier", supplier.id, restaurantId)),
+      ]);
       const data = response.data?.data;
-      setTransactions(Array.isArray(data?.transactions) ? data.transactions : []);
-      setCurrentPayable(Number(data?.current_payable || 0));
+      setTransactions(
+        Array.isArray(data?.transactions) ? data.transactions : [],
+      );
+      const loadedStatement = statementResponse.data?.data as PartyStatement | undefined;
+      setStatement(loadedStatement || null);
+      setCurrentPayable(Math.max(0, Number(loadedStatement?.net_open ?? data?.current_payable ?? 0)));
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.detail ||
@@ -120,7 +235,8 @@ export function SupplierTransactionsDialog({
         {
           paid_amount: paymentAmount,
           payment_method:
-            paymentAccount.account_type === "drawer" || paymentAccount.bank_type === "custom"
+            paymentAccount.account_type === "drawer" ||
+            paymentAccount.bank_type === "custom"
               ? "cash"
               : "bank_transfer",
           reference: reference.trim() || null,
@@ -155,7 +271,22 @@ export function SupplierTransactionsDialog({
             <p className="mt-1 text-xl font-semibold tabular-nums">
               {formatCurrency(currentPayable)}
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Calculated from open purchase bills and supplier credits.
+            </p>
           </div>
+          {statement && (
+            <div className="grid grid-cols-2 gap-3 rounded-xl border bg-background p-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Open purchase bills</p>
+                <p className="mt-1 font-semibold tabular-nums">{formatCurrency(statement.total_debt_open)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Supplier credit available</p>
+                <p className="mt-1 font-semibold tabular-nums text-emerald-600">{formatCurrency(statement.total_credit_open)}</p>
+              </div>
+            </div>
+          )}
           <div className="max-h-[60vh] overflow-y-auto pr-1">
             {loading ? (
               <div className="flex min-h-48 items-center justify-center">
@@ -178,7 +309,19 @@ export function SupplierTransactionsDialog({
                       ? "reversed"
                       : transaction.payment_status;
                   return (
-                    <div key={transaction.id} className="flex gap-3 py-4">
+                    <div
+                      key={transaction.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedTransaction(transaction)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedTransaction(transaction);
+                        }
+                      }}
+                      className="flex cursor-pointer gap-3 py-4 transition-colors hover:bg-muted/30 focus-visible:bg-muted/40 focus-visible:outline-none"
+                    >
                       {credit ? (
                         <ArrowDownLeft className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
                       ) : (
@@ -193,7 +336,9 @@ export function SupplierTransactionsDialog({
                             </p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               {label(transaction.source_type || "expense")} ·{" "}
-                              {new Date(transaction.paid_on).toLocaleDateString()}
+                              {new Date(
+                                transaction.paid_on,
+                              ).toLocaleDateString()}
                               {transaction.reference
                                 ? ` · ${transaction.reference}`
                                 : ""}
@@ -208,10 +353,15 @@ export function SupplierTransactionsDialog({
                             >
                               {credit ? "−" : ""}
                               {formatCurrency(
-                                Math.abs(Number(transaction.signed_amount || 0)),
+                                Math.abs(
+                                  Number(transaction.signed_amount || 0),
+                                ),
                               )}
                             </p>
-                            <Badge variant="outline" className="mt-1 text-[10px]">
+                            <Badge
+                              variant="outline"
+                              className="mt-1 text-[10px]"
+                            >
                               {label(status)}
                             </Badge>
                           </div>
@@ -219,7 +369,8 @@ export function SupplierTransactionsDialog({
                         {Number(transaction.remaining_amount || 0) > 0 ? (
                           <div className="mt-2 flex items-center justify-between gap-3">
                             <p className="text-xs text-muted-foreground">
-                              Paid {formatCurrency(transaction.paid_amount)} · Remaining{" "}
+                              Paid {formatCurrency(transaction.paid_amount)} ·
+                              Remaining{" "}
                               {formatCurrency(transaction.remaining_amount)}
                             </p>
                             {canSettle(transaction) ? (
@@ -227,7 +378,10 @@ export function SupplierTransactionsDialog({
                                 type="button"
                                 size="sm"
                                 variant="secondary"
-                                onClick={() => void openPayment(transaction)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void openPayment(transaction);
+                                }}
                               >
                                 Pay
                               </Button>
@@ -243,6 +397,12 @@ export function SupplierTransactionsDialog({
           </div>
         </DialogContent>
       </Dialog>
+
+      <TransactionDetailSheet
+        open={selectedTransaction != null}
+        onOpenChange={(nextOpen) => !nextOpen && setSelectedTransaction(null)}
+        detail={transactionDetail}
+      />
 
       <Dialog
         open={paymentTransaction !== null}
@@ -297,10 +457,7 @@ export function SupplierTransactionsDialog({
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={submitting || !paymentAccount}
-              >
+              <Button type="submit" disabled={submitting || !paymentAccount}>
                 {submitting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : null}
@@ -319,7 +476,13 @@ function canSettle(transaction: SupplierTransaction) {
     Number(transaction.remaining_amount || 0) > 0 &&
     transaction.status !== "reversed" &&
     transaction.transaction_direction !== "credit" &&
-    ["general_purchase", "inventory_adjustment", "manual_entry"].includes(
+    [
+      "general_purchase",
+      "inventory_adjustment",
+      "manual_entry",
+      "inventory_purchase",
+      "non_inventory_purchase",
+    ].includes(
       transaction.source_type || "",
     )
   );

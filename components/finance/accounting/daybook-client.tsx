@@ -1,16 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, History, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
-import { AccountingApis } from "@/lib/api/endpoints";
+import { AccountingApis, DayCloseApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -22,8 +21,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AccountingNav } from "./accounting-nav";
+import { DaybookReport } from "./daybook-report";
 import type { AccountingDaybook, DaybookCashTransaction } from "@/types/accounting";
+import {
+  parseDayCloseCurrent,
+  parseDayCloseList,
+  type DayCloseListItem,
+} from "@/types/day-close";
 
 type BaseResponse<T> = {
   status?: string;
@@ -136,8 +140,11 @@ export function DaybookClient() {
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
   const router = useRouter();
-  const [businessDate, setBusinessDate] = useState(() => yyyyMmDd(new Date()));
+  const businessDate = yyyyMmDd(new Date());
   const [businessLine, setBusinessLine] = useState("restaurant");
+  const [reportMode, setReportMode] = useState<"current" | "closed">("current");
+  const [closedDaybooks, setClosedDaybooks] = useState<DayCloseListItem[]>([]);
+  const [selectedClose, setSelectedClose] = useState<DayCloseListItem | null>(null);
   const [daybook, setDaybook] = useState<AccountingDaybook | null>(null);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -154,15 +161,28 @@ export function DaybookClient() {
     void checkAuth();
   }, [user, me, router]);
 
-  const loadDaybook = useCallback(async () => {
+  const fetchDaybook = useCallback(async ({
+    date,
+    periodStartAt,
+    periodEndAt,
+    dayCloseId,
+  }: {
+    date: string;
+    periodStartAt?: string;
+    periodEndAt?: string;
+    dayCloseId?: number;
+  }) => {
     if (!restaurantId || !canView) return;
     setLoading(true);
     try {
       const res = await apiClient.get<BaseResponse<AccountingDaybook>>(
         AccountingApis.daybook({
           restaurantId,
-          businessDate,
+          businessDate: date,
           businessLine,
+          periodStartAt,
+          periodEndAt,
+          dayCloseId,
         })
       );
       setDaybook(res.data?.data ?? null);
@@ -175,41 +195,90 @@ export function DaybookClient() {
     } finally {
       setLoading(false);
     }
-  }, [restaurantId, canView, businessDate, businessLine]);
+  }, [restaurantId, canView, businessLine]);
+
+  const loadCurrentDaybook = useCallback(async () => {
+    if (!restaurantId || !canView) return;
+    try {
+      const currentResponse = await apiClient.get(
+        DayCloseApis.current({
+          restaurantId,
+          businessLine,
+          businessDate,
+        }),
+      );
+      const current = parseDayCloseCurrent(currentResponse.data?.data);
+      await fetchDaybook({
+        date: current?.business_date || businessDate,
+        periodStartAt: current?.period_start_at,
+        periodEndAt: current?.period_start_at
+          ? current.period_end_at || new Date().toISOString()
+          : undefined,
+      });
+    } catch {
+      await fetchDaybook({ date: businessDate });
+    }
+  }, [restaurantId, canView, businessLine, businessDate, fetchDaybook]);
+
+  const loadClosedDaybooks = useCallback(async () => {
+    if (!restaurantId || !canView) return;
+    setLoading(true);
+    try {
+      const response = await apiClient.get(
+        DayCloseApis.list({
+          restaurantId,
+          businessLine,
+          status: "confirmed",
+          limit: 100,
+        }),
+      );
+      const closes = parseDayCloseList(response.data?.data).filter(
+        (item) => item.period_start_at && item.period_end_at,
+      );
+      setClosedDaybooks(closes);
+      const next = closes[0] ?? null;
+      setSelectedClose(next);
+      if (next?.business_date) {
+        await fetchDaybook({
+          date: next.business_date,
+          periodStartAt: next.period_start_at,
+          periodEndAt: next.period_end_at,
+          dayCloseId: next.id,
+        });
+      } else {
+        setDaybook(null);
+        setLoaded(true);
+      }
+    } catch (error) {
+      console.error("Failed to load closed daybooks", error);
+      setClosedDaybooks([]);
+      setSelectedClose(null);
+      setDaybook(null);
+      setLoaded(true);
+      toast.error("Failed to load closed Daybooks");
+    } finally {
+      setLoading(false);
+    }
+  }, [restaurantId, canView, businessLine, fetchDaybook]);
+
+  const selectClosedDaybook = useCallback(async (close: DayCloseListItem) => {
+    if (!close.business_date) return;
+    setSelectedClose(close);
+    await fetchDaybook({
+      date: close.business_date,
+      periodStartAt: close.period_start_at,
+      periodEndAt: close.period_end_at,
+      dayCloseId: close.id,
+    });
+  }, [fetchDaybook]);
 
   useEffect(() => {
-    void loadDaybook();
-  }, [loadDaybook]);
-
-  const summary = useMemo(
-    () => [
-      {
-        label: "Opening balance",
-        value: formatMoney(daybook?.cash_control.opening_balance ?? 0),
-      },
-      {
-        label: "Cash sales",
-        value: formatMoney(daybook?.cash_control.cash_sales ?? 0),
-      },
-      {
-        label: "Transfers out",
-        value: formatMoney(daybook?.cash_control.transfers_out ?? 0),
-      },
-      {
-        label: "Closing balance",
-        value: formatMoney(daybook?.cash_control.closing_balance ?? 0),
-      },
-      {
-        label: "Ledger debit",
-        value: formatMoney(daybook?.ledger_impact.total_debit ?? 0),
-      },
-      {
-        label: "Ledger credit",
-        value: formatMoney(daybook?.ledger_impact.total_credit ?? 0),
-      },
-    ],
-    [daybook]
-  );
+    if (reportMode === "current") {
+      void loadCurrentDaybook();
+    } else {
+      void loadClosedDaybooks();
+    }
+  }, [reportMode, loadCurrentDaybook, loadClosedDaybooks]);
 
   if (!user) {
     return (
@@ -234,33 +303,40 @@ export function DaybookClient() {
     <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-4 sm:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <Button variant="ghost" size="sm" className="mb-2 px-0" onClick={() => router.push("/finance/accounting")}>
+          <Button variant="ghost" size="sm" className="mb-2 px-0" onClick={() => router.push("/finance/reports")}>
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Accounting
+            Finance reports
           </Button>
           <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">Daybook</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Cash control, payment instruments, transfers, ledger impact, and close blockers for one business day.
+            A structured receipts-and-payments report with the underlying cash, instrument, transfer, and ledger evidence.
           </p>
         </div>
-        <Button onClick={() => void loadDaybook()} disabled={loading || !restaurantId} className="w-full sm:w-auto">
+        <Button
+          onClick={() => void (reportMode === "current" ? loadCurrentDaybook() : loadClosedDaybooks())}
+          disabled={loading || !restaurantId}
+          className="w-full sm:w-auto"
+        >
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
           Refresh
         </Button>
       </div>
 
-      <AccountingNav />
+      <Tabs
+        value={reportMode}
+        onValueChange={(value) => setReportMode(value as "current" | "closed")}
+      >
+        <TabsList className="h-auto">
+          <TabsTrigger value="current">Current Daybook</TabsTrigger>
+          <TabsTrigger value="closed">
+            <History className="mr-2 h-4 w-4" />
+            Closed Daybooks
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      <div className="grid gap-3 rounded-md border border-border p-4 md:grid-cols-[180px_180px_auto] md:items-end">
-        <div className="space-y-2">
-          <Label htmlFor="business-date">Business date</Label>
-          <Input
-            id="business-date"
-            type="date"
-            value={businessDate}
-            onChange={(event) => setBusinessDate(event.target.value)}
-          />
-        </div>
+      {reportMode === "current" ? (
+        <div className="grid gap-3 rounded-md border border-border p-4 md:grid-cols-[180px_auto] md:items-end">
         <div className="space-y-2">
           <Label htmlFor="business-line">Business line</Label>
           <Input
@@ -270,24 +346,55 @@ export function DaybookClient() {
           />
         </div>
         <div className="text-sm text-muted-foreground">
-          {restaurantId ? `Restaurant #${restaurantId}` : "Restaurant scope unavailable"}
+          {restaurantId
+            ? `Live open period for restaurant #${restaurantId}`
+            : "Restaurant scope unavailable"}
         </div>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        {summary.map((item) => (
-          <Card key={item.label} className="rounded-md">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {item.label}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-semibold">{item.value}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div className="rounded-md border border-border">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold">Past closed Daybooks</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Each report uses the exact period frozen by its confirmed Day Close.
+            </p>
+          </div>
+          {closedDaybooks.length ? (
+            <div className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {closedDaybooks.map((close) => (
+                <button
+                  key={close.id}
+                  type="button"
+                  onClick={() => void selectClosedDaybook(close)}
+                  className={`rounded-md border p-3 text-left transition-colors ${
+                    selectedClose?.id === close.id
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <div className="text-sm font-semibold">
+                    {close.business_date
+                      ? new Date(`${close.business_date}T00:00:00`).toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })
+                      : `Day Close #${close.id}`}
+                  </div>
+                  <div className="mt-1 text-xs capitalize text-muted-foreground">
+                    {close.business_line || "restaurant"} · Confirmed
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {formatDateTime(close.period_start_at)} – {formatDateTime(close.period_end_at)}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : !loading ? (
+            <EmptyState label="No confirmed Daybooks are available yet." />
+          ) : null}
+        </div>
+      )}
 
       {loading && !loaded ? (
         <div className="flex h-48 items-center justify-center rounded-md border border-border">
@@ -297,14 +404,18 @@ export function DaybookClient() {
 
       {!loading && loaded && !daybook ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          No daybook data returned for this date.
+          {reportMode === "current"
+            ? "No current Daybook data returned for this date."
+            : "No report data returned for this closed Daybook."}
         </div>
       ) : null}
 
       {daybook ? (
-        <Tabs defaultValue="cash" className="w-full">
+        <div className="space-y-5">
+          <DaybookReport daybook={daybook} />
+          <Tabs defaultValue="cash" className="w-full">
           <TabsList className="h-auto w-full justify-start overflow-x-auto">
-            <TabsTrigger value="cash">Cash Control</TabsTrigger>
+            <TabsTrigger value="cash">Cash detail</TabsTrigger>
             <TabsTrigger value="instruments">Payment Instruments</TabsTrigger>
             <TabsTrigger value="transfers">Transfers</TabsTrigger>
             <TabsTrigger value="ledger">Ledger Impact</TabsTrigger>
@@ -414,7 +525,8 @@ export function DaybookClient() {
               </div>
             )}
           </TabsContent>
-        </Tabs>
+          </Tabs>
+        </div>
       ) : null}
     </div>
   );

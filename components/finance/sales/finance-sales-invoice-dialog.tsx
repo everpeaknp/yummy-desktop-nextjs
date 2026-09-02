@@ -41,10 +41,12 @@ export function FinanceSalesInvoiceDialog({
   open,
   onOpenChange,
   onCreated,
+  initialCustomerId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: (document: FinanceSalesDocument) => void;
+  initialCustomerId?: number | null;
 }) {
   const restaurantId = useAuth((state) => state.user?.restaurant_id);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -86,6 +88,11 @@ export function FinanceSalesInvoiceDialog({
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
   }, [businessLine, open, restaurantId]);
+
+  useEffect(() => {
+    if (!open) return;
+    setCustomerId(initialCustomerId ? String(initialCustomerId) : "");
+  }, [initialCustomerId, open]);
 
   const total = useMemo(
     () => money(lines.reduce((sum, line) => sum + Math.max(0, Number(line.quantity || 0)) * Math.max(0, Number(line.unit_price || 0)) - Math.max(0, Number(line.discount_amount || 0)) + Math.max(0, Number(line.tax_amount || 0)), 0)),

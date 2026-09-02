@@ -310,11 +310,35 @@ export interface DayCloseReceivablesSnapshot {
   credit_collections_by_method?: Record<string, unknown>;
 }
 
+export interface DayCloseFinancialSummary {
+  contract_version?: string;
+  source?: string;
+  ledger_source?: string;
+  ledger_complete?: boolean;
+  gross_sales?: number;
+  sales_total?: number;
+  discount_total?: number;
+  net_sales?: number;
+  collections_total?: number;
+  credit_sales?: number;
+  credit_collections?: number;
+  manual_income_total?: number;
+  total_income?: number;
+  refund_total?: number;
+  expense_total?: number;
+  operating_profit?: number;
+  period_receivables_change?: number;
+  outstanding_receivables_at_close?: number;
+  opening_drawer_balance?: number;
+  expected_drawer_balance?: number;
+}
+
 export interface DayCloseSnapshotData {
   period_start_at?: string;
   period_end_at?: string;
   business_date?: string;
   business_line?: BusinessLine | string;
+  financial_summary?: DayCloseFinancialSummary;
   opening_balance?: number;
   hotel_revenue_split?: HotelRevenueSplit;
   payment_distribution?: Partial<
@@ -444,6 +468,10 @@ export interface DayCloseValidateResult {
   pending_refunds_count?: number;
   blockers?: string[];
   warnings?: string[];
+  period_start_at?: string;
+  period_end_at?: string;
+  drawer_ready?: boolean;
+  drawer_blockers?: string[];
 }
 
 /** Merge generate-snapshot summary root with nested `detailed` breakdown. */
@@ -502,6 +530,28 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
   const raw = asRecord(nested);
   if (!raw) return null;
   const data = mergeSnapshotPayload(raw);
+  const financialRaw = asRecord(data.financial_summary);
+  const financial_summary: DayCloseFinancialSummary | undefined = financialRaw
+    ? {
+        ...financialRaw,
+        gross_sales: readAmount(financialRaw.gross_sales),
+        sales_total: readAmount(financialRaw.sales_total),
+        discount_total: readAmount(financialRaw.discount_total),
+        net_sales: readAmount(financialRaw.net_sales),
+        collections_total: readAmount(financialRaw.collections_total),
+        credit_sales: readAmount(financialRaw.credit_sales),
+        credit_collections: readAmount(financialRaw.credit_collections),
+        manual_income_total: readAmount(financialRaw.manual_income_total),
+        total_income: readAmount(financialRaw.total_income),
+        refund_total: readAmount(financialRaw.refund_total),
+        expense_total: readAmount(financialRaw.expense_total),
+        operating_profit: readAmount(financialRaw.operating_profit),
+        period_receivables_change: readAmount(financialRaw.period_receivables_change),
+        outstanding_receivables_at_close: readAmount(financialRaw.outstanding_receivables_at_close),
+        opening_drawer_balance: readAmount(financialRaw.opening_drawer_balance),
+        expected_drawer_balance: readAmount(financialRaw.expected_drawer_balance),
+      }
+    : undefined;
 
   const payment_distribution: DayCloseSnapshotData["payment_distribution"] = {};
   for (const key of ["cash", "card", "digital", "fonepay", "credit"] as const) {
@@ -596,6 +646,7 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
     period_end_at: data.period_end_at != null ? String(data.period_end_at) : undefined,
     business_date: data.business_date != null ? String(data.business_date) : undefined,
     business_line: data.business_line != null ? String(data.business_line) : undefined,
+    financial_summary,
     opening_balance: readAmount(data.opening_balance),
     payment_distribution: Object.keys(payment_distribution).length ? payment_distribution : undefined,
     payment_instrument_distribution,
@@ -616,13 +667,15 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
       data.expense_breakdown && typeof data.expense_breakdown === "object"
         ? (data.expense_breakdown as Record<string, unknown>)
         : undefined,
-    gross_sales: readAmount(data.gross_sales),
-    net_sales: readAmount(data.net_sales),
-    expense_total: readAmount(data.expense_total),
-    total_income: readAmount(data.total_income),
+    gross_sales: financial_summary?.gross_sales ?? readAmount(data.gross_sales),
+    discount_total: financial_summary?.discount_total ?? readAmount(data.discount_total),
+    net_sales: financial_summary?.net_sales ?? readAmount(data.net_sales),
+    expense_total: financial_summary?.expense_total ?? readAmount(data.expense_total),
+    total_income: financial_summary?.total_income ?? readAmount(data.total_income),
     expected_cash: readAmount(data.expected_cash),
     cash_collected: readAmount(data.cash_collected),
-    manual_income_total: readAmount(data.manual_income_total),
+    manual_income_total:
+      financial_summary?.manual_income_total ?? readAmount(data.manual_income_total),
     manual_cash_income: readAmount(data.manual_cash_income),
   };
 }
@@ -810,6 +863,12 @@ export function parseDayCloseValidateResult(payload: unknown): DayCloseValidateR
       typeof row.pending_refunds_count === "number" ? row.pending_refunds_count : undefined,
     blockers: Array.isArray(row.blockers) ? row.blockers.map(String) : undefined,
     warnings: Array.isArray(row.warnings) ? row.warnings.map(String) : undefined,
+    period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
+    period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    drawer_ready: typeof row.drawer_ready === "boolean" ? row.drawer_ready : undefined,
+    drawer_blockers: Array.isArray(row.drawer_blockers)
+      ? row.drawer_blockers.map(String)
+      : undefined,
   };
 }
 

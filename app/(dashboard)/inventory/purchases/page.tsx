@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Plus,
@@ -10,9 +10,8 @@ import {
   ChevronLeft,
   Loader2,
   MoreVertical,
-  CheckCircle2,
   Ban,
-  PackageCheck,
+  Undo2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -61,15 +60,15 @@ import {
 import apiClient from "@/lib/api-client";
 import { PurchaseApis, SupplierApis } from "@/lib/api/endpoints";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  TransactionDetailSheet,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
 
 function statusBadge(status: string) {
   switch (status) {
-    case "draft":
-      return <Badge variant="secondary" className="capitalize">Draft</Badge>;
-    case "ordered":
-      return <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 capitalize">Ordered</Badge>;
     case "posted":
-      return <Badge variant="default" className="bg-green-600 hover:bg-green-700 capitalize">Posted</Badge>;
+      return <Badge variant="default" className="bg-green-600 hover:bg-green-700">Purchased</Badge>;
     case "voided":
       return <Badge variant="destructive" className="capitalize">Voided</Badge>;
     default:
@@ -80,6 +79,7 @@ function statusBadge(status: string) {
 export default function InventoryPurchasesPage() {
   const user = useAuth((state) => state.user);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,21 +96,18 @@ export default function InventoryPurchasesPage() {
     notes: "",
   });
   const [createLines, setCreateLines] = useState<PurchaseLineDraft[]>([newPurchaseLineDraft()]);
+  const [createPaymentStatus, setCreatePaymentStatus] = useState("pending");
+  const [createPaidAmount, setCreatePaidAmount] = useState("");
+  const [createAccount, setCreateAccount] = useState<CashBankAccountOption | null>(null);
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
   const [detailPurchase, setDetailPurchase] = useState<any | null>(null);
-
-  const [receivePurchase, setReceivePurchase] = useState<any | null>(null);
-  const [receiveQuantities, setReceiveQuantities] = useState<Record<number, string>>({});
-  const [receivePaymentStatus, setReceivePaymentStatus] = useState("pending");
-  const [receiveAccount, setReceiveAccount] = useState<CashBankAccountOption | null>(null);
-  const [receiveSubmitting, setReceiveSubmitting] = useState(false);
 
   const [voidPurchase, setVoidPurchase] = useState<any | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [voidSubmitting, setVoidSubmitting] = useState(false);
 
-  const fetchPurchases = async () => {
+  const fetchPurchases = useCallback(async () => {
     if (!user?.restaurant_id) return;
     setLoading(true);
     try {
@@ -128,9 +125,9 @@ export default function InventoryPurchasesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, user?.restaurant_id]);
 
-  const fetchSuppliers = async () => {
+  const fetchSuppliers = useCallback(async () => {
     if (!user?.restaurant_id) return;
     try {
       const response = await apiClient.get(SupplierApis.listSuppliers(user.restaurant_id, true));
@@ -140,25 +137,29 @@ export default function InventoryPurchasesPage() {
     } catch (err) {
       console.error("Failed to fetch suppliers:", err);
     }
-  };
-
-  useEffect(() => {
-    fetchSuppliers();
   }, [user?.restaurant_id]);
 
   useEffect(() => {
+    fetchSuppliers();
+  }, [fetchSuppliers]);
+
+  useEffect(() => {
     fetchPurchases();
-  }, [user?.restaurant_id, statusFilter]);
+  }, [fetchPurchases]);
 
   const openCreate = () => {
+    const supplierFromUrl = searchParams.get("supplier_id") || "";
     setCreateForm({
-      supplier_id: "",
+      supplier_id: supplierFromUrl,
       purchase_date: new Date().toISOString().split("T")[0],
       expected_delivery_date: "",
       reference_number: "",
       notes: "",
     });
     setCreateLines([newPurchaseLineDraft()]);
+    setCreatePaymentStatus("pending");
+    setCreatePaidAmount("");
+    setCreateAccount(null);
     setCreateOpen(true);
   };
 
@@ -181,6 +182,14 @@ export default function InventoryPurchasesPage() {
         return;
       }
     }
+    if (["paid", "partial"].includes(createPaymentStatus) && !createAccount) {
+      toast.error("Select the cash or bank account used to pay.");
+      return;
+    }
+    if (createPaymentStatus === "partial" && Number(createPaidAmount) <= 0) {
+      toast.error("Enter the amount paid now.");
+      return;
+    }
 
     setCreateSubmitting(true);
     try {
@@ -191,6 +200,11 @@ export default function InventoryPurchasesPage() {
         expected_delivery_date: createForm.expected_delivery_date || undefined,
         reference_number: createForm.reference_number.trim() || undefined,
         notes: createForm.notes.trim() || undefined,
+        payment_status: createPaymentStatus,
+        paid_amount: createPaymentStatus === "partial" ? Number(createPaidAmount) : undefined,
+        account_type: ["paid", "partial"].includes(createPaymentStatus) ? createAccount?.account_type : undefined,
+        account_id: ["paid", "partial"].includes(createPaymentStatus) ? createAccount?.id : undefined,
+        idempotency_key: crypto.randomUUID(),
         lines: lines.map((line) => ({
           inventory_item_id: line.mode === "existing" ? line.inventoryItemId : undefined,
           station_id: line.mode === "existing" ? line.stationId : undefined,
@@ -213,75 +227,13 @@ export default function InventoryPurchasesPage() {
         })),
       };
       await apiClient.post(PurchaseApis.create, payload);
-      toast.success("Purchase saved as draft.");
+      toast.success("Purchase recorded and stock updated.");
       setCreateOpen(false);
       await fetchPurchases();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Failed to save purchase.");
     } finally {
       setCreateSubmitting(false);
-    }
-  };
-
-  const openReceive = (purchase: any) => {
-    setReceivePurchase(purchase);
-    const defaults: Record<number, string> = {};
-    for (const line of purchase.lines || []) {
-      const remaining = Number(line.ordered_quantity) - Number(line.received_quantity);
-      defaults[line.id] = remaining > 0 ? String(remaining) : "0";
-    }
-    setReceiveQuantities(defaults);
-    setReceivePaymentStatus("pending");
-    setReceiveAccount(null);
-  };
-
-  const handleReceive = async () => {
-    if (!receivePurchase || !user?.restaurant_id) return;
-    const lines = Object.entries(receiveQuantities)
-      .filter(([, qty]) => Number(qty) > 0)
-      .map(([purchase_line_id, qty]) => ({
-        purchase_line_id: Number(purchase_line_id),
-        quantity_received_now: Number(qty),
-      }));
-    if (lines.length === 0) {
-      toast.error("Enter a quantity to receive for at least one line.");
-      return;
-    }
-    if (receivePaymentStatus === "paid" && !receiveAccount) {
-      toast.error("Select the account used to pay for this receipt.");
-      return;
-    }
-
-    setReceiveSubmitting(true);
-    try {
-      const payload: any = {
-        lines,
-        payment_status: receivePaymentStatus,
-      };
-      if (receivePaymentStatus === "paid" && receiveAccount) {
-        payload.account_type = receiveAccount.account_type;
-        payload.account_id = receiveAccount.id;
-      }
-      await apiClient.post(PurchaseApis.receive(receivePurchase.id, user.restaurant_id), payload);
-      toast.success("Purchase received.");
-      setReceivePurchase(null);
-      setDetailPurchase(null);
-      await fetchPurchases();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Failed to receive purchase.");
-    } finally {
-      setReceiveSubmitting(false);
-    }
-  };
-
-  const handleMarkOrdered = async (purchase: any) => {
-    if (!user?.restaurant_id) return;
-    try {
-      await apiClient.post(PurchaseApis.markOrdered(purchase.id, user.restaurant_id));
-      toast.success("Purchase marked as ordered.");
-      await fetchPurchases();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Failed to mark purchase as ordered.");
     }
   };
 
@@ -308,10 +260,66 @@ export default function InventoryPurchasesPage() {
 
   const filteredPurchases = purchases.filter(
     (p) =>
-      !searchQuery ||
-      p.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.reference_number?.toLowerCase().includes(searchQuery.toLowerCase()),
+      ["posted", "voided"].includes(p.status) &&
+      (!searchQuery ||
+        p.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.reference_number?.toLowerCase().includes(searchQuery.toLowerCase())),
   );
+
+  const purchaseDetail: TransactionDetailModel | null = detailPurchase
+    ? {
+        eyebrow: "Inventory purchase",
+        title: detailPurchase.reference_number || "Supplier purchase",
+        reference: [detailPurchase.supplier_name, formatDate(detailPurchase.purchase_date)]
+          .filter(Boolean)
+          .join(" · "),
+        subtitle: detailPurchase.supplier_name || "Inventory supplier",
+        occurredAt: detailPurchase.created_at || detailPurchase.purchase_date,
+        status: detailPurchase.status,
+        amount: detailPurchase.total_cost,
+        amountLabel: "Purchase value",
+        amountTone: "out",
+        badges: [detailPurchase.status, detailPurchase.payment_status].filter(Boolean),
+        sections: [
+          {
+            title: "Purchase overview",
+            fields: [
+              { label: "Supplier", value: detailPurchase.supplier_name || "Supplier not recorded" },
+              { label: "Purchase date", value: formatDate(detailPurchase.purchase_date) },
+              { label: "Expected delivery", value: detailPurchase.expected_delivery_date ? formatDate(detailPurchase.expected_delivery_date) : "Not specified" },
+              { label: "Reference", value: detailPurchase.reference_number || "Not provided" },
+              { label: "Notes", value: detailPurchase.notes || "No notes", fullWidth: true },
+            ],
+          },
+          {
+            title: "Items received",
+            description: "Ordered and received quantities for every inventory item.",
+            table: {
+              columns: ["Item", "Ordered", "Received", "Unit cost", "Amount"],
+              rows: (detailPurchase.lines || []).map((line: any) => {
+                const unit = line.purchase_unit || line.item_unit || "unit";
+                return [
+                  line.item_name || "Inventory item",
+                  `${Number(line.ordered_quantity || 0).toLocaleString()} ${unit}`,
+                  `${Number(line.received_quantity || 0).toLocaleString()} ${unit}`,
+                  formatCurrency(line.unit_cost || 0),
+                  formatCurrency(line.line_total || 0),
+                ];
+              }),
+            },
+          },
+          {
+            title: "Settlement",
+            fields: [
+              { label: "Total purchase value", value: formatCurrency(detailPurchase.total_cost) },
+              { label: "Payment status", value: detailPurchase.payment_status?.replaceAll("_", " ") || "Not recorded" },
+              { label: "Payment method", value: detailPurchase.payment_method?.replaceAll("_", " ") || "Not recorded" },
+              { label: "Lifecycle status", value: detailPurchase.status?.replaceAll("_", " ") || "Not recorded" },
+            ],
+          },
+        ],
+      }
+    : null;
 
   return (
     <div className="p-6 space-y-6">
@@ -322,12 +330,17 @@ export default function InventoryPurchasesPage() {
           </Button>
           <h1 className="text-2xl font-bold tracking-tight">Purchases</h1>
           <p className="text-muted-foreground">
-            Stock acquired from suppliers. Posting a purchase increases inventory only by what's actually received.
+            Stock acquired from suppliers. Posting a purchase increases inventory only by what is actually received.
           </p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="w-4 h-4 mr-2" /> Record Purchase
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={() => router.push("/inventory/purchases/returns")}>
+            <Undo2 className="w-4 h-4 mr-2" /> Purchase returns
+          </Button>
+          <Button onClick={openCreate}>
+            <Plus className="w-4 h-4 mr-2" /> Record Purchase
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
@@ -346,9 +359,7 @@ export default function InventoryPurchasesPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="ordered">Ordered</SelectItem>
-            <SelectItem value="posted">Posted</SelectItem>
+            <SelectItem value="posted">Purchased</SelectItem>
             <SelectItem value="voided">Voided</SelectItem>
           </SelectContent>
         </Select>
@@ -381,7 +392,19 @@ export default function InventoryPurchasesPage() {
               </TableRow>
             ) : (
               filteredPurchases.map((purchase) => (
-                <TableRow key={purchase.id} className="cursor-pointer" onClick={() => setDetailPurchase(purchase)}>
+                <TableRow
+                  key={purchase.id}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+                  onClick={() => setDetailPurchase(purchase)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setDetailPurchase(purchase);
+                    }
+                  }}
+                >
                   <TableCell>{formatDate(purchase.purchase_date)}</TableCell>
                   <TableCell>{purchase.supplier_name || "Unknown"}</TableCell>
                   <TableCell>{purchase.reference_number || "-"}</TableCell>
@@ -396,26 +419,21 @@ export default function InventoryPurchasesPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => setDetailPurchase(purchase)}>View details</DropdownMenuItem>
-                        {purchase.status === "draft" && (
-                          <DropdownMenuItem onClick={() => handleMarkOrdered(purchase)}>
-                            <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as Ordered
-                          </DropdownMenuItem>
-                        )}
-                        {(purchase.status === "draft" || purchase.status === "ordered" || purchase.status === "posted") && (
-                          <DropdownMenuItem onClick={() => openReceive(purchase)}>
-                            <PackageCheck className="w-4 h-4 mr-2" /> Receive
-                          </DropdownMenuItem>
-                        )}
                         {purchase.status === "posted" && (
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setVoidPurchase(purchase);
-                              setVoidReason("");
-                            }}
-                            className="text-red-600"
-                          >
-                            <Ban className="w-4 h-4 mr-2" /> Void
-                          </DropdownMenuItem>
+                          <>
+                            <DropdownMenuItem onClick={() => router.push(`/inventory/purchases/returns?purchase_id=${purchase.id}`)}>
+                              <Undo2 className="w-4 h-4 mr-2" /> Return items
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setVoidPurchase(purchase);
+                                setVoidReason("");
+                              }}
+                              className="text-red-600"
+                            >
+                              <Ban className="w-4 h-4 mr-2" /> Void
+                            </DropdownMenuItem>
+                          </>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -434,8 +452,8 @@ export default function InventoryPurchasesPage() {
             <DialogHeader>
               <DialogTitle>Record Purchase</DialogTitle>
               <DialogDescription>
-                Pick existing inventory items or create new ones inline. Inventory only
-                increases once you receive this purchase, not when you save it.
+                Add the supplier bill and items once. Saving immediately updates stock,
+                supplier balance, and accounting.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -465,15 +483,7 @@ export default function InventoryPurchasesPage() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Expected delivery date</Label>
-                  <Input
-                    type="date"
-                    value={createForm.expected_delivery_date}
-                    onChange={(e) => setCreateForm({ ...createForm, expected_delivery_date: e.target.value })}
-                  />
-                </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Reference number</Label>
                   <Input
@@ -482,7 +492,29 @@ export default function InventoryPurchasesPage() {
                     onChange={(e) => setCreateForm({ ...createForm, reference_number: e.target.value })}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>Payment</Label>
+                  <Select value={createPaymentStatus} onValueChange={(value) => {
+                    setCreatePaymentStatus(value);
+                    if (value !== "paid" && value !== "partial") setCreateAccount(null);
+                    if (value !== "partial") setCreatePaidAmount("");
+                  }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="paid">Paid now</SelectItem>
+                      <SelectItem value="partial">Pay part now</SelectItem>
+                      <SelectItem value="pending">Pay later / supplier due</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+
+              {["paid", "partial"].includes(createPaymentStatus) ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <CashBankAccountSelect label="Paid from account" value={createAccount} onChange={setCreateAccount} />
+                  {createPaymentStatus === "partial" ? <div className="space-y-2"><Label>Amount paid now</Label><Input type="number" min="0.01" step="0.01" value={createPaidAmount} onChange={(e) => setCreatePaidAmount(e.target.value)} placeholder="0.00" /><p className="text-xs text-muted-foreground">The remaining amount stays as a supplier bill.</p></div> : null}
+                </div>
+              ) : null}
 
               {user?.restaurant_id && (
                 <PurchaseLineItemsEditor
@@ -507,135 +539,41 @@ export default function InventoryPurchasesPage() {
               </Button>
               <Button type="submit" disabled={createSubmitting}>
                 {createSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Save Draft
+                Record purchase
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Purchase Detail Dialog */}
-      <Dialog open={!!detailPurchase} onOpenChange={(open) => !open && setDetailPurchase(null)}>
-        <DialogContent className="sm:max-w-[640px] max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              Purchase #{detailPurchase?.id} {detailPurchase && statusBadge(detailPurchase.status)}
-            </DialogTitle>
-            <DialogDescription>
-              {detailPurchase?.supplier_name} · {detailPurchase && formatDate(detailPurchase.purchase_date)}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            {(detailPurchase?.lines || []).map((line: any) => (
-              <div key={line.id} className="flex items-center justify-between rounded-md border p-3 text-sm">
-                <div>
-                  <p className="font-medium">{line.item_name || `Item #${line.inventory_item_id}`}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {line.received_quantity} / {line.ordered_quantity} {line.purchase_unit || line.item_unit} received
-                  </p>
-                </div>
-                <span className="font-medium">{formatCurrency(line.line_total)}</span>
-              </div>
-            ))}
-            <div className="flex justify-between pt-2 border-t font-semibold">
-              <span>Total</span>
-              <span>{detailPurchase ? formatCurrency(detailPurchase.total_cost) : null}</span>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            {detailPurchase?.status === "draft" && (
-              <Button variant="outline" onClick={() => handleMarkOrdered(detailPurchase)}>
-                Mark as Ordered
-              </Button>
-            )}
-            {["draft", "ordered", "posted"].includes(detailPurchase?.status) && (
-              <Button variant="outline" onClick={() => openReceive(detailPurchase)}>
-                Receive
-              </Button>
-            )}
-            {detailPurchase?.status === "posted" && (
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  setVoidPurchase(detailPurchase);
-                  setVoidReason("");
-                }}
-              >
-                Void
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Receive Dialog */}
-      <Dialog open={!!receivePurchase} onOpenChange={(open) => !open && setReceivePurchase(null)}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader>
-            <DialogTitle>Receive Purchase #{receivePurchase?.id}</DialogTitle>
-            <DialogDescription>
-              Enter what actually arrived. Safe to receive partially -- come back later for the rest.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            {(receivePurchase?.lines || []).map((line: any) => {
-              const remaining = Number(line.ordered_quantity) - Number(line.received_quantity);
-              if (remaining <= 0) return null;
-              return (
-                <div key={line.id} className="flex items-center justify-between gap-3">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{line.item_name || `Item #${line.inventory_item_id}`}</p>
-                    <p className="text-xs text-muted-foreground">{remaining} remaining of {line.ordered_quantity}</p>
-                  </div>
-                  <Input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    max={remaining}
-                    className="w-28"
-                    value={receiveQuantities[line.id] ?? ""}
-                    onChange={(e) =>
-                      setReceiveQuantities({ ...receiveQuantities, [line.id]: e.target.value })
-                    }
-                  />
-                </div>
-              );
-            })}
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <div className="space-y-2">
-                <Label>Payment status</Label>
-                <Select value={receivePaymentStatus} onValueChange={setReceivePaymentStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="paid">Paid now</SelectItem>
-                    <SelectItem value="pending">Unpaid / supplier payable</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {receivePaymentStatus === "paid" && (
-                <CashBankAccountSelect label="Paid from account" value={receiveAccount} onChange={setReceiveAccount} />
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReceivePurchase(null)} disabled={receiveSubmitting}>
-              Cancel
-            </Button>
-            <Button onClick={handleReceive} disabled={receiveSubmitting}>
-              {receiveSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Receive
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TransactionDetailSheet
+        open={detailPurchase != null}
+        onOpenChange={(open) => !open && setDetailPurchase(null)}
+        detail={purchaseDetail}
+        footer={
+          detailPurchase ? (
+            <>
+              {detailPurchase.status === "posted" ? (
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setVoidPurchase(detailPurchase);
+                    setVoidReason("");
+                  }}
+                >
+                  Void purchase
+                </Button>
+              ) : null}
+            </>
+          ) : null
+        }
+      />
 
       {/* Void Dialog */}
       <Dialog open={!!voidPurchase} onOpenChange={(open) => !open && setVoidPurchase(null)}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Void Purchase #{voidPurchase?.id}</DialogTitle>
+            <DialogTitle>Void {voidPurchase?.reference_number || "supplier purchase"}</DialogTitle>
             <DialogDescription>
               This reverses the received stock and reverses the linked expense. Use a
               Purchase Return instead if the goods already left the restaurant.

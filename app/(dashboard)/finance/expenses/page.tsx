@@ -55,7 +55,11 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { startOfMonth, startOfWeek, endOfDay, subDays } from "date-fns";
 import Link from "next/link";
-import { AllocationLinesEditor, AllocationLineItem, EligibleHead } from "@/components/finance/allocation-lines-editor";
+import {
+  AllocationLinesEditor,
+  AllocationLineItem,
+  EligibleHead,
+} from "@/components/finance/allocation-lines-editor";
 import { StationPicker } from "@/components/stations/station-picker";
 import { financeReportingApi } from "@/lib/api/finance-reporting-api";
 import type {
@@ -70,6 +74,10 @@ import {
   toFinanceStationParam,
 } from "@/lib/finance-station-scope";
 import { shouldUseFinanceMetrics } from "@/lib/finance-metric-authority";
+import {
+  TransactionDetailSheet,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
 
 function shouldUseFinanceEventMetrics(
   finance: FinanceExpensesResponse | null | undefined,
@@ -135,7 +143,11 @@ function normalizeExpensePaymentMethod(raw: string | null | undefined): string {
 function buildExpensePaymentMethodBreakdown(expenses: any[]) {
   const totals = new Map<string, number>();
   for (const expense of expenses) {
-    if (["cancelled", "corrected"].includes(String(expense.source_status || "").toLowerCase())) {
+    if (
+      ["cancelled", "corrected"].includes(
+        String(expense.source_status || "").toLowerCase(),
+      )
+    ) {
       continue;
     }
     const method = normalizeExpensePaymentMethod(expense.payment_method);
@@ -166,16 +178,27 @@ function buildFinanceExpensePaymentMethodBreakdown(
   const totals = new Map<string, number>();
   for (const transaction of transactions ?? []) {
     const eventType = String(transaction.event_type || "");
-    const originalEventType = String(transaction.metadata_json?.original_event_type || "");
+    const originalEventType = String(
+      transaction.metadata_json?.original_event_type || "",
+    );
     const isReversal = eventType === "inventory_transaction_reversed";
-    if (!cashOutEventTypes.has(isReversal ? originalEventType : eventType)) continue;
+    if (!cashOutEventTypes.has(isReversal ? originalEventType : eventType))
+      continue;
     const amount = Number(transaction.amount) || 0;
     if (amount <= 0) continue;
     const method = normalizeExpensePaymentMethod(transaction.payment_method);
-    totals.set(method, (totals.get(method) ?? 0) + (isReversal ? -amount : amount));
+    totals.set(
+      method,
+      (totals.get(method) ?? 0) + (isReversal ? -amount : amount),
+    );
   }
-  const positiveTotals = Array.from(totals.entries()).filter(([, amount]) => amount > 0.0001);
-  const grandTotal = positiveTotals.reduce((sum, [, amount]) => sum + amount, 0);
+  const positiveTotals = Array.from(totals.entries()).filter(
+    ([, amount]) => amount > 0.0001,
+  );
+  const grandTotal = positiveTotals.reduce(
+    (sum, [, amount]) => sum + amount,
+    0,
+  );
   return positiveTotals
     .map(([method, amount]) => ({
       method,
@@ -190,7 +213,10 @@ function isFinanceEventExpense(expense: any): boolean {
 }
 
 function isInventoryFinanceExpense(expense: any): boolean {
-  return isFinanceEventExpense(expense) && String(expense?.source_type || "").includes("inventory_");
+  return (
+    isFinanceEventExpense(expense) &&
+    String(expense?.source_type || "").includes("inventory_")
+  );
 }
 
 export default function ExpensesPage() {
@@ -205,12 +231,19 @@ export default function ExpensesPage() {
   const [businessLine, setBusinessLine] = useState<BusinessLineFilter>("all");
   const [selectedStation, setSelectedStation] = useState("all");
   const [selectedReportingHeadId, setSelectedReportingHeadId] = useState("all");
-  const [expenseHeadFilterOptions, setExpenseHeadFilterOptions] = useState<EligibleHead[]>([]);
+  const [expenseHeadFilterOptions, setExpenseHeadFilterOptions] = useState<
+    EligibleHead[]
+  >([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<any | null>(null);
+  const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
-  const [eligibleExpenseHeads, setEligibleExpenseHeads] = useState<EligibleHead[]>([]);
-  const [allocationLines, setAllocationLines] = useState<AllocationLineItem[]>([]);
+  const [eligibleExpenseHeads, setEligibleExpenseHeads] = useState<
+    EligibleHead[]
+  >([]);
+  const [allocationLines, setAllocationLines] = useState<AllocationLineItem[]>(
+    [],
+  );
   const [newExpense, setNewExpense] = useState({
     amount: "",
     description: "",
@@ -223,8 +256,12 @@ export default function ExpensesPage() {
   });
   const [partyType, setPartyType] = useState<ExpensePartyType>("none");
   const [partyId, setPartyId] = useState("");
-  const [parties, setParties] = useState<Record<Exclude<ExpensePartyType, "none">, ExpenseParty[]>>({
-    supplier: [], staff: [], customer: [],
+  const [parties, setParties] = useState<
+    Record<Exclude<ExpensePartyType, "none">, ExpenseParty[]>
+  >({
+    supplier: [],
+    staff: [],
+    customer: [],
   });
   const [partiesLoading, setPartiesLoading] = useState(false);
   const [accounts, setAccounts] = useState<CashBankAccount[]>([]);
@@ -257,16 +294,15 @@ export default function ExpensesPage() {
       return "hotel";
     }
     return "restaurant";
-  }, [
-    businessLine,
-    restaurant?.hotel_enabled,
-    restaurant?.restaurant_enabled,
-  ]);
+  }, [businessLine, restaurant?.hotel_enabled, restaurant?.restaurant_enabled]);
   const expenseWriteBusinessLine = useMemo((): "restaurant" | "hotel" => {
     const existingBusinessLine = String(
       editingExpense?.business_line ?? "",
     ).toLowerCase();
-    if (existingBusinessLine === "hotel" || editingExpense?.station === "rooms") {
+    if (
+      existingBusinessLine === "hotel" ||
+      editingExpense?.station === "rooms"
+    ) {
       return "hotel";
     }
     if (existingBusinessLine === "restaurant") return "restaurant";
@@ -283,7 +319,12 @@ export default function ExpensesPage() {
     ) {
       setSelectedStation("all");
     }
-  }, [businessLine, restaurant?.hotel_enabled, selectedStation, customFinanceStations]);
+  }, [
+    businessLine,
+    restaurant?.hotel_enabled,
+    selectedStation,
+    customFinanceStations,
+  ]);
 
   useEffect(() => {
     if (
@@ -324,17 +365,28 @@ export default function ExpensesPage() {
     );
     if (current) return;
     const exactOthers = scoped.find(
-      (cat: any) => String(cat.name ?? "").trim().toLowerCase() === "others",
+      (cat: any) =>
+        String(cat.name ?? "")
+          .trim()
+          .toLowerCase() === "others",
     );
     const byOtherType = scoped.find(
-      (cat: any) => String(cat.type ?? "").trim().toLowerCase() === "other",
+      (cat: any) =>
+        String(cat.type ?? "")
+          .trim()
+          .toLowerCase() === "other",
     );
     const fallback = exactOthers ?? byOtherType ?? scoped[0];
     setNewExpense((current) => ({
       ...current,
       category_id: String(fallback.id),
     }));
-  }, [categories, expenseWriteBusinessLine, editingExpense, newExpense.category_id]);
+  }, [
+    categories,
+    expenseWriteBusinessLine,
+    editingExpense,
+    newExpense.category_id,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -362,7 +414,8 @@ export default function ExpensesPage() {
           ? (response.data.data as CashBankAccount[])
           : [];
         const available = rows.filter(
-          (account) => account.account_type === "bank" || account.drawer_session_id,
+          (account) =>
+            account.account_type === "bank" || account.drawer_session_id,
         );
         setAccounts(available);
         setSelectedAccountKey(
@@ -436,25 +489,41 @@ export default function ExpensesPage() {
     let cancelled = false;
     setPartiesLoading(true);
     Promise.all([
-      apiClient.get(SupplierApis.listSuppliers(Number(user.restaurant_id), true)),
+      apiClient.get(
+        SupplierApis.listSuppliers(Number(user.restaurant_id), true),
+      ),
       apiClient.get(StaffProfileApis.list({ limit: 200 })),
       apiClient.get(CustomerApis.listCustomers(Number(user.restaurant_id))),
-    ]).then(([supplierRes, staffRes, customerRes]) => {
-      if (cancelled) return;
-      const supplierRows = supplierRes.data?.data?.suppliers ?? [];
-      const staffRows = staffRes.data?.data ?? [];
-      const customerRows = customerRes.data?.data?.customers ?? [];
-      setParties({
-        supplier: supplierRows.map((row: any) => ({ id: Number(row.id), name: String(row.name ?? "Supplier") })),
-        staff: staffRows.map((row: any) => ({ id: Number(row.id), name: String(row.user_name ?? row.name ?? "Staff") })),
-        customer: customerRows.map((row: any) => ({ id: Number(row.id), name: String(row.name ?? row.business_name ?? "Customer") })),
+    ])
+      .then(([supplierRes, staffRes, customerRes]) => {
+        if (cancelled) return;
+        const supplierRows = supplierRes.data?.data?.suppliers ?? [];
+        const staffRows = staffRes.data?.data ?? [];
+        const customerRows = customerRes.data?.data?.customers ?? [];
+        setParties({
+          supplier: supplierRows.map((row: any) => ({
+            id: Number(row.id),
+            name: String(row.name ?? "Supplier"),
+          })),
+          staff: staffRows.map((row: any) => ({
+            id: Number(row.id),
+            name: String(row.user_name ?? row.name ?? "Staff"),
+          })),
+          customer: customerRows.map((row: any) => ({
+            id: Number(row.id),
+            name: String(row.name ?? row.business_name ?? "Customer"),
+          })),
+        });
+      })
+      .catch((error) => {
+        console.error("Failed to load expense parties", error);
+      })
+      .finally(() => {
+        if (!cancelled) setPartiesLoading(false);
       });
-    }).catch((error) => {
-      console.error("Failed to load expense parties", error);
-    }).finally(() => {
-      if (!cancelled) setPartiesLoading(false);
-    });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [editingExpense, isAddDialogOpen, user?.restaurant_id]);
 
   useEffect(() => {
@@ -586,7 +655,9 @@ export default function ExpensesPage() {
         date_to: end,
         station: stationParam,
         reporting_head_id:
-          selectedReportingHeadId === "all" ? undefined : selectedReportingHeadId,
+          selectedReportingHeadId === "all"
+            ? undefined
+            : selectedReportingHeadId,
         business_line: listBusinessLineParam,
         timezone: tz,
       };
@@ -654,7 +725,11 @@ export default function ExpensesPage() {
         : newExpense.payment_status === "unpaid"
           ? 0
           : Number(newExpense.paid_amount);
-    if (!Number.isFinite(paidNow) || paidNow < 0 || paidNow > Number(newExpense.amount)) {
+    if (
+      !Number.isFinite(paidNow) ||
+      paidNow < 0 ||
+      paidNow > Number(newExpense.amount)
+    ) {
       toast.error("Enter a valid amount paid now");
       return;
     }
@@ -665,17 +740,19 @@ export default function ExpensesPage() {
 
     if (!editingExpense) {
       if (allocationLines.length === 0) {
-        toast.error("Please allocate 100% of the expense amount to reporting heads.");
+        toast.error(
+          "Please allocate 100% of the expense amount to reporting heads.",
+        );
         return;
       }
       const targetCents = Math.round(parseFloat(newExpense.amount) * 100);
       const linesCents = allocationLines.reduce(
         (sum, l) => sum + Math.round((Number(l.amount) || 0) * 100),
-        0
+        0,
       );
       if (targetCents !== linesCents) {
         toast.error(
-          "Allocation lines must sum to exactly 100% of the total expense amount."
+          "Allocation lines must sum to exactly 100% of the total expense amount.",
         );
         return;
       }
@@ -818,9 +895,130 @@ export default function ExpensesPage() {
   const manualExpenseCount = filteredExpenses.filter(
     (expense) => !isFinanceEventExpense(expense),
   ).length;
-  const sourceManagedExpenseCount = filteredExpenses.filter(
-    (expense) => isFinanceEventExpense(expense),
+  const sourceManagedExpenseCount = filteredExpenses.filter((expense) =>
+    isFinanceEventExpense(expense),
   ).length;
+
+  const expenseDetail: TransactionDetailModel | null = selectedExpense
+    ? {
+        eyebrow: isFinanceEventExpense(selectedExpense)
+          ? "Source-managed expense"
+          : "Expense",
+        title: selectedExpense.description || "Expense",
+        reference: `${selectedExpense.source_type || "expense"} #${selectedExpense.id}`,
+        subtitle:
+          selectedExpense.party_name ||
+          selectedExpense.category?.name ||
+          "Business expense",
+        occurredAt:
+          selectedExpense.created_at ||
+          selectedExpense.expense_date ||
+          selectedExpense.paid_on,
+        status:
+          selectedExpense.source_status || selectedExpense.status || "recorded",
+        amount: selectedExpense.amount,
+        amountLabel: "Expense amount",
+        amountTone: "out",
+        badges: [
+          selectedExpense.business_line,
+          selectedExpense.station,
+          selectedExpense.source_type,
+        ].filter(Boolean),
+        sections: [
+          {
+            title: "Expense overview",
+            fields: [
+              {
+                label: "Expense date",
+                value: new Date(
+                  selectedExpense.expense_date || selectedExpense.paid_on,
+                ).toLocaleDateString(),
+              },
+              {
+                label: "Category",
+                value: selectedExpense.category?.name || "Uncategorized",
+              },
+              {
+                label: "Party",
+                value:
+                  selectedExpense.party_name ||
+                  (selectedExpense.party_type
+                    ? `${selectedExpense.party_type} #${selectedExpense.party_id}`
+                    : "—"),
+              },
+              {
+                label: "Business",
+                value: selectedExpense.business_line || "Restaurant",
+              },
+              {
+                label: "Station",
+                value:
+                  selectedExpense.station ||
+                  (selectedExpense.station_id
+                    ? `Station #${selectedExpense.station_id}`
+                    : "General"),
+              },
+              { label: "Vendor", value: selectedExpense.vendor || "—" },
+              {
+                label: "Description",
+                value: selectedExpense.description || "—",
+                fullWidth: true,
+              },
+            ],
+          },
+          {
+            title: "Payment & source",
+            fields: [
+              {
+                label: "Payment method",
+                value: normalizeExpensePaymentMethod(
+                  selectedExpense.payment_method,
+                ),
+              },
+              {
+                label: "Payment status",
+                value:
+                  selectedExpense.payment_status ||
+                  selectedExpense.status ||
+                  "—",
+              },
+              {
+                label: "Paid amount",
+                value: `Rs. ${Number(selectedExpense.paid_amount ?? selectedExpense.amount ?? 0).toLocaleString()}`,
+              },
+              {
+                label: "Source owner",
+                value: selectedExpense.source_type || "Manual expense",
+              },
+              { label: "Source ID", value: selectedExpense.source_id || "—" },
+              {
+                label: "Source status",
+                value: selectedExpense.source_status || "—",
+              },
+            ],
+          },
+          {
+            title: "Account allocation",
+            description: "The expense account heads that receive this cost.",
+            table: selectedExpense.expense_lines?.length
+              ? {
+                  columns: ["Account head", "Description", "Amount"],
+                  rows: selectedExpense.expense_lines.map((line: any) => [
+                    line.reporting_head_name ||
+                      (line.reporting_head_id
+                        ? `Account #${line.reporting_head_id}`
+                        : "Expense"),
+                    line.description || "—",
+                    `Rs. ${Number(line.amount || 0).toLocaleString()}`,
+                  ]),
+                }
+              : undefined,
+            emptyText:
+              "This record has no line-level allocation in the current response.",
+          },
+        ],
+      }
+    : null;
 
   const resetExpenseForm = () => {
     setEditingExpense(null);
@@ -853,7 +1051,8 @@ export default function ExpensesPage() {
       category_id: expense.category_id ? String(expense.category_id) : "",
       payment_method: expense.payment_method || "cash",
       payment_status: expense.payment_status || "paid",
-      paid_amount: expense.paid_amount == null ? "" : String(expense.paid_amount),
+      paid_amount:
+        expense.paid_amount == null ? "" : String(expense.paid_amount),
     });
     setIsAddDialogOpen(true);
   };
@@ -905,7 +1104,9 @@ export default function ExpensesPage() {
                 Expenses
               </h1>
               <p className="text-muted-foreground">
-                Recognized costs from manual entries and source-owned workflows. Supplier payments are managed from Suppliers and are not counted again.
+                Recognized costs from manual entries and source-owned workflows.
+                Supplier payments are managed from Suppliers and are not counted
+                again.
               </p>
             </div>
           </div>
@@ -1050,9 +1251,19 @@ export default function ExpensesPage() {
 
       <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
         <span>Supplier bills and payments belong to the supplier ledger.</span>
-        <Link href="/suppliers" className="font-semibold text-primary hover:underline">Open Suppliers</Link>
+        <Link
+          href="/suppliers"
+          className="font-semibold text-primary hover:underline"
+        >
+          Open Suppliers
+        </Link>
         <span>·</span>
-        <Link href="/finance/purchases" className="font-semibold text-primary hover:underline">Open Purchases</Link>
+        <Link
+          href="/finance/purchases"
+          className="font-semibold text-primary hover:underline"
+        >
+          Open Purchases
+        </Link>
       </div>
 
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -1087,7 +1298,9 @@ export default function ExpensesPage() {
             className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             onClick={() => {
               if (dualBusinessLines && businessLine === "all") {
-                toast.info("Choose Restaurant or Hotel before adding an expense.");
+                toast.info(
+                  "Choose Restaurant or Hotel before adding an expense.",
+                );
                 return;
               }
               resetExpenseForm();
@@ -1166,7 +1379,10 @@ export default function ExpensesPage() {
               <div className="grid gap-2">
                 <Label>Payment</Label>
                 <p className="text-sm capitalize">
-                  {String(newExpense.payment_method || "-").replaceAll("_", " ")}
+                  {String(newExpense.payment_method || "-").replaceAll(
+                    "_",
+                    " ",
+                  )}
                 </p>
               </div>
             ) : (
@@ -1180,11 +1396,17 @@ export default function ExpensesPage() {
                       setPartyType(nextPartyType);
                       setPartyId("");
                       if (nextPartyType !== "supplier") {
-                        setNewExpense((current) => ({ ...current, payment_status: "paid", paid_amount: current.amount }));
+                        setNewExpense((current) => ({
+                          ...current,
+                          payment_status: "paid",
+                          paid_amount: current.amount,
+                        }));
                       }
                     }}
                   >
-                    <SelectTrigger id="expense-party-type"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="expense-party-type">
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">No linked party</SelectItem>
                       <SelectItem value="supplier">Supplier</SelectItem>
@@ -1195,30 +1417,84 @@ export default function ExpensesPage() {
                 </div>
                 {partyType !== "none" && (
                   <div className="grid gap-2">
-                    <Label htmlFor="expense-party">{partyType[0].toUpperCase() + partyType.slice(1)}*</Label>
-                    <Select value={partyId} onValueChange={setPartyId} disabled={partiesLoading}>
-                      <SelectTrigger id="expense-party"><SelectValue placeholder={partiesLoading ? "Loading parties..." : `Select ${partyType}`} /></SelectTrigger>
+                    <Label htmlFor="expense-party">
+                      {partyType[0].toUpperCase() + partyType.slice(1)}*
+                    </Label>
+                    <Select
+                      value={partyId}
+                      onValueChange={setPartyId}
+                      disabled={partiesLoading}
+                    >
+                      <SelectTrigger id="expense-party">
+                        <SelectValue
+                          placeholder={
+                            partiesLoading
+                              ? "Loading parties..."
+                              : `Select ${partyType}`
+                          }
+                        />
+                      </SelectTrigger>
                       <SelectContent>
-                        {parties[partyType].map((party) => <SelectItem key={party.id} value={String(party.id)}>{party.name}</SelectItem>)}
+                        {parties[partyType].map((party) => (
+                          <SelectItem key={party.id} value={String(party.id)}>
+                            {party.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                 )}
                 <div className="grid gap-2">
                   <Label htmlFor="expense-payment-status">Payment</Label>
-                  <Select value={newExpense.payment_status} onValueChange={(payment_status: "paid" | "unpaid" | "partial") => setNewExpense({ ...newExpense, payment_status, paid_amount: payment_status === "paid" ? newExpense.amount : payment_status === "unpaid" ? "" : newExpense.paid_amount })}>
-                    <SelectTrigger id="expense-payment-status"><SelectValue /></SelectTrigger>
+                  <Select
+                    value={newExpense.payment_status}
+                    onValueChange={(
+                      payment_status: "paid" | "unpaid" | "partial",
+                    ) =>
+                      setNewExpense({
+                        ...newExpense,
+                        payment_status,
+                        paid_amount:
+                          payment_status === "paid"
+                            ? newExpense.amount
+                            : payment_status === "unpaid"
+                              ? ""
+                              : newExpense.paid_amount,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="expense-payment-status">
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="paid">Paid in full</SelectItem>
-                      {partyType === "supplier" && <SelectItem value="partial">Partially paid</SelectItem>}
-                      {partyType === "supplier" && <SelectItem value="unpaid">Unpaid (supplier payable)</SelectItem>}
+                      {partyType === "supplier" && (
+                        <SelectItem value="partial">Partially paid</SelectItem>
+                      )}
+                      {partyType === "supplier" && (
+                        <SelectItem value="unpaid">
+                          Unpaid (supplier payable)
+                        </SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
                 {newExpense.payment_status === "partial" && (
                   <div className="grid gap-2">
                     <Label htmlFor="expense-paid-now">Paid now*</Label>
-                    <Input id="expense-paid-now" type="number" min="0" max={newExpense.amount || undefined} value={newExpense.paid_amount} onChange={(event) => setNewExpense({ ...newExpense, paid_amount: event.target.value })} />
+                    <Input
+                      id="expense-paid-now"
+                      type="number"
+                      min="0"
+                      max={newExpense.amount || undefined}
+                      value={newExpense.paid_amount}
+                      onChange={(event) =>
+                        setNewExpense({
+                          ...newExpense,
+                          paid_amount: event.target.value,
+                        })
+                      }
+                    />
                   </div>
                 )}
               </>
@@ -1227,8 +1503,8 @@ export default function ExpensesPage() {
             {editingExpense && (
               <p className="-mt-3 text-xs text-muted-foreground">
                 Amount, station, category, payment method, and posting date are
-                immutable after posting. Delete and recreate the expense to
-                make an audited financial correction.
+                immutable after posting. Delete and recreate the expense to make
+                an audited financial correction.
               </p>
             )}
 
@@ -1243,7 +1519,9 @@ export default function ExpensesPage() {
                   <SelectTrigger id="expense-account">
                     <SelectValue
                       placeholder={
-                        accountsLoading ? "Loading accounts..." : "Select account"
+                        accountsLoading
+                          ? "Loading accounts..."
+                          : "Select account"
                       }
                     />
                   </SelectTrigger>
@@ -1253,7 +1531,8 @@ export default function ExpensesPage() {
                         key={`${account.account_type}:${account.id}`}
                         value={`${account.account_type}:${account.id}`}
                       >
-                        {account.name} · Rs. {Number(account.current_balance || 0).toLocaleString()}
+                        {account.name} · Rs.{" "}
+                        {Number(account.current_balance || 0).toLocaleString()}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1266,8 +1545,8 @@ export default function ExpensesPage() {
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    The expense reduces this account. Drawers record cash;
-                    bank accounts record a bank transfer.
+                    The expense reduces this account. Drawers record cash; bank
+                    accounts record a bank transfer.
                   </p>
                 )}
               </div>
@@ -1313,7 +1592,9 @@ export default function ExpensesPage() {
                 saving ||
                 (!editingExpense &&
                   newExpense.payment_status !== "unpaid" &&
-                  (accountsLoading || accounts.length === 0 || !selectedAccountKey))
+                  (accountsLoading ||
+                    accounts.length === 0 ||
+                    !selectedAccountKey))
               }
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
@@ -1324,133 +1605,182 @@ export default function ExpensesPage() {
       </Dialog>
 
       <div className="w-full">
-          {loading ? (
-            <div className="h-64 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 animate-spin text-red-500" />
-            </div>
-          ) : filteredExpenses.length === 0 ? (
-            <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/20">
-              <Receipt className="w-12 h-12 mb-4 opacity-20" />
-              <p>No expenses found for the selected period.</p>
-            </div>
-          ) : (
-            <Card className="border-border">
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
-                      <tr>
-                        <th className="px-6 py-4">Description</th>
-                        <th className="px-6 py-4">Category</th>
-                        <th className="px-6 py-4">Party</th>
-                        <th className="px-6 py-4">Amount</th>
-                        <th className="px-6 py-4">Date</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filteredExpenses.map((expense: any) => {
-                        const readOnlyFinanceRow =
-                          isFinanceEventExpense(expense);
-                        const inventoryFinanceRow = isInventoryFinanceExpense(expense);
-                        const sourceStatus = String(expense.source_status || "").toLowerCase();
-                        const superseded = ["cancelled", "corrected"].includes(sourceStatus);
-                        return (
-                          <tr
-                            key={`${expense.source_type || "expense"}-${expense.id}`}
-                            className="hover:bg-muted/30 transition-colors"
+        {loading ? (
+          <div className="h-64 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-red-500" />
+          </div>
+        ) : filteredExpenses.length === 0 ? (
+          <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/20">
+            <Receipt className="w-12 h-12 mb-4 opacity-20" />
+            <p>No expenses found for the selected period.</p>
+          </div>
+        ) : (
+          <Card className="border-border">
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
+                    <tr>
+                      <th className="px-6 py-4">Description</th>
+                      <th className="px-6 py-4">Category</th>
+                      <th className="px-6 py-4">Party</th>
+                      <th className="px-6 py-4">Amount</th>
+                      <th className="px-6 py-4">Date</th>
+                      <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredExpenses.map((expense: any) => {
+                      const readOnlyFinanceRow = isFinanceEventExpense(expense);
+                      const inventoryFinanceRow =
+                        isInventoryFinanceExpense(expense);
+                      const sourceStatus = String(
+                        expense.source_status || "",
+                      ).toLowerCase();
+                      const superseded = ["cancelled", "corrected"].includes(
+                        sourceStatus,
+                      );
+                      return (
+                        <tr
+                          key={`${expense.source_type || "expense"}-${expense.id}`}
+                          tabIndex={0}
+                          role="button"
+                          onClick={() => setSelectedExpense(expense)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedExpense(expense);
+                            }
+                          }}
+                          className="cursor-pointer transition-colors hover:bg-muted/30 focus-visible:bg-muted/40 focus-visible:outline-none"
+                        >
+                          <td
+                            className={cn(
+                              "px-6 py-4 font-medium",
+                              superseded &&
+                                "text-muted-foreground line-through",
+                            )}
                           >
-                            <td className={cn("px-6 py-4 font-medium", superseded && "text-muted-foreground line-through")}>
-                              {expense.description || "Untitled"}
-                            </td>
-                            <td className="px-6 py-4 text-muted-foreground">
-                              {expense.category?.name || "General"}
-                            </td>
-                            <td className="px-6 py-4 text-muted-foreground">
-                              {expense.party_name || (expense.party_type ? `${expense.party_type} #${expense.party_id}` : "—")}
-                            </td>
-                            <td className={cn("px-6 py-4 font-bold text-red-600 dark:text-red-500", superseded && "text-muted-foreground line-through dark:text-muted-foreground")}>
-                              - Rs. {Number(expense.amount).toLocaleString()}
-                            </td>
-                            <td className="px-6 py-4 text-muted-foreground">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="w-3.5 h-3.5" />
-                                {new Date(
-                                  expense.expense_date || expense.paid_on,
-                                ).toLocaleDateString()}
+                            {expense.description || "Untitled"}
+                          </td>
+                          <td className="px-6 py-4 text-muted-foreground">
+                            {expense.category?.name || "General"}
+                          </td>
+                          <td className="px-6 py-4 text-muted-foreground">
+                            {expense.party_name ||
+                              (expense.party_type
+                                ? `${expense.party_type} #${expense.party_id}`
+                                : "—")}
+                          </td>
+                          <td
+                            className={cn(
+                              "px-6 py-4 font-bold text-red-600 dark:text-red-500",
+                              superseded &&
+                                "text-muted-foreground line-through dark:text-muted-foreground",
+                            )}
+                          >
+                            - Rs. {Number(expense.amount).toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-3.5 h-3.5" />
+                              {new Date(
+                                expense.expense_date || expense.paid_on,
+                              ).toLocaleDateString()}
+                            </div>
+                          </td>
+                          <td
+                            className="px-6 py-4"
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
+                            <Badge
+                              variant="outline"
+                              className="border-border text-muted-foreground capitalize"
+                            >
+                              {readOnlyFinanceRow
+                                ? sourceStatus || "Recorded"
+                                : expense.status || "Completed"}
+                            </Badge>
+                          </td>
+                          <td className="px-6 py-4">
+                            {readOnlyFinanceRow ? (
+                              <div className="flex justify-end">
+                                {inventoryFinanceRow && expense.source_id ? (
+                                  <Button asChild size="sm" variant="outline">
+                                    <Link
+                                      href={`/inventory?view=activity&adjustment=${expense.source_id}`}
+                                    >
+                                      <PackageSearch className="mr-2 h-4 w-4" />{" "}
+                                      Manage in inventory
+                                    </Link>
+                                  </Button>
+                                ) : (
+                                  <Badge variant="secondary">
+                                    Finance event
+                                  </Badge>
+                                )}
                               </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <Badge
-                                variant="outline"
-                                className="border-border text-muted-foreground capitalize"
-                              >
-                                {readOnlyFinanceRow
-                                  ? sourceStatus || "Recorded"
-                                  : expense.status || "Completed"}
-                              </Badge>
-                            </td>
-                            <td className="px-6 py-4">
-                              {readOnlyFinanceRow ? (
-                                <div className="flex justify-end">
-                                  {inventoryFinanceRow && expense.source_id ? (
-                                    <Button asChild size="sm" variant="outline">
-                                      <Link href={`/inventory?view=activity&adjustment=${expense.source_id}`}>
-                                        <PackageSearch className="mr-2 h-4 w-4" /> Manage in inventory
-                                      </Link>
-                                    </Button>
-                                  ) : (
-                                    <Badge variant="secondary">Finance event</Badge>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="flex justify-end gap-2">
-                                  <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-8 w-8"
-                                    onClick={() => handleEditExpense(expense)}
-                                    aria-label="Edit expense"
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-8 w-8 text-destructive hover:text-destructive"
-                                    onClick={() => handleDeleteExpense(expense)}
-                                    aria-label="Delete expense"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            ) : (
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8"
+                                  onClick={() => handleEditExpense(expense)}
+                                  aria-label="Edit expense"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                  onClick={() => handleDeleteExpense(expense)}
+                                  aria-label="Delete expense"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {(expenseTotalCount || expenses.length) > expenses.length && (
+                <div className="p-4 border-t border-border flex justify-center bg-muted/10">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 font-semibold"
+                    onClick={() => setRecentLimit((prev) => prev + 25)}
+                  >
+                    View More Expenses
+                  </Button>
                 </div>
-                {(expenseTotalCount || expenses.length) > expenses.length && (
-                  <div className="p-4 border-t border-border flex justify-center bg-muted/10">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 font-semibold"
-                      onClick={() => setRecentLimit((prev) => prev + 25)}
-                    >
-                      View More Expenses
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
+      <TransactionDetailSheet
+        open={selectedExpense != null}
+        onOpenChange={(open) => !open && setSelectedExpense(null)}
+        detail={expenseDetail}
+        actionHref={
+          isInventoryFinanceExpense(selectedExpense) &&
+          selectedExpense?.source_id
+            ? `/inventory?view=activity&adjustment=${selectedExpense.source_id}`
+            : null
+        }
+        actionLabel="Open inventory activity"
+      />
     </div>
   );
 }

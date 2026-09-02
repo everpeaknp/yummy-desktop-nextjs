@@ -188,10 +188,7 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
     const isInventoryRecord = ["opening_stock", "inventory_adjustment"].includes(String(record?.source_type || ""));
     const selectedDrawerPayload = () => {
         if (!isInventoryRecord || formData.payment_method !== "cash" || !cashDrawerControlsEnabled) return {};
-        if (!selectedCashDrawerSessionId) {
-            toast.error("Select an open cash drawer before recording this cash inventory payment.");
-            return null;
-        }
+        if (!selectedCashDrawerSessionId) return {};
         return { drawer_session_id: Number(selectedCashDrawerSessionId) };
     };
 
@@ -313,11 +310,11 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                                         onValueChange={setSelectedCashDrawerSessionId}
                                     >
                                         <SelectTrigger id="cash_drawer">
-                                            <SelectValue placeholder="Select open cash drawer" />
+                                            <SelectValue placeholder="Automatic drawer" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {cashDrawerSessions.length === 0 ? (
-                                                <SelectItem value="none" disabled>No open cash drawers</SelectItem>
+                                                <SelectItem value="none" disabled>Opens automatically on payment</SelectItem>
                                             ) : cashDrawerSessions.map((session) => (
                                                 <SelectItem key={session.id} value={String(session.id)}>
                                                     {`${session.name || session.drawer_key || "Drawer"} · ${session.station || "general"} · ${session.business_date || ""}`}
@@ -327,7 +324,7 @@ export function PaymentDialog({ open, onOpenChange, record, onSuccess, mode }: P
                                     </Select>
                                     {cashDrawerSessions.length === 0 && (
                                         <p className="text-xs text-destructive">
-                                            Open a cash drawer before recording cash inventory payments.
+                                            The configured drawer will open automatically when the payment is recorded.
                                         </p>
                                     )}
                                 </div>

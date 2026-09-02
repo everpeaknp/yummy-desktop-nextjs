@@ -467,6 +467,25 @@ export function useSidebarItems(): SidebarItem[] {
         });
       }
 
+      if (
+        hasPermission(user, "finance.daybook.view") &&
+        !isExplicitlyLocked("finance.daybook.enabled")
+      ) {
+        const cashDrawersIndex = financeItems.findIndex(
+          (item) => item.href === "/cash-drawers",
+        );
+        financeItems.splice(
+          cashDrawersIndex >= 0 ? cashDrawersIndex + 1 : financeItems.length,
+          0,
+          {
+            title: "Day Close",
+            href: "/day-close",
+            icon: Receipt,
+            isNestedChild: true,
+          },
+        );
+      }
+
       if (hasPermission(user, "finance.journal.view")) {
         financeItems.push({
           title: "Journal Vouchers",

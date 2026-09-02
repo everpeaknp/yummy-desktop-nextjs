@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, Loader2, PencilLine, RefreshCw, RotateCcw, Search } from "lucide-react";
+import {
+  Ban,
+  Loader2,
+  PencilLine,
+  RefreshCw,
+  RotateCcw,
+  Search,
+} from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { InventoryApis } from "@/lib/api/endpoints";
@@ -26,6 +33,10 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import {
+  TransactionDetailSheet,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
 
 type ActivityAction = "correct" | "cancel" | "return";
 
@@ -113,6 +124,8 @@ export function InventoryActivityPanel({
 }: Props) {
   const { toast } = useToast();
   const [activities, setActivities] = useState<InventoryActivity[]>([]);
+  const [selectedActivity, setSelectedActivity] =
+    useState<InventoryActivity | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -163,17 +176,139 @@ export function InventoryActivityPanel({
     const query = search.trim().toLowerCase();
     if (!query) return activities;
     return activities.filter((row) =>
-      [row.item_name, row.activity_type, row.lifecycle_status, row.supplier_name, row.created_by_name, row.reason]
+      [
+        row.item_name,
+        row.activity_type,
+        row.lifecycle_status,
+        row.supplier_name,
+        row.created_by_name,
+        row.reason,
+      ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query)),
     );
   }, [activities, search]);
 
+  const activityDetail: TransactionDetailModel | null = selectedActivity
+    ? {
+        eyebrow: "Inventory activity",
+        title: selectedActivity.item_name,
+        reference: selectedActivity.adjustment_id
+          ? `Adjustment #${selectedActivity.adjustment_id}`
+          : `Movement #${selectedActivity.movement_id}`,
+        subtitle: humanize(selectedActivity.activity_type),
+        occurredAt: selectedActivity.created_at,
+        status: selectedActivity.lifecycle_status,
+        amount: selectedActivity.cost == null ? null : selectedActivity.cost,
+        amountLabel: "Cost / payment",
+        amountTone:
+          Number(selectedActivity.quantity_delta || 0) >= 0 ? "neutral" : "out",
+        badges: [
+          selectedActivity.activity_type,
+          selectedActivity.payment_status,
+        ].filter(Boolean) as string[],
+        sections: [
+          {
+            title: "Stock movement",
+            description:
+              "The exact before-and-after stock position created by this entry.",
+            fields: [
+              { label: "Item", value: selectedActivity.item_name },
+              {
+                label: "Activity",
+                value: humanize(selectedActivity.activity_type),
+              },
+              {
+                label: "Previous stock",
+                value: `${Number(selectedActivity.previous_stock || 0).toLocaleString()} ${selectedActivity.item_unit}`,
+              },
+              {
+                label: "Movement",
+                value: `${Number(selectedActivity.quantity_delta || 0) >= 0 ? "+" : ""}${Number(selectedActivity.quantity_delta || 0).toLocaleString()} ${selectedActivity.item_unit}`,
+              },
+              {
+                label: "Resulting stock",
+                value: `${Number(selectedActivity.resulting_stock || 0).toLocaleString()} ${selectedActivity.item_unit}`,
+              },
+              {
+                label: "Reason",
+                value: selectedActivity.reason || "—",
+                fullWidth: true,
+              },
+            ],
+          },
+          {
+            title: "Purchase & settlement",
+            fields: [
+              {
+                label: "Cost",
+                value:
+                  selectedActivity.cost == null
+                    ? "No cost recorded"
+                    : `Rs. ${Number(selectedActivity.cost).toLocaleString()}`,
+              },
+              {
+                label: "Payment method",
+                value: selectedActivity.payment_method
+                  ? humanize(selectedActivity.payment_method)
+                  : "No payment",
+              },
+              {
+                label: "Payment status",
+                value: selectedActivity.payment_status
+                  ? humanize(selectedActivity.payment_status)
+                  : "—",
+              },
+              {
+                label: "Supplier",
+                value: selectedActivity.supplier_name || "—",
+              },
+            ],
+          },
+          {
+            title: "Audit trail",
+            fields: [
+              {
+                label: "Recorded by",
+                value: selectedActivity.created_by_name || "System",
+              },
+              {
+                label: "Recorded at",
+                value: new Date(selectedActivity.created_at).toLocaleString(),
+              },
+              { label: "Movement ID", value: selectedActivity.movement_id },
+              {
+                label: "Adjustment ID",
+                value: selectedActivity.adjustment_id || "—",
+              },
+              {
+                label: "Reverses adjustment",
+                value: selectedActivity.reversal_of_adjustment_id || "—",
+              },
+              {
+                label: "Replacement adjustment",
+                value: selectedActivity.replacement_adjustment_id || "—",
+              },
+              {
+                label: "Management rule",
+                value:
+                  selectedActivity.management_block_reason || "No restriction",
+                fullWidth: true,
+              },
+            ],
+          },
+        ],
+      }
+    : null;
+
   const openAction = (row: InventoryActivity, nextAction: ActivityAction) => {
     setSelected(row);
     setAction(nextAction);
     setForm({
-      quantity: nextAction === "cancel" ? "" : String(Math.abs(Number(row.quantity_delta || 0))),
+      quantity:
+        nextAction === "cancel"
+          ? ""
+          : String(Math.abs(Number(row.quantity_delta || 0))),
       cost: nextAction === "correct" ? String(Number(row.cost || 0)) : "",
       reason: "",
       settlement: "refund_received",
@@ -187,36 +322,37 @@ export function InventoryActivityPanel({
   };
 
   const selectedNeedsCashDrawer =
-    String(selected?.payment_method || "").toLowerCase() === "cash" && cashDrawerControlsEnabled;
+    String(selected?.payment_method || "").toLowerCase() === "cash" &&
+    cashDrawerControlsEnabled;
 
   const submitAction = async () => {
     if (!selected?.adjustment_id || !action) return;
     if (form.reason.trim().length < 3) {
       toast({
         title: "Reason required",
-        description: "Enter at least three characters so the audit record is meaningful.",
+        description:
+          "Enter at least three characters so the audit record is meaningful.",
         variant: "destructive",
       });
       return;
     }
     if (action !== "cancel" && Number(form.quantity) <= 0) {
-      toast({ title: "Invalid quantity", description: "Quantity must be greater than zero.", variant: "destructive" });
-      return;
-    }
-    if (action === "correct" && Number(form.cost) < 0) {
-      toast({ title: "Invalid cost", description: "Cost cannot be negative.", variant: "destructive" });
-      return;
-    }
-    if (selectedNeedsCashDrawer && !selectedCashDrawerSessionId) {
       toast({
-        title: "Cash drawer required",
-        description: "Select an open cash drawer for the refund or corrected payment.",
+        title: "Invalid quantity",
+        description: "Quantity must be greater than zero.",
         variant: "destructive",
       });
       return;
     }
-
-    const drawer = selectedNeedsCashDrawer
+    if (action === "correct" && Number(form.cost) < 0) {
+      toast({
+        title: "Invalid cost",
+        description: "Cost cannot be negative.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const drawer = selectedNeedsCashDrawer && selectedCashDrawerSessionId
       ? { drawer_session_id: Number(selectedCashDrawerSessionId) }
       : {};
     const reason = form.reason.trim();
@@ -227,7 +363,12 @@ export function InventoryActivityPanel({
       payload = { reason, ...drawer };
     } else if (action === "correct") {
       endpoint = InventoryApis.correctPurchase(selected.adjustment_id);
-      payload = { quantity: Number(form.quantity), cost: Number(form.cost), reason, ...drawer };
+      payload = {
+        quantity: Number(form.quantity),
+        cost: Number(form.cost),
+        reason,
+        ...drawer,
+      };
     } else {
       endpoint = InventoryApis.returnPurchase(selected.adjustment_id);
       payload = {
@@ -243,15 +384,20 @@ export function InventoryActivityPanel({
       await apiClient.post(endpoint, payload);
       toast({
         title: `${actionLabels[action]} recorded`,
-        description: "Stock and finance were reversed through an auditable activity entry.",
+        description:
+          "Stock and finance were reversed through an auditable activity entry.",
       });
       setSelected(null);
       setAction(null);
-      await Promise.all([loadActivity(), Promise.resolve(onInventoryChanged())]);
+      await Promise.all([
+        loadActivity(),
+        Promise.resolve(onInventoryChanged()),
+      ]);
     } catch (error: any) {
       toast({
         title: `${actionLabels[action]} failed`,
-        description: error.response?.data?.detail || "The purchase could not be changed.",
+        description:
+          error.response?.data?.detail || "The purchase could not be changed.",
         variant: "destructive",
       });
     } finally {
@@ -269,11 +415,20 @@ export function InventoryActivityPanel({
           <div>
             <h2 className="text-lg font-semibold">Inventory activity</h2>
             <p className="text-sm text-muted-foreground">
-              {total} stock movement{total === 1 ? "" : "s"}. Purchases are corrected with linked reversal entries, never erased.
+              {total} stock movement{total === 1 ? "" : "s"}. Purchases are
+              corrected with linked reversal entries, never erased.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => void loadActivity()} disabled={loading}>
-            <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} /> Refresh
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void loadActivity()}
+            disabled={loading}
+          >
+            <RefreshCw
+              className={cn("mr-2 h-4 w-4", loading && "animate-spin")}
+            />{" "}
+            Refresh
           </Button>
         </div>
 
@@ -288,7 +443,9 @@ export function InventoryActivityPanel({
             />
           </div>
           <Select value={activityType} onValueChange={setActivityType}>
-            <SelectTrigger><SelectValue placeholder="Activity type" /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder="Activity type" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All activities</SelectItem>
               <SelectItem value="purchase">Purchases</SelectItem>
@@ -298,13 +455,17 @@ export function InventoryActivityPanel({
             </SelectContent>
           </Select>
           <Select value={lifecycleStatus} onValueChange={setLifecycleStatus}>
-            <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="posted">Posted</SelectItem>
               <SelectItem value="corrected">Corrected</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
-              <SelectItem value="partially_returned">Partially returned</SelectItem>
+              <SelectItem value="partially_returned">
+                Partially returned
+              </SelectItem>
               <SelectItem value="returned">Returned</SelectItem>
             </SelectContent>
           </Select>
@@ -333,35 +494,78 @@ export function InventoryActivityPanel({
               </thead>
               <tbody className="divide-y divide-border">
                 {visibleActivities.map((row) => {
-                  const highlighted = Number(row.adjustment_id) === Number(focusAdjustmentId);
+                  const highlighted =
+                    Number(row.adjustment_id) === Number(focusAdjustmentId);
                   const quantity = Number(row.quantity_delta || 0);
                   return (
-                    <tr key={row.id} className={cn("align-top hover:bg-muted/40", highlighted && "bg-orange-50 dark:bg-orange-950/20")}>
+                    <tr
+                      key={row.id}
+                      tabIndex={0}
+                      role="button"
+                      onClick={() => setSelectedActivity(row)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedActivity(row);
+                        }
+                      }}
+                      className={cn(
+                        "cursor-pointer align-top hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+                        highlighted && "bg-orange-50 dark:bg-orange-950/20",
+                      )}
+                    >
                       <td className="px-4 py-3">
-                        <p className="font-semibold text-foreground">{row.item_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {humanize(row.activity_type)}{row.reason ? ` · ${row.reason}` : ""}
+                        <p className="font-semibold text-foreground">
+                          {row.item_name}
                         </p>
-                        {row.supplier_name ? <p className="mt-1 text-xs text-muted-foreground">Supplier: {row.supplier_name}</p> : null}
+                        <p className="text-xs text-muted-foreground">
+                          {humanize(row.activity_type)}
+                          {row.reason ? ` · ${row.reason}` : ""}
+                        </p>
+                        {row.supplier_name ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Supplier: {row.supplier_name}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
-                        <p className={cn("font-semibold", quantity >= 0 ? "text-emerald-600" : "text-red-600")}>
-                          {quantity >= 0 ? "+" : ""}{quantity.toLocaleString()} {row.item_unit}
+                        <p
+                          className={cn(
+                            "font-semibold",
+                            quantity >= 0 ? "text-emerald-600" : "text-red-600",
+                          )}
+                        >
+                          {quantity >= 0 ? "+" : ""}
+                          {quantity.toLocaleString()} {row.item_unit}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {Number(row.previous_stock).toLocaleString()} → {Number(row.resulting_stock).toLocaleString()}
+                          {Number(row.previous_stock).toLocaleString()} →{" "}
+                          {Number(row.resulting_stock).toLocaleString()}
                         </p>
                       </td>
                       <td className="px-4 py-3">
-                        <p>{row.cost == null ? "—" : `Rs. ${Number(row.cost).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}</p>
+                        <p>
+                          {row.cost == null
+                            ? "—"
+                            : `Rs. ${Number(row.cost).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                        </p>
                         <p className="text-xs capitalize text-muted-foreground">
-                          {[row.payment_method, row.payment_status].filter(Boolean).join(" · ") || "No payment"}
+                          {[row.payment_method, row.payment_status]
+                            .filter(Boolean)
+                            .join(" · ") || "No payment"}
                         </p>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant="outline" className={statusClass(row.lifecycle_status)}>{humanize(row.lifecycle_status)}</Badge>
+                        <Badge
+                          variant="outline"
+                          className={statusClass(row.lifecycle_status)}
+                        >
+                          {humanize(row.lifecycle_status)}
+                        </Badge>
                         {row.replacement_adjustment_id ? (
-                          <p className="mt-1 text-xs text-muted-foreground">Replacement #{row.replacement_adjustment_id}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Replacement #{row.replacement_adjustment_id}
+                          </p>
                         ) : null}
                       </td>
                       <td className="px-4 py-3">
@@ -370,27 +574,56 @@ export function InventoryActivityPanel({
                           {new Date(row.created_at).toLocaleString()}
                         </p>
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        {canManage && row.adjustment_id && (row.can_correct || row.can_cancel || row.can_return) ? (
+                      <td
+                        className="px-4 py-3 text-right"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        {canManage &&
+                        row.adjustment_id &&
+                        (row.can_correct ||
+                          row.can_cancel ||
+                          row.can_return) ? (
                           <div className="flex justify-end gap-1">
                             {row.can_correct ? (
-                              <Button size="sm" variant="ghost" onClick={() => openAction(row, "correct")} title="Correct purchase">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openAction(row, "correct")}
+                                title="Correct purchase"
+                              >
                                 <PencilLine className="h-4 w-4" />
                               </Button>
                             ) : null}
                             {row.can_return ? (
-                              <Button size="sm" variant="ghost" onClick={() => openAction(row, "return")} title="Return to supplier">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openAction(row, "return")}
+                                title="Return to supplier"
+                              >
                                 <RotateCcw className="h-4 w-4" />
                               </Button>
                             ) : null}
                             {row.can_cancel ? (
-                              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => openAction(row, "cancel")} title="Cancel purchase">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => openAction(row, "cancel")}
+                                title="Cancel purchase"
+                              >
                                 <Ban className="h-4 w-4" />
                               </Button>
                             ) : null}
                           </div>
                         ) : (
-                          <span className="text-xs text-muted-foreground" title={row.management_block_reason || undefined}>Audit only</span>
+                          <span
+                            className="text-xs text-muted-foreground"
+                            title={row.management_block_reason || undefined}
+                          >
+                            Audit only
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -402,26 +635,47 @@ export function InventoryActivityPanel({
         )}
       </div>
 
-      <Dialog open={Boolean(selected && action)} onOpenChange={(open) => !open && closeAction()}>
+      <TransactionDetailSheet
+        open={selectedActivity != null}
+        onOpenChange={(open) => !open && setSelectedActivity(null)}
+        detail={activityDetail}
+      />
+
+      <Dialog
+        open={Boolean(selected && action)}
+        onOpenChange={(open) => !open && closeAction()}
+      >
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>{action ? actionLabels[action] : "Manage purchase"}</DialogTitle>
+            <DialogTitle>
+              {action ? actionLabels[action] : "Manage purchase"}
+            </DialogTitle>
             <DialogDescription>
-              {selected?.item_name} purchase #{selected?.adjustment_id}. The original entry remains in the audit history.
+              {selected?.item_name} purchase #{selected?.adjustment_id}. The
+              original entry remains in the audit history.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
             {action !== "cancel" ? (
               <div className="grid gap-2">
-                <Label htmlFor="activity_quantity">{action === "correct" ? "Correct quantity" : "Return quantity"}</Label>
+                <Label htmlFor="activity_quantity">
+                  {action === "correct"
+                    ? "Correct quantity"
+                    : "Return quantity"}
+                </Label>
                 <Input
                   id="activity_quantity"
                   type="number"
                   min="0.001"
                   step="0.001"
                   value={form.quantity}
-                  onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      quantity: event.target.value,
+                    }))
+                  }
                 />
               </div>
             ) : null}
@@ -435,7 +689,12 @@ export function InventoryActivityPanel({
                   min="0"
                   step="0.01"
                   value={form.cost}
-                  onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      cost: event.target.value,
+                    }))
+                  }
                 />
               </div>
             ) : null}
@@ -443,11 +702,22 @@ export function InventoryActivityPanel({
             {action === "return" ? (
               <div className="grid gap-2">
                 <Label htmlFor="return_settlement">Settlement</Label>
-                <Select value={form.settlement} onValueChange={(value) => setForm((current) => ({ ...current, settlement: value }))}>
-                  <SelectTrigger id="return_settlement"><SelectValue /></SelectTrigger>
+                <Select
+                  value={form.settlement}
+                  onValueChange={(value) =>
+                    setForm((current) => ({ ...current, settlement: value }))
+                  }
+                >
+                  <SelectTrigger id="return_settlement">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="refund_received">Refund received</SelectItem>
-                    <SelectItem value="supplier_credit">Supplier credit</SelectItem>
+                    <SelectItem value="refund_received">
+                      Refund received
+                    </SelectItem>
+                    <SelectItem value="supplier_credit">
+                      Supplier credit
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -457,40 +727,76 @@ export function InventoryActivityPanel({
               <Label htmlFor="activity_reason">Reason *</Label>
               <Input
                 id="activity_reason"
-                placeholder={action === "cancel" ? "e.g. Duplicate purchase entry" : "Describe the mistake or supplier return"}
+                placeholder={
+                  action === "cancel"
+                    ? "e.g. Duplicate purchase entry"
+                    : "Describe the mistake or supplier return"
+                }
                 value={form.reason}
-                onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    reason: event.target.value,
+                  }))
+                }
               />
             </div>
 
             {selectedNeedsCashDrawer ? (
               <div className="grid gap-2">
                 <Label htmlFor="activity_cash_drawer">Cash drawer</Label>
-                <Select value={selectedCashDrawerSessionId} onValueChange={onCashDrawerSessionChange}>
-                  <SelectTrigger id="activity_cash_drawer"><SelectValue placeholder="Select open cash drawer" /></SelectTrigger>
+                <Select
+                  value={selectedCashDrawerSessionId}
+                  onValueChange={onCashDrawerSessionChange}
+                >
+                  <SelectTrigger id="activity_cash_drawer">
+                    <SelectValue placeholder="Automatic drawer" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {cashDrawerSessions.length ? cashDrawerSessions.map((drawer) => (
-                      <SelectItem key={drawer.id} value={String(drawer.id)}>{drawerLabel(drawer)}</SelectItem>
-                    )) : <SelectItem value="none" disabled>No open cash drawers</SelectItem>}
+                    {cashDrawerSessions.length ? (
+                      cashDrawerSessions.map((drawer) => (
+                        <SelectItem key={drawer.id} value={String(drawer.id)}>
+                          {drawerLabel(drawer)}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>
+                        Opens automatically on activity
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
             ) : null}
 
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-              This creates linked reversal entries for stock, expense/accounting, supplier balance, and cash drawer records where applicable.
+              This creates linked reversal entries for stock,
+              expense/accounting, supplier balance, and cash drawer records
+              where applicable.
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={closeAction} disabled={submitting}>Keep purchase</Button>
+            <Button
+              variant="outline"
+              onClick={closeAction}
+              disabled={submitting}
+            >
+              Keep purchase
+            </Button>
             <Button
               onClick={() => void submitAction()}
               disabled={submitting}
               variant={action === "cancel" ? "destructive" : "default"}
-              className={action === "cancel" ? undefined : "bg-orange-600 text-white hover:bg-orange-700"}
+              className={
+                action === "cancel"
+                  ? undefined
+                  : "bg-orange-600 text-white hover:bg-orange-700"
+              }
             >
-              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {submitting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               {action ? actionLabels[action] : "Save"}
             </Button>
           </DialogFooter>

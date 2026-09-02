@@ -28,6 +28,7 @@ export const reportGroups: FinanceReportGroup[] = [
   {
     label: "Ledgers & reconciliation",
     reports: [
+      { href: "/finance/reports/daybook", label: "Daybook", description: "Review the current open-period report and previously closed Daybooks." },
       { href: "/finance/reports/account-ledger", label: "Account Ledger", description: "Every posting for one account head." },
       { href: "/finance/reports/party-balances", label: "Party Balances", description: "Customer, supplier, and staff balances." },
       { href: "/finance/reports/head-activity", label: "Head Activity", description: "Movement summarized by account head." },

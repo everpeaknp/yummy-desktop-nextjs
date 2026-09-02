@@ -4,11 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowDownLeft,
   ArrowRight,
-  ArrowUpRight,
   Banknote,
-  BookOpen,
   Loader2,
   Pencil,
   Plus,
@@ -52,7 +49,6 @@ import apiClient from "@/lib/api-client";
 import {
   BalanceTransferApis,
   CashAndBanksApis,
-  DayBookApis,
   AccountingApis,
 } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
@@ -86,17 +82,6 @@ interface BalanceTransfer {
   reference?: string | null;
   remarks?: string | null;
   transfer_date: string;
-}
-
-interface DayBookEntry {
-  account_type: AccountType;
-  account_id: number;
-  account_name: string;
-  movement_type: string;
-  signed_amount: number | string;
-  occurred_at: string;
-  recorded_by_id?: number | null;
-  metadata_json?: Record<string, unknown> | null;
 }
 
 const today = () => {
@@ -145,7 +130,7 @@ function readList<T>(response: { data?: { data?: unknown } }): T[] {
 export default function FinanceOperationsPage() {
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const initialTab = ["accounts", "transfers", "day-book", "payment-instruments", "cash-drawers"].includes(requestedTab || "")
+  const initialTab = ["accounts", "transfers", "payment-instruments", "cash-drawers"].includes(requestedTab || "")
     ? requestedTab!
     : "accounts";
   const user = useAuth((state) => state.user);
@@ -158,11 +143,9 @@ export default function FinanceOperationsPage() {
   const [businessLine, setBusinessLine] = useState<"restaurant" | "hotel">(
     supportsRestaurant ? "restaurant" : "hotel",
   );
-  const [date, setDate] = useState(today);
   const [accounts, setAccounts] = useState<CashBankAccount[]>([]);
   const [managedBanks, setManagedBanks] = useState<ManagedBankAccount[]>([]);
   const [transfers, setTransfers] = useState<BalanceTransfer[]>([]);
-  const [entries, setEntries] = useState<DayBookEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -184,23 +167,14 @@ export default function FinanceOperationsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [accountResponse, bankResponse, transferResponse, dayBookResponse] = await Promise.all([
+      const [accountResponse, bankResponse, transferResponse] = await Promise.all([
         apiClient.get(CashAndBanksApis.list(restaurantId, businessLine)),
         apiClient.get(AccountingApis.paymentBanks(restaurantId)),
         apiClient.get(BalanceTransferApis.list(restaurantId, businessLine)),
-        apiClient.get(
-          DayBookApis.list({
-            restaurantId,
-            businessLine,
-            dateFrom: date,
-            dateTo: date,
-          }),
-        ),
       ]);
       setAccounts(readList<CashBankAccount>(accountResponse));
       setManagedBanks(readList<ManagedBankAccount>(bankResponse));
       setTransfers(readList<BalanceTransfer>(transferResponse));
-      setEntries(readList<DayBookEntry>(dayBookResponse));
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.detail ||
@@ -210,7 +184,7 @@ export default function FinanceOperationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [businessLine, date, restaurantId]);
+  }, [businessLine, restaurantId]);
 
   useEffect(() => {
     void load();
@@ -428,7 +402,6 @@ export default function FinanceOperationsPage() {
             <TabsList>
               <TabsTrigger value="accounts">Where money is held</TabsTrigger>
               <TabsTrigger value="transfers">Transfers</TabsTrigger>
-              <TabsTrigger value="day-book">Day Book</TabsTrigger>
               <TabsTrigger value="payment-instruments">Payment Instruments</TabsTrigger>
               <TabsTrigger value="cash-drawers">Cash Drawers</TabsTrigger>
             </TabsList>
@@ -499,27 +472,6 @@ export default function FinanceOperationsPage() {
                       <p className="font-semibold tabular-nums">{money(transfer.amount, currency)}</p>
                     </div>
                   )) : <Empty text="No balance transfers recorded yet." />}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="day-book" className="space-y-4">
-              <div className="flex items-center gap-2"><Label htmlFor="day-book-date">Business date</Label><Input id="day-book-date" type="date" className="w-auto" value={date} onChange={(event) => setDate(event.target.value)} /></div>
-              <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><BookOpen className="h-4 w-4" />Movement ledger</CardTitle></CardHeader>
-                <CardContent className="space-y-1">
-                  {entries.length ? entries.map((entry, index) => {
-                    const amount = Number(entry.signed_amount || 0);
-                    return (
-                      <div key={`${entry.account_type}:${entry.account_id}:${entry.occurred_at}:${index}`} className="flex items-center justify-between gap-4 border-b py-3 last:border-0">
-                        <div className="flex min-w-0 items-center gap-3">
-                          {amount >= 0 ? <ArrowDownLeft className="h-5 w-5 shrink-0 text-emerald-600" /> : <ArrowUpRight className="h-5 w-5 shrink-0 text-rose-600" />}
-                          <div className="min-w-0"><p className="truncate text-sm font-medium">{titleCase(entry.movement_type)}</p><p className="truncate text-xs text-muted-foreground">{entry.account_name} · {new Date(entry.occurred_at).toLocaleString()}</p></div>
-                        </div>
-                        <p className={cn("shrink-0 font-semibold tabular-nums", amount >= 0 ? "text-emerald-600" : "text-rose-600")}>{amount >= 0 ? "+" : "−"}{money(Math.abs(amount), currency)}</p>
-                      </div>
-                    );
-                  }) : <Empty text="No account movements were recorded on this date." />}
                 </CardContent>
               </Card>
             </TabsContent>

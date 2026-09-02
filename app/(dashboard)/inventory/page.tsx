@@ -262,14 +262,7 @@ export default function InventoryPage() {
 
   const drawerSessionIdForCashPayment = () => {
     if (!cashDrawerControlsEnabled) return undefined;
-    if (!selectedCashDrawerSessionId) {
-      toast({
-        title: "Cash Drawer Required",
-        description: "Select an open cash drawer before recording a cash inventory payment.",
-        variant: "destructive",
-      });
-      return null;
-    }
+    if (!selectedCashDrawerSessionId) return undefined;
     return Number(selectedCashDrawerSessionId);
   };
 
@@ -280,12 +273,12 @@ export default function InventoryPage() {
         <Label htmlFor={id}>Cash Drawer</Label>
         <Select value={selectedCashDrawerSessionId} onValueChange={setSelectedCashDrawerSessionId}>
           <SelectTrigger id={id}>
-            <SelectValue placeholder="Select open cash drawer" />
+            <SelectValue placeholder="Automatic drawer" />
           </SelectTrigger>
           <SelectContent>
             {cashDrawerSessions.length === 0 ? (
               <SelectItem value="none" disabled>
-                No open cash drawers
+                Opens automatically on payment
               </SelectItem>
             ) : (
               cashDrawerSessions.map((session) => (
@@ -297,8 +290,8 @@ export default function InventoryPage() {
           </SelectContent>
         </Select>
         {cashDrawerSessions.length === 0 && (
-          <p className="text-xs text-destructive">
-            Open a cash drawer before recording cash inventory payments.
+          <p className="text-xs text-muted-foreground">
+            The configured drawer will open automatically when cash is recorded.
           </p>
         )}
       </div>
@@ -989,7 +982,7 @@ export default function InventoryPage() {
                   <div className="space-y-0.5">
                     <Label htmlFor="reduce_allow_negative">Allow negative stock</Label>
                     <p className="text-xs text-muted-foreground">
-                      Requires the restaurant's negative-stock setting to be enabled too.
+                      Requires the restaurant&apos;s negative-stock setting to be enabled too.
                     </p>
                   </div>
                   <Switch

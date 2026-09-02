@@ -60,7 +60,7 @@ export function FolioRefundDialog({ open, onOpenChange, restaurantId, folio, amo
       setSessions(readySessions);
       const selected = readySessions.length === 1 ? String(readySessions[0].id) : "";
       setDrawerSessionId(selected);
-      setDrawerReady(!readiness.controlsEnabled || readySessions.length === 1);
+      setDrawerReady(readiness.ready);
       setDrawerMessage(readiness.controlsEnabled ? readySessions.length > 1 ? "Select the hotel drawer paying this cash refund." : readiness.message || "Cash will be removed from the active hotel drawer." : "Drawer controls are disabled; the refund will be reconciled at day close.");
     } catch {
       setDrawerReady(false);

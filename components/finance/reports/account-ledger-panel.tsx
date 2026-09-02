@@ -49,6 +49,15 @@ import type {
   FinanceReportingLedgerLine,
 } from "@/types/finance-reporting";
 import { TYPE_LABELS } from "@/components/finance/heads/account-head-dialog";
+import apiClient from "@/lib/api-client";
+import { AccountingApis } from "@/lib/api/endpoints";
+import { useAuth } from "@/hooks/use-auth";
+import type { JournalVoucher } from "@/types/accounting";
+import {
+  TransactionDetailSheet,
+  transactionMetadataFields,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
 
 function money(value: number | string | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -89,7 +98,7 @@ function ledgerLineLabel(line: FinanceReportingLedgerLine): { primary: string; s
   return {
     primary: line.description || humanize(line.source_type),
     secondary:
-      line.party_type && line.party_id ? `${humanize(line.party_type)} #${line.party_id}` : undefined,
+      line.party_type ? humanize(line.party_type) : undefined,
   };
 }
 
@@ -130,6 +139,8 @@ export interface AccountLedgerPanelProps {
  * ledger views.
  */
 export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedgerPanelProps) {
+  const user = useAuth((state) => state.user);
+  const restaurantId = user?.restaurant_id;
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [partyType, setPartyType] = useState("all");
@@ -141,6 +152,10 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
   const [report, setReport] = useState<FinanceReportingAccountLedgerRead | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedLine, setSelectedLine] = useState<FinanceReportingLedgerLine | null>(null);
+  const [selectedJournal, setSelectedJournal] = useState<JournalVoucher | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   useEffect(() => {
     // Reset local state whenever a different account is opened.
@@ -151,7 +166,80 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
     setSourceType("");
     setShowFilters(false);
     setOffset(0);
+    setSelectedLine(null);
+    setSelectedJournal(null);
   }, [headId]);
+
+  const openLedgerLine = async (line: FinanceReportingLedgerLine) => {
+    setSelectedLine(line);
+    setSelectedJournal(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const response = await apiClient.get(
+        AccountingApis.journalEntry(line.entry_id, restaurantId ? Number(restaurantId) : undefined),
+      );
+      setSelectedJournal(response.data?.data ?? null);
+    } catch (requestError) {
+      setDetailError(readError(requestError));
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const lineLabel = selectedLine ? ledgerLineLabel(selectedLine) : null;
+  const transactionDetail: TransactionDetailModel | null = selectedLine ? {
+    eyebrow: "Ledger transaction",
+    title: lineLabel?.primary || selectedLine.description || "Journal transaction",
+    reference: selectedJournal?.entry_number || humanize(selectedLine.source_type),
+    subtitle: lineLabel?.secondary || selectedLine.description || humanize(selectedLine.source_type),
+    occurredAt: selectedLine.occurred_at,
+    status: selectedJournal?.status || selectedLine.entry_status,
+    amount: Math.max(Number(selectedLine.debit || 0), Number(selectedLine.credit || 0)),
+    amountLabel: Number(selectedLine.debit || 0) ? "Debit to this account" : "Credit to this account",
+    amountTone: Number(selectedLine.debit || 0) ? "in" : "out",
+    badges: [selectedLine.source_type, selectedJournal?.voucher_type, selectedJournal?.business_line].filter(Boolean) as string[],
+    sections: [
+      {
+        title: "Posting overview",
+        fields: [
+          { label: "Account", value: report?.head ? `${report.head.code} · ${report.head.name}` : "—" },
+          { label: "Business date", value: selectedLine.business_date },
+          { label: "Debit", value: Number(selectedLine.debit || 0) ? money(selectedLine.debit) : "—" },
+          { label: "Credit", value: Number(selectedLine.credit || 0) ? money(selectedLine.credit) : "—" },
+          { label: "Balance after posting", value: money(selectedLine.running_balance) },
+          { label: "Payment method", value: selectedLine.payment_method ? humanize(selectedLine.payment_method) : "Not a settlement" },
+          { label: "Party", value: selectedLine.party_name || (selectedLine.party_type ? humanize(selectedLine.party_type) : "—") },
+          { label: "Source", value: humanize(selectedLine.source_type) || "Finance journal" },
+          { label: "Description", value: selectedLine.description || selectedJournal?.memo || "—", fullWidth: true },
+        ],
+      },
+      {
+        title: "Complete journal",
+        description: "Every debit and credit posted by the same transaction.",
+        table: selectedJournal?.lines?.length ? {
+          columns: ["Account", "Memo / party", "Debit", "Credit"],
+          rows: selectedJournal.lines.map((line) => [
+            line.account ? `${line.account.code} · ${line.account.name}` : "Ledger account",
+            line.memo || (line.party_type ? humanize(line.party_type) : "—"),
+            Number(line.debit || 0) ? money(line.debit) : "—",
+            Number(line.credit || 0) ? money(line.credit) : "—",
+          ]),
+        } : undefined,
+        emptyText: detailLoading ? "Loading journal lines…" : "No journal lines were returned.",
+      },
+      {
+        title: "Audit metadata",
+        fields: [
+          { label: "Journal entry ID", value: selectedLine.entry_id },
+          { label: "Ledger line ID", value: selectedLine.line_id },
+          { label: "Finance event ID", value: selectedLine.finance_event_id || "—" },
+          { label: "Created by", value: selectedJournal?.created_by_id === user?.id ? user?.full_name || "Current user" : selectedJournal?.created_by_id ? "Staff member" : "System" },
+          ...transactionMetadataFields(selectedJournal?.metadata_json),
+        ],
+      },
+    ],
+  } : null;
 
   const params = useMemo(
     () => ({
@@ -201,6 +289,7 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
   const end = report ? Math.min(report.offset + report.lines.length, report.total) : 0;
 
   return (
+    <>
     <Sheet open={headId != null} onOpenChange={(open) => !open && onOpenChange(false)}>
       <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl">
         {loading && !report ? (
@@ -435,7 +524,19 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
                     {report.lines.map((line) => {
                       const label = ledgerLineLabel(line);
                       return (
-                      <TableRow key={line.line_id}>
+                      <TableRow
+                        key={line.line_id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => void openLedgerLine(line)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            void openLedgerLine(line);
+                          }
+                        }}
+                        className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+                      >
                         <TableCell className="align-top text-xs">
                           <div>{line.business_date}</div>
                           <div className="text-[11px] text-muted-foreground">
@@ -500,5 +601,21 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
         ) : null}
       </SheetContent>
     </Sheet>
+    <TransactionDetailSheet
+      open={selectedLine != null}
+      onOpenChange={(open) => {
+        if (!open) {
+          setSelectedLine(null);
+          setSelectedJournal(null);
+          setDetailError(null);
+        }
+      }}
+      detail={transactionDetail}
+      loading={detailLoading}
+      error={detailError}
+      actionHref={selectedJournal?.id ? `/finance/accounting/vouchers/${selectedJournal.id}` : null}
+      actionLabel="Open journal voucher"
+    />
+    </>
   );
 }

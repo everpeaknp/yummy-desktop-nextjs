@@ -168,7 +168,7 @@ export function FolioPaymentDialog({
         if (sessions.length === 1) return String(sessions[0].id);
         return sessions.some((session) => String(session.id) === current) ? current : "";
       });
-      setDrawerReady(!readiness.controlsEnabled || sessions.length === 1);
+      setDrawerReady(readiness.ready);
       setDrawerMessage(readiness.controlsEnabled
         ? sessions.length > 1
           ? "Select the hotel till receiving this cash payment."

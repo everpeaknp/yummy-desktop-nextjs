@@ -83,6 +83,7 @@ export interface FinanceSalesDocument {
   business_line: string;
   business_date: string;
   customer_id: number | null;
+  customer_name?: string | null;
   source_type: string;
   source_id: number | null;
   daily_order_number: number | null;
@@ -97,6 +98,7 @@ export interface FinanceSalesDocument {
   notes: string | null;
   reason: string | null;
   created_by_id: number | null;
+  created_by_name?: string | null;
   created_at: string;
   lines: FinanceSalesDocumentLine[];
 }

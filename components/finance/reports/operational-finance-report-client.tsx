@@ -38,6 +38,10 @@ import {
 } from "@/components/ui/table";
 import { FinanceReportNavigation } from "@/components/finance/reports/finance-report-navigation";
 import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
+import {
+  TransactionDetailSheet,
+  type TransactionDetailModel,
+} from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import type {
   FinanceReportTotals,
   InvoiceReportResponse,
@@ -235,12 +239,10 @@ function SalesLikeTable({
               <TableCell>{row.business_date}</TableCell>
               <TableCell>
                 <div className="font-medium">{row.invoice_number}</div>
-                <div className="font-mono text-xs text-muted-foreground">Order #{row.order_id}</div>
               </TableCell>
               <TableCell>{formatDateTime(row.completed_at)}</TableCell>
               <TableCell>
                 <div>{row.customer_name ?? "Walk-in"}</div>
-                <div className="text-xs text-muted-foreground">Customer {row.customer_id ?? "-"}</div>
               </TableCell>
               <TableCell className="text-right font-mono">{formatMoney(row.taxable_sales)}</TableCell>
               <TableCell className="text-right font-mono">{formatMoney(row.tax_amount)}</TableCell>
@@ -276,11 +278,56 @@ function PaymentTable({
   rows: Array<PaymentReportRow | RefundReportRow>;
   mode: "payments" | "refunds";
 }) {
+  const [selected, setSelected] = useState<PaymentReportRow | RefundReportRow | null>(null);
   if (rows.length === 0) {
     return <div className="p-8 text-center text-sm text-muted-foreground">No report rows found.</div>;
   }
 
+  const selectedAt = selected
+    ? "paid_at" in selected
+      ? selected.paid_at
+      : selected.refunded_at
+    : null;
+  const selectedDetail: TransactionDetailModel | null = selected
+    ? {
+        eyebrow: mode === "payments" ? "Payment received" : "Refund paid",
+        title: selected.invoice_number,
+        reference: selected.reference || selected.invoice_number,
+        subtitle:
+          selected.customer_name ||
+          (mode === "payments" ? "Walk-in customer payment" : "Customer refund"),
+        occurredAt: selectedAt,
+        status: mode === "payments" ? "successful" : "refunded",
+        amount: selected.amount,
+        amountLabel: mode === "payments" ? "Amount collected" : "Amount refunded",
+        amountTone: mode === "payments" ? "in" : "out",
+        badges: [selected.payment_method, selected.instrument_type].filter(Boolean) as string[],
+        sections: [
+          {
+            title: "Payment overview",
+            fields: [
+              { label: "Invoice", value: selected.invoice_number },
+              { label: "Customer", value: selected.customer_name || "Walk-in customer" },
+              { label: "Business date", value: selected.business_date },
+              { label: mode === "payments" ? "Paid at" : "Refunded at", value: formatDateTime(selectedAt) },
+              { label: "Reference", value: selected.reference || "Not provided", fullWidth: true },
+            ],
+          },
+          {
+            title: "Settlement",
+            fields: [
+              { label: "Payment method", value: selected.payment_method.replaceAll("_", " ") },
+              { label: "Instrument type", value: selected.instrument_type?.replaceAll("_", " ") || "Not specified" },
+              { label: "Instrument", value: selected.instrument_name || "Not specified" },
+              { label: "Amount", value: formatMoney(selected.amount) },
+            ],
+          },
+        ],
+      }
+    : null;
+
   return (
+    <>
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
@@ -299,12 +346,23 @@ function PaymentTable({
           {rows.map((row) => {
             const happenedAt = "paid_at" in row ? row.paid_at : row.refunded_at;
             return (
-              <TableRow key={`${row.payment_id}-${row.order_id}`}>
+              <TableRow
+                key={`${row.payment_id}-${row.order_id}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelected(row)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelected(row);
+                  }
+                }}
+                className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+              >
                 <TableCell>{row.business_date}</TableCell>
                 <TableCell>{formatDateTime(happenedAt)}</TableCell>
                 <TableCell>
                   <div className="font-medium">{row.invoice_number}</div>
-                  <div className="font-mono text-xs text-muted-foreground">Order #{row.order_id}</div>
                 </TableCell>
                 <TableCell className="capitalize">{row.payment_method}</TableCell>
                 <TableCell>
@@ -313,7 +371,6 @@ function PaymentTable({
                 </TableCell>
                 <TableCell>
                   <div>{row.customer_name ?? "Walk-in"}</div>
-                  <div className="text-xs text-muted-foreground">Customer {row.customer_id ?? "-"}</div>
                 </TableCell>
                 <TableCell className="text-right font-mono">{formatMoney(row.amount)}</TableCell>
                 <TableCell className="font-mono text-xs">{row.reference ?? "-"}</TableCell>
@@ -323,6 +380,14 @@ function PaymentTable({
         </TableBody>
       </Table>
     </div>
+    <TransactionDetailSheet
+      open={selected != null}
+      onOpenChange={(open) => !open && setSelected(null)}
+      detail={selectedDetail}
+      actionHref={selected ? `/orders/${selected.order_id}` : null}
+      actionLabel="Open invoice"
+    />
+    </>
   );
 }
 

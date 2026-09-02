@@ -613,6 +613,7 @@ export default function CheckoutPage() {
   const drawerBusinessLine = "restaurant";
   const [drawerSessions, setDrawerSessions] = useState<DrawerSession[]>([]);
   const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] = useState(true);
+  const [cashDrawerWillAutoOpen, setCashDrawerWillAutoOpen] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const [editPaymentOpen, setEditPaymentOpen] = useState(false);
@@ -862,11 +863,13 @@ export default function CheckoutPage() {
       );
       const readiness = resolveCheckoutCashDrawerReadiness(activeRes.data);
       setCashDrawerControlsEnabled(readiness.controlsEnabled);
+      setCashDrawerWillAutoOpen(readiness.autoOpenOnPayment);
       setDrawerSessions(readiness.paymentReadySessions);
       return { ready: readiness.ready, message: readiness.message };
     } catch (err: any) {
       const message = extractApiErrorMessage(err, "Failed to load cash drawer status.");
       setCashDrawerControlsEnabled(true);
+      setCashDrawerWillAutoOpen(false);
       setDrawerSessions([]);
       setDrawerError(message);
       return { ready: false, message };
@@ -1739,7 +1742,15 @@ export default function CheckoutPage() {
           return;
         }
       } catch (e) {}
-      setPayError(err?.response?.data?.detail || "Failed to add payment");
+      // FastAPI's shared exception handler returns `{ message }`, while a few
+      // endpoint-specific responses still use `{ detail }`. Preserve either so
+      // a cashier sees the actionable drawer/settlement reason rather than a
+      // generic failure.
+      setPayError(
+        err?.response?.data?.detail ||
+          err?.response?.data?.message ||
+          "Failed to add payment",
+      );
     } finally {
       setPaySubmitting(false);
     }
@@ -2017,10 +2028,12 @@ export default function CheckoutPage() {
             <p className="text-xs text-destructive">
               {CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE}
             </p>
-          ) : (
+          ) : cashDrawerWillAutoOpen ? (
             <p className="text-xs text-muted-foreground">
               {CHECKOUT_OPEN_CASH_DRAWER_MESSAGE}
             </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">Cash drawer status will be resolved when payment is recorded.</p>
           )}
         </div>
         <div className="flex gap-2">
@@ -2061,9 +2074,10 @@ export default function CheckoutPage() {
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
           {CHECKOUT_MULTIPLE_ACTIVE_CASH_DRAWERS_MESSAGE}
         </div>
-      ) : !hasCashDrawerConflict ? (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-          No active cash drawer is available to you. Open one in Cash Drawers, then return here to take cash.
+      ) : cashDrawerWillAutoOpen ? (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+          <CheckCircle className="h-4 w-4" />
+          The drawer will open automatically and this payment will be its first activity.
         </div>
       ) : null}
     </div>

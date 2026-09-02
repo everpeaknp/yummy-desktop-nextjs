@@ -1,44 +1,48 @@
 "use client";
 
-import Link from "next/link";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  Banknote,
+  BookOpen,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
+
+import apiClient from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/api-error-message";
+import { AccountingApis, DayCloseApis } from "@/lib/api/endpoints";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
-  CheckCircle2,
-  ChevronRight,
-  Calculator,
-  AlertTriangle,
-  Banknote,
-  Maximize2,
-  Minimize2,
-} from "lucide-react";
-import {
-  resizableDialogContentClass,
-  useResizableDialogStyle,
-} from "@/lib/resizable-dialog";
-import apiClient from "@/lib/api-client";
-import { getApiErrorMessage } from "@/lib/api-error-message";
-import { DayCloseApis } from "@/lib/api/endpoints";
-import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { DrawerSessionPanel } from "@/components/day-close/drawer-session-panel";
 import { OperationalCloseStatus } from "@/components/day-close/operational-close-status";
+import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
+import { DaybookReport } from "@/components/finance/accounting/daybook-report";
+import type { AccountingDaybook } from "@/types/accounting";
 import {
-  formatDayCloseCloseName,
-  formatDayCloseCurrency,
-  formatDayCloseCoveredRange,
-} from "@/lib/day-close-format";
-import {
-  parseDayCloseCurrent,
   parseDayCloseDetail,
   parseDayCloseSnapshotData,
   parseDayCloseSnapshotResponse,
   parseDayCloseValidateResult,
   unwrapApiData,
+  type BusinessLine,
   type DayCloseDetail,
   type DayCloseSnapshotData,
-  type BusinessLine,
-  type DayCloseDrawerControlRow,
+  type DayCloseValidateResult,
 } from "@/types/day-close";
 
 interface DayCloseModalProps {
@@ -50,7 +54,35 @@ interface DayCloseModalProps {
   targetBusinessDate?: string | null;
 }
 
-type Step = "health-check" | "financial-snapshot" | "drawer-cash-result" | "success";
+type Step = "drawers" | "daybook" | "success";
+
+type BaseResponse<T> = {
+  status?: string;
+  data?: T;
+  message?: string;
+};
+
+function todayIso() {
+  const date = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function displayDate(value: string) {
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function periodText(validation: DayCloseValidateResult | null) {
+  if (!validation?.period_start_at || !validation.period_end_at) return null;
+  return `${new Date(validation.period_start_at).toLocaleString()} – ${new Date(validation.period_end_at).toLocaleString()}`;
+}
 
 export function DayCloseModal({
   isOpen,
@@ -60,913 +92,411 @@ export function DayCloseModal({
   targetDayCloseId = null,
   targetBusinessDate = null,
 }: DayCloseModalProps) {
-  const [currentStep, setCurrentStep] = useState<Step>("health-check");
-  const [snapshotData, setSnapshotData] = useState<DayCloseSnapshotData | null>(null);
-  const [dayCloseId, setDayCloseId] = useState<number | null>(null);
-  const [confirmedData, setConfirmedData] = useState<DayCloseDetail | null>(null);
-  const [confirmedSnapshot, setConfirmedSnapshot] = useState<DayCloseSnapshotData | null>(null);
-  const [currentClose, setCurrentClose] = useState<ReturnType<typeof parseDayCloseCurrent>>(null);
-  const [loadingCurrent, setLoadingCurrent] = useState(false);
-  const [modalMaximized, setModalMaximized] = useState(false);
-  const modalDialogStyle = useResizableDialogStyle(modalMaximized, "wizard");
+  const [step, setStep] = useState<Step>("drawers");
+  const [selectedDate, setSelectedDate] = useState(targetBusinessDate || todayIso());
+  const [validation, setValidation] = useState<DayCloseValidateResult | null>(null);
+  const [daybook, setDaybook] = useState<AccountingDaybook | null>(null);
+  const [snapshot, setSnapshot] = useState<DayCloseSnapshotData | null>(null);
+  const [confirmed, setConfirmed] = useState<DayCloseDetail | null>(null);
+  const [notes, setNotes] = useState("");
+  const [loadingValidation, setLoadingValidation] = useState(false);
+  const [loadingReview, setLoadingReview] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleClose = () => {
-    setCurrentStep("health-check");
-    setSnapshotData(null);
-    setDayCloseId(null);
-    setConfirmedData(null);
-    setConfirmedSnapshot(null);
-    setModalMaximized(false);
-    onClose();
-  };
+  const reset = useCallback(() => {
+    setStep("drawers");
+    setSelectedDate(targetBusinessDate || todayIso());
+    setValidation(null);
+    setDaybook(null);
+    setSnapshot(null);
+    setConfirmed(null);
+    setNotes("");
+    setError(null);
+  }, [targetBusinessDate]);
 
-  const loadCurrent = useCallback(async () => {
-    setLoadingCurrent(true);
+  const refreshValidation = useCallback(async () => {
+    setLoadingValidation(true);
+    setError(null);
     try {
-      if (targetDayCloseId) {
-        const res = await apiClient.get(DayCloseApis.get(targetDayCloseId));
-        const detail = unwrapApiData(res.data, parseDayCloseDetail);
-        if (!detail) {
-          setCurrentClose(null);
-          return;
-        }
-        setCurrentClose({
-          id: detail.id,
-          business_date: detail.business_date,
-          business_line: detail.business_line,
-          status: detail.status,
-          period_start_at: detail.period_start_at,
-          period_end_at: detail.period_end_at,
-          action_label:
-            String(detail.status || "").toLowerCase() === "reopened"
-              ? "Re-confirm Day Close"
-              : undefined,
-          snapshot_preview: null,
-        });
-        return;
-      }
-      const res = await apiClient.get(
-        DayCloseApis.current({
+      const response = await apiClient.get(
+        DayCloseApis.validateClose({
           restaurantId,
           businessLine,
-          businessDate: targetBusinessDate ?? undefined,
-        })
+          businessDate: selectedDate,
+        }),
       );
-      setCurrentClose(unwrapApiData(res.data, parseDayCloseCurrent));
-    } catch {
-      setCurrentClose(null);
+      const parsed = unwrapApiData(response.data, parseDayCloseValidateResult);
+      if (!parsed) throw new Error("The server returned an invalid close-readiness response.");
+      setValidation(parsed);
+      return parsed;
+    } catch (requestError) {
+      setValidation(null);
+      setError(getApiErrorMessage(requestError, "Failed to check close readiness."));
+      return null;
     } finally {
-      setLoadingCurrent(false);
+      setLoadingValidation(false);
     }
-  }, [restaurantId, businessLine, targetBusinessDate, targetDayCloseId]);
+  }, [businessLine, restaurantId, selectedDate]);
 
   useEffect(() => {
     if (!isOpen) return;
-    setCurrentStep("health-check");
-    setSnapshotData(null);
-    setDayCloseId(null);
-    setConfirmedData(null);
-    setConfirmedSnapshot(null);
-    void loadCurrent();
-  }, [isOpen, loadCurrent]);
+    reset();
+  }, [isOpen, reset]);
 
-  const closeName = formatDayCloseCloseName(businessLine);
-  const coveredRange = formatDayCloseCoveredRange(
-    currentClose?.period_start_at,
-    currentClose?.period_end_at,
+  useEffect(() => {
+    if (!isOpen || step !== "drawers") return;
+    void refreshValidation();
+  }, [isOpen, refreshValidation, step]);
+
+  const loadReview = useCallback(
+    async (readiness: DayCloseValidateResult) => {
+      setLoadingReview(true);
+      setError(null);
+      try {
+        const [daybookResponse, snapshotResponse] = await Promise.all([
+          apiClient.get<BaseResponse<AccountingDaybook>>(
+            AccountingApis.daybook({
+              restaurantId,
+              businessLine,
+              businessDate: selectedDate,
+              periodStartAt: readiness.period_start_at,
+              periodEndAt: readiness.period_end_at,
+            }),
+          ),
+          apiClient.get(
+            DayCloseApis.generateSnapshot({
+              restaurantId,
+              businessLine,
+              businessDate: selectedDate,
+            }),
+          ),
+        ]);
+        const nextDaybook = daybookResponse.data?.data ?? null;
+        const nextSnapshot = unwrapApiData(
+          snapshotResponse.data,
+          parseDayCloseSnapshotData,
+        );
+        if (!nextDaybook || !nextSnapshot) {
+          throw new Error("Daybook or financial snapshot data is missing.");
+        }
+        setDaybook(nextDaybook);
+        setSnapshot(nextSnapshot);
+        setStep("daybook");
+      } catch (requestError) {
+        setError(getApiErrorMessage(requestError, "Failed to load the close review."));
+      } finally {
+        setLoadingReview(false);
+      }
+    },
+    [businessLine, restaurantId, selectedDate],
   );
 
-  const steps = [
-    { id: "health-check", label: "Health Check" },
-    { id: "financial-snapshot", label: "Snapshot" },
-    { id: "drawer-cash-result", label: "Drawer Cash" },
-    { id: "success", label: "Complete" },
-  ] as const;
+  const continueFromDrawers = async () => {
+    const readiness = await refreshValidation();
+    if (!readiness?.can_close) {
+      setError("Resolve every blocker before reviewing the daybook.");
+      return;
+    }
+    await loadReview(readiness);
+  };
 
-  const currentStepIndex = steps.findIndex((s) => s.id === currentStep);
+  const closeDay = async () => {
+    if (!daybook || !snapshot) return;
+    const accountingBlockers = daybook.exceptions.filter((item) => item.blocking);
+    if (accountingBlockers.length > 0) {
+      setError("Resolve the blocking daybook exceptions before closing this period.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const initiateResponse = await apiClient.post(DayCloseApis.initiate, {
+        restaurant_id: restaurantId,
+        business_line: businessLine,
+        business_date: selectedDate,
+        day_close_id: targetDayCloseId ?? undefined,
+      });
+      const initiated = unwrapApiData(initiateResponse.data, parseDayCloseDetail);
+      if (!initiated?.id) throw new Error("The server did not return a day-close record.");
+
+      const latestSnapshotResponse = await apiClient.get(
+        DayCloseApis.generateSnapshot({
+          restaurantId,
+          businessLine,
+          businessDate: selectedDate,
+        }),
+      );
+      const latestSnapshot =
+        unwrapApiData(latestSnapshotResponse.data, parseDayCloseSnapshotData) ?? snapshot;
+      const countedCash = latestSnapshot.drawer_control?.counted_cash;
+      const actualCash =
+        typeof countedCash === "number" && Number.isFinite(countedCash)
+          ? countedCash
+          : latestSnapshot.expected_cash;
+      if (typeof actualCash !== "number" || !Number.isFinite(actualCash)) {
+        throw new Error("Drawer counted cash is not available.");
+      }
+
+      const confirmResponse = await apiClient.post(DayCloseApis.confirm(initiated.id), {
+        actual_cash: actualCash,
+        confirmation_notes: notes.trim() || undefined,
+      });
+      const detail = unwrapApiData(confirmResponse.data, parseDayCloseDetail);
+      if (!detail) throw new Error("The close was confirmed but its record is missing.");
+
+      let savedSnapshot = latestSnapshot;
+      try {
+        const savedResponse = await apiClient.get(DayCloseApis.snapshot(detail.id));
+        const savedPayload = unwrapApiData(
+          savedResponse.data,
+          parseDayCloseSnapshotResponse,
+        );
+        savedSnapshot =
+          parseDayCloseSnapshotData(savedPayload?.snapshot_data ?? savedPayload) ??
+          latestSnapshot;
+      } catch {
+        // The confirmed detail remains authoritative if snapshot re-fetch is delayed.
+      }
+      setSnapshot(savedSnapshot);
+      setConfirmed(detail);
+      setStep("success");
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError, "Failed to close this period."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const steps = useMemo(
+    () => [
+      { id: "drawers" as const, label: "Cash drawers", icon: Banknote },
+      { id: "daybook" as const, label: "Daybook & snapshot", icon: BookOpen },
+      { id: "success" as const, label: "Complete", icon: CheckCircle2 },
+    ],
+    [],
+  );
+  const stepIndex = steps.findIndex((item) => item.id === step);
+  const coveredPeriod = periodText(validation);
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent
-        className={resizableDialogContentClass(
-          modalMaximized,
-          "day-close-ui p-0 gap-0 overflow-hidden flex flex-col",
-        )}
-        style={modalDialogStyle}
-      >
-        <DialogHeader className="sr-only">
-          <DialogTitle>End of Day Close</DialogTitle>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="flex h-[92vh] w-[96vw] max-w-6xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-b border-border/70 px-6 py-5 pr-14 text-left">
+          <DialogTitle className="text-xl font-semibold tracking-tight">
+            {targetDayCloseId ? "Re-confirm close" : "Close financial period"}
+          </DialogTitle>
           <DialogDescription>
-            Review system health, backend financial snapshot, and reconcile cash to close the day.
+            Settle drawers, review the structured daybook and snapshot, then confirm one audited close.
           </DialogDescription>
-        </DialogHeader>
-
-        <div className="bg-slate-50 dark:bg-slate-900 border-b p-6 pr-14 sm:pr-16 flex flex-col gap-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-xl font-semibold">End of Day Close</h2>
-              <p className="text-muted-foreground text-sm font-semibold">{closeName}</p>
-              {loadingCurrent ? (
-                <p className="text-xs text-muted-foreground mt-1">Loading close window…</p>
-              ) : coveredRange ? (
-                <p className="text-xs font-medium text-foreground mt-1 break-words">{coveredRange}</p>
-              ) : (
-                <p className="text-xs text-muted-foreground mt-1">Close window not loaded</p>
-              )}
-              {currentClose?.action_label ? (
-                <p className="text-xs font-semibold text-orange-600 mt-1">
-                  {currentClose.action_label}
-                </p>
-              ) : null}
+          <div className="grid gap-3 pt-3 sm:grid-cols-[220px_1fr] sm:items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor="day-close-date">Close date</Label>
+              <Input
+                id="day-close-date"
+                type="date"
+                value={selectedDate}
+                max={todayIso()}
+                disabled={Boolean(targetDayCloseId) || step === "success"}
+                onChange={(event) => {
+                  setSelectedDate(event.target.value);
+                  setValidation(null);
+                  setDaybook(null);
+                  setSnapshot(null);
+                  setStep("drawers");
+                }}
+              />
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="px-3 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-full text-xs font-semibold border border-orange-200 dark:border-orange-900/50 whitespace-nowrap">
-                Step {currentStepIndex + 1} of 4
+            <div className="min-w-0 text-sm">
+              <div className="font-medium">{displayDate(selectedDate)}</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {coveredPeriod
+                  ? `Open period: ${coveredPeriod}`
+                  : "The server will resolve the open period ending now."}
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-full"
-                onClick={() => setModalMaximized((v) => !v)}
-                aria-label={modalMaximized ? "Minimize window" : "Maximize window"}
-                title={modalMaximized ? "Minimize" : "Maximize"}
-              >
-                {modalMaximized ? (
-                  <Minimize2 className="h-4 w-4" />
-                ) : (
-                  <Maximize2 className="h-4 w-4" />
-                )}
-              </Button>
             </div>
           </div>
+        </DialogHeader>
 
-          <div className="flex gap-2">
-            {steps.map((step, index) => {
-              const isCompleted = index < currentStepIndex;
-              const isActive = index === currentStepIndex;
+        <div className="border-b border-border/70 bg-muted/20 px-6 py-3">
+          <div className="grid grid-cols-3 gap-2">
+            {steps.map((item, index) => {
+              const Icon = item.icon;
+              const active = index === stepIndex;
+              const complete = index < stepIndex;
               return (
                 <div
-                  key={step.id}
-                  className="flex-1 h-1.5 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800"
+                  key={item.id}
+                  className={cn(
+                    "flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium",
+                    active && "bg-background text-foreground shadow-sm",
+                    !active && !complete && "text-muted-foreground",
+                    complete && "text-emerald-700",
+                  )}
                 >
-                  <div
-                    className={cn(
-                      "h-full transition-all duration-500 ease-in-out",
-                      isActive || isCompleted ? "bg-orange-500 w-full" : "w-0"
-                    )}
-                  />
+                  {complete ? <Check className="h-4 w-4 shrink-0" /> : <Icon className="h-4 w-4 shrink-0" />}
+                  <span className="truncate">{item.label}</span>
                 </div>
               );
             })}
           </div>
         </div>
 
-        <div className={cn("flex-1 overflow-y-auto p-6", modalMaximized ? "min-h-0" : "min-h-[400px]")}>
-          {currentStep === "health-check" ? (
-            <HealthCheckStep
-              restaurantId={restaurantId}
-              businessLine={businessLine}
-              businessDate={targetBusinessDate ?? currentClose?.business_date}
-              onNext={() => setCurrentStep("financial-snapshot")}
-            />
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+          {step === "drawers" ? (
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/15 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="font-semibold">1. Close and settle every drawer</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Multi-day sessions remain visible. The selected date labels the close; timestamps determine which activity is included.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => void refreshValidation()} disabled={loadingValidation}>
+                  {loadingValidation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                  Recheck
+                </Button>
+              </div>
+
+              <DrawerSessionPanel
+                restaurantId={restaurantId}
+                businessLine={businessLine}
+                businessDate={selectedDate}
+                includeAllActiveSessions
+                title="Drawer settlement"
+                description="Count, close, approve variance where required, and submit the final settlement here."
+                footerNote="The daybook unlocks only after backend validation confirms every required drawer is settled."
+              />
+
+              {validation ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className={cn("rounded-xl border p-4", validation.can_close ? "border-emerald-300 bg-emerald-500/10" : "border-amber-300 bg-amber-500/10")}>
+                    <div className="font-semibold">
+                      {validation.can_close ? "Ready for daybook review" : "Close blockers remain"}
+                    </div>
+                    <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                      {(validation.blockers ?? []).length === 0 ? (
+                        <p>Orders, refunds, payments, and drawers are ready.</p>
+                      ) : (
+                        validation.blockers?.map((blocker) => <p key={blocker}>• {blocker}</p>)
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-border/70 p-4">
+                    <div className="font-semibold">Operational checks</div>
+                    <div className="mt-2 text-sm text-muted-foreground">
+                      <p>Active orders: {validation.active_orders_count ?? 0}</p>
+                      <p>Pending refunds: {validation.pending_refunds_count ?? 0}</p>
+                      <p>Drawer settlement: {validation.drawer_ready === false ? "Incomplete" : "Ready"}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           ) : null}
-          {currentStep === "financial-snapshot" ? (
-            <FinancialSnapshotStep
-              restaurantId={restaurantId}
-              businessLine={businessLine}
-              businessDate={targetBusinessDate}
-              targetDayCloseId={targetDayCloseId}
-              snapshotPreview={currentClose?.snapshot_preview ?? null}
-              onNext={(data, id) => {
-                setSnapshotData(data);
-                setDayCloseId(id);
-                setCurrentStep("drawer-cash-result");
-              }}
-            />
+
+          {step === "daybook" ? (
+            <div className="space-y-5">
+              {loadingReview ? (
+                <div className="flex min-h-64 items-center justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : daybook && snapshot ? (
+                <>
+                  <DaybookReport
+                    daybook={daybook}
+                    outstandingReceivables={
+                      snapshot.receivables?.outstanding_receivables ?? 0
+                    }
+                    title={`${displayDate(selectedDate)} Day Book`}
+                  />
+                  <section className="space-y-3 rounded-2xl border border-border/70 p-4 sm:p-5">
+                    <div>
+                      <h3 className="font-semibold">Financial snapshot</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Supporting sales, payments, expenses, refunds, receivables, and operational evidence for this close.
+                      </p>
+                    </div>
+                    <DayCloseSnapshotPanel snapshot={snapshot} />
+                  </section>
+                  <div className="space-y-2 rounded-2xl border border-border/70 p-4">
+                    <Label htmlFor="day-close-notes">Close notes (optional)</Label>
+                    <Textarea
+                      id="day-close-notes"
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      placeholder="Add a short handover note or exception reference."
+                      rows={3}
+                    />
+                  </div>
+                  {daybook.exceptions.some((item) => item.blocking) ? (
+                    <div className="rounded-xl border border-amber-300 bg-amber-500/10 p-4 text-sm text-amber-800">
+                      <AlertTriangle className="mr-2 inline h-4 w-4" />
+                      Blocking daybook exceptions must be resolved before final close.
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
           ) : null}
-          {currentStep === "drawer-cash-result" ? (
-            <DrawerCashResultStep
-              snapshot={snapshotData}
-              dayCloseId={dayCloseId}
-              restaurantId={restaurantId}
-              businessLine={businessLine}
-              businessDate={targetBusinessDate}
-              onNext={(data, finalizedSnapshot) => {
-                setConfirmedData(data);
-                setConfirmedSnapshot(finalizedSnapshot);
-                setCurrentStep("success");
-              }}
-            />
+
+          {step === "success" ? (
+            <div className="mx-auto flex max-w-2xl flex-col items-center gap-5 py-10 text-center">
+              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-700">
+                <CheckCircle2 className="h-8 w-8" />
+              </span>
+              <div>
+                <h3 className="text-2xl font-semibold tracking-tight">Period closed successfully</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {displayDate(selectedDate)} now owns the frozen period, daybook, drawer evidence, and financial snapshot.
+                </p>
+              </div>
+              <OperationalCloseStatus detail={confirmed} />
+            </div>
           ) : null}
-          {currentStep === "success" ? (
-            <SuccessStep
-              data={confirmedData}
-              snapshot={confirmedSnapshot}
-              onClose={handleClose}
-            />
+
+          {error ? (
+            <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              <AlertTriangle className="mr-2 inline h-4 w-4" />
+              {error}
+            </div>
           ) : null}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-border/70 bg-background px-6 py-4">
+          {step === "daybook" ? (
+            <Button variant="ghost" onClick={() => setStep("drawers")} disabled={submitting}>
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Drawers
+            </Button>
+          ) : (
+            <div />
+          )}
+          {step === "drawers" ? (
+            <Button onClick={() => void continueFromDrawers()} disabled={loadingValidation || loadingReview}>
+              {loadingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Review daybook
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          ) : step === "daybook" ? (
+            <Button
+              onClick={() => void closeDay()}
+              disabled={
+                submitting ||
+                !daybook ||
+                !snapshot ||
+                daybook.exceptions.some((item) => item.blocking)
+              }
+            >
+              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+              {submitting ? "Closing period…" : "Confirm final close"}
+            </Button>
+          ) : (
+            <Button onClick={onClose}>Done</Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function HealthCheckStep({
-  onNext,
-  restaurantId,
-  businessLine,
-  businessDate,
-}: {
-  onNext: () => void;
-  restaurantId: number;
-  businessLine: BusinessLine;
-  businessDate?: string | null;
-}) {
-  const [checks, setChecks] = useState<
-    Array<{ label: string; status: "pass" | "fail" | "warn"; message?: string }>
-  >([]);
-  const [loading, setLoading] = useState(true);
-  const [canProceed, setCanProceed] = useState(false);
-
-  useEffect(() => {
-    const validate = async () => {
-      try {
-        const res = await apiClient.get(
-          DayCloseApis.validateClose({
-            restaurantId,
-            businessLine,
-            businessDate: businessDate ?? undefined,
-          })
-        );
-        const data = unwrapApiData(res.data, parseDayCloseValidateResult);
-        if (!data) {
-          setChecks([{ label: "Validation Failed", status: "fail", message: "Invalid response" }]);
-          return;
-        }
-
-        const newChecks: Array<{ label: string; status: "pass" | "fail" | "warn"; message?: string }> = [];
-
-        if ((data.active_orders_count ?? 0) > 0) {
-          newChecks.push({
-            label: "Active Orders",
-            status: "fail",
-            message: `${data.active_orders_count} active orders need attention`,
-          });
-        } else {
-          newChecks.push({
-            label: "Active Orders",
-            status: "pass",
-            message: "All orders completed",
-          });
-        }
-
-        if ((data.pending_refunds_count ?? 0) > 0) {
-          newChecks.push({
-            label: "Pending Refunds",
-            status: "fail",
-            message: `${data.pending_refunds_count} refunds pending processing`,
-          });
-        } else {
-          newChecks.push({
-            label: "Pending Refunds",
-            status: "pass",
-            message: "No pending refunds",
-          });
-        }
-
-        if (data.blockers?.length) {
-          data.blockers
-            .filter(
-              (b) =>
-                !b.toLowerCase().includes("active order") &&
-                !b.toLowerCase().includes("pending refund"),
-            )
-            .forEach((b) => {
-              newChecks.push({ label: "System Validation", status: "fail", message: b });
-            });
-        }
-
-        if (data.warnings?.length) {
-          data.warnings.forEach((warning) => {
-            newChecks.push({ label: "Advisory", status: "warn", message: warning });
-          });
-        }
-
-        setChecks(newChecks);
-        setCanProceed(data.can_close);
-      } catch {
-        setChecks([
-          { label: "System Connection", status: "fail", message: "Failed to connect to server" },
-        ]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    void validate();
-  }, [restaurantId, businessLine, businessDate]);
-
-  return (
-    <div className="space-y-6">
-      <StepBanner
-        icon={<ActivityIcon className="w-5 h-5" />}
-        title="System Health Check"
-        subtitle="Verifying pending orders, unpaid bills, and drawer readiness from the server..."
-        tone="blue"
-      />
-      <div className="rounded-xl border bg-muted/20 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg border bg-background">
-              <Banknote className="h-5 w-5 text-emerald-600" />
-            </span>
-            <div className="space-y-1">
-              <div className="text-sm font-semibold">Cash drawer verification</div>
-              <p className="text-sm text-muted-foreground">
-                Drawer opening, counting, and settlement are managed from Cash Drawers. This step only checks whether day close can proceed.
-              </p>
-            </div>
-          </div>
-          <Button asChild variant="outline" className="shrink-0">
-            <Link href="/cash-drawers">Open Cash Drawers</Link>
-          </Button>
-        </div>
-      </div>
-      <div className="grid gap-4">
-        {loading ? (
-          <div className="p-4 text-center text-muted-foreground">Running checks…</div>
-        ) : (
-          checks.map((check, i) => <CheckItem key={i} {...check} />)
-        )}
-      </div>
-      <div className="pt-4 flex justify-end">
-        <Button onClick={onNext} disabled={!canProceed} className="gap-2">
-          Continue to Snapshot <ChevronRight className="w-4 h-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function FinancialSnapshotStep({
-  onNext,
-  restaurantId,
-  businessLine,
-  businessDate,
-  targetDayCloseId,
-  snapshotPreview,
-}: {
-  onNext: (data: DayCloseSnapshotData, id: number) => void;
-  restaurantId: number;
-  businessLine: BusinessLine;
-  businessDate?: string | null;
-  targetDayCloseId?: number | null;
-  snapshotPreview: DayCloseSnapshotData | null;
-}) {
-  const [snapshot, setSnapshot] = useState<DayCloseSnapshotData | null>(snapshotPreview);
-  const [loading, setLoading] = useState(!snapshotPreview);
-  const [initiating, setInitiating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (snapshotPreview) {
-      setSnapshot(snapshotPreview);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    const generate = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await apiClient.get(
-          DayCloseApis.generateSnapshot({
-            restaurantId,
-            businessLine,
-            businessDate: businessDate ?? undefined,
-          })
-        );
-        const parsed = unwrapApiData(res.data, parseDayCloseSnapshotData);
-        if (!parsed) {
-          setError("Snapshot data is missing from the server response.");
-          setSnapshot(null);
-          return;
-        }
-        setSnapshot(parsed);
-      } catch (err: unknown) {
-        const message =
-          (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-          "Failed to load snapshot from server.";
-        setError(message);
-        setSnapshot(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-    void generate();
-  }, [restaurantId, businessLine, businessDate, snapshotPreview]);
-
-  const handleContinue = async () => {
-    if (!snapshot) return;
-    setInitiating(true);
-    setError(null);
-    try {
-      const res = await apiClient.post(DayCloseApis.initiate, {
-        restaurant_id: restaurantId,
-        day_close_id: targetDayCloseId ?? undefined,
-        business_date: businessDate ?? undefined,
-        business_line: businessLine,
-      });
-      const detail = unwrapApiData(res.data, parseDayCloseDetail);
-      if (detail?.id) {
-        let freshSnapshot = snapshot;
-        try {
-          const snapRes = await apiClient.get(
-            DayCloseApis.generateSnapshot({
-              restaurantId,
-              businessLine,
-              businessDate: businessDate ?? undefined,
-            }),
-          );
-          const parsed = unwrapApiData(snapRes.data, parseDayCloseSnapshotData);
-          if (parsed) freshSnapshot = parsed;
-        } catch {
-          // Keep snapshot from step load if refresh fails.
-        }
-        onNext(freshSnapshot, detail.id);
-      } else {
-        setError(
-          (res.data as { message?: string })?.message ?? "Failed to initiate day close"
-        );
-      }
-    } catch (err: unknown) {
-      setError(getApiErrorMessage(err, "Failed to proceed. Please try again."));
-    } finally {
-      setInitiating(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 space-y-4">
-        <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-muted-foreground">Loading financial snapshot from server…</p>
-      </div>
-    );
-  }
-
-  if (error && !snapshot) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 space-y-4 text-center">
-        <div className="p-3 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-full">
-          <AlertTriangle className="w-6 h-6" />
-        </div>
-        <div>
-          <p className="font-semibold text-red-600 dark:text-red-400">Snapshot Unavailable</p>
-          <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!snapshot) {
-    return (
-      <EmptySnapshotNotice message="No snapshot returned by the server for this close window." />
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <StepBanner
-        icon={<Calculator className="w-5 h-5" />}
-        title="Financial Snapshot"
-        subtitle="All totals below are loaded from the backend snapshot — not calculated in the browser."
-        tone="purple"
-      />
-      <DayCloseSnapshotPanel snapshot={snapshot} />
-      {error ? (
-        <div className="p-3 bg-red-100 text-red-600 text-sm rounded-lg flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          {error}
-        </div>
-      ) : null}
-      <div className="pt-4 flex justify-end">
-        <Button onClick={handleContinue} disabled={initiating} className="gap-2">
-          {initiating ? "Starting…" : "Review Drawer Cash"} <ChevronRight className="w-4 h-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function DrawerCashResultStep({
-  onNext,
-  snapshot,
-  dayCloseId,
-  restaurantId,
-  businessLine,
-  businessDate,
-}: {
-  onNext: (data: DayCloseDetail, finalizedSnapshot: DayCloseSnapshotData | null) => void;
-  snapshot: DayCloseSnapshotData | null;
-  dayCloseId: number | null;
-  restaurantId: number;
-  businessLine: BusinessLine;
-  businessDate?: string | null;
-}) {
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [liveSnapshot, setLiveSnapshot] = useState<DayCloseSnapshotData | null>(snapshot);
-
-  useEffect(() => {
-    setLiveSnapshot(snapshot);
-  }, [snapshot]);
-
-  useEffect(() => {
-    const refresh = async () => {
-      try {
-        const res = await apiClient.get(
-          DayCloseApis.generateSnapshot({
-            restaurantId,
-            businessLine,
-            businessDate: businessDate ?? undefined,
-          }),
-        );
-        const parsed = unwrapApiData(res.data, parseDayCloseSnapshotData);
-        if (parsed) setLiveSnapshot(parsed);
-      } catch {
-        // Keep prior snapshot if refresh fails.
-      }
-    };
-    void refresh();
-  }, [restaurantId, businessLine, businessDate]);
-
-  const expectedCash = liveSnapshot?.expected_cash;
-  const countedCash = liveSnapshot?.drawer_control?.counted_cash;
-  const boundaryInferred = liveSnapshot?.drawer_control?.boundary_inferred === true;
-  const actualCashForSubmit =
-    typeof countedCash === "number" && Number.isFinite(countedCash)
-      ? countedCash
-      : expectedCash;
-  const drawerRows = Array.isArray(liveSnapshot?.drawer_control?.drawers)
-    ? liveSnapshot?.drawer_control?.drawers ?? []
-    : [];
-  const currentDrawerRows = drawerRows.filter((row) => row?.is_current_session !== false);
-  const expectedDrawerRows = (currentDrawerRows.length > 0 ? currentDrawerRows : drawerRows)
-    .filter((row): row is DayCloseDrawerControlRow => Boolean(row))
-    .filter((row) => row.expected_closing_cash != null);
-
-  const handleSubmit = async () => {
-    if (!dayCloseId) {
-      setError("Missing Day Close ID. Please restart the process.");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      let latestSnapshot = liveSnapshot;
-      try {
-        const snapRes = await apiClient.get(
-          DayCloseApis.generateSnapshot({
-            restaurantId,
-            businessLine,
-            businessDate: businessDate ?? undefined,
-          }),
-        );
-        const parsed = unwrapApiData(snapRes.data, parseDayCloseSnapshotData);
-        if (parsed) {
-          latestSnapshot = parsed;
-          setLiveSnapshot(parsed);
-        }
-      } catch {
-        // Proceed with last known expected cash.
-      }
-
-      const latestCountedCash = latestSnapshot?.drawer_control?.counted_cash;
-      const latestExpectedCash = latestSnapshot?.expected_cash;
-      const drawerActualCash =
-        typeof latestCountedCash === "number" && Number.isFinite(latestCountedCash)
-          ? latestCountedCash
-          : latestExpectedCash;
-      if (typeof drawerActualCash !== "number" || !Number.isFinite(drawerActualCash)) {
-        setError("Drawer cash result is not available. Refresh the snapshot and try again.");
-        return;
-      }
-
-      const res = await apiClient.post(DayCloseApis.confirm(dayCloseId), {
-        actual_cash: drawerActualCash,
-      });
-      const detail = unwrapApiData(res.data, parseDayCloseDetail);
-      if (detail) {
-        let finalizedSnapshot: DayCloseSnapshotData | null = latestSnapshot ?? snapshot;
-        try {
-          const snapRes = await apiClient.get(DayCloseApis.snapshot(detail.id));
-          const snapPayload = unwrapApiData(snapRes.data, parseDayCloseSnapshotResponse);
-          const parsed = parseDayCloseSnapshotData(
-            snapPayload?.snapshot_data ?? snapPayload,
-          );
-          if (parsed) finalizedSnapshot = parsed;
-        } catch {
-          // Keep preview snapshot if saved snapshot is not yet available.
-        }
-        onNext(detail, finalizedSnapshot);
-      } else {
-        setError(
-          (res.data as { message?: string })?.message ?? "Failed to submit day close."
-        );
-      }
-    } catch (err: unknown) {
-      setError(getApiErrorMessage(err, "Failed to submit day close."));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <StepBanner
-        icon={<Banknote className="w-5 h-5" />}
-        title="Drawer Cash Result"
-        subtitle="Cash is controlled by drawer counts. Day close records the drawer result without a separate manual reconciliation."
-        tone="emerald"
-      />
-      <div className="space-y-4">
-        <div className="p-4 border rounded-xl bg-slate-50 dark:bg-slate-900">
-          <p className="text-sm font-medium mb-2">Expected Drawer Cash</p>
-          <p className="text-2xl font-semibold text-slate-700 dark:text-slate-200">
-            {formatDayCloseCurrency(expectedCash)}
-          </p>
-          {expectedDrawerRows.length > 0 ? (
-            <div className="mt-4 rounded-xl border border-border/60 bg-background/80 p-3">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Drawer-wise expected cash
-              </div>
-              <div className="space-y-2">
-                {expectedDrawerRows.map((row, index) => {
-                  const label = row.name?.trim()
-                    || [row.station, row.drawer_key].filter(Boolean).join(" / ")
-                    || `Drawer ${index + 1}`;
-                  return (
-                    <div
-                      key={`${row.session_id ?? row.configuration_id ?? label}-${index}`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-border/50 px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{label}</div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {String(row.status || "active").replace(/_/g, " ")}
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-sm font-semibold text-foreground">
-                        {formatDayCloseCurrency(row.expected_closing_cash)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
-        <div className="p-4 border rounded-xl bg-emerald-50 dark:bg-emerald-950/30">
-          <p className="text-sm font-medium mb-2">Drawer Counted Cash</p>
-          <p className="text-2xl font-semibold text-emerald-700 dark:text-emerald-300">
-            {formatDayCloseCurrency(actualCashForSubmit)}
-          </p>
-          <p className="text-xs text-muted-foreground mt-2">
-            {boundaryInferred
-              ? "This historical drawer was counted after the business-day cutoff. Cash at the cutoff is reconstructed from drawer activity; later activity remains with the later period."
-              : "If this value is wrong, correct the drawer count before closing the day."}
-          </p>
-        </div>
-        {error ? (
-          <div className="p-3 bg-red-100 text-red-600 text-sm rounded-lg flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            {error}
-          </div>
-        ) : null}
-      </div>
-      <div className="pt-4 flex justify-end">
-        <Button
-          onClick={handleSubmit}
-          disabled={submitting || expectedCash == null || actualCashForSubmit == null}
-          className="gap-2 bg-green-600 hover:bg-green-700"
-        >
-          {submitting ? "Closing…" : "Submit Day Close"} <CheckCircle2 className="w-4 h-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function SuccessStep({
-  onClose,
-  data,
-  snapshot,
-}: {
-  onClose: () => void;
-  data: DayCloseDetail | null;
-  snapshot: DayCloseSnapshotData | null;
-}) {
-  const [showSnapshot, setShowSnapshot] = useState(false);
-  const discrepancy = data?.cash_discrepancy;
-  const isMatched =
-    discrepancy == null ? true : Math.abs(discrepancy) < 0.01;
-  const isOverage = discrepancy != null && discrepancy > 0;
-  const coveredRange = formatDayCloseCoveredRange(
-    data?.period_start_at ?? snapshot?.period_start_at,
-    data?.period_end_at ?? snapshot?.period_end_at,
-  );
-
-  return (
-    <div className="flex flex-col items-center justify-center h-full text-center space-y-6 py-6">
-      <div
-        className={cn(
-          "w-20 h-20 rounded-full flex items-center justify-center border-4",
-          isMatched
-            ? "bg-green-100 text-green-600 border-green-200"
-            : isOverage
-              ? "bg-blue-100 text-blue-600 border-blue-200"
-              : "bg-red-100 text-red-600 border-red-200"
-        )}
-      >
-        {isMatched ? (
-          <CheckCircle2 className="w-10 h-10" />
-        ) : (
-          <AlertTriangle className="w-10 h-10" />
-        )}
-      </div>
-      <div className="space-y-2">
-        <h2 className="text-2xl font-semibold">
-          {isMatched ? "Day Closed Successfully!" : "Day Closed with Discrepancy"}
-        </h2>
-        <p className="text-muted-foreground max-w-xs mx-auto text-sm">
-          The frozen financial snapshot is saved on the server. Totals below are display-only.
-        </p>
-        <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-          This operational confirmation is separate from accounting review status.
-        </p>
-        {coveredRange ? (
-          <p className="text-xs font-medium text-foreground">{coveredRange}</p>
-        ) : null}
-      </div>
-      <OperationalCloseStatus detail={data} />
-      {!isMatched && data ? (
-        <div
-          className={cn(
-            "p-4 rounded-xl border w-full max-w-sm mx-auto text-left",
-            isOverage
-              ? "bg-blue-50 border-blue-100 dark:bg-blue-900/20"
-              : "bg-red-50 border-red-100 dark:bg-red-900/20"
-          )}
-        >
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <span className="text-muted-foreground">Opening Balance:</span>
-            <span className="font-mono text-right font-medium">
-              {formatDayCloseCurrency((data as any).opening_balance)}
-            </span>
-            <span className="text-muted-foreground">Expected:</span>
-            <span className="font-mono text-right font-medium">
-              {formatDayCloseCurrency(data.expected_cash)}
-            </span>
-            <span className="text-muted-foreground">Actual:</span>
-            <span className="font-mono text-right font-medium">
-              {formatDayCloseCurrency(data.actual_cash)}
-            </span>
-            <div className="col-span-2 h-px bg-slate-200 dark:bg-slate-700 my-1" />
-            <span className="font-semibold">{isOverage ? "Overage:" : "Shortage:"}</span>
-            <span
-              className={cn(
-                "font-mono text-right font-semibold",
-                isOverage ? "text-blue-600" : "text-red-600"
-              )}
-            >
-              {discrepancy != null
-                ? `${isOverage ? "+" : ""}${formatDayCloseCurrency(discrepancy)}`
-                : "—"}
-            </span>
-          </div>
-        </div>
-      ) : null}
-      {snapshot ? (
-        <div className="w-full max-w-2xl mx-auto text-left space-y-3">
-          <Button
-            type="button"
-            variant="outline"
-            className="dc-btn-outline w-full rounded-xl font-semibold"
-            onClick={() => setShowSnapshot((v) => !v)}
-          >
-            {showSnapshot ? "Hide Snapshot" : "View Snapshot"}
-          </Button>
-          {showSnapshot ? (
-            <DayCloseSnapshotPanel snapshot={snapshot} detail={data} />
-          ) : null}
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground max-w-sm">
-          Saved snapshot could not be loaded. Open Day Close History to retry.
-        </p>
-      )}
-      <Button onClick={onClose} size="lg" className="min-w-[200px]">
-        Done
-      </Button>
-    </div>
-  );
-}
-
-function CheckItem({
-  label,
-  status,
-  message,
-}: {
-  label: string;
-  status: "pass" | "fail" | "warn";
-  message?: string;
-}) {
-  const toneClass =
-    status === "pass"
-      ? "text-green-600"
-      : status === "warn"
-        ? "text-amber-600"
-        : "text-red-500";
-  const statusLabel =
-    status === "pass" ? "Passed" : status === "warn" ? "Warning" : "Action Needed";
-
-  return (
-    <div className="flex items-center justify-between p-3 rounded-lg border bg-white dark:bg-slate-950">
-      <div>
-        <span className="font-medium text-sm block">{label}</span>
-        {message ? <span className="text-xs text-muted-foreground">{message}</span> : null}
-      </div>
-      <div
-        className={cn(
-          "flex items-center gap-2 text-xs font-semibold uppercase tracking-wider",
-          toneClass,
-        )}
-      >
-        {status === "pass" ? (
-          <CheckCircle2 className="w-4 h-4" />
-        ) : (
-          <AlertTriangle className="w-4 h-4" />
-        )}
-        {statusLabel}
-      </div>
-    </div>
-  );
-}
-
-function StepBanner({
-  icon,
-  title,
-  subtitle,
-  tone,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-  tone: "blue" | "purple" | "emerald";
-}) {
-  const toneClass =
-    tone === "blue"
-      ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-900/50"
-      : tone === "purple"
-        ? "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-900/50"
-        : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-900/50";
-
-  return (
-    <div className={cn("flex items-center gap-4 p-4 rounded-xl border", toneClass)}>
-      <div className="p-2 bg-white dark:bg-slate-950 rounded-lg">{icon}</div>
-      <div>
-        <h3 className="font-semibold">{title}</h3>
-        <p className="text-xs opacity-80">{subtitle}</p>
-      </div>
-    </div>
-  );
-}
-
-function EmptySnapshotNotice({ message }: { message: string }) {
-  return (
-    <p className="text-sm text-muted-foreground rounded-xl border border-dashed px-4 py-6 text-center">
-      {message}
-    </p>
-  );
-}
-
-function ActivityIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-    </svg>
   );
 }

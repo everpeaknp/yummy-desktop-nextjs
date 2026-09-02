@@ -5,6 +5,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -59,6 +61,11 @@ export default function DayClosePage() {
   const restaurantId = user?.restaurant_id ?? undefined;
   const [closeOpen, setCloseOpen] = useState(false);
   const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  });
   const [currentLoading, setCurrentLoading] = useState(false);
   const [currentClose, setCurrentClose] = useState<DayCloseCurrent | null>(null);
   const [snapshotPreview, setSnapshotPreview] = useState<DayCloseSnapshotData | null>(null);
@@ -73,8 +80,20 @@ export default function DayClosePage() {
     setCurrentLoading(true);
     try {
       const [sessionRes, snapshotRes] = await Promise.all([
-        apiClient.get(DayCloseApis.current({ restaurantId, businessLine })),
-        apiClient.get(DayCloseApis.generateSnapshot({ restaurantId, businessLine })),
+        apiClient.get(
+          DayCloseApis.current({
+            restaurantId,
+            businessLine,
+            businessDate: selectedDate,
+          }),
+        ),
+        apiClient.get(
+          DayCloseApis.generateSnapshot({
+            restaurantId,
+            businessLine,
+            businessDate: selectedDate,
+          }),
+        ),
       ]);
 
       if (sessionRes.data?.status === "success") {
@@ -100,7 +119,7 @@ export default function DayClosePage() {
     } finally {
       setCurrentLoading(false);
     }
-  }, [restaurantId, businessLine]);
+  }, [restaurantId, businessLine, selectedDate]);
 
   useEffect(() => {
     if (restaurantId) loadCurrent();
@@ -111,17 +130,17 @@ export default function DayClosePage() {
     if (label) return label;
     const status = String(currentClose?.status ?? "open").toLowerCase();
     if (status === "pending") return "Continue Close";
-    if (status === "confirmed") return "View Current Day";
-    return "Close Today";
+    if (status === "confirmed") return "View Closed Period";
+    return "Start Close";
   }, [currentClose?.action_label, currentClose?.status]);
 
   const handlePrimaryAction = useCallback(async () => {
-    if (currentClose?.id) {
+    if (currentClose?.id && String(currentClose.status).toLowerCase() === "confirmed") {
       await dayCloseHistoryRef.current?.openDayCloseDetail(currentClose.id);
       return;
     }
     setCloseOpen(true);
-  }, [currentClose?.id]);
+  }, [currentClose?.id, currentClose?.status]);
 
   const displayNetSales = pickBackendAmount(
     snapshotPreview?.net_sales,
@@ -142,6 +161,7 @@ export default function DayClosePage() {
     if (normalized === "reopened") return "bg-blue-500/10 text-blue-600 border-blue-200";
     return "bg-muted text-muted-foreground border-border";
   })();
+  const isConfirmed = String(currentClose?.status ?? "").toLowerCase() === "confirmed";
 
   return (
     <div className="day-close-page day-close-ui flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
@@ -153,6 +173,23 @@ export default function DayClosePage() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+          <div className="space-y-1">
+            <Label htmlFor="day-close-page-date" className="sr-only">
+              Close date
+            </Label>
+            <Input
+              id="day-close-page-date"
+              type="date"
+              value={selectedDate}
+              max={(() => {
+                const now = new Date();
+                const pad = (value: number) => String(value).padStart(2, "0");
+                return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+              })()}
+              onChange={(event) => setSelectedDate(event.target.value)}
+              className="h-11 min-w-[170px] rounded-2xl"
+            />
+          </div>
           {showBusinessLinePicker ? (
             <Select
               value={businessLine}
@@ -181,11 +218,11 @@ export default function DayClosePage() {
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card
           className="dc-card lg:col-span-1 relative overflow-hidden group transition-all duration-300"
-          role={currentClose?.id ? "button" : undefined}
-          tabIndex={currentClose?.id ? 0 : undefined}
-          onClick={currentClose?.id ? () => void handlePrimaryAction() : undefined}
+          role={isConfirmed && currentClose?.id ? "button" : undefined}
+          tabIndex={isConfirmed && currentClose?.id ? 0 : undefined}
+          onClick={isConfirmed && currentClose?.id ? () => void handlePrimaryAction() : undefined}
           onKeyDown={
-            currentClose?.id
+            isConfirmed && currentClose?.id
               ? (event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
@@ -216,7 +253,7 @@ export default function DayClosePage() {
             </div>
           </CardHeader>
           <CardContent className="relative z-10 space-y-3">
-            <p className="dc-eyebrow">Current day</p>
+            <p className="dc-eyebrow">Selected close date</p>
             <p className="text-lg font-medium tracking-tight break-words text-foreground">
               {currentClose?.id
                 ? formatDayCloseListHeading({
@@ -311,6 +348,7 @@ export default function DayClosePage() {
           }}
           restaurantId={restaurantId}
           businessLine={businessLine}
+          targetBusinessDate={selectedDate}
         />
       ) : null}
     </div>

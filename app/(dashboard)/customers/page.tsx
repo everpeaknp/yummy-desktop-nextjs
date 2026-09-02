@@ -13,14 +13,11 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
 import { AddCustomerDialog } from "@/components/customers/add-customer-dialog";
-import { CustomerDetailsSheet } from "@/components/customers/customer-details-sheet";
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFallbackMode, setIsFallbackMode] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   const user = useAuth(state => state.user);
@@ -125,8 +122,7 @@ export default function CustomersPage() {
   };
 
   const openDetails = (customer: any) => {
-    setSelectedCustomer(customer);
-    setIsSheetOpen(true);
+    router.push(`/customers/${customer.id}`);
   };
 
   return (
@@ -247,12 +243,6 @@ export default function CustomersPage() {
         </div>
       )}
 
-      <CustomerDetailsSheet
-        customer={selectedCustomer}
-        open={isSheetOpen}
-        onOpenChange={setIsSheetOpen}
-        onUpdate={fetchCustomers}
-      />
     </div>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import {
@@ -237,34 +236,14 @@ function EmptyReport({ message }: { message: string }) {
   );
 }
 
-function ledgerHref(
-  headId: number,
-  dateFrom: string,
-  dateTo: string,
-  businessLine: string,
-  party?: { type: string; id: number },
-) {
-  const query = new URLSearchParams({ head_id: String(headId), date_from: dateFrom, date_to: dateTo });
-  if (businessLine !== "all") query.set("business_line", businessLine);
-  if (party) {
-    query.set("party_type", party.type);
-    query.set("party_id", String(party.id));
-  }
-  return `/finance/reports/account-ledger?${query.toString()}`;
-}
-
 function HeadAmountTable({
   title,
   rows,
-  dateFrom,
-  dateTo,
-  businessLine,
+  onSelectHead,
 }: {
   title: string;
   rows: FinanceReportingHeadAmount[];
-  dateFrom: string;
-  dateTo: string;
-  businessLine: string;
+  onSelectHead: (headId: number) => void;
 }) {
   return (
     <Card>
@@ -277,16 +256,27 @@ function HeadAmountTable({
             <TableHeader><TableRow><TableHead>Account head</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.head_id}>
+                <TableRow
+                  key={row.head_id}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+                  onClick={() => onSelectHead(row.head_id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelectHead(row.head_id);
+                    }
+                  }}
+                >
                   <TableCell>
-                    <Link
-                      href={ledgerHref(row.head_id, dateFrom, dateTo, businessLine)}
+                    <span
                       className="font-medium hover:text-primary hover:underline"
                       style={{ paddingLeft: `${Math.max(0, row.depth - 1) * 12}px` }}
                     >
                       <span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span>
                       {row.name}
-                    </Link>
+                    </span>
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{money(row.amount)}</TableCell>
                 </TableRow>
@@ -301,14 +291,10 @@ function HeadAmountTable({
 
 function ProfitAndLossView({
   report,
-  dateFrom,
-  dateTo,
-  businessLine,
+  onSelectHead,
 }: {
   report: FinanceReportingProfitLossRead;
-  dateFrom: string;
-  dateTo: string;
-  businessLine: string;
+  onSelectHead: (headId: number) => void;
 }) {
   const netRevenue = asNumber(report.total_income) - asNumber(report.total_contra_income);
   const netProfit = asNumber(report.net_profit);
@@ -359,10 +345,10 @@ function ProfitAndLossView({
         <EmptyReport message="No posted income or expense lines match this period and business line." />
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
-          <HeadAmountTable title="Income" rows={report.income} {...{ dateFrom, dateTo, businessLine }} />
-          <HeadAmountTable title="Contra income" rows={report.contra_income} {...{ dateFrom, dateTo, businessLine }} />
+          <HeadAmountTable title="Income" rows={report.income} onSelectHead={onSelectHead} />
+          <HeadAmountTable title="Contra income" rows={report.contra_income} onSelectHead={onSelectHead} />
           <div className="xl:col-span-2">
-            <HeadAmountTable title="Expenses" rows={report.expenses} {...{ dateFrom, dateTo, businessLine }} />
+            <HeadAmountTable title="Expenses" rows={report.expenses} onSelectHead={onSelectHead} />
           </div>
         </div>
       )}
@@ -372,14 +358,10 @@ function ProfitAndLossView({
 
 function TrialBalanceView({
   report,
-  dateFrom,
-  dateTo,
-  businessLine,
+  onSelectHead,
 }: {
   report: FinanceReportingTrialBalanceRead;
-  dateFrom: string;
-  dateTo: string;
-  businessLine: string;
+  onSelectHead: (headId: number) => void;
 }) {
   const difference = Math.abs(asNumber(report.total_closing_debit) - asNumber(report.total_closing_credit));
   return (
@@ -414,16 +396,25 @@ function TrialBalanceView({
               </TableHeader>
               <TableBody>
                 {report.rows.map((row) => (
-                  <TableRow key={row.head_id} className={cn(!row.is_postable && "bg-muted/30 font-semibold")}>
+                  <TableRow
+                    key={row.head_id}
+                    role={row.is_postable ? "button" : undefined}
+                    tabIndex={row.is_postable ? 0 : undefined}
+                    onClick={() => row.is_postable && onSelectHead(row.head_id)}
+                    onKeyDown={(event) => {
+                      if (row.is_postable && (event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        onSelectHead(row.head_id);
+                      }
+                    }}
+                    className={cn(row.is_postable && "cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none", !row.is_postable && "bg-muted/30 font-semibold")}
+                  >
                     <TableCell>
                       <div style={{ paddingLeft: `${row.depth * 14}px` }}>
                         {row.is_postable ? (
-                          <Link
-                            href={ledgerHref(row.head_id, dateFrom, dateTo, businessLine)}
-                            className="hover:text-primary hover:underline"
-                          >
+                          <span className="hover:text-primary hover:underline">
                             <span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span>{row.name}
-                          </Link>
+                          </span>
                         ) : (
                           <><span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span>{row.name}</>
                         )}
@@ -521,11 +512,9 @@ function AccountLedgerListView({
   );
 }
 
-function CustodyReconciliationView({ report, dateFrom, dateTo, businessLine }: {
+function CustodyReconciliationView({ report, onSelectHead }: {
   report: FinanceCustodyReconciliationRead;
-  dateFrom: string;
-  dateTo: string;
-  businessLine: string;
+  onSelectHead: (headId: number) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -559,9 +548,9 @@ function CustodyReconciliationView({ report, dateFrom, dateTo, businessLine }: {
                     <TableCell><div className="font-medium">{row.account_name}</div><div className="text-xs text-muted-foreground">{humanize(row.account_type)} · {humanize(row.account_subtype)}</div></TableCell>
                     <TableCell>
                       {row.reporting_head_id ? (
-                        <Link href={ledgerHref(row.reporting_head_id, dateFrom, dateTo, businessLine)} className="font-medium hover:text-primary hover:underline">
+                        <button type="button" onClick={() => onSelectHead(row.reporting_head_id!)} className="font-medium hover:text-primary hover:underline">
                           {row.reporting_head_name || `Head #${row.reporting_head_id}`}
-                        </Link>
+                        </button>
                       ) : <span className="text-amber-600">Not linked</span>}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums">{money(row.custody_balance)}</TableCell>
@@ -581,11 +570,10 @@ function CustodyReconciliationView({ report, dateFrom, dateTo, businessLine }: {
   );
 }
 
-function BalanceSheetView({ report, dateFrom, dateTo, businessLine }: {
+function BalanceSheetView({ report, dateTo, onSelectHead }: {
   report: FinanceReportingBalanceSheetRead;
-  dateFrom: string;
   dateTo: string;
-  businessLine: string;
+  onSelectHead: (headId: number) => void;
 }) {
   const hasRows = report.assets.length + report.liabilities.length + report.equity.length > 0;
   return (
@@ -607,10 +595,10 @@ function BalanceSheetView({ report, dateFrom, dateTo, businessLine }: {
         <EmptyReport message="No asset, liability, or equity balances exist as of this date." />
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
-          <HeadAmountTable title="Assets" rows={report.assets} {...{ dateFrom, dateTo, businessLine }} />
+          <HeadAmountTable title="Assets" rows={report.assets} onSelectHead={onSelectHead} />
           <div className="space-y-4">
-            <HeadAmountTable title="Liabilities" rows={report.liabilities} {...{ dateFrom, dateTo, businessLine }} />
-            <HeadAmountTable title="Equity" rows={report.equity} {...{ dateFrom, dateTo, businessLine }} />
+            <HeadAmountTable title="Liabilities" rows={report.liabilities} onSelectHead={onSelectHead} />
+            <HeadAmountTable title="Equity" rows={report.equity} onSelectHead={onSelectHead} />
           </div>
         </div>
       )}
@@ -618,11 +606,10 @@ function BalanceSheetView({ report, dateFrom, dateTo, businessLine }: {
   );
 }
 
-function PartyBalancesView({ report, dateFrom, dateTo, businessLine }: {
+function PartyBalancesView({ report, dateTo, onSelectHead }: {
   report: FinanceReportingPartyBalancesRead;
-  dateFrom: string;
   dateTo: string;
-  businessLine: string;
+  onSelectHead: (headId: number) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -648,7 +635,7 @@ function PartyBalancesView({ report, dateFrom, dateTo, businessLine }: {
                   <TableRow key={`${row.party_type}:${row.party_id}:${row.reporting_head_id}`}>
                     <TableCell><div className="font-medium">{row.party_name || `${humanize(row.party_type)} #${row.party_id}`}</div><div className="text-xs text-muted-foreground">{humanize(row.party_type)} · ID {row.party_id}</div></TableCell>
                     <TableCell><Badge variant={row.balance_type === "receivable" ? "info" : "warning"}>{humanize(row.balance_type)}</Badge></TableCell>
-                    <TableCell><Link href={ledgerHref(row.reporting_head_id, dateFrom, dateTo, businessLine, { type: row.party_type, id: row.party_id })} className="font-medium hover:text-primary hover:underline">{row.reporting_head_name}</Link></TableCell>
+                    <TableCell><button type="button" onClick={() => onSelectHead(row.reporting_head_id)} className="font-medium hover:text-primary hover:underline">{row.reporting_head_name}</button></TableCell>
                     <TableCell className="text-right font-mono font-semibold tabular-nums">{money(row.balance)}</TableCell>
                   </TableRow>
                 ))}
@@ -704,11 +691,9 @@ function CashFlowView({ report }: { report: FinanceReportingCashFlowRead }) {
   );
 }
 
-function HeadActivityView({ report, dateFrom, dateTo, businessLine }: {
+function HeadActivityView({ report, onSelectHead }: {
   report: FinanceReportingHeadActivityRead;
-  dateFrom: string;
-  dateTo: string;
-  businessLine: string;
+  onSelectHead: (headId: number) => void;
 }) {
   const periodDebit = report.rows.reduce((total, row) => total + asNumber(row.period_debit), 0);
   const periodCredit = report.rows.reduce((total, row) => total + asNumber(row.period_credit), 0);
@@ -737,8 +722,8 @@ function HeadActivityView({ report, dateFrom, dateTo, businessLine }: {
               </TableRow></TableHeader>
               <TableBody>
                 {report.rows.map((row) => (
-                  <TableRow key={row.head_id}>
-                    <TableCell><Link href={ledgerHref(row.head_id, dateFrom, dateTo, businessLine)} className="font-medium hover:text-primary hover:underline"><span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span>{row.name}</Link></TableCell>
+                  <TableRow key={row.head_id} role="button" tabIndex={0} onClick={() => onSelectHead(row.head_id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectHead(row.head_id); } }} className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none">
+                    <TableCell><span className="font-medium hover:text-primary hover:underline"><span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span>{row.name}</span></TableCell>
                     <TableCell><Badge variant="outline">{humanize(row.head_type)}</Badge></TableCell>
                     {[row.period_debit, row.period_credit, row.closing_debit, row.closing_credit].map((value, index) => <TableCell key={index} className="text-right font-mono tabular-nums">{money(value)}</TableCell>)}
                   </TableRow>
@@ -831,7 +816,7 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
     } finally {
       setLoading(false);
     }
-  }, [canView, dateTo, includeZero, mode, params, user]);
+  }, [canView, dateTo, includeZero, mode, params, partyType, user]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -903,8 +888,8 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
       ) : null}
       {loading && !report ? <LoadingReport /> : null}
 
-      {report && mode === "profit-and-loss" ? <ProfitAndLossView report={report as FinanceReportingProfitLossRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
-      {report && mode === "trial-balance" ? <TrialBalanceView report={report as FinanceReportingTrialBalanceRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
+      {report && mode === "profit-and-loss" ? <ProfitAndLossView report={report as FinanceReportingProfitLossRead} onSelectHead={setSelectedHeadId} /> : null}
+      {report && mode === "trial-balance" ? <TrialBalanceView report={report as FinanceReportingTrialBalanceRead} onSelectHead={setSelectedHeadId} /> : null}
       {report && mode === "account-ledger" ? (
         <AccountLedgerListView
           report={report as FinanceReportingHeadActivityRead}
@@ -912,11 +897,11 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
           onSelectHead={setSelectedHeadId}
         />
       ) : null}
-      {report && mode === "custody-reconciliation" ? <CustodyReconciliationView report={report as FinanceCustodyReconciliationRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
-      {report && mode === "balance-sheet" ? <BalanceSheetView report={report as FinanceReportingBalanceSheetRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
-      {report && mode === "party-balances" ? <PartyBalancesView report={report as FinanceReportingPartyBalancesRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
+      {report && mode === "custody-reconciliation" ? <CustodyReconciliationView report={report as FinanceCustodyReconciliationRead} onSelectHead={setSelectedHeadId} /> : null}
+      {report && mode === "balance-sheet" ? <BalanceSheetView report={report as FinanceReportingBalanceSheetRead} dateTo={dateTo} onSelectHead={setSelectedHeadId} /> : null}
+      {report && mode === "party-balances" ? <PartyBalancesView report={report as FinanceReportingPartyBalancesRead} dateTo={dateTo} onSelectHead={setSelectedHeadId} /> : null}
       {report && mode === "cash-flow" ? <CashFlowView report={report as FinanceReportingCashFlowRead} /> : null}
-      {report && mode === "head-activity" ? <HeadActivityView report={report as FinanceReportingHeadActivityRead} {...{ dateFrom, dateTo, businessLine }} /> : null}
+      {report && mode === "head-activity" ? <HeadActivityView report={report as FinanceReportingHeadActivityRead} onSelectHead={setSelectedHeadId} /> : null}
 
       <div className="flex flex-wrap items-center gap-4 border-t pt-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5"><Landmark className="h-3.5 w-3.5" />Independent reporting ledger</span>

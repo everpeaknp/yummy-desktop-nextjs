@@ -34,13 +34,14 @@ const manualRow = (): SourceRow => ({
 });
 
 export function FinanceSalesReturnDialog({
-  open, onOpenChange, onCreated, initialInvoiceId, initialOrderId,
+  open, onOpenChange, onCreated, initialInvoiceId, initialOrderId, initialCustomerId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: () => void;
   initialInvoiceId?: number | null;
   initialOrderId?: number | null;
+  initialCustomerId?: number | null;
 }) {
   const restaurantId = useAuth((state) => state.user?.restaurant_id);
   const [sourceType, setSourceType] = useState<FinanceSalesReturnSource>("finance_invoice");
@@ -86,7 +87,8 @@ export function FinanceSalesReturnDialog({
     if (!open) return;
     setSourceType("finance_invoice");
     if (initialInvoiceId) setSourceId(String(initialInvoiceId));
-  }, [initialInvoiceId, open]);
+    if (initialCustomerId) setCustomerId(String(initialCustomerId));
+  }, [initialCustomerId, initialInvoiceId, open]);
 
   useEffect(() => {
     if (!open || sourceType !== "finance_invoice" || !sourceId || !invoices.length) return;
@@ -165,7 +167,10 @@ export function FinanceSalesReturnDialog({
         settlement: outcome === "refund_now" && account
           ? { account_type: account.account_type, account_id: account.id, reference: reference.trim() || null }
           : null,
-        original_payment_id: isPosInvoice && originalPaymentId ? Number(originalPaymentId) : null,
+        original_payment_id:
+          isPosInvoice && outcome === "refund_now" && originalPaymentId
+            ? Number(originalPaymentId)
+            : null,
       });
       toast.success("Sales return and credit note recorded.");
       onOpenChange(false);
@@ -202,7 +207,7 @@ export function FinanceSalesReturnDialog({
               <Label>Invoice *</Label>
               <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={sourceId} onChange={(event) => setSourceId(event.target.value)}>
                 <option value="">Select by invoice number</option>
-                {invoices.map((invoice) => (
+                {invoices.filter((invoice) => !initialCustomerId || invoice.customer_id === initialCustomerId).map((invoice) => (
                   <option key={invoice.id} value={invoice.id}>
                     {invoice.document_number}{invoice.daily_order_number ? ` · Daily order #${invoice.daily_order_number}` : ""} · {invoice.source_type === "pos_order" ? "POS" : "Manual"} · NPR {Number(invoice.grand_total).toLocaleString()}
                   </option>
@@ -241,10 +246,10 @@ export function FinanceSalesReturnDialog({
           <div className="space-y-4">
             <div className="space-y-2"><Label>Customer {outcome === "customer_credit" ? "*" : "(optional)"}</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={customerId} onChange={(event) => setCustomerId(event.target.value)}><option value="">No customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.full_name || customer.name || `Customer #${customer.id}`}</option>)}</select></div>
             <div className="space-y-2"><Label>Reason *</Label><Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why are these items being returned?" /></div>
-            {isPosInvoice && successfulPayments.length ? <div className="space-y-2"><Label>Original payment to reverse</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={originalPaymentId} onChange={(event) => setOriginalPaymentId(event.target.value)}>{successfulPayments.map((payment: any) => <option key={payment.id} value={payment.id}>{String(payment.method).replaceAll("_", " ")} · NPR {Number(payment.amount).toLocaleString()}</option>)}</select></div> : null}
+            {isPosInvoice && outcome === "refund_now" && successfulPayments.length ? <div className="space-y-2"><Label>Original payment to reverse</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={originalPaymentId} onChange={(event) => setOriginalPaymentId(event.target.value)}>{successfulPayments.map((payment: any) => <option key={payment.id} value={payment.id}>{String(payment.method).replaceAll("_", " ")} · NPR {Number(payment.amount).toLocaleString()}</option>)}</select></div> : null}
           </div>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 rounded-lg bg-muted p-1"><Button variant={outcome === "refund_now" ? "default" : "ghost"} onClick={() => setOutcome("refund_now")}>Refund now</Button><Button variant={outcome === "customer_credit" ? "default" : "ghost"} disabled={isPosInvoice} onClick={() => setOutcome("customer_credit")}>Customer credit</Button></div>
+            <div className="grid grid-cols-2 rounded-lg bg-muted p-1"><Button variant={outcome === "refund_now" ? "default" : "ghost"} onClick={() => setOutcome("refund_now")}>Refund now</Button><Button variant={outcome === "customer_credit" ? "default" : "ghost"} onClick={() => setOutcome("customer_credit")}>Customer credit</Button></div>
             {outcome === "refund_now" ? <CashBankAccountSelect value={account} onChange={setAccount} label="Refund from *" /> : <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">No money leaves now. The amount remains available as customer credit.</p>}
             <div className="flex justify-between border-t pt-4 font-semibold"><span>Estimated return</span><span>NPR {estimatedTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
           </div>
