@@ -51,6 +51,7 @@ export interface OrderPayment {
 
 export interface Order {
   id: number;
+  version?: number;
   restaurant_id: number;
   restaurant_order_id?: number | null;
   invoice_number?: string | null;

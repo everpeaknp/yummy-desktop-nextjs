@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CircleDollarSign, Loader2, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -94,6 +95,7 @@ function money(value: number) {
 }
 
 export function OtherIncomeClient() {
+  const searchParams = useSearchParams();
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((state) => state.restaurant);
   const canManageCoa = hasPermission(user, "finance.coa.manage");
@@ -115,6 +117,12 @@ export function OtherIncomeClient() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const now = useMemo(() => new Date(), []);
+
+  useEffect(() => {
+    if (searchParams.get("business_line") === "hotel" && restaurant?.hotel_enabled) {
+      setBusinessLine("hotel");
+    }
+  }, [restaurant?.hotel_enabled, searchParams]);
 
   const load = useCallback(async () => {
     if (!user?.restaurant_id) return;

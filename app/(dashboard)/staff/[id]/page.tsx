@@ -9,6 +9,7 @@ import {
   Banknote,
   BriefcaseBusiness,
   CalendarDays,
+  ChevronRight,
   Check,
   CheckCircle2,
   Clock3,
@@ -22,6 +23,8 @@ import {
   Phone,
   RefreshCw,
   ShieldCheck,
+  Shield,
+  UserCog,
   UserX,
   UserRound,
   WalletCards,
@@ -85,6 +88,15 @@ type StaffUser = {
   created_at?: string;
   status?: string;
   is_active?: boolean;
+  custom_role_id?: number | null;
+};
+
+type RoleOption = {
+  id: number | string;
+  name: string;
+  description?: string | null;
+  is_system_role?: boolean;
+  permissions?: string[];
 };
 
 type EmploymentPeriod = {
@@ -126,6 +138,30 @@ type ProfileForm = {
 
 const scopeKeys: ScopeKey[] = ["analytics", "orders", "receipts"];
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+const ROLE_COPY: Record<string, { label: string; description: string }> = {
+  admin: { label: "Administrator", description: "Full business administration and team management." },
+  manager: { label: "Operations manager", description: "Runs day-to-day operations and supervises the team." },
+  cashier: { label: "Cashier", description: "Takes payments and manages the assigned checkout flow." },
+  waiter: { label: "Service staff", description: "Creates and manages guest orders during service." },
+  kitchen: { label: "Kitchen staff", description: "Views and updates kitchen tickets and preparation work." },
+  bar: { label: "Bar staff", description: "Manages bar orders and drink preparation." },
+  cafe: { label: "Cafe staff", description: "Manages cafe service and preparation work." },
+  barista: { label: "Barista", description: "Prepares and manages coffee and cafe orders." },
+  accountant: { label: "Accountant", description: "Reviews finance, records, and accounting reports." },
+  accounting_approver: { label: "Finance approver", description: "Reviews and approves controlled finance actions." },
+  staff: { label: "Team member", description: "Standard staff access based on assigned responsibilities." },
+};
+
+function readableRole(role?: string | null) {
+  const key = String(role || "staff").trim().toLowerCase();
+  return ROLE_COPY[key]?.label || key.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function roleDescription(role?: string | null, fallback?: string | null) {
+  const key = String(role || "staff").trim().toLowerCase();
+  return fallback?.trim() || ROLE_COPY[key]?.description || "Access tailored to this team member's responsibilities.";
+}
 
 function isoDate(value: Date) {
   const year = value.getFullYear();
@@ -214,6 +250,11 @@ export default function StaffWorkspacePage() {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [permissionsSaving, setPermissionsSaving] = useState(false);
+  const [availableRoles, setAvailableRoles] = useState<RoleOption[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [roleChangeOpen, setRoleChangeOpen] = useState(false);
+  const [selectedRoleName, setSelectedRoleName] = useState("");
+  const [roleSaving, setRoleSaving] = useState(false);
 
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountSaving, setAccountSaving] = useState(false);
@@ -284,17 +325,56 @@ export default function StaffWorkspacePage() {
       return;
     }
     quiet ? setRefreshing(true) : setLoading(true);
+    setRolesLoading(true);
     const warnings: string[] = [];
     try {
-      const [userResponse, permissionResponse, employmentResponse] = await Promise.all([
+      const [userResponse, permissionResponse, employmentResponse, customRolesResponse, builtInRolesResponse] = await Promise.all([
         apiClient.get(StaffApis.getStaff(userId)),
         apiClient.get(RoleApis.listPermissions).catch(() => null),
         apiClient.get(StaffProfileApis.employmentHistory(userId)).catch(() => null),
+        apiClient.get(RoleApis.listRoles).catch(() => null),
+        apiClient.get(RoleApis.listBuiltInRoles).catch(() => null),
       ]);
       const loadedStaff = userResponse.data?.data as StaffUser;
       setStaff(loadedStaff);
       setSelectedPermissions(loadedStaff.permissions || []);
       setAvailablePermissions(permissionResponse?.data?.data || []);
+      const rolePayload = (response: any) => {
+        const body = response?.data;
+        if (Array.isArray(body?.data)) return body.data;
+        if (Array.isArray(body?.data?.roles)) return body.data.roles;
+        if (Array.isArray(body)) return body;
+        if (Array.isArray(body?.roles)) return body.roles;
+        if (body?.status === "success" && body?.data && typeof body.data === "object") {
+          return Object.entries(body.data).map(([name, permissions]) => ({
+            id: `system-${name}`,
+            name,
+            is_system_role: true,
+            permissions: Array.isArray(permissions) ? permissions : [],
+          }));
+        }
+        return [];
+      };
+      const byName = new Map<string, RoleOption>();
+      [...rolePayload(builtInRolesResponse), ...rolePayload(customRolesResponse)].forEach((role: RoleOption) => {
+        const name = String(role?.name || "").trim();
+        if (!name || ["superadmin", "super_admin", "platform_staff"].includes(name.toLowerCase())) return;
+        const existing = byName.get(name.toLowerCase());
+        if (!existing || (String(existing.id).startsWith("system-") && !String(role.id).startsWith("system-"))) {
+          byName.set(name.toLowerCase(), { ...role, name });
+        }
+      });
+      Object.keys(ROLE_COPY).forEach((name) => {
+        if (!byName.has(name)) {
+          byName.set(name, { id: `built-in-${name}`, name, is_system_role: true, permissions: [] });
+        }
+      });
+      const currentRoleName = loadedStaff.primary_role || loadedStaff.role || "staff";
+      if (!byName.has(currentRoleName.toLowerCase())) {
+        byName.set(currentRoleName.toLowerCase(), { id: `legacy-${currentRoleName}`, name: currentRoleName, is_system_role: true, permissions: loadedStaff.permissions || [] });
+      }
+      setAvailableRoles(Array.from(byName.values()).sort((left, right) => readableRole(left.name).localeCompare(readableRole(right.name))));
+      setSelectedRoleName(currentRoleName);
       setAccountForm({ name: loadedStaff.name || "", email: loadedStaff.email || "" });
       setEmploymentHistory((employmentResponse?.data?.data || null) as EmploymentHistory | null);
 
@@ -340,6 +420,7 @@ export default function StaffWorkspacePage() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setRolesLoading(false);
     }
   }, [canViewAttendance, canViewPayroll, dateFrom, dateTo, loadScopes, userId]);
 
@@ -533,6 +614,41 @@ export default function StaffWorkspacePage() {
     }
   };
 
+  const openRoleChange = () => {
+    setSelectedRoleName(staff?.primary_role || staff?.role || "staff");
+    setRoleChangeOpen(true);
+  };
+
+  const saveRole = async () => {
+    const selectedRole = availableRoles.find((role) => role.name === selectedRoleName);
+    if (!selectedRole) {
+      toast.error("Choose a role for this staff member");
+      return;
+    }
+    if (["admin", "administrator", "superadmin", "super_admin", "platform_staff"].includes(selectedRole.name.toLowerCase())) {
+      toast.error("Administrator roles are managed through the verified administrator flow");
+      return;
+    }
+    setRoleSaving(true);
+    try {
+      const customRoleId = Number(selectedRole.id);
+      const isCustomRole = selectedRole.is_system_role === false && Number.isInteger(customRoleId);
+      await apiClient.patch(StaffApis.update(userId), {
+        role: selectedRole.name,
+        roles: [selectedRole.name],
+        primary_role: selectedRole.name,
+        custom_role_id: isCustomRole ? customRoleId : null,
+      });
+      toast.success(`${staff?.name || "Staff member"}'s role is now ${readableRole(selectedRole.name)}`);
+      setRoleChangeOpen(false);
+      await loadWorkspace(true);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.message || "Failed to change staff role");
+    } finally {
+      setRoleSaving(false);
+    }
+  };
+
   const saveScope = async (key: ScopeKey) => {
     const draft = scopeDrafts[key];
     const maxDays = draft.max_lookback_days ? Number(draft.max_lookback_days) : null;
@@ -634,8 +750,8 @@ export default function StaffWorkspacePage() {
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-foreground shadow-lg shadow-primary/20">{staff.name?.charAt(0).toUpperCase() || "?"}</div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{staff.name}</h1><Badge variant={staff.is_active === false ? "secondary" : "default"}>{staff.is_active === false ? "Inactive" : "Active"}</Badge></div>
-              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><BriefcaseBusiness className="h-4 w-4" />{staff.primary_role || staff.role || "Staff"}<span>•</span><span>User #{staff.id}</span>{profile ? <><span>•</span><span>Staff #{profile.id}</span></> : null}</p>
-              <div className="mt-2 flex flex-wrap gap-1.5">{activeRoles.map((role) => <Badge key={role} variant="secondary" className="capitalize">{role}</Badge>)}</div>
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><BriefcaseBusiness className="h-4 w-4" />{readableRole(staff.primary_role || staff.role)}<span>•</span><span>User #{staff.id}</span>{profile ? <><span>•</span><span>Staff #{profile.id}</span></> : null}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">{activeRoles.map((role) => <Badge key={role} variant="secondary">{readableRole(role)}</Badge>)}</div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -719,7 +835,7 @@ export default function StaffWorkspacePage() {
         </TabsContent>
 
         <TabsContent value="access" className="space-y-5">
-          <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Roles and permissions</CardTitle><CardDescription>Role access stays separate from sensitive attendance and payroll data.</CardDescription></div>{canManageStaff ? <Button size="sm" onClick={() => setPermissionsOpen(true)}><ShieldCheck className="mr-2 h-4 w-4" />Manage</Button> : null}</CardHeader><CardContent><div className="flex flex-wrap gap-2">{staff.permissions?.length ? staff.permissions.map((permission) => <Badge key={permission} variant="secondary" className="font-mono text-[11px]">{permission}</Badge>) : <p className="text-sm text-muted-foreground">No direct overrides; role defaults apply.</p>}</div></CardContent></Card>
+          <Card className="overflow-hidden"><CardHeader className="border-b bg-muted/30"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex gap-3"><div className="rounded-xl bg-primary/10 p-2.5 text-primary"><UserCog className="h-5 w-5" /></div><div><CardTitle>Role and access</CardTitle><CardDescription>Assign one clear role, then add exceptional access only when needed.</CardDescription></div></div>{canManageStaff ? <Button onClick={openRoleChange}><UserCog className="mr-2 h-4 w-4" />Change role</Button> : null}</div></CardHeader><CardContent className="grid gap-5 p-5 lg:grid-cols-[.85fr_1.15fr]"><div className="rounded-2xl border bg-background p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current role</p><div className="mt-3 flex items-center gap-3"><div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-700"><ShieldCheck className="h-5 w-5" /></div><div><p className="font-semibold">{readableRole(staff.primary_role || staff.role)}</p><p className="mt-1 text-sm text-muted-foreground">{roleDescription(staff.primary_role || staff.role)}</p></div></div></div><div><p className="text-sm font-semibold">What this person can access</p><p className="mt-1 text-sm text-muted-foreground">{staff.permissions?.length ? `${staff.permissions.length} effective permissions, including this role and any approved exceptions.` : "Access is provided by the assigned role."}</p><div className="mt-4 flex flex-wrap gap-2">{activeRoles.map((role) => <Badge key={role} variant="secondary" className="px-2.5 py-1">{readableRole(role)}</Badge>)}</div>{canManageStaff ? <Button variant="link" className="mt-3 h-auto px-0 text-sm" onClick={() => setPermissionsOpen(true)}>Customize exceptional access <ChevronRight className="ml-1 h-4 w-4" /></Button> : null}</div></CardContent></Card>
           <div className="grid gap-5 lg:grid-cols-3">{scopeKeys.map((key) => { const draft = scopeDrafts[key]; const active = Boolean(scopesByKey[key]); return <Card key={key}><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-base capitalize">{key}</CardTitle><Badge variant={active ? "default" : "outline"}>{active ? "Scoped" : "Full access"}</Badge></div><CardDescription>Limit historical visibility for this module.</CardDescription></CardHeader><CardContent className="space-y-3"><div><Label>Maximum lookback days</Label><Input inputMode="numeric" placeholder="Example: 30" value={draft.max_lookback_days} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], max_lookback_days: event.target.value } }))} /></div><div className="grid grid-cols-2 gap-2"><div><Label>Start</Label><Input type="date" value={draft.window_start} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], window_start: event.target.value } }))} /></div><div><Label>End</Label><Input type="date" value={draft.window_end} onChange={(event) => setScopeDrafts((current) => ({ ...current, [key]: { ...current[key], window_end: event.target.value } }))} /></div></div>{canManageStaff ? <div className="flex gap-2"><Button className="flex-1" disabled={scopeBusy === key} onClick={() => void saveScope(key)}>{scopeBusy === key ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save</Button><Button variant="outline" disabled={!active || scopeBusy === key} onClick={() => void removeScope(key)}>Remove</Button></div> : null}</CardContent></Card>; })}</div>
         </TabsContent>
 
@@ -732,7 +848,9 @@ export default function StaffWorkspacePage() {
 
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>{profile ? "Edit employment and pay profile" : "Create employment and pay profile"}</DialogTitle><DialogDescription>Salary changes create effective-dated history and can require payroll periods to be split.</DialogDescription></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2"><FormField label="Account number"><Input value={profileForm.account_number} onChange={(event) => setProfileForm((current) => ({ ...current, account_number: event.target.value }))} /></FormField><FormField label="Salary type"><Select value={profileForm.salary_type} onValueChange={(value) => setProfileForm((current) => ({ ...current, salary_type: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="daily">Daily</SelectItem><SelectItem value="hourly">Hourly</SelectItem></SelectContent></Select></FormField><FormField label="Salary amount"><Input type="number" min="0" step="0.01" value={profileForm.salary_amount} onChange={(event) => setProfileForm((current) => ({ ...current, salary_amount: event.target.value }))} /></FormField><FormField label="Effective from"><Input type="date" value={profileForm.salary_effective_from} onChange={(event) => setProfileForm((current) => ({ ...current, salary_effective_from: event.target.value }))} /></FormField><FormField label="Weekly hours"><Input type="number" min="0" step="0.25" value={profileForm.weekly_hours} onChange={(event) => setProfileForm((current) => ({ ...current, weekly_hours: event.target.value }))} /></FormField><FormField label="Daily hours"><Input type="number" min="0" step="0.25" value={profileForm.daily_hours} onChange={(event) => setProfileForm((current) => ({ ...current, daily_hours: event.target.value }))} /></FormField><FormField label="Phone"><Input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></FormField><FormField label="Age"><Input type="number" min="0" value={profileForm.age} onChange={(event) => setProfileForm((current) => ({ ...current, age: event.target.value }))} /></FormField><div className="sm:col-span-2"><FormField label="Address"><Input value={profileForm.address} onChange={(event) => setProfileForm((current) => ({ ...current, address: event.target.value }))} /></FormField></div><div className="sm:col-span-2"><FormField label="Salary change reason"><Input placeholder={profile ? "Promotion, review, correction…" : "Initial salary"} value={profileForm.salary_change_reason} onChange={(event) => setProfileForm((current) => ({ ...current, salary_change_reason: event.target.value }))} /></FormField></div></div><DialogFooter><Button variant="outline" onClick={() => setProfileOpen(false)}>Cancel</Button><Button onClick={saveProfile} disabled={profileSaving}>{profileSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save profile</Button></DialogFooter></DialogContent></Dialog>
 
-      <Dialog open={permissionsOpen} onOpenChange={setPermissionsOpen}><DialogContent className="max-w-xl"><DialogHeader><DialogTitle>Manage permissions</DialogTitle><DialogDescription>Direct overrides for {staff.name}. Role defaults still apply.</DialogDescription></DialogHeader><ScrollArea className="h-[420px] pr-4"><div className="space-y-5">{Object.entries(availablePermissions.reduce((grouped: Record<string, any[]>, permission: any) => { const groupName = permission.module || "Other"; (grouped[groupName] ||= []).push(permission); return grouped; }, {})).map(([groupName, permissions]) => <section key={groupName}><h3 className="mb-2 border-b pb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">{groupName}</h3><div className="space-y-3">{permissions.map((permission: any) => <label key={permission.key} className="flex cursor-pointer items-start gap-3"><Checkbox checked={selectedPermissions.includes(permission.key)} onCheckedChange={(checked) => setSelectedPermissions((current) => checked ? Array.from(new Set([...current, permission.key])) : current.filter((item) => item !== permission.key))} /><span><span className="block text-sm font-medium">{permission.key}</span>{permission.description ? <span className="block text-xs text-muted-foreground">{permission.description}</span> : null}</span></label>)}</div></section>)}</div></ScrollArea><DialogFooter><Button variant="outline" onClick={() => setPermissionsOpen(false)}>Cancel</Button><Button onClick={savePermissions} disabled={permissionsSaving}>{permissionsSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save permissions</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={roleChangeOpen} onOpenChange={(open) => !roleSaving && setRoleChangeOpen(open)}><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>Change role</DialogTitle><DialogDescription>Choose the responsibilities that best match {staff.name}&apos;s day-to-day work. The role sets their normal access.</DialogDescription></DialogHeader><div className="rounded-2xl border bg-muted/30 p-4"><div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-lg font-bold text-primary-foreground">{staff.name?.charAt(0).toUpperCase() || "?"}</div><div><p className="font-semibold">{staff.name}</p><p className="text-sm text-muted-foreground">Currently {readableRole(staff.primary_role || staff.role)}</p></div></div></div><div className="grid gap-3 py-2 sm:grid-cols-2">{rolesLoading ? <div className="col-span-full flex items-center justify-center py-8 text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading roles</div> : availableRoles.map((role) => { const selected = selectedRoleName === role.name; const protectedRole = ["admin", "administrator", "superadmin", "super_admin", "platform_staff"].includes(role.name.toLowerCase()); return <button key={`${role.id}-${role.name}`} type="button" disabled={protectedRole} onClick={() => setSelectedRoleName(role.name)} className={`rounded-2xl border p-4 text-left transition-colors ${selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/40"} ${protectedRole ? "cursor-not-allowed opacity-60" : ""}`}><div className="flex items-start justify-between gap-3"><div className="flex gap-3"><div className={`rounded-xl p-2 ${selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}><Shield className="h-4 w-4" /></div><div><p className="font-semibold">{readableRole(role.name)}</p><p className="mt-1 text-sm text-muted-foreground">{roleDescription(role.name, role.description)}</p></div></div>{selected ? <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" /> : null}</div>{role.is_system_role === false ? <Badge variant="outline" className="mt-3">Custom role</Badge> : null}</button>; })}</div><DialogFooter><Button variant="outline" disabled={roleSaving} onClick={() => setRoleChangeOpen(false)}>Cancel</Button><Button disabled={roleSaving || !selectedRoleName} onClick={saveRole}>{roleSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserCog className="mr-2 h-4 w-4" />}Save role</Button></DialogFooter></DialogContent></Dialog>
+
+      <Dialog open={permissionsOpen} onOpenChange={setPermissionsOpen}><DialogContent className="max-w-xl"><DialogHeader><DialogTitle>Customize exceptional access</DialogTitle><DialogDescription>Use this only for responsibilities outside {staff.name}&apos;s normal role. These choices are shown in plain language; the assigned role remains the starting point.</DialogDescription></DialogHeader><ScrollArea className="h-[420px] pr-4"><div className="space-y-5">{Object.entries(availablePermissions.reduce((grouped: Record<string, any[]>, permission: any) => { const groupName = permission.module || "Other"; (grouped[groupName] ||= []).push(permission); return grouped; }, {})).map(([groupName, permissions]) => <section key={groupName}><h3 className="mb-2 border-b pb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">{String(groupName).replaceAll("_", " ")}</h3><div className="space-y-3">{permissions.map((permission: any) => <label key={permission.key} className="flex cursor-pointer items-start gap-3 rounded-xl p-2 hover:bg-muted"><Checkbox checked={selectedPermissions.includes(permission.key)} onCheckedChange={(checked) => setSelectedPermissions((current) => checked ? Array.from(new Set([...current, permission.key])) : current.filter((item) => item !== permission.key))} /><span><span className="block text-sm font-medium">{permission.title || String(permission.key).replaceAll(".", " ").replaceAll("_", " ")}</span>{permission.description ? <span className="block text-xs text-muted-foreground">{permission.description}</span> : null}</span></label>)}</div></section>)}</div></ScrollArea><DialogFooter><Button variant="outline" onClick={() => setPermissionsOpen(false)}>Cancel</Button><Button onClick={savePermissions} disabled={permissionsSaving}>{permissionsSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save exceptional access</Button></DialogFooter></DialogContent></Dialog>
     </div>
   );
 }

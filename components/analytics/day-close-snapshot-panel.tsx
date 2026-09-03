@@ -25,6 +25,8 @@ import {
 } from "@/lib/day-close-format";
 import {
   isHotelDayClose,
+  hotelCollectionMethodRows,
+  hotelDaybookRows,
   snapshotDayOrderRows,
   snapshotExpenseRows,
   snapshotHotelSplitRows,
@@ -118,7 +120,15 @@ export function DayCloseSnapshotPanel({
     snapshot.period_end_at,
   );
   const [internalTab, setInternalTab] = useState<DayCloseSnapshotTab>("payments");
-  const resolvedTab = activeTab ?? internalTab;
+  const hotelSnapshot = isHotelDayClose(snapshot);
+  const hotelTabs: DayCloseSnapshotTab[] = [
+    "stay-activity", "rooms-and-revenue", "collections", "guest-folios",
+    "other-income", "expenses", "front-desk-cash", "exceptions",
+  ];
+  const requestedTab = activeTab ?? internalTab;
+  const resolvedTab = hotelSnapshot && !hotelTabs.includes(requestedTab)
+    ? "stay-activity"
+    : requestedTab;
   const handleTabChange = (value: string) => {
     const next = value as DayCloseSnapshotTab;
     if (activeTab === undefined) setInternalTab(next);
@@ -234,6 +244,16 @@ export function DayCloseSnapshotPanel({
         <ExpectedDrawerBreakdownCard rows={expectedDrawerRows} />
       ) : null}
 
+      {hotelSnapshot ? (
+        <HotelDaybookTabs
+          snapshot={snapshot}
+          expenses={expenses}
+          drawerEvidence={drawerEvidence}
+          activeTab={resolvedTab}
+          compact={compact}
+          onTabChange={handleTabChange}
+        />
+      ) : (
       <Tabs
         value={resolvedTab}
         onValueChange={handleTabChange}
@@ -443,8 +463,9 @@ export function DayCloseSnapshotPanel({
           </TabsContent>
         </div>
       </Tabs>
+      )}
 
-      {hotelSplit.length > 0 ? (
+      {!hotelSnapshot && hotelSplit.length > 0 ? (
         <section className="space-y-4">
           <h4 className="dc-section-title">
             Hotel Revenue Split
@@ -480,6 +501,92 @@ export function DayCloseSnapshotPanel({
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function HotelDaybookTabs({
+  snapshot,
+  expenses,
+  drawerEvidence,
+  activeTab,
+  compact,
+  onTabChange,
+}: {
+  snapshot: DayCloseSnapshotData;
+  expenses: SnapshotListRow[];
+  drawerEvidence: Array<Record<string, unknown>>;
+  activeTab: DayCloseSnapshotTab;
+  compact: boolean;
+  onTabChange: (value: string) => void;
+}) {
+  const stayActivity = hotelDaybookRows(snapshot, "stay_activity");
+  const roomsAndRevenue = hotelDaybookRows(snapshot, "rooms_and_revenue");
+  const collections = hotelDaybookRows(snapshot, "collections");
+  const collectionMethods = hotelCollectionMethodRows(snapshot);
+  const guestFolios = hotelDaybookRows(snapshot, "guest_folios");
+  const exceptions = hotelDaybookRows(snapshot, "exceptions");
+  const otherIncome = roomsAndRevenue.filter((row) => row.label === "Other hotel revenue");
+  const tabClass = cn("dc-tab-trigger", compact && "dc-tab-trigger-compact");
+  return (
+    <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
+      <TabsList className={cn(
+        "dc-tabs-list rounded-2xl",
+        compact ? "!grid grid-cols-3 gap-1.5 w-full p-1 h-auto" : "flex w-full justify-start overflow-x-auto flex-wrap gap-1.5 pl-2 sm:pl-3 h-auto",
+      )}>
+        <TabsTrigger value="stay-activity" className={tabClass}>Stay activity</TabsTrigger>
+        <TabsTrigger value="rooms-and-revenue" className={tabClass}>Rooms & revenue</TabsTrigger>
+        <TabsTrigger value="collections" className={tabClass}>Collections</TabsTrigger>
+        <TabsTrigger value="guest-folios" className={tabClass}>Guest folios</TabsTrigger>
+        <TabsTrigger value="other-income" className={tabClass}>Other income</TabsTrigger>
+        <TabsTrigger value="expenses" className={tabClass}>Expenses</TabsTrigger>
+        {drawerEvidence.length > 0 ? <TabsTrigger value="front-desk-cash" className={tabClass}>Front-desk cash</TabsTrigger> : null}
+        <TabsTrigger value="exceptions" className={tabClass}>Exceptions</TabsTrigger>
+      </TabsList>
+      <div className="mt-4">
+        <TabsContent value="stay-activity" className="m-0">
+          <HotelEvidenceCard title="Stay activity" rows={stayActivity} empty="Stay activity was not recorded in this snapshot." />
+        </TabsContent>
+        <TabsContent value="rooms-and-revenue" className="m-0">
+          <HotelEvidenceCard title="Rooms & revenue" rows={roomsAndRevenue} empty="Room and revenue evidence was not recorded in this snapshot." />
+        </TabsContent>
+        <TabsContent value="collections" className="m-0 space-y-4">
+          <HotelEvidenceCard title="Collections" rows={collections} empty="No guest collections were recorded in this close window." />
+          {collectionMethods.length > 0 ? <HotelEvidenceCard title="Collected by method" rows={collectionMethods} /> : null}
+        </TabsContent>
+        <TabsContent value="guest-folios" className="m-0">
+          <HotelEvidenceCard title="Guest folios" rows={guestFolios} empty="Guest folio evidence was not recorded in this snapshot." />
+        </TabsContent>
+        <TabsContent value="other-income" className="m-0">
+          <HotelEvidenceCard title="Other hotel income" rows={otherIncome} empty="No other hotel income was recorded in this close window." />
+        </TabsContent>
+        <TabsContent value="expenses" className="m-0">
+          {expenses.length > 0 ? <SimpleListCard title="Hotel expenses" rows={expenses} expenseTone scrollable /> : <EmptySnapshotNotice message="No hotel-scoped expenses were recorded in this close window." />}
+        </TabsContent>
+        {drawerEvidence.length > 0 ? <TabsContent value="front-desk-cash" className="m-0"><DrawerEvidenceCard rows={drawerEvidence} /></TabsContent> : null}
+        <TabsContent value="exceptions" className="m-0">
+          <HotelEvidenceCard title="Operational exceptions" rows={exceptions} empty="No hotel exceptions were recorded in this snapshot." />
+        </TabsContent>
+      </div>
+    </Tabs>
+  );
+}
+
+function HotelEvidenceCard({ title, rows, empty }: { title: string; rows: SnapshotListRow[]; empty?: string }) {
+  if (rows.length === 0) return <EmptySnapshotNotice message={empty ?? "No evidence is available in this snapshot."} />;
+  return (
+    <div className="rounded-2xl border border-border/50 bg-card/80 shadow-sm overflow-hidden">
+      <p className="dc-eyebrow px-5 py-3 border-b border-border/40">{title}</p>
+      <div className="divide-y divide-border/40">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-4 px-5 py-3">
+            <span className="text-sm font-medium text-foreground">{row.label}</span>
+            <span className="text-sm font-semibold whitespace-nowrap text-foreground">
+              {row.amount !== undefined ? formatDayCloseCurrency(row.amount) : row.secondary ?? "—"}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

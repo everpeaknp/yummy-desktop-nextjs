@@ -75,7 +75,7 @@ export default function ModifiersPage() {
           ...data,
           restaurant_id: restaurantId 
       });
-      toast({ title: "Success", description: "Modifier group created." });
+      toast({ title: "Success", description: "Option group created." });
       fetchGroups();
     } catch (error) {
       toast({ title: "Error", description: "Failed to create group.", variant: "destructive" });
@@ -87,7 +87,7 @@ export default function ModifiersPage() {
     if (!editingGroup) return;
     try {
       await apiClient.patch(ModifierApis.updateGroup(editingGroup.id), data);
-      toast({ title: "Success", description: "Modifier group updated." });
+      toast({ title: "Success", description: "Option group updated." });
       fetchGroups();
     } catch (error) {
        toast({ title: "Error", description: "Failed to update group.", variant: "destructive" });
@@ -99,7 +99,7 @@ export default function ModifiersPage() {
     if (!groupToDelete) return;
     try {
       await apiClient.delete(ModifierApis.deleteGroup(groupToDelete.id));
-      toast({ title: "Success", description: "Modifier group deleted." });
+      toast({ title: "Success", description: "Option group deleted." });
       fetchGroups();
     } catch (error) {
         toast({ title: "Error", description: "Failed to delete group.", variant: "destructive" });
@@ -133,21 +133,21 @@ export default function ModifiersPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Modifiers</h1>
-          <p className="text-muted-foreground">Create options like toppings, sizes, and variations.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Options & add-ons</h1>
+          <p className="text-muted-foreground">Create choices such as size, toppings, and variations for menu items.</p>
         </div>
         <Button onClick={openCreateDialog} className="bg-primary text-white hover:bg-primary/90">
-          <Plus className="mr-2 h-4 w-4" /> Add Group
+          <Plus className="mr-2 h-4 w-4" /> Add option group
         </Button>
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>All Groups</CardTitle>
+            <CardTitle>All option groups</CardTitle>
             <div className="relative w-full md:w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search groups..." className="pl-8" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+              <Input placeholder="Search option groups..." className="pl-8" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
           </div>
         </CardHeader>
@@ -155,7 +155,7 @@ export default function ModifiersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Group Name</TableHead>
+                <TableHead>Option group</TableHead>
                 <TableHead>Selection Type</TableHead>
                 <TableHead>Configuration</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -176,7 +176,7 @@ export default function ModifiersPage() {
                   <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
                          <AlertCircle className="h-8 w-8 opacity-50" />
-                         <p>No modifier groups found.</p>
+                         <p>No option groups found.</p>
                     </div>
                   </TableCell>
                 </TableRow>

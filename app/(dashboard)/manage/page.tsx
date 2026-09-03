@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
     Users,
     CreditCard,
-    ClipboardList,
     UserCircle,
     Package,
     TrendingUp,
@@ -23,7 +22,6 @@ import {
     ChevronRight,
     Truck,
     ShoppingCart,
-    Clock,
     Store,
     Settings,
     Shield,
@@ -97,8 +95,8 @@ const sections: Array<{ title: string; items: ManageItem[] }> = [
                 iconBg: "bg-amber-50 dark:bg-amber-900/20",
             },
             {
-                title: "Modifiers",
-                description: "Add-ons & sides",
+                title: "Options & add-ons",
+                description: "Toppings, extras & sides",
                 href: "/menu/modifiers",
                 icon: Settings2,
                 iconColor: "text-emerald-500",
@@ -149,14 +147,6 @@ const sections: Array<{ title: string; items: ManageItem[] }> = [
                 iconColor: "text-indigo-500",
                 iconBg: "bg-indigo-50 dark:bg-indigo-900/20",
             },
-            {
-                title: "Awaiting Payments",
-                description: "Pending supplier bills",
-                href: "/manage/awaiting-payments",
-                icon: Clock,
-                iconColor: "text-amber-600",
-                iconBg: "bg-amber-50 dark:bg-amber-900/20",
-            },
         ],
     },
     {
@@ -193,14 +183,6 @@ const sections: Array<{ title: string; items: ManageItem[] }> = [
                 icon: Fingerprint,
                 iconColor: "text-teal-600",
                 iconBg: "bg-teal-50 dark:bg-teal-900/20",
-            },
-            {
-                title: "Period Reports",
-                description: "Weekly/Monthly close",
-                href: "/period-reports",
-                icon: ClipboardList,
-                iconColor: "text-orange-600",
-                iconBg: "bg-orange-50 dark:bg-orange-900/20",
             },
             {
                 title: "Customers",

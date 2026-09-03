@@ -1,6 +1,7 @@
 /** Backend-driven day close types — financial values are authoritative from API only. */
 
-export type BusinessLine = "restaurant" | "hotel";
+/** `combined` is a close/cash-custody scope; source documents remain hotel or restaurant. */
+export type BusinessLine = "restaurant" | "hotel" | "combined";
 
 export type DayCloseStatus = "open" | "pending" | "confirmed" | "reopened" | string;
 

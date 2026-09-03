@@ -16,7 +16,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { cn, getImageUrl } from "@/lib/utils";
 import Image from "next/image";
 import { ItemCustomizationDialog } from "./item-customization-dialog";
-import { KotApis, TaxConfigApis } from "@/lib/api/endpoints";
+import { KotApis, OrderApis, TaxConfigApis } from "@/lib/api/endpoints";
 import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 
@@ -130,6 +130,7 @@ const CartContent = ({
   canMarkNc?: boolean;
   toggleNc?: (cartItemId: number) => void;
 }) => {
+  const isAddingItems = Boolean(orderId && orderId !== "create");
   const subtotal = cart.reduce((acc: number, item: any) => acc + getItemChargeableTotal(item), 0);
   const complimentaryTotal = cart.reduce(
     (acc: number, item: any) => acc + (item.is_nc ? getItemUnitPrice(item) * item.quantity : 0),
@@ -144,7 +145,7 @@ const CartContent = ({
       <div className="p-4 border-b bg-muted/20">
         <h2 className="font-semibold flex items-center gap-2">
           <ChefHat className="h-5 w-5 text-primary" />
-          {!orderId || orderId === 'create' ? 'New Order' : `Order #${orderData?.restaurant_order_id || orderId}`}
+          {!isAddingItems ? "New Order" : `Add items to Order #${orderData?.restaurant_order_id || orderId}`}
         </h2>
         <p className="text-xs text-muted-foreground capitalize font-bold">
           {tableNames || 'No Table'} • {orderData?.channel || channelFromQuery.replace('_', ' ')}
@@ -156,7 +157,7 @@ const CartContent = ({
           <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-center">
             <ShoppingBag className="h-12 w-12 mb-2 opacity-20" />
             <p>Cart is empty</p>
-            <p className="text-xs">Select items from the menu to start ordering</p>
+            <p className="text-xs">{isAddingItems ? "Select items to add to this order" : "Select items from the menu to start ordering"}</p>
           </div>
         ) : (
           cart.map((item: any) => (
@@ -290,7 +291,7 @@ const CartContent = ({
             disabled={processing || cart.length === 0 || (!(!orderId || orderId === 'create') && !isDirty)}
           >
             {processing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {!orderId || orderId === 'create' ? 'Place Order' : 'Update Order'}
+            {!isAddingItems ? "Place Order" : "Add Items & Send"}
           </Button>
         </div>
         {orderId && orderId !== 'create' && (
@@ -421,19 +422,25 @@ export default function POSSystem({
         if (orderRes && orderRes.data.status === "success") {
           const order = orderRes.data.data;
           setOrderData(order);
-          setCart(order.items.map((item: any) => ({
-            id: item.id,
-            menu_item_id: item.menu_item_id,
-            name: item.name_snapshot,
-            price: item.unit_price,
-            quantity: item.qty,
-            notes: item.notes,
-            modifiers: item.modifiers || [],
-            category_name_snapshot: item.category_name_snapshot,
-            category_type_snapshot: item.category_type_snapshot,
-            revenue_category: item.revenue_category,
-            is_nc: item.is_nc || false
-          })));
+          // An existing order opens an Add Items composer. Saved order lines
+          // are context only; this cart contains only newly selected lines.
+          if (orderId && orderId !== "create") {
+            setCart([]);
+          } else {
+            setCart(order.items.filter((item: any) => item.qty > 0).map((item: any) => ({
+              id: item.id,
+              menu_item_id: item.menu_item_id,
+              name: item.name_snapshot,
+              price: item.unit_price,
+              quantity: item.qty,
+              notes: item.notes,
+              modifiers: item.modifiers || [],
+              category_name_snapshot: item.category_name_snapshot,
+              category_type_snapshot: item.category_type_snapshot,
+              revenue_category: item.revenue_category,
+              is_nc: item.is_nc || false
+            })));
+          }
         }
       } catch (err) {
         console.error("[POS] Failed to fetch POS data:", err);
@@ -501,16 +508,9 @@ export default function POSSystem({
 
 
   const updateQuantity = (cartItemId: number, delta: number) => {
-    const isEditingExistingOrder = Boolean(orderId && orderId !== "create");
-
     setCart(prev => {
       const target = prev.find((item) => item.id === cartItemId);
       if (!target) return prev;
-
-      if (isEditingExistingOrder && delta < 0 && target.quantity + delta <= 0 && !canVoidItem) {
-        toast.error("You do not have permission to void order items.");
-        return prev;
-      }
 
       return prev.map(item => {
         if (item.id === cartItemId) {
@@ -534,7 +534,7 @@ export default function POSSystem({
     if (cart.length === 0) return;
     setProcessing(true);
     try {
-      const isEditing = orderId && orderId !== 'create';
+      const isAddingItems = Boolean(orderId && orderId !== "create");
       const buildItemPayload = (item: any) => ({
         menu_item_id: item.menu_item_id,
         name_snapshot: item.name,
@@ -561,7 +561,7 @@ export default function POSSystem({
         items: cart.map(buildItemPayload)
       };
 
-      if (!isEditing && channelFromQuery === "room_service") {
+      if (!isAddingItems && channelFromQuery === "room_service") {
         if (!hotelStayRoomAssignmentId) {
           toast.error("Choose an occupied PMS room before creating a room order.");
           setProcessing(false);
@@ -570,14 +570,14 @@ export default function POSSystem({
         payload.hotel_stay_room_assignment_id = hotelStayRoomAssignmentId;
       }
 
-      if (!isEditing && defaultTableIds && defaultTableIds.length > 0) {
+      if (!isAddingItems && defaultTableIds && defaultTableIds.length > 0) {
         payload.table_ids = defaultTableIds;
         if (!payload.table_id) {
           payload.table_id = defaultTableIds[0];
         }
       }
 
-      if (!isEditing && (channelFromQuery === 'delivery' || channelFromQuery === 'pickup')) {
+      if (!isAddingItems && (channelFromQuery === 'delivery' || channelFromQuery === 'pickup')) {
         if (!customerName.trim() || !customerPhone.trim()) {
           toast.error("Customer Name and Phone are required.");
           setProcessing(false);
@@ -594,9 +594,11 @@ export default function POSSystem({
       }
 
       let response;
-      if (isEditing) {
-        response = await apiClient.post(`/orders/${orderId}/items/bulk-update`, {
-          items: cart.map(buildItemPayload)
+      if (isAddingItems) {
+        response = await apiClient.post(OrderApis.addOrderLinesBatch(Number(orderId)), {
+          items: cart.map(buildItemPayload),
+          expected_version: orderData?.version,
+          idempotency_key: crypto.randomUUID(),
         });
       } else {
         response = await apiClient.post('/orders/', payload);
@@ -635,21 +637,10 @@ export default function POSSystem({
             const printIfNew = (kot: any) => {
               const kotId = kot.id || kot.kot_id;
               const printKey = getKotPrintKey(kot);
-              const isModifiedVersion = Boolean(
-                kot?.modification_type ||
-                kot?.last_modified_at ||
-                (Array.isArray(kot?.items) &&
-                  kot.items.some((item: any) =>
-                    Number(item?.deleted_qty ?? 0) > 0 ||
-                    Number(item?.is_deleted ?? 0) === 1 ||
-                    Number(item?.qty_change ?? 0) < 0
-                  ))
-              );
-
               if (kotId && !printedKotsRef.current.has(printKey)) {
-                // Do not reprint the untouched initial KOT when editing an existing order.
-                if (isEditing && kot.type === "INITIAL" && !isModifiedVersion) {
-                  console.log(`[POS] Ignoring untouched INITIAL KOT ${kotId} during order edit.`);
+                // The full order context includes historical KOTs. Only KOTs
+                // explicitly returned in this command's print scope may print.
+                if (kot.should_auto_print !== true) {
                   printedKotsRef.current.add(printKey);
                   return;
                 }
@@ -681,29 +672,18 @@ export default function POSSystem({
           }
         };
 
-        if (isEditing) {
-          console.log("[POS] Success: Order updated");
-          toast.success("Order updated successfully");
+        if (isAddingItems) {
+          console.log("[POS] Success: items added and sent to kitchen");
+          toast.success("Items added and sent to kitchen");
           
-          const updatedOrder = response.data.data || response.data;
+          const context = response.data.data || response.data;
+          const updatedOrder = context?.order || context;
           setOrderData(updatedOrder);
-          
-          if (updatedOrder && Array.isArray(updatedOrder.items)) {
-            setCart(updatedOrder.items.map((item: any) => ({
-              id: item.id,
-              menu_item_id: item.menu_item_id,
-              name: item.name_snapshot,
-              price: item.unit_price,
-              quantity: item.qty,
-              notes: item.notes,
-              modifiers: item.modifiers || [],
-              category_name_snapshot: item.category_name_snapshot,
-              category_type_snapshot: item.category_type_snapshot,
-              revenue_category: item.revenue_category
-            })));
+          if (context) triggerDirectPrint(context);
+          const savedOrderId = updatedOrder?.id || orderId;
+          if (savedOrderId) {
+            router.replace(`/orders/${savedOrderId}`);
           }
-          
-          if (updatedOrder) triggerDirectPrint(updatedOrder);
         } else {
           console.log("[POS] Success: Order placed");
           toast.success("Order placed successfully");
@@ -765,6 +745,7 @@ export default function POSSystem({
   };
 
   const isDirty = useMemo(() => {
+    if (orderId && orderId !== "create") return cart.length > 0;
     const originalItems = orderData?.items || [];
     if (cart.length !== originalItems.length) return true;
     
@@ -784,7 +765,7 @@ export default function POSSystem({
     const originalSigs = originalItems.map(getOriginalItemSig).sort();
 
     return JSON.stringify(cartSigs) !== JSON.stringify(originalSigs);
-  }, [cart, orderData]);
+  }, [cart, orderData, orderId]);
 
   console.log("[POS] Render:", { 
     filteredCount: filteredItems.length, 

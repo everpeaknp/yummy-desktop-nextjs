@@ -56,7 +56,7 @@ export function formatDayClosePeriod(
 
 export function formatDayCloseCloseName(businessLine?: string | null): string {
   return String(businessLine ?? "restaurant").toLowerCase() === "hotel"
-    ? "Hotel Close"
+    ? "Hotel Daybook"
     : "Restaurant Close";
 }
 
@@ -142,7 +142,7 @@ export function formatDayCloseExportFilename(
   extension: "pdf" | "xlsx",
 ): string {
   const line = String(detail.business_line ?? "restaurant").toLowerCase();
-  const prefix = line === "hotel" ? "hotel_close" : "day_close";
+  const prefix = line === "hotel" ? "hotel_daybook" : "day_close";
   const period = formatDayClosePeriod(detail.period_start_at, detail.period_end_at);
   if (period !== "—") {
     const safe = period

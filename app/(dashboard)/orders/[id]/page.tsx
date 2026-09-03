@@ -23,7 +23,14 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -58,7 +65,6 @@ import {
   Ban,
   Plus,
   Minus,
-  Pencil,
   CreditCard,
   Armchair,
   Eye,
@@ -84,7 +90,6 @@ import type {
   OrderItem,
   OrderPayment,
 } from "@/types/order";
-import { EntityNotificationsCard } from "@/components/notifications/entity-notifications-card";
 import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getRecordedOrderDiscount } from "@/lib/order-totals";
@@ -176,6 +181,24 @@ function getKOTStatusConfig(s: string) {
   }
 }
 
+type DetailKotStatus = "PENDING" | "PREPARING" | "READY" | "SERVED" | "REJECTED";
+
+function nextKotStatus(status: string): DetailKotStatus | null {
+  const normalized = status.trim().toUpperCase();
+  if (normalized === "PENDING" || normalized === "ACKNOWLEDGED") return "PREPARING";
+  if (normalized === "PREPARING" || normalized === "PARTIAL") return "READY";
+  if (normalized === "READY") return "SERVED";
+  return null;
+}
+
+function kotActionLabel(status: string): string | null {
+  const normalized = status.trim().toUpperCase();
+  if (normalized === "PENDING" || normalized === "ACKNOWLEDGED") return "Start cooking";
+  if (normalized === "PREPARING" || normalized === "PARTIAL") return "Mark ready";
+  if (normalized === "READY") return "Mark served";
+  return null;
+}
+
 type TabKey = "details" | "kots" | "events";
 
 // ── Main Page ────────────────────────────────────────
@@ -187,7 +210,15 @@ export default function OrderDetailPage() {
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
 
-  const { context, loading, error, fetchContext, isFullyPaid, allKotsServed } = useOrderFull(orderId);
+  const {
+    context,
+    loading,
+    error,
+    fetchContext,
+    updateKotLocal,
+    isFullyPaid,
+    allKotsServed,
+  } = useOrderFull(orderId);
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("details");
@@ -205,8 +236,9 @@ export default function OrderDetailPage() {
   const [tableTypes, setTableTypes] = useState<any[]>([]);
   const [selectedArea, setSelectedArea] = useState("All Areas");
   const [itemOverrides, setItemOverrides] = useState<Record<number, Partial<OrderItem>>>({});
+  const [kotUpdatingId, setKotUpdatingId] = useState<number | null>(null);
 
-  const { canVoidOrder, canVoidItem, canTransferOrder, canMarkNc } = usePosBillingPermissions();
+  const { canVoidOrder, canTransferOrder, canMarkNc } = usePosBillingPermissions();
   const sourceOrder = context?.order;
   const displayOrder = sourceOrder
     ? (() => {
@@ -278,6 +310,41 @@ export default function OrderDetailPage() {
       void fetchEvents();
     }
   }, [activeTab, fetchContext, fetchEvents]);
+
+  const handleKotStatusChange = useCallback(async (kotId: number, status: string) => {
+    const next = nextKotStatus(status);
+    if (!next) return;
+    const previousKot = context?.kots.find((kot) => kot.id === kotId);
+    updateKotLocal(kotId, { status: next });
+    setKotUpdatingId(kotId);
+    try {
+      await apiClient.patch(KotApis.updateKotStatus(kotId), { status: next });
+      toast.success(`KOT marked ${next.toLowerCase()}`);
+    } catch (err: any) {
+      if (previousKot) updateKotLocal(kotId, previousKot);
+      const detail = err?.response?.data?.detail || err?.response?.data?.message || "Failed to update KOT status";
+      toast.error(detail);
+    } finally {
+      setKotUpdatingId(null);
+    }
+  }, [context?.kots, updateKotLocal]);
+
+  const handleKotReject = useCallback(async (kotId: number) => {
+    if (typeof window !== "undefined" && !window.confirm("Reject this kitchen ticket?")) return;
+    const previousKot = context?.kots.find((kot) => kot.id === kotId);
+    updateKotLocal(kotId, { status: "REJECTED" });
+    setKotUpdatingId(kotId);
+    try {
+      await apiClient.post(KotApis.rejectKot(kotId), undefined);
+      toast.success("KOT rejected");
+    } catch (err: any) {
+      if (previousKot) updateKotLocal(kotId, previousKot);
+      const detail = err?.response?.data?.detail || err?.response?.data?.message || "Failed to reject KOT";
+      toast.error(detail);
+    } finally {
+      setKotUpdatingId(null);
+    }
+  }, [context?.kots, updateKotLocal]);
 
   useEffect(() => {
     setItemOverrides({});
@@ -635,7 +702,7 @@ export default function OrderDetailPage() {
                 </Button>
               )}
 
-               <Link href={`/orders/${orderId}/edit`}>
+               <Link href={`/orders/${orderId}/add-items`}>
                 <Button variant="outline" size="sm" className="gap-2 rounded-xl h-9 font-semibold">
                   <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Add Items</span>
                 </Button>
@@ -753,13 +820,19 @@ export default function OrderDetailPage() {
               order={displayOrder}
               tables={context.tables}
               onRefresh={fetchContext}
-              canVoidItem={canVoidItem}
               canMarkNc={canMarkNc}
               itemOverrides={itemOverrides}
               setItemOverrides={setItemOverrides}
             />
           )}
-          {activeTab === "kots" && <KOTsTab kots={context.kots} />}
+            {activeTab === "kots" && (
+              <KOTsTab
+                kots={context.kots}
+                onStatusChange={handleKotStatusChange}
+                onReject={handleKotReject}
+                updatingKotId={kotUpdatingId}
+              />
+            )}
           {activeTab === "events" && <EventsTab events={events} loading={eventsLoading} />}
         </div>
 
@@ -831,15 +904,6 @@ export default function OrderDetailPage() {
               </span>
             </div>
           </Card>
-
-          {/* Order Notifications */}
-          <EntityNotificationsCard
-            title="Order Notifications"
-            restaurantId={order.restaurant_id}
-            entity="order"
-            entityId={order.id}
-          />
-
 
         </div>
       </div>
@@ -1029,7 +1093,6 @@ function DetailsTab({
   order,
   tables,
   onRefresh,
-  canVoidItem,
   canMarkNc,
   itemOverrides,
   setItemOverrides,
@@ -1037,67 +1100,38 @@ function DetailsTab({
   order: Order;
   tables: OrderTableSummary[];
   onRefresh: () => void;
-  canVoidItem: boolean;
   canMarkNc: boolean;
   itemOverrides: Record<number, Partial<OrderItem>>;
   setItemOverrides: Dispatch<SetStateAction<Record<number, Partial<OrderItem>>>>;
 }) {
   const router = useRouter();
-  const [editingItemNote, setEditingItemNote] = useState<OrderItem | null>(null);
-  const [editNoteValue, setEditNoteValue] = useState("");
+  const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
+  const [selectedItemQuantity, setSelectedItemQuantity] = useState(1);
+  const [selectedItemNc, setSelectedItemNc] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
   const displayItems = order.items;
 
-  const handleQtyChange = useCallback(async (item: OrderItem, delta: number) => {
-    // Read current qty from overrides or original item
-    const currentQty = itemOverrides[item.id]?.qty ?? item.qty;
-    const nextQty = Math.max(0, currentQty + delta);
-    if (nextQty === currentQty) return;
-    if (nextQty <= 0 && !canVoidItem) {
-      toast.error("You do not have permission to void order items.");
-      return;
-    }
-    // Optimistically update
-    setItemOverrides(prev => ({
-      ...prev,
-      [item.id]: { ...(prev[item.id] || {}), qty: nextQty }
-    }));
-    await handleApplyItemUpdate(item.id, { qty: nextQty });
-  }, [canVoidItem, itemOverrides]);
-
-  const handleApplyItemUpdate = useCallback(async (itemId: number, patch: { qty?: number; notes?: string | null; is_nc?: boolean }) => {
+  const handleApplyItemUpdate = useCallback(async (itemId: number, patch: { qty?: number; is_nc?: boolean }) => {
     setIsUpdating(true);
     try {
-      const payload = {
-        items: order.items.map((item) => {
-          const isTarget = item.id === itemId;
-          const displayItem = displayItems.find(di => di.id === item.id) || item;
-          return {
-            menu_item_id: item.menu_item_id,
-            name_snapshot: item.name_snapshot,
-            category_name_snapshot: item.category_name_snapshot,
-            category_type_snapshot: item.category_type_snapshot,
-            revenue_category: (item as any).revenue_category,
-            unit_price: item.unit_price,
-            qty: isTarget ? (patch.qty ?? displayItem.qty) : displayItem.qty,
-            notes: isTarget ? (patch.notes !== undefined ? patch.notes : (displayItem.notes || null)) : (displayItem.notes || null),
-            is_nc: isTarget ? (patch.is_nc ?? Boolean(displayItem.is_nc)) : Boolean(displayItem.is_nc),
-            modifiers: item.modifiers ? item.modifiers.map((m) => ({
-              modifier_id: m.modifier_id,
-              modifier_name_snapshot: m.modifier_name_snapshot,
-              price_adjustment_snapshot: m.price_adjustment_snapshot
-            })) : []
-          };
-        })
-      };
-
-      await apiClient.post(OrderApis.updateOrderItems(order.id), payload);
-      if (patch.notes !== undefined) toast.success("Note updated");
+      const item = order.items.find((candidate) => candidate.id === itemId);
+      if (!item) throw new Error("Order line not found");
+      const displayItem = displayItems.find((candidate) => candidate.id === itemId) || item;
+      const qty = patch.qty ?? displayItem.qty;
+      if (patch.qty !== undefined || patch.is_nc !== undefined) {
+        await apiClient.patch(OrderApis.updateOrderLine(order.id, item.id), {
+          ...(patch.qty !== undefined ? { qty } : {}),
+          ...(patch.is_nc !== undefined ? { is_nc: patch.is_nc } : {}),
+          expected_version: (order as any).version,
+          idempotency_key: crypto.randomUUID(),
+        });
+      }
       if (patch.qty !== undefined) toast.success("Quantity updated");
       if (patch.is_nc !== undefined) toast.success("NC status updated");
       await onRefresh();
       setItemOverrides({});
+      return true;
     } catch (err: any) {
       console.error("Failed to update item:", err);
       toast.error(err.response?.data?.detail || "Failed to update item");
@@ -1107,20 +1141,32 @@ function DetailsTab({
         delete next[itemId];
         return next;
       });
+      return false;
     } finally {
       setIsUpdating(false);
     }
-  }, [order.id, order.items, displayItems, onRefresh, setItemOverrides]);
+  }, [order, displayItems, onRefresh, setItemOverrides]);
 
-  const handleOpenNoteEdit = (item: OrderItem) => {
-    setEditingItemNote(item);
-    setEditNoteValue(item.notes || "");
+  const handleOpenItemDetail = (item: OrderItem) => {
+    setSelectedItem(item);
+    setSelectedItemQuantity(Number(itemOverrides[item.id]?.qty ?? item.qty));
+    setSelectedItemNc(Boolean(itemOverrides[item.id]?.is_nc ?? item.is_nc));
   };
 
-  const handleSaveNote = async () => {
-    if (!editingItemNote) return;
-    await handleApplyItemUpdate(editingItemNote.id, { notes: editNoteValue || null });
-    setEditingItemNote(null);
+  const handleSaveItemDetail = async () => {
+    if (!selectedItem) return;
+    const nextQty = Math.max(1, Math.floor(selectedItemQuantity || 1));
+    const currentQty = Number(itemOverrides[selectedItem.id]?.qty ?? selectedItem.qty);
+    const currentNc = Boolean(itemOverrides[selectedItem.id]?.is_nc ?? selectedItem.is_nc);
+    if (nextQty === currentQty && selectedItemNc === currentNc) {
+      setSelectedItem(null);
+      return;
+    }
+    const saved = await handleApplyItemUpdate(selectedItem.id, {
+      qty: nextQty,
+      ...(selectedItemNc !== currentNc ? { is_nc: selectedItemNc } : {}),
+    });
+    if (saved) setSelectedItem(null);
   };
 
   return (
@@ -1141,8 +1187,26 @@ function DetailsTab({
           </div>
 
           <div className="divide-y divide-border/20">
-            {displayItems.map((item: OrderItem) => (
-              <div key={item.id} className="px-5 py-4 hover:bg-muted/5 transition-colors">
+            {displayItems.map((item: OrderItem) => {
+              const canEdit = order.status !== "completed" && order.status !== "canceled";
+              return (
+              <div
+                key={item.id}
+                role={canEdit ? "button" : undefined}
+                tabIndex={canEdit ? 0 : undefined}
+                aria-label={canEdit ? `Edit ${item.name_snapshot}` : undefined}
+                className={cn(
+                  "px-5 py-4 transition-colors",
+                  canEdit && "cursor-pointer hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40"
+                )}
+                onClick={canEdit ? () => handleOpenItemDetail(item) : undefined}
+                onKeyDown={canEdit ? (event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    handleOpenItemDetail(item);
+                  }
+                } : undefined}
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-sm text-foreground">{item.name_snapshot}</p>
@@ -1174,82 +1238,19 @@ function DetailsTab({
                   </div>
                   <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
                     <div className="flex items-center gap-3">
-                      {order.status !== 'completed' && order.status !== 'canceled' ? (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={isUpdating || (item.qty <= 1 && !canVoidItem)}
-                            onClick={() => void handleQtyChange(item, -1)}
-                          >
-                            <Minus className="h-3.5 w-3.5" />
-                          </Button>
-                          <div className="min-w-[2.5rem] text-center font-semibold tabular-nums text-sm">
-                            {item.qty}
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={isUpdating}
-                            onClick={() => void handleQtyChange(item, 1)}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground tabular-nums">×{item.qty}</span>
-                      )}
+                      <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold tabular-nums">
+                        ×{item.qty}
+                      </span>
                       <span className="font-bold text-sm tabular-nums">{formatCurrency(item.line_total)}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-muted-foreground tabular-nums">
-                        @ {formatCurrency(item.unit_price)}
-                      </span>
-                      {order.status !== 'completed' && order.status !== 'canceled' && (
-                        <>
-                          <Button
-                            variant={item.is_nc ? "default" : "outline"}
-                            size="sm"
-                            className={cn(
-                              "h-8 gap-1.5 px-2 text-xs font-semibold",
-                              item.is_nc && "bg-orange-500 hover:bg-orange-600 text-white"
-                            )}
-                            disabled={isUpdating || !canMarkNc}
-                            onClick={() => {
-                              // Read current value from overrides or original item
-                              const currentNc = itemOverrides[item.id]?.is_nc ?? item.is_nc;
-                              const nextNc = !Boolean(currentNc);
-                              // Optimistically update
-                              setItemOverrides(prev => ({
-                                ...prev,
-                                [item.id]: { ...(prev[item.id] || {}), is_nc: nextNc }
-                              }));
-                              void handleApplyItemUpdate(item.id, {
-                                is_nc: nextNc,
-                              });
-                            }}
-                          >
-                            <Award className="h-3.5 w-3.5" />
-                            NC
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 gap-1.5 px-2 text-xs font-semibold"
-                            onClick={() => handleOpenNoteEdit(item)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            Note
-                          </Button>
-                        </>
-                      )}
-                    </div>
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      @ {formatCurrency(item.unit_price)}
+                    </span>
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -1380,44 +1381,104 @@ function DetailsTab({
       </Card>
 
 
-      {/* Note Edit Modal */}
-      <Dialog open={!!editingItemNote} onOpenChange={(open) => !open && setEditingItemNote(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Note</DialogTitle>
-            <DialogDescription>
-              {editingItemNote ? editingItemNote.name_snapshot : "Update the item note."}
-            </DialogDescription>
-          </DialogHeader>
+      <Sheet open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
+        <SheetContent side="bottom" className="mx-auto w-full max-w-3xl rounded-t-2xl px-6 pb-6 pt-8">
+          <SheetHeader className="pr-8">
+            <SheetTitle>{selectedItem?.name_snapshot}</SheetTitle>
+            <SheetDescription>
+              {selectedItem?.category_name_snapshot || "Menu item"} · {selectedItem ? formatCurrency(selectedItem.unit_price) : ""} each
+            </SheetDescription>
+          </SheetHeader>
 
-          <div className="space-y-3 py-2">
-            <Textarea
-              value={editNoteValue}
-              onChange={(e) => setEditNoteValue(e.target.value)}
-              placeholder="Add a note for this item"
-              className="min-h-[96px]"
-            />
+          <div className="space-y-5 py-6">
+            <div className="flex items-center justify-between rounded-xl border border-border/60 p-4">
+              <div>
+                <p className="font-semibold">Quantity</p>
+                <p className="text-sm text-muted-foreground">Changes are sent to the kitchen only when you confirm.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10"
+                  disabled={isUpdating || selectedItemQuantity <= 1}
+                  onClick={() => setSelectedItemQuantity((value) => Math.max(1, value - 1))}
+                  aria-label="Reduce quantity"
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <Input
+                  type="number"
+                  min={1}
+                  value={selectedItemQuantity}
+                  onChange={(event) => setSelectedItemQuantity(Math.max(1, Number(event.target.value) || 1))}
+                  className="h-10 w-20 text-center font-bold tabular-nums"
+                  aria-label="Quantity"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10"
+                  disabled={isUpdating}
+                  onClick={() => setSelectedItemQuantity((value) => value + 1)}
+                  aria-label="Increase quantity"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {canMarkNc && (
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-center justify-between rounded-xl border p-4 text-left transition-colors",
+                  selectedItemNc ? "border-orange-500/50 bg-orange-50 dark:bg-orange-950/20" : "border-border/60 hover:bg-muted/40"
+                )}
+                disabled={isUpdating}
+                onClick={() => setSelectedItemNc((value) => !value)}
+              >
+                <div className="flex items-center gap-3">
+                  <span className={cn("flex h-9 w-9 items-center justify-center rounded-lg", selectedItemNc ? "bg-orange-500 text-white" : "bg-muted text-muted-foreground")}>
+                    <Award className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="font-semibold">Non-chargeable (NC)</p>
+                    <p className="text-sm text-muted-foreground">Exclude this item from the bill.</p>
+                  </div>
+                </div>
+                <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", selectedItemNc ? "bg-orange-500 text-white" : "bg-muted text-muted-foreground")}>
+                  {selectedItemNc ? "NC" : "Chargeable"}
+                </span>
+              </button>
+            )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingItemNote(null)}>Cancel</Button>
-            <Button
-              onClick={handleSaveNote}
-              disabled={!editingItemNote || isUpdating}
-              className="gap-2"
-            >
-              {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Save Note
+          <SheetFooter>
+            <Button variant="outline" onClick={() => setSelectedItem(null)} disabled={isUpdating}>Cancel</Button>
+            <Button onClick={handleSaveItemDetail} disabled={!selectedItem || isUpdating}>
+              {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Update & Send
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
 // ── KOTs Tab ────────────────────────────────────────
-function KOTsTab({ kots }: { kots: KOTUpdate[] }) {
+function KOTsTab({
+  kots,
+  onStatusChange,
+  onReject,
+  updatingKotId,
+}: {
+  kots: KOTUpdate[];
+  onStatusChange?: (kotId: number, status: string) => void;
+  onReject?: (kotId: number) => void;
+  updatingKotId?: number | null;
+}) {
   if (!kots || kots.length === 0) {
     return (
       <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
@@ -1434,6 +1495,9 @@ function KOTsTab({ kots }: { kots: KOTUpdate[] }) {
     <div className="space-y-4">
       {kots.map((kot) => {
         const statusConfig = getKOTStatusConfig(kot.status);
+        const next = nextKotStatus(kot.status);
+        const action = kotActionLabel(kot.status);
+        const isUpdating = updatingKotId === kot.id;
         return (
           <Card key={kot.id} className={cn("border overflow-hidden bg-white dark:bg-[#1a1a1a]", statusConfig.bg)}>
             <CardContent className="p-0">
@@ -1458,6 +1522,30 @@ function KOTsTab({ kots }: { kots: KOTUpdate[] }) {
                       <span className="text-[10px] text-muted-foreground">{formatTime(kot.created_at)}</span>
                     </div>
                   </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {action && next && onStatusChange && (
+                    <Button
+                      size="sm"
+                      className="h-8 px-3 text-xs"
+                      onClick={() => onStatusChange(kot.id, kot.status)}
+                      disabled={isUpdating || Boolean(updatingKotId && updatingKotId !== kot.id)}
+                    >
+                      {isUpdating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                      {action}
+                    </Button>
+                  )}
+                  {next && onReject && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-3 text-xs text-destructive hover:text-destructive"
+                      onClick={() => onReject(kot.id)}
+                      disabled={isUpdating || Boolean(updatingKotId && updatingKotId !== kot.id)}
+                    >
+                      Reject
+                    </Button>
+                  )}
                 </div>
               </div>
 

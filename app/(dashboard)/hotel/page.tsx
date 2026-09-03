@@ -51,7 +51,8 @@ export default function HotelPmsPage() {
     { value: "housekeeping", label: "Housekeeping", icon: Brush, visible: hasPermission(user, "hotel.housekeeping.view") },
     { value: "room-orders", label: "Room service", icon: BarChart3, visible: hasPermission(user, "reports.analytics.view") },
     { value: "finance", label: "Finance", icon: WalletCards, visible: hasPermission(user, "finance.income.view") },
-    { value: "night-audit", label: "Close day", icon: MoonStar, visible: hasPermission(user, "hotel.night_audit.run") },
+    { value: "daybook", label: "Daybook", icon: BookOpenCheck, visible: hasPermission(user, "hotel.view") && hasPermission(user, "reports.dayclose.view") },
+    { value: "night-audit", label: "Night audit", icon: MoonStar, visible: hasPermission(user, "hotel.night_audit.run") },
   ].filter((item) => item.visible), [user]);
 
   useEffect(() => {
@@ -89,6 +90,22 @@ export default function HotelPmsPage() {
         {can("hotel.housekeeping.view") ? <TabsContent value="housekeeping" className="mt-5"><HousekeepingPanel restaurantId={restaurantId} canManage={can("hotel.housekeeping.manage")} refreshKey={refreshKey} onChanged={changed} /></TabsContent> : null}
         {can("reports.analytics.view") ? <TabsContent value="room-orders" className="mt-5"><RoomOrderAnalyticsPanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
         {can("finance.income.view") ? <TabsContent value="finance" className="mt-5"><FinancePanel restaurantId={restaurantId} refreshKey={refreshKey} /></TabsContent> : null}
+        {can("hotel.view") && can("reports.dayclose.view") ? (
+          <TabsContent value="daybook" className="mt-5">
+            <section className="mx-auto max-w-4xl rounded-3xl border bg-card p-6 shadow-sm sm:p-8">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                <div className="max-w-2xl">
+                  <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500/10 text-orange-600"><BookOpenCheck className="h-5 w-5" /></div>
+                  <h2 className="text-xl font-bold tracking-tight">Hotel Daybook</h2>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    Review accommodation, folio activity, payments, refunds, hotel income, expenses, and accounting checks for one date. Closing the daybook saves an audited snapshot; it does not require a front-desk drawer count or stop hotel operations.
+                  </p>
+                </div>
+                <button type="button" onClick={() => router.push("/day-close?business_line=hotel")} className="shrink-0 rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600">Open hotel daybook</button>
+              </div>
+            </section>
+          </TabsContent>
+        ) : null}
         {can("hotel.night_audit.run") ? <TabsContent value="night-audit" className="mt-5"><NightAuditPanel restaurantId={restaurantId} canRun refreshKey={refreshKey} onChanged={changed} /></TabsContent> : null}
       </Tabs>
       <BookingDetailDialog bookingId={selectedBookingId} open={detailOpen} onOpenChange={setDetailOpen} permissions={permissions} onChanged={changed} />

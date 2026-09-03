@@ -108,7 +108,7 @@ const LiveStats = memo(function LiveStats() {
         <span className="text-[10px] text-muted-foreground uppercase font-black">orders</span>
       </Link>
       <Link
-        href="/kitchen"
+        href="/orders?tab=kot"
         data-tour="navbar-stat-kot"
         className="flex items-center gap-2 px-3 py-1 rounded-md bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors"
       >

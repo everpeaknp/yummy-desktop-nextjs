@@ -133,8 +133,22 @@ export function useOrderFull(orderId: string | number) {
     });
   }, [context?.tables, context?.order?.table_id, context?.order?.table_ids]);
 
+  // Update a single ticket locally so status actions do not reload the whole
+  // order context (and consequently reset the user's scroll position).
+  const updateKotLocal = useCallback((kotId: number, patch: Partial<KOTUpdate>) => {
+    setContext((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        kots: prev.kots.map((kot) =>
+          kot.id === kotId ? { ...kot, ...patch } : kot,
+        ),
+      };
+    });
+  }, []);
+
   const isFullyPaid = context ? context.payments.filter(p => !p.status || p.status.toLowerCase() === 'success').reduce((sum, p) => sum + Number(p.amount), 0) >= (Number(context.order.grand_total) - 0.01) : false;
   const allKotsServed = context ? (context.kots.length === 0 || context.kots.every(kot => ['served', 'completed', 'ready', 'rejected', 'cancelled'].includes(kot.status?.toLowerCase()))) : false;
 
-  return { context, loading, error, fetchContext, isFullyPaid, allKotsServed };
+  return { context, loading, error, fetchContext, updateKotLocal, isFullyPaid, allKotsServed };
 }

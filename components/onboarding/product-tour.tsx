@@ -105,7 +105,7 @@ const TOUR_COPY: Record<string, { title: string; text: string }> = {
   },
   "nav-group-menu": {
     title: "Menu",
-    text: "Open this section for items, categories, and modifiers.",
+    text: "Open this section for items, categories, options, and add-ons.",
   },
   "nav-group-table-and-space": {
     title: "Tables & space",
@@ -136,8 +136,8 @@ const TOUR_COPY: Record<string, { title: string; text: string }> = {
     text: "Organize menu items into categories.",
   },
   "nav-menu-modifiers": {
-    title: "Modifiers",
-    text: "Add-ons and options customers can choose.",
+    title: "Options & add-ons",
+    text: "Choices such as toppings, sizes, and extras customers can select.",
   },
   "nav-tables": {
     title: "Tables",

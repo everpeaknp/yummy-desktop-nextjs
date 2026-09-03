@@ -1,13 +1,5 @@
-import { EntitlementGate } from "@/components/subscription/entitlement-gate";
+import type { ReactNode } from "react";
 
-export default function PeriodReportsLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <EntitlementGate
-      entitlement="finance.period_close.enabled"
-      legacyFallback
-      title="Period reports are not included in your plan"
-    >
-      {children}
-    </EntitlementGate>
-  );
+export default function LegacyPeriodReportsLayout({ children }: { children: ReactNode }) {
+  return children;
 }

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { OrderApis, AnalyticsApis, TableApis } from "@/lib/api/endpoints";
+import { OrderApis, AnalyticsApis, TableApis, KotApis } from "@/lib/api/endpoints";
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions";
 import {
   defaultHistoryDateRange,
@@ -29,11 +29,20 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
-  Loader2
+  Loader2,
+  ChefHat
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useSubscriptionStore } from "@/hooks/use-subscription";
@@ -47,9 +56,71 @@ import {
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { OrderCard } from "@/components/orders/order-card";
+import { OrderHistoryCard } from "@/components/orders/order-history-card";
 import Link from "next/link";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { DateRange } from "react-day-picker";
+
+interface OrdersKotItem {
+    id: number;
+    item_name: string;
+    qty_change: number;
+    qty_ready?: number;
+    qty_served?: number;
+    notes?: string;
+    is_deleted?: number;
+}
+
+interface OrdersKot {
+    id: number;
+    kot_number: string;
+    station?: string;
+    status: string;
+    order_id: number;
+    created_at: string;
+    items: OrdersKotItem[];
+    table_name?: string;
+    table_category?: string;
+    order_created_at?: string;
+    created_by_staff_name?: string;
+    customer_name?: string;
+}
+
+interface OrdersKotActivity {
+    id: number;
+    event: string;
+    change_field?: string | null;
+    old_value?: Record<string, any> | null;
+    new_value?: Record<string, any> | null;
+    actor_name?: string | null;
+    actor_role?: string | null;
+    created_at: string;
+}
+
+type OrdersKotStatus = "PENDING" | "PREPARING" | "READY" | "SERVED" | "REJECTED";
+
+function nextKotStatus(status: string): OrdersKotStatus | null {
+    switch (String(status || "PENDING").toUpperCase()) {
+        case "PENDING": return "PREPARING";
+        case "PREPARING": return "READY";
+        case "READY": return "SERVED";
+        default: return null;
+    }
+}
+
+function kotStatusLabel(status: string): string {
+    const normalized = String(status || "PENDING").toUpperCase();
+    return normalized.charAt(0) + normalized.slice(1).toLowerCase();
+}
+
+function kotNextActionLabel(status: string): string {
+    switch (nextKotStatus(status)) {
+        case "PREPARING": return "Start Cooking";
+        case "READY": return "Mark Ready";
+        case "SERVED": return "Complete";
+        default: return "Completed";
+    }
+}
 
 function getOrderTimeMs(order: any): number {
     const status = String(order?.status || "").toLowerCase();
@@ -61,7 +132,7 @@ function getOrderTimeMs(order: any): number {
 }
 
 export default function OrdersPage() {
-    const [activeTab, setActiveTab] = useState<"active" | "history">("active");
+    const [activeTab, setActiveTab] = useState<"active" | "kot" | "history">("active");
     const [activeFilter, setActiveFilter] = useState<"today" | "all">("today");
 
     // Hydrate activeFilter from localStorage on mount
@@ -81,6 +152,10 @@ export default function OrdersPage() {
     const [historyOrders, setHistoryOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [kots, setKots] = useState<OrdersKot[]>([]);
+    const [kotLoading, setKotLoading] = useState(false);
+    const [kotStatusFilter, setKotStatusFilter] = useState<OrdersKotStatus | "ALL">("ALL");
+    const [kotStationFilter, setKotStationFilter] = useState("All");
     const [searchQuery, setSearchQuery] = useState("");
     const [dateRange, setDateRange] = useState<DateRange | undefined>();
     const [scopeNotice, setScopeNotice] = useState<ParsedScopeError | null>(null);
@@ -95,6 +170,11 @@ export default function OrdersPage() {
 
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+    const [kotDetailsOpen, setKotDetailsOpen] = useState(false);
+    const [selectedKot, setSelectedKot] = useState<OrdersKot | null>(null);
+    const [kotActivity, setKotActivity] = useState<OrdersKotActivity[]>([]);
+    const [kotActivityLoading, setKotActivityLoading] = useState(false);
+    const [kotStatusUpdating, setKotStatusUpdating] = useState(false);
     const [historyLimit, setHistoryLimit] = useState(50);
     const observerTarget = useRef<HTMLDivElement>(null);
 
@@ -142,20 +222,25 @@ export default function OrdersPage() {
         pathname === "/orders/history" || pathname === "/order-history";
 
     const setOrdersTab = useCallback(
-        (tab: "active" | "history") => {
+        (tab: "active" | "kot" | "history") => {
             setActiveTab(tab);
-            router.replace(tab === "history" ? "/orders/history" : "/orders", { scroll: false });
+            router.replace(
+                tab === "history" ? "/orders/history" : tab === "kot" ? "/orders?tab=kot" : "/orders",
+                { scroll: false },
+            );
         },
         [router],
     );
 
-    // Route + legacy ?tab=history query
+    // Route + tab query keep the selected view shareable without creating a separate KOT page.
     useEffect(() => {
         if (isHistoryRoute || searchParams?.get("tab") === "history") {
             setActiveTab("history");
             if (searchParams?.get("tab") === "history" && pathname === "/orders") {
                 router.replace("/orders/history", { scroll: false });
             }
+        } else if (searchParams?.get("tab") === "kot") {
+            setActiveTab("kot");
         } else {
             setActiveTab("active");
         }
@@ -237,7 +322,35 @@ export default function OrdersPage() {
         } finally {
             setLoading(false);
         }
-    }, [user?.restaurant_id, user]);
+    }, [user]);
+
+    const fetchKotData = useCallback(async () => {
+        if (!user?.restaurant_id) return;
+        setKotLoading(true);
+        try {
+            const start = new Date();
+            start.setHours(0, 0, 0, 0);
+            const end = new Date();
+            end.setHours(23, 59, 59, 999);
+            const params = new URLSearchParams({
+                restaurant_id: String(user.restaurant_id),
+                limit: "100",
+                include_printer_config: "false",
+                date_from: start.toISOString(),
+                date_to: end.toISOString(),
+            });
+            const res = await apiClient.get(`${KotApis.searchKots}?${params.toString()}`);
+            if (res.data?.status === "success") {
+                const next = Array.isArray(res.data.data) ? res.data.data : [];
+                setKots(next as OrdersKot[]);
+            }
+        } catch (error) {
+            console.error("Failed to fetch KOT data:", error);
+            toast.error("Failed to load kitchen tickets");
+        } finally {
+            setKotLoading(false);
+        }
+    }, [user?.restaurant_id]);
 
     // 3. Fetch History Orders
     const fetchHistoryData = useCallback(async () => {
@@ -321,7 +434,7 @@ export default function OrdersPage() {
             setHistoryLoading(false);
         }
     }, [
-        user?.restaurant_id,
+        user,
         activeTab,
         dateRange,
         searchQuery,
@@ -340,14 +453,17 @@ export default function OrdersPage() {
     }, [suggestedRange]);
 
     useEffect(() => {
-        if (user?.restaurant_id) {
+        if (user?.restaurant_id && activeTab === "active") {
             fetchActiveData();
-            if (activeTab === "active") {
-                const interval = setInterval(fetchActiveData, 10000);
-                return () => clearInterval(interval);
-            }
+            const interval = setInterval(fetchActiveData, 10000);
+            return () => clearInterval(interval);
         }
-    }, [user, fetchActiveData, activeTab]);
+        if (user?.restaurant_id && activeTab === "kot") {
+            fetchKotData();
+            const interval = setInterval(fetchKotData, 15000);
+            return () => clearInterval(interval);
+        }
+    }, [user, fetchActiveData, fetchKotData, activeTab]);
 
     useEffect(() => {
         if (activeTab === "history") {
@@ -360,6 +476,70 @@ export default function OrdersPage() {
         setSelectedOrderId(orderId);
         setDetailsOpen(true);
     };
+
+    useEffect(() => {
+        if (!kotDetailsOpen || !selectedKot) return;
+
+        let cancelled = false;
+        setKotActivityLoading(true);
+        apiClient
+            .get(KotApis.getKotActivity(selectedKot.id), { params: { skip: 0, limit: 100 } })
+            .then((res) => {
+                if (cancelled) return;
+                setKotActivity(res.data?.status === "success" ? (res.data?.data?.items || []) : []);
+            })
+            .catch(() => {
+                if (!cancelled) setKotActivity([]);
+            })
+            .finally(() => {
+                if (!cancelled) setKotActivityLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [kotDetailsOpen, selectedKot]);
+
+    const openKotDetails = (kot: OrdersKot) => {
+        setSelectedKot(kot);
+        setKotActivity([]);
+        setKotDetailsOpen(true);
+    };
+
+    const updateKotStatus = useCallback(async (kotId: number, newStatus: OrdersKotStatus) => {
+        if (kotStatusUpdating) return;
+        setKotStatusUpdating(true);
+        try {
+            await apiClient.patch(KotApis.updateKotStatus(kotId), { status: newStatus });
+            setSelectedKot((current) => current && current.id === kotId ? { ...current, status: newStatus } : current);
+            setKots((current) => current.map((kot) => kot.id === kotId ? { ...kot, status: newStatus } : kot));
+            toast.success(`KOT marked ${newStatus.toLowerCase()}`);
+            // Keep counts, filters, and server-derived fields in sync after the update.
+            await fetchKotData();
+        } catch (error: any) {
+            const detail = error?.response?.data?.detail || error?.response?.data?.message;
+            toast.error(typeof detail === "string" ? detail : "Failed to update KOT status");
+        } finally {
+            setKotStatusUpdating(false);
+        }
+    }, [fetchKotData, kotStatusUpdating]);
+
+    const rejectKot = useCallback(async (kotId: number) => {
+        if (kotStatusUpdating || !window.confirm("Reject this kitchen ticket?")) return;
+        setKotStatusUpdating(true);
+        try {
+            await apiClient.post(KotApis.rejectKot(kotId));
+            setSelectedKot((current) => current && current.id === kotId ? { ...current, status: "REJECTED" } : current);
+            setKots((current) => current.map((kot) => kot.id === kotId ? { ...kot, status: "REJECTED" } : kot));
+            toast.success("KOT rejected");
+            await fetchKotData();
+        } catch (error: any) {
+            const detail = error?.response?.data?.detail || error?.response?.data?.message;
+            toast.error(typeof detail === "string" ? detail : "Failed to reject KOT");
+        } finally {
+            setKotStatusUpdating(false);
+        }
+    }, [fetchKotData, kotStatusUpdating]);
 
     // Grouping logic for History
     const groupedHistory = useMemo(() => {
@@ -427,6 +607,32 @@ export default function OrdersPage() {
         );
     }).sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
 
+    const filteredKots = useMemo(() => {
+        const query = searchQuery.trim().toLowerCase();
+        return kots
+            .filter((kot) => kotStatusFilter === "ALL" || String(kot.status).toUpperCase() === kotStatusFilter)
+            .filter((kot) => kotStationFilter === "All" || (kot.station || "").toLowerCase() === kotStationFilter.toLowerCase())
+            .filter((kot) => {
+                if (!query) return true;
+                const haystack = [
+                    kot.kot_number,
+                    kot.table_name,
+                    kot.station,
+                    kot.customer_name,
+                    kot.created_by_staff_name,
+                    ...(kot.items || []).map((item) => item.item_name),
+                ].filter(Boolean).join(" ").toLowerCase();
+                return haystack.includes(query);
+            })
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }, [kots, kotStatusFilter, kotStationFilter, searchQuery]);
+
+    const kotStats = useMemo(() => ({
+        active: kots.filter((kot) => !["SERVED", "REJECTED"].includes(String(kot.status).toUpperCase())).length,
+        ready: kots.filter((kot) => String(kot.status).toUpperCase() === "READY").length,
+        pending: kots.filter((kot) => String(kot.status).toUpperCase() === "PENDING").length,
+    }), [kots]);
+
     return (
         <div className="flex flex-col gap-8 max-w-[1600px] mx-auto pb-10">
             {/* Header */}
@@ -451,8 +657,8 @@ export default function OrdersPage() {
                             onChange={(e) => setSearchQuery(e.target.value)} 
                         />
                     </div>
-                    <Button variant="outline" className="h-12 w-12 rounded-2xl p-0" onClick={() => activeTab === "active" ? fetchActiveData() : fetchHistoryData()}>
-                       <RefreshCw className={cn("h-5 w-5", (loading || historyLoading) && "animate-spin")} />
+                    <Button variant="outline" className="h-12 w-12 rounded-2xl p-0" onClick={() => activeTab === "active" ? fetchActiveData() : activeTab === "kot" ? fetchKotData() : fetchHistoryData()}>
+                       <RefreshCw className={cn("h-5 w-5", (loading || historyLoading || kotLoading) && "animate-spin")} />
                     </Button>
                 </div>
             </div>
@@ -460,25 +666,25 @@ export default function OrdersPage() {
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <StatCard
-                    label="Active"
-                    value={activeTab === "active" ? activeStats.activeCount.toString() : stats.activeCount.toString()}
-                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's in progress" : "All in progress") : "In progress"}
+                    label={activeTab === "kot" ? "Tickets" : "Active"}
+                    value={activeTab === "active" ? activeStats.activeCount.toString() : activeTab === "kot" ? kotStats.active.toString() : stats.activeCount.toString()}
+                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's in progress" : "All in progress") : activeTab === "kot" ? "Kitchen work in progress" : "In progress"}
                     icon={<RefreshCw className="h-6 w-6" />}
                     color="blue"
-                    active={activeTab === "active"}
+                    active={activeTab !== "history"}
                 />
                 <StatCard
-                    label="Value"
-                    value={activeTab === "active" ? activeStats.activeOrdersValue.toLocaleString() : stats.totalRevenue.toLocaleString()}
-                    prefix={restaurant?.currency || "Rs."}
-                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's active value" : "Total active value") : "Total revenue"}
+                    label={activeTab === "kot" ? "Ready" : "Value"}
+                    value={activeTab === "active" ? activeStats.activeOrdersValue.toLocaleString() : activeTab === "kot" ? kotStats.ready.toString() : stats.totalRevenue.toLocaleString()}
+                    prefix={activeTab === "kot" ? "" : restaurant?.currency || "Rs."}
+                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's active value" : "Total active value") : activeTab === "kot" ? "Ready for service" : "Total revenue"}
                     icon={<TrendingUp className="h-6 w-6" />}
                     color="orange"
                 />
                 <StatCard
                     label="Pending"
-                    value={activeTab === "active" ? activeStats.pendingAction.toString() : stats.pendingAction.toString()}
-                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's need action" : "All need action") : "Need action"}
+                    value={activeTab === "active" ? activeStats.pendingAction.toString() : activeTab === "kot" ? kotStats.pending.toString() : stats.pendingAction.toString()}
+                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's need action" : "All need action") : activeTab === "kot" ? "Waiting to start" : "Need action"}
                     icon={<Clock className="h-6 w-6" />}
                     color="yellow"
                 />
@@ -486,13 +692,19 @@ export default function OrdersPage() {
 
             {/* Tabs & Filters */}
             <div className="flex flex-col gap-6">
-                <div className="flex items-center justify-between border-b border-border/40 pb-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/40 pb-4">
                     <div className="flex items-center gap-6">
                         <TabButton 
                             label="Active" 
                             active={activeTab === "active"} 
                             onClick={() => setOrdersTab("active")} 
                             icon={<ClipboardList className="h-4 w-4" />}
+                        />
+                        <TabButton
+                            label="KOT"
+                            active={activeTab === "kot"}
+                            onClick={() => setOrdersTab("kot")}
+                            icon={<ChefHat className="h-4 w-4" />}
                         />
                         <TabButton 
                             label="History" 
@@ -607,6 +819,35 @@ export default function OrdersPage() {
                             </Popover>
                         </div>
                     )}
+
+                    {activeTab === "kot" && (
+                        <div className="flex flex-wrap items-center gap-2">
+                            {(["ALL", "PENDING", "PREPARING", "READY", "SERVED", "REJECTED"] as const).map((status) => (
+                                <button
+                                    key={status}
+                                    onClick={() => setKotStatusFilter(status === "ALL" ? "ALL" : status)}
+                                    className={cn(
+                                        "rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors",
+                                        kotStatusFilter === status
+                                            ? "border-primary bg-primary/10 text-primary"
+                                            : "border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                                    )}
+                                >
+                                    {status === "ALL" ? `All ${kots.length}` : status.replace("_", " ")}
+                                </button>
+                            ))}
+                            <select
+                                aria-label="Filter kitchen station"
+                                value={kotStationFilter}
+                                onChange={(event) => setKotStationFilter(event.target.value)}
+                                className="h-9 rounded-xl border border-border/50 bg-background px-3 text-xs font-semibold text-muted-foreground outline-none focus:border-primary"
+                            >
+                                {Array.from(new Set(["All", ...kots.map((kot) => kot.station).filter(Boolean) as string[]])).map((station) => (
+                                    <option key={station} value={station}>{station}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                 </div>
 
                 {/* Content */}
@@ -626,11 +867,23 @@ export default function OrdersPage() {
                         ) : filteredActive.length === 0 ? (
                             <EmptyState label="No active orders found" icon={<ClipboardList />} />
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-5">
                                 {filteredActive.map((order) => (
-                                    <Link key={order.id} href={`/orders/${order.id}`}>
+                                    <Link key={order.id} href={`/orders/${order.id}`} className="block h-full">
                                         <OrderCard order={order} />
                                     </Link>
+                                ))}
+                            </div>
+                        )
+                    ) : activeTab === "kot" ? (
+                        kotLoading && kots.length === 0 ? (
+                            <LoadingGrid />
+                        ) : filteredKots.length === 0 ? (
+                            <EmptyState label="No kitchen tickets found" icon={<ChefHat />} />
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-5">
+                                {filteredKots.map((kot) => (
+                                    <KotOrderCard key={kot.id} kot={kot} onClick={openKotDetails} />
                                 ))}
                             </div>
                         )
@@ -647,10 +900,10 @@ export default function OrdersPage() {
                                             {label}
                                             <span className="h-[1px] flex-1 bg-border/40" />
                                         </h2>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-5">
                                             {orders.map((order) => (
-                                                <Link key={order.id} href={`/orders/${order.id}`}>
-                                                    <OrderCard order={order} />
+                                                <Link key={order.id} href={`/orders/${order.id}`} className="block h-full">
+                                                    <OrderHistoryCard order={order} />
                                                 </Link>
                                             ))}
                                         </div>
@@ -672,7 +925,237 @@ export default function OrdersPage() {
                 open={detailsOpen}
                 onOpenChange={setDetailsOpen}
             />
+
+            <Dialog
+                open={kotDetailsOpen}
+                onOpenChange={(open) => {
+                    setKotDetailsOpen(open);
+                    if (!open) {
+                        setSelectedKot(null);
+                        setKotActivity([]);
+                    }
+                }}
+            >
+                <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[760px] overflow-hidden rounded-2xl p-0 sm:rounded-2xl">
+                    <DialogHeader className="border-b border-border/50 bg-muted/20 p-6 pr-12 text-left">
+                        {selectedKot ? (
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="min-w-0">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-primary">Kitchen ticket</p>
+                                    <DialogTitle className="mt-1 text-2xl font-black tracking-tight">
+                                        KOT {selectedKot.kot_number || `#${selectedKot.id}`}
+                                    </DialogTitle>
+                                    <DialogDescription className="mt-1 truncate text-sm">
+                                        {[selectedKot.table_name || selectedKot.customer_name || "Walk-in order", selectedKot.station || "Kitchen"]
+                                            .filter(Boolean)
+                                            .join(" · ")}
+                                    </DialogDescription>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                    <Badge
+                                        variant="outline"
+                                        className={cn(
+                                            "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wide",
+                                            String(selectedKot.status).toUpperCase() === "REJECTED"
+                                                ? "border-destructive/30 bg-destructive/10 text-destructive"
+                                                : String(selectedKot.status).toUpperCase() === "SERVED"
+                                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                                                    : "border-primary/30 bg-primary/10 text-primary"
+                                        )}
+                                    >
+                                        {kotStatusLabel(selectedKot.status)}
+                                    </Badge>
+                                    {nextKotStatus(selectedKot.status) ? (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            disabled={kotStatusUpdating}
+                                            className="h-9 rounded-lg px-3 text-xs font-bold"
+                                            onClick={() => {
+                                                const next = nextKotStatus(selectedKot.status);
+                                                if (next) void updateKotStatus(selectedKot.id, next);
+                                            }}
+                                        >
+                                            {kotNextActionLabel(selectedKot.status)}
+                                        </Button>
+                                    ) : null}
+                                    {String(selectedKot.status).toUpperCase() !== "REJECTED" && String(selectedKot.status).toUpperCase() !== "SERVED" ? (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            disabled={kotStatusUpdating}
+                                            className="h-9 rounded-lg px-2 text-xs font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                            onClick={() => void rejectKot(selectedKot.id)}
+                                        >
+                                            Reject
+                                        </Button>
+                                    ) : null}
+                                    {kotStatusUpdating ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                                </div>
+                            </div>
+                        ) : (
+                            <DialogTitle>KOT details</DialogTitle>
+                        )}
+                    </DialogHeader>
+
+                    {selectedKot ? (
+                        <div className="max-h-[calc(90vh-130px)] space-y-5 overflow-y-auto p-6">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                <div className="rounded-xl border border-border/50 bg-card p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Created</p>
+                                    <p className="mt-1 text-sm font-bold">
+                                        {selectedKot.created_at ? format(new Date(selectedKot.created_at), "MMM d, yyyy · h:mm a") : "—"}
+                                    </p>
+                                </div>
+                                <div className="rounded-xl border border-border/50 bg-card p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Recorded by</p>
+                                    <p className="mt-1 truncate text-sm font-bold">{selectedKot.created_by_staff_name || "System"}</p>
+                                </div>
+                                <div className="rounded-xl border border-border/50 bg-card p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Order</p>
+                                    <Link href={`/orders/${selectedKot.order_id}`} className="mt-1 inline-block text-sm font-bold text-primary hover:underline">
+                                        Order #{selectedKot.order_id}
+                                    </Link>
+                                </div>
+                            </div>
+
+                            <section className="rounded-xl border border-border/50 bg-card">
+                                <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
+                                    <div>
+                                        <h3 className="text-sm font-black">Items to prepare</h3>
+                                        <p className="text-xs text-muted-foreground">Everything recorded on this kitchen ticket.</p>
+                                    </div>
+                                    <Badge variant="secondary" className="rounded-lg text-xs">
+                                        {selectedKot.items?.filter((item) => !item.is_deleted && Math.abs(item.qty_change || 0) > 0).length || 0} items
+                                    </Badge>
+                                </div>
+                                <div className="divide-y divide-border/40">
+                                    {(selectedKot.items || [])
+                                        .filter((item) => !item.is_deleted && Math.abs(item.qty_change || 0) > 0)
+                                        .map((item) => {
+                                            const quantity = Math.abs(item.qty_change || 0);
+                                            const ready = Math.min(Math.abs(item.qty_ready || 0), quantity);
+                                            return (
+                                                <div key={item.id} className="flex items-start justify-between gap-4 px-4 py-3">
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-bold">{item.item_name}</p>
+                                                        {item.notes ? <p className="mt-0.5 text-xs text-muted-foreground">Note: {item.notes}</p> : null}
+                                                    </div>
+                                                    <div className="flex shrink-0 items-center gap-3 text-xs font-semibold text-muted-foreground">
+                                                        <span>×{quantity}</span>
+                                                        <span className={cn("rounded-md px-2 py-1", ready >= quantity ? "bg-emerald-500/10 text-emerald-700" : "bg-muted text-muted-foreground")}>
+                                                            {ready}/{quantity} ready
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    {!(selectedKot.items || []).some((item) => !item.is_deleted && Math.abs(item.qty_change || 0) > 0) ? (
+                                        <p className="px-4 py-6 text-sm text-muted-foreground">No active items on this ticket.</p>
+                                    ) : null}
+                                </div>
+                            </section>
+
+                            <section className="rounded-xl border border-border/50 bg-card">
+                                <div className="border-b border-border/50 px-4 py-3">
+                                    <h3 className="text-sm font-black">Activity</h3>
+                                    <p className="text-xs text-muted-foreground">Status and preparation changes for this ticket.</p>
+                                </div>
+                                <div className="divide-y divide-border/40">
+                                    {kotActivityLoading ? (
+                                        <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
+                                            <Loader2 className="h-4 w-4 animate-spin" /> Loading activity…
+                                        </div>
+                                    ) : kotActivity.length === 0 ? (
+                                        <p className="px-4 py-6 text-sm text-muted-foreground">No activity recorded yet.</p>
+                                    ) : (
+                                        kotActivity.map((activity) => (
+                                            <div key={activity.id} className="flex items-start justify-between gap-4 px-4 py-3">
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-semibold">{String(activity.event || "Ticket updated").replaceAll("_", " ")}</p>
+                                                    <p className="mt-0.5 text-xs text-muted-foreground">{activity.actor_name || activity.actor_role || "System"}</p>
+                                                </div>
+                                                <time className="shrink-0 text-xs text-muted-foreground">
+                                                    {activity.created_at ? format(new Date(activity.created_at), "MMM d · h:mm a") : "—"}
+                                                </time>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </section>
+                        </div>
+                    ) : null}
+                    <DialogFooter className="border-t border-border/50 bg-muted/20 p-4 sm:p-5">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="h-10 w-full rounded-xl sm:w-auto"
+                            onClick={() => setKotDetailsOpen(false)}
+                        >
+                            Close
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
+    );
+}
+
+function KotOrderCard({ kot, onClick }: { kot: OrdersKot; onClick: (kot: OrdersKot) => void }) {
+    const status = String(kot.status || "PENDING").toUpperCase();
+    const statusClass = {
+        PENDING: "border-amber-300/60 bg-amber-50/60 text-amber-700",
+        PREPARING: "border-blue-300/60 bg-blue-50/60 text-blue-700",
+        READY: "border-emerald-300/60 bg-emerald-50/60 text-emerald-700",
+        SERVED: "border-slate-300/60 bg-slate-50 text-slate-600",
+        REJECTED: "border-red-300/60 bg-red-50 text-red-700",
+    }[status as OrdersKotStatus] || "border-border/50 bg-muted/30 text-muted-foreground";
+    const items = (kot.items || []).filter((item) => !item.is_deleted && Math.abs(item.qty_change || 0) > 0);
+    const previewItems = items.slice(0, 5);
+    const itemCount = items.reduce((sum, item) => sum + Math.abs(item.qty_change || 0), 0);
+    const readyCount = items.reduce((sum, item) => sum + Math.min(Math.abs(item.qty_ready || 0), Math.abs(item.qty_change || 0)), 0);
+    const timestamp = kot.created_at || kot.order_created_at;
+
+    return (
+            <button type="button" onClick={() => onClick(kot)} className="block h-full w-full text-left">
+            <Card className="h-[330px] border-border/50 bg-card transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg sm:h-[340px]">
+                <CardContent className="flex h-full flex-col gap-4 overflow-hidden p-5">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-muted-foreground">
+                                <ChefHat className="h-4 w-4 text-primary" />
+                                KOT {kot.kot_number || `#${kot.id}`}
+                            </div>
+                            <h3 className="mt-2 truncate text-lg font-black">{kot.table_name || kot.customer_name || "Walk-in order"}</h3>
+                            <p className="mt-1 truncate text-xs font-medium text-muted-foreground">
+                                {[kot.station, kot.created_by_staff_name].filter(Boolean).join(" · ") || "Kitchen ticket"}
+                            </p>
+                        </div>
+                        <Badge variant="outline" className={cn("shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase", statusClass)}>
+                            {status.replace("_", " ")}
+                        </Badge>
+                    </div>
+
+                    <div className="flex h-[132px] shrink-0 flex-col border-y border-dashed border-border/50 py-3">
+                        <div className="space-y-1">
+                        {previewItems.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between gap-3 text-xs leading-4">
+                                <span className="truncate font-semibold">{item.item_name}</span>
+                                <span className="shrink-0 font-bold text-muted-foreground">×{Math.abs(item.qty_change || 0)}</span>
+                            </div>
+                        ))}
+                        {items.length === 0 && <p className="text-sm text-muted-foreground">No active items</p>}
+                        </div>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between text-xs font-semibold text-muted-foreground">
+                        <span>{readyCount}/{itemCount || 0} ready</span>
+                        <span>{timestamp ? format(new Date(timestamp), "h:mm a") : ""}</span>
+                    </div>
+                </CardContent>
+            </Card>
+            </button>
     );
 }
 

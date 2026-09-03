@@ -98,7 +98,7 @@ export function ModifierGroupDialog({
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>
-            {initialData ? "Edit Modifier Group" : "Create Modifier Group"}
+            {initialData ? "Edit option group" : "Create option group"}
           </DialogTitle>
           <DialogDescription>
             Define how customers select options (e.g., &quot;Choose 1&quot; or &quot;Choose up to 3&quot;).
@@ -111,9 +111,9 @@ export function ModifierGroupDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Group Name</FormLabel>
+                  <FormLabel>Option group name</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Choose Size, Add Toppings" {...field} />
+                    <Input placeholder="e.g. Size, Extra toppings" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

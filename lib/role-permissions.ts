@@ -342,6 +342,33 @@ export function hasPermission(
   return permissions.includes(permission);
 }
 
+/**
+ * Keeps operational workspaces separated for staff assigned to only one
+ * business module. Finance administrators retain access through their admin
+ * role, while a hotel-only staff member cannot switch into restaurant close
+ * screens merely because both modules share the same property.
+ */
+export function canAccessBusinessModule(
+  user: { role?: string | null; roles?: string[] | null; permissions?: string[] } | null,
+  businessLine: "restaurant" | "hotel",
+): boolean {
+  if (!user) return false;
+  const roles = normalizeRolesForUser(user);
+  const permissions = user.permissions ?? [];
+  if (roles.includes("admin") || permissions.includes("platform.restaurants.view")) {
+    return true;
+  }
+  if (businessLine === "hotel") {
+    return permissions.some((permission) => permission.startsWith("hotel."));
+  }
+  return permissions.some(
+    (permission) =>
+      permission.startsWith("pos.") ||
+      permission.startsWith("billing.") ||
+      permission.startsWith("station."),
+  );
+}
+
 // ─── Permission checks (match Flutter RolePermissions) ──────────────────────
 
 export const canAccessSettings = (r: UserRole | null) =>
@@ -621,7 +648,6 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/staff": ADMIN_MANAGER,
   "/attendance": ADMIN_MANAGER,
   "/workforce": ADMIN_MANAGER,
-  "/period-reports": ADMIN_MANAGER,
   "/settings": ALL_DASHBOARD_ROLES,
   "/feedback": ALL_DASHBOARD_ROLES,
   "/premium": ADMIN_MANAGER,

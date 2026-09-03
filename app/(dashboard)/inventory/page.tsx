@@ -1345,6 +1345,9 @@ export default function InventoryPage() {
           setDetailsOpen(false);
           openOps(target);
         }}
+        onRecipeLinksChanged={() => {
+          void fetchInventory();
+        }}
       />
 
       {/* Inventory Advanced Ops: Ledger */}

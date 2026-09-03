@@ -14,15 +14,13 @@ import {
   Plus, 
   Shield, 
   ShieldCheck, 
-  ShieldAlert, 
   ArrowLeft, 
   MoreVertical, 
   Edit, 
   Trash2, 
-  CheckCircle2, 
-  AlertCircle,
   Search,
-  Users
+  Check,
+  ChevronDown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -32,6 +30,7 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Link from "next/link";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -54,12 +53,55 @@ interface Role {
 }
 
 const ROLE_PRESET_LABELS: Record<string, string> = {
-  cashier: "Cashier",
-  manager: "Manager",
-  accountant: "Accountant",
-  accounting_approver: "Accounting approver",
   admin: "Administrator",
+  manager: "Operations manager",
+  cashier: "Cashier",
+  waiter: "Service staff",
+  kitchen: "Kitchen staff",
+  bar: "Bar staff",
+  cafe: "Cafe staff",
+  barista: "Barista",
+  accountant: "Accountant",
+  accounting_approver: "Finance approver",
+  staff: "Team member",
 };
+
+const ROLE_PRESET_DESCRIPTIONS: Record<string, string> = {
+  cashier: "Takes payments and manages the assigned checkout flow.",
+  manager: "Runs day-to-day operations and supervises the team.",
+  accountant: "Reviews finance, records, and accounting reports.",
+  accounting_approver: "Reviews and approves controlled finance actions.",
+  admin: "Full business administration and team management.",
+  waiter: "Takes customer orders and supports table service.",
+  kitchen: "Manages kitchen tickets and food preparation.",
+  bar: "Manages bar orders and beverage service.",
+  cafe: "Supports counter service and cafe operations.",
+  barista: "Prepares drinks and manages cafe orders.",
+  staff: "Basic access for a general team member.",
+};
+
+function readableRoleName(roleName: string) {
+  return ROLE_PRESET_LABELS[roleName]
+    || roleName.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function readableModuleName(moduleName: string) {
+  const labels: Record<string, string> = {
+    pos: "Point of sale",
+    finance: "Finance",
+    hotel: "Hotel",
+    inventory: "Inventory",
+    reports: "Reports",
+    workforce: "Workforce",
+  };
+  return labels[moduleName.toLowerCase()]
+    || moduleName.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function readablePermission(key: string, permissions: Permission[]) {
+  const permission = permissions.find((item) => item.key === key);
+  return permission?.title || key.replaceAll(".", " ").replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
 export default function RolesPage() {
   const [loading, setLoading] = useState(true);
@@ -70,6 +112,8 @@ export default function RolesPage() {
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
+  const [showPermissionEditor, setShowPermissionEditor] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -122,6 +166,8 @@ export default function RolesPage() {
   };
 
   const handleOpenDialog = (role: Role | null = null) => {
+    setSelectedPreset(null);
+    setShowPermissionEditor(Boolean(role));
     if (role) {
       setEditingRole(role);
       setFormData({
@@ -208,7 +254,28 @@ export default function RolesPage() {
     setFormData((previous) => ({
       ...previous,
       permissions: [...presetPermissions],
+      name: previous.name || `${readableRoleName(presetName)} copy`,
+      description: previous.description || ROLE_PRESET_DESCRIPTIONS[presetName] || "Custom access based on a built-in role.",
     }));
+    setSelectedPreset(presetName);
+  };
+
+  const createFromPreset = (presetName: string) => {
+    const label = ROLE_PRESET_LABELS[presetName] || presetName.replaceAll("_", " ");
+    setEditingRole(null);
+    setFormData({
+      name: `${label} copy`,
+      description: ROLE_PRESET_DESCRIPTIONS[presetName] || "Custom access based on a built-in role.",
+      permissions: [...(builtInPresets[presetName] || [])],
+    });
+    setSelectedPreset(presetName);
+    setShowPermissionEditor(false);
+    setIsDialogOpen(true);
+  };
+
+  const startBlankRole = () => {
+    setSelectedPreset(null);
+    setFormData((previous) => ({ ...previous, permissions: [] }));
   };
 
   // Group permissions by module
@@ -236,24 +303,23 @@ export default function RolesPage() {
           </Link>
           <div className="space-y-1">
             <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
-              Role Management
-              <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/10 ml-2 font-bold uppercase tracking-widest text-[10px]">Beta</Badge>
+              Roles
             </h1>
-            <p className="text-muted-foreground font-medium">Define custom roles and manage granular access permissions.</p>
+            <p className="text-muted-foreground font-medium">Create clear job roles and give people the access they need to do their work.</p>
           </div>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-             <Input 
-               placeholder="Search roles..." 
+            <Input
+              placeholder="Find a role..."
                className="pl-9 bg-card/40 border-border/40 focus:border-primary/50"
                value={searchQuery}
                onChange={(e) => setSearchQuery(e.target.value)}
              />
           </div>
           <Button className="bg-primary font-bold shadow-lg shadow-primary/20" onClick={() => handleOpenDialog()}>
-            <Plus className="w-4 h-4 mr-2" /> New Role
+            <Plus className="w-4 h-4 mr-2" /> Create role
           </Button>
         </div>
       </div>
@@ -264,7 +330,9 @@ export default function RolesPage() {
           <p className="font-bold tracking-widest uppercase text-xs">Initializing Permissions...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <>
+        {Object.keys(builtInPresets).length ? <section className="space-y-3"><div><h2 className="text-lg font-bold">Role templates</h2><p className="text-sm text-muted-foreground">Ready-to-use access for common jobs. Create a copy only when you need a variation.</p></div><div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">{Object.keys(builtInPresets).map((presetName) => <Card key={presetName} className="group border-border/60 bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"><CardContent className="p-4"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Shield className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="font-semibold leading-5">{readableRoleName(presetName)}</p><p className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground">{ROLE_PRESET_DESCRIPTIONS[presetName] || "Ready-to-use access template."}</p></div></div><div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2.5"><span className="text-[11px] text-muted-foreground">{builtInPresets[presetName].length} capabilities</span><Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs font-semibold text-primary hover:bg-primary/5" onClick={() => createFromPreset(presetName)}>Use template</Button></div></CardContent></Card>)}</div></section> : null}
+        <section className="space-y-3"><div><h2 className="text-lg font-bold">Custom roles</h2><p className="text-sm text-muted-foreground">Roles created specifically for this business.</p></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filteredRoles.map((role) => (
             <Card key={role.id} className={cn(
               "group relative overflow-hidden border-border/40 bg-card/40 backdrop-blur-sm transition-all hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5",
@@ -274,13 +342,13 @@ export default function RolesPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <CardTitle className="text-lg font-black">{role.name}</CardTitle>
+                      <CardTitle className="text-lg font-black">{readableRoleName(role.name)}</CardTitle>
                       {role.is_system_role && (
                         <Badge variant="outline" className="bg-blue-50/50 text-blue-600 border-blue-200 uppercase text-[9px] font-black tracking-tighter">System</Badge>
                       )}
                     </div>
                     <CardDescription className="line-clamp-2 text-xs font-medium h-8">
-                      {role.description || "No description provided."}
+                      {role.description || "Custom access for a specific job or responsibility."}
                     </CardDescription>
                   </div>
                   {!role.is_system_role && (
@@ -304,13 +372,13 @@ export default function RolesPage() {
               </CardHeader>
               <CardContent className="p-6 pt-0 space-y-4">
                 <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                   <span>Permissions</span>
-                   <span className="text-foreground">{role.permissions?.length || 0}</span>
+                   <span>Capabilities</span>
+                   <span className="text-foreground">{role.permissions?.length || 0} included</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5 h-[68px] overflow-hidden relative">
                   {(role.permissions || []).slice(0, 8).map(p => (
                     <Badge key={p} variant="secondary" className="bg-muted/50 text-[10px] font-medium border-transparent">
-                      {p.replace(/\./g, ' ')}
+                      {readablePermission(p, permissions)}
                     </Badge>
                   ))}
                   {(role.permissions || []).length > 8 && (
@@ -319,16 +387,16 @@ export default function RolesPage() {
                     </span>
                   )}
                   {(!role.permissions || role.permissions.length === 0) && (
-                    <p className="text-[11px] italic text-muted-foreground mt-2">No permissions assigned.</p>
+                    <p className="text-[11px] italic text-muted-foreground mt-2">No access has been selected yet.</p>
                   )}
                 </div>
                 <div className="pt-4 flex items-center justify-between border-t border-border/20">
                     <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                       <Users className="w-3.5 h-3.5" />
-                       <span>Assigned to 0 staff</span>
+                       <ShieldCheck className="w-3.5 h-3.5" />
+                       <span>Custom role</span>
                     </div>
                     <Button variant="link" className="text-[11px] font-black uppercase text-primary p-0 h-auto" onClick={() => handleOpenDialog(role)}>
-                        Detail View
+                        Edit access
                     </Button>
                 </div>
               </CardContent>
@@ -343,9 +411,9 @@ export default function RolesPage() {
             <div className="w-12 h-12 rounded-full bg-muted group-hover:bg-primary/10 flex items-center justify-center transition-colors">
               <Plus className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
             </div>
-            <span className="text-sm font-black uppercase tracking-widest text-muted-foreground group-hover:text-primary transition-colors">Add Custom Role</span>
+            <span className="text-sm font-black uppercase tracking-widest text-muted-foreground group-hover:text-primary transition-colors">Create a custom role</span>
           </button>
-        </div>
+        </div></section></>
       )}
 
       {/* Role Dialog (Custom Modal)
@@ -354,140 +422,103 @@ export default function RolesPage() {
       {isDialogOpen ? (
         <SimpleModal
           onClose={() => setIsDialogOpen(false)}
-          className="w-full max-w-[700px] p-0 overflow-hidden bg-card border border-border/40 shadow-2xl rounded-lg"
+          className="w-full max-w-[760px] p-0 overflow-hidden bg-card border border-border/40 shadow-2xl rounded-2xl"
         >
           <form onSubmit={handleSaveRole}>
-            <div className="p-8 pb-4 space-y-6">
-              <div className="space-y-2">
-                <h2 className="text-2xl font-black">
-                  {editingRole ? `Edit Role: ${editingRole.name}` : "Create New Custom Role"}
+            <div className="max-h-[calc(100vh-6rem)] overflow-y-auto p-6 sm:p-8">
+              <div className="mb-7 pr-8">
+                <h2 className="text-2xl font-bold tracking-tight">
+                  {editingRole ? `Edit ${readableRoleName(editingRole.name)}` : "Create a custom role"}
                 </h2>
-                <p className="text-sm text-muted-foreground font-medium">
-                  Custom roles allow you to define precise access levels for your staff members.
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Start from a job template, then change only the access this role genuinely needs.
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">
-                  Start from preset
-                </Label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {Object.entries(ROLE_PRESET_LABELS).map(([presetName, label]) => (
-                    <Button
-                      key={presetName}
-                      type="button"
-                      variant="outline"
-                      className="h-10 justify-start px-3 text-xs font-semibold"
-                      disabled={!builtInPresets[presetName]}
-                      onClick={() => applyPreset(presetName)}
-                    >
-                      <Shield className="mr-2 h-4 w-4" />
-                      {label}
-                    </Button>
-                  ))}
+              {!editingRole ? <section className="mb-7">
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold">Start with a built-in role</h3>
+                      <p className="text-xs text-muted-foreground">Choose from all available roles, or start with no access.</p>
+                    </div>
+                    {selectedPreset ? <Button type="button" variant="ghost" size="sm" onClick={startBlankRole}>Start blank</Button> : null}
+                  </div>
+                  <Select value={selectedPreset || "blank"} onValueChange={(value) => value === "blank" ? startBlankRole() : applyPreset(value)}>
+                    <SelectTrigger className="h-11 bg-background"><SelectValue placeholder="Choose a role template" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="blank">Start with no template</SelectItem>
+                      {Object.keys(builtInPresets).map((presetName) => <SelectItem key={presetName} value={presetName}>{readableRoleName(presetName)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <div className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
+                    {selectedPreset ? <><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" /><span><strong className="font-medium text-foreground">{readableRoleName(selectedPreset)}</strong> includes {builtInPresets[selectedPreset]?.length || 0} capabilities. {ROLE_PRESET_DESCRIPTIONS[selectedPreset] || "You can adjust it below before saving."}</span></> : <><Shield className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Starting blank means this role has no access until you choose it below.</span></>}
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  A preset replaces the current selection. You can customize it before saving.
-                </p>
-              </div>
+              </section> : null}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="role-name" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Role Name</Label>
-                  <Input 
-                    id="role-name" 
-                    placeholder="e.g., Inventory Manager" 
+                  <Label htmlFor="role-name">Role name</Label>
+                  <Input
+                    id="role-name"
+                    placeholder="For example, Inventory manager"
                     value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="bg-muted/50 border-border/40 focus:border-primary/50 h-11"
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="h-11"
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="role-desc" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Description</Label>
-                  <Input 
-                    id="role-desc" 
-                    placeholder="Briefly describe what this role can do" 
+                  <Label htmlFor="role-desc">What is this role for?</Label>
+                  <Input
+                    id="role-desc"
+                    placeholder="One short description for your team"
                     value={formData.description}
-                    onChange={(e) => setFormData({...formData, description: e.target.value})}
-                    className="bg-muted/50 border-border/40 focus:border-primary/50 h-11"
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    className="h-11"
                   />
                 </div>
-              </div>
-            </div>
+              </section>
 
-            <div className="px-8 pb-4">
-              <div className="flex items-center justify-between mb-4">
-                <Label className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4" /> 
-                  Permission Selection ({formData.permissions.length} selected)
-                </Label>
-                <div className="flex gap-2">
-                  <Button type="button" variant="ghost" className="h-6 text-[9px] font-black uppercase tracking-tighter" onClick={() => setFormData({...formData, permissions: permissions.map(p => p.key)})}>Select All</Button>
-                  <Button type="button" variant="ghost" className="h-6 text-[9px] font-black uppercase tracking-tighter" onClick={() => setFormData({...formData, permissions: []})}>Clear All</Button>
-                </div>
-              </div>
-
-              <div className="bg-muted/30 rounded-xl border border-border/20">
-                {/* Avoid Radix ScrollArea here: it has caused presence/ref loops in some dev setups. */}
-                <div className="h-[400px] w-full overflow-y-auto p-6 pr-5 custom-scrollbar">
-                  <div className="space-y-8">
-                    {Object.entries(groupedPermissions).map(([module, perms]) => (
-                      <div key={module} className="space-y-4">
-                        <div className="flex items-center gap-4">
-                           <h3 className="text-[13px] font-black uppercase tracking-widest text-foreground shrink-0">{module}</h3>
-                           <div className="h-[1px] w-full bg-border/20"></div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                          {perms.map((perm) => (
-                            <div 
-                              key={perm.key} 
-                              className={cn(
-                                "flex items-start gap-4 p-3 rounded-lg border border-transparent transition-all cursor-pointer hover:bg-white/5 hover:border-border/40",
-                                formData.permissions.includes(perm.key) && "bg-white/5 border-primary/20"
-                              )}
-                            >
-                              <input
-                                id={`perm-${perm.key}`}
-                                type="checkbox"
-                                checked={formData.permissions.includes(perm.key)}
-                                onChange={() => togglePermission(perm.key)}
-                                className="mt-1 h-4 w-4 rounded-sm border border-primary bg-transparent accent-primary"
-                              />
-                              <div className="space-y-1">
-                                <label 
-                                  htmlFor={`perm-${perm.key}`}
-                                  className="text-[13px] font-bold leading-none cursor-pointer group-hover:text-primary transition-colors"
-                                >
-                                  {perm.title || perm.key.replace(/\./g, ' ')}
-                                </label>
-                                {perm.risk_level === "high" || perm.risk_level === "critical" ? (
-                                  <Badge
-                                    variant="outline"
-                                    className="mt-2 h-5 px-1.5 text-[9px] uppercase"
-                                  >
-                                    {perm.risk_level}
-                                  </Badge>
-                                ) : null}
-                                <p className="text-[11px] text-muted-foreground font-medium leading-relaxed">
-                                  {perm.description || `Grants access to ${perm.key} features.`}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+              <section className="mt-6 rounded-xl border border-border/60">
+                <button type="button" className="flex w-full items-center justify-between gap-4 p-4 text-left" onClick={() => setShowPermissionEditor((value) => !value)}>
+                  <span><span className="block font-semibold">Customize access</span><span className="mt-0.5 block text-xs text-muted-foreground">{formData.permissions.length} capabilities included. Most roles do not need changes.</span></span>
+                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", showPermissionEditor && "rotate-180")} />
+                </button>
+                {showPermissionEditor ? <div className="border-t border-border/60 p-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">Only enable access that is needed for this job. Sensitive actions are marked for review.</p>
+                    <div className="flex gap-1">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setFormData({ ...formData, permissions: permissions.map((permission) => permission.key) })}>Select all</Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setFormData({ ...formData, permissions: [] })}>Clear</Button>
+                    </div>
                   </div>
-                </div>
-              </div>
+                  <div className="max-h-[360px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="space-y-5">
+                      {Object.entries(groupedPermissions).map(([module, perms]) => <div key={module}>
+                        <h3 className="mb-2 text-sm font-semibold">{readableModuleName(module)}</h3>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {perms.map((perm) => {
+                            const selected = formData.permissions.includes(perm.key);
+                            return <label key={perm.key} htmlFor={`perm-${perm.key}`} className={cn("flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors", selected ? "border-primary/50 bg-primary/5" : "border-border/50 hover:bg-muted/50")}>
+                              <input id={`perm-${perm.key}`} type="checkbox" checked={selected} onChange={() => togglePermission(perm.key)} className="mt-0.5 h-4 w-4 accent-primary" />
+                              <span className="min-w-0"><span className="flex flex-wrap items-center gap-1 text-sm font-medium">{readablePermission(perm.key, permissions)}{(perm.risk_level === "high" || perm.risk_level === "critical") ? <Badge variant="outline" className="text-[9px] capitalize">Needs care</Badge> : null}</span><span className="mt-0.5 block text-xs text-muted-foreground">{perm.description || "Access to this part of Yummy."}</span></span>
+                            </label>;
+                          })}
+                        </div>
+                      </div>)}
+                    </div>
+                  </div>
+                </div> : null}
+              </section>
             </div>
 
-            <div className="p-8 bg-muted/20 border-t border-border/20 pt-6 flex items-center justify-end gap-2">
-              <Button type="button" variant="ghost" className="font-black uppercase tracking-widest text-xs" onClick={() => setIsDialogOpen(false)}>
+            <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/20 p-4 sm:px-8">
+              <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="bg-primary font-black uppercase tracking-widest text-xs h-11 px-8 shadow-lg shadow-primary/20" disabled={submitting}>
+              <Button type="submit" className="h-10 px-6 font-semibold" disabled={submitting}>
                 {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {editingRole ? "Update Role" : "Create Custom Role"}
               </Button>

@@ -64,7 +64,7 @@ export function CheckoutModal({
             onClick={() => {
               const orderId = room?.active_order_ids?.[0];
               onOpenChange(false);
-              router.push(`/orders/${orderId}/edit`);
+              router.push(`/orders/${orderId}/add-items`);
             }}
           >
             <Utensils className="h-4 w-4" /> Place Order / Add Item

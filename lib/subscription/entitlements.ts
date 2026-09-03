@@ -32,7 +32,6 @@ const ENTITLEMENT_LABELS: Record<string, string> = {
   "finance.income_expense.enabled": "Income and expense tracking",
   "finance.daybook.enabled": "Daybook",
   "finance.cash_drawer.enabled": "Cash drawer sessions",
-  "finance.period_close.enabled": "Period close",
   "finance.full_history.enabled": "Full finance history",
   "finance.live_insights.enabled": "Live finance insights",
   "finance.accounting.enabled": "Full accounting",
@@ -70,7 +69,6 @@ const LEGACY_ENTITLEMENT_ALIASES: Record<string, string> = {
   "payments.credit.enabled": "can_use_credit_payment",
   "reservations.enabled": "can_use_reservations",
   "finance.daybook.enabled": "can_use_day_close",
-  "finance.period_close.enabled": "can_use_period_close",
   "finance.full_history.enabled": "can_view_full_finance_history",
   "payroll.enabled": "can_manage_payroll",
 };

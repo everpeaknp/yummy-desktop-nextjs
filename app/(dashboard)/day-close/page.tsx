@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +41,11 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
-import { DayCloseApis } from "@/lib/api/endpoints";
+import { DayCloseApis, DrawerSessionApis } from "@/lib/api/endpoints";
+import {
+  canAccessBusinessModule,
+  hasPermission,
+} from "@/lib/role-permissions";
 import {
   formatDayCloseCurrency,
   formatDayCloseListHeading,
@@ -56,11 +61,17 @@ import {
 } from "@/types/day-close";
 
 export default function DayClosePage() {
+  const searchParams = useSearchParams();
   const user = useAuth((s) => s.user);
   const restaurant = useRestaurant((s) => s.restaurant);
   const restaurantId = user?.restaurant_id ?? undefined;
   const [closeOpen, setCloseOpen] = useState(false);
-  const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
+  const requestedBusinessLine = searchParams.get("business_line");
+  const [businessLine, setBusinessLine] = useState<BusinessLine>(
+    requestedBusinessLine === "hotel" || requestedBusinessLine === "combined"
+      ? requestedBusinessLine
+      : "restaurant",
+  );
   const [selectedDate, setSelectedDate] = useState(() => {
     const now = new Date();
     const pad = (value: number) => String(value).padStart(2, "0");
@@ -69,11 +80,49 @@ export default function DayClosePage() {
   const [currentLoading, setCurrentLoading] = useState(false);
   const [currentClose, setCurrentClose] = useState<DayCloseCurrent | null>(null);
   const [snapshotPreview, setSnapshotPreview] = useState<DayCloseSnapshotData | null>(null);
+  const [cashControlMode, setCashControlMode] = useState<"separate" | "combined">("separate");
   const dayCloseHistoryRef = useRef<DayCloseHistoryHandle | null>(null);
 
+  const canUseRestaurantClose = canAccessBusinessModule(user, "restaurant");
+  const canUseHotelDaybook = Boolean(restaurant?.hotel_enabled) &&
+    canAccessBusinessModule(user, "hotel") &&
+    hasPermission(user, "reports.dayclose.view");
+
   const showBusinessLinePicker = Boolean(
-    restaurant?.hotel_enabled && restaurant?.restaurant_enabled,
+    restaurant?.hotel_enabled && restaurant?.restaurant_enabled &&
+      canUseRestaurantClose && canUseHotelDaybook,
   );
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    let active = true;
+    void apiClient
+      .get(DrawerSessionApis.cashControlPolicy({ restaurantId, effectiveDate: selectedDate }))
+      .then((response) => {
+        if (!active) return;
+        setCashControlMode(response.data?.data?.mode === "combined" ? "combined" : "separate");
+      })
+      .catch(() => {
+        if (active) setCashControlMode("separate");
+      });
+    return () => {
+      active = false;
+    };
+  }, [restaurantId, selectedDate]);
+
+  useEffect(() => {
+    if (cashControlMode === "combined") {
+      setBusinessLine("combined");
+      return;
+    }
+    if (requestedBusinessLine === "hotel" && canUseHotelDaybook) {
+      setBusinessLine(requestedBusinessLine);
+    } else if (requestedBusinessLine === "restaurant" && canUseRestaurantClose) {
+      setBusinessLine(requestedBusinessLine);
+    } else if (!canUseRestaurantClose && canUseHotelDaybook) {
+      setBusinessLine("hotel");
+    }
+  }, [canUseHotelDaybook, canUseRestaurantClose, cashControlMode, requestedBusinessLine]);
 
   const loadCurrent = useCallback(async () => {
     if (!restaurantId) return;
@@ -151,7 +200,7 @@ export default function DayClosePage() {
     currentClose?.snapshot_preview?.expense_total,
   );
 
-  const businessLineLabel = businessLine === "hotel" ? "Hotel Close" : "Restaurant Close";
+  const businessLineLabel = businessLine === "combined" ? "Combined Day Close" : businessLine === "hotel" ? "Hotel Daybook" : "Restaurant Close";
   const statusLabel = String(currentClose?.status ?? "—").replace(/_/g, " ");
   const statusTone = (() => {
     const normalized = statusLabel.toLowerCase();
@@ -167,9 +216,13 @@ export default function DayClosePage() {
     <div className="day-close-page day-close-ui flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="dc-page-title">Day Close</h1>
+          <h1 className="dc-page-title">{businessLine === "combined" ? "Combined Day Close" : businessLine === "hotel" ? "Hotel Daybook" : "Restaurant Day Close"}</h1>
           <p className="dc-page-subtitle">
-            Period and totals come from the backend day-close service
+            {businessLine === "combined"
+              ? "One cash reconciliation for shared drawers; Hotel and Restaurant reporting remains separate."
+              : businessLine === "hotel"
+              ? "Settle hotel drawers, then save an audited daily hotel daybook."
+              : "Settle drawers, review the daybook, and confirm one audited restaurant close."}
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
@@ -190,7 +243,11 @@ export default function DayClosePage() {
               className="h-11 min-w-[170px] rounded-2xl"
             />
           </div>
-          {showBusinessLinePicker ? (
+          {cashControlMode === "combined" ? (
+            <Badge variant="outline" className="h-11 rounded-2xl px-4 text-sm font-medium">
+              Shared drawers · combined close
+            </Badge>
+          ) : showBusinessLinePicker ? (
             <Select
               value={businessLine}
               onValueChange={(value) => setBusinessLine(value as BusinessLine)}
@@ -199,8 +256,8 @@ export default function DayClosePage() {
                 <SelectValue placeholder="Business line" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="restaurant">Restaurant Close</SelectItem>
-                <SelectItem value="hotel">Hotel Close</SelectItem>
+                <SelectItem value="restaurant">Restaurant Day Close</SelectItem>
+                <SelectItem value="hotel">Hotel Daybook</SelectItem>
               </SelectContent>
             </Select>
           ) : null}
@@ -311,6 +368,7 @@ export default function DayClosePage() {
             ref={dayCloseHistoryRef}
             restaurantId={restaurantId}
             timezone={restaurant?.timezone}
+            initialBusinessLine={businessLine}
             liveCurrentClose={currentClose}
             liveSnapshotPreview={snapshotPreview}
             onLiveCurrentRefresh={loadCurrent}

@@ -325,6 +325,7 @@ function DayCloseDetailDialogSkeleton({ compact = false }: { compact?: boolean }
 type DayCloseHistoryProps = {
   restaurantId?: number;
   timezone?: string;
+  initialBusinessLine?: BusinessLine;
   liveCurrentClose?: DayCloseCurrent | null;
   liveSnapshotPreview?: DayCloseSnapshotData | null;
   onLiveCurrentRefresh?: () => Promise<void> | void;
@@ -337,13 +338,14 @@ export type DayCloseHistoryHandle = {
 export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistoryProps>(function DayCloseHistory({
   restaurantId,
   timezone,
+  initialBusinessLine = "restaurant",
   liveCurrentClose,
   liveSnapshotPreview,
   onLiveCurrentRefresh,
 }: DayCloseHistoryProps, ref) {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<DayCloseListItem[]>([]);
-  const [businessLine, setBusinessLine] = useState<BusinessLine>("restaurant");
+  const [businessLine, setBusinessLine] = useState<BusinessLine>(initialBusinessLine);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
     from: startOfDay(subDays(new Date(), 30)),
     to: endOfDay(new Date()),
@@ -383,6 +385,10 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
   const [adjCategoryId, setAdjCategoryId] = useState<string>("");
 
   const canLoad = !!restaurantId;
+
+  useEffect(() => {
+    setBusinessLine(initialBusinessLine);
+  }, [initialBusinessLine]);
 
   const fetchSessions = useCallback(async () => {
     if (!restaurantId) return;
@@ -898,6 +904,7 @@ export const DayCloseHistory = forwardRef<DayCloseHistoryHandle, DayCloseHistory
                   <SelectContent>
                     <SelectItem value="restaurant">Restaurant</SelectItem>
                     <SelectItem value="hotel">Hotel</SelectItem>
+                    <SelectItem value="combined">Combined</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

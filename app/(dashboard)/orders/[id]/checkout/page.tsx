@@ -974,42 +974,91 @@ export default function CheckoutPage() {
     if (!context?.order?.items?.length) return;
 
     setItemUpdating(true);
+    let item: any;
+    let requestedQty: number | undefined;
     try {
-      const payload = {
-        items: context.order.items.map((item: any) => {
-          const isTarget = Number(item.id) === Number(targetItemId);
-          const displayItem = {
-            ...item,
-            ...(itemOverrides[item.id] || {})
-          };
-          return {
-            menu_item_id: item.menu_item_id,
-            name_snapshot: item.name_snapshot,
-            category_name_snapshot: item.category_name_snapshot,
-            category_type_snapshot: item.category_type_snapshot,
-            revenue_category: item.revenue_category,
-            unit_price: item.unit_price,
-            qty: isTarget ? (patch.qty ?? displayItem.qty) : displayItem.qty,
-            notes: isTarget ? (patch.notes !== undefined ? patch.notes : (displayItem.notes || null)) : (displayItem.notes || null),
-            is_nc: isTarget ? (patch.is_nc ?? Boolean(displayItem.is_nc)) : Boolean(displayItem.is_nc),
-            modifiers: Array.isArray(item.modifiers)
-              ? item.modifiers.map((modifier: any) => ({
-                  modifier_id: modifier.modifier_id,
-                  modifier_name_snapshot: modifier.modifier_name_snapshot,
-                  price_adjustment_snapshot: modifier.price_adjustment_snapshot,
-                }))
-              : [],
-          };
-        }),
-      };
-
-      await apiClient.post(OrderApis.updateOrderItems(orderId), payload);
+      item = context.order.items.find((candidate: any) => Number(candidate.id) === Number(targetItemId));
+      if (!item) throw new Error("Order line not found");
+      const displayItem = { ...item, ...(itemOverrides[item.id] || {}) };
+      const qty = patch.qty ?? displayItem.qty;
+      requestedQty = Number(qty);
+      const identityChanged = patch.notes !== undefined || patch.is_nc !== undefined;
+      if (qty <= 0) {
+        if (!canVoidItem) throw new Error("You do not have permission to void order items.");
+        const reason = window.prompt("Reason for voiding this item?")?.trim();
+        if (!reason) return;
+        await apiClient.post(OrderApis.voidOrderLine(orderId, item.id), {
+          qty: item.qty,
+          reason,
+          idempotency_key: crypto.randomUUID(),
+        });
+      } else if (patch.is_nc !== undefined) {
+        await apiClient.patch(OrderApis.updateOrderLine(orderId, item.id), {
+          is_nc: patch.is_nc,
+          expected_version: (context.order as any).version,
+          idempotency_key: crypto.randomUUID(),
+        });
+      } else if (identityChanged) {
+        if (!canVoidItem) throw new Error("You do not have permission to replace order items.");
+        await apiClient.post(OrderApis.voidOrderLine(orderId, item.id), {
+          qty: item.qty,
+          reason: "Line details changed",
+          idempotency_key: crypto.randomUUID(),
+        });
+        await apiClient.post(OrderApis.addOrderLine(orderId), {
+          menu_item_id: item.menu_item_id,
+          name_snapshot: item.name_snapshot,
+          category_name_snapshot: item.category_name_snapshot,
+          category_type_snapshot: item.category_type_snapshot,
+          revenue_category: item.revenue_category,
+          unit_price: item.unit_price,
+          qty,
+          notes: patch.notes !== undefined ? patch.notes : (displayItem.notes || null),
+          is_nc: patch.is_nc ?? Boolean(displayItem.is_nc),
+          idempotency_key: crypto.randomUUID(),
+          modifiers: Array.isArray(item.modifiers) ? item.modifiers.map((modifier: any) => ({
+            modifier_id: modifier.modifier_id,
+            modifier_name_snapshot: modifier.modifier_name_snapshot,
+            price_adjustment_snapshot: modifier.price_adjustment_snapshot,
+          })) : [],
+        });
+      } else if (patch.qty !== undefined) {
+        await apiClient.patch(OrderApis.updateOrderLine(orderId, item.id), {
+          qty,
+          idempotency_key: crypto.randomUUID(),
+        });
+      }
       if (options?.successMessage) toast.success(options.successMessage);
       await Promise.all([fetchContext(), fetchBill()]);
       setItemOverrides({});
     } catch (err: any) {
       console.error("Failed to update item from checkout:", err);
-      toast.error(extractApiErrorMessage(err, "Failed to update item"));
+      const detail = extractApiErrorMessage(err, "Failed to update item");
+      if (
+        detail.includes("manager-confirmed void") &&
+        canVoidItem &&
+        item &&
+        Number(requestedQty) < Number(item.qty)
+      ) {
+        const reason = window.prompt("Kitchen has started this item. Enter the manager void reason:")?.trim();
+        if (reason) {
+          try {
+            await apiClient.post(OrderApis.voidOrderLine(orderId, item.id), {
+              qty: Number(item.qty) - Number(requestedQty),
+              reason,
+              idempotency_key: crypto.randomUUID(),
+            });
+            toast.success("Manager void recorded");
+            await Promise.all([fetchContext(), fetchBill()]);
+            setItemOverrides({});
+            return;
+          } catch (voidErr: any) {
+            toast.error(extractApiErrorMessage(voidErr, "Failed to void item"));
+          }
+        }
+      } else {
+        toast.error(detail);
+      }
       // Revert optimistic update on error
       setItemOverrides(prev => {
         const next = { ...prev };
@@ -1019,7 +1068,7 @@ export default function CheckoutPage() {
     } finally {
       setItemUpdating(false);
     }
-  }, [context?.order?.items, orderId, itemOverrides, fetchBill, fetchContext]);
+  }, [canVoidItem, context?.order?.items, context?.order?.version, orderId, itemOverrides, fetchBill, fetchContext]);
 
   const handleSaveItemEdit = async () => {
     if (!editingItem) return;
@@ -2217,8 +2266,14 @@ export default function CheckoutPage() {
   const displayGrandTotal = Number((displaySubtotal + Number(bill.service_charge || 0) - computedDiscount).toFixed(2));
   const displayBalanceDue = Math.max(0, Number((displayGrandTotal - Number(bill.total_paid || 0)).toFixed(2)));
   const displayIsFullyPaid = displayBalanceDue <= 0;
+  const totalRefunded = bill.payments.reduce(
+    (total, payment) => total + Math.max(0, -Number(payment.amount || 0)),
+    0,
+  );
   const isRoomServiceOrder = orderMeta?.channel === "room_service";
-  const showCheckoutControls = !isRoomServiceOrder && (
+  // A return/refund is a separate audited cash movement.  It must never make
+  // the original completed sale editable or invite another customer payment.
+  const showCheckoutControls = !isRoomServiceOrder && !orderEditLocked && (
     !displayIsFullyPaid
     || hasNcItems
     || (guestBills?.orders?.length > 0 && guestBills?.split_group_id)
@@ -2380,30 +2435,8 @@ export default function CheckoutPage() {
                           )}
                         </td>
                         <td className="p-4">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8"
-                              disabled={orderEditLocked || itemUpdating || (displayItem.qty <= 1 && !canVoidItem)}
-                              onClick={() => void handleQtyChange(item, -1)}
-                            >
-                              <Minus className="h-3.5 w-3.5" />
-                            </Button>
-                            <div className="min-w-[2.5rem] text-center font-semibold tabular-nums">
-                              {displayItem.qty}
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8"
-                              disabled={orderEditLocked || itemUpdating}
-                              onClick={() => void handleQtyChange(item, 1)}
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                            </Button>
+                          <div className="text-center font-semibold tabular-nums">
+                            {displayItem.qty}
                           </div>
                         </td>
                         <td className="p-4 text-right text-sm tabular-nums text-muted-foreground">
@@ -2428,16 +2461,6 @@ export default function CheckoutPage() {
                               >
                                 <Award className="h-3.5 w-3.5" />
                                 NC
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 gap-1.5 px-2 text-xs font-semibold"
-                                onClick={() => handleOpenItemEdit(item)}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                                Note
                               </Button>
                             </div>
                           ) : (
@@ -2546,7 +2569,7 @@ export default function CheckoutPage() {
                   <div className="flex items-center gap-1.5">
                     <Percent className="h-3.5 w-3.5 text-emerald-600" />
                     <span className="text-emerald-600 font-medium">{discountLabel}</span>
-                    {!displayIsFullyPaid && canApplyDiscount && (
+                    {!orderEditLocked && !displayIsFullyPaid && canApplyDiscount && (
                       <button onClick={handleRemoveDiscount} className="text-destructive hover:text-destructive/80 ml-1">
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -2572,6 +2595,13 @@ export default function CheckoutPage() {
                 </div>
               )}
 
+              {totalRefunded > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Refunded</span>
+                  <span className="tabular-nums text-rose-600 font-medium">-{formatCurrency(totalRefunded, curr)}</span>
+                </div>
+              )}
+
               <div className="flex justify-between font-bold text-base">
                 <span className={displayBalanceDue > 0 ? "text-destructive" : "text-emerald-600"}>
                   {displayBalanceDue > 0 ? "Balance Due" : "Paid"}
@@ -2593,6 +2623,7 @@ export default function CheckoutPage() {
                   const Icon = method?.icon || Banknote;
                   const instrument = readPaymentInstrument(p);
                   const isRemoving = removingPaymentId === p.id;
+                  const isRefund = Number(p.amount || 0) < 0;
                   const canRemovePayment = Number(p.amount || 0) >= 0;
                   return (
                     <div key={p.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
@@ -2601,7 +2632,9 @@ export default function CheckoutPage() {
                           <Icon className="h-4 w-4" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium capitalize">{p.method}</p>
+                          <p className="text-sm font-medium capitalize">
+                            {isRefund ? "Refund issued" : p.method}
+                          </p>
                           {instrument?.name && (
                             <p className="text-xs text-muted-foreground">
                               {instrument.name}
@@ -2618,7 +2651,14 @@ export default function CheckoutPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-semibold tabular-nums">{formatCurrency(p.amount, curr)}</span>
+                        <span className={cn(
+                          "font-semibold tabular-nums",
+                          isRefund && "text-rose-600",
+                        )}>
+                          {isRefund
+                            ? `-${formatCurrency(Math.abs(Number(p.amount || 0)), curr)}`
+                            : formatCurrency(p.amount, curr)}
+                        </span>
                         {canEditPayment && !orderEditLocked && (
                           <Button
                             type="button"
@@ -2883,7 +2923,7 @@ export default function CheckoutPage() {
                 <Button
                   variant="outline"
                   className="gap-2 text-xs sm:text-sm"
-                  onClick={() => router.push(`/orders/${orderId}/edit`)}
+                  onClick={() => router.push(`/orders/${orderId}/add-items`)}
                 >
                   <Receipt className="h-4 w-4" />
                   Edit Order

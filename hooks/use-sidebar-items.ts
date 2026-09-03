@@ -227,7 +227,6 @@ export function useSidebarItems(): SidebarItem[] {
           "/cash-drawers": "finance.cash_drawer.enabled",
           "/customers": "customers.crm.enabled",
           "/day-close": "finance.daybook.enabled",
-          "/period-reports": "finance.period_close.enabled",
           "/manage/receipt-designer": "designers.receipt.enabled",
           "/manage/kot-designer": "designers.kot.enabled",
         };

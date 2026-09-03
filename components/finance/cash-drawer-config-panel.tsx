@@ -81,6 +81,11 @@ export function CashDrawerConfigPanel({
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerControlsEnabled, setDrawerControlsEnabled] = useState(false);
   const [drawerControlsSaving, setDrawerControlsSaving] = useState(false);
+  const [cashControlMode, setCashControlMode] = useState<"separate" | "combined">("separate");
+  const [policyMode, setPolicyMode] = useState<"separate" | "combined">("separate");
+  const [policyEffectiveFrom, setPolicyEffectiveFrom] = useState("");
+  const [policyReason, setPolicyReason] = useState("");
+  const [policySaving, setPolicySaving] = useState(false);
   const [drawerDialog, setDrawerDialog] = useState<{ open: boolean; id: number | null }>({
     open: false,
     id: null,
@@ -94,13 +99,22 @@ export function CashDrawerConfigPanel({
   const canAssignDrawers = isDrawerAdmin || hasPermission(user, "finance.drawer.assign");
   const canManageDrawers = canAssignDrawers || canConfigureDrawers;
 
+  const tomorrowIso = () => {
+    const value = new Date();
+    value.setDate(value.getDate() + 1);
+    return value.toISOString().slice(0, 10);
+  };
+
   const loadDrawerConfigurations = useCallback(async () => {
     if (!restaurantId) return;
     setDrawerLoading(true);
     try {
+      const policyRes = await apiClient.get(DrawerSessionApis.cashControlPolicy({ restaurantId }));
+      const activeMode = policyRes.data?.data?.mode === "combined" ? "combined" : "separate";
+      const physicalScope = activeMode === "combined" ? "shared" : businessLine;
       const [configRes, assignmentRes, cashierRes, controlsRes] = await Promise.all([
-        apiClient.get(DrawerSessionApis.configurations({ restaurantId, businessLine })),
-        apiClient.get(DrawerSessionApis.assignments({ restaurantId, businessLine })),
+        apiClient.get(DrawerSessionApis.configurations({ restaurantId, businessLine: physicalScope })),
+        apiClient.get(DrawerSessionApis.assignments({ restaurantId, businessLine: physicalScope })),
         apiClient.get(DrawerSessionApis.cashiers({ restaurantId })),
         apiClient.get(DrawerSessionApis.controls({ restaurantId })),
       ]);
@@ -108,6 +122,10 @@ export function CashDrawerConfigPanel({
       setDrawerAssignments(Array.isArray(assignmentRes.data?.data) ? assignmentRes.data.data : []);
       setDrawerCashiers(Array.isArray(cashierRes.data?.data) ? cashierRes.data.data : []);
       setDrawerControlsEnabled(Boolean(controlsRes.data?.data?.enabled));
+      setCashControlMode(activeMode);
+      setPolicyMode(activeMode);
+      setPolicyEffectiveFrom(policyRes.data?.data?.effective_from ?? tomorrowIso());
+      setPolicyReason(policyRes.data?.data?.reason ?? "");
     } catch (err: any) {
       const status = err?.response?.status;
       if (status !== 403) {
@@ -121,6 +139,30 @@ export function CashDrawerConfigPanel({
       setDrawerLoading(false);
     }
   }, [restaurantId, businessLine]);
+
+  const saveCashControlPolicy = async () => {
+    if (!restaurantId || !canConfigureDrawers) return;
+    if (!policyEffectiveFrom) {
+      toast.error("Choose the future date when this cash-control change takes effect");
+      return;
+    }
+    try {
+      setPolicySaving(true);
+      await apiClient.put(DrawerSessionApis.saveCashControlPolicy, {
+        restaurant_id: restaurantId,
+        mode: policyMode,
+        effective_from: policyEffectiveFrom,
+        reason: policyReason.trim() || undefined,
+      });
+      toast.success("Cash-control policy scheduled. Closed days remain unchanged.");
+      await loadDrawerConfigurations();
+    } catch (err) {
+      console.error("Failed to schedule cash-control policy", err);
+      toast.error("Failed to schedule cash-control policy");
+    } finally {
+      setPolicySaving(false);
+    }
+  };
 
   useEffect(() => {
     if (canManageDrawers) void loadDrawerConfigurations();
@@ -149,7 +191,7 @@ export function CashDrawerConfigPanel({
       return;
     }
     if (!config) {
-      setDrawerForm(emptyDrawerForm(businessLine));
+      setDrawerForm(emptyDrawerForm(cashControlMode === "combined" ? "shared" : businessLine));
       setDrawerDialog({ open: true, id: null });
       return;
     }
@@ -196,7 +238,7 @@ export function CashDrawerConfigPanel({
       });
       toast.success("Cash drawer saved");
       setDrawerDialog({ open: false, id: null });
-      setDrawerForm(emptyDrawerForm(businessLine));
+      setDrawerForm(emptyDrawerForm(cashControlMode === "combined" ? "shared" : businessLine));
       await loadDrawerConfigurations();
     } catch (err) {
       console.error("Failed to save cash drawer", err);
@@ -317,6 +359,42 @@ export function CashDrawerConfigPanel({
 
   return (
     <>
+      {hotelEnabled ? (
+        <Card className="border-border/70">
+          <CardHeader>
+            <CardTitle>Cash-control policy</CardTitle>
+            <CardDescription>
+              Choose whether Hotel and Restaurant use separate tills and separate closes, or one shared till and a combined close. This takes effect on a future date and never rewrites prior closes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-[1fr_180px_1fr_auto] md:items-end">
+            <div className="space-y-2">
+              <Label>Cash custody</Label>
+              <Select value={policyMode} onValueChange={(value) => setPolicyMode(value as "separate" | "combined")} disabled={!canConfigureDrawers || policySaving}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="separate">Separate Hotel and Restaurant drawers</SelectItem>
+                  <SelectItem value="combined">One shared Hotel and Restaurant drawer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Effective from</Label>
+              <Input type="date" min={tomorrowIso()} value={policyEffectiveFrom} onChange={(event) => setPolicyEffectiveFrom(event.target.value)} disabled={!canConfigureDrawers || policySaving} />
+            </div>
+            <div className="space-y-2">
+              <Label>Reason (optional)</Label>
+              <Input value={policyReason} onChange={(event) => setPolicyReason(event.target.value)} placeholder="e.g. shared front-desk till" disabled={!canConfigureDrawers || policySaving} />
+            </div>
+            <Button onClick={() => void saveCashControlPolicy()} disabled={!canConfigureDrawers || policySaving}>
+              {policySaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Schedule
+            </Button>
+            <p className="md:col-span-4 text-xs text-muted-foreground">
+              Active today: <span className="font-medium capitalize text-foreground">{cashControlMode}</span>. Financial documents keep their Hotel or Restaurant identity in both modes.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
       <Card id="drawer-configuration" className="border-border/70">
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div className="space-y-1">
@@ -546,8 +624,14 @@ export function CashDrawerConfigPanel({
                     <SelectValue placeholder="Select business area" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="restaurant">Restaurant POS</SelectItem>
-                    {hotelEnabled ? <SelectItem value="hotel">Hotel / front desk</SelectItem> : null}
+                    {cashControlMode === "combined" ? (
+                      <SelectItem value="shared">Shared Hotel & Restaurant</SelectItem>
+                    ) : (
+                      <>
+                        <SelectItem value="restaurant">Restaurant POS</SelectItem>
+                        {hotelEnabled ? <SelectItem value="hotel">Hotel / front desk</SelectItem> : null}
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">

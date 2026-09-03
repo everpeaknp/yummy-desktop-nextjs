@@ -193,7 +193,7 @@ export function BookingDetailDialog({ bookingId, open, onOpenChange, permissions
     const editableOrder = editableRoomOrderFor(assignmentId);
     onOpenChange(false);
     if (editableOrder) {
-      router.push(`/orders/${editableOrder.id}/edit`);
+      router.push(`/orders/${editableOrder.id}/add-items`);
       return;
     }
     router.push(`/orders/create?channel=room_service&stay_assignment=${assignmentId}&room=${encodeURIComponent(roomNumber)}&guest=${encodeURIComponent(booking?.primary_guest_name || "")}`);

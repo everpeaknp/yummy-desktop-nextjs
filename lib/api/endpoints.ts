@@ -249,8 +249,10 @@ export const OrderApis = {
     if (fields) params.append("fields", fields);
     return `/orders/summary?${params.toString()}`;
   },
-  addItemsToOrder: (id: number) => `/orders/${id}/items/bulk-add`,
-  updateOrderItems: (id: number) => `/orders/${id}/items/bulk-update`,
+  addOrderLine: (id: number) => `/orders/${id}/lines`,
+  addOrderLinesBatch: (id: number) => `/orders/${id}/lines/batch`,
+  updateOrderLine: (orderId: number, itemId: number) => `/orders/${orderId}/lines/${itemId}`,
+  voidOrderLine: (orderId: number, itemId: number) => `/orders/${orderId}/lines/${itemId}/void`,
   addPayment: (id: number) => `/orders/${id}/payments`,
   updatePayment: (orderId: number, paymentId: number) =>
     `/orders/${orderId}/payments/${paymentId}`,
@@ -489,21 +491,23 @@ export const InventoryApis = {
     if (timezone) params.append("timezone", timezone);
     return `/inventory/items/${itemId}/ledger?${params.toString()}`;
   },
+  getMenuLinksForInventory: (itemId: number, restaurantId: number) =>
+    `/inventory/items/${itemId}/menu-links?restaurant_id=${restaurantId}`,
+  getModifierLinksForInventory: (itemId: number, restaurantId: number) =>
+    `/inventory/items/${itemId}/modifier-links?restaurant_id=${restaurantId}`,
   linkMenuInventory: "/inventory/menu-link",
+  updateMenuInventory: (linkId: number) => `/inventory/menu-link/${linkId}`,
   unlinkMenuInventory: (linkId: number) => `/inventory/menu-link/${linkId}`,
   getMenuInventory: (menuItemId: number) => `/inventory/menu/${menuItemId}`,
   // Modifier <-> inventory linking (used to deduct inventory when a modifier is applied).
   linkModifierInventory: "/inventory/modifier-link",
+  updateModifierInventory: (linkId: number) => `/inventory/modifier-link/${linkId}`,
   unlinkModifierInventory: (linkId: number) =>
     `/inventory/modifier-link/${linkId}`,
   getInventoryForModifier: (modifierId: number) =>
     `/inventory/modifier/${modifierId}`,
   previewConsumption: "/inventory/consumption/preview",
   consume: "/inventory/consumption",
-  awaitingPayments: "/awaiting-payments",
-  awaitingPaymentById: (id: number) => `/awaiting-payments/${id}`,
-  markAwaitingPaymentPaid: (id: number) => `/awaiting-payments/${id}/mark-paid`,
-  rejectAwaitingPayment: (id: number) => `/awaiting-payments/${id}/reject`,
 };
 
 // Inventory-linked purchases: posting one increases inventory and creates
@@ -564,20 +568,6 @@ export const PurchaseReturnApis = {
     `/purchase-returns/${id}?restaurant_id=${restaurantId}`,
   void: (id: number, restaurantId: number) =>
     `/purchase-returns/${id}/void?restaurant_id=${restaurantId}`,
-};
-
-export const AwaitingPaymentApis = {
-  list: (restaurantId: number, params: any) => {
-    const qv = new URLSearchParams({
-      restaurant_id: restaurantId.toString(),
-      ...params,
-    });
-    return `/awaiting-payments?${qv.toString()}`;
-  },
-  markPaid: (id: number, restaurantId: number) =>
-    `/awaiting-payments/${id}/mark-paid?restaurant_id=${restaurantId}`,
-  reject: (id: number, restaurantId: number) =>
-    `/awaiting-payments/${id}/reject?restaurant_id=${restaurantId}`,
 };
 
 export const CashAndBanksApis = {
@@ -1943,6 +1933,18 @@ export const DayCloseApis = {
 };
 
 export const DrawerSessionApis = {
+  cashControlPolicy: ({
+    restaurantId,
+    effectiveDate,
+  }: {
+    restaurantId: number;
+    effectiveDate?: string;
+  }) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (effectiveDate) params.set("effective_date", effectiveDate);
+    return `/drawer-sessions/cash-control-policy?${params.toString()}`;
+  },
+  saveCashControlPolicy: "/drawer-sessions/cash-control-policy",
   configurations: ({
     restaurantId,
     businessLine = "restaurant",
@@ -2295,57 +2297,6 @@ export const AttendanceApis = {
     "/attendance/connectors/" + credentialId + "/revoke",
 };
 
-export const PeriodCloseApis = {
-  weeklyPreview: (restaurantId: number, year: number, week: number) =>
-    `/period-closes/weekly/preview?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
-  confirmWeekly: (restaurantId: number, year: number, week: number) =>
-    `/period-closes/weekly/confirm?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
-  weeklyRebuild: (restaurantId: number, year: number, week: number) =>
-    `/period-closes/weekly/rebuild?restaurant_id=${restaurantId}&year=${year}&week_number=${week}`,
-  listWeekly: (restaurantId: number, year?: number) => {
-    const params = new URLSearchParams({
-      restaurant_id: restaurantId.toString(),
-    });
-    if (year) params.append("year", year.toString());
-    return `/period-closes/weekly?${params.toString()}`;
-  },
-  weeklySnapshot: (weeklyCloseId: number) =>
-    `/period-closes/weekly/${weeklyCloseId}/snapshot`,
-  weeklyPreviewPdf: (
-    restaurantId: number,
-    year: number,
-    week: number,
-    doc: string,
-  ) =>
-    `/period-closes/weekly/preview/export/pdf?restaurant_id=${restaurantId}&year=${year}&week_number=${week}&doc=${encodeURIComponent(doc)}`,
-  weeklyClosePdf: (weeklyCloseId: number, doc: string) =>
-    `/period-closes/weekly/${weeklyCloseId}/export/pdf?doc=${encodeURIComponent(doc)}`,
-  monthlyPreview: (restaurantId: number, year: number, month: number) =>
-    `/period-closes/monthly/preview?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
-  confirmMonthly: (restaurantId: number, year: number, month: number) =>
-    `/period-closes/monthly/confirm?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
-  monthlyRebuild: (restaurantId: number, year: number, month: number) =>
-    `/period-closes/monthly/rebuild?restaurant_id=${restaurantId}&year=${year}&month=${month}`,
-  listMonthly: (restaurantId: number, year?: number) => {
-    const params = new URLSearchParams({
-      restaurant_id: restaurantId.toString(),
-    });
-    if (year) params.append("year", year.toString());
-    return `/period-closes/monthly?${params.toString()}`;
-  },
-  monthlySnapshot: (monthlyCloseId: number) =>
-    `/period-closes/monthly/${monthlyCloseId}/snapshot`,
-  monthlyPreviewPdf: (
-    restaurantId: number,
-    year: number,
-    month: number,
-    doc: string,
-  ) =>
-    `/period-closes/monthly/preview/export/pdf?restaurant_id=${restaurantId}&year=${year}&month=${month}&doc=${encodeURIComponent(doc)}`,
-  monthlyClosePdf: (monthlyCloseId: number, doc: string) =>
-    `/period-closes/monthly/${monthlyCloseId}/export/pdf?doc=${encodeURIComponent(doc)}`,
-};
-
 export const GeneralPurchaseApis = {
   list: ({
     restaurantId,
@@ -2376,8 +2327,6 @@ export const GeneralPurchaseApis = {
   receive: (id: number) => `/general-purchases/${id}/receive`,
   cancel: (id: number) => `/general-purchases/${id}/cancel`,
   return: (id: number) => `/general-purchases/${id}/return`,
-  awaitingPayments: (restaurantId: number) =>
-    `/awaiting-payments/general?restaurant_id=${restaurantId}`,
 };
 
 export const TaxConfigApis = {

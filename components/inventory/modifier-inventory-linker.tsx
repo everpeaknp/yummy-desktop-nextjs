@@ -140,7 +140,7 @@ export function ModifierInventoryLinker({
       };
       const res = await apiClient.post(InventoryApis.linkModifierInventory, payload);
       if (res.data?.status === "success") {
-        toast.success("Linked modifier to inventory");
+        toast.success("Option linked to inventory");
         await fetchLinks(modifierId);
         resetForm();
       } else {
@@ -183,12 +183,12 @@ export function ModifierInventoryLinker({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Link this modifier option to one or more inventory items (quantity required per modifier).
+            Link this option or add-on to the inventory it uses. Set the quantity used each time it is selected.
           </DialogDescription>
         </DialogHeader>
 
         {!modifierId ? (
-          <div className="text-sm text-muted-foreground">No modifier selected.</div>
+          <div className="text-sm text-muted-foreground">No option selected.</div>
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -217,7 +217,7 @@ export function ModifierInventoryLinker({
                   onChange={(e) => setQtyRequired(e.target.value)}
                 />
                 <div className="text-[11px] text-muted-foreground">
-                  This amount will be deducted from inventory when the modifier is used.
+                  This amount will be deducted from inventory when the option is selected.
                 </div>
               </div>
               <div className="flex items-end">
@@ -248,7 +248,7 @@ export function ModifierInventoryLinker({
                   ) : links.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
-                        No inventory links set for this modifier.
+                        No inventory links set for this option yet.
                       </TableCell>
                     </TableRow>
                   ) : (

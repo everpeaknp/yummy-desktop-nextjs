@@ -264,6 +264,10 @@ const FINANCIAL_SUMMARY_PRIMARY = new Set([
   "Net Sales",
   "Total Income",
   "Refunds",
+  "Accommodation Revenue",
+  "Other Hotel Income",
+  "Booking Advances",
+  "Checkout Collections",
 ]);
 
 const FINANCIAL_SUMMARY_SECONDARY = new Set([
@@ -274,6 +278,8 @@ const FINANCIAL_SUMMARY_SECONDARY = new Set([
   "Outstanding Receivables",
   "Expected Drawer",
   "Drawer (Actual)",
+  "Guest Balance",
+  "Front-desk Drawer",
 ]);
 
 function FinancialSummaryCard({

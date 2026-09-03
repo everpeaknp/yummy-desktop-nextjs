@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   BadgeDollarSign,
   BedDouble,
@@ -41,6 +42,7 @@ function money(value: string | number | undefined, currency = "NPR"): string {
 }
 
 export function FinancePanel({ restaurantId, refreshKey }: Props) {
+  const router = useRouter();
   const [dateFrom, setDateFrom] = useState(monthStart);
   const [dateTo, setDateTo] = useState(() => hotelDate(new Date()));
   const [data, setData] = useState<HotelFinanceSummary | null>(null);
@@ -97,6 +99,19 @@ export function FinancePanel({ restaurantId, refreshKey }: Props) {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => <Card key={metric.label} className="shadow-sm"><CardContent className="flex items-center gap-4 p-5"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${metric.tone}`}><metric.icon className="h-5 w-5" /></span><div className="min-w-0"><p className="text-sm text-muted-foreground">{metric.label}</p><p className="mt-1 truncate text-xl font-black tabular-nums">{money(metric.value, currency)}</p></div></CardContent></Card>)}
       </div>
+
+      <Card className="border-orange-500/20 bg-orange-500/[0.035] shadow-sm">
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-bold">Hotel financial entries</p>
+            <p className="mt-1 text-sm text-muted-foreground">Record income and expenses under Hotel so they remain separate from restaurant reporting while using the same accounting ledger.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => router.push("/finance/other-income?business_line=hotel")}>Record income</Button>
+            <Button className="rounded-xl bg-orange-500 hover:bg-orange-600" onClick={() => router.push("/finance/expenses?business_line=hotel")}>Record expense</Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
         <Card className="shadow-sm">

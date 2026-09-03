@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { hasPermission } from "@/lib/role-permissions";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import {
   CashAndBanksApis,
@@ -220,6 +220,7 @@ function isInventoryFinanceExpense(expense: any): boolean {
 }
 
 export default function ExpensesPage() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [expenseTotalCount, setExpenseTotalCount] = useState(0);
@@ -229,6 +230,10 @@ export default function ExpensesPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [dateFilter, setDateFilter] = useState("this_month");
   const [businessLine, setBusinessLine] = useState<BusinessLineFilter>("all");
+  // The page filter controls what is shown. The entry itself owns the
+  // business line so a combined view can still create a correctly scoped
+  // Hotel or Restaurant expense.
+  const [entryBusinessLine, setEntryBusinessLine] = useState<"restaurant" | "hotel">("restaurant");
   const [selectedStation, setSelectedStation] = useState("all");
   const [selectedReportingHeadId, setSelectedReportingHeadId] = useState("all");
   const [expenseHeadFilterOptions, setExpenseHeadFilterOptions] = useState<
@@ -254,6 +259,12 @@ export default function ExpensesPage() {
     payment_status: "paid" as "paid" | "unpaid" | "partial",
     paid_amount: "",
   });
+
+  useEffect(() => {
+    if (searchParams.get("business_line") === "hotel") {
+      setBusinessLine("hotel");
+    }
+  }, [searchParams]);
   const [partyType, setPartyType] = useState<ExpensePartyType>("none");
   const [partyId, setPartyId] = useState("");
   const [parties, setParties] = useState<
@@ -287,14 +298,11 @@ export default function ExpensesPage() {
   const listBusinessLineParam = businessLine;
 
   const createBusinessLine = useMemo((): "restaurant" | "hotel" => {
-    if (businessLine === "restaurant" || businessLine === "hotel") {
-      return businessLine;
-    }
     if (restaurant?.hotel_enabled && !restaurant?.restaurant_enabled) {
       return "hotel";
     }
-    return "restaurant";
-  }, [businessLine, restaurant?.hotel_enabled, restaurant?.restaurant_enabled]);
+    return entryBusinessLine;
+  }, [entryBusinessLine, restaurant?.hotel_enabled, restaurant?.restaurant_enabled]);
   const expenseWriteBusinessLine = useMemo((): "restaurant" | "hotel" => {
     const existingBusinessLine = String(
       editingExpense?.business_line ?? "",
@@ -1043,6 +1051,11 @@ export default function ExpensesPage() {
 
   const handleEditExpense = (expense: any) => {
     setEditingExpense(expense);
+    setEntryBusinessLine(
+      String(expense.business_line ?? "").toLowerCase() === "hotel" || expense.station === "rooms"
+        ? "hotel"
+        : "restaurant",
+    );
     setNewExpense({
       amount: String(expense.amount ?? ""),
       description: expense.description || "",
@@ -1297,13 +1310,16 @@ export default function ExpensesPage() {
           <Button
             className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             onClick={() => {
-              if (dualBusinessLines && businessLine === "all") {
-                toast.info(
-                  "Choose Restaurant or Hotel before adding an expense.",
-                );
-                return;
-              }
               resetExpenseForm();
+              setEntryBusinessLine(
+                businessLine === "hotel"
+                  ? "hotel"
+                  : businessLine === "restaurant"
+                    ? "restaurant"
+                    : restaurant?.hotel_enabled && !restaurant?.restaurant_enabled
+                      ? "hotel"
+                      : "restaurant",
+              );
               setIsAddDialogOpen(true);
             }}
           >
@@ -1331,6 +1347,33 @@ export default function ExpensesPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-5 py-2">
+            {dualBusinessLines && !editingExpense ? (
+              <div className="grid gap-2">
+                <Label htmlFor="expense-business-line">Business*</Label>
+                <Select
+                  value={entryBusinessLine}
+                  onValueChange={(value: "restaurant" | "hotel") => {
+                    setEntryBusinessLine(value);
+                    setNewExpense((current) => ({
+                      ...current,
+                      station: "general",
+                      station_id: null,
+                    }));
+                    setSelectedAccountKey("");
+                    setAllocationLines([]);
+                  }}
+                >
+                  <SelectTrigger id="expense-business-line">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="restaurant">Restaurant</SelectItem>
+                    <SelectItem value="hotel">Hotel</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">This controls the financial owner of the expense. The page filter only controls what you are viewing.</p>
+              </div>
+            ) : null}
             <div className="grid gap-2">
               <Label htmlFor="amount">Amount*</Label>
               <Input

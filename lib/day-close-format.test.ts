@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatDayCloseCloseName,
+  formatDayCloseExportFilename,
   formatDayCloseCurrency,
   formatDayCloseNumber,
   pickBackendAmount,
@@ -23,5 +25,15 @@ describe("day close formatters", () => {
   it("keeps invalid values as unavailable", () => {
     expect(formatDayCloseCurrency("not-a-number")).toBe("—");
     expect(formatDayCloseNumber("")).toBe("—");
+  });
+
+  it("labels and exports hotel closes as hotel daybooks", () => {
+    expect(formatDayCloseCloseName("hotel")).toBe("Hotel Daybook");
+    expect(formatDayCloseExportFilename({
+      id: 42,
+      business_line: "hotel",
+      period_start_at: null,
+      period_end_at: null,
+    }, "pdf")).toBe("hotel_daybook_42.pdf");
   });
 });

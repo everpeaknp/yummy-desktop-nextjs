@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Hotel,
   Loader2,
   RefreshCw,
 } from "lucide-react";
@@ -62,6 +63,23 @@ type BaseResponse<T> = {
   message?: string;
 };
 
+function isAccountingFeatureLocked(error: unknown) {
+  const response = error as {
+    response?: {
+      status?: number;
+      data?: { errors?: Array<{ code?: string; entitlement_key?: string }> };
+    };
+  };
+  return (
+    response.response?.status === 403 &&
+    response.response.data?.errors?.some(
+      (item) =>
+        item.code === "PLAN_FEATURE_LOCKED" &&
+        item.entitlement_key === "finance.accounting.enabled",
+    ) === true
+  );
+}
+
 function todayIso() {
   const date = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -92,11 +110,15 @@ export function DayCloseModal({
   targetDayCloseId = null,
   targetBusinessDate = null,
 }: DayCloseModalProps) {
+  const isHotelDaybook = businessLine === "hotel";
+  const isCombinedClose = businessLine === "combined";
+  const isOperationalDaybook = isHotelDaybook || isCombinedClose;
   const [step, setStep] = useState<Step>("drawers");
   const [selectedDate, setSelectedDate] = useState(targetBusinessDate || todayIso());
   const [validation, setValidation] = useState<DayCloseValidateResult | null>(null);
   const [daybook, setDaybook] = useState<AccountingDaybook | null>(null);
   const [snapshot, setSnapshot] = useState<DayCloseSnapshotData | null>(null);
+  const [accountingDaybookLocked, setAccountingDaybookLocked] = useState(false);
   const [confirmed, setConfirmed] = useState<DayCloseDetail | null>(null);
   const [notes, setNotes] = useState("");
   const [loadingValidation, setLoadingValidation] = useState(false);
@@ -110,6 +132,7 @@ export function DayCloseModal({
     setValidation(null);
     setDaybook(null);
     setSnapshot(null);
+    setAccountingDaybookLocked(false);
     setConfirmed(null);
     setNotes("");
     setError(null);
@@ -154,34 +177,52 @@ export function DayCloseModal({
       setLoadingReview(true);
       setError(null);
       try {
-        const [daybookResponse, snapshotResponse] = await Promise.all([
-          apiClient.get<BaseResponse<AccountingDaybook>>(
-            AccountingApis.daybook({
-              restaurantId,
-              businessLine,
-              businessDate: selectedDate,
-              periodStartAt: readiness.period_start_at,
-              periodEndAt: readiness.period_end_at,
-            }),
-          ),
-          apiClient.get(
-            DayCloseApis.generateSnapshot({
-              restaurantId,
-              businessLine,
-              businessDate: selectedDate,
-            }),
-          ),
-        ]);
-        const nextDaybook = daybookResponse.data?.data ?? null;
+        const snapshotResponse = await apiClient.get(
+          DayCloseApis.generateSnapshot({
+            restaurantId,
+            businessLine,
+            businessDate: selectedDate,
+          }),
+        );
         const nextSnapshot = unwrapApiData(
           snapshotResponse.data,
           parseDayCloseSnapshotData,
         );
-        if (!nextDaybook || !nextSnapshot) {
-          throw new Error("Daybook or financial snapshot data is missing.");
+        if (!nextSnapshot) {
+          throw new Error("The financial snapshot data is missing.");
+        }
+
+        let nextDaybook: AccountingDaybook | null = null;
+        let accountingLocked = false;
+        // Combined close is an operational aggregation. The legacy
+        // accounting-daybook endpoint is source-line scoped, so requesting a
+        // combined GL daybook would imply that events lost their dimension.
+        if (!isCombinedClose) {
+          try {
+            const daybookResponse = await apiClient.get<BaseResponse<AccountingDaybook>>(
+              AccountingApis.daybook({
+                restaurantId,
+                businessLine,
+                businessDate: selectedDate,
+                periodStartAt: readiness.period_start_at,
+                periodEndAt: readiness.period_end_at,
+              }),
+            );
+            nextDaybook = daybookResponse.data?.data ?? null;
+          } catch (requestError) {
+            if (!isOperationalDaybook || !isAccountingFeatureLocked(requestError)) {
+              throw requestError;
+            }
+            accountingLocked = true;
+          }
+        }
+
+        if (!isOperationalDaybook && !nextDaybook) {
+          throw new Error("The accounting daybook data is missing.");
         }
         setDaybook(nextDaybook);
         setSnapshot(nextSnapshot);
+        setAccountingDaybookLocked(accountingLocked);
         setStep("daybook");
       } catch (requestError) {
         setError(getApiErrorMessage(requestError, "Failed to load the close review."));
@@ -189,7 +230,7 @@ export function DayCloseModal({
         setLoadingReview(false);
       }
     },
-    [businessLine, restaurantId, selectedDate],
+    [businessLine, isCombinedClose, isOperationalDaybook, restaurantId, selectedDate],
   );
 
   const continueFromDrawers = async () => {
@@ -202,8 +243,8 @@ export function DayCloseModal({
   };
 
   const closeDay = async () => {
-    if (!daybook || !snapshot) return;
-    const accountingBlockers = daybook.exceptions.filter((item) => item.blocking);
+    if (!snapshot || (!isOperationalDaybook && !daybook)) return;
+    const accountingBlockers = daybook?.exceptions.filter((item) => item.blocking) ?? [];
     if (accountingBlockers.length > 0) {
       setError("Resolve the blocking daybook exceptions before closing this period.");
       return;
@@ -231,8 +272,7 @@ export function DayCloseModal({
       const latestSnapshot =
         unwrapApiData(latestSnapshotResponse.data, parseDayCloseSnapshotData) ?? snapshot;
       const countedCash = latestSnapshot.drawer_control?.counted_cash;
-      const actualCash =
-        typeof countedCash === "number" && Number.isFinite(countedCash)
+      const actualCash = typeof countedCash === "number" && Number.isFinite(countedCash)
           ? countedCash
           : latestSnapshot.expected_cash;
       if (typeof actualCash !== "number" || !Number.isFinite(actualCash)) {
@@ -285,10 +325,20 @@ export function DayCloseModal({
       <DialogContent className="flex h-[92vh] w-[96vw] max-w-6xl flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border/70 px-6 py-5 pr-14 text-left">
           <DialogTitle className="text-xl font-semibold tracking-tight">
-            {targetDayCloseId ? "Re-confirm close" : "Close financial period"}
+            {targetDayCloseId
+              ? "Re-confirm daybook"
+              : isCombinedClose
+                ? "Close combined financial period"
+                : isHotelDaybook
+                ? "Close hotel daybook"
+                : "Close financial period"}
           </DialogTitle>
           <DialogDescription>
-            Settle drawers, review the structured daybook and snapshot, then confirm one audited close.
+            {isCombinedClose
+              ? "Settle the shared drawers, then record one audited close while preserving Hotel and Restaurant reporting separately."
+              : isHotelDaybook
+              ? "Settle hotel drawers, review the hotel's structured daybook and snapshot, then record one audited daily close."
+              : "Settle drawers, review the structured daybook and snapshot, then confirm one audited close."}
           </DialogDescription>
           <div className="grid gap-3 pt-3 sm:grid-cols-[220px_1fr] sm:items-end">
             <div className="space-y-1.5">
@@ -348,9 +398,13 @@ export function DayCloseModal({
             <div className="space-y-4">
               <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/15 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h3 className="font-semibold">1. Close and settle every drawer</h3>
+                  <h3 className="font-semibold">
+                    {isCombinedClose ? "1. Close and settle shared drawers" : isHotelDaybook ? "1. Close and settle hotel drawers" : "1. Close and settle every drawer"}
+                  </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Multi-day sessions remain visible. The selected date labels the close; timestamps determine which activity is included.
+                    {isCombinedClose
+                      ? "The shared drawer is reconciled once. Hotel and Restaurant transactions remain separately attributed in reports."
+                      : "Multi-day sessions remain visible. The selected date labels the close; timestamps determine which activity is included."}
                   </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => void refreshValidation()} disabled={loadingValidation}>
@@ -361,10 +415,10 @@ export function DayCloseModal({
 
               <DrawerSessionPanel
                 restaurantId={restaurantId}
-                businessLine={businessLine}
+                businessLine={isCombinedClose ? "shared" : businessLine}
                 businessDate={selectedDate}
                 includeAllActiveSessions
-                title="Drawer settlement"
+                title={isCombinedClose ? "Shared drawer settlement" : "Drawer settlement"}
                 description="Count, close, approve variance where required, and submit the final settlement here."
                 footerNote="The daybook unlocks only after backend validation confirms every required drawer is settled."
               />
@@ -377,7 +431,7 @@ export function DayCloseModal({
                     </div>
                     <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                       {(validation.blockers ?? []).length === 0 ? (
-                        <p>Orders, refunds, payments, and drawers are ready.</p>
+                        <p>{isCombinedClose ? "Hotel and Restaurant activity, payments, refunds, and shared drawers are ready." : isHotelDaybook ? "Hotel charges, payments, refunds, and drawers are ready." : "Orders, refunds, payments, and drawers are ready."}</p>
                       ) : (
                         validation.blockers?.map((blocker) => <p key={blocker}>• {blocker}</p>)
                       )}
@@ -388,7 +442,7 @@ export function DayCloseModal({
                     <div className="mt-2 text-sm text-muted-foreground">
                       <p>Active orders: {validation.active_orders_count ?? 0}</p>
                       <p>Pending refunds: {validation.pending_refunds_count ?? 0}</p>
-                      <p>Drawer settlement: {validation.drawer_ready === false ? "Incomplete" : "Ready"}</p>
+                      <p>{`Drawer settlement: ${validation.drawer_ready === false ? "Incomplete" : "Ready"}`}</p>
                     </div>
                   </div>
                 </div>
@@ -402,15 +456,43 @@ export function DayCloseModal({
                 <div className="flex min-h-64 items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-              ) : daybook && snapshot ? (
+              ) : snapshot && (daybook || isOperationalDaybook) ? (
                 <>
-                  <DaybookReport
-                    daybook={daybook}
-                    outstandingReceivables={
-                      snapshot.receivables?.outstanding_receivables ?? 0
-                    }
-                    title={`${displayDate(selectedDate)} Day Book`}
-                  />
+                  {daybook ? (
+                    <DaybookReport
+                      daybook={daybook}
+                      outstandingReceivables={
+                        snapshot.receivables?.outstanding_receivables ?? 0
+                      }
+                      title={`${displayDate(selectedDate)} Day Book`}
+                    />
+                  ) : (
+                    <section className="rounded-2xl border border-border/70 bg-muted/10 p-4 sm:p-5">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <Hotel className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold">{displayDate(selectedDate)} {isCombinedClose ? "Combined Daybook" : "Hotel Daybook"}</h3>
+                            <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                              Operational report
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {isCombinedClose
+                              ? "This close shares physical cash custody only. Hotel and Restaurant revenue, expenses, analytics, and accounting dimensions stay separate."
+                              : "This daily record covers hotel activity, receipts, expenses, refunds, and outstanding balances for the selected period."}
+                          </p>
+                          {accountingDaybookLocked ? (
+                            <p className="mt-3 text-xs text-muted-foreground">
+                              General-ledger daybook checks are not included in this plan. They are not required to mark this hotel daybook closed.
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </section>
+                  )}
                   <section className="space-y-3 rounded-2xl border border-border/70 p-4 sm:p-5">
                     <div>
                       <h3 className="font-semibold">Financial snapshot</h3>
@@ -430,7 +512,7 @@ export function DayCloseModal({
                       rows={3}
                     />
                   </div>
-                  {daybook.exceptions.some((item) => item.blocking) ? (
+                  {daybook?.exceptions.some((item) => item.blocking) ? (
                     <div className="rounded-xl border border-amber-300 bg-amber-500/10 p-4 text-sm text-amber-800">
                       <AlertTriangle className="mr-2 inline h-4 w-4" />
                       Blocking daybook exceptions must be resolved before final close.
@@ -449,7 +531,7 @@ export function DayCloseModal({
               <div>
                 <h3 className="text-2xl font-semibold tracking-tight">Period closed successfully</h3>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {displayDate(selectedDate)} now owns the frozen period, daybook, drawer evidence, and financial snapshot.
+                  {displayDate(selectedDate)} now owns the frozen period, structured daybook, and financial snapshot.
                 </p>
               </div>
               <OperationalCloseStatus detail={confirmed} />
@@ -476,7 +558,7 @@ export function DayCloseModal({
           {step === "drawers" ? (
             <Button onClick={() => void continueFromDrawers()} disabled={loadingValidation || loadingReview}>
               {loadingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Review daybook
+              {isCombinedClose ? "Review combined daybook" : isHotelDaybook ? "Review hotel daybook" : "Review daybook"}
               <ChevronRight className="ml-2 h-4 w-4" />
             </Button>
           ) : step === "daybook" ? (
@@ -484,13 +566,13 @@ export function DayCloseModal({
               onClick={() => void closeDay()}
               disabled={
                 submitting ||
-                !daybook ||
                 !snapshot ||
-                daybook.exceptions.some((item) => item.blocking)
+                (!isOperationalDaybook && !daybook) ||
+                (!isOperationalDaybook && (daybook?.exceptions.some((item) => item.blocking) ?? false))
               }
             >
               {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-              {submitting ? "Closing period…" : "Confirm final close"}
+              {submitting ? "Closing period…" : isCombinedClose ? "Confirm combined close" : isHotelDaybook ? "Mark hotel daybook closed" : "Confirm final close"}
             </Button>
           ) : (
             <Button onClick={onClose}>Done</Button>
