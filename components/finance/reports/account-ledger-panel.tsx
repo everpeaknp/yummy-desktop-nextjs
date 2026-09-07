@@ -42,22 +42,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import apiClient from "@/lib/api-client";
+import { FinanceApis, PartyLedgerApis, PurchaseApis, PurchaseReturnApis } from "@/lib/api/endpoints";
+import { financeSalesApi } from "@/lib/api/finance-sales-api";
+import { useAuth } from "@/hooks/use-auth";
 import { financeReportingApi } from "@/lib/api/finance-reporting-api";
 import { cn } from "@/lib/utils";
 import type {
   FinanceReportingAccountLedgerRead,
   FinanceReportingLedgerLine,
 } from "@/types/finance-reporting";
+import type { FinanceSalesDocument } from "@/types/finance-sales";
+import type { FinanceTransactionRow, FinanceTransactionsResponse } from "@/types/finance";
 import { TYPE_LABELS } from "@/components/finance/heads/account-head-dialog";
-import apiClient from "@/lib/api-client";
-import { AccountingApis } from "@/lib/api/endpoints";
-import { useAuth } from "@/hooks/use-auth";
-import type { JournalVoucher } from "@/types/accounting";
 import {
   TransactionDetailSheet,
-  transactionMetadataFields,
   type TransactionDetailModel,
 } from "@/components/finance/transaction-detail/transaction-detail-sheet";
+import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
+import {
+  partyLedgerEntryDetail,
+  purchaseDocumentDetail,
+  purchaseReturnDetail,
+} from "@/components/finance/transaction-detail/party-workspace-detail";
 
 function money(value: number | string | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -102,6 +109,39 @@ function ledgerLineLabel(line: FinanceReportingLedgerLine): { primary: string; s
   };
 }
 
+type BusinessTransactionType =
+  | "Sales"
+  | "Purchase"
+  | "Sales return"
+  | "Purchase return"
+  | "Payment in"
+  | "Payment out"
+  | "Other income"
+  | "Expense"
+  | "Transfer"
+  | "Adjustment";
+
+function businessTransactionType(line: FinanceReportingLedgerLine): BusinessTransactionType {
+  const value = `${line.source_type} ${line.description || ""} ${line.order_reference || ""}`.toLowerCase();
+  if (value.includes("purchase_return") || value.includes("purchase return")) return "Purchase return";
+  if (value.includes("sales_return") || value.includes("sales return") || value.includes("refund")) return "Sales return";
+  if (value.includes("supplier_payment") || value.includes("payment_out") || value.includes("payment made")) return "Payment out";
+  if (value.includes("collection") || value.includes("payment_in") || value.includes("payment received")) return "Payment in";
+  if (value.includes("inventory_purchase") || value.includes("general_purchase") || value.includes("purchase")) return "Purchase";
+  if (value.includes("sale_recognized") || value.includes("finance_sales") || value.includes("pos_order") || value.includes("order")) return "Sales";
+  if (value.includes("income")) return "Other income";
+  if (value.includes("expense")) return "Expense";
+  if (value.includes("transfer") || value.includes("deposit")) return "Transfer";
+  return "Adjustment";
+}
+
+function businessTypeClass(type: BusinessTransactionType) {
+  if (["Sales", "Payment in", "Other income"].includes(type)) return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (["Purchase", "Payment out", "Expense"].includes(type)) return "border-rose-200 bg-rose-50 text-rose-700";
+  if (type.includes("return")) return "border-orange-200 bg-orange-50 text-orange-700";
+  return "border-border bg-muted text-muted-foreground";
+}
+
 function dateTime(value: string | null | undefined) {
   if (!value) return "—";
   const parsed = new Date(value);
@@ -128,6 +168,8 @@ const PAGE_SIZE = 50;
 export interface AccountLedgerPanelProps {
   headId: number | null;
   onOpenChange: (open: boolean) => void;
+  /** Operations open a plain-language account statement; Chart of accounts keeps configuration context. */
+  presentation?: "operational" | "accounting";
   /** Only passed by the Chart of Accounts screen, which owns editing. */
   onEdit?: () => void;
 }
@@ -138,9 +180,13 @@ export interface AccountLedgerPanelProps {
  * for the same account, so the two never drift into different-looking
  * ledger views.
  */
-export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedgerPanelProps) {
+export function AccountLedgerPanel({
+  headId,
+  onOpenChange,
+  presentation = "accounting",
+  onEdit,
+}: AccountLedgerPanelProps) {
   const user = useAuth((state) => state.user);
-  const restaurantId = user?.restaurant_id;
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [partyType, setPartyType] = useState("all");
@@ -153,9 +199,9 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedLine, setSelectedLine] = useState<FinanceReportingLedgerLine | null>(null);
-  const [selectedJournal, setSelectedJournal] = useState<JournalVoucher | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [selectedSalesDocument, setSelectedSalesDocument] = useState<FinanceSalesDocument | null>(null);
+  const [sourceDetail, setSourceDetail] = useState<TransactionDetailModel | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
 
   useEffect(() => {
     // Reset local state whenever a different account is opened.
@@ -167,75 +213,43 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
     setShowFilters(false);
     setOffset(0);
     setSelectedLine(null);
-    setSelectedJournal(null);
+    setSelectedSalesDocument(null);
+    setSourceDetail(null);
+    setSourceLoading(false);
   }, [headId]);
 
-  const openLedgerLine = async (line: FinanceReportingLedgerLine) => {
+  const openLedgerLine = (line: FinanceReportingLedgerLine) => {
+    setSelectedSalesDocument(null);
+    setSourceDetail(null);
+    // Do not show an accounting-posting fallback while its business record is
+    // being resolved. A statement row should open one canonical detail view.
+    setSourceLoading(true);
     setSelectedLine(line);
-    setSelectedJournal(null);
-    setDetailError(null);
-    setDetailLoading(true);
-    try {
-      const response = await apiClient.get(
-        AccountingApis.journalEntry(line.entry_id, restaurantId ? Number(restaurantId) : undefined),
-      );
-      setSelectedJournal(response.data?.data ?? null);
-    } catch (requestError) {
-      setDetailError(readError(requestError));
-    } finally {
-      setDetailLoading(false);
-    }
   };
 
   const lineLabel = selectedLine ? ledgerLineLabel(selectedLine) : null;
+  const selectedType = selectedLine ? businessTransactionType(selectedLine) : "Adjustment";
   const transactionDetail: TransactionDetailModel | null = selectedLine ? {
-    eyebrow: "Ledger transaction",
+    eyebrow: selectedType,
     title: lineLabel?.primary || selectedLine.description || "Journal transaction",
-    reference: selectedJournal?.entry_number || humanize(selectedLine.source_type),
-    subtitle: lineLabel?.secondary || selectedLine.description || humanize(selectedLine.source_type),
+    reference: selectedLine.order_reference || selectedLine.party_name || null,
+    subtitle: lineLabel?.secondary || selectedLine.description || `${selectedType} details.`,
     occurredAt: selectedLine.occurred_at,
-    status: selectedJournal?.status || selectedLine.entry_status,
+    status: selectedLine.entry_status,
     amount: Math.max(Number(selectedLine.debit || 0), Number(selectedLine.credit || 0)),
-    amountLabel: Number(selectedLine.debit || 0) ? "Debit to this account" : "Credit to this account",
+    amountLabel: "Transaction amount",
     amountTone: Number(selectedLine.debit || 0) ? "in" : "out",
-    badges: [selectedLine.source_type, selectedJournal?.voucher_type, selectedJournal?.business_line].filter(Boolean) as string[],
+    badges: [],
     sections: [
       {
-        title: "Posting overview",
+        title: "Transaction overview",
         fields: [
-          { label: "Account", value: report?.head ? `${report.head.code} · ${report.head.name}` : "—" },
+          { label: "Account", value: report?.head?.name || "—" },
           { label: "Business date", value: selectedLine.business_date },
-          { label: "Debit", value: Number(selectedLine.debit || 0) ? money(selectedLine.debit) : "—" },
-          { label: "Credit", value: Number(selectedLine.credit || 0) ? money(selectedLine.credit) : "—" },
           { label: "Balance after posting", value: money(selectedLine.running_balance) },
-          { label: "Payment method", value: selectedLine.payment_method ? humanize(selectedLine.payment_method) : "Not a settlement" },
+          { label: "Payment method", value: selectedLine.payment_method ? humanize(selectedLine.payment_method) : "Not recorded" },
           { label: "Party", value: selectedLine.party_name || (selectedLine.party_type ? humanize(selectedLine.party_type) : "—") },
-          { label: "Source", value: humanize(selectedLine.source_type) || "Finance journal" },
-          { label: "Description", value: selectedLine.description || selectedJournal?.memo || "—", fullWidth: true },
-        ],
-      },
-      {
-        title: "Complete journal",
-        description: "Every debit and credit posted by the same transaction.",
-        table: selectedJournal?.lines?.length ? {
-          columns: ["Account", "Memo / party", "Debit", "Credit"],
-          rows: selectedJournal.lines.map((line) => [
-            line.account ? `${line.account.code} · ${line.account.name}` : "Ledger account",
-            line.memo || (line.party_type ? humanize(line.party_type) : "—"),
-            Number(line.debit || 0) ? money(line.debit) : "—",
-            Number(line.credit || 0) ? money(line.credit) : "—",
-          ]),
-        } : undefined,
-        emptyText: detailLoading ? "Loading journal lines…" : "No journal lines were returned.",
-      },
-      {
-        title: "Audit metadata",
-        fields: [
-          { label: "Journal entry ID", value: selectedLine.entry_id },
-          { label: "Ledger line ID", value: selectedLine.line_id },
-          { label: "Finance event ID", value: selectedLine.finance_event_id || "—" },
-          { label: "Created by", value: selectedJournal?.created_by_id === user?.id ? user?.full_name || "Current user" : selectedJournal?.created_by_id ? "Staff member" : "System" },
-          ...transactionMetadataFields(selectedJournal?.metadata_json),
+          { label: "Description", value: selectedLine.description || "—", fullWidth: true },
         ],
       },
     ],
@@ -281,6 +295,108 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
     };
   }, [headId, params]);
 
+  useEffect(() => {
+    const restaurantId = Number(user?.restaurant_id || 0);
+    if (!selectedLine || !restaurantId) {
+      setSourceLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let source = String(selectedLine.source_type || "").toLowerCase();
+    let sourceId = Number(selectedLine.source_id || 0);
+    let party: "customer" | "supplier" | null = selectedLine.party_type === "customer" || selectedLine.party_type === "supplier"
+      ? selectedLine.party_type
+      : null;
+    let partyId = Number(selectedLine.party_id || 0);
+
+    const loadCanonicalDetail = async () => {
+      setSourceLoading(true);
+      try {
+        if (source === "finance_event" && selectedLine.finance_event_id) {
+          const response = await apiClient.get(FinanceApis.transactions({
+            restaurantId,
+            dateFrom: selectedLine.business_date,
+            dateTo: selectedLine.business_date,
+            businessLine: "all",
+            limit: 300,
+            offset: 0,
+          }));
+          const financeRows = (response.data?.data ?? response.data) as FinanceTransactionsResponse;
+          const event = financeRows.transactions?.find((candidate: FinanceTransactionRow) =>
+            Number(candidate.id) === Number(selectedLine.finance_event_id),
+          );
+          if (event) {
+            source = String(event.source_type || "").toLowerCase();
+            sourceId = Number(event.source_id || 0);
+            party = event.customer_id ? "customer" : event.supplier_id ? "supplier" : party;
+            partyId = Number(event.customer_id || event.supplier_id || partyId || 0);
+            if (event.order_id && (source.includes("order") || source.includes("sale"))) {
+              const document = await financeSalesApi.getByOrder(restaurantId, Number(event.order_id));
+              if (!cancelled) setSelectedSalesDocument(document);
+              return;
+            }
+          }
+        }
+
+        if (source.includes("inventory_purchase_return") && sourceId > 0) {
+          const response = await apiClient.get(PurchaseReturnApis.get(sourceId, restaurantId));
+          if (!cancelled) setSourceDetail(purchaseReturnDetail(response.data.data));
+          return;
+        }
+
+        if (source.includes("inventory_purchase") && sourceId > 0) {
+          const response = await apiClient.get(PurchaseApis.get(sourceId, restaurantId));
+          const purchase = response.data.data;
+          if (!purchase || cancelled) return;
+          const supplierId = Number(purchase.supplier_id || partyId);
+          if (supplierId > 0) {
+            const statement = await apiClient.get(PartyLedgerApis.statement("supplier", supplierId, restaurantId));
+            if (cancelled) return;
+            setSourceDetail(purchaseDocumentDetail(purchase, statement.data.data));
+          } else {
+            setSourceDetail(purchaseDocumentDetail(purchase));
+          }
+          return;
+        }
+
+        if (source.includes("pos_order") && sourceId > 0) {
+          const document = await financeSalesApi.getByOrder(restaurantId, sourceId);
+          if (!cancelled) setSelectedSalesDocument(document);
+          return;
+        }
+
+        if (source.includes("finance_sales_invoice") || source.includes("finance_sales_credit_note")) {
+          const kind = source.includes("credit_note") ? "credit_note" : "invoice";
+          const documents = await financeSalesApi.list(restaurantId, { kind, limit: 500 });
+          const document = documents.documents.find((candidate) => Number(candidate.id) === sourceId);
+          if (!cancelled && document) setSelectedSalesDocument(document);
+          return;
+        }
+
+        if (party && partyId > 0) {
+          const response = await apiClient.get(PartyLedgerApis.statement(party, partyId, restaurantId));
+          if (cancelled) return;
+          const statement = response.data.data;
+          const entry = (statement?.entries || []).find((candidate: any) =>
+            Number(candidate.id) === sourceId ||
+            (String(candidate.source_type || "").toLowerCase() === source && Number(candidate.source_id) === sourceId),
+          );
+          if (entry) setSourceDetail(partyLedgerEntryDetail(entry, party, statement?.allocations || []));
+        }
+      } catch (requestError) {
+        console.warn("Could not resolve the business transaction for this account statement line", requestError);
+      } finally {
+        if (!cancelled) setSourceLoading(false);
+      }
+    };
+
+    void loadCanonicalDetail();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLine, user?.restaurant_id]);
+
   const activeFilterCount = [dateFrom, dateTo, partyType !== "all" ? partyType : "", sourceType].filter(
     Boolean,
   ).length;
@@ -316,28 +432,37 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-xs shrink-0">
-                      {report.head.code}
-                    </Badge>
-                    <SheetTitle className="truncate text-lg">{report.head.name}</SheetTitle>
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <Badge variant="secondary" className="text-[11px]">
-                      {TYPE_LABELS[report.head.head_type]}
-                    </Badge>
-                    <Badge
-                      variant={report.head.is_active ? "outline" : "destructive"}
-                      className="text-[11px]"
-                    >
-                      {report.head.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                    {report.head.system_role && (
-                      <Badge variant="outline" className="gap-1 text-[11px] bg-primary/5 text-primary border-primary/20">
-                        <Lock className="h-2.5 w-2.5" />
-                        Built-in
+                    {presentation === "accounting" ? (
+                      <Badge variant="outline" className="shrink-0 font-mono text-xs">
+                        {report.head.code}
                       </Badge>
-                    )}
+                    ) : null}
+                    <SheetTitle className="truncate text-lg">
+                      {presentation === "operational" ? "Account statement" : report.head.name}
+                    </SheetTitle>
                   </div>
+                  {presentation === "operational" ? (
+                    <p className="mt-1 text-sm font-medium text-foreground">{report.head.name}</p>
+                  ) : null}
+                  {presentation === "accounting" ? (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <Badge variant="secondary" className="text-[11px]">
+                        {TYPE_LABELS[report.head.head_type]}
+                      </Badge>
+                      <Badge
+                        variant={report.head.is_active ? "outline" : "destructive"}
+                        className="text-[11px]"
+                      >
+                        {report.head.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                      {report.head.system_role && (
+                        <Badge variant="outline" className="gap-1 border-primary/20 bg-primary/5 text-[11px] text-primary">
+                          <Lock className="h-2.5 w-2.5" />
+                          Built-in
+                        </Badge>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
                 {onEdit && (
                   <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={onEdit}>
@@ -456,7 +581,7 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
                       </SelectContent>
                     </Select>
                   </div>
-                  {partyType !== "all" && (
+                  {presentation === "accounting" && partyType !== "all" && (
                     <div className="space-y-1">
                       <Label className="text-[11px] text-muted-foreground">Party ID</Label>
                       <Input
@@ -469,15 +594,17 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
                       />
                     </div>
                   )}
-                  <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">Source</Label>
-                    <Input
-                      value={sourceType}
-                      onChange={(e) => setSourceType(e.target.value)}
-                      placeholder="All sources"
-                      className="h-8 w-36 text-xs"
-                    />
-                  </div>
+                  {presentation === "accounting" ? (
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Source</Label>
+                      <Input
+                        value={sourceType}
+                        onChange={(e) => setSourceType(e.target.value)}
+                        placeholder="All sources"
+                        className="h-8 w-36 text-xs"
+                      />
+                    </div>
+                  ) : null}
                   {activeFilterCount > 0 && (
                     <Button
                       variant="ghost"
@@ -515,6 +642,7 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
                     <TableRow>
                       <TableHead className="w-28">Date</TableHead>
                       <TableHead>What happened</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead className="text-right">Debit</TableHead>
                       <TableHead className="text-right">Credit</TableHead>
                       <TableHead className="text-right">Balance</TableHead>
@@ -523,16 +651,17 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
                   <TableBody>
                     {report.lines.map((line) => {
                       const label = ledgerLineLabel(line);
+                      const type = businessTransactionType(line);
                       return (
                       <TableRow
                         key={line.line_id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => void openLedgerLine(line)}
+                        onClick={() => openLedgerLine(line)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            void openLedgerLine(line);
+                            openLedgerLine(line);
                           }
                         }}
                         className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
@@ -553,6 +682,11 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
                               Reversed
                             </Badge>
                           )}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant="outline" className={cn("whitespace-nowrap", businessTypeClass(type))}>
+                            {type}
+                          </Badge>
                         </TableCell>
                         <TableCell className="text-right align-top font-mono text-xs tabular-nums text-emerald-600">
                           {Number(line.debit) ? money(line.debit) : "—"}
@@ -601,21 +735,30 @@ export function AccountLedgerPanel({ headId, onOpenChange, onEdit }: AccountLedg
         ) : null}
       </SheetContent>
     </Sheet>
-    <TransactionDetailSheet
-      open={selectedLine != null}
-      onOpenChange={(open) => {
-        if (!open) {
-          setSelectedLine(null);
-          setSelectedJournal(null);
-          setDetailError(null);
-        }
-      }}
-      detail={transactionDetail}
-      loading={detailLoading}
-      error={detailError}
-      actionHref={selectedJournal?.id ? `/finance/accounting/vouchers/${selectedJournal.id}` : null}
-      actionLabel="Open journal voucher"
-    />
+    {selectedSalesDocument ? (
+      <SalesDocumentDetailSheet
+        open={selectedLine != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedLine(null);
+            setSelectedSalesDocument(null);
+          }
+        }}
+        document={selectedSalesDocument}
+      />
+    ) : selectedLine && !sourceLoading ? (
+      <TransactionDetailSheet
+        open
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedLine(null);
+            setSourceDetail(null);
+          }
+        }}
+        detail={sourceDetail || transactionDetail}
+        loading={sourceLoading}
+      />
+    ) : null}
     </>
   );
 }

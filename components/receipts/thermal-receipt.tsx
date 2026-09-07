@@ -81,6 +81,10 @@ export function ThermalReceipt({ data, template, mode = 'receipt' }: ThermalRece
 function renderBlock(block: any, global: any, data: ReceiptData) {
     const { config, type } = block;
     const { order, restaurant } = data;
+    // Normal receipts use the assigned business bill number, never the
+    // database order ID. Completed orders receive this number server-side.
+    const billNumber = String(order.invoice_number || '').trim() || 'Not issued';
+    const dailyOrderNumber = order.restaurant_order_id ? `#${order.restaurant_order_id}` : '—';
     
     const effectiveFontType = config.font_type || global.global_font_type || 'A';
     const effectiveFontSize = config.font_size || global.global_font_size || 12;
@@ -160,9 +164,12 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
                 <div style={style} className="space-y-0.5 text-left">
                     {hasDetailFlags ? (
                         <>
+                            <div className="flex justify-between">
+                                <span>{config.bill_label || 'Bill No.'}: {billNumber}</span>
+                            </div>
                             {(showKotNum || showStation) && (
                                 <div className="flex justify-between">
-                                    {showKotNum && <span>{config.kot_label || 'KOT'}: #{order.id}</span>}
+                                    {showKotNum && <span>{config.kot_label || 'KOT'}: {(order as any).kot_number || '—'}</span>}
                                     {showStation && <span className="text-right">{config.station_label || 'STATION'}: {(order as any).station_name || '-'}</span>}
                                 </div>
                             )}
@@ -174,7 +181,7 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
                             )}
                             {(showOrderId || showDate) && (
                                 <div className="flex justify-between">
-                                    {showOrderId && <span>{config.order_label || 'Daily order'}: #{order.restaurant_order_id || order.id}</span>}
+                                    {showOrderId && <span>{config.order_label || 'Daily order'}: {dailyOrderNumber}</span>}
                                     {showDate && <span className="text-right">{config.date_label || 'DATE'}: {dateStr}</span>}
                                 </div>
                             )}
@@ -193,12 +200,12 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
                     ) : (
                         <>
                             <div className="flex justify-between">
-                                <span>{config.bill_label || 'INVOICE'} {order.invoice_number || `POS-${String(order.id).padStart(8, '0')}`}</span>
+                                <span>{config.bill_label || 'Bill No.'}: {billNumber}</span>
                                 <span className="text-right">{dateStr}</span>
                             </div>
                             {showOrderId && (
                                 <div>
-                                    <span>{config.order_label || 'Daily order'} #{order.restaurant_order_id || order.id}</span>
+                                    <span>{config.order_label || 'Daily order'} {dailyOrderNumber}</span>
                                 </div>
                             )}
                             {showTable && (
@@ -352,7 +359,7 @@ function resolveReceiptPlaceholders(text: string, data: ReceiptData) {
         .replace(/\{\{restaurant_phone\}\}/g, restaurant?.phone || "")
         .replace(/\{\{restaurant_pan\}\}/g, restaurant?.pan_number || "")
         .replace(/\{\{bill_no\}\}/g, String(order?.invoice_number || (order?.id ? `POS-${String(order.id).padStart(8, "0")}` : "")))
-        .replace(/\{\{order_id\}\}/g, String(order?.id || ""))
+        .replace(/\{\{order_id\}\}/g, String(order?.restaurant_order_id || ""))
         .replace(/\{\{table\}\}/g, order?.table_name || "-")
         .replace(/\{\{customer_name\}\}/g, order?.customer_name || "")
         .replace(/\{\{customer_phone\}\}/g, order?.customer_phone || "")

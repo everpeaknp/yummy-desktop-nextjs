@@ -237,12 +237,12 @@ export function SupplierDetailWorkspace({ supplierId }: SupplierDetailWorkspaceP
             {([ ["activity", "All activity"], ["bills", "Purchase bills"], ["returns", "Purchase returns"], ["payments", "Payments"], ["open", "Open bills"], ["statement", "Statement"] ] as const).map(([value, label]) => <Button key={value} size="sm" variant={tab === value ? "secondary" : "ghost"} onClick={() => setTab(value)}>{label}</Button>)}
             <Button variant="ghost" size="icon" className="ml-auto" onClick={load}><RefreshCw className="h-4 w-4" /></Button>
           </div>
-          {tab === "activity" && <ActivityList entries={activity} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "supplier"))} />}
-          {tab === "bills" && <BillList purchases={purchases} openBills={openBills} onOpen={(purchase) => setSelectedDetail(purchaseDocumentDetail(purchase))} />}
+          {tab === "activity" && <ActivityList entries={activity} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "supplier", statement?.allocations || []))} />}
+          {tab === "bills" && <BillList purchases={purchases} openBills={openBills} onOpen={(purchase) => setSelectedDetail(purchaseDocumentDetail(purchase, statement, returns))} />}
           {tab === "returns" && <ReturnList returns={returns} onOpen={(purchaseReturn) => setSelectedDetail(purchaseReturnDetail(purchaseReturn))} />}
-          {tab === "payments" && <PaymentList entries={payments} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "supplier"))} />}
-          {tab === "open" && <OpenBillList bills={openBills} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "supplier"))} onReturn={(purchaseId) => router.push(`/inventory/purchases/returns?purchase_id=${purchaseId}`)} />}
-          {tab === "statement" && <StatementWithAllocations entries={activity} allocations={statement?.allocations || []} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "supplier"))} onOpenAllocation={(allocation) => setSelectedDetail(settlementAllocationDetail(allocation, "supplier"))} />}
+          {tab === "payments" && <PaymentList entries={payments} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "supplier", statement?.allocations || []))} />}
+          {tab === "open" && <OpenBillList bills={openBills} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "supplier", statement?.allocations || []))} onReturn={(purchaseId) => router.push(`/inventory/purchases/returns?purchase_id=${purchaseId}`)} />}
+          {tab === "statement" && <StatementWithAllocations entries={activity} allocations={statement?.allocations || []} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "supplier", statement?.allocations || []))} onOpenAllocation={(allocation) => setSelectedDetail(settlementAllocationDetail(allocation, "supplier"))} />}
         </div>
       </div>
 

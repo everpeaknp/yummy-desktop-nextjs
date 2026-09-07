@@ -108,6 +108,34 @@ export interface FinanceSalesDocumentList {
   total: number;
 }
 
+export interface FinanceSalesSettlementPayment {
+  amount: number | string;
+  payment_method?: string | null;
+  received_at: string;
+  reference?: string | null;
+  note?: string | null;
+}
+
+export interface FinanceSalesDocumentSettlement {
+  document: FinanceSalesDocument;
+  amount_received: number | string;
+  amount_returned: number | string;
+  amount_refunded: number | string;
+  balance_due: number | string;
+  settlement_status: "unpaid" | "partially_paid" | "paid" | "partially_returned" | "returned" | string;
+  payments: FinanceSalesSettlementPayment[];
+}
+
+export interface FinanceOrderSettlementSummary {
+  order_id: number;
+  document_id: number;
+  document_number: string;
+  amount_received: number | string;
+  amount_returned: number | string;
+  balance_due: number | string;
+  settlement_status: "unpaid" | "partially_paid" | "paid" | "partially_returned" | "returned" | string;
+}
+
 export interface OrderSettlementReplacementInput {
   reason: string;
   idempotency_key: string;

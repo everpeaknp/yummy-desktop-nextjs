@@ -23,6 +23,26 @@ export function fiscalDocumentTitle(
   }
 }
 
+/** The fiscal document number is the legal customer-facing document number. */
+export function fiscalDocumentNumberLabel(
+  kind: FiscalDocumentType | undefined,
+): string {
+  switch (kind) {
+    case "tax_invoice":
+      return "Invoice number";
+    case "pan_invoice":
+      return "Invoice number";
+    case "credit_note":
+      return "Credit note number";
+    case "debit_note":
+      return "Debit note number";
+    case "provisional_bill":
+      return "Bill number";
+    default:
+      return "Document number";
+  }
+}
+
 export function fiscalCopyDesignation(
   copyNumber?: number,
   serverDesignation?: string | null,
@@ -69,7 +89,7 @@ export function buildFiscalReceiptRawPayload(
     document.seller_address,
     `PAN: ${document.seller_pan}`,
     "--------------------------------",
-    `Invoice: ${document.document_number}`,
+    `${fiscalDocumentNumberLabel(fiscalKind(document))}: ${document.document_number}`,
     `Fiscal Year: ${document.fiscal_year}`,
     `Transaction Date: ${
       document.transaction_date ||

@@ -909,11 +909,9 @@ export default function ExpensesPage() {
 
   const expenseDetail: TransactionDetailModel | null = selectedExpense
     ? {
-        eyebrow: isFinanceEventExpense(selectedExpense)
-          ? "Source-managed expense"
-          : "Expense",
+        eyebrow: "Expense",
         title: selectedExpense.description || "Expense",
-        reference: `${selectedExpense.source_type || "expense"} #${selectedExpense.id}`,
+        reference: null,
         subtitle:
           selectedExpense.party_name ||
           selectedExpense.category?.name ||
@@ -927,11 +925,6 @@ export default function ExpensesPage() {
         amount: selectedExpense.amount,
         amountLabel: "Expense amount",
         amountTone: "out",
-        badges: [
-          selectedExpense.business_line,
-          selectedExpense.station,
-          selectedExpense.source_type,
-        ].filter(Boolean),
         sections: [
           {
             title: "Expense overview",
@@ -948,60 +941,19 @@ export default function ExpensesPage() {
               },
               {
                 label: "Party",
-                value:
-                  selectedExpense.party_name ||
-                  (selectedExpense.party_type
-                    ? `${selectedExpense.party_type} #${selectedExpense.party_id}`
-                    : "—"),
-              },
-              {
-                label: "Business",
-                value: selectedExpense.business_line || "Restaurant",
-              },
-              {
-                label: "Station",
-                value:
-                  selectedExpense.station ||
-                  (selectedExpense.station_id
-                    ? `Station #${selectedExpense.station_id}`
-                    : "General"),
+                value: selectedExpense.party_name || "Not recorded",
               },
               { label: "Vendor", value: selectedExpense.vendor || "—" },
-              {
-                label: "Description",
-                value: selectedExpense.description || "—",
-                fullWidth: true,
-              },
             ],
           },
           {
-            title: "Payment & source",
+            title: "Payment",
             fields: [
               {
                 label: "Payment method",
                 value: normalizeExpensePaymentMethod(
                   selectedExpense.payment_method,
                 ),
-              },
-              {
-                label: "Payment status",
-                value:
-                  selectedExpense.payment_status ||
-                  selectedExpense.status ||
-                  "—",
-              },
-              {
-                label: "Paid amount",
-                value: `Rs. ${Number(selectedExpense.paid_amount ?? selectedExpense.amount ?? 0).toLocaleString()}`,
-              },
-              {
-                label: "Source owner",
-                value: selectedExpense.source_type || "Manual expense",
-              },
-              { label: "Source ID", value: selectedExpense.source_id || "—" },
-              {
-                label: "Source status",
-                value: selectedExpense.source_status || "—",
               },
             ],
           },
@@ -1023,6 +975,7 @@ export default function ExpensesPage() {
               : undefined,
             emptyText:
               "This record has no line-level allocation in the current response.",
+            internal: true,
           },
         ],
       }

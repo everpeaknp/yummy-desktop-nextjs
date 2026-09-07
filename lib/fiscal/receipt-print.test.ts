@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildFiscalReceiptRawPayload,
   fiscalCopyDesignation,
+  fiscalDocumentNumberLabel,
   isFiscalCbmsPending,
 } from "./receipt-print";
 import type { FiscalDocument, PrintAuthorization } from "./types";
@@ -50,6 +51,12 @@ describe("fiscal receipt print contract", () => {
     expect(fiscalCopyDesignation(2)).toBe("COPY 2");
   });
 
+  it("labels each legal document number by its fiscal document type", () => {
+    expect(fiscalDocumentNumberLabel("tax_invoice")).toBe("Invoice number");
+    expect(fiscalDocumentNumberLabel("credit_note")).toBe("Credit note number");
+    expect(fiscalDocumentNumberLabel("provisional_bill")).toBe("Bill number");
+  });
+
   it("builds raw printer content only from the immutable fiscal document", () => {
     const authorization: PrintAuthorization = {
       authorization_id: 77,
@@ -63,6 +70,7 @@ describe("fiscal receipt print contract", () => {
     const output = buildFiscalReceiptRawPayload(authorization);
 
     expect(output).toContain("TAX INVOICE");
+    expect(output).toContain("Invoice number: TI-2083-000001");
     expect(output).toContain("TI-2083-000001");
     expect(output).toContain("PAN: 123456789");
     expect(output).toContain("Buyer PAN: 987654321");

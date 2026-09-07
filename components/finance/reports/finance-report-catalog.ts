@@ -29,18 +29,14 @@ export const reportGroups: FinanceReportGroup[] = [
     label: "Ledgers & reconciliation",
     reports: [
       { href: "/finance/reports/daybook", label: "Daybook", description: "Review the current open-period report and previously closed Daybooks." },
-      { href: "/finance/reports/account-ledger", label: "Account Ledger", description: "Every posting for one account head." },
+      { href: "/finance/reports/account-ledger", label: "Accounts", description: "Active accounts, balances, and their business activity." },
       { href: "/finance/reports/party-balances", label: "Party Balances", description: "Customer, supplier, and staff balances." },
-      { href: "/finance/reports/head-activity", label: "Head Activity", description: "Movement summarized by account head." },
       { href: "/finance/reports/custody-reconciliation", label: "Custody Reconciliation", description: "Compare ledger custody with cash and bank balances." },
     ],
   },
   {
-    label: "Sales & tax registers",
+    label: "Sales returns & tax",
     reports: [
-      { href: "/finance/reports/sales-book", label: "Sales Book", description: "Completed bills with tax and settlement." },
-      { href: "/finance/reports/invoices", label: "Invoice Register", description: "Invoice-level sales and balances." },
-      { href: "/finance/reports/payments", label: "Payment Register", description: "Customer collections and payment instruments." },
       { href: "/finance/reports/refunds", label: "Refund Register", description: "Sales refunds and reversals." },
       { href: "/finance/reports/vat-sales", label: "VAT Sales", description: "Taxable sales and VAT amounts." },
     ],

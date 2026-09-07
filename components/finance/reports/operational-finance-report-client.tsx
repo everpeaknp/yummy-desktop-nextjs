@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
 import {
   BadgeDollarSign,
@@ -18,6 +17,7 @@ import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
 import { FinanceReportApis } from "@/lib/api/endpoints";
+import { financeSalesApi } from "@/lib/api/finance-sales-api";
 import { hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FinanceReportNavigation } from "@/components/finance/reports/finance-report-navigation";
+import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
 import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
 import {
   TransactionDetailSheet,
@@ -55,6 +56,7 @@ import type {
   VatSalesReportResponse,
   VatSalesRow,
 } from "@/types/finance-reports";
+import type { FinanceSalesDocument } from "@/types/finance-sales";
 
 type BaseResponse<T> = {
   status?: string;
@@ -79,8 +81,8 @@ type OperationalFinanceReportClientProps = {
 
 const reportMeta: Record<ReportMode, { title: string; description: string }> = {
   "sales-book": {
-    title: "Sales Book",
-    description: "Completed bills with sales, discount, tax, service charge, settlement, and balance.",
+    title: "Sales report",
+    description: "Date-filtered sales, tax, discount, settlement, and balance for review or export.",
   },
   invoices: {
     title: "Invoices",
@@ -205,9 +207,11 @@ function SummaryStrip({ data, mode }: { data: ReportResponse | null; mode: Repor
 function SalesLikeTable({
   rows,
   mode,
+  onSelectSale,
 }: {
   rows: Array<SalesBookRow | InvoiceRow | VatSalesRow>;
   mode: ReportMode;
+  onSelectSale: (orderId: number) => void;
 }) {
   if (rows.length === 0) {
     return <div className="p-8 text-center text-sm text-muted-foreground">No report rows found.</div>;
@@ -230,12 +234,23 @@ function SalesLikeTable({
             {includeSettlement && <TableHead className="text-right">Paid</TableHead>}
             {includeSettlement && <TableHead className="text-right">Balance</TableHead>}
             {includeSettlement && <TableHead className="min-w-[130px]">Settlement</TableHead>}
-            {mode === "invoices" && <TableHead className="text-right">Action</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
-            <TableRow key={`${row.order_id}-${row.invoice_number}`}>
+            <TableRow
+              key={`${row.order_id}-${row.invoice_number}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelectSale(row.order_id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelectSale(row.order_id);
+                }
+              }}
+              className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+            >
               <TableCell>{row.business_date}</TableCell>
               <TableCell>
                 <div className="font-medium">{row.invoice_number}</div>
@@ -255,13 +270,6 @@ function SalesLikeTable({
               )}
               {includeSettlement && "settlement_status" in row && (
                 <TableCell className="capitalize">{settlementLabel(row)}</TableCell>
-              )}
-              {mode === "invoices" && (
-                <TableCell className="text-right">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/orders/${row.order_id}`}>Open invoice</Link>
-                  </Button>
-                </TableCell>
               )}
             </TableRow>
           ))}
@@ -407,6 +415,7 @@ export function OperationalFinanceReportClient({
   const [paymentMethod, setPaymentMethod] = useState("");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ReportResponse | null>(null);
+  const [selectedSale, setSelectedSale] = useState<FinanceSalesDocument | null>(null);
 
   const canView = hasPermission(user, "finance.income.view");
   const restaurantId = user?.restaurant_id;
@@ -493,6 +502,21 @@ export function OperationalFinanceReportClient({
     setBillNumber("");
     setPaymentMethod("");
   };
+
+  const openSaleDetail = useCallback(
+    async (orderId: number) => {
+      if (!restaurantId) return;
+      try {
+        setSelectedSale(
+          await financeSalesApi.getByOrder(Number(restaurantId), orderId),
+        );
+      } catch (error) {
+        console.error("Failed to load sale detail from report", error);
+        toast.error("Could not load this sale.");
+      }
+    },
+    [restaurantId],
+  );
 
   if (!user) {
     return (
@@ -632,12 +656,18 @@ export function OperationalFinanceReportClient({
                 report.rows as Array<SalesBookRow | InvoiceRow | VatSalesRow>
               }
               mode={mode}
+              onSelectSale={openSaleDetail}
             />
           ) : (
             <div className="p-8 text-center text-sm text-muted-foreground">No report loaded.</div>
           )}
         </CardContent>
       </Card>
+      <SalesDocumentDetailSheet
+        open={selectedSale != null}
+        onOpenChange={(open) => !open && setSelectedSale(null)}
+        document={selectedSale}
+      />
     </div>
   );
 }

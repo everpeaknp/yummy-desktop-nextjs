@@ -1,9 +1,7 @@
-import type { Metadata } from "next";
-
-import { ReportingLedgerReportClient } from "@/components/finance/reports/reporting-ledger-report-client";
-
-export const metadata: Metadata = { title: "Head Activity | Yummy Finance" };
+import { redirect } from "next/navigation";
 
 export default function HeadActivityReportPage() {
-  return <ReportingLedgerReportClient mode="head-activity" />;
+  // Compatibility for bookmarked legacy report URLs. Accounts is the only
+  // user-facing account-activity report.
+  redirect("/finance/reports/account-ledger");
 }

@@ -94,6 +94,7 @@ import { toast } from "sonner";
 import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getRecordedOrderDiscount } from "@/lib/order-totals";
 import { getKOTHeading, getKOTItemDisplay } from "@/lib/order-kot-display";
+import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
@@ -578,6 +579,23 @@ export default function OrderDetailPage() {
   }
 
   if (!context || !displayOrder) return null;
+
+  if (displayOrder.status === "completed") {
+    return (
+      <>
+        <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
+          Opening completed sale…
+        </div>
+        <SalesDocumentDetailSheet
+          orderId={orderId}
+          open
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) router.back();
+          }}
+        />
+      </>
+    );
+  }
 
   const order = displayOrder;
   const computedDiscount = computeOrderDiscount(displayOrder);

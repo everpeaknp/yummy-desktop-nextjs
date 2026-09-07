@@ -6,15 +6,16 @@ import { FileText, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { FinanceSalesInvoiceDialog } from "@/components/finance/sales/finance-sales-invoice-dialog";
-import {
-  TransactionDetailSheet,
-  type TransactionDetailModel,
-} from "@/components/finance/transaction-detail/transaction-detail-sheet";
+import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
+import type { TransactionDetailModel } from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
-import type { FinanceSalesDocument } from "@/types/finance-sales";
+import type {
+  FinanceOrderSettlementSummary,
+  FinanceSalesDocument,
+} from "@/types/finance-sales";
 
 const formatMoney = (value: number | string) =>
   `NPR ${Number(value || 0).toLocaleString(undefined, {
@@ -22,7 +23,7 @@ const formatMoney = (value: number | string) =>
     maximumFractionDigits: 2,
   })}`;
 
-function documentDetail(
+export function documentDetail(
   document: FinanceSalesDocument,
 ): TransactionDetailModel {
   return {
@@ -31,36 +32,23 @@ function documentDetail(
     reference:
       document.fiscal_document_number ||
       document.external_reference ||
-      (document.source_type === "pos_order" ? "POS invoice" : "Sales invoice"),
+      (document.source_type === "pos_order" ? "POS sale" : "Manual sale"),
     subtitle: document.daily_order_number
       ? `Daily order #${document.daily_order_number}`
-      : "Sales invoice",
+      : "Manual sale",
     occurredAt: document.created_at || document.business_date,
     status: document.settlement_status,
     amount: document.grand_total,
-    amountLabel: "Invoice total",
+    amountLabel: "Sale total",
     amountTone: "in",
-    badges: [document.business_line, document.source_type],
     sections: [
       {
-        title: "Invoice overview",
+        title: "Sale overview",
         fields: [
           { label: "Business date", value: document.business_date },
           {
-            label: "Source",
-            value:
-              document.source_type === "pos_order"
-                ? "Point of sale order"
-                : "Manual invoice",
-          },
-          { label: "Order / source ID", value: document.source_id || "—" },
-          {
             label: "Customer",
             value: document.customer_name || "Cash customer",
-          },
-          {
-            label: "Created by",
-            value: document.created_by_name || "System",
           },
           {
             label: "Notes",
@@ -71,7 +59,7 @@ function documentDetail(
       },
       {
         title: "Items",
-        description: "The products and amounts recorded on this invoice.",
+        description: "The products and amounts recorded for this sale.",
         table: {
           columns: ["Item", "Quantity", "Rate", "Amount"],
           rows: document.lines.map((line) => [
@@ -97,14 +85,12 @@ function documentDetail(
       {
         title: "Totals & settlement",
         fields: [
-          { label: "Subtotal", value: formatMoney(document.subtotal) },
-          { label: "Discount", value: formatMoney(document.discount_total) },
-          { label: "Tax", value: formatMoney(document.tax_total) },
-          { label: "Grand total", value: formatMoney(document.grand_total) },
-          {
-            label: "Settlement",
-            value: document.settlement_status.replaceAll("_", " "),
-          },
+          ...(Number(document.discount_total) > 0
+            ? [{ label: "Discount", value: formatMoney(document.discount_total) }]
+            : []),
+          ...(Number(document.tax_total) > 0
+            ? [{ label: "Tax", value: formatMoney(document.tax_total) }]
+            : []),
           {
             label: "Fiscal document",
             value: document.fiscal_document_number || "Not issued",
@@ -118,6 +104,9 @@ function documentDetail(
 export function FinanceSalesWorkspace() {
   const restaurantId = useAuth((state) => state.user?.restaurant_id);
   const [documents, setDocuments] = useState<FinanceSalesDocument[]>([]);
+  const [settlements, setSettlements] = useState<
+    Record<number, FinanceOrderSettlementSummary>
+  >({});
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] =
@@ -132,6 +121,27 @@ export function FinanceSalesWorkspace() {
         limit: 200,
       });
       setDocuments(result.documents);
+      const orderIds = result.documents
+        .filter(
+          (document) =>
+            document.source_type === "pos_order" && document.source_id != null,
+        )
+        .map((document) => Number(document.source_id));
+      try {
+        const summaries = await financeSalesApi.getOrderSettlements(
+          Number(restaurantId),
+          orderIds,
+        );
+        setSettlements(
+          Object.fromEntries(
+            summaries.map((summary) => [summary.document_id, summary]),
+          ),
+        );
+      } catch {
+        // Keep the sales workspace useful even when settlement summaries are
+        // temporarily unavailable; each sale can still load its full detail.
+        setSettlements({});
+      }
     } catch (error: any) {
       toast.error(
         error.response?.data?.detail || "Could not load sales invoices.",
@@ -140,6 +150,20 @@ export function FinanceSalesWorkspace() {
       setLoading(false);
     }
   }, [restaurantId]);
+
+  const settlementFor = (document: FinanceSalesDocument) =>
+    settlements[document.id];
+
+  const settlementStatus = (document: FinanceSalesDocument) =>
+    settlementFor(document)?.settlement_status || document.settlement_status;
+
+  const balanceDue = (document: FinanceSalesDocument) => {
+    const summary = settlementFor(document);
+    if (summary) return Number(summary.balance_due || 0);
+    return String(document.settlement_status).toLowerCase() === "paid"
+      ? 0
+      : Number(document.grand_total || 0);
+  };
 
   useEffect(() => {
     void load();
@@ -152,7 +176,7 @@ export function FinanceSalesWorkspace() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
             Sales &amp; receivables
           </p>
-          <h1 className="text-2xl font-semibold">Sales invoices</h1>
+          <h1 className="text-2xl font-semibold">Sales</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             One register for completed POS orders and manual sales. POS sales
             keep their order and kitchen history; manual sales create no KOT.
@@ -182,25 +206,21 @@ export function FinanceSalesWorkspace() {
 
       <FinanceWorkspaceNav
         links={[
-          { label: "Sales invoices", href: "/finance/sales" },
+          { label: "Sales", href: "/finance/sales" },
           { label: "Sales returns", href: "/finance/sales/returns" },
         ]}
-        action={{
-          label: "Detailed sales book",
-          href: "/finance/reports/sales-book",
-        }}
       />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border p-4">
           <p className="text-xs font-medium uppercase text-muted-foreground">
-            All invoices
+            All sales
           </p>
           <p className="mt-2 text-2xl font-semibold">{documents.length}</p>
         </div>
         <div className="rounded-lg border p-4">
           <p className="text-xs font-medium uppercase text-muted-foreground">
-            Invoice value
+            Sales value
           </p>
           <p className="mt-2 text-2xl font-semibold">
             {formatMoney(
@@ -218,8 +238,7 @@ export function FinanceSalesWorkspace() {
           <p className="mt-2 text-2xl font-semibold text-amber-600">
             {formatMoney(
               documents
-                .filter((doc) => doc.settlement_status !== "paid")
-                .reduce((sum, doc) => sum + Number(doc.grand_total || 0), 0),
+                .reduce((sum, doc) => sum + balanceDue(doc), 0),
             )}
           </p>
         </div>
@@ -228,9 +247,9 @@ export function FinanceSalesWorkspace() {
       <div className="overflow-hidden rounded-lg border">
         <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
           <div>
-            <h2 className="font-medium">Invoice register</h2>
+            <h2 className="font-medium">Sales register</h2>
             <p className="text-xs text-muted-foreground">
-              Select an invoice to see its items, settlement and source.
+              Select a sale to see its items, settlement and source.
             </p>
           </div>
           <FileText className="h-5 w-5 text-muted-foreground" />
@@ -241,7 +260,7 @@ export function FinanceSalesWorkspace() {
               <thead className="bg-muted/40 text-left text-muted-foreground">
                 <tr>
                   <th className="p-3">Date</th>
-                  <th className="p-3">Invoice</th>
+                  <th className="p-3">Sale</th>
                   <th className="p-3">Source</th>
                   <th className="p-3">Order / reference</th>
                   <th className="p-3">Items</th>
@@ -270,7 +289,7 @@ export function FinanceSalesWorkspace() {
                       <p className="font-medium">{document.document_number}</p>
                       {document.fiscal_document_number ? (
                         <p className="text-xs text-muted-foreground">
-                          Fiscal: {document.fiscal_document_number}
+                          Fiscal invoice: {document.fiscal_document_number}
                         </p>
                       ) : null}
                     </td>
@@ -289,7 +308,7 @@ export function FinanceSalesWorkspace() {
                     <td className="p-3">{document.lines.length}</td>
                     <td className="p-3">
                       <span className="rounded-full bg-muted px-2 py-1 text-xs capitalize">
-                        {document.settlement_status.replaceAll("_", " ")}
+                        {settlementStatus(document).replaceAll("_", " ")}
                       </span>
                     </td>
                     <td className="p-3 text-right font-medium">
@@ -311,10 +330,10 @@ export function FinanceSalesWorkspace() {
           </div>
         ) : (
           <div className="p-12 text-center">
-            <p className="font-medium">No sales invoices yet.</p>
+            <p className="font-medium">No sales yet.</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Complete a POS sale or record a manual sale to create the first
-              invoice.
+              sale.
             </p>
           </div>
         )}
@@ -325,17 +344,10 @@ export function FinanceSalesWorkspace() {
         onOpenChange={setDialogOpen}
         onCreated={() => void load()}
       />
-      <TransactionDetailSheet
+      <SalesDocumentDetailSheet
         open={selectedDocument != null}
         onOpenChange={(open) => !open && setSelectedDocument(null)}
-        detail={selectedDocument ? documentDetail(selectedDocument) : null}
-        actionHref={
-          selectedDocument?.source_type === "pos_order" &&
-          selectedDocument.source_id
-            ? `/orders/${selectedDocument.source_id}`
-            : null
-        }
-        actionLabel="Open order"
+        document={selectedDocument}
       />
     </div>
   );

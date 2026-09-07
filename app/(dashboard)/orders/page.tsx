@@ -60,6 +60,8 @@ import { OrderHistoryCard } from "@/components/orders/order-history-card";
 import Link from "next/link";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { DateRange } from "react-day-picker";
+import { financeSalesApi } from "@/lib/api/finance-sales-api";
+import type { FinanceOrderSettlementSummary } from "@/types/finance-sales";
 
 interface OrdersKotItem {
     id: number;
@@ -150,6 +152,7 @@ export default function OrdersPage() {
 
     const [orders, setOrders] = useState<any[]>([]);
     const [historyOrders, setHistoryOrders] = useState<any[]>([]);
+    const [historySettlements, setHistorySettlements] = useState<Record<number, FinanceOrderSettlementSummary>>({});
     const [loading, setLoading] = useState(true);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [kots, setKots] = useState<OrdersKot[]>([]);
@@ -366,6 +369,7 @@ export default function OrdersPage() {
             setScopeNotice(validationToScopeError(validation));
             setSuggestedRange(validation.suggestedRange);
             setHistoryOrders([]);
+            setHistorySettlements({});
             setHistoryLoading(false);
             return;
         }
@@ -413,12 +417,25 @@ export default function OrdersPage() {
                 const list = [...(data.orders || [])]
                     .sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
                 setHistoryOrders(list);
+                try {
+                    const settlements = await financeSalesApi.getOrderSettlements(
+                        Number(user.restaurant_id),
+                        list.map((order: any) => Number(order.id)).filter((id: number) => id > 0),
+                    );
+                    setHistorySettlements(
+                        Object.fromEntries(settlements.map((settlement) => [settlement.order_id, settlement])),
+                    );
+                } catch (settlementError) {
+                    console.warn("Order settlement summaries are unavailable", settlementError);
+                    setHistorySettlements({});
+                }
             }
         } catch (err: unknown) {
             const parsed = parseApiScopeError(err, { role: primaryRole });
             if (parsed) {
                 setScopeNotice(parsed);
                 setHistoryOrders([]);
+                setHistorySettlements({});
                 if (parsed.kind === "role_manager_limit") {
                     setSuggestedRange({ from: subDays(new Date(), 30), to: new Date() });
                 } else if (parsed.maxDays) {
@@ -903,7 +920,7 @@ export default function OrdersPage() {
                                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-5">
                                             {orders.map((order) => (
                                                 <Link key={order.id} href={`/orders/${order.id}`} className="block h-full">
-                                                    <OrderHistoryCard order={order} />
+                                                    <OrderHistoryCard order={order} settlement={historySettlements[order.id]} />
                                                 </Link>
                                             ))}
                                         </div>

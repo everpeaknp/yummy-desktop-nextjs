@@ -1,15 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Plus, RefreshCw, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { FinanceSalesReturnDialog } from "@/components/finance/sales/finance-sales-return-dialog";
 import {
-  TransactionDetailSheet,
-  type TransactionDetailModel,
-} from "@/components/finance/transaction-detail/transaction-detail-sheet";
+  originalSaleLabel,
+  salesReturnDetail,
+} from "@/components/finance/transaction-detail/sales-return-detail";
+import { TransactionDetailSheet } from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -22,80 +23,13 @@ const formatMoney = (value: number | string) =>
     maximumFractionDigits: 2,
   })}`;
 
-function creditNoteDetail(document: FinanceSalesDocument): TransactionDetailModel {
-  return {
-    eyebrow: "Sales return",
-    title: document.document_number,
-    reference: document.external_reference || "Credit note",
-    subtitle: document.original_document_id
-      ? `Return against invoice #${document.original_document_id}`
-      : "Sales credit note",
-    occurredAt: document.created_at || document.business_date,
-    status: document.status,
-    amount: document.grand_total,
-    amountLabel:
-      document.settlement_status === "refund_now"
-        ? "Refunded"
-        : "Customer credit",
-    amountTone: "out",
-    badges: [document.business_line, document.settlement_status],
-    sections: [
-      {
-        title: "Return overview",
-        fields: [
-          { label: "Business date", value: document.business_date },
-          { label: "Customer", value: document.customer_name || "Cash customer" },
-          {
-            label: "Original sale",
-            value: document.original_document_id
-              ? `Invoice #${document.original_document_id}`
-              : "External sale",
-          },
-          {
-            label: "Settlement",
-            value: document.settlement_status.replaceAll("_", " "),
-          },
-          {
-            label: "Reason",
-            value: document.reason || "Not recorded",
-            fullWidth: true,
-          },
-        ],
-      },
-      {
-        title: "Returned items",
-        description: "Items and values reversed by this credit note.",
-        table: {
-          columns: ["Item", "Quantity", "Rate", "Amount"],
-          rows: document.lines.map((line) => [
-            line.item_name,
-            Number(line.quantity || 0).toLocaleString(),
-            formatMoney(line.unit_price),
-            <span key={`credit-note-line-${line.id}`} className="font-medium tabular-nums">
-              {formatMoney(line.line_total)}
-            </span>,
-          ]),
-        },
-      },
-      {
-        title: "Totals",
-        fields: [
-          { label: "Subtotal", value: formatMoney(document.subtotal) },
-          { label: "Tax reversed", value: formatMoney(document.tax_total) },
-          { label: "Credit note total", value: formatMoney(document.grand_total) },
-          { label: "Notes", value: document.notes || "None", fullWidth: true },
-        ],
-      },
-    ],
-  };
-}
-
 export function FinanceSalesReturnsWorkspace() {
   const searchParams = useSearchParams();
   const restaurantId = useAuth((state) => state.user?.restaurant_id);
   const invoiceId = Number(searchParams.get("invoice_id") || 0) || null;
   const orderId = Number(searchParams.get("order_id") || 0) || null;
   const [documents, setDocuments] = useState<FinanceSalesDocument[]>([]);
+  const [salesDocuments, setSalesDocuments] = useState<FinanceSalesDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(Boolean(invoiceId || orderId));
   const [selectedDocument, setSelectedDocument] =
@@ -105,11 +39,12 @@ export function FinanceSalesReturnsWorkspace() {
     if (!restaurantId) return;
     setLoading(true);
     try {
-      const result = await financeSalesApi.list(Number(restaurantId), {
-        kind: "credit_note",
-        limit: 200,
-      });
-      setDocuments(result.documents);
+      const [returnsResult, salesResult] = await Promise.all([
+        financeSalesApi.list(Number(restaurantId), { kind: "credit_note", limit: 200 }),
+        financeSalesApi.list(Number(restaurantId), { kind: "invoice", limit: 200 }),
+      ]);
+      setDocuments(returnsResult.documents);
+      setSalesDocuments(salesResult.documents);
     } catch (error: any) {
       toast.error(error.response?.data?.detail || "Could not load sales returns.");
     } finally {
@@ -123,6 +58,10 @@ export function FinanceSalesReturnsWorkspace() {
   useEffect(() => {
     if (invoiceId || orderId) setDialogOpen(true);
   }, [invoiceId, orderId]);
+  const salesById = useMemo(
+    () => new Map(salesDocuments.map((document) => [document.id, document])),
+    [salesDocuments],
+  );
 
   return (
     <div className="mx-auto w-full max-w-[1500px] space-y-6 p-4 md:p-6">
@@ -133,7 +72,7 @@ export function FinanceSalesReturnsWorkspace() {
           </p>
           <h1 className="text-2xl font-semibold">Sales returns</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Credit notes linked to POS orders, finance invoices, or verified external sales.
+            Credit notes linked to completed sales or verified external sales.
             Returns preserve the original sale and create an auditable reversal.
           </p>
         </div>
@@ -149,7 +88,7 @@ export function FinanceSalesReturnsWorkspace() {
 
       <FinanceWorkspaceNav
         links={[
-          { label: "Sales invoices", href: "/finance/sales" },
+          { label: "Sales", href: "/finance/sales" },
           { label: "Sales returns", href: "/finance/sales/returns" },
         ]}
         action={{ label: "View refund report", href: "/finance/reports/refunds" }}
@@ -183,7 +122,7 @@ export function FinanceSalesReturnsWorkspace() {
             <table className="w-full min-w-[850px] text-sm">
               <thead className="bg-muted/40 text-left text-muted-foreground">
                 <tr>
-                  <th className="p-3">Date</th><th className="p-3">Credit note</th><th className="p-3">Source</th><th className="p-3">Reason</th><th className="p-3">Outcome</th><th className="p-3 text-right">Total</th>
+                  <th className="p-3">Date</th><th className="p-3">Credit note</th><th className="p-3">Original sale</th><th className="p-3">Reason</th><th className="p-3">Outcome</th><th className="p-3 text-right">Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -203,7 +142,7 @@ export function FinanceSalesReturnsWorkspace() {
                   >
                     <td className="p-3">{document.business_date}</td>
                     <td className="p-3 font-medium">{document.document_number}</td>
-                    <td className="p-3 capitalize">{document.source_type.replaceAll("_", " ")}{document.source_id ? ` #${document.source_id}` : ""}</td>
+                    <td className="p-3">{originalSaleLabel(document, salesById.get(document.original_document_id || 0))}</td>
                     <td className="max-w-72 truncate p-3 text-muted-foreground">{document.reason || "-"}</td>
                     <td className="p-3"><span className="rounded-full bg-muted px-2 py-1 text-xs capitalize">{document.settlement_status.replaceAll("_", " ")}</span></td>
                     <td className="p-3 text-right font-medium">{formatMoney(document.grand_total)}</td>
@@ -221,7 +160,7 @@ export function FinanceSalesReturnsWorkspace() {
       <TransactionDetailSheet
         open={selectedDocument != null}
         onOpenChange={(open) => !open && setSelectedDocument(null)}
-        detail={selectedDocument ? creditNoteDetail(selectedDocument) : null}
+        detail={selectedDocument ? salesReturnDetail(selectedDocument, salesById.get(selectedDocument.original_document_id || 0)) : null}
       />
     </div>
   );

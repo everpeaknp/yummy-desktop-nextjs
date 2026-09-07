@@ -23,15 +23,31 @@ import type { FinanceReportingDepartmentBreakdownRead } from "@/types/finance-re
 
 function formatMoney(value: string | number | null | undefined): string {
   const num = Number(value ?? 0);
-  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `NPR ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function localIso(date: Date): string {
+  const timezoneOffset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 10);
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localIso(new Date());
+}
+
+function monthStartIso(): string {
+  const date = new Date();
+  date.setDate(1);
+  return localIso(date);
+}
+
+function departmentName(value: string): string {
+  if (value === "unassigned") return "Unassigned";
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 export function DepartmentBreakdownReportClient() {
-  const [dateFrom, setDateFrom] = useState(todayIso());
+  const [dateFrom, setDateFrom] = useState(monthStartIso());
   const [dateTo, setDateTo] = useState(todayIso());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,12 +82,8 @@ export function DepartmentBreakdownReportClient() {
         <CardHeader>
           <CardTitle>Performance by Department</CardTitle>
           <CardDescription>
-            Revenue, cost, and margin per station (Kitchen, Bar, Cafe, or any custom department) for the
-            selected period. This slices the same Food/Beverage/Rooms accounts you already see in Profit
-            &amp; Loss by station — it does not add new ledger accounts, so totals here reconcile to the
-            standard Chart of Accounts. Note: every row also includes any unattributed/global entries for
-            the period (e.g. opening balances), so rows share that baseline rather than summing to the
-            period&apos;s grand total.
+            Revenue, expenses, and net result for each department in the selected period. Activity without
+            a department is shown separately as Unassigned.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -117,7 +129,7 @@ export function DepartmentBreakdownReportClient() {
               <TableBody>
                 {report.departments.map((dept) => (
                   <TableRow key={dept.station}>
-                    <TableCell className="font-medium capitalize">{dept.station}</TableCell>
+                    <TableCell className="font-medium">{departmentName(dept.station)}</TableCell>
                     <TableCell className="text-right">{formatMoney(dept.total_income)}</TableCell>
                     <TableCell className="text-right">{formatMoney(dept.total_expenses)}</TableCell>
                     <TableCell
@@ -130,7 +142,7 @@ export function DepartmentBreakdownReportClient() {
               </TableBody>
             </Table>
           ) : (
-            !error && <p className="text-sm text-muted-foreground py-8 text-center">No department activity for this period.</p>
+            !error && <p className="py-8 text-center text-sm text-muted-foreground">No department activity in this period. Try a wider date range.</p>
           )}
         </CardContent>
       </Card>

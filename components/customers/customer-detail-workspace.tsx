@@ -9,7 +9,8 @@ import { CashBankAccountSelect, type CashBankAccountOption } from "@/components/
 import { FinanceSalesInvoiceDialog } from "@/components/finance/sales/finance-sales-invoice-dialog";
 import { FinanceSalesReturnDialog } from "@/components/finance/sales/finance-sales-return-dialog";
 import { TransactionDetailSheet, type TransactionDetailModel } from "@/components/finance/transaction-detail/transaction-detail-sheet";
-import { partyLedgerEntryDetail, salesDocumentDetail, settlementAllocationDetail } from "@/components/finance/transaction-detail/party-workspace-detail";
+import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
+import { partyLedgerEntryDetail, settlementAllocationDetail } from "@/components/finance/transaction-detail/party-workspace-detail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,6 +56,7 @@ export function CustomerDetailWorkspace({ customerId }: CustomerDetailWorkspaceP
   const [payoutReference, setPayoutReference] = useState("");
   const [payoutNotes, setPayoutNotes] = useState("");
   const [selectedDetail, setSelectedDetail] = useState<TransactionDetailModel | null>(null);
+  const [selectedSalesDocument, setSelectedSalesDocument] = useState<FinanceSalesDocument | null>(null);
   const [manualPayoutAllocation, setManualPayoutAllocation] = useState(false);
   const [payoutAllocations, setPayoutAllocations] = useState<Record<number, string>>({});
 
@@ -100,6 +102,22 @@ export function CustomerDetailWorkspace({ customerId }: CustomerDetailWorkspaceP
   const totalCollected = collections.reduce((sum, entry: any) => sum + money(entry.amount), 0);
   const refunded = returns.filter((creditNote) => creditNote.settlement_status === "refunded" || creditNote.settlement_status === "refund_now").reduce((sum, creditNote) => sum + money(creditNote.grand_total), 0);
   const totalPaidOut = customerPaymentsOut.reduce((sum, entry: any) => sum + money(entry.amount), 0) + refunded;
+  const openSalesDocument = useCallback((document: FinanceSalesDocument) => {
+    setSelectedDetail(null);
+    setSelectedSalesDocument(document);
+  }, []);
+  const openEntryDetail = useCallback((entry: any) => {
+    const salesDocument =
+      entry.entry_type === "customer_invoice"
+        ? invoices.find((document) => document.id === Number(entry.source_id))
+        : null;
+    if (salesDocument) {
+      openSalesDocument(salesDocument);
+      return;
+    }
+    setSelectedSalesDocument(null);
+    setSelectedDetail(partyLedgerEntryDetail(entry, "customer", statement?.allocations || []));
+  }, [invoices, openSalesDocument, statement]);
   const manualTotal = Object.values(allocations).reduce((sum, value) => sum + money(value), 0);
   const fifoPreview = useMemo(() => {
     let remaining = money(amount);
@@ -244,12 +262,12 @@ export function CustomerDetailWorkspace({ customerId }: CustomerDetailWorkspaceP
       <Card className="h-fit"><CardContent className="space-y-5 p-5"><div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-lg font-semibold text-primary">{String(customer.full_name || customer.name || "CU").slice(0, 2).toUpperCase()}</div><div><p className="text-sm font-medium">Current balance</p><p className={receivable > 0 ? "mt-1 text-2xl font-semibold text-orange-600" : "mt-1 text-2xl font-semibold"}>{receivable > 0 ? `${formatCurrency(receivable)} receivable` : customerCredit > 0 ? `${formatCurrency(customerCredit)} customer credit` : "Settled"}</p></div><div className="flex items-center justify-between border-t pt-4"><p className="text-sm text-muted-foreground">Status</p><Badge variant={customer.is_active ? "default" : "secondary"}>{customer.is_active ? "Active" : "Inactive"}</Badge></div><div className="space-y-3 border-t pt-4 text-sm"><div><p className="text-muted-foreground">Phone</p><p>{customer.phone || "Not recorded"}</p></div><div><p className="text-muted-foreground">Email</p><p>{customer.email || "Not recorded"}</p></div><div><p className="text-muted-foreground">Address</p><p>{customer.address || customer.billing_address || "Not recorded"}</p></div><div><p className="text-muted-foreground">Notes</p><p>{customer.notes || "—"}</p></div></div></CardContent></Card>
       <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><Metric label="Open invoices" value={formatCurrency(receivable)} icon={<WalletCards className="h-4 w-4" />} /><Metric label="Customer credit" value={formatCurrency(customerCredit)} icon={<Landmark className="h-4 w-4" />} /><Metric label="Sales" value={formatCurrency(totalSales)} icon={<ClipboardList className="h-4 w-4" />} /><Metric label="Sales returns" value={formatCurrency(totalReturns)} icon={<RotateCcw className="h-4 w-4" />} /><Metric label="Payments received" value={formatCurrency(totalCollected)} icon={<ReceiptText className="h-4 w-4" />} /><Metric label="Payments out" value={formatCurrency(totalPaidOut)} icon={<Banknote className="h-4 w-4" />} /></div>
         <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1">{([ ["activity", "All activity"], ["sales", "Sales invoices"], ["returns", "Sales returns"], ["payments", "Payments"], ["open", "Open invoices"], ["statement", "Statement"] ] as const).map(([value, label]) => <Button key={value} size="sm" variant={tab === value ? "secondary" : "ghost"} onClick={() => setTab(value)}>{label}</Button>)}<Button variant="ghost" size="icon" className="ml-auto" onClick={() => void load()}><RefreshCw className="h-4 w-4" /></Button></div>
-        {tab === "activity" && <ActivityList entries={entries} returns={returns} onOpenEntry={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "customer"))} onOpenDocument={(document) => setSelectedDetail(salesDocumentDetail(document))} />}
-        {tab === "sales" && <InvoiceList invoices={invoices} openInvoices={openInvoices} onOpen={(invoice) => setSelectedDetail(salesDocumentDetail(invoice))} onReturn={() => { setReturnOpen(true); }} />}
-        {tab === "returns" && <ReturnList returns={returns} onOpen={(creditNote) => setSelectedDetail(salesDocumentDetail(creditNote))} />}
-        {tab === "payments" && <PaymentList entries={[...collections, ...customerPaymentsOut]} returns={returns} onOpenEntry={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "customer"))} onOpenDocument={(document) => setSelectedDetail(salesDocumentDetail(document))} />}
-        {tab === "open" && <OpenInvoiceList invoices={openInvoices} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "customer"))} onCollect={openCollection} onReturn={() => setReturnOpen(true)} />}
-        {tab === "statement" && <StatementWithAllocations entries={entries} allocations={statement?.allocations || []} onOpen={(entry) => setSelectedDetail(partyLedgerEntryDetail(entry, "customer"))} onOpenAllocation={(allocation) => setSelectedDetail(settlementAllocationDetail(allocation, "customer"))} />}
+        {tab === "activity" && <ActivityList entries={entries} returns={returns} onOpenEntry={openEntryDetail} onOpenDocument={openSalesDocument} />}
+        {tab === "sales" && <InvoiceList invoices={invoices} openInvoices={openInvoices} onOpen={openSalesDocument} onReturn={() => { setReturnOpen(true); }} />}
+        {tab === "returns" && <ReturnList returns={returns} onOpen={openSalesDocument} />}
+        {tab === "payments" && <PaymentList entries={[...collections, ...customerPaymentsOut]} returns={returns} onOpenEntry={openEntryDetail} onOpenDocument={openSalesDocument} />}
+        {tab === "open" && <OpenInvoiceList invoices={openInvoices} onOpen={openEntryDetail} onCollect={openCollection} onReturn={() => setReturnOpen(true)} />}
+        {tab === "statement" && <StatementWithAllocations entries={entries} allocations={statement?.allocations || []} onOpen={openEntryDetail} onOpenAllocation={(allocation) => setSelectedDetail(settlementAllocationDetail(allocation, "customer"))} />}
       </div>
     </div>
 
@@ -286,6 +304,7 @@ export function CustomerDetailWorkspace({ customerId }: CustomerDetailWorkspaceP
     <FinanceSalesInvoiceDialog open={saleOpen} onOpenChange={setSaleOpen} onCreated={() => void load()} initialCustomerId={customerId} />
     <FinanceSalesReturnDialog open={returnOpen} onOpenChange={setReturnOpen} onCreated={() => void load()} initialCustomerId={customerId} />
     <TransactionDetailSheet open={Boolean(selectedDetail)} onOpenChange={(open) => !open && setSelectedDetail(null)} detail={selectedDetail} />
+    <SalesDocumentDetailSheet open={Boolean(selectedSalesDocument)} onOpenChange={(open) => !open && setSelectedSalesDocument(null)} document={selectedSalesDocument} />
   </div>;
 }
 

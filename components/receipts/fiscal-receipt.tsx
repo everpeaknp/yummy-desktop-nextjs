@@ -3,6 +3,7 @@
 import type { FiscalDocument, FiscalDocumentType } from "@/lib/fiscal/types";
 import {
   fiscalCopyDesignation,
+  fiscalDocumentNumberLabel,
   fiscalDocumentTitle,
   isFiscalCbmsPending,
 } from "@/lib/fiscal/receipt-print";
@@ -80,7 +81,7 @@ export function FiscalReceipt({
 
         <section className="mt-2 space-y-0.5 border-y border-dashed border-black py-2">
           <div className="flex justify-between gap-2">
-            <span>Invoice</span>
+            <span>{fiscalDocumentNumberLabel(fiscalKind(document))}</span>
             <span className="text-right font-bold">
               {document.document_number}
             </span>

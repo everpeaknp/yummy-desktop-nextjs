@@ -275,19 +275,13 @@ export function OtherIncomeClient() {
     ? {
         eyebrow: "Other income",
         title: selectedIncome.description || "Other income received",
-        reference: selectedIncome.id
-          ? `Income entry ${selectedIncome.id}`
-          : selectedIncome.source || "Income entry",
+        reference: null,
         subtitle: "Non-sales income receipt",
         occurredAt: selectedIncome.paid_at,
         status: selectedIncome.status || "recorded",
         amount: selectedIncome.amount,
         amountLabel: "Amount received",
         amountTone: "in",
-        badges: [
-          selectedIncome.business_line,
-          selectedIncome.source_type,
-        ].filter(Boolean) as string[],
         sections: [
           {
             title: "Receipt overview",
@@ -304,15 +298,6 @@ export function OtherIncomeClient() {
                   selectedIncome.source_type ||
                   "Manual entry",
               },
-              { label: "Business", value: selectedIncome.business_line || "—" },
-              {
-                label: "Station",
-                value:
-                  selectedIncome.station ||
-                  (selectedIncome.station_id
-                    ? "Assigned station"
-                    : "—"),
-              },
               {
                 label: "Recorded by",
                 value:
@@ -320,11 +305,6 @@ export function OtherIncomeClient() {
                   (selectedIncome.created_by === user?.id
                     ? user?.full_name || "Current user"
                     : "System"),
-              },
-              {
-                label: "Description",
-                value: selectedIncome.description || "—",
-                fullWidth: true,
               },
             ],
           },
@@ -346,6 +326,7 @@ export function OtherIncomeClient() {
                   ]),
                 }
               : undefined,
+            internal: true,
             emptyText:
               "This legacy receipt has no saved line-level allocation.",
           },

@@ -2,6 +2,8 @@ import apiClient from "@/lib/api-client";
 import type {
   FinanceSalesDocument,
   FinanceSalesDocumentList,
+  FinanceSalesDocumentSettlement,
+  FinanceOrderSettlementSummary,
   FinanceSalesInvoiceInput,
   FinanceSalesReturnInput,
   OrderSettlementReplacementInput,
@@ -12,7 +14,13 @@ type ApiResponse<T> = { data: T; message?: string };
 export const financeSalesApi = {
   list: async (
     restaurantId: number,
-    params?: { kind?: "invoice" | "credit_note"; date_from?: string; date_to?: string; limit?: number },
+    params?: {
+      kind?: "invoice" | "credit_note";
+      customer_id?: number;
+      date_from?: string;
+      date_to?: string;
+      limit?: number;
+    },
   ): Promise<FinanceSalesDocumentList> => {
     const response = await apiClient.get<ApiResponse<FinanceSalesDocumentList>>(
       "/finance/sales-documents",
@@ -33,6 +41,30 @@ export const financeSalesApi = {
     const response = await apiClient.get<ApiResponse<FinanceSalesDocument>>(
       `/finance/sales-documents/orders/${orderId}`,
       { params: { restaurant_id: restaurantId } },
+    );
+    return response.data.data;
+  },
+
+  getSettlement: async (
+    restaurantId: number,
+    documentId: number,
+  ): Promise<FinanceSalesDocumentSettlement> => {
+    const response = await apiClient.get<ApiResponse<FinanceSalesDocumentSettlement>>(
+      `/finance/sales-documents/${documentId}/settlement`,
+      { params: { restaurant_id: restaurantId } },
+    );
+    return response.data.data;
+  },
+
+  getOrderSettlements: async (
+    restaurantId: number,
+    orderIds: number[],
+  ): Promise<FinanceOrderSettlementSummary[]> => {
+    if (!orderIds.length) return [];
+    const search = new URLSearchParams({ restaurant_id: String(restaurantId) });
+    orderIds.forEach((orderId) => search.append("order_ids", String(orderId)));
+    const response = await apiClient.get<ApiResponse<FinanceOrderSettlementSummary[]>>(
+      `/finance/sales-documents/order-settlements?${search.toString()}`,
     );
     return response.data.data;
   },

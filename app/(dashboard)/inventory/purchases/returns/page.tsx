@@ -84,23 +84,19 @@ function purchaseReturnDetail(entry: any): TransactionDetailModel {
   const settlement = String(entry.settlement_type || "supplier_credit").replaceAll("_", " ");
   return {
     eyebrow: "Purchase return",
-    title: `Purchase return #${entry.id}`,
-    reference: entry.purchase_id ? `Linked purchase #${entry.purchase_id}` : "Purchase return",
+    title: entry.return_number || "Purchase return",
+    reference: null,
     subtitle: entry.supplier_name ? `Return to ${entry.supplier_name}` : "Supplier return",
     occurredAt: entry.posted_at || entry.created_at || entry.return_date,
     status: entry.status,
     amount: entry.total_cost,
     amountLabel: entry.settlement_type === "refund_received" ? "Refund received" : "Supplier credit",
     amountTone: "in",
-    badges: [settlement],
     sections: [
       {
         title: "Return overview",
         fields: [
-          { label: "Return date", value: entry.return_date },
           { label: "Supplier", value: entry.supplier_name || "Supplier" },
-          { label: "Original purchase", value: entry.purchase_id ? `Purchase #${entry.purchase_id}` : "Not recorded" },
-          { label: "Settlement", value: settlement },
           { label: "Reason", value: String(entry.reason_code || "other").replaceAll("_", " "), fullWidth: true },
           { label: "Stock outcome", value: entry.goods_physically_returned ? "Goods returned to the supplier" : "Financial credit only" },
           ...(entry.void_reason ? [{ label: "Void reason", value: entry.void_reason, fullWidth: true }] : []),

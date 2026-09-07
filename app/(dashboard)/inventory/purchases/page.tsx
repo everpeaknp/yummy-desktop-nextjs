@@ -58,12 +58,13 @@ import {
   type PurchaseLineDraft,
 } from "@/components/purchases/purchase-line-items-editor";
 import apiClient from "@/lib/api-client";
-import { PurchaseApis, SupplierApis } from "@/lib/api/endpoints";
+import { PartyLedgerApis, PurchaseApis, PurchaseReturnApis, SupplierApis } from "@/lib/api/endpoints";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   TransactionDetailSheet,
   type TransactionDetailModel,
 } from "@/components/finance/transaction-detail/transaction-detail-sheet";
+import { purchaseDocumentDetail } from "@/components/finance/transaction-detail/party-workspace-detail";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -102,6 +103,9 @@ export default function InventoryPurchasesPage() {
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
   const [detailPurchase, setDetailPurchase] = useState<any | null>(null);
+  const [detailStatement, setDetailStatement] = useState<any | null>(null);
+  const [detailReturns, setDetailReturns] = useState<any[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const [voidPurchase, setVoidPurchase] = useState<any | null>(null);
   const [voidReason, setVoidReason] = useState("");
@@ -136,6 +140,29 @@ export default function InventoryPurchasesPage() {
       }
     } catch (err) {
       console.error("Failed to fetch suppliers:", err);
+    }
+  }, [user?.restaurant_id]);
+
+  const openPurchaseDetail = useCallback(async (purchase: any) => {
+    setDetailPurchase(purchase);
+    setDetailStatement(null);
+    setDetailReturns([]);
+    if (!user?.restaurant_id || !purchase?.supplier_id) return;
+
+    setDetailLoading(true);
+    try {
+      const [purchaseResponse, statementResponse, returnsResponse] = await Promise.all([
+        apiClient.get(PurchaseApis.get(purchase.id, user.restaurant_id)),
+        apiClient.get(PartyLedgerApis.statement("supplier", purchase.supplier_id, user.restaurant_id)),
+        apiClient.get(PurchaseReturnApis.list({ restaurantId: user.restaurant_id, supplierId: purchase.supplier_id, limit: 200 })),
+      ]);
+      setDetailPurchase(purchaseResponse.data.data || purchase);
+      setDetailStatement(statementResponse.data.data || null);
+      setDetailReturns(returnsResponse.data.data?.purchase_returns || []);
+    } catch (error) {
+      console.error("Failed to load purchase settlement details", error);
+    } finally {
+      setDetailLoading(false);
     }
   }, [user?.restaurant_id]);
 
@@ -267,58 +294,7 @@ export default function InventoryPurchasesPage() {
   );
 
   const purchaseDetail: TransactionDetailModel | null = detailPurchase
-    ? {
-        eyebrow: "Inventory purchase",
-        title: detailPurchase.reference_number || "Supplier purchase",
-        reference: [detailPurchase.supplier_name, formatDate(detailPurchase.purchase_date)]
-          .filter(Boolean)
-          .join(" · "),
-        subtitle: detailPurchase.supplier_name || "Inventory supplier",
-        occurredAt: detailPurchase.created_at || detailPurchase.purchase_date,
-        status: detailPurchase.status,
-        amount: detailPurchase.total_cost,
-        amountLabel: "Purchase value",
-        amountTone: "out",
-        badges: [detailPurchase.status, detailPurchase.payment_status].filter(Boolean),
-        sections: [
-          {
-            title: "Purchase overview",
-            fields: [
-              { label: "Supplier", value: detailPurchase.supplier_name || "Supplier not recorded" },
-              { label: "Purchase date", value: formatDate(detailPurchase.purchase_date) },
-              { label: "Expected delivery", value: detailPurchase.expected_delivery_date ? formatDate(detailPurchase.expected_delivery_date) : "Not specified" },
-              { label: "Reference", value: detailPurchase.reference_number || "Not provided" },
-              { label: "Notes", value: detailPurchase.notes || "No notes", fullWidth: true },
-            ],
-          },
-          {
-            title: "Items received",
-            description: "Ordered and received quantities for every inventory item.",
-            table: {
-              columns: ["Item", "Ordered", "Received", "Unit cost", "Amount"],
-              rows: (detailPurchase.lines || []).map((line: any) => {
-                const unit = line.purchase_unit || line.item_unit || "unit";
-                return [
-                  line.item_name || "Inventory item",
-                  `${Number(line.ordered_quantity || 0).toLocaleString()} ${unit}`,
-                  `${Number(line.received_quantity || 0).toLocaleString()} ${unit}`,
-                  formatCurrency(line.unit_cost || 0),
-                  formatCurrency(line.line_total || 0),
-                ];
-              }),
-            },
-          },
-          {
-            title: "Settlement",
-            fields: [
-              { label: "Total purchase value", value: formatCurrency(detailPurchase.total_cost) },
-              { label: "Payment status", value: detailPurchase.payment_status?.replaceAll("_", " ") || "Not recorded" },
-              { label: "Payment method", value: detailPurchase.payment_method?.replaceAll("_", " ") || "Not recorded" },
-              { label: "Lifecycle status", value: detailPurchase.status?.replaceAll("_", " ") || "Not recorded" },
-            ],
-          },
-        ],
-      }
+    ? purchaseDocumentDetail(detailPurchase, detailStatement, detailReturns)
     : null;
 
   return (
@@ -371,7 +347,8 @@ export default function InventoryPurchasesPage() {
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Supplier</TableHead>
-              <TableHead>Reference</TableHead>
+              <TableHead>Purchase</TableHead>
+              <TableHead>Supplier reference</TableHead>
               <TableHead>Total</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -380,13 +357,13 @@ export default function InventoryPurchasesPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
             ) : filteredPurchases.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   No purchases found.
                 </TableCell>
               </TableRow>
@@ -397,16 +374,17 @@ export default function InventoryPurchasesPage() {
                   role="button"
                   tabIndex={0}
                   className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
-                  onClick={() => setDetailPurchase(purchase)}
+                  onClick={() => void openPurchaseDetail(purchase)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      setDetailPurchase(purchase);
+                      void openPurchaseDetail(purchase);
                     }
                   }}
                 >
                   <TableCell>{formatDate(purchase.purchase_date)}</TableCell>
                   <TableCell>{purchase.supplier_name || "Unknown"}</TableCell>
+                  <TableCell className="font-medium">Purchase #{purchase.id}</TableCell>
                   <TableCell>{purchase.reference_number || "-"}</TableCell>
                   <TableCell className="font-medium">{formatCurrency(purchase.total_cost)}</TableCell>
                   <TableCell>{statusBadge(purchase.status)}</TableCell>
@@ -418,7 +396,7 @@ export default function InventoryPurchasesPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setDetailPurchase(purchase)}>View details</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => void openPurchaseDetail(purchase)}>View details</DropdownMenuItem>
                         {purchase.status === "posted" && (
                           <>
                             <DropdownMenuItem onClick={() => router.push(`/inventory/purchases/returns?purchase_id=${purchase.id}`)}>
@@ -548,8 +526,15 @@ export default function InventoryPurchasesPage() {
 
       <TransactionDetailSheet
         open={detailPurchase != null}
-        onOpenChange={(open) => !open && setDetailPurchase(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetailPurchase(null);
+            setDetailStatement(null);
+            setDetailReturns([]);
+          }
+        }}
         detail={purchaseDetail}
+        loading={detailLoading}
         footer={
           detailPurchase ? (
             <>

@@ -48,6 +48,7 @@ import {
   AlertCircle,
   RefreshCw,
   CheckCircle,
+  Clock3,
   User,
   ChevronDown,
   Search,
@@ -88,6 +89,9 @@ import {
   preventPaymentAmountWheelChange,
 } from "@/lib/payment-composer-config";
 import { CompletedSettlementCorrectionDialog } from "@/components/orders/completed-settlement-correction-dialog";
+import { InvoiceSettlementCard } from "@/components/orders/invoice-settlement-card";
+import { financeSalesApi } from "@/lib/api/finance-sales-api";
+import type { FinanceSalesDocumentSettlement } from "@/types/finance-sales";
 
 function findFirstStringByKey(input: unknown, keyHints: string[]): string | null {
   if (!input) return null;
@@ -589,6 +593,7 @@ export default function CheckoutPage() {
   });
   const [bill, setBill] = useState<OrderBill | null>(null);
   const [orderMeta, setOrderMeta] = useState<OrderMeta | null>(null);
+  const [invoiceSettlement, setInvoiceSettlement] = useState<FinanceSalesDocumentSettlement | null>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -936,6 +941,19 @@ export default function CheckoutPage() {
       if (orderRes.data.status === "success") {
         setOrderMeta(orderRes.data.data);
       }
+      const isCompleted = String(orderRes.data?.data?.status || "").toLowerCase() === "completed";
+      const restaurantId = Number(user?.restaurant_id || restaurant?.id || 0);
+      if (isCompleted && restaurantId > 0) {
+        try {
+          const document = await financeSalesApi.getByOrder(restaurantId, orderId);
+          const settlement = await financeSalesApi.getSettlement(restaurantId, document.id);
+          setInvoiceSettlement(settlement);
+        } catch {
+          setInvoiceSettlement(null);
+        }
+      } else {
+        setInvoiceSettlement(null);
+      }
       setError(null);
       await fetchGuestBills();
     } catch (err: any) {
@@ -943,7 +961,7 @@ export default function CheckoutPage() {
     } finally {
       setLoading(false);
     }
-  }, [orderId, fetchGuestBills]);
+  }, [orderId, fetchGuestBills, restaurant?.id, user?.restaurant_id]);
 
   const handleOpenItemEdit = (item: BillItem) => {
     setEditingItem(item);
@@ -2266,6 +2284,8 @@ export default function CheckoutPage() {
   const displayGrandTotal = Number((displaySubtotal + Number(bill.service_charge || 0) - computedDiscount).toFixed(2));
   const displayBalanceDue = Math.max(0, Number((displayGrandTotal - Number(bill.total_paid || 0)).toFixed(2)));
   const displayIsFullyPaid = displayBalanceDue <= 0;
+  const invoiceBalanceDue = Number(invoiceSettlement?.balance_due || 0);
+  const isCustomerBalanceOutstanding = invoiceBalanceDue > 0.004;
   const totalRefunded = bill.payments.reduce(
     (total, payment) => total + Math.max(0, -Number(payment.amount || 0)),
     0,
@@ -2339,13 +2359,24 @@ export default function CheckoutPage() {
       </div>
 
       {/* ── Fully Paid Banner ── */}
-      {displayIsFullyPaid && !isRoomServiceOrder && (!guestBills?.split_group_id || guestBills.orders.every((g: any) => g.is_fully_paid)) && (
+      {displayIsFullyPaid && !isCustomerBalanceOutstanding && !isRoomServiceOrder && (!guestBills?.split_group_id || guestBills.orders.every((g: any) => g.is_fully_paid)) && (
         <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl">
           <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
           <div>
             <p className="font-semibold text-emerald-700 dark:text-emerald-300">Bill Fully Paid</p>
             <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">
               {orderMeta?.table_name ? `${orderMeta.table_name} has been freed.` : "Order completed successfully."}
+            </p>
+          </div>
+        </div>
+      )}
+      {isCustomerBalanceOutstanding && !isRoomServiceOrder && (
+        <div className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4 dark:border-orange-900/60 dark:bg-orange-950/20">
+          <Clock3 className="h-5 w-5 shrink-0 text-orange-600" />
+          <div>
+            <p className="font-semibold text-orange-800 dark:text-orange-200">Sold on credit</p>
+            <p className="text-sm text-orange-700/80 dark:text-orange-300/80">
+              The order is complete. The customer still owes {formatCurrency(invoiceBalanceDue, curr)}.
             </p>
           </div>
         </div>
@@ -2588,7 +2619,7 @@ export default function CheckoutPage() {
 
               <Separator />
 
-              {bill.total_paid > 0 && (
+              {bill.total_paid > 0 && !isCustomerBalanceOutstanding && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Paid</span>
                   <span className="tabular-nums text-emerald-600 font-medium">{formatCurrency(bill.total_paid, curr)}</span>
@@ -2603,11 +2634,11 @@ export default function CheckoutPage() {
               )}
 
               <div className="flex justify-between font-bold text-base">
-                <span className={displayBalanceDue > 0 ? "text-destructive" : "text-emerald-600"}>
-                  {displayBalanceDue > 0 ? "Balance Due" : "Paid"}
+                <span className={isCustomerBalanceOutstanding || displayBalanceDue > 0 ? "text-orange-600" : "text-emerald-600"}>
+                  {isCustomerBalanceOutstanding ? "Recorded on credit" : displayBalanceDue > 0 ? "Balance Due" : "Paid"}
                 </span>
-                <span className={cn("tabular-nums", displayBalanceDue > 0 ? "text-destructive" : "text-emerald-600")}>
-                  {formatCurrency(displayBalanceDue, curr)}
+                <span className={cn("tabular-nums", isCustomerBalanceOutstanding || displayBalanceDue > 0 ? "text-orange-600" : "text-emerald-600")}>
+                  {formatCurrency(isCustomerBalanceOutstanding ? displayGrandTotal : displayBalanceDue, curr)}
                 </span>
               </div>
             </CardContent>
@@ -2617,7 +2648,7 @@ export default function CheckoutPage() {
           {bill.payments.length > 0 && (
             <Card className="border-border/40">
               <CardContent className="p-5 space-y-3">
-                <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground mb-2">Payments</h3>
+                <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground mb-2">Checkout record</h3>
                 {bill.payments.map((p) => {
                   const method = PAYMENT_METHODS.find((m) => m.value === p.method);
                   const Icon = method?.icon || Banknote;
@@ -2695,6 +2726,8 @@ export default function CheckoutPage() {
               </CardContent>
             </Card>
           )}
+
+          {invoiceSettlement ? <InvoiceSettlementCard settlement={invoiceSettlement} /> : null}
 
           {/* Action Buttons */}
           {showCheckoutControls && (

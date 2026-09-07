@@ -58,7 +58,7 @@ const accountingNavGroups = [
       { href: "/finance/accounting/setup", label: "Setup", icon: Settings },
       { href: "/finance/accounting/inventory", label: "Inventory", icon: PackageOpen, permission: "inventory.accounting.view" as PermissionKey },
       { href: "/finance/accounting/opening-balances", label: "Opening Balances", icon: NotebookPen },
-      { href: "/finance/accounting/chart-of-accounts", label: "Accounts", icon: Landmark },
+      { href: "/finance/heads", label: "Chart of Accounts", icon: Landmark },
       { href: "/finance/accounting/ledger-mapping", label: "Mappings", icon: Map },
     ],
   },

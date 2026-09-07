@@ -56,6 +56,7 @@ import type {
   FinanceReportingHeadActivityRead,
   FinanceReportingPartyBalancesRead,
   FinanceReportingTrialBalanceRead,
+  FinanceReportingTrialBalanceRow,
 } from "@/types/finance-reporting";
 
 export type ReportingLedgerReportMode =
@@ -65,8 +66,7 @@ export type ReportingLedgerReportMode =
   | "custody-reconciliation"
   | "balance-sheet"
   | "party-balances"
-  | "cash-flow"
-  | "head-activity";
+  | "cash-flow";
 
 type ReportingLedgerReport =
   | FinanceReportingProfitLossRead
@@ -92,7 +92,7 @@ const modeMeta: Record<
   },
   "account-ledger": {
     title: "Accounts",
-    description: "Every account with its opening, period, and closing balances. Click one to see its full ledger.",
+    description: "Balances grouped by your account structure. Open an account to review the business activity behind it.",
   },
   "custody-reconciliation": {
     title: "Custody Reconciliation",
@@ -109,10 +109,6 @@ const modeMeta: Record<
   "cash-flow": {
     title: "Cash Flow",
     description: "Cash inflows and outflows classified by operating, investing, and financing activity.",
-  },
-  "head-activity": {
-    title: "Head Activity",
-    description: "A compact activity and balance view for every postable account head.",
   },
 };
 
@@ -198,7 +194,7 @@ function ClosureNotice({ closure }: { closure: FinanceReportingClosureSummary })
     return (
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-        {closure.confirmed_day_count} confirmed business day(s) in this period
+        This period is confirmed. Figures are final.
       </div>
     );
   }
@@ -206,10 +202,9 @@ function ClosureNotice({ closure }: { closure: FinanceReportingClosureSummary })
   return (
     <Alert className="border-amber-500/40 bg-amber-500/5">
       <AlertCircle className="h-4 w-4 text-amber-600" />
-      <AlertTitle>Period is not fully closed</AlertTitle>
+      <AlertTitle>Figures may still change</AlertTitle>
       <AlertDescription>
-        {closure.unconfirmed_day_count} unconfirmed and {closure.reopened_day_count} reopened business day(s).
-        Totals can still change until those days are confirmed.
+        Some business days are still open. Confirm day close to finalise this report.
       </AlertDescription>
     </Alert>
   );
@@ -454,15 +449,61 @@ function AccountLedgerListView({
   const rows = query
     ? report.rows.filter((row) => `${row.code} ${row.name}`.toLowerCase().includes(query))
     : report.rows;
-  const postableRows = rows.filter((row) => row.is_postable);
+  const allRowsById = new Map(report.rows.map((row) => [row.head_id, row]));
+  const hasMovement = (row: FinanceReportingTrialBalanceRow) =>
+    [row.opening_debit, row.opening_credit, row.period_debit, row.period_credit, row.closing_debit, row.closing_credit]
+      .some((value) => Math.abs(asNumber(value)) > 0.004);
+  const isTechnical = (row: FinanceReportingTrialBalanceRow) =>
+    /^(SYS-|EQ-|ADV-|COGS-|COMP-|DEPOSITS|DISC|INV-|PAYROLL|TAX-|TEST-|VARIANCE|WASTAGE)/i.test(row.code) ||
+    /retained earnings|owner equity|suspense|cash over|cash short|cash in transit|complimentary/i.test(row.name);
+  const ancestorsFor = (row: FinanceReportingTrialBalanceRow) => {
+    const ancestors: FinanceReportingTrialBalanceRow[] = [];
+    const seen = new Set<number>();
+    let parentId = row.parent_id;
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = allRowsById.get(parentId);
+      if (!parent) break;
+      ancestors.unshift(parent);
+      parentId = parent.parent_id;
+    }
+    return ancestors;
+  };
+  const groupFor = (row: FinanceReportingTrialBalanceRow) => {
+    const hierarchy = [...ancestorsFor(row), row];
+    const nonRoot = hierarchy.filter((candidate) => candidate.name.toLowerCase() !== row.head_type.toLowerCase());
+    return {
+      group: nonRoot[0]?.name || humanize(row.head_type),
+      context: nonRoot.slice(1, -1).map((candidate) => candidate.name).join(" / "),
+    };
+  };
+  const postableRows = rows.filter((row) =>
+    row.is_postable && (Boolean(query) || (!isTechnical(row) && hasMovement(row))),
+  );
+  const groupedRows = Array.from(
+    postableRows.reduce<Map<string, { row: FinanceReportingTrialBalanceRow; context: string }[]>>(
+      (result, row) => {
+        const { group, context } = groupFor(row);
+        result.set(group, [...(result.get(group) || []), { row, context }]);
+        return result;
+      },
+      new Map(),
+    ),
+  ).flatMap(([group, accounts]) => [
+    { kind: "group" as const, group },
+    ...accounts.map((account) => ({ kind: "account" as const, ...account })),
+  ]);
 
   return (
     <div className="space-y-4">
       <ClosureNotice closure={report.closure} />
-      <p className="text-sm text-muted-foreground">
-        {postableRows.length} account{postableRows.length === 1 ? "" : "s"}
-        {query ? ` matching "${search.trim()}"` : ""}
-      </p>
+      <div className="border-l-2 border-primary/30 pl-3 text-sm text-muted-foreground">
+        <p className="font-medium text-foreground">Operational accounts</p>
+        <p className="mt-0.5">
+          {postableRows.length} active account{postableRows.length === 1 ? "" : "s"}
+          {query ? ` matching "${search.trim()}"` : ". Zero-balance and technical system accounts stay in Chart of accounts."}
+        </p>
+      </div>
       {postableRows.length === 0 ? (
         <EmptyReport message="No accounts match your search or filters." />
       ) : (
@@ -480,7 +521,17 @@ function AccountLedgerListView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {postableRows.map((row) => {
+                {groupedRows.map((item) => {
+                  if (item.kind === "group") {
+                    return (
+                      <TableRow key={`group:${item.group}`} className="bg-muted/35 hover:bg-muted/35">
+                        <TableCell colSpan={6} className="py-2 text-xs font-semibold text-muted-foreground">
+                          {item.group}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  const { row, context } = item;
                   const opening = asNumber(row.opening_debit) - asNumber(row.opening_credit);
                   const closing = asNumber(row.closing_debit) - asNumber(row.closing_credit);
                   return (
@@ -490,10 +541,8 @@ function AccountLedgerListView({
                       onClick={() => onSelectHead(row.head_id)}
                     >
                       <TableCell>
-                        <span className="font-medium hover:text-primary hover:underline">
-                          <span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span>
-                          {row.name}
-                        </span>
+                        <div className="font-medium hover:text-primary hover:underline">{row.name}</div>
+                        {context ? <div className="mt-0.5 text-xs text-muted-foreground">{context}</div> : null}
                       </TableCell>
                       <TableCell><Badge variant="outline">{humanize(row.head_type)}</Badge></TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{money(opening)}</TableCell>
@@ -691,52 +740,6 @@ function CashFlowView({ report }: { report: FinanceReportingCashFlowRead }) {
   );
 }
 
-function HeadActivityView({ report, onSelectHead }: {
-  report: FinanceReportingHeadActivityRead;
-  onSelectHead: (headId: number) => void;
-}) {
-  const periodDebit = report.rows.reduce((total, row) => total + asNumber(row.period_debit), 0);
-  const periodCredit = report.rows.reduce((total, row) => total + asNumber(row.period_credit), 0);
-  const activeCount = report.rows.filter((row) => asNumber(row.period_debit) || asNumber(row.period_credit)).length;
-  return (
-    <div className="space-y-4">
-      <ClosureNotice closure={report.closure} />
-      <div className="grid gap-3 sm:grid-cols-3">
-        <MetricCard label="Active heads" value={String(activeCount)} />
-        <MetricCard label="Period debits" value={money(periodDebit)} />
-        <MetricCard label="Period credits" value={money(periodCredit)} />
-      </div>
-      {report.rows.length === 0 ? (
-        <EmptyReport message="No postable account-head activity matches these filters." />
-      ) : (
-        <Card>
-          <CardContent className="overflow-x-auto p-0">
-            <Table>
-              <TableHeader><TableRow>
-                <TableHead className="min-w-64">Account head</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">Period debit</TableHead>
-                <TableHead className="text-right">Period credit</TableHead>
-                <TableHead className="text-right">Closing debit</TableHead>
-                <TableHead className="text-right">Closing credit</TableHead>
-              </TableRow></TableHeader>
-              <TableBody>
-                {report.rows.map((row) => (
-                  <TableRow key={row.head_id} role="button" tabIndex={0} onClick={() => onSelectHead(row.head_id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectHead(row.head_id); } }} className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none">
-                    <TableCell><span className="font-medium hover:text-primary hover:underline"><span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span>{row.name}</span></TableCell>
-                    <TableCell><Badge variant="outline">{humanize(row.head_type)}</Badge></TableCell>
-                    {[row.period_debit, row.period_credit, row.closing_debit, row.closing_credit].map((value, index) => <TableCell key={index} className="text-right font-mono tabular-nums">{money(value)}</TableCell>)}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
 function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMode }) {
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
@@ -787,9 +790,8 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
       } else if (mode === "trial-balance") {
         data = await financeReportingApi.getTrialBalance({ ...params, include_zero: includeZero });
       } else if (mode === "account-ledger") {
-        // "Account Ledger" is now the accounts list -- every postable head's
-        // opening/period/closing balances in one bulk call. Opening a single
-        // account's entry-by-entry activity happens in the shared panel.
+        // Accounts is the operational view. Chart of accounts retains the
+        // complete zero-balance and system tree for finance administrators.
         data = await financeReportingApi.getHeadActivity({ ...params, include_zero: true });
       } else if (mode === "custody-reconciliation") {
         data = await financeReportingApi.getCustodyReconciliation({ business_line: params.business_line });
@@ -833,7 +835,7 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
     );
   }
 
-  const showPeriodDates = ["profit-and-loss", "trial-balance", "account-ledger", "cash-flow", "head-activity"].includes(mode);
+  const showPeriodDates = ["profit-and-loss", "trial-balance", "account-ledger", "cash-flow"].includes(mode);
   const showAsOfDate = mode === "balance-sheet" || mode === "party-balances";
 
   return (
@@ -862,7 +864,7 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
               <SelectContent>{mode !== "custody-reconciliation" ? <SelectItem value="all">All business lines</SelectItem> : null}<SelectItem value="restaurant">Restaurant</SelectItem><SelectItem value="hotel">Hotel</SelectItem></SelectContent>
             </Select>
           </div>
-          {mode === "trial-balance" || mode === "head-activity" ? (
+          {mode === "trial-balance" ? (
             <div className="flex h-10 items-center gap-2"><Switch id="include-zero" checked={includeZero} onCheckedChange={setIncludeZero} /><Label htmlFor="include-zero" className="text-sm">Show zero balances</Label></div>
           ) : null}
           {mode === "party-balances" ? (
@@ -874,7 +876,7 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
               <Input
                 value={accountSearch}
                 onChange={(event) => setAccountSearch(event.target.value)}
-                placeholder="Code or name"
+                placeholder="Account name"
                 className="w-56 bg-background"
               />
             </div>
@@ -901,15 +903,18 @@ function ReportingLedgerReportContent({ mode }: { mode: ReportingLedgerReportMod
       {report && mode === "balance-sheet" ? <BalanceSheetView report={report as FinanceReportingBalanceSheetRead} dateTo={dateTo} onSelectHead={setSelectedHeadId} /> : null}
       {report && mode === "party-balances" ? <PartyBalancesView report={report as FinanceReportingPartyBalancesRead} dateTo={dateTo} onSelectHead={setSelectedHeadId} /> : null}
       {report && mode === "cash-flow" ? <CashFlowView report={report as FinanceReportingCashFlowRead} /> : null}
-      {report && mode === "head-activity" ? <HeadActivityView report={report as FinanceReportingHeadActivityRead} onSelectHead={setSelectedHeadId} /> : null}
 
       <div className="flex flex-wrap items-center gap-4 border-t pt-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5"><Landmark className="h-3.5 w-3.5" />Independent reporting ledger</span>
         <span className="flex items-center gap-1.5"><Scale className="h-3.5 w-3.5" />Balanced debit and credit postings</span>
-        <span className="flex items-center gap-1.5"><ArrowUpRight className="h-3.5 w-3.5" /><ArrowDownRight className="h-3.5 w-3.5" />Drill down from statements to entries</span>
+        <span className="flex items-center gap-1.5"><ArrowUpRight className="h-3.5 w-3.5" /><ArrowDownRight className="h-3.5 w-3.5" />Open the business transaction behind each statement row</span>
       </div>
 
-      <AccountLedgerPanel headId={selectedHeadId} onOpenChange={(open) => !open && setSelectedHeadId(null)} />
+      <AccountLedgerPanel
+        headId={selectedHeadId}
+        presentation="operational"
+        onOpenChange={(open) => !open && setSelectedHeadId(null)}
+      />
     </div>
   );
 }
