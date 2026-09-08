@@ -256,7 +256,7 @@ export function FinanceHomeClient() {
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         {[
           { label: "Net sales", value: metrics?.net_sales, icon: TrendingUp, help: "Revenue after sales discounts and refunds." },
           { label: "Money collected", value: metrics?.collections_total, icon: CreditCard, help: "Cash and bank receipts, including collections of older receivables." },
@@ -264,10 +264,10 @@ export function FinanceHomeClient() {
           { label: "Operating result", value: metrics?.operating_profit, icon: Banknote, help: "Income less recognized operating costs for the selected period." },
         ].map((metric) => (
           <Card key={metric.label} className="border-border shadow-none">
-            <CardContent className="flex items-start justify-between p-5">
+            <CardContent className="flex items-start justify-between p-3 sm:p-5">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{metric.label}</p>
-                <p className="mt-2 text-2xl font-semibold tabular-nums">
+                <p className="mt-1 text-lg font-semibold tabular-nums sm:mt-2 sm:text-2xl">
                   {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : money(metric.value)}
                 </p>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">{metric.help}</p>

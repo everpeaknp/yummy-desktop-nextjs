@@ -381,15 +381,15 @@ export function AccountHeadsClient() {
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4 max-w-7xl mx-auto">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-4 overflow-x-hidden p-3 sm:p-4">
       {/* Header & Main Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b pb-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <FolderTree className="h-6 w-6 text-primary" />
+          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight sm:text-2xl">
+            <FolderTree className="h-5 w-5 shrink-0 text-primary sm:h-6 sm:w-6" />
             Chart of Accounts
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="max-w-xl text-sm text-muted-foreground">
             Organize the categories you use when recording income and expenses.
           </p>
         </div>
@@ -400,10 +400,11 @@ export function AccountHeadsClient() {
             size="sm"
             onClick={loadData}
             disabled={loading}
-            className="gap-1.5 text-xs"
+            className="h-9 w-9 gap-1.5 px-0 text-xs sm:h-8 sm:w-auto sm:px-3"
+            title="Refresh categories"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+            <span className="hidden sm:inline">Refresh</span>
           </Button>
 
           <Button
@@ -411,10 +412,11 @@ export function AccountHeadsClient() {
             size="sm"
             onClick={() => setShowAccountingDetails((current) => !current)}
             disabled={workspaceView === "setup"}
-            className="gap-1.5 text-xs"
+            className="h-9 w-9 gap-1.5 px-0 text-xs sm:h-8 sm:w-auto sm:px-3"
+            title="Show more details"
           >
             <Info className="h-3.5 w-3.5" />
-            {detailsVisible ? "More details shown" : "Show more details"}
+            <span className="hidden sm:inline">{detailsVisible ? "More details shown" : "Show more details"}</span>
           </Button>
 
           {canManageOpeningBalances && (
@@ -422,10 +424,11 @@ export function AccountHeadsClient() {
               variant="outline"
               size="sm"
               onClick={() => setOpeningBalanceOpen(true)}
-              className="gap-1.5 text-xs border-emerald-600/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+              className="h-9 w-9 gap-1.5 px-0 text-xs border-emerald-600/30 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400 sm:h-8 sm:w-auto sm:px-3"
+              title="Starting balances"
             >
               <Layers className="h-3.5 w-3.5" />
-              Starting Balances
+              <span className="hidden sm:inline">Starting Balances</span>
             </Button>
           )}
 
@@ -438,10 +441,11 @@ export function AccountHeadsClient() {
                 setEditingHead(null);
                 setGroupDialogOpen(true);
               }}
-              className="gap-1.5 text-xs"
+              className="h-9 w-9 gap-1.5 px-0 text-xs sm:h-8 sm:w-auto sm:px-3"
+              title="Add group"
             >
               <FolderPlus className="h-3.5 w-3.5" />
-              Add Group
+              <span className="hidden sm:inline">Add Group</span>
             </Button>
           )}
 
@@ -465,10 +469,10 @@ export function AccountHeadsClient() {
       {/* Workspace views keep daily work separate from the complete list. */}
       <div className="rounded-xl border bg-card p-3">
         <Tabs value={workspaceView} onValueChange={(value) => setWorkspaceView(value as "in-use" | "available" | "setup")}>
-          <TabsList className="h-auto w-full justify-start gap-1 bg-transparent p-0">
-            <TabsTrigger value="in-use" className="px-3 py-2 text-xs">In use</TabsTrigger>
-            <TabsTrigger value="available" className="px-3 py-2 text-xs">Available categories</TabsTrigger>
-            <TabsTrigger value="setup" className="px-3 py-2 text-xs">Full list</TabsTrigger>
+          <TabsList className="grid h-auto w-full grid-cols-3 gap-1 bg-transparent p-0 sm:flex sm:justify-start">
+            <TabsTrigger value="in-use" className="h-9 w-full px-1 text-[11px] sm:w-auto sm:px-3 sm:text-xs">In use</TabsTrigger>
+            <TabsTrigger value="available" className="h-9 w-full px-1 text-[11px] sm:w-auto sm:px-3 sm:text-xs">Available categories</TabsTrigger>
+            <TabsTrigger value="setup" className="h-9 w-full px-1 text-[11px] sm:w-auto sm:px-3 sm:text-xs">Full list</TabsTrigger>
           </TabsList>
         </Tabs>
         <p className="mt-2 text-xs text-muted-foreground">
@@ -494,10 +498,13 @@ export function AccountHeadsClient() {
         </div>
 
         {/* Type Tabs */}
+        <select value={selectedType} onChange={(event) => setSelectedType(event.target.value)} className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm sm:hidden">
+          <option value="all">All account types</option><option value="asset">Assets</option><option value="liability">Liabilities</option><option value="equity">Equity</option><option value="income">Income</option><option value="expense">Expenses</option>
+        </select>
         <Tabs
           value={selectedType}
           onValueChange={setSelectedType}
-          className="w-auto"
+          className="hidden sm:block"
         >
           <TabsList className="h-9">
             <TabsTrigger value="all" className="text-xs px-2.5">
@@ -598,7 +605,7 @@ export function AccountHeadsClient() {
                     </span>
                     <p className="text-[11px] text-muted-foreground mt-1">
                       This category is used automatically by the system (for example: cash,
-                      amounts owed to you, or amounts you owe) and can't be deleted.
+                      amounts owed to you, or amounts you owe) and can&apos;t be deleted.
                     </p>
                   </div>
                 )}

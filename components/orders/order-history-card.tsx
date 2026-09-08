@@ -90,14 +90,14 @@ export function OrderHistoryCard({ order, settlement }: OrderHistoryCardProps) {
   const payment = settlementMeta(order, settlement);
 
   return (
-    <article className="group relative flex h-[330px] flex-col overflow-hidden rounded-2xl border border-border/70 bg-card p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg sm:h-[340px]">
+    <article className="group relative flex min-h-[224px] flex-col overflow-hidden rounded-xl border border-border/70 bg-card p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg sm:h-[340px] sm:rounded-2xl sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary sm:h-11 sm:w-11 sm:rounded-xl">
             <ChannelIcon className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-[17px] font-bold leading-6 text-foreground">{tableLabel}</h3>
+            <h3 className="truncate text-sm font-bold leading-5 text-foreground sm:text-[17px] sm:leading-6">{tableLabel}</h3>
             <p className="mt-0.5 text-sm text-muted-foreground">Order #{orderNumber}</p>
           </div>
         </div>
@@ -121,7 +121,7 @@ export function OrderHistoryCard({ order, settlement }: OrderHistoryCardProps) {
         <span className="shrink-0">{timeLabel}</span>
       </div>
 
-      <div className="mt-4 h-[64px] shrink-0 overflow-hidden border-t border-dashed border-border/70 pt-3">
+      <div className="mt-3 h-[44px] shrink-0 overflow-hidden border-t border-dashed border-border/70 pt-2 sm:mt-4 sm:h-[64px] sm:pt-3">
         {shownItems.length ? (
           <p className="line-clamp-2 text-sm leading-6 text-foreground/85">
             {shownItems.join(", ")}{moreItems > 0 ? ` +${moreItems} more` : ""}
@@ -139,7 +139,7 @@ export function OrderHistoryCard({ order, settlement }: OrderHistoryCardProps) {
               {currency} {payment.balanceDue.toLocaleString()} due
             </p>
           )}
-          <span className="text-lg font-bold tracking-tight text-foreground">{currency} {Number(order.grand_total || 0).toLocaleString()}</span>
+          <span className="text-base font-bold tracking-tight text-foreground sm:text-lg">{currency} {Number(order.grand_total || 0).toLocaleString()}</span>
         </div>
       </div>
     </article>

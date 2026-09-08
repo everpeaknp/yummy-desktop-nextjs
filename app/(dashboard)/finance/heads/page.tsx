@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function AccountHeadsPage() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 w-full flex-col gap-4 overflow-x-hidden">
       <AccountHeadsClient />
     </div>
   );

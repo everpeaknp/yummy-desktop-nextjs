@@ -201,6 +201,9 @@ export const Header = memo(function Header() {
       data-tour="navbar"
       className="flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6"
     >
+      <Link href="/dashboard" className="text-sm font-semibold tracking-tight text-foreground md:hidden">
+        Yummy
+      </Link>
 
       {/* Live stats — active orders, KOT pending, today's sales */}
       <div className="flex items-center gap-4">
@@ -224,7 +227,7 @@ export const Header = memo(function Header() {
 
       <div className="flex items-center gap-1">
         {/* Mobile Menu (hamburger on the right) */}
-        <div className="md:hidden">
+        <div className="hidden">
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="shrink-0">
@@ -329,7 +332,7 @@ export const Header = memo(function Header() {
             variant="ghost"
             size="icon"
             asChild
-            className="h-8 w-8 text-muted-foreground hover:text-primary"
+            className="hidden h-8 w-8 text-muted-foreground hover:text-primary sm:inline-flex"
             data-tour="navbar-download"
           >
             <a
@@ -351,7 +354,7 @@ export const Header = memo(function Header() {
               size="sm"
               asChild
               data-tour="navbar-premium"
-              className="group relative flex items-center gap-1.5 px-4 h-8 bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-500 font-bold text-[10px] uppercase tracking-wider rounded-full overflow-hidden transition-all hover:scale-[1.02] active:scale-[0.98] mr-1"
+              className="group relative hidden items-center gap-1.5 px-4 h-8 bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-500 font-bold text-[10px] uppercase tracking-wider rounded-full overflow-hidden transition-all hover:scale-[1.02] active:scale-[0.98] mr-1 sm:flex"
             >
               <Link href="/premium">
                 <Zap className="h-3.5 w-3.5 fill-current animate-pulse group-hover:animate-none" />
@@ -372,13 +375,13 @@ export const Header = memo(function Header() {
           >
             <HelpCircle className="h-5 w-5" />
           </Button>
-          <div data-tour="navbar-theme">
+          <div className="hidden sm:block" data-tour="navbar-theme">
             <ModeToggle />
           </div>
         </div>
 
         <div className="h-6 w-px bg-border mx-1 hidden md:block" />
-        <div className="flex items-center gap-2 pl-1" data-tour="navbar-user">
+        <div className="hidden items-center gap-2 pl-1 sm:flex" data-tour="navbar-user">
           {canLeaveRestaurant && (
             <Button variant="ghost" size="sm" asChild className="hidden text-muted-foreground md:inline-flex">
               <Link href="/leave-restaurant">Leave restaurant</Link>

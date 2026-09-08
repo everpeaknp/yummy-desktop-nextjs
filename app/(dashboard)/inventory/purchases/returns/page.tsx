@@ -415,8 +415,20 @@ export default function InventoryPurchaseReturnsPage() {
         </Button>
       </div>
 
-      <div className="rounded-lg border overflow-x-auto">
-        <Table>
+      <div className="overflow-hidden rounded-lg border">
+        <div className="divide-y divide-border md:hidden">
+          {loading ? (
+            <div className="flex items-center justify-center p-8 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : returns.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted-foreground">No purchase returns yet.</p>
+          ) : returns.map((r) => (
+            <div key={r.id} className="p-4">
+              <button type="button" onClick={() => setDetailReturn(r)} className="w-full text-left"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium">{r.supplier_name || "Unknown supplier"}</p><p className="mt-1 text-xs capitalize text-muted-foreground">{formatDate(r.return_date)} · {r.reason_code?.replace(/_/g, " ") || "Return"}</p></div><p className="shrink-0 font-semibold tabular-nums">{formatCurrency(r.total_cost)}</p></div><div className="mt-2">{statusBadge(r.status)}</div></button>
+              {r.status === "posted" ? <Button size="sm" variant="ghost" className="mt-3 text-destructive hover:text-destructive" onClick={() => { setVoidReturn(r); setVoidReason(""); }}>Void return</Button> : null}
+            </div>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block"><Table>
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>
@@ -486,7 +498,7 @@ export default function InventoryPurchaseReturnsPage() {
               ))
             )}
           </TableBody>
-        </Table>
+        </Table></div>
       </div>
 
       {/* Create Return Dialog */}

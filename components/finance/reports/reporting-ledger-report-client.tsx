@@ -247,7 +247,16 @@ function HeadAmountTable({
         {rows.length === 0 ? (
           <p className="px-6 py-8 text-center text-sm text-muted-foreground">No {title.toLowerCase()} posted.</p>
         ) : (
-          <Table>
+          <>
+          <div className="divide-y divide-border md:hidden">
+            {rows.map((row) => (
+              <button key={row.head_id} type="button" onClick={() => onSelectHead(row.head_id)} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none">
+                <span className="min-w-0"><span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span><span className="font-medium">{row.name}</span></span>
+                <span className="shrink-0 font-mono font-semibold tabular-nums">{money(row.amount)}</span>
+              </button>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block"><Table>
             <TableHeader><TableRow><TableHead>Account head</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((row) => (
@@ -277,7 +286,8 @@ function HeadAmountTable({
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -376,7 +386,16 @@ function TrialBalanceView({
         <EmptyReport message="No account-head balances match these filters." />
       ) : (
         <Card>
-          <CardContent className="overflow-x-auto p-0">
+          <CardContent className="p-0">
+            <div className="divide-y divide-border md:hidden">
+              {report.rows.map((row) => (
+                <button key={row.head_id} type="button" disabled={!row.is_postable} onClick={() => row.is_postable && onSelectHead(row.head_id)} className={cn("w-full px-4 py-3 text-left", row.is_postable ? "hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none" : "bg-muted/30")}>
+                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium"><span className="mr-2 font-mono text-xs text-muted-foreground">{row.code}</span>{row.name}</p><p className="mt-1 text-xs text-muted-foreground">Opening {money(row.opening_debit)} Dr · {money(row.opening_credit)} Cr</p></div><p className="shrink-0 font-semibold tabular-nums">{money(asNumber(row.closing_debit) - asNumber(row.closing_credit))}</p></div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground"><span>Period Dr <b className="ml-1 text-foreground">{money(row.period_debit)}</b></span><span>Period Cr <b className="ml-1 text-foreground">{money(row.period_credit)}</b></span></div>
+                </button>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -429,6 +448,7 @@ function TrialBalanceView({
                 </TableRow>
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -341,8 +341,23 @@ export default function InventoryPurchasesPage() {
         </Select>
       </div>
 
-      <div className="rounded-lg border overflow-x-auto">
-        <Table>
+      <div className="overflow-hidden rounded-lg border">
+        <div className="divide-y divide-border md:hidden">
+          {loading ? (
+            <div className="flex items-center justify-center p-8 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : filteredPurchases.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted-foreground">No purchases found.</p>
+          ) : filteredPurchases.map((purchase) => (
+            <div key={purchase.id} className="p-4">
+              <button type="button" onClick={() => void openPurchaseDetail(purchase)} className="w-full text-left">
+                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium">{purchase.supplier_name || "Unknown supplier"}</p><p className="mt-1 text-xs text-muted-foreground">Purchase #{purchase.id} · {formatDate(purchase.purchase_date)}</p></div><p className="shrink-0 font-semibold tabular-nums">{formatCurrency(purchase.total_cost)}</p></div>
+                <div className="mt-2 flex items-center justify-between gap-2"><span className="truncate text-xs text-muted-foreground">{purchase.reference_number || "No supplier reference"}</span>{statusBadge(purchase.status)}</div>
+              </button>
+              {purchase.status === "posted" ? <div className="mt-3 flex gap-2"><Button size="sm" variant="outline" onClick={() => router.push(`/inventory/purchases/returns?purchase_id=${purchase.id}`)}>Return items</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => { setVoidPurchase(purchase); setVoidReason(""); }}>Void</Button></div> : null}
+            </div>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block"><Table>
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>
@@ -420,7 +435,7 @@ export default function InventoryPurchasesPage() {
               ))
             )}
           </TableBody>
-        </Table>
+        </Table></div>
       </div>
 
       {/* Create Purchase Dialog */}

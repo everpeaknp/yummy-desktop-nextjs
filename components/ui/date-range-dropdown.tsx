@@ -30,6 +30,7 @@ interface DateRangeDropdownProps {
   setActiveRange: (range: DateRangePreset) => void
   date: DateRange | undefined
   setDate: (date: DateRange | undefined) => void
+  className?: string
 }
 
 export function DateRangeDropdown({
@@ -37,6 +38,7 @@ export function DateRangeDropdown({
   setActiveRange,
   date,
   setDate,
+  className,
 }: DateRangeDropdownProps) {
   const [open, setOpen] = React.useState(false)
   const [fromTime, setFromTime] = React.useState("00:00")
@@ -85,6 +87,7 @@ export function DateRangeDropdown({
           className={cn(
             "dc-filter-control dc-filter-control-active h-11 min-w-[160px] justify-between rounded-2xl px-4 font-medium",
             !date && "text-muted-foreground",
+            className,
           )}
         >
           <div className="flex items-center gap-2">

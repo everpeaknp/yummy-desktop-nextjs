@@ -118,7 +118,24 @@ export function FinanceSalesReturnsWorkspace() {
           <RotateCcw className="h-5 w-5 text-muted-foreground" />
         </div>
         {documents.length ? (
-          <div className="overflow-x-auto">
+          <>
+          <div className="divide-y divide-border md:hidden">
+            {documents.map((document) => (
+              <button
+                key={document.id}
+                type="button"
+                onClick={() => setSelectedDocument(document)}
+                className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0"><p className="truncate font-medium">{document.document_number}</p><p className="mt-1 truncate text-xs text-muted-foreground">{document.business_date} · {originalSaleLabel(document, salesById.get(document.original_document_id || 0))}</p></div>
+                  <p className="shrink-0 text-sm font-semibold tabular-nums">{formatMoney(document.grand_total)}</p>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2"><span className="truncate text-xs text-muted-foreground">{document.reason || "No reason recorded"}</span><span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs capitalize">{document.settlement_status.replaceAll("_", " ")}</span></div>
+              </button>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[850px] text-sm">
               <thead className="bg-muted/40 text-left text-muted-foreground">
                 <tr>
@@ -151,6 +168,7 @@ export function FinanceSalesReturnsWorkspace() {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <div className="p-12 text-center"><p className="font-medium">No sales returns recorded.</p><p className="mt-1 text-sm text-muted-foreground">Refunding a completed order through this workflow creates its credit note automatically.</p></div>
         )}

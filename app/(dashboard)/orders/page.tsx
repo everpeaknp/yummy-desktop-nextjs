@@ -5,8 +5,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { OrderApis, AnalyticsApis, TableApis, KotApis } from "@/lib/api/endpoints";
-import { hasAnalyticsViewPermission } from "@/lib/role-permissions";
+import { OrderApis, TableApis, KotApis } from "@/lib/api/endpoints";
 import {
   defaultHistoryDateRange,
   hasExtendedHistoryAccess,
@@ -19,11 +18,9 @@ import { HistoryScopeNotice } from "@/components/shared/history-scope-notice";
 import { 
   Search, 
   RefreshCw, 
-  Clock, 
   LayoutGrid,
   ClipboardList,
   History,
-  TrendingUp,
   Receipt,
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -61,6 +58,7 @@ import Link from "next/link";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { DateRange } from "react-day-picker";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
+import { OrdersFloatingNewButton } from "@/components/orders/orders-floating-new-button";
 import type { FinanceOrderSettlementSummary } from "@/types/finance-sales";
 
 interface OrdersKotItem {
@@ -164,12 +162,6 @@ export default function OrdersPage() {
     const [scopeNotice, setScopeNotice] = useState<ParsedScopeError | null>(null);
     const [suggestedRange, setSuggestedRange] = useState<DateRange | undefined>();
     const dateRangeInitialized = useRef(false);
-    const [stats, setStats] = useState({
-        activeCount: 0,
-        totalRevenue: 0,
-        pendingAction: 0,
-        activeOrdersValue: 0
-    });
 
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
@@ -259,13 +251,11 @@ export default function OrdersPage() {
         checkAuth();
     }, [user, me, router]);
 
-    // 2. Fetch Active Orders & Stats
+    // 2. Fetch active orders
     const fetchActiveData = useCallback(async () => {
         if (!user?.restaurant_id) return;
 
         try {
-            const todayStr = format(new Date(), "yyyy-MM-dd");
-
             const ordersPromise = apiClient.get(`${OrderApis.activeOrders}`, {
                 params: { 
                     restaurant_id: user.restaurant_id,
@@ -274,49 +264,13 @@ export default function OrdersPage() {
                 }
             });
 
-            const canViewAnalytics = hasAnalyticsViewPermission(user);
-            const analyticsPromise = canViewAnalytics
-                ? apiClient.get(AnalyticsApis.dashboard({
-                    restaurantId: user.restaurant_id,
-                    dateFrom: todayStr,
-                    dateTo: todayStr,
-                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                    include: "core",
-                })).catch(err => {
-                    console.warn("Analytics revenue stat unavailable:", err.message);
-                    return { data: { status: "error", data: null } };
-                })
-                : Promise.resolve({ data: { status: "skipped", data: null } });
-
-            const [ordersRes, analyticsRes] = await Promise.all([ordersPromise, analyticsPromise]);
+            const ordersRes = await ordersPromise;
 
             if (ordersRes.data.status === "success") {
                 const fetchedOrders = [...(ordersRes.data.data.orders || [])]
                     .sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
                 setOrders(fetchedOrders);
                 
-                const pending = fetchedOrders.filter((o: any) => 
-                    ['pending', 'confirmed', 'preparing', 'requested'].includes((o.status as string).toLowerCase())
-                ).length;
-
-                const activeValue = fetchedOrders.reduce((sum: number, o: any) => sum + (o.grand_total || 0), 0);
-
-                setStats(prev => ({
-                    ...prev,
-                    activeCount: fetchedOrders.length,
-                    pendingAction: pending,
-                    activeOrdersValue: activeValue
-                }));
-            }
-
-            if (analyticsRes.data.status === "success") {
-                const d = analyticsRes.data.data;
-                setStats(prev => ({
-                    ...prev,
-                    totalRevenue: d.overview?.total_income || d.kpis?.gross_sales || 0
-                }));
-            } else if (!canViewAnalytics) {
-                setStats(prev => ({ ...prev, totalRevenue: 0 }));
             }
         } catch (err) {
             console.error("Failed to fetch active data:", err);
@@ -576,35 +530,6 @@ export default function OrdersPage() {
         return groups;
     }, [historyOrders]);
 
-    const activeStats = useMemo(() => {
-        // Exclude parent split orders if they are fully split (total is 0) to align with backend
-        const activeList = orders.filter(o => {
-            if (o.is_split_parent && o.grand_total === 0) {
-                return false;
-            }
-            return true;
-        });
-
-        const todayOrders = activeList.filter(o => {
-            const raw = o.started_at || o.created_at || o.updated_at;
-            return raw && isToday(new Date(raw));
-        });
-
-        const targetOrders = activeFilter === "today" ? todayOrders : activeList;
-
-        const activeCount = targetOrders.length;
-        const pendingAction = targetOrders.filter((o: any) => 
-            ['pending', 'confirmed', 'preparing', 'requested'].includes((o.status as string).toLowerCase())
-        ).length;
-        const activeOrdersValue = targetOrders.reduce((sum: number, o: any) => sum + (o.grand_total || 0), 0);
-
-        return {
-            activeCount,
-            pendingAction,
-            activeOrdersValue
-        };
-    }, [orders, activeFilter]);
-
     const filteredActive = orders.filter(order => {
         if (order.is_split_parent && order.grand_total === 0) {
             return false;
@@ -644,14 +569,8 @@ export default function OrdersPage() {
             .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }, [kots, kotStatusFilter, kotStationFilter, searchQuery]);
 
-    const kotStats = useMemo(() => ({
-        active: kots.filter((kot) => !["SERVED", "REJECTED"].includes(String(kot.status).toUpperCase())).length,
-        ready: kots.filter((kot) => String(kot.status).toUpperCase() === "READY").length,
-        pending: kots.filter((kot) => String(kot.status).toUpperCase() === "PENDING").length,
-    }), [kots]);
-
     return (
-        <div className="flex flex-col gap-8 max-w-[1600px] mx-auto pb-10">
+        <div className="flex flex-col gap-6 max-w-[1600px] mx-auto pb-24 md:pb-10">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
@@ -664,8 +583,8 @@ export default function OrdersPage() {
                     </div>
                 </div>
                 
-                <div className="flex items-center gap-4">
-                    <div className="relative group min-w-[300px]">
+                <div className="flex w-full items-center gap-2 md:w-auto md:gap-4">
+                    <div className="relative group min-w-0 flex-1 md:min-w-[300px]">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                         <Input 
                             className="pl-10 bg-card border-border/40 h-12 rounded-2xl focus-visible:ring-primary/20 transition-all font-medium text-sm" 
@@ -674,37 +593,10 @@ export default function OrdersPage() {
                             onChange={(e) => setSearchQuery(e.target.value)} 
                         />
                     </div>
-                    <Button variant="outline" className="h-12 w-12 rounded-2xl p-0" onClick={() => activeTab === "active" ? fetchActiveData() : activeTab === "kot" ? fetchKotData() : fetchHistoryData()}>
+                    <Button variant="outline" className="h-12 w-12 shrink-0 rounded-2xl p-0" onClick={() => activeTab === "active" ? fetchActiveData() : activeTab === "kot" ? fetchKotData() : fetchHistoryData()}>
                        <RefreshCw className={cn("h-5 w-5", (loading || historyLoading || kotLoading) && "animate-spin")} />
                     </Button>
                 </div>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard
-                    label={activeTab === "kot" ? "Tickets" : "Active"}
-                    value={activeTab === "active" ? activeStats.activeCount.toString() : activeTab === "kot" ? kotStats.active.toString() : stats.activeCount.toString()}
-                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's in progress" : "All in progress") : activeTab === "kot" ? "Kitchen work in progress" : "In progress"}
-                    icon={<RefreshCw className="h-6 w-6" />}
-                    color="blue"
-                    active={activeTab !== "history"}
-                />
-                <StatCard
-                    label={activeTab === "kot" ? "Ready" : "Value"}
-                    value={activeTab === "active" ? activeStats.activeOrdersValue.toLocaleString() : activeTab === "kot" ? kotStats.ready.toString() : stats.totalRevenue.toLocaleString()}
-                    prefix={activeTab === "kot" ? "" : restaurant?.currency || "Rs."}
-                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's active value" : "Total active value") : activeTab === "kot" ? "Ready for service" : "Total revenue"}
-                    icon={<TrendingUp className="h-6 w-6" />}
-                    color="orange"
-                />
-                <StatCard
-                    label="Pending"
-                    value={activeTab === "active" ? activeStats.pendingAction.toString() : activeTab === "kot" ? kotStats.pending.toString() : stats.pendingAction.toString()}
-                    subSelect={activeTab === "active" ? (activeFilter === "today" ? "Today's need action" : "All need action") : activeTab === "kot" ? "Waiting to start" : "Need action"}
-                    icon={<Clock className="h-6 w-6" />}
-                    color="yellow"
-                />
             </div>
 
             {/* Tabs & Filters */}
@@ -884,13 +776,16 @@ export default function OrdersPage() {
                         ) : filteredActive.length === 0 ? (
                             <EmptyState label="No active orders found" icon={<ClipboardList />} />
                         ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-5">
+                            <>
+                            <div className="mb-3 flex items-center gap-2 text-base font-bold sm:mb-4 sm:text-lg"><span className="h-2 w-2 rounded-full bg-emerald-500" />Now serving</div>
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 2xl:grid-cols-4 lg:gap-5">
                                 {filteredActive.map((order) => (
                                     <Link key={order.id} href={`/orders/${order.id}`} className="block h-full">
                                         <OrderCard order={order} />
                                     </Link>
                                 ))}
                             </div>
+                            </>
                         )
                     ) : activeTab === "kot" ? (
                         kotLoading && kots.length === 0 ? (
@@ -942,6 +837,7 @@ export default function OrdersPage() {
                 open={detailsOpen}
                 onOpenChange={setDetailsOpen}
             />
+            <OrdersFloatingNewButton />
 
             <Dialog
                 open={kotDetailsOpen}
@@ -1136,8 +1032,8 @@ function KotOrderCard({ kot, onClick }: { kot: OrdersKot; onClick: (kot: OrdersK
 
     return (
             <button type="button" onClick={() => onClick(kot)} className="block h-full w-full text-left">
-            <Card className="h-[330px] border-border/50 bg-card transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg sm:h-[340px]">
-                <CardContent className="flex h-full flex-col gap-4 overflow-hidden p-5">
+            <Card className="min-h-[224px] rounded-xl border-border/50 bg-card transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg sm:h-[340px] sm:rounded-2xl">
+                <CardContent className="flex h-full flex-col gap-3 overflow-hidden p-3 sm:gap-4 sm:p-5">
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-muted-foreground">
@@ -1154,7 +1050,7 @@ function KotOrderCard({ kot, onClick }: { kot: OrdersKot; onClick: (kot: OrdersK
                         </Badge>
                     </div>
 
-                    <div className="flex h-[132px] shrink-0 flex-col border-y border-dashed border-border/50 py-3">
+                    <div className="flex h-[76px] shrink-0 flex-col overflow-hidden border-y border-dashed border-border/50 py-2 sm:h-[132px] sm:py-3">
                         <div className="space-y-1">
                         {previewItems.map((item) => (
                             <div key={item.id} className="flex items-center justify-between gap-3 text-xs leading-4">
@@ -1173,35 +1069,6 @@ function KotOrderCard({ kot, onClick }: { kot: OrdersKot; onClick: (kot: OrdersK
                 </CardContent>
             </Card>
             </button>
-    );
-}
-
-function StatCard({ label, value, subSelect, icon, color, active }: any) {
-    const colors: any = {
-        blue: "bg-blue-500/10 text-blue-600 border-blue-200/50 dark:border-blue-900/30",
-        orange: "bg-orange-500/10 text-orange-600 border-orange-200/50 dark:border-orange-900/30",
-        yellow: "bg-yellow-500/10 text-yellow-600 border-yellow-200/50 dark:border-yellow-900/30",
-    };
-
-    return (
-        <Card className={cn(
-            "relative overflow-hidden border shadow-sm group bg-card transition-all duration-300",
-            active && "ring-2 ring-primary/20 border-primary/30 shadow-md"
-        )}>
-            <CardContent className="p-6 flex items-center gap-5">
-                <div className={cn(
-                    "h-14 w-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110",
-                    colors[color]
-                )}>
-                    {icon}
-                </div>
-                <div className="flex flex-col">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">{label}</p>
-                    <h3 className="text-3xl font-black tracking-tighter">{value}</h3>
-                    <p className="text-[10px] text-muted-foreground font-medium mt-0.5">{subSelect}</p>
-                </div>
-            </CardContent>
-        </Card>
     );
 }
 

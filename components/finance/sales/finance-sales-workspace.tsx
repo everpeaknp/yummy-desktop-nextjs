@@ -255,7 +255,30 @@ export function FinanceSalesWorkspace() {
           <FileText className="h-5 w-5 text-muted-foreground" />
         </div>
         {documents.length ? (
-          <div className="overflow-x-auto">
+          <>
+          <div className="divide-y divide-border md:hidden">
+            {documents.map((document) => (
+              <button
+                key={document.id}
+                type="button"
+                onClick={() => setSelectedDocument(document)}
+                className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{document.document_number}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{document.business_date} · {document.daily_order_number ? `Daily order #${document.daily_order_number}` : document.external_reference || "Manual sale"}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold tabular-nums">{formatMoney(document.grand_total)}</p>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className="rounded-full bg-muted px-2 py-1 text-xs capitalize">{settlementStatus(document).replaceAll("_", " ")}</span>
+                  <Link onClick={(event) => event.stopPropagation()} className="text-xs font-medium text-primary" href={`/finance/sales/returns?invoice_id=${document.id}`}>Return</Link>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[960px] text-sm">
               <thead className="bg-muted/40 text-left text-muted-foreground">
                 <tr>
@@ -328,6 +351,7 @@ export function FinanceSalesWorkspace() {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <div className="p-12 text-center">
             <p className="font-medium">No sales yet.</p>

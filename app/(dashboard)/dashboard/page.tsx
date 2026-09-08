@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { DashboardStatusBanner } from "@/components/dashboard/dashboard-status-banner"
 import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
 import { UnifiedInsightsCard } from "@/components/dashboard/unified-insights-card"
+import { MobileDashboardHome } from "@/components/dashboard/mobile-dashboard-home"
 import dynamic from "next/dynamic"
 import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown"
 import { DateRange } from "react-day-picker"
@@ -316,7 +317,13 @@ export default function DashboardPage() {
           }
 
   return (
-    <div className="dashboard-ui relative flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
+    <>
+      <MobileDashboardHome
+        home={home}
+        outletName={data?.meta?.outlet_name}
+        currency={currency}
+      />
+      <div className="dashboard-ui relative mx-auto hidden max-w-[1600px] flex-col gap-10 px-4 pb-20 md:flex">
       {refreshing ? (
         <div className="pointer-events-none absolute right-4 top-0 z-10 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
           <RefreshCw className="h-3 w-3 animate-spin" />
@@ -609,7 +616,7 @@ export default function DashboardPage() {
             </Button>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-6">
           <SummaryMetric label="Net Sales" value={kpis.net_sales} prefix={currency} icon={<DollarSign className="h-4 w-4" />} trend={mapCompareTrend(salesTrendPct, salesTrendPrev) || data?.trends?.sales_vs_yesterday} compareLabel={compareLabel} />
           <SummaryMetric label="Collections" value={kpis.collections_total} prefix={currency} icon={<CreditCard className="h-4 w-4" />} compareLabel={compareLabel} />
           <SummaryMetric label="Credit Sales" value={kpis.credit_sales} prefix={currency} icon={<ReceiptText className="h-4 w-4" />} compareLabel={compareLabel} />
@@ -639,7 +646,7 @@ export default function DashboardPage() {
           </Card>
         ) : (
           <>
-            <div className="h-[400px]">
+            <div className="h-[280px] sm:h-[400px]">
               <RevenueChart
                 data={revenueChartData}
                 loading={loading}
@@ -659,7 +666,7 @@ export default function DashboardPage() {
                 }
               />
             </div>
-            <div className="h-[400px]">
+            <div className="h-[280px] sm:h-[400px]">
               <CategoryPieChart
                 data={mixChartData}
                 loading={loading}
@@ -719,7 +726,8 @@ export default function DashboardPage() {
             <PaymentSplitCard payments={paymentSplit} currency={currency} />
         </div>
       </section>
-    </div>
+      </div>
+    </>
   )
 }
 
@@ -1897,9 +1905,9 @@ function SummaryMetric({ label, value, prefix = "", suffix = "", icon, trend, co
       <HoverCardTrigger asChild>
         <Card className="dc-card hover:-translate-y-1 transition-all duration-300 group overflow-hidden relative cursor-default">
           <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-primary/40 to-primary group-hover:w-full group-hover:opacity-5 transition-all duration-500" />
-          <CardContent className="p-5 flex flex-col justify-center h-full relative z-10">
-            <div className="flex items-center gap-2 mb-2">
-               <div className="p-1.5 rounded-md border border-black/[0.08] bg-white text-muted-foreground group-hover:text-primary group-hover:border-black/[0.12] transition-colors dark:border-white/15 dark:bg-muted">
+          <CardContent className="relative z-10 flex h-full flex-col justify-center p-3 sm:p-5">
+            <div className="mb-1 flex items-center gap-1.5 sm:mb-2 sm:gap-2">
+               <div className="hidden rounded-md border border-black/[0.08] bg-white p-1.5 text-muted-foreground transition-colors group-hover:border-black/[0.12] group-hover:text-primary sm:block dark:border-white/15 dark:bg-muted">
                   {icon}
                </div>
                <p className="dc-metric-label">

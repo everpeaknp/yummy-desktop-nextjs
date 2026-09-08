@@ -15,6 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useEntitlement } from "@/hooks/use-subscription";
 import { hotelDate, hotelPmsApi } from "@/lib/hotel/api";
+import { MobileNewOrderFlow } from "@/components/orders/mobile-new-order-flow";
 
 
 interface TableType {
@@ -356,7 +357,24 @@ export default function NewOrderPage() {
     ];
 
     return (
-        <div className="flex flex-col w-full max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8">
+        <>
+            <MobileNewOrderFlow
+                canDineIn={dineInAccess.allowed}
+                canTakeaway={takeawayAccess.allowed}
+                canDelivery={deliveryAccess.allowed}
+                canRoomService={hotelEnabled && hotelAccess.allowed}
+                tables={tables}
+                tableAreas={tableTypes.map((type) => ({ name: type.name, layoutHeight: type.layout_height }))}
+                rooms={roomTargets}
+                loadingTables={loading}
+                loadingRooms={loadingRooms}
+                onBrowseTables={() => setActiveTab("tables")}
+                onBrowseRooms={() => setActiveTab("rooms")}
+                onStart={(channel) => setActivePOS({ orderId: "create", channel })}
+                onChooseTable={handleTableClick}
+                onChooseRoom={(target) => setActivePOS({ orderId: "create", channel: "room_service", stayAssignmentId: target.assignmentId, roomOrderLabel: `Room ${target.roomNumber} · ${target.guestName}` })}
+            />
+            <div className="hidden w-full max-w-[1600px] flex-col mx-auto p-4 md:flex md:p-6 lg:p-8">
 
             <div className="flex flex-col gap-1 mb-6 flex-shrink-0">
                 <h1 className="text-2xl font-bold tracking-tight">Point of Sale</h1>
@@ -577,7 +595,8 @@ export default function NewOrderPage() {
                 </div>
             )}
 
-        </div>
+            </div>
+        </>
     );
 
 }

@@ -13,6 +13,7 @@ import { hasStoredSession } from "@/lib/auth-storage";
 import { useSessionRestoreState } from "@/hooks/use-session-restore";
 import { ProductTourHost } from "@/components/onboarding/product-tour-host";
 import { canAccessOnboarding } from "@/lib/onboarding";
+import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 
 export default function DashboardLayout({
   children,
@@ -164,10 +165,11 @@ export default function DashboardLayout({
       <Sidebar />
       <div className="flex flex-col flex-1 h-full overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto p-4">
+        <main className="flex-1 overflow-y-auto p-4 pb-24 md:pb-4">
           <RoleGuard>{children}</RoleGuard>
         </main>
       </div>
+      <MobileBottomNav />
       <GlobalKotPrinter />
       <Suspense fallback={null}>
         <ProductTourHost />

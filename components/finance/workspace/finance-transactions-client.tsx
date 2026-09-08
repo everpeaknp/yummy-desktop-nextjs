@@ -652,7 +652,27 @@ function EventTable({
 
   return (
     <>
-      <div className="overflow-x-auto">
+      <div className="divide-y divide-border md:hidden">
+        {visibleRegisterRows.map((row) => {
+          const isIn = row.amountTone === "in";
+          const isOut = row.amountTone === "out";
+          return (
+            <button
+              key={row.key}
+              type="button"
+              onClick={() => setSelected(row.source)}
+              className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0"><p className="truncate font-medium">{row.reference}</p><p className="mt-1 truncate text-xs text-muted-foreground">{row.particular || row.type} · {new Date(row.source.event_at).toLocaleDateString()}</p></div>
+                <p className={`shrink-0 font-semibold tabular-nums ${isIn ? "text-emerald-600" : isOut ? "text-rose-600" : ""}`}>{isIn ? "+" : isOut ? "−" : ""}{money(row.amount)}</p>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2"><Badge variant="outline" className={typeBadgeClass(row.type)}>{row.type}</Badge><span className="truncate text-xs text-muted-foreground">{row.status}</span></div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="hidden overflow-x-auto md:block">
         <Table>
           <TableHeader>
             <TableRow>

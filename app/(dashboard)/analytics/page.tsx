@@ -52,6 +52,7 @@ import {
   BarChart2,
   Award,
   UserCheck,
+  SlidersHorizontal,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
@@ -80,6 +81,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useRef } from "react";
 import { DateRange } from "react-day-picker";
 import Link from "next/link";
@@ -151,6 +153,7 @@ import {
 
 export default function AnalyticsPage() {
   const [activeRange, setActiveRange] = useState<DateRangePreset>("today");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [data, setData] = useState<any>(null);
   const [cashControlSummary, setCashControlSummary] =
     useState<DrawerCashControlSummary | null>(null);
@@ -1476,7 +1479,7 @@ export default function AnalyticsPage() {
   if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
-    <div className="flex flex-col gap-8 max-w-[1600px] mx-auto pb-10">
+    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto pb-10">
       {scopeNotice ? (
         <HistoryScopeNotice
           error={scopeNotice}
@@ -1510,22 +1513,49 @@ export default function AnalyticsPage() {
       {/* Header & Filters */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
-          <p className="text-muted-foreground text-sm uppercase tracking-wider text-orange-500 font-semibold">
+          <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
+          <p className="text-muted-foreground text-sm text-primary font-semibold">
             {restaurant?.name || "YUMMY"}
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <div className="flex items-center gap-2 sm:hidden">
           <DateRangeDropdown
             activeRange={activeRange}
             setActiveRange={setActiveRange}
             date={date}
             setDate={setDate}
+            className="h-9 min-w-0 flex-1 rounded-lg bg-primary/5 px-3 text-sm"
+          />
+          <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 rounded-lg" aria-label="Open analytics filters">
+                <SlidersHorizontal className="h-4 w-4" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="flex max-h-[78dvh] flex-col rounded-t-2xl p-0">
+              <SheetHeader className="border-b px-5 py-4 text-left"><SheetTitle>Filters</SheetTitle></SheetHeader>
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+                <div className="space-y-2"><p className="text-xs font-medium text-muted-foreground">Daybook</p><Select value={selectedDayCloseSession ? String(selectedDayCloseSession.id) : "all"} onValueChange={(val) => { if (val === "all") { setSelectedDayCloseSession(null); setFetchTrigger((t) => t + 1); } else { const sess = sessions.find((s) => String(s.id) === val); if (sess) { setStation(undefined); setSelectedDayCloseSession(sess); if (sess.business_line) setBusinessLine(sess.business_line); setFetchTrigger((t) => t + 1); } } }}><SelectTrigger className="h-10 rounded-xl"><SelectValue placeholder="All daybooks" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="all">All daybooks</SelectItem>{sessions.map((sess: any) => <SelectItem key={sess.id} value={String(sess.id)}>{getSessionDateLabel(sess)}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><p className="text-xs font-medium text-muted-foreground">Station</p><Select value={station || "all"} onValueChange={(val) => setStation(toFinanceStationParam(val, { businessLine: businessLine ?? "all", hotelEnabled: Boolean(restaurant?.hotel_enabled), customStations: customFinanceStations }))} disabled={!!selectedDayCloseSession}><SelectTrigger className="h-10 rounded-xl"><SelectValue placeholder="All stations" /></SelectTrigger><SelectContent className="rounded-xl">{stationOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.value === "all" ? "All stations" : option.label}</SelectItem>)}</SelectContent></Select></div>
+                {restaurant?.hotel_enabled && restaurant?.restaurant_enabled ? <div className="space-y-2"><p className="text-xs font-medium text-muted-foreground">Business line</p><Select value={businessLine || "all"} onValueChange={(val) => { setBusinessLine(val === "all" ? undefined : val); setFetchTrigger((t) => t + 1); }}><SelectTrigger className="h-10 rounded-xl"><SelectValue /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="all">All services</SelectItem><SelectItem value="restaurant">Restaurant</SelectItem><SelectItem value="hotel">Hotel / Rooms</SelectItem></SelectContent></Select></div> : null}
+              </div>
+              <div className="border-t p-4"><Button className="w-full" onClick={() => setMobileFiltersOpen(false)}>Done</Button></div>
+            </SheetContent>
+          </Sheet>
+        </div>
+
+        <div className="hidden items-center gap-3 sm:flex">
+          <DateRangeDropdown
+            activeRange={activeRange}
+            setActiveRange={setActiveRange}
+            date={date}
+            setDate={setDate}
+            className="h-9 w-full min-w-0 rounded-lg bg-primary/5 px-3 text-sm sm:h-11 sm:w-auto sm:min-w-[160px] sm:rounded-2xl sm:px-4"
           />
 
           {/* Daybook Select */}
-          <div className="flex flex-col min-w-[220px]">
+          <div className="flex min-w-0 flex-col sm:min-w-[220px]">
             <Select
               value={
                 selectedDayCloseSession
@@ -1547,7 +1577,7 @@ export default function AnalyticsPage() {
                 }
               }}
             >
-              <SelectTrigger className="h-10 rounded-xl bg-card border-border/60 font-medium">
+              <SelectTrigger className="h-9 rounded-lg bg-background border-border/60 text-sm font-medium sm:h-10 sm:rounded-xl sm:bg-card">
                 <SelectValue placeholder="Daybook: All">
                   {selectedDayCloseSession
                     ? `Daybook: ${getSessionDateLabel(selectedDayCloseSession)}`
@@ -1587,7 +1617,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Station Select */}
-          <div className="flex flex-col min-w-[200px]">
+          <div className="flex min-w-0 flex-col sm:min-w-[200px]">
             <Select
               value={station || "all"}
               onValueChange={(val) => {
@@ -1601,7 +1631,7 @@ export default function AnalyticsPage() {
               }}
               disabled={!!selectedDayCloseSession}
             >
-              <SelectTrigger className="h-10 rounded-xl bg-card border-border/60 font-medium">
+              <SelectTrigger className="h-9 rounded-lg bg-background border-border/60 text-sm font-medium sm:h-10 sm:rounded-xl sm:bg-card">
                 <SelectValue placeholder="Station: All">
                   {station
                     ? `Station: ${financeStationLabel(station, customFinanceStations)}`
@@ -1620,7 +1650,7 @@ export default function AnalyticsPage() {
 
           {/* Business Line Select */}
           {restaurant?.hotel_enabled && restaurant?.restaurant_enabled && (
-            <div className="flex flex-col min-w-[220px]">
+            <div className="flex min-w-0 flex-col sm:min-w-[220px]">
               <Select
                 value={businessLine || "all"}
                 onValueChange={(val) => {
@@ -1628,7 +1658,7 @@ export default function AnalyticsPage() {
                   setFetchTrigger((t) => t + 1);
                 }}
               >
-                <SelectTrigger className="h-10 rounded-xl bg-card border-border/60 font-medium">
+                <SelectTrigger className="h-9 rounded-lg bg-background border-border/60 text-sm font-medium sm:h-10 sm:rounded-xl sm:bg-card">
                   <SelectValue placeholder="View Metrics For: All Services">
                     {businessLine === "restaurant"
                       ? "View Metrics For: Restaurant"
@@ -1667,81 +1697,53 @@ export default function AnalyticsPage() {
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
-          className="w-full space-y-6"
+          className="w-full space-y-5"
         >
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <TabsList className="bg-muted p-1 rounded-xl flex overflow-x-auto gap-1 max-w-full no-scrollbar">
+          <div className="flex items-center gap-2 xl:justify-between">
+            <TabsList className="flex h-10 min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-xl bg-muted p-1 sm:max-w-none sm:flex-none sm:overflow-x-auto no-scrollbar">
               <TabsTrigger
                 value="overview"
-                className="rounded-lg font-semibold shrink-0"
+                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
               >
                 Overview
               </TabsTrigger>
               <TabsTrigger
                 value="orders"
-                className="rounded-lg font-semibold shrink-0"
+                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
               >
                 Orders
               </TabsTrigger>
               <TabsTrigger
                 value="finance"
-                className="rounded-lg font-semibold shrink-0"
+                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
               >
                 Finance
               </TabsTrigger>
               <TabsTrigger
                 value="menu"
-                className="rounded-lg font-semibold shrink-0"
+                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
               >
                 Menu
               </TabsTrigger>
               <TabsTrigger
                 value="staff"
-                className="rounded-lg font-semibold shrink-0"
+                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
               >
                 Staff
               </TabsTrigger>
               <TabsTrigger
                 value="nc"
-                className="rounded-lg font-semibold shrink-0"
+                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
               >
                 NC
               </TabsTrigger>
             </TabsList>
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href="/analytics/menu">
-                <Button
-                  variant="outline"
-                  className="rounded-full gap-2 h-8 text-xs font-semibold"
-                >
-                  <ReceiptText className="w-3.5 h-3.5" /> Menu Drilldown
-                </Button>
-              </Link>
-              <Link href="/analytics/kitchen">
-                <Button
-                  variant="outline"
-                  className="rounded-full gap-2 h-8 text-xs font-semibold"
-                >
-                  <ChefHat className="w-3.5 h-3.5" /> Kitchen Details
-                </Button>
-              </Link>
-              <Link href="/analytics/inventory">
-                <Button
-                  variant="outline"
-                  className="rounded-full gap-2 h-8 text-xs font-semibold"
-                >
-                  <Boxes className="w-3.5 h-3.5" /> Inventory Details
-                </Button>
-              </Link>
-              <Link href="/analytics/compare">
-                <Button
-                  variant="outline"
-                  className="rounded-full gap-2 h-8 text-xs font-semibold"
-                >
-                  <ArrowLeftRight className="w-3.5 h-3.5" /> Compare
-                </Button>
-              </Link>
-            </div>
+            <Link href="/analytics/compare">
+              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 rounded-lg sm:w-auto sm:gap-2 sm:px-3" aria-label="Compare periods">
+                <ArrowLeftRight className="h-4 w-4" />
+                <span className="hidden text-xs font-semibold sm:inline">Compare</span>
+              </Button>
+            </Link>
           </div>
 
           {/* ══════════════════════════════════════════════════ OVERVIEW TAB */}
@@ -1751,7 +1753,7 @@ export default function AnalyticsPage() {
               <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">
                 Today Snapshot
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
                 <SnapshotCard
                   label="GROSS SALES"
                   value={todayGrossSales}
@@ -1796,7 +1798,7 @@ export default function AnalyticsPage() {
               <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">
                 Summary
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
                 <BigMetricCard
                   label="Sales"
                   value={
@@ -2433,23 +2435,15 @@ export default function AnalyticsPage() {
           <TabsContent value="finance" className="space-y-6 outline-none">
             {/* Finance Summary Cards */}
             <section className="space-y-3">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">
-                  Finance Summary
-                </h3>
-                <div className="flex items-center gap-3">
-                  <p className="text-[11px] font-semibold text-muted-foreground">
-                    {financeSummaryScopeLabel}
-                  </p>
-                  <Link href="/finance/operations">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-full gap-2 h-8 text-xs font-semibold"
-                    >
-                      <Banknote className="w-3.5 h-3.5" /> Cash &amp; Banks
-                    </Button>
-                  </Link>
+              <div className="space-y-2">
+                <h3 className="text-base font-semibold tracking-tight text-foreground">Finance summary</h3>
+                <p className="text-xs text-muted-foreground">{financeSummaryScopeLabel.split(" | ")[0]}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {financeSummaryScopeLabel.split(" | ").slice(1).map((scope) => (
+                    <span key={scope} className="rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                      {scope.replace("Business line: ", "").replace("Station: ", "")}
+                    </span>
+                  ))}
                 </div>
               </div>
 
@@ -3336,12 +3330,6 @@ export default function AnalyticsPage() {
                         </p>
                       </div>
                     </div>
-                    <Link href="/analytics/menu">
-                      <Button className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl">
-                        <ReceiptText className="mr-2 h-4 w-4" />
-                        Open Station Drilldown
-                      </Button>
-                    </Link>
                   </div>
                   <div className="bg-background/60 border border-border/40 rounded-xl p-4 mb-4">
                     <p className="text-xs font-bold text-orange-500 uppercase tracking-wider mb-2">
@@ -3477,7 +3465,7 @@ export default function AnalyticsPage() {
                     <Package className="w-4 h-4 text-muted-foreground" /> All
                     Items
                   </CardTitle>
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                     <Input
                       placeholder="Search items..."
                       value={menuSearch}
@@ -3485,7 +3473,7 @@ export default function AnalyticsPage() {
                         setMenuSearch(e.target.value);
                         setMenuPage(1);
                       }}
-                      className="h-8 w-[160px] text-xs rounded-lg"
+                      className="col-span-2 h-8 w-full rounded-lg text-xs sm:w-[160px]"
                     />
                     <Select
                       value={menuCategory || "all"}
@@ -3494,7 +3482,7 @@ export default function AnalyticsPage() {
                         setMenuPage(1);
                       }}
                     >
-                      <SelectTrigger className="h-8 rounded-lg text-xs w-[130px]">
+                      <SelectTrigger className="h-8 w-full rounded-lg text-xs sm:w-[130px]">
                         <SelectValue placeholder="All Categories" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl">
@@ -3513,7 +3501,7 @@ export default function AnalyticsPage() {
                         setMenuPage(1);
                       }}
                     >
-                      <SelectTrigger className="h-8 rounded-lg text-xs w-[110px]">
+                      <SelectTrigger className="h-8 w-full rounded-lg text-xs sm:w-[110px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl">
@@ -3546,7 +3534,19 @@ export default function AnalyticsPage() {
                       : "Switch to Menu tab to load data"}
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-border overflow-hidden">
+                  <>
+                  <div className="space-y-1 md:hidden">
+                    {(menuData?.items || []).map((item: any, i: number) => (
+                      <div key={item.id ?? i} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">{item.category || "Uncategorised"} · {fmtCount(item.quantity_sold || item.quantitySold || 0)} sold</p>
+                        </div>
+                        <p className="shrink-0 text-sm font-semibold">{fmtShort(item.revenue || 0)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto rounded-xl border border-border md:block">
                     <Table>
                       <TableHeader className="bg-muted/40">
                         <TableRow>
@@ -3591,6 +3591,7 @@ export default function AnalyticsPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  </>
                 )}
                 {(menuData?.total_pages || 0) > 1 && (
                   <div className="flex items-center justify-between mt-4 text-xs text-muted-foreground">
@@ -3878,9 +3879,9 @@ function SnapshotCard({
           bgColor,
         )}
       />
-      <CardContent className="p-6 relative z-10">
-        <div className="flex justify-between items-start mb-4">
-          <div className={cn("p-2.5 rounded-xl", bgColor)}>
+      <CardContent className="relative z-10 p-3 sm:p-6">
+        <div className="mb-2 flex items-start justify-between sm:mb-4">
+          <div className={cn("rounded-lg p-1.5 sm:rounded-xl sm:p-2.5", bgColor)}>
             <div
               className={cn(
                 "transition-transform duration-300 group-hover:scale-110",
@@ -3891,10 +3892,10 @@ function SnapshotCard({
             </div>
           </div>
         </div>
-        <div className="text-[10px] font-black tracking-widest mb-1.5 uppercase opacity-60 text-muted-foreground">
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:mb-1.5">
           {label}
         </div>
-        <div className="text-2xl font-black text-foreground tracking-tight">
+        <div className="text-lg font-semibold tracking-tight text-foreground sm:text-2xl sm:font-black">
           Rs.{" "}
           {Number(value).toLocaleString(undefined, {
             minimumFractionDigits: 2,
@@ -3917,18 +3918,18 @@ function BigMetricCard({
 }: any) {
   const hasTrend = trend !== undefined && trend !== null && trend !== 0;
   return (
-    <Card className="bg-card border-border hover:shadow-md transition-all duration-300 shadow-sm relative overflow-hidden group">
+    <Card className="group relative overflow-hidden border-border bg-card shadow-sm transition-all duration-300 hover:shadow-md">
       <div
         className={cn(
           "absolute bottom-0 left-0 w-full h-[3px] opacity-0 group-hover:opacity-100 transition-opacity",
           color.replace("text-", "bg-"),
         )}
       />
-      <CardContent className="p-5 flex flex-col justify-between h-36">
+      <CardContent className="flex min-h-24 flex-col justify-between p-3 sm:h-36 sm:p-5">
         <div className="flex justify-between items-start">
           <div
             className={cn(
-              "p-2 rounded-xl bg-muted border border-border transition-transform duration-300 group-hover:scale-110",
+              "rounded-lg border border-border bg-muted p-1.5 transition-transform duration-300 group-hover:scale-110 sm:rounded-xl sm:p-2",
               color,
             )}
           >
@@ -3938,7 +3939,7 @@ function BigMetricCard({
             <Badge
               variant="outline"
               className={cn(
-                "border-0 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5",
+                "hidden border-0 px-2 py-0.5 text-[10px] font-bold sm:flex items-center gap-0.5 rounded-full",
                 tagColor,
               )}
             >
@@ -3952,10 +3953,10 @@ function BigMetricCard({
           )}
         </div>
         <div>
-          <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1 opacity-70">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             {label}
           </div>
-          <div className="text-xl font-black text-foreground tracking-tight">
+          <div className="text-lg font-semibold tracking-tight text-foreground sm:text-xl sm:font-black">
             {noCurrency
               ? value
               : `Rs. ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -3978,7 +3979,7 @@ function FinanceMetricGroup({
       <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">
         {title}
       </h4>
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(200px,1fr))]">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:[grid-template-columns:repeat(auto-fit,minmax(200px,1fr))]">
         {children}
       </div>
     </section>
