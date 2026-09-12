@@ -57,6 +57,7 @@ function BuildingFacade({
   onAddRoom,
   availableRoomIds,
   priceByRoomType,
+  showAllRooms = false,
 }: {
   building: HotelBuilding;
   floors: HotelFloor[];
@@ -70,6 +71,7 @@ function BuildingFacade({
   onAddRoom?: () => void;
   availableRoomIds?: Set<number>;
   priceByRoomType?: Record<number, number>;
+  showAllRooms?: boolean;
 }) {
   const buildingFloors = sortedFloors(building, floors);
   const condition = buildingCondition(building);
@@ -162,13 +164,49 @@ function BuildingFacade({
               <div
                 key={floor.id}
                 className={cn(
-                  "grid border-b-[3px] border-muted-foreground/30 bg-gradient-to-b from-muted/10 to-muted/35",
-                  compact
-                    ? "grid-cols-[64px_1fr] gap-3 p-3"
-                    : "grid-cols-[120px_1fr] gap-5 p-5",
+                  "border-b-[3px] border-muted-foreground/30 bg-gradient-to-b from-muted/10 to-muted/35",
+                  compact ? "p-3" : "grid grid-cols-[120px_1fr] gap-5 p-5",
                 )}
               >
-                <div className="flex min-w-0 flex-col items-center justify-center border-r border-dashed border-muted-foreground/25 pr-2 text-center text-muted-foreground">
+                {compact ? (
+                  <div className="mb-2 flex min-w-0 items-center gap-2 text-muted-foreground">
+                    <Layers3 className="h-4 w-4 shrink-0" />
+                    {onSelectFloor ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelectFloor(floor);
+                        }}
+                        className="min-w-0 truncate text-left text-sm font-bold hover:text-orange-600"
+                        title={`Open ${floor.name}`}
+                      >
+                        {floor.name}
+                      </button>
+                    ) : (
+                      <span className="min-w-0 truncate text-sm font-bold">
+                        {floor.name}
+                      </span>
+                    )}
+                    <span className="ml-auto shrink-0 text-[11px] font-semibold">
+                      {floorRooms.length} room{floorRooms.length === 1 ? "" : "s"}
+                    </span>
+                    {onEditFloor ? (
+                      <button
+                        type="button"
+                        aria-label={`Edit ${floor.name}`}
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-orange-600 hover:bg-orange-500/10"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEditFloor(floor);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="flex min-w-0 flex-col items-center justify-center border-r border-dashed border-muted-foreground/25 pr-2 text-center text-muted-foreground">
                   {onSelectFloor ? (
                     <button
                       type="button"
@@ -208,7 +246,7 @@ function BuildingFacade({
                       </span>
                     </div>
                   )}
-                  {!compact && onEditFloor ? (
+                  {onEditFloor ? (
                     <button
                       type="button"
                       aria-label={`Edit ${floor.name}`}
@@ -222,7 +260,8 @@ function BuildingFacade({
                       Edit
                     </button>
                   ) : null}
-                </div>
+                  </div>
+                )}
                 <HotelFloorRoomPlan
                   floor={floor}
                   rooms={floorRooms}
@@ -230,6 +269,7 @@ function BuildingFacade({
                   onSelectRoom={onSelectRoom}
                   availableRoomIds={availableRoomIds}
                   priceByRoomType={priceByRoomType}
+                  showAllRooms={showAllRooms}
                 />
               </div>
             );
@@ -276,6 +316,7 @@ export function HotelPropertyMap({
   manage = false,
   availableRoomIds,
   priceByRoomType,
+  showAllRooms = false,
 }: {
   buildings: HotelBuilding[];
   floors: HotelFloor[];
@@ -290,6 +331,7 @@ export function HotelPropertyMap({
   manage?: boolean;
   availableRoomIds?: Set<number>;
   priceByRoomType?: Record<number, number>;
+  showAllRooms?: boolean;
 }) {
   const orderedBuildings = [...buildings].sort(
     (left, right) =>
@@ -356,7 +398,7 @@ export function HotelPropertyMap({
           ))}
         </div>
       </div>
-      <div className="space-y-8 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.08),transparent_38%),linear-gradient(to_right,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:auto,28px_28px,28px_28px] p-4 sm:p-6 lg:p-8">
+      <div className="space-y-5 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.08),transparent_38%),linear-gradient(to_right,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:auto,28px_28px,28px_28px] p-3 sm:space-y-8 sm:p-6 lg:p-8">
         {visibleBuildings.map((building) => {
           const buildingFloors = sortedFloors(building, floors);
           const buildingRooms = rooms.filter((room) =>
@@ -368,26 +410,37 @@ export function HotelPropertyMap({
               aria-label={building.name}
               className="min-w-0"
             >
-              <BuildingFacade
-                building={building}
-                floors={buildingFloors}
-                rooms={buildingRooms}
-                onSelectRoom={onSelectRoom}
-                onEditFloor={manage ? onEditFloor : undefined}
-                onEditBuilding={
-                  manage && onEditBuilding
-                    ? () => onEditBuilding(building)
-                    : undefined
-                }
-                onAddFloor={
-                  manage && onAddFloor ? () => onAddFloor(building) : undefined
-                }
-                onAddRoom={
-                  manage && onAddRoom ? () => onAddRoom(building) : undefined
-                }
-                availableRoomIds={availableRoomIds}
-                priceByRoomType={priceByRoomType}
-              />
+              <div className="sm:hidden">
+                <BuildingFacade
+                  compact
+                  building={building}
+                  floors={buildingFloors}
+                  rooms={buildingRooms}
+                  onSelectRoom={onSelectRoom}
+                  onEditFloor={manage ? onEditFloor : undefined}
+                  onEditBuilding={manage && onEditBuilding ? () => onEditBuilding(building) : undefined}
+                  onAddFloor={manage && onAddFloor ? () => onAddFloor(building) : undefined}
+                  onAddRoom={manage && onAddRoom ? () => onAddRoom(building) : undefined}
+                  availableRoomIds={availableRoomIds}
+                  priceByRoomType={priceByRoomType}
+                  showAllRooms={showAllRooms}
+                />
+              </div>
+              <div className="hidden sm:block">
+                <BuildingFacade
+                  building={building}
+                  floors={buildingFloors}
+                  rooms={buildingRooms}
+                  onSelectRoom={onSelectRoom}
+                  onEditFloor={manage ? onEditFloor : undefined}
+                  onEditBuilding={manage && onEditBuilding ? () => onEditBuilding(building) : undefined}
+                  onAddFloor={manage && onAddFloor ? () => onAddFloor(building) : undefined}
+                  onAddRoom={manage && onAddRoom ? () => onAddRoom(building) : undefined}
+                  availableRoomIds={availableRoomIds}
+                  priceByRoomType={priceByRoomType}
+                  showAllRooms={showAllRooms}
+                />
+              </div>
             </article>
           );
         })}

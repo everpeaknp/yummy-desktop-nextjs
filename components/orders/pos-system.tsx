@@ -932,11 +932,11 @@ export default function POSSystem({
       <div className="lg:hidden fixed bottom-6 right-6 z-50">
         <Sheet>
           <SheetTrigger asChild>
-            <Button size="lg" className="h-14 w-14 rounded-full shadow-2xl bg-primary text-primary-foreground relative p-0 overflow-hidden">
+            <Button size="lg" className="relative h-14 w-14 overflow-visible rounded-full bg-primary p-0 text-primary-foreground shadow-2xl">
               <ShoppingCart className="h-6 w-6" />
               {cart.length > 0 && (
-                <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-red-500 border-2 border-white text-white">
-                  {cart.reduce((a, b) => a + b.quantity, 0)}
+                <Badge className="absolute -right-1 -top-1 z-10 flex h-5 min-w-5 items-center justify-center border-2 border-background bg-red-500 px-1 text-[10px] font-bold leading-none tabular-nums text-white shadow-sm">
+                  {cart.reduce((a, b) => a + b.quantity, 0) > 99 ? "99+" : cart.reduce((a, b) => a + b.quantity, 0)}
                 </Badge>
               )}
             </Button>

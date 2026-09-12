@@ -95,6 +95,9 @@ These are the canonical pages that prove the foundation before wider rollout:
 4. Finance Sales register: filters, register rows and desktop/mobile data
    alternatives.
 
+The active finance route map, mobile hierarchy and workflow rules are defined
+in [Finance mobile architecture](./FINANCE_MOBILE_ARCHITECTURE.md).
+
 ## Migration order
 
 | Wave | Family | Risk | Outcome |
@@ -106,6 +109,30 @@ These are the canonical pages that prove the foundation before wider rollout:
 | 4 | Balance Sheet, Trial Balance, Ledgers, accounting reports | High | bounded financial tables with mobile summaries |
 | 5 | Customers, Suppliers, Staff, Settings, Manage | Low-Medium | management lists and forms become consistent |
 | 6 | Checkout, new order, finance forms, Hotel workflows | High | complex workflows migrate after primitives are proven |
+
+## Current implementation status
+
+- Wave 0 is complete: the shared page, control, navigation, data, feedback,
+  card, report and adaptive-action patterns are implemented and covered by a
+  development-only gallery and focused component tests.
+- Wave 1 is in progress: Orders, Analytics, desktop Dashboard and Finance
+  Sales now use the shared page language. The standalone mobile Dashboard
+  composition still needs a component-level migration.
+- Wave 2 is in progress: Kitchen, Tables, Menu and Inventory now use shared
+  responsive page chrome, search, tabs, filters, metric cards and feedback
+  states. Kitchen retains its specialist KDS ticket controls.
+- Wave 3 is in progress: Sales, Sales Returns, Payments, Transactions and the
+  management Purchases workspace use the shared page, metric, filter or
+  operational-card patterns. Purchases has a compact mobile list and bounded
+  desktop register.
+- Wave 4 is in progress: the shared report shell and filter treatment now
+  cover both accounting report families, including Trial Balance, Balance
+  Sheet, Profit and Loss, ledgers, Cash Flow and VAT reports.
+- Wave 5 is in progress: Customers and Suppliers use the shared headers,
+  compact metrics, search fields, feedback states and responsive management
+  list treatments.
+- Remaining routes keep their current business behavior until their family is
+  migrated; a changed outer shell alone does not count as completion.
 
 ## Acceptance criteria for every migrated route
 

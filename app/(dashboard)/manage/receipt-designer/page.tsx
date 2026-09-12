@@ -2,7 +2,7 @@
 
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { ReceiptDesigner } from "@/components/manage/settings/receipt-designer";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -56,26 +56,8 @@ export default function ReceiptDesignerPage() {
     }
 
     return (
-        <div className="h-screen flex flex-col bg-background overflow-hidden">
-            {/* Minimal Header */}
-            <div className="px-6 py-4 border-b border-border/40 flex items-center justify-between bg-background/80 backdrop-blur-md z-20">
-                <div className="flex items-center gap-4">
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => router.push('/manage/additional-settings')}
-                        className="rounded-full h-8 w-8"
-                    >
-                        <ArrowLeft className="w-4 h-4" />
-                    </Button>
-                    <div>
-                        <h1 className="text-lg font-black tracking-tight uppercase italic">Receipt Designer</h1>
-                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest leading-none">Immersive Layout Workspace</p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex-1 min-h-0 p-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+            <div className="min-h-0 flex-1 p-4 pb-24 sm:p-6">
                 <ReceiptDesigner 
                     restaurantId={restaurant.id} 
                     initialTemplate={template} 

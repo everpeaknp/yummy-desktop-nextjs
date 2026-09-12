@@ -47,6 +47,8 @@ import {
 } from "@/components/ui/select";
 import { DrawerSessionPanel } from "@/components/day-close/drawer-session-panel";
 import { DrawerHistoryDialog } from "@/components/cash-drawers/drawer-history-dialog";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 import type {
   BusinessLine,
   DrawerSession,
@@ -125,24 +127,8 @@ export default function CashDrawersPage() {
     [],
   );
 
-  return (
-    <div className="mx-auto flex max-w-[1500px] flex-col gap-6 px-4 pb-20">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-500/5">
-            <Banknote className="h-6 w-6 text-emerald-600" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              {businessLineLabel}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Open, count, close, and settle {businessLine} drawers
-              independently from the other business line.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+  const workspaceActions = (
+    <>
           {showBusinessLinePicker ? (
             <Select
               value={businessLine}
@@ -170,10 +156,56 @@ export default function CashDrawersPage() {
           <Button asChild size="sm" className="gap-2">
             <Link href="/finance/operations?tab=cash-drawers">
               <Settings2 className="h-4 w-4" />
-              Configure drawers
+              <span className="hidden sm:inline">Configure drawers</span>
+              <span className="sm:hidden">Configure</span>
             </Link>
           </Button>
-        </div>
+    </>
+  );
+
+  return (
+    <AppPage width="wide" className="pb-20">
+      <PageHeader
+        className="hidden md:flex"
+        title={businessLineLabel}
+        leading={
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
+            <Banknote className="h-6 w-6 text-emerald-600" />
+          </span>
+        }
+        description={`Open, count, close, and settle ${businessLine} drawers independently from the other business line.`}
+        actions={workspaceActions}
+      />
+
+      <div className="flex items-center gap-2 md:hidden">
+        {showBusinessLinePicker ? (
+          <div className="min-w-0 flex-1">
+            <Select
+              value={businessLine}
+              onValueChange={(value) => changeBusinessLine(value as BusinessLine)}
+            >
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="Business line" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="restaurant">Restaurant drawers</SelectItem>
+                <SelectItem value="hotel">Hotel drawers</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        {returnTo ? (
+          <Button asChild variant="outline" size="icon" className="h-11 w-11 shrink-0" aria-label="Return to hotel">
+            <Link href={returnTo}>
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+        ) : null}
+        <Button asChild variant="outline" size="icon" className="h-11 w-11 shrink-0" aria-label="Configure drawers">
+          <Link href="/finance/operations?tab=cash-drawers">
+            <Settings2 className="h-4 w-4" />
+          </Link>
+        </Button>
       </div>
 
       {!restaurantId ? (
@@ -186,27 +218,27 @@ export default function CashDrawersPage() {
       ) : (
         <>
           <Card className="overflow-hidden border-border/70">
-            <CardContent className="flex flex-col gap-5 bg-gradient-to-br from-emerald-500/10 via-transparent to-transparent p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
-                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15">
-                  <Wallet className="h-7 w-7 text-emerald-600" />
+            <CardContent className="flex flex-col gap-3 bg-emerald-500/[0.035] p-4 sm:flex-row sm:items-center sm:justify-between md:p-5">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 md:h-14 md:w-14 md:rounded-2xl">
+                  <Wallet className="h-5 w-5 text-emerald-600 md:h-7 md:w-7" />
                 </span>
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <div className="text-xs font-medium text-muted-foreground">
                     Cash currently in drawers
                   </div>
-                  <div className="mt-1 text-3xl font-bold tabular-nums">
+                  <div className="mt-0.5 text-2xl font-semibold tabular-nums md:mt-1 md:text-3xl md:font-bold">
                     {formatMoney(activeDrawerCash)}
                   </div>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:border-t-0 sm:pt-0">
+                <span className="rounded-full bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground ring-1 ring-border/70">
                   {drawerSummary.activeSessionCount} active session
                   {drawerSummary.activeSessionCount === 1 ? "" : "s"}
                 </span>
                 {drawerSummary.unopenedRetainedCash > 0 ? (
-                  <span className="rounded-full border border-amber-300/60 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700">
+                  <span className="rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 ring-1 ring-amber-300/60">
                     {formatMoney(drawerSummary.unopenedRetainedCash)} retained,
                     unopened
                   </span>
@@ -240,7 +272,7 @@ export default function CashDrawersPage() {
           />
         </>
       )}
-    </div>
+    </AppPage>
   );
 }
 

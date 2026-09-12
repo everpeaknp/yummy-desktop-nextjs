@@ -48,6 +48,13 @@ function toApiBusinessDayTime(value?: string | null) {
     return `${normalized}:00`;
 }
 
+function normalizeRestaurantPhone(value?: string | null) {
+    const phone = String(value || "").trim();
+    if (!phone || phone.startsWith("+")) return phone;
+    const digits = phone.replace(/\D/g, "");
+    return /^9\d{9}$/.test(digits) ? `+977${digits}` : phone;
+}
+
 export default function RestaurantProfilePage() {
     const user = useAuth(state => state.user);
     const router = useRouter();
@@ -89,7 +96,7 @@ export default function RestaurantProfilePage() {
                     const data = {
                         name: r.name || "",
                         address: r.address || "",
-                        phone: r.phone || "",
+                        phone: normalizeRestaurantPhone(r.phone),
                         pan_number: r.pan_number || "",
                         description: r.description || "",
                         profile_picture: r.profile_picture || "",
@@ -177,11 +184,21 @@ export default function RestaurantProfilePage() {
         type === 'logo' ? setUploadingLogo(true) : setUploadingCover(true);
         try {
             const publicUrl = await ImageService.uploadRestaurantImage(file, type, user.restaurant_id);
-            
+            const field = type === "logo" ? "profile_picture" : "cover_photo";
+            const previousUrl = formData[field];
             setFormData(prev => ({
                 ...prev,
-                [type === 'logo' ? 'profile_picture' : 'cover_photo']: publicUrl
+                [field]: publicUrl,
             }));
+
+            const updateResponse = await apiClient.put(RestaurantApis.update(user.restaurant_id), { [field]: publicUrl });
+            if (updateResponse.data?.status !== "success") {
+                setFormData((prev) => ({ ...prev, [field]: previousUrl }));
+                throw new Error(updateResponse.data?.message || `Failed to save ${type}`);
+            }
+
+            setInitialData((previous) => previous ? { ...previous, [field]: publicUrl } : previous);
+            await fetchGlobalRestaurant(true);
             toast.success(`${type === 'logo' ? 'Logo' : 'Cover image'} uploaded`);
         } catch (err: any) {
             console.error(`Failed to upload ${type}`, err);
@@ -244,22 +261,7 @@ export default function RestaurantProfilePage() {
     }
 
     return (
-        <div className="p-6 space-y-6 max-w-[1000px] mx-auto pb-24">
-            {/* Header */}
-            <div className="space-y-1">
-                <button 
-                    onClick={() => router.push('/manage')}
-                    className="flex items-center text-sm text-muted-foreground hover:text-primary transition-colors mb-2"
-                >
-                    <ChevronLeft className="w-4 h-4 mr-1" />
-                    Back to Manage
-                </button>
-                <h1 className="text-3xl font-bold tracking-tight">Restaurant Profile</h1>
-                <p className="text-muted-foreground text-sm">
-                    Manage your public identity, contact details, and branding.
-                </p>
-            </div>
-
+        <div className="mx-auto max-w-[1000px] space-y-6 pb-24 md:p-6">
             <form onSubmit={handleSubmit} className="space-y-6">
                 <Card>
                     <CardHeader>

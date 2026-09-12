@@ -27,6 +27,8 @@ import { DashboardStatusBanner } from "@/components/dashboard/dashboard-status-b
 import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
 import { UnifiedInsightsCard } from "@/components/dashboard/unified-insights-card"
 import { MobileDashboardHome } from "@/components/dashboard/mobile-dashboard-home"
+import { AppPage } from "@/components/patterns/page/app-page"
+import { PageHeader } from "@/components/patterns/page/page-header"
 import dynamic from "next/dynamic"
 import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown"
 import { DateRange } from "react-day-picker"
@@ -320,10 +322,9 @@ export default function DashboardPage() {
     <>
       <MobileDashboardHome
         home={home}
-        outletName={data?.meta?.outlet_name}
         currency={currency}
       />
-      <div className="dashboard-ui relative mx-auto hidden max-w-[1600px] flex-col gap-10 px-4 pb-20 md:flex">
+      <AppPage width="wide" className="dashboard-ui relative hidden flex-col gap-10 pb-20 md:flex">
       {refreshing ? (
         <div className="pointer-events-none absolute right-4 top-0 z-10 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
           <RefreshCw className="h-3 w-3 animate-spin" />
@@ -332,14 +333,11 @@ export default function DashboardPage() {
       ) : null}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="dc-page-title">Executive Dashboard</h1>
-          <p className="dc-page-subtitle">
-            Real-time operational overview for {data?.meta?.outlet_name || "your outlet"}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+      <PageHeader
+        title="Executive Dashboard"
+        description={`Real-time operational overview for ${data?.meta?.outlet_name || "your outlet"}.`}
+        actions={
+          <>
           <DateRangeDropdown
             activeRange={activeRange}
             setActiveRange={setActiveRange}
@@ -363,8 +361,9 @@ export default function DashboardPage() {
               {healthBadge.label}
             </Badge>
           )}
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <DashboardStatusBanner
         error={error}
@@ -726,7 +725,7 @@ export default function DashboardPage() {
             <PaymentSplitCard payments={paymentSplit} currency={currency} />
         </div>
       </section>
-      </div>
+      </AppPage>
     </>
   )
 }

@@ -20,7 +20,6 @@ import {
     Scale, 
     Percent, 
     History,
-    Search,
     LayoutGrid,
     Receipt,
     ClipboardList,
@@ -28,7 +27,6 @@ import {
     X,
     Loader2,
     Settings2,
-    ArrowLeft,
     ArrowRight,
     ChevronRight,
     Clock,
@@ -50,6 +48,9 @@ import { MenuGalleryItem } from "@/lib/constants/menu-gallery";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { SearchField } from "@/components/patterns/controls/search-field";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/hooks/use-preferences";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -927,8 +928,16 @@ export default function AdditionalSettingsPage() {
     };
 
     return (
-        <div className="p-8 max-w-[1600px] mx-auto space-y-12 pb-24">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <AppPage width="wide" className="pb-24">
+            <PageHeader title="Additional settings" description="Advanced operational, document, and support settings." />
+            <SearchField
+                placeholder="Search settings"
+                value={searchQuery}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+                className="md:max-w-sm"
+            />
+            {/* Legacy internal header intentionally removed; the shared app bar owns internal-route navigation. */}
+            {/*
                 <div className="space-y-3">
                     <Button
                         variant="ghost"
@@ -936,7 +945,6 @@ export default function AdditionalSettingsPage() {
                         onClick={() => router.push("/manage")}
                         className="w-fit gap-2 px-0 text-muted-foreground hover:text-foreground"
                     >
-                        <ArrowLeft className="h-4 w-4" />
                         Back to Manage
                     </Button>
                     <h1 className="text-3xl font-black tracking-tight text-foreground">Additional Settings</h1>
@@ -954,16 +962,16 @@ export default function AdditionalSettingsPage() {
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                     />
                 </div>
-            </div>
+            */}
 
-            <div className="grid grid-cols-1 gap-12">
+            <div className="grid grid-cols-1 gap-7">
                 {filteredCategories.map((section: any) => (
-                    <div key={section.title} className="space-y-5">
-                        <h2 className="text-[11px] font-black tracking-[0.2em] text-muted-foreground/70 uppercase">
+                    <div key={section.title} className="space-y-3">
+                        <h2 className="text-sm font-semibold text-foreground">
                             {section.title}
                         </h2>
                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                             {section.items.map((item: any) => (
                                 <button 
                                     key={item.id}
@@ -984,20 +992,20 @@ export default function AdditionalSettingsPage() {
                                         setSelectedSetting(item.id);
                                     }}
                                 >
-                                    <Card className="group hover:border-primary/50 transition-all hover:shadow-md cursor-pointer border-border/40 bg-card/40 backdrop-blur-sm overflow-hidden h-[90px]">
-                                        <CardContent className="h-full p-4 flex items-center gap-4">
+                                    <Card className="group h-[76px] cursor-pointer overflow-hidden border-border/60 bg-card transition-colors hover:border-primary/50 hover:bg-muted/30">
+                                        <CardContent className="flex h-full items-center gap-3 p-3">
                                             <div className={cn(
-                                                "w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110 shadow-sm border border-white/10",
+                                                "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10",
                                                 item.iconBg,
                                                 item.iconColor
                                             )}>
                                                 <item.icon className="w-5 h-5" />
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <h3 className="text-[14px] font-bold group-hover:text-primary transition-colors truncate mb-0.5 uppercase tracking-tight">
+                                                <h3 className="truncate text-sm font-semibold group-hover:text-primary">
                                                     {item.title}
                                                 </h3>
-                                                <p className="text-[11px] text-muted-foreground font-medium line-clamp-1 opacity-70 group-hover:opacity-100 transition-opacity leading-tight">
+                                                <p className="line-clamp-1 text-xs text-muted-foreground">
                                                     {item.description}
                                                 </p>
                                             </div>
@@ -1104,6 +1112,6 @@ export default function AdditionalSettingsPage() {
                 onOpenChange={setGalleryOpen} 
                 onSelect={handleGallerySelect} 
             />
-        </div>
+        </AppPage>
     );
 }

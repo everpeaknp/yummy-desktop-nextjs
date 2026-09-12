@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CircleDollarSign, Loader2, Plus, RefreshCw } from "lucide-react";
+import { CircleDollarSign, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
@@ -55,6 +55,8 @@ import {
   TransactionDetailSheet,
   type TransactionDetailModel,
 } from "@/components/finance/transaction-detail/transaction-detail-sheet";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 
 type IncomeRow = {
   id?: number;
@@ -335,38 +337,24 @@ export function OtherIncomeClient() {
     : null;
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Finance
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            Other income
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Record rent, commission, interest, grants, and other non-sales
-            income. Order revenue stays in Sales.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void load()}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-          <Button onClick={openCreate}>
+    <AppPage width="wide" density="compact">
+      <PageHeader
+        title="Other income"
+        description="Non-sales income such as rent, commission, interest, and grants."
+        actions={(
+          <Button className="w-full sm:w-auto" onClick={openCreate}>
             <Plus className="mr-2 h-4 w-4" />
-            Add other income
+            Record income
           </Button>
-        </div>
-      </header>
+        )}
+      />
       <Card className="max-w-sm border-border shadow-none">
-        <CardContent className="flex items-center justify-between p-5">
+        <CardContent className="flex items-center justify-between p-4">
           <div>
-            <p className="text-xs font-medium uppercase text-muted-foreground">
+            <p className="text-xs font-medium text-muted-foreground">
               Other income this month
             </p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums">
+            <p className="mt-1 text-xl font-semibold tabular-nums">
               {money(total)}
             </p>
           </div>
@@ -380,7 +368,26 @@ export function OtherIncomeClient() {
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           ) : rows.length ? (
-            <div className="overflow-x-auto">
+            <>
+            <div className="divide-y sm:hidden">
+              {rows.map((row, index) => (
+                <button
+                  key={row.id || `${row.paid_at}:${index}`}
+                  type="button"
+                  onClick={() => void openIncome(row)}
+                  className="flex min-h-20 w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{row.description || "Other income"}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {new Date(row.paid_at).toLocaleDateString()} · {row.payment_method?.replaceAll("_", " ") || "Method not specified"}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold tabular-nums text-emerald-600">+ {money(row.amount)}</p>
+                </button>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto sm:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -426,6 +433,7 @@ export function OtherIncomeClient() {
                 </TableBody>
               </Table>
             </div>
+            </>
           ) : (
             <div className="flex min-h-64 items-center justify-center text-sm text-muted-foreground">
               No other income was recorded this month.
@@ -542,6 +550,6 @@ export function OtherIncomeClient() {
         loading={detailLoading}
         error={detailError}
       />
-    </div>
+    </AppPage>
   );
 }

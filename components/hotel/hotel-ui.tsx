@@ -28,7 +28,7 @@ export function HotelEmptyState({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-xl border border-dashed p-8 text-center", className)}>
+    <div className={cn("rounded-xl border border-dashed p-5 text-center sm:p-6", className)}>
       <p className="font-semibold">{title}</p>
       <p className="mt-1 text-sm text-muted-foreground">{description}</p>
     </div>

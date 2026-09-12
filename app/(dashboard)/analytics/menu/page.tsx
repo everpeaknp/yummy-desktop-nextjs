@@ -1,15 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Download,
   FileText,
   Loader2,
-  RefreshCw,
   Search,
   ReceiptText,
   Layers3,
@@ -44,6 +41,10 @@ import {
 } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { DateRange } from "react-day-picker";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { ReportFilters } from "@/components/patterns/controls/report-filters";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 
 type MenuDetailItem = {
   id: number;
@@ -599,32 +600,20 @@ export default function AnalyticsMenuPage() {
   if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
+    <AppPage width="wide" className="gap-5 pb-24">
       {fetchError ? (
         <AnalyticsFetchError message={fetchError} onRetry={() => fetchActiveView()} />
       ) : null}
 
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/analytics">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Menu Analytics</h1>
-            <p className="text-muted-foreground">
-              Switch between flat menu totals and station-wise sales drilldown.
-            </p>
-          </div>
-        </div>
-        <Button variant="outline" onClick={() => fetchActiveView()} disabled={loading}>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          Refresh
-        </Button>
-        <div className="flex items-center gap-2 flex-wrap">
+      <PageHeader
+        title="Menu analytics"
+        description="Review menu performance by item or service station."
+      />
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+        <div className="flex flex-wrap items-center gap-2">
           <Select value={exportMode} onValueChange={(value) => setExportMode(value as ExportMode)}>
-            <SelectTrigger className="w-[190px]">
+            <SelectTrigger className="h-10 w-[170px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -645,23 +634,14 @@ export default function AnalyticsMenuPage() {
       </div>
 
       <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)}>
-        <TabsList className="grid w-full max-w-[480px] grid-cols-2">
-          <TabsTrigger value="flat">Flat View</TabsTrigger>
-          <TabsTrigger value="station">Station Breakdown</TabsTrigger>
+        <TabsList className="grid h-11 w-full grid-cols-2 rounded-xl bg-muted/50 p-1 sm:max-w-[400px]">
+          <TabsTrigger className="rounded-lg" value="flat">Items</TabsTrigger>
+          <TabsTrigger className="rounded-lg" value="station">By station</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-          <CardDescription>
-            {viewMode === "flat"
-              ? "Classic item leaderboard for the selected range."
-              : "Operational drilldown grouped by station, category, item, and modifiers."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-4">
-          <div className="space-y-2 md:col-span-2">
+      <ReportFilters title="Menu filters" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="space-y-1.5">
             <Label>Date range</Label>
             <DateRangeDropdown
               activeRange={activeRange}
@@ -676,12 +656,12 @@ export default function AnalyticsMenuPage() {
               }}
             />
           </div>
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-1.5">
             <Label>Search</Label>
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
               <Input
-                className="pl-8"
+                className="h-11 pl-9"
                 placeholder={viewMode === "flat" ? "Item name..." : "Search item for breakdown..."}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -692,10 +672,10 @@ export default function AnalyticsMenuPage() {
 
           {viewMode === "flat" ? (
             <>
-              <div className="space-y-2 md:col-span-1">
+              <div className="space-y-1.5">
                 <Label>Sort</Label>
                 <Select value={sortBy} onValueChange={(v) => { setPage(1); setSortBy(v as any); }}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -707,10 +687,10 @@ export default function AnalyticsMenuPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2 md:col-span-1">
+              <div className="space-y-1.5">
                 <Label>Direction</Label>
                 <Select value={sortDir} onValueChange={(v) => { setPage(1); setSortDir(v as any); }}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -719,10 +699,10 @@ export default function AnalyticsMenuPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2 md:col-span-1">
+              <div className="space-y-1.5">
                 <Label>Page Size</Label>
                 <Select value={String(pageSize)} onValueChange={(v) => { setPage(1); setPageSize(Number(v)); }}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -735,7 +715,7 @@ export default function AnalyticsMenuPage() {
               </div>
             </>
           ) : (
-            <div className="space-y-2 md:col-span-2">
+            <div className="space-y-1.5">
               <Label>Station</Label>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -769,19 +749,16 @@ export default function AnalyticsMenuPage() {
             </div>
           )}
 
-          <div className="md:col-span-1 flex items-end">
-            <Button className="w-full bg-amber-600 hover:bg-amber-700 text-white" onClick={applySearch} disabled={loading}>
+          <div className="flex items-end">
+            <Button className="h-11 w-full" onClick={applySearch} disabled={loading}>
               Apply
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </ReportFilters>
 
-      <Card className="border-border">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Category</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <Card className="rounded-xl border-border shadow-sm">
+        <CardContent className="p-3 sm:p-4">
+          <p className="mb-2 text-sm font-medium">Category</p>
           <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
             <button
               type="button"
@@ -856,7 +833,31 @@ export default function AnalyticsMenuPage() {
             ) : null}
           </div>
 
-          <Card className="border-border shadow-sm overflow-hidden">
+          <Card className="overflow-hidden rounded-xl border-border shadow-sm">
+            <div className="md:hidden">
+              <DataList>
+                {loading && !data ? (
+                  <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading menu analytics...
+                  </div>
+                ) : (data?.items?.length || 0) === 0 ? (
+                  <div className="flex h-40 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                    No menu activity was found for this range.
+                  </div>
+                ) : (
+                  (data?.items || []).map((it) => (
+                    <ListRow
+                      key={it.id}
+                      title={it.name}
+                      description={`${Number(it.quantity_sold || 0).toLocaleString()} sold · avg Rs. ${money.format(Number(it.avg_sale_price || 0))}`}
+                      meta={it.category || undefined}
+                      value={<span className="font-semibold tabular-nums">Rs. {money.format(Number(it.revenue || 0))}</span>}
+                    />
+                  ))
+                )}
+              </DataList>
+            </div>
+            <div className="hidden md:block">
             <Table>
               <TableHeader className="bg-muted/30">
                 <TableRow>
@@ -896,6 +897,7 @@ export default function AnalyticsMenuPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </Card>
         </>
       ) : (
@@ -1174,6 +1176,6 @@ export default function AnalyticsMenuPage() {
           </div>
         </SheetContent>
       </Sheet>
-    </div>
+    </AppPage>
   );
 }

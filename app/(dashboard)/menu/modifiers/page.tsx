@@ -129,9 +129,67 @@ export default function ModifiersPage() {
       setDeleteDialogOpen(true);
   };
 
+  const filteredGroups = groups.filter((group) =>
+    !searchQuery.trim() || group.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 md:gap-6">
+      <div className="flex min-w-0 items-center gap-2 md:hidden">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search option groups"
+            className="h-11 rounded-xl pl-10"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+        </div>
+        <Button onClick={openCreateDialog} size="icon" className="h-11 w-11 shrink-0 rounded-xl" aria-label="Add option group">
+          <Plus className="h-5 w-5" />
+        </Button>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-border/70 bg-card md:hidden">
+        {loading ? (
+          <div className="space-y-3 p-4">
+            {[1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full rounded-xl" />)}
+          </div>
+        ) : filteredGroups.length === 0 ? (
+          <div className="px-4 py-12 text-center">
+            <AlertCircle className="mx-auto mb-3 h-5 w-5 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">{searchQuery ? "No matching option groups" : "No option groups yet"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{searchQuery ? "Try a different search." : "Add choices such as sizes or toppings."}</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border/70">
+            {filteredGroups.map((group) => {
+              const selection = group.min_selections === 1 && group.max_selections === 1 ? "Single choice" : "Multiple choices";
+              return (
+                <div key={group.id} className="flex min-w-0 items-center gap-2 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">{group.name}</p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {selection} {group.is_required ? "· Required" : "· Optional"}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 rounded-lg" onClick={() => openOptionsSheet(group)} aria-label={`Manage ${group.name} options`}>
+                    <Settings2 className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-lg" onClick={() => openEditDialog(group)} aria-label={`Edit ${group.name}`}>
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-lg text-destructive hover:text-destructive" onClick={() => openDeleteDialog(group)} aria-label={`Delete ${group.name}`}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="hidden md:flex md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Options & add-ons</h1>
           <p className="text-muted-foreground">Create choices such as size, toppings, and variations for menu items.</p>
@@ -141,7 +199,7 @@ export default function ModifiersPage() {
         </Button>
       </div>
 
-      <Card>
+      <Card className="hidden md:block">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>All option groups</CardTitle>
@@ -181,10 +239,7 @@ export default function ModifiersPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                groups.filter((g) => {
-                  if (!searchQuery.trim()) return true;
-                  return g.name.toLowerCase().includes(searchQuery.toLowerCase());
-                }).map((group) => (
+                filteredGroups.map((group) => (
                   <TableRow key={group.id}>
                     <TableCell className="font-medium">{group.name}</TableCell>
                     <TableCell className="capitalize">

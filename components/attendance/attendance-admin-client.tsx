@@ -55,6 +55,8 @@ import { FieldInfo } from "@/components/ui/field-info";
 import LocationPicker from "@/components/manage/profile/location-picker";
 import { forwardGeocode, reverseGeocode } from "@/lib/geocode";
 import { attendanceRadiusLabel } from "./attendance-policy";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 
 type StaffProfile = { id: number; user_id: number; account_number?: string };
 type StaffUser = {
@@ -803,8 +805,19 @@ export function AttendanceAdminClient() {
   const showDateFilters = activeTab === "overview" || activeTab === "timesheets";
 
   return (
-    <div className="mx-auto w-full max-w-[1560px] space-y-5 overflow-x-hidden p-4 pb-24 md:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <AppPage width="wide" className="pb-24">
+      <PageHeader
+        className="hidden md:flex"
+        title="Attendance"
+        description="Staff presence, payable time, schedules, kiosk, and attendance devices."
+        actions={
+          showDateFilters ? <>
+            <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 w-[160px]" />
+            <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 w-[160px]" />
+          </> : null
+        }
+      />
+      <div className="hidden flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-foreground">Attendance</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
@@ -816,15 +829,32 @@ export function AttendanceAdminClient() {
             <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 sm:w-[160px]" />
             <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 sm:w-[160px]" />
           </> : null}
-          <Button variant="outline" onClick={loadAll} disabled={loading || busy}>
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Refresh
-          </Button>
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-2 md:hidden">
+        {showDateFilters ? <>
+          <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-11 rounded-xl text-sm" />
+          <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-11 rounded-xl text-sm" />
+        </> : null}
+      </div>
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto p-1">
+        <div className="md:hidden">
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="h-11 w-full rounded-xl"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="overview">Overview</SelectItem>
+              <SelectItem value="timesheets">Timesheets</SelectItem>
+              <SelectItem value="schedules">Schedule</SelectItem>
+              <SelectItem value="leave">Leave & holidays</SelectItem>
+              <SelectItem value="qr">QR kiosk</SelectItem>
+              <SelectItem value="devices">Devices</SelectItem>
+              <SelectItem value="settings">Settings</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <TabsList className="hidden h-auto w-full justify-start gap-1 overflow-x-auto p-1 md:flex">
           <TabsTrigger value="overview" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Overview</TabsTrigger>
           <TabsTrigger value="timesheets" className="min-w-max gap-2"><Check className="h-4 w-4" />Timesheets</TabsTrigger>
           <TabsTrigger value="schedules" className="min-w-max gap-2"><CalendarDays className="h-4 w-4" />Schedule</TabsTrigger>
@@ -835,12 +865,12 @@ export function AttendanceAdminClient() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
             {metricCards.map(([label, value]) => (
               <Card key={String(label)}>
-                <CardContent className="p-4">
-                  <p className="text-xs font-bold uppercase text-muted-foreground">{label}</p>
-                  <p className="mt-2 text-2xl font-black">{value}</p>
+                <CardContent className="p-3 sm:p-4">
+                  <p className="truncate text-[11px] font-medium text-muted-foreground sm:text-xs sm:font-bold sm:uppercase">{label}</p>
+                  <p className="mt-1 text-lg font-semibold sm:mt-2 sm:text-2xl sm:font-black">{value}</p>
                 </CardContent>
               </Card>
             ))}
@@ -1238,7 +1268,7 @@ export function AttendanceAdminClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }
 

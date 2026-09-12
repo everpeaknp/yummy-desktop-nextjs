@@ -5,14 +5,18 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { CustomerApis, OrderApis } from "@/lib/api/endpoints";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Search, Plus, User, Phone, Mail, Award, Loader2, DollarSign } from "lucide-react";
-import Link from "next/link";
+import { User, Phone, Mail, Award, DollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 import { AddCustomerDialog } from "@/components/customers/add-customer-dialog";
+import { MetricCard } from "@/components/cards/metric-card";
+import { OperationalCard } from "@/components/cards/operational-card";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
@@ -125,45 +129,55 @@ export default function CustomersPage() {
     router.push(`/customers/${customer.id}`);
   };
 
+  const filteredCustomers = customers.filter((customer) => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (customer.name || "").toLowerCase().includes(query)
+      || (customer.phone || "").toLowerCase().includes(query)
+      || (customer.email || "").toLowerCase().includes(query);
+  });
+
+  const creditBalance = customers.reduce((sum, customer) => sum + (customer.credit || 0), 0);
+
   return (
-    <div className="flex flex-col gap-8 max-w-[1600px] mx-auto p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Customers</h1>
-          <p className="text-muted-foreground">Manage your customer base and loyalty.</p>
-        </div>
-        <AddCustomerDialog onCustomerAdded={handleCreateSuccess} />
+    <AppPage width="wide" className="p-4 sm:p-6">
+      <div className="hidden md:block">
+        <PageHeader
+          title="Customers"
+          description="Manage customer details, loyalty, visits, and credit."
+          actions={<AddCustomerDialog onCustomerAdded={handleCreateSuccess} />}
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-              <User className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Total Customers</p>
-              <h3 className="text-2xl font-bold">{customers.length}</h3>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600">
-              <DollarSign className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground text-emerald-800 dark:text-emerald-400">
-                Total Credit Balance
-              </p>
-              <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-500">
-                {isFallbackMode
-                  ? "Unavailable"
-                  : `Rs. ${customers.reduce((acc, c) => acc + (c.credit || 0), 0).toLocaleString()}`}
-              </h3>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex min-w-0 items-center gap-2 md:hidden">
+        <SearchField
+          placeholder="Search customers"
+          className="min-w-0"
+          containerClassName="flex-1"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+        />
+        <AddCustomerDialog onCustomerAdded={handleCreateSuccess} iconOnly triggerClassName="h-11 w-11 shrink-0 rounded-xl" />
+      </div>
+
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 md:hidden">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-muted-foreground">Credit balance</p>
+          <p className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
+            {isFallbackMode ? "Unavailable" : `Rs. ${creditBalance.toLocaleString()}`}
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground">{customers.length} customers</p>
+      </div>
+
+      <div className="hidden grid-cols-2 gap-3 md:grid md:max-w-2xl">
+        <MetricCard label="Customers" value={customers.length} icon={<User className="h-4 w-4" />} tone="brand" />
+        <MetricCard
+          label="Credit balance"
+          value={isFallbackMode ? "Unavailable" : `Rs. ${creditBalance.toLocaleString()}`}
+          icon={<DollarSign className="h-4 w-4" />}
+          tone="success"
+        />
       </div>
       {isFallbackMode && (
         <p className="text-xs text-amber-600">
@@ -171,78 +185,62 @@ export default function CustomersPage() {
         </p>
       )}
 
-      <div className="relative w-full max-w-sm">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-8 bg-muted/50 border-border" placeholder="Search customers..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-      </div>
+      <SearchField containerClassName="hidden max-w-md md:block" placeholder="Search customers" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
 
       {loading ? (
-        <div className="h-64 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
+        <LoadingState label="Loading customers..." />
       ) : customers.length === 0 ? (
-        <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-lg">
-          <User className="w-12 h-12 mb-4 opacity-20" />
-          <p>No customers found.</p>
-        </div>
+        <EmptyState icon={<User className="h-5 w-5" />} title="No customers found" description="Add a customer to start tracking loyalty, visits, and credit." />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {customers.filter((c) => {
-            if (!searchQuery.trim()) return true;
-            const q = searchQuery.toLowerCase();
-            return (c.name || "").toLowerCase().includes(q) || (c.phone || "").toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q);
-          }).map((customer) => (
-            <Card key={customer.id} className="bg-card border-border hover:shadow-md transition-all shadow-sm cursor-pointer" onClick={() => openDetails(customer)}>
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-lg font-bold text-muted-foreground">
-                      {customer.name?.charAt(0) || <User className="w-5 h-5" />}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground truncate">{customer.name || "Guest"}</h3>
-                      <p className="text-xs text-muted-foreground">ID: #{customer.id}</p>
-                    </div>
-                  </div>
-                  {customer.loyalty_points > 0 && (
-                    <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-900/50 dark:bg-orange-950/20 dark:text-orange-500">
-                      <Award className="w-3 h-3 mr-1" /> {customer.loyalty_points}
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>{customer.phone || "No phone"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-3.5 h-3.5" />
-                    <span className="truncate">{customer.email || "No email"}</span>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-border flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground font-medium">
-                    {typeof customer.credit === "number" && customer.credit > 0 ? (
-                      <span className="text-red-600 flex items-center gap-1">
-                        <DollarSign className="w-3 h-3" />
-                        Credit: Rs. {customer.credit.toLocaleString()}
-                      </span>
-                    ) : (
-                      <span>Visits: {customer.visits || 0}</span>
-                    )}
+        <>
+        <DataList className="md:hidden">
+          {filteredCustomers.map((customer) => (
+            <ListRow
+              key={customer.id}
+              interactive
+              onClick={() => openDetails(customer)}
+              leading={<span className="font-semibold">{customer.name?.charAt(0) || <User className="h-4 w-4" />}</span>}
+              title={customer.name || "Guest"}
+              description={customer.phone || customer.email || "No contact details"}
+              meta={typeof customer.credit === "number" && customer.credit > 0 ? `Rs. ${customer.credit.toLocaleString()}` : `${customer.visits || 0} visits`}
+              trailing={customer.loyalty_points > 0 ? <Badge variant="outline" className="border-orange-200 bg-orange-50 text-[10px] text-orange-600 dark:border-orange-900/50 dark:bg-orange-950/20 dark:text-orange-500">{customer.loyalty_points}</Badge> : undefined}
+            />
+          ))}
+        </DataList>
+        <div className="hidden grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:grid">
+          {filteredCustomers.map((customer) => (
+            <OperationalCard
+              key={customer.id}
+              title={customer.name || "Guest"}
+              status={customer.loyalty_points > 0 ? <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-900/50 dark:bg-orange-950/20 dark:text-orange-500"><Award className="mr-1 h-3 w-3" />{customer.loyalty_points}</Badge> : null}
+              meta={`Customer #${customer.id}`}
+              className="cursor-pointer"
+              onClick={() => openDetails(customer)}
+              footer={
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-medium">
+                    {typeof customer.credit === "number" && customer.credit > 0 ? <span className="text-destructive">Credit: Rs. {customer.credit.toLocaleString()}</span> : `Visits: ${customer.visits || 0}`}
                   </span>
-                  <Button variant="ghost" size="sm" className="h-auto p-0 text-primary hover:text-primary/80" onClick={(e) => { e.stopPropagation(); openDetails(customer); }}>
-                    View Details
-                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-primary" onClick={(event) => { event.stopPropagation(); openDetails(customer); }}>Details</Button>
                 </div>
-              </CardContent>
-            </Card>
+              }
+            >
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-base font-bold text-muted-foreground">
+                    {customer.name?.charAt(0) || <User className="h-5 w-5" />}
+                  </div>
+                  <div className="min-w-0 text-xs text-muted-foreground">Customer profile</div>
+                </div>
+                <div className="space-y-1.5 text-xs text-muted-foreground">
+                  <div className="flex min-w-0 items-center gap-2"><Phone className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{customer.phone || "No phone"}</span></div>
+                  <div className="flex min-w-0 items-center gap-2"><Mail className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{customer.email || "No email"}</span></div>
+                </div>
+            </OperationalCard>
           ))}
         </div>
+        </>
       )}
 
-    </div>
+    </AppPage>
   );
 }

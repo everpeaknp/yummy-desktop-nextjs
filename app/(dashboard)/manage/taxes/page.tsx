@@ -9,7 +9,6 @@ import {
     MoreVertical, 
     Edit, 
     Trash2, 
-    ChevronLeft,
     RefreshCw,
     Percent,
     FileText,
@@ -40,8 +39,10 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { TaxConfigApis, RestaurantApis } from "@/lib/api/endpoints";
 import { TaxDialog } from "@/components/manage/taxes/tax-dialog";
-import { useRouter } from "next/navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 
 export default function TaxesPage() {
     const user = useAuth(state => state.user);
@@ -52,7 +53,6 @@ export default function TaxesPage() {
         isActiveVat,
         loading: fiscalProfileLoading,
     } = useFiscalProfile(Boolean(user?.restaurant_id));
-    const router = useRouter();
     const [taxes, setTaxes] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -104,26 +104,11 @@ export default function TaxesPage() {
     };
 
     return (
-        <div className="p-6 space-y-6 max-w-[1000px] mx-auto">
-            {/* Header */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-1">
-                    <button 
-                        onClick={() => router.push('/manage')}
-                        className="flex items-center text-sm text-muted-foreground hover:text-primary transition-colors mb-2"
-                    >
-                        <ChevronLeft className="w-4 h-4 mr-1" />
-                        Back to Manage
-                    </button>
-                    <h1 className="text-3xl font-bold tracking-tight">Taxes & Fees</h1>
-                    <p className="text-muted-foreground text-sm">
-                        Define VAT, Service Charges, and other local fees.
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" onClick={fetchTaxes} disabled={loading}>
-                        <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                    </Button>
+        <AppPage className="pb-24" width="standard">
+            <PageHeader
+                title="Taxes & fees"
+                description="Set the tax calculation used for new orders."
+                actions={
                     <Button 
                         onClick={() => { setSelectedTax(null); setIsDialogOpen(true); }}
                         disabled={fiscalProfileLoading || isActiveVat || taxes.length > 0}
@@ -131,8 +116,8 @@ export default function TaxesPage() {
                         <Plus className="w-4 h-4 mr-2" />
                         {taxes.length > 0 ? "Tax Configured" : "Add Tax"}
                     </Button>
-                </div>
-            </div>
+                }
+            />
 
             {isActiveVat && (
                 <Alert className="bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900">
@@ -159,8 +144,8 @@ export default function TaxesPage() {
                 </Alert>
             )}
 
-            <Card className={cn("overflow-hidden", !isActiveVat && !restaurant?.tax_enabled && "opacity-60 grayscale-[0.5]")}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <Card className={cn("overflow-hidden rounded-xl", !isActiveVat && !restaurant?.tax_enabled && "opacity-60 grayscale-[0.5]")}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4">
                     <div>
                         <CardTitle>Global Enablement</CardTitle>
                         <CardDescription>
@@ -183,13 +168,32 @@ export default function TaxesPage() {
                 </AlertDescription>
             </Alert>
 
-            <Card>
-                <CardHeader>
+            <Card className="overflow-hidden rounded-xl">
+                <CardHeader className="p-4">
                     <CardTitle>Active Fees</CardTitle>
                     <CardDescription>
                         These fees will be automatically applied to new POS orders.
                     </CardDescription>
                 </CardHeader>
+                <div className="md:hidden">
+                    <DataList>
+                        {loading ? (
+                            <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm text-muted-foreground"><RefreshCw className="h-4 w-4 animate-spin" />Loading tax settings...</div>
+                        ) : taxes.length === 0 ? (
+                            <div className="px-4 py-10 text-center text-sm text-muted-foreground">No taxes configured.</div>
+                        ) : taxes.map((tax) => (
+                            <ListRow
+                                key={tax.id}
+                                icon={<FileText className="h-4 w-4 text-blue-600" />}
+                                title={tax.name}
+                                description={`Standard tax · ${tax.rate}%`}
+                                value={<Badge variant={tax.is_active ? "default" : "secondary"}>{tax.is_active ? "Active" : "Inactive"}</Badge>}
+                                action={<DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-9 w-9"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem disabled={isActiveVat} onClick={() => { setSelectedTax(tax); setIsDialogOpen(true); }}><Edit className="mr-2 h-4 w-4" />Edit</DropdownMenuItem><DropdownMenuItem disabled={isActiveVat} onClick={() => handleDelete(tax.id)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" />Remove</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+                            />
+                        ))}
+                    </DataList>
+                </div>
+                <div className="hidden md:block">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -269,6 +273,7 @@ export default function TaxesPage() {
                         )}
                     </TableBody>
                 </Table>
+                </div>
             </Card>
 
             {user?.restaurant_id && !isActiveVat && (
@@ -280,6 +285,6 @@ export default function TaxesPage() {
                     onSuccess={fetchTaxes}
                 />
             )}
-        </div>
+        </AppPage>
     );
 }

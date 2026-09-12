@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Plus, RefreshCw, RotateCcw } from "lucide-react";
+import { Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { FinanceSalesReturnDialog } from "@/components/finance/sales/finance-sales-return-dialog";
@@ -12,6 +12,10 @@ import {
 } from "@/components/finance/transaction-detail/sales-return-detail";
 import { TransactionDetailSheet } from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
+import { MetricCard } from "@/components/cards/metric-card";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
@@ -64,27 +68,13 @@ export function FinanceSalesReturnsWorkspace() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] space-y-6 p-4 md:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
-            Sales &amp; receivables
-          </p>
-          <h1 className="text-2xl font-semibold">Sales returns</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Credit notes linked to completed sales or verified external sales.
-            Returns preserve the original sale and create an auditable reversal.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className="mr-2 h-4 w-4" />Refresh
-          </Button>
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />New sales return
-          </Button>
-        </div>
-      </div>
+    <AppPage width="wide" density="compact">
+      <PageHeader
+        title="Sales returns"
+        description="Record a return against a completed sale."
+        meta="Sales & receivables"
+        actions={<Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />New sales return</Button>}
+      />
 
       <FinanceWorkspaceNav
         links={[
@@ -94,15 +84,16 @@ export function FinanceSalesReturnsWorkspace() {
         action={{ label: "View refund report", href: "/finance/reports/refunds" }}
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="Credit notes" value={documents.length.toString()} />
-        <SummaryCard
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+        <MetricCard label="Credit notes" value={documents.length.toString()} />
+        <MetricCard
           label="Returned value"
           value={formatMoney(documents.reduce((sum, item) => sum + Number(item.grand_total || 0), 0))}
         />
-        <SummaryCard
+        <MetricCard
+          className="col-span-2 sm:col-span-1"
           label="Customer credit"
-          tone="amber"
+          tone="warning"
           value={formatMoney(documents.filter((item) => item.settlement_status === "customer_credit").reduce((sum, item) => sum + Number(item.grand_total || 0), 0))}
         />
       </div>
@@ -119,22 +110,28 @@ export function FinanceSalesReturnsWorkspace() {
         </div>
         {documents.length ? (
           <>
-          <div className="divide-y divide-border md:hidden">
+          <DataList className="rounded-none border-x-0 border-y-0 md:hidden">
             {documents.map((document) => (
-              <button
+              <ListRow
                 key={document.id}
-                type="button"
+                leading={<RotateCcw className="h-4 w-4" />}
+                title={document.document_number}
+                description={`${document.business_date} · ${originalSaleLabel(document, salesById.get(document.original_document_id || 0))}`}
+                meta={<span className="font-semibold tabular-nums">{formatMoney(document.grand_total)}</span>}
+                trailing={<span className="max-w-24 truncate rounded-full bg-muted px-2 py-1 text-xs capitalize">{document.settlement_status.replaceAll("_", " ")}</span>}
+                interactive
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedDocument(document)}
-                className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0"><p className="truncate font-medium">{document.document_number}</p><p className="mt-1 truncate text-xs text-muted-foreground">{document.business_date} · {originalSaleLabel(document, salesById.get(document.original_document_id || 0))}</p></div>
-                  <p className="shrink-0 text-sm font-semibold tabular-nums">{formatMoney(document.grand_total)}</p>
-                </div>
-                <div className="mt-2 flex items-center justify-between gap-2"><span className="truncate text-xs text-muted-foreground">{document.reason || "No reason recorded"}</span><span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs capitalize">{document.settlement_status.replaceAll("_", " ")}</span></div>
-              </button>
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedDocument(document);
+                  }
+                }}
+              />
             ))}
-          </div>
+          </DataList>
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[850px] text-sm">
               <thead className="bg-muted/40 text-left text-muted-foreground">
@@ -180,10 +177,6 @@ export function FinanceSalesReturnsWorkspace() {
         onOpenChange={(open) => !open && setSelectedDocument(null)}
         detail={selectedDocument ? salesReturnDetail(selectedDocument, salesById.get(selectedDocument.original_document_id || 0)) : null}
       />
-    </div>
+    </AppPage>
   );
-}
-
-function SummaryCard({ label, value, tone }: { label: string; value: string; tone?: "amber" }) {
-  return <div className="rounded-lg border p-4"><p className="text-xs font-medium uppercase text-muted-foreground">{label}</p><p className={`mt-2 text-2xl font-semibold ${tone === "amber" ? "text-amber-600" : ""}`}>{value}</p></div>;
 }

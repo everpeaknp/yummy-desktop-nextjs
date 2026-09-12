@@ -8,11 +8,17 @@ import { DrawerSessionApis, InventoryApis, SupplierApis } from "@/lib/api/endpoi
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Plus, Package, AlertTriangle, ArrowUpDown, Loader2, Filter, History, Utensils } from "lucide-react";
+import { Plus, Package, AlertTriangle, ArrowUpDown, Loader2, Filter, History, Utensils } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
+import { MetricCard } from "@/components/cards/metric-card";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { PageTabs } from "@/components/patterns/navigation/page-tabs";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
 
 import {
   Dialog,
@@ -601,29 +607,45 @@ export default function InventoryPage() {
   const valuationByItemId = new Map<number, any>(
     (valuation?.items || []).map((row: any) => [Number(row.inventory_item_id), row]),
   );
+  const visibleItems = items.filter((item) => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (item.name || "").toLowerCase().includes(query) || (item.category || "").toLowerCase().includes(query);
+  });
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
-          <p className="text-muted-foreground">Track stock levels and manage supplies.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {inventoryView === "items" && canConsumeInventory ? (
-            <Button variant="outline" onClick={() => setConsumeOpen(true)}>
+    <AppPage width="wide">
+      <div className="hidden md:block">
+        <PageHeader
+          title="Inventory"
+          description="Track stock levels, book value, and stock activity."
+          actions={
+            <>
+              {inventoryView === "items" && canConsumeInventory ? (
+                <Button variant="outline" className="h-11 rounded-xl" onClick={() => setConsumeOpen(true)}>
+                  <Utensils className="mr-2 h-4 w-4" /> Consume
+                </Button>
+              ) : null}
+              {inventoryView === "items" ? <Button className="h-11 rounded-xl" onClick={openAdd}>
+                <Plus className="mr-2 h-4 w-4" /> Add Item
+              </Button> : null}
+            </>
+          }
+        />
+      </div>
+
+      {inventoryView === "items" ? (
+        <div className="flex gap-2 md:hidden">
+          {canConsumeInventory ? (
+            <Button variant="outline" className="h-11 flex-1 rounded-xl" onClick={() => setConsumeOpen(true)}>
               <Utensils className="mr-2 h-4 w-4" /> Consume
             </Button>
           ) : null}
-          {inventoryView === "items" ? <Button
-            className="bg-orange-600 hover:bg-orange-700 text-white"
-            onClick={openAdd}
-          >
-            <Plus className="w-4 h-4 mr-2" /> Add Item
-          </Button> : null}
+          <Button className="h-11 flex-1 rounded-xl" onClick={openAdd}>
+            <Plus className="mr-2 h-4 w-4" /> Add item
+          </Button>
         </div>
-
-      </div>
+      ) : null}
 
       {user?.restaurant_id ? (
         <InventoryConsumptionDialog
@@ -636,70 +658,119 @@ export default function InventoryPage() {
         />
       ) : null}
 
-      <Tabs value={inventoryView} onValueChange={(value) => changeInventoryView(value as "items" | "activity")}>
-        <TabsList className="border border-border bg-muted">
-          <TabsTrigger value="items">Stock items</TabsTrigger>
-          <TabsTrigger value="activity"><History className="mr-2 h-4 w-4" /> Activity</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <PageTabs
+        value={inventoryView}
+        onValueChange={(value) => changeInventoryView(value as "items" | "activity")}
+        mobileMode="equal"
+        ariaLabel="Inventory sections"
+        items={[
+          { value: "items", label: "Stock items", icon: Package },
+          { value: "activity", label: "Activity", icon: History },
+        ]}
+      />
 
       {inventoryView === "items" ? (
         <>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="rounded-lg">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">Book inventory value</p>
-            <p className="mt-1 text-xl font-semibold">
-              Rs. {Number(valuation?.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">Reconciles to the inventory asset in finance reports.</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-lg">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">Book-valued stock items</p>
-            <p className="mt-1 text-xl font-semibold">{Number(valuation?.valued_items || 0)}</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-lg">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">Missing book valuation</p>
-            <p className={cn("mt-1 text-xl font-semibold", Number(valuation?.unvalued_items || 0) > 0 && "text-amber-600") }>
-              {Number(valuation?.unvalued_items || 0)}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 md:hidden">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-muted-foreground">Inventory value</p>
+          <p className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
+            Rs. {Number(valuation?.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1 text-right">
+          <span className="text-xs text-muted-foreground">{items.length} items</span>
+          {Number(valuation?.unvalued_items || 0) > 0 ? (
+            <Badge variant="outline" className="border-amber-500/40 text-[10px] text-amber-700 dark:text-amber-400">
+              {Number(valuation?.unvalued_items || 0)} need value
+            </Badge>
+          ) : null}
+        </div>
       </div>
 
-      <div className="flex flex-col md:flex-row items-center gap-4 justify-between">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-[400px]">
-          <TabsList className="bg-muted border border-border">
-            <TabsTrigger value="all">All Items</TabsTrigger>
-            <TabsTrigger value="low_stock" className="data-[state=active]:bg-red-100 data-[state=active]:text-red-700 dark:data-[state=active]:bg-red-950 dark:data-[state=active]:text-red-500">
-              <AlertTriangle className="w-4 h-4 mr-2" />
-              Low Stock
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <div className="hidden grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid">
+        <MetricCard
+          className="col-span-2 sm:col-span-1"
+          label="Book inventory value"
+          value={`Rs. ${Number(valuation?.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+          detail="Reconciles to the inventory asset."
+        />
+        <MetricCard label="Book-valued items" value={Number(valuation?.valued_items || 0)} />
+        <MetricCard
+          label="Missing valuation"
+          value={Number(valuation?.unvalued_items || 0)}
+          tone={Number(valuation?.unvalued_items || 0) > 0 ? "warning" : "neutral"}
+        />
+      </div>
 
-        <div className="relative w-full md:w-64">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-8 bg-muted/50 border-border" placeholder="Search items..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-        </div>
+      <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(18rem,25rem)_minmax(16rem,1fr)]">
+        <SearchField
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          onClear={() => setSearchQuery("")}
+          placeholder="Search inventory items"
+          className="md:col-start-2"
+        />
+        <PageTabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          mobileMode="equal"
+          ariaLabel="Stock filters"
+          items={[
+            { value: "all", label: "All items" },
+            { value: "low_stock", label: "Low stock", icon: AlertTriangle },
+          ]}
+        />
       </div>
 
       {loading ? (
-        <div className="h-64 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
+        <LoadingState label="Loading inventory" />
       ) : items.length === 0 ? (
-        <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-lg">
-          <Package className="w-12 h-12 mb-4 opacity-20" />
-          <p>No inventory items found.</p>
-        </div>
+        <EmptyState
+          icon={<Package className="h-5 w-5" />}
+          title="No inventory items found"
+          description="Add the first stock item to start tracking quantity and value."
+          actionLabel="Add item"
+          onAction={openAdd}
+        />
+      ) : visibleItems.length === 0 ? (
+        <EmptyState
+          icon={<Package className="h-5 w-5" />}
+          title="No matching inventory items"
+          description={`No stock items match “${searchQuery}”.`}
+          actionLabel="Clear search"
+          onAction={() => setSearchQuery("")}
+        />
       ) : (
-        <div className="bg-card border border-border rounded-lg overflow-x-auto shadow-sm">
+        <>
+        <DataList className="md:hidden">
+          {visibleItems.map((item) => (
+            <ListRow
+              key={item.id}
+              role="button"
+              tabIndex={0}
+              leading={<Package className="h-4 w-4" />}
+              title={item.name}
+              description={`${item.station || "General"} · ${item.unit}${item.storage_location ? ` · ${item.storage_location}` : ""}`}
+              meta={`${item.current_stock} ${item.unit}`}
+              trailing={item.is_low_stock ? <Badge variant="outline" className="border-red-500/40 text-[10px] text-red-600">Low</Badge> : undefined}
+              interactive
+              onClick={() => {
+                setDetailsItem(item);
+                setDetailsOpen(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setDetailsItem(item);
+                  setDetailsOpen(true);
+                }
+              }}
+            />
+          ))}
+        </DataList>
+        <div className="hidden max-w-full overflow-x-auto rounded-2xl border border-border bg-card shadow-sm md:block">
           <table className="w-full text-sm text-left">
             <thead className="bg-muted text-muted-foreground font-medium border-b border-border">
               <tr>
@@ -714,11 +785,7 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {items.filter((item) => {
-                if (!searchQuery.trim()) return true;
-                const q = searchQuery.toLowerCase();
-                return (item.name || "").toLowerCase().includes(q) || (item.category || "").toLowerCase().includes(q);
-              }).map((item) => (
+              {visibleItems.map((item) => (
                 <tr
                   key={item.id}
                   className="hover:bg-muted/50 transition-colors cursor-pointer"
@@ -813,6 +880,7 @@ export default function InventoryPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
         </>
@@ -1434,7 +1502,7 @@ export default function InventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
 
   );
 }

@@ -40,6 +40,11 @@ import { cn } from "@/lib/utils";
 import { ImageService } from "@/services/image-service";
 import { MenuGalleryDialog, MenuGalleryItem } from "@/components/menu/menu-gallery-dialog";
 import { InventoryLinkDialog } from "@/components/menu/inventory-link-dialog";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { FilterChip } from "@/components/patterns/controls/filter-chip";
+import { EmptyState } from "@/components/patterns/feedback/feedback-state";
 import Image from "next/image";
 import type { FiscalTaxCategory } from "@/lib/fiscal/types";
 
@@ -355,7 +360,7 @@ export default function MenuItemsPage() {
   const currency = restaurant?.currency || "Rs.";
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto">
+    <AppPage width="wide">
       {/* Feedback toast */}
       {message && (
         <div className={cn(
@@ -367,33 +372,39 @@ export default function MenuItemsPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Menu</h1>
-          <p className="text-muted-foreground text-sm">
-            Manage your dishes and categories
-            {!loading && <span className="ml-1 text-foreground font-medium">({allItems.length} items)</span>}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by name or category..."
-              className="pl-9 pr-9"
+      <div className="hidden md:block">
+      <PageHeader
+        title="Menu"
+        description={`Manage dishes and categories${loading ? "" : ` · ${allItems.length} items`}`}
+        actions={
+          <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
+            <SearchField
+              placeholder="Search by name or category"
+              className="min-w-0 flex-1 md:w-72"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onClear={handleClearSearch}
             />
-            {searchQuery && (
-              <button onClick={handleClearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-          <Button onClick={openAddDialog} className="bg-primary text-white hover:bg-primary/90 shrink-0">
+          <Button onClick={openAddDialog} className="h-11 shrink-0 rounded-xl">
             <Plus className="mr-2 h-4 w-4" /> Add Item
           </Button>
-        </div>
+          </div>
+        }
+      />
+      </div>
+
+      <div className="flex min-w-0 items-center gap-2 md:hidden">
+        <SearchField
+          placeholder="Search menu"
+          className="min-w-0"
+          containerClassName="flex-1"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onClear={handleClearSearch}
+        />
+        <Button onClick={openAddDialog} size="icon" className="h-11 w-11 shrink-0 rounded-xl" aria-label="Add menu item">
+          <Plus className="h-5 w-5" />
+        </Button>
       </div>
 
       {/* Category Filter Tabs */}
@@ -405,32 +416,24 @@ export default function MenuItemsPage() {
         </div>
       ) : categories.length > 0 ? (
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-          <button
+          <FilterChip
             onClick={() => setSelectedCategory(null)}
-            className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all border",
-              selectedCategory === null
-                ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/20"
-            )}
+            active={selectedCategory === null}
+            count={allItems.length}
           >
-            All ({allItems.length})
-          </button>
+            All
+          </FilterChip>
           {categories.map((cat) => {
             const count = allItems.filter((i) => i.item_category_id === cat.id).length;
             return (
-              <button
+              <FilterChip
                 key={cat.id}
                 onClick={() => setSelectedCategory(selectedCategory === cat.id ? null : cat.id)}
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all border",
-                  selectedCategory === cat.id
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                    : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/20"
-                )}
+                active={selectedCategory === cat.id}
+                count={count}
               >
-                {cat.name} ({count})
-              </button>
+                {cat.name}
+              </FilterChip>
             );
           })}
         </div>
@@ -451,29 +454,13 @@ export default function MenuItemsPage() {
           ))}
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          {searchQuery || selectedCategory !== null ? (
-            <>
-              <Search className="h-12 w-12 text-muted-foreground/40 mb-4" />
-              <h3 className="text-lg font-semibold mb-1">No results found</h3>
-              <p className="text-muted-foreground text-sm mb-4">
-                {searchQuery ? `No items match "${searchQuery}"` : "No items in this category"}
-              </p>
-              <Button variant="outline" onClick={() => { setSearchQuery(""); setSelectedCategory(null); }}>
-                Clear Filters
-              </Button>
-            </>
-          ) : (
-            <>
-              <UtensilsCrossed className="h-12 w-12 text-muted-foreground/40 mb-4" />
-              <h3 className="text-lg font-semibold mb-1">No menu items yet</h3>
-              <p className="text-muted-foreground text-sm mb-4">Add your first item to get started.</p>
-              <Button onClick={openAddDialog}>
-                <Plus className="mr-2 h-4 w-4" /> Add Item
-              </Button>
-            </>
-          )}
-        </div>
+        <EmptyState
+          icon={searchQuery || selectedCategory !== null ? <Search className="h-5 w-5" /> : <UtensilsCrossed className="h-5 w-5" />}
+          title={searchQuery || selectedCategory !== null ? "No results found" : "No menu items yet"}
+          description={searchQuery ? `No items match “${searchQuery}”` : selectedCategory !== null ? "No items in this category." : "Add your first item to get started."}
+          actionLabel={searchQuery || selectedCategory !== null ? "Clear filters" : "Add item"}
+          onAction={searchQuery || selectedCategory !== null ? () => { setSearchQuery(""); setSelectedCategory(null); } : openAddDialog}
+        />
       ) : (
         <>
           {searchQuery && (
@@ -796,7 +783,7 @@ export default function MenuItemsPage() {
         }}
         menuItem={inventoryLinkItem}
       />
-    </div>
+    </AppPage>
   );
 }
 
@@ -847,7 +834,7 @@ function MenuItemCard({
             {item.category_name}
           </Badge>
         )}
-        <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute right-1.5 top-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="secondary" size="icon" className="h-7 w-7 bg-black/50 hover:bg-black/70 text-white border-0">

@@ -9,6 +9,7 @@ import { Plus, Loader2 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { CustomerApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
+import { cn } from "@/lib/utils";
 import {
   customerPanValidationMessage,
   optionalCustomerText,
@@ -16,9 +17,11 @@ import {
 
 interface AddCustomerDialogProps {
   onCustomerAdded: () => void;
+  triggerClassName?: string;
+  iconOnly?: boolean;
 }
 
-export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
+export function AddCustomerDialog({ onCustomerAdded, triggerClassName, iconOnly = false }: AddCustomerDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,10 +96,11 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
         setOpen(nextOpen);
         if (nextOpen) setError(null);
       }}
-    >
+      >
       <DialogTrigger asChild>
-        <Button className="bg-orange-600 hover:bg-orange-700 text-white">
-          <Plus className="w-4 h-4 mr-2" /> Add Customer
+        <Button className={cn("bg-orange-600 text-white hover:bg-orange-700", triggerClassName)} size={iconOnly ? "icon" : "default"} aria-label={iconOnly ? "Add customer" : undefined}>
+          <Plus className={cn("h-4 w-4", !iconOnly && "mr-2")} />
+          {!iconOnly ? "Add Customer" : null}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[520px]">

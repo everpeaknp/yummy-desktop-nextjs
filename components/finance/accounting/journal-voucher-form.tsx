@@ -240,27 +240,27 @@ export function JournalVoucherForm({
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
-        <div className="border border-border p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Debit</div>
+      <div className="grid grid-cols-3 gap-2.5">
+        <div className="rounded-xl border border-border p-3">
+          <div className="text-xs font-semibold text-muted-foreground">Debit</div>
           <div className="mt-1 text-lg font-bold">{formatMoney(totals.debit)}</div>
         </div>
-        <div className="border border-border p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Credit</div>
+        <div className="rounded-xl border border-border p-3">
+          <div className="text-xs font-semibold text-muted-foreground">Credit</div>
           <div className="mt-1 text-lg font-bold">{formatMoney(totals.credit)}</div>
         </div>
-        <div className="border border-border p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Difference</div>
+        <div className="rounded-xl border border-border p-3">
+          <div className="text-xs font-semibold text-muted-foreground">Difference</div>
           <div className={totals.difference === 0 ? "mt-1 text-lg font-bold text-emerald-600" : "mt-1 text-lg font-bold text-red-600"}>
             {formatMoney(totals.difference)}
           </div>
         </div>
-        <div className="flex items-end justify-end gap-2">
-          <Button variant="outline" onClick={() => setLines((current) => [...current, newLine()])}>
+        <div className="col-span-3 flex gap-2">
+          <Button className="h-11 flex-1" variant="outline" onClick={() => setLines((current) => [...current, newLine()])}>
             <Plus className="mr-2 h-4 w-4" />
             Add line
           </Button>
-          <Button onClick={createVoucher} disabled={saving || postableAccounts.length === 0}>
+          <Button className="h-11 flex-1" onClick={createVoucher} disabled={saving || postableAccounts.length === 0}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Create voucher
           </Button>
@@ -289,7 +289,29 @@ export function JournalVoucherForm({
         )}
       </div>
 
-      <div className="overflow-x-auto border border-border">
+      <div className="space-y-3 md:hidden">
+        {lines.map((line, index) => (
+          <div key={line.row_key} className="space-y-3 rounded-2xl border bg-card p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">Line {index + 1}</p>
+              <Button variant="ghost" size="icon" onClick={() => removeLine(line.row_key)} disabled={lines.length <= 1} aria-label={`Remove line ${index + 1}`}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            <Select value={line.account_id ? String(line.account_id) : undefined} onValueChange={(value) => updateLine(line.row_key, { account_id: Number(value) })}>
+              <SelectTrigger className="h-11"><SelectValue placeholder="Select account" /></SelectTrigger>
+              <SelectContent>{postableAccounts.map((account) => <SelectItem key={account.id} value={String(account.id)}>{account.code} - {account.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">Debit</label><Input className="h-11" type="number" min="0" step="0.01" value={line.debit || ""} onChange={(event) => updateLine(line.row_key, { debit: Number(event.target.value || 0) })} /></div>
+              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">Credit</label><Input className="h-11" type="number" min="0" step="0.01" value={line.credit || ""} onChange={(event) => updateLine(line.row_key, { credit: Number(event.target.value || 0) })} /></div>
+            </div>
+            <Input className="h-11" value={line.memo || ""} onChange={(event) => updateLine(line.row_key, { memo: event.target.value })} placeholder="Line memo (optional)" />
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto border border-border md:block">
         <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>

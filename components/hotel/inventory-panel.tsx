@@ -13,7 +13,6 @@ import {
   Map as MapIcon,
   Pencil,
   Plus,
-  RefreshCw,
   Save,
   Settings2,
   SlidersHorizontal,
@@ -280,7 +279,7 @@ export function InventoryPanel({
   );
   const floorSections = useMemo(() => {
     const scopedFloors =
-      activeBuildingId == null
+      mode === "book" || activeBuildingId == null
         ? floors
         : floors.filter((floor) => floor.building_id === activeBuildingId);
     let rows: Array<{ floor: HotelFloor | null; rooms: HotelRoom[] }> =
@@ -1059,12 +1058,9 @@ export function InventoryPanel({
     return (
       <div className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-black tracking-tight">Rooms</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Add your first building, then create its floors and rooms.
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Add your first building, then create its floors and rooms.
+          </p>
           {canManage ? (
             <Button onClick={() => openBuildingDialog()}>
               <Plus className="mr-2 h-4 w-4" />
@@ -1085,16 +1081,11 @@ export function InventoryPanel({
     return (
       <div className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-black tracking-tight">
-              {mode === "manage" ? "Manage rooms" : "Choose a room"}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {mode === "manage"
-                ? "Edit buildings, floors, and room details from this screen."
-                : "View all floors and select any available room to start a booking."}
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            {mode === "manage"
+              ? "Edit buildings, floors, and room details from this screen."
+              : "View all floors and select any available room to start a booking."}
+          </p>
           <div className="flex flex-wrap gap-2">
             {canManage ? (
               <Button
@@ -1122,25 +1113,19 @@ export function InventoryPanel({
                 </Button>
               </>
             ) : null}
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Refresh rooms"
-              onClick={() => void load()}
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
           </div>
         </div>
         {bookingFiltersNode}
         <HotelPropertyMap
           buildings={buildings}
           floors={floors}
-          rooms={rooms}
+          rooms={mode === "book" ? availableRooms : rooms}
           selectedBuildingId={buildingFilterId}
           onSelectedBuildingChange={(buildingId) => {
             setBuildingFilterId(buildingId);
-            if (buildingId !== "all") setActiveBuildingId(buildingId);
+            setActiveBuildingId(buildingId === "all" ? null : buildingId);
+            setActiveFloorId(null);
+            setSelectedFloor("all");
           }}
           manage={mode === "manage"}
           onSelectRoom={handleRoomSelection}
@@ -1168,6 +1153,7 @@ export function InventoryPanel({
           }}
           availableRoomIds={mode === "book" ? availableRoomIds : undefined}
           priceByRoomType={mode === "book" ? priceByRoomType : undefined}
+          showAllRooms={mode === "book"}
         />
         {buildingDialogNode}
         {bookingDialogNode}
@@ -1436,12 +1422,10 @@ export function InventoryPanel({
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-black tracking-tight">
-            Edit {activeFloor?.name ?? "floor"}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {activeBuilding?.name ?? "Building"} · Arrange rooms on the grid and
-            save the arrangement when finished.
+          <p className="text-sm text-muted-foreground">
+            {mode === "manage"
+              ? `${activeBuilding?.name ?? "Building"} · Arrange rooms and save when finished.`
+              : "Select an available room to begin a booking."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1468,15 +1452,6 @@ export function InventoryPanel({
               {activeBuilding.name}
             </Button>
           ) : null}
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Refresh rooms"
-            onClick={() => void load()}
-            disabled={loading}
-          >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-          </Button>
         </div>
       </div>
 
@@ -1519,7 +1494,7 @@ export function InventoryPanel({
                 </label>
               </div>
 
-              <div className="grid min-w-[300px] flex-1 grid-cols-2 gap-2 sm:grid-cols-[minmax(190px,1fr)_minmax(150px,0.75fr)]">
+              <div className="grid w-full min-w-0 flex-1 grid-cols-2 gap-2 sm:w-auto sm:grid-cols-[minmax(190px,1fr)_minmax(150px,0.75fr)]">
                 <Select value={selectedType} onValueChange={setSelectedType}>
                   <SelectTrigger className="h-[45px] rounded-xl">
                     <SelectValue placeholder="All room types" />
@@ -1832,25 +1807,22 @@ export function InventoryPanel({
           <Loader2 className="h-7 w-7 animate-spin" />
         </div>
       ) : mode === "book" ? (
-        floorSections.length ? (
-          <div className="space-y-4">
-            {floorSections.map((section) => (
-              <HotelFloorBoard
-                key={floorKey(section.floor?.id ?? null)}
-                floor={section.floor}
-                rooms={section.rooms}
-                selectedRoomId={null}
-                onSelectRoom={startBooking}
-                priceByRoomType={priceByRoomType}
-              />
-            ))}
-          </div>
-        ) : (
-          <HotelEmptyState
-            title="No rooms available"
-            description="Try another room type, price range, or stay dates."
-          />
-        )
+        <HotelPropertyMap
+          buildings={buildings}
+          floors={floors}
+          rooms={availableRooms}
+          selectedBuildingId={buildingFilterId}
+          onSelectedBuildingChange={(buildingId) => {
+            setBuildingFilterId(buildingId);
+            setActiveBuildingId(buildingId === "all" ? null : buildingId);
+            setActiveFloorId(null);
+            setSelectedFloor("all");
+          }}
+          onSelectRoom={handleRoomSelection}
+          availableRoomIds={availableRoomIds}
+          priceByRoomType={priceByRoomType}
+          showAllRooms
+        />
       ) : rooms.length ? (
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">

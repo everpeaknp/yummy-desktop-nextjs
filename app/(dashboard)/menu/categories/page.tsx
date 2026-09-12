@@ -134,9 +134,65 @@ export default function CategoriesPage() {
     setDeleteDialogOpen(true);
   };
 
+  const filteredCategories = categories.filter((category) => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    const stationName = category.station_id != null ? stationNames[category.station_id] : undefined;
+    return category.name.toLowerCase().includes(query) || (stationName || "").toLowerCase().includes(query);
+  });
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 md:gap-6">
+      <div className="flex min-w-0 items-center gap-2 md:hidden">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search categories"
+            className="h-11 rounded-xl pl-10"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+        </div>
+        <Button onClick={openCreateDialog} size="icon" className="h-11 w-11 shrink-0 rounded-xl" aria-label="Add category">
+          <Plus className="h-5 w-5" />
+        </Button>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-border/70 bg-card md:hidden">
+        {loading ? (
+          <div className="space-y-3 p-4">
+            {[1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full rounded-xl" />)}
+          </div>
+        ) : filteredCategories.length === 0 ? (
+          <div className="px-4 py-12 text-center">
+            <AlertCircle className="mx-auto mb-3 h-5 w-5 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">{searchQuery ? "No matching categories" : "No categories yet"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{searchQuery ? "Try a different search." : "Add a category to organize your menu."}</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border/70">
+            {filteredCategories.map((category) => {
+              const stationName = category.station_id != null ? stationNames[category.station_id] : undefined;
+              return (
+                <div key={category.id} className="flex min-w-0 items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">{category.name}</p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{stationName || "Unassigned station"}</p>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-lg" onClick={() => openEditDialog(category)} aria-label={`Edit ${category.name}`}>
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-lg text-destructive hover:text-destructive" onClick={() => openDeleteDialog(category)} aria-label={`Delete ${category.name}`}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="hidden md:flex md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Categories</h1>
           <p className="text-muted-foreground">Organize your menu items into categories.</p>
@@ -146,7 +202,7 @@ export default function CategoriesPage() {
         </Button>
       </div>
 
-      <Card>
+      <Card className="hidden md:block">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Categories</CardTitle>
@@ -191,12 +247,7 @@ export default function CategoriesPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                categories.filter((c) => {
-                  if (!searchQuery.trim()) return true;
-                  const q = searchQuery.toLowerCase();
-                  const stationName = c.station_id != null ? stationNames[c.station_id] : undefined;
-                  return c.name.toLowerCase().includes(q) || (stationName || "").toLowerCase().includes(q);
-                }).map((category) => (
+                filteredCategories.map((category) => (
                   <TableRow key={category.id}>
                     <TableCell>
                       <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />

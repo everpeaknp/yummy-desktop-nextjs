@@ -65,6 +65,10 @@ import {
   type TransactionDetailModel,
 } from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import { purchaseDocumentDetail } from "@/components/finance/transaction-detail/party-workspace-detail";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { PageSection } from "@/components/patterns/page/page-section";
+import { SearchField } from "@/components/patterns/controls/search-field";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -298,39 +302,19 @@ export default function InventoryPurchasesPage() {
     : null;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <Button variant="ghost" size="sm" className="mb-2 -ml-2" onClick={() => router.push("/inventory")}>
-            <ChevronLeft className="w-4 h-4 mr-1" /> Inventory
-          </Button>
-          <h1 className="text-2xl font-bold tracking-tight">Purchases</h1>
-          <p className="text-muted-foreground">
-            Stock acquired from suppliers. Posting a purchase increases inventory only by what is actually received.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => router.push("/inventory/purchases/returns")}>
-            <Undo2 className="w-4 h-4 mr-2" /> Purchase returns
-          </Button>
-          <Button onClick={openCreate}>
-            <Plus className="w-4 h-4 mr-2" /> Record Purchase
-          </Button>
-        </div>
-      </div>
+    <AppPage width="wide" className="p-4 pb-24 sm:p-6">
+      <PageHeader
+        backHref="/inventory"
+        title="Purchases"
+        description="Receive supplier stock and keep inventory quantities accurate."
+        actions={<div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto"><Button variant="outline" className="h-11 rounded-xl" onClick={() => router.push("/inventory/purchases/returns")}><Undo2 className="mr-2 h-4 w-4" /> Returns</Button><Button className="h-11 rounded-xl" onClick={openCreate}><Plus className="mr-2 h-4 w-4" /> Record purchase</Button></div>}
+      />
 
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by supplier or reference..."
-            className="pl-9"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+      <PageSection surface className="space-y-3">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem]">
+          <SearchField placeholder="Search supplier or reference" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="h-11 w-full rounded-xl">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -339,9 +323,11 @@ export default function InventoryPurchasesPage() {
             <SelectItem value="voided">Voided</SelectItem>
           </SelectContent>
         </Select>
-      </div>
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground">A posted purchase changes stock only by the quantity actually received.</p>
+      </PageSection>
 
-      <div className="overflow-hidden rounded-lg border">
+      <PageSection surface className="overflow-hidden p-0">
         <div className="divide-y divide-border md:hidden">
           {loading ? (
             <div className="flex items-center justify-center p-8 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
@@ -436,21 +422,21 @@ export default function InventoryPurchasesPage() {
             )}
           </TableBody>
         </Table></div>
-      </div>
+      </PageSection>
 
       {/* Create Purchase Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[720px] max-h-[92vh] overflow-y-auto">
-          <form onSubmit={handleCreate}>
-            <DialogHeader>
+        <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[720px] flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[92vh] sm:w-full">
+          <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <DialogHeader className="shrink-0 border-b px-5 py-4 text-left sm:px-6">
               <DialogTitle>Record Purchase</DialogTitle>
               <DialogDescription>
                 Add the supplier bill and items once. Saving immediately updates stock,
                 supplier balance, and accounting.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="grid flex-1 gap-4 overflow-y-auto px-5 py-4 sm:px-6">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Supplier *</Label>
                   <Select
@@ -526,11 +512,11 @@ export default function InventoryPurchasesPage() {
                 />
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
+            <DialogFooter className="shrink-0 border-t px-5 py-3 sm:px-6">
+              <Button className="h-11 flex-1 sm:flex-none" variant="outline" type="button" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createSubmitting}>
+              <Button className="h-11 flex-[1.3] sm:flex-none" type="submit" disabled={createSubmitting}>
                 {createSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Record purchase
               </Button>
@@ -594,6 +580,6 @@ export default function InventoryPurchasesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }

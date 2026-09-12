@@ -35,6 +35,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, subDays } from "date-fns";
+import { FilterChip } from "@/components/patterns/controls/filter-chip";
+import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
+import { PageTabs } from "@/components/patterns/navigation/page-tabs";
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface KotItem {
@@ -532,14 +535,6 @@ export default function KitchenPage() {
   }, [kots, stationTab]);
 
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  const activeCount = total - (counts.SERVED || 0) - (counts.REJECTED || 0);
-  const pendingCount = counts.PENDING || 0;
-  const delayedCount = useMemo(() => {
-    let base = kots;
-    if (stationTab !== "All") base = base.filter((k) => k.station?.toLowerCase() === stationTab.toLowerCase());
-    return base.filter(isDelayed).length;
-  }, [kots, stationTab]);
-
   const setDayAndClose = (d: Date) => {
     setSelectedDate(d);
     setDatePickerOpen(false);
@@ -549,7 +544,7 @@ export default function KitchenPage() {
   // RENDER
   // ════════════════════════════════════════════════════════════════════
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] max-w-[1800px] mx-auto bg-background">
+    <div className="mx-auto flex h-[calc(100vh-4rem)] w-full min-w-0 max-w-[1800px] flex-col overflow-x-clip bg-background">
       {/* Toast */}
       {message && (
         <div className={cn(
@@ -561,27 +556,27 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="px-5 pt-5 pb-3 flex items-center justify-between shrink-0 border-b border-border/40">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-black tracking-tighter">Kitchen</h1>
+      {/* Operational controls */}
+      <div className="shrink-0 border-b border-border/40 bg-background px-4 py-3 sm:px-5 sm:py-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+          <h1 className="hidden shrink-0 text-xl font-bold tracking-tight sm:block sm:text-2xl">Kitchen</h1>
           
           {/* Date Picker (styled, consistent) */}
           <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
-                className="h-10 rounded-xl gap-2 font-bold text-xs uppercase tracking-widest px-4"
+                className="h-11 min-w-0 flex-1 justify-start rounded-xl px-3 text-xs font-semibold sm:flex-none sm:justify-center sm:px-4"
               >
                 <CalendarIcon className="h-4 w-4" />
                 {format(selectedDate, "MM/dd/yyyy")}
               </Button>
             </PopoverTrigger>
             <PopoverContent
-              className="w-auto p-0 flex shadow-2xl border border-border/40 rounded-[24px] overflow-hidden bg-background"
+              className="flex w-[calc(100vw-2rem)] max-w-[440px] flex-col overflow-hidden rounded-2xl border border-border/40 bg-background p-0 shadow-2xl sm:w-auto sm:flex-row sm:rounded-[24px]"
               align="start"
             >
-              <div className="flex flex-col p-5 border-r border-border/40 bg-muted/20 w-[150px] shrink-0">
+              <div className="hidden w-[150px] shrink-0 flex-col border-r border-border/40 bg-muted/20 p-5 sm:flex">
                 <p className="text-[9px] font-black uppercase tracking-[0.3em] text-orange-500 mb-4">Quick Select</p>
                 <div className="flex flex-col gap-1 flex-1">
                   <button
@@ -604,7 +599,7 @@ export default function KitchenPage() {
                   Reset
                 </button>
               </div>
-              <div className="p-4">
+              <div className="overflow-x-auto p-3 sm:p-4">
                 <CalendarComponent
                   initialFocus
                   mode="single"
@@ -621,13 +616,11 @@ export default function KitchenPage() {
               </div>
             </PopoverContent>
           </Popover>
-        </div>
-
-        <div className="flex items-center gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
           <div
             title={wsConnected ? "Real-time WebSocket connected" : "Auto-refreshing"}
             className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-colors",
+              "flex min-h-11 items-center gap-2 rounded-xl px-3 text-xs font-semibold transition-colors",
               wsConnected
                 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50"
                 : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200/50"
@@ -640,82 +633,58 @@ export default function KitchenPage() {
             size="icon"
             variant="ghost"
             onClick={() => { if (restaurantId) { setLoading(true); doFetch(restaurantId); } }}
-            className="h-9 w-9 rounded-lg"
+            className="h-11 w-11 rounded-xl"
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
-        </div>
-      </div>
-
-      {/* Controls Bar */}
-      <div className="flex shrink-0 flex-col items-stretch justify-between gap-3 border-b border-border/40 bg-muted/20 px-5 py-3 lg:flex-row lg:items-center">
-          <div className="flex max-w-full items-center gap-2 overflow-x-auto rounded-lg bg-muted/50 p-1">
-             {STATIONS.map((s) => (
-                <button
-                    key={s}
-                    onClick={() => setStationTab(s)}
-                    className={cn(
-                        "px-4 py-1.5 rounded-md text-xs font-bold transition-all whitespace-nowrap",
-                        stationTab === s
-                            ? "bg-background text-foreground shadow-sm ring-1 ring-border"
-                            : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-                    )}
-                >
-                    {s}
-                </button>
-             ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-             <StatusChip label="All" count={total} active={statusFilter === null} onClick={() => setStatusFilter(null)} />
-             {ALL_STATUSES.map((s) => (
-                <StatusChip 
-                  key={s} 
-                  label={s === "PENDING" ? "Pending" : s === "PREPARING" ? "Making" : s === "READY" ? "Ready" : s === "SERVED" ? "Served" : "Void"} 
-                  count={counts[s] || 0} 
-                  active={statusFilter === s} 
-                  onClick={() => setStatusFilter(s)} 
-                />
-             ))}
           </div>
         </div>
 
-      {/* Stats Summary - Optional, maybe hide for cleaner look? Keeping as requested "fix them" */}
-      <div className="grid shrink-0 grid-cols-2 gap-3 px-5 py-4 md:grid-cols-4 md:gap-4">
-          <div className="bg-blue-500/5 border border-blue-500/20 text-blue-700 dark:text-blue-300 rounded-xl p-3 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase opacity-70">Active</span>
-              <span className="text-xl font-black">{activeCount}</span>
-          </div>
-          <div className="bg-amber-500/5 border border-amber-500/20 text-amber-700 dark:text-amber-300 rounded-xl p-3 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase opacity-70">Pending</span>
-              <span className="text-xl font-black">{pendingCount}</span>
-          </div>
-          <div className="bg-red-500/5 border border-red-500/20 text-red-700 dark:text-red-300 rounded-xl p-3 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase opacity-70">Delayed</span>
-              <span className="text-xl font-black">{delayedCount}</span>
-          </div>
-          <div className="bg-gray-500/5 border border-gray-500/20 text-gray-700 dark:text-gray-300 rounded-xl p-3 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase opacity-70">Completed</span>
-              <span className="text-xl font-black">{(counts.SERVED || 0)}</span>
-          </div>
+        <div className="mt-3 min-w-0">
+          <PageTabs
+            ariaLabel="Kitchen station"
+            className="max-w-full"
+            items={STATIONS.map((station) => ({ value: station, label: station }))}
+            mobileMode="scroll"
+            value={stationTab}
+            onValueChange={setStationTab}
+          />
+        </div>
+
+        <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <FilterChip count={total} active={statusFilter === null} onClick={() => setStatusFilter(null)}>All</FilterChip>
+          {ALL_STATUSES.map((s) => (
+            <FilterChip
+              key={s}
+              count={counts[s] || 0}
+              active={statusFilter === s}
+              onClick={() => setStatusFilter(s)}
+            >
+              {s === "PENDING" ? "Pending" : s === "PREPARING" ? "Making" : s === "READY" ? "Ready" : s === "SERVED" ? "Served" : "Void"}
+            </FilterChip>
+          ))}
+        </div>
       </div>
 
       {/* KOT Grid */}
-      <div className="flex-1 overflow-y-auto px-5 pb-10">
+      <div className="min-w-0 flex-1 overflow-y-auto px-4 pb-10 pt-4 sm:px-5">
         {loading && kots.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center text-muted-foreground">
-            <Loader2 className="h-8 w-8 animate-spin mb-3" />
-            <p className="text-sm font-medium">Fetching orders...</p>
-          </div>
+          <LoadingState label="Fetching orders..." />
         ) : filtered.length === 0 ? (
-          <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border/50 rounded-3xl bg-muted/5 mt-4">
-            <Archive className="w-12 h-12 mb-4 opacity-10" />
-            <p className="font-bold text-lg text-foreground/50">No orders found</p>
-            <p className="text-sm mt-1 opacity-50">Try selecting a different date or filter.</p>
-          </div>
+          <EmptyState
+            className="min-h-72"
+            icon={<Archive className="h-5 w-5" />}
+            title="No orders found"
+            description="Try selecting a different date, station, or status."
+          />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
-            {filtered.map((kot) => {
+          <>
+            <div className="mb-3 flex items-baseline justify-between gap-3">
+              <p className="text-sm font-semibold text-foreground">{filtered.length} {filtered.length === 1 ? "ticket" : "tickets"}</p>
+              <p className="truncate text-xs text-muted-foreground">{stationTab === "All" ? "All stations" : stationTab}</p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {filtered.map((kot) => {
                // Final filter check to skip cards that would be empty (e.g. legacy/corrupt KOTs with only room charges)
                const visibleItems = kot.items.filter(i => !String(i.item_name || "").toLowerCase().includes("room charge"));
                if (visibleItems.length === 0) return null;
@@ -731,8 +700,9 @@ export default function KitchenPage() {
 	                   tick={elapsedTick}
 	                 />
 	               );
-	            })}
-	          </div>
+              })}
+            </div>
+          </>
         )}
       </div>
 
@@ -1034,30 +1004,6 @@ function useElapsedTick() {
 }
 
 // ── Status Filter Chip ─────────────────────────────────────────────────
-function StatusChip({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border border-transparent",
-        active
-          ? "bg-foreground text-background shadow-md border-foreground/10"
-          : "bg-background border-border text-muted-foreground hover:bg-muted"
-      )}
-    >
-      {label}
-      {count > 0 && (
-        <span className={cn(
-          "h-4 min-w-[1rem] px-1 rounded-full text-[9px] flex items-center justify-center",
-          active ? "bg-background text-foreground" : "bg-muted text-muted-foreground"
-        )}>
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
-
 function ReasonDialog({
   open,
   title,

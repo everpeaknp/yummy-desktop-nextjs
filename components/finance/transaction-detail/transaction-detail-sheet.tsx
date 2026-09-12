@@ -12,7 +12,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 
 export type TransactionDetailField = {
   label: string;
@@ -66,17 +66,6 @@ function humanize(value: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function money(value: number | string | null | undefined) {
-  const parsed = Number(value ?? 0);
-  return `NPR ${(Number.isFinite(parsed) ? parsed : 0).toLocaleString(
-    undefined,
-    {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    },
-  )}`;
-}
-
 function dateTime(value: string | null | undefined) {
   if (!value) return null;
   const parsed = new Date(value);
@@ -92,10 +81,23 @@ function dateTime(value: string | null | undefined) {
 
 function statusBadgeTone(status: string | null | undefined) {
   const value = String(status || "").toLowerCase();
-  if (["paid", "fully paid", "fully_paid", "fully_settled", "settled"].includes(value)) {
+  if (
+    ["paid", "fully paid", "fully_paid", "fully_settled", "settled"].includes(
+      value,
+    )
+  ) {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
-  if (["partially paid", "partially_paid", "partial", "unpaid", "open", "pending"].includes(value)) {
+  if (
+    [
+      "partially paid",
+      "partially_paid",
+      "partial",
+      "unpaid",
+      "open",
+      "pending",
+    ].includes(value)
+  ) {
     return "border-orange-200 bg-orange-50 text-orange-700";
   }
   if (["voided", "reversed", "cancelled", "failed"].includes(value)) {
@@ -140,22 +142,20 @@ function DetailSection({
   section: TransactionDetailSection;
   hasHeaderAmount: boolean;
 }) {
-  const visibleFields = (section.fields || []).filter(
-    (field) => {
-      const label = field.label.trim().toLowerCase();
-      if (!hasUserValue(field.value)) return false;
-      if (/(^|\s)id$/i.test(label) || internalFieldLabels.has(label)) {
-        return false;
-      }
-      return !hasHeaderAmount || !duplicateSummaryLabels.has(label);
-    },
-  );
+  const visibleFields = (section.fields || []).filter((field) => {
+    const label = field.label.trim().toLowerCase();
+    if (!hasUserValue(field.value)) return false;
+    if (/(^|\s)id$/i.test(label) || internalFieldLabels.has(label)) {
+      return false;
+    }
+    return !hasHeaderAmount || !duplicateSummaryLabels.has(label);
+  });
   const hasFields = visibleFields.length > 0;
   const hasRows = Boolean(section.table?.rows.length);
 
   return (
-    <section className="border-b border-border px-5 py-6 last:border-b-0 sm:px-7">
-      <div className="mb-5">
+    <section className="border-b border-border px-4 py-4 last:border-b-0 sm:px-6 sm:py-5">
+      <div className="mb-3">
         <h3 className="text-sm font-semibold text-foreground">
           {section.title}
         </h3>
@@ -167,7 +167,7 @@ function DetailSection({
       </div>
 
       {hasFields ? (
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
           {visibleFields.map((field, index) => (
             <div
               key={`${field.label}-${index}`}
@@ -179,7 +179,7 @@ function DetailSection({
               <dt className="text-[11px] font-medium leading-4 text-muted-foreground">
                 {field.label}
               </dt>
-              <dd className="mt-1.5 break-words text-sm font-medium leading-5 text-foreground">
+              <dd className="mt-1 break-words text-sm font-medium leading-5 text-foreground">
                 {field.value ?? "Not recorded"}
               </dd>
             </div>
@@ -215,10 +215,7 @@ function DetailSection({
                   {section.table.columns.map((column, index) => (
                     <th
                       key={column}
-                      className={cn(
-                        "px-3 py-2.5",
-                        index > 0 && "text-right",
-                      )}
+                      className={cn("px-3 py-2.5", index > 0 && "text-right")}
                     >
                       {column}
                     </th>
@@ -266,17 +263,16 @@ export function TransactionDetailSheet({
   actionLabel = "Open source",
   footer,
 }: Props) {
-  const amountTone = detail?.amountTone || "neutral";
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl lg:max-w-[780px]">
-        <SheetHeader className="shrink-0 border-b border-border px-5 py-5 text-left sm:px-7 sm:py-6">
-          <div className="flex flex-col gap-5 pr-8 sm:flex-row sm:items-start sm:justify-between">
+      <SheetContent className="flex h-dvh w-full flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-w-3xl lg:max-w-[860px]">
+        <SheetHeader className="sticky top-0 z-10 shrink-0 border-b border-border bg-background px-4 py-4 pr-12 text-left sm:px-6 sm:py-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-primary">
+              <p className="text-xs font-medium text-muted-foreground">
                 {detail?.eyebrow || "Transaction details"}
               </p>
-              <SheetTitle className="mt-2 break-words text-2xl font-semibold leading-tight tracking-tight sm:text-[28px]">
+              <SheetTitle className="mt-1 break-words text-xl font-semibold leading-tight tracking-tight sm:text-2xl">
                 {detail?.title || "Transaction"}
               </SheetTitle>
               <SheetDescription className="mt-2 max-w-xl text-sm leading-5">
@@ -285,29 +281,18 @@ export function TransactionDetailSheet({
               </SheetDescription>
             </div>
             {detail?.amount != null ? (
-              <div className="shrink-0 border-l border-border pl-4 sm:min-w-40 sm:pl-5 sm:text-right">
+              <div className="shrink-0 border-t border-border pt-3 sm:min-w-40 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0 sm:text-right">
                 <p className="text-[11px] font-medium text-muted-foreground">
                   {detail.amountLabel || "Amount"}
                 </p>
-                <p
-                  className={cn(
-                    "mt-1 whitespace-nowrap text-2xl font-semibold tracking-tight tabular-nums",
-                    amountTone === "in" && "text-emerald-600",
-                    amountTone === "out" && "text-rose-600",
-                  )}
-                >
-                  {amountTone === "in"
-                    ? "+ "
-                    : amountTone === "out"
-                      ? "− "
-                      : ""}
-                  {money(detail.amount)}
+                <p className="mt-1 whitespace-nowrap text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+                  {formatCurrency(detail.amount)}
                 </p>
               </div>
             ) : null}
           </div>
           {detail ? (
-            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3 text-xs text-muted-foreground">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3 text-xs text-muted-foreground">
               {detail.reference ? (
                 <span className="inline-flex items-center gap-1.5">
                   <Hash className="h-3.5 w-3.5" />
@@ -360,11 +345,11 @@ export function TransactionDetailSheet({
             ? detail.sections
                 .filter((section) => !section.internal)
                 .map((section, index) => (
-                <DetailSection
-                  key={`${section.title}-${index}`}
-                  section={section}
-                  hasHeaderAmount={detail.amount != null}
-                />
+                  <DetailSection
+                    key={`${section.title}-${index}`}
+                    section={section}
+                    hasHeaderAmount={detail.amount != null}
+                  />
                 ))
             : null}
         </div>
@@ -400,9 +385,6 @@ export function transactionMetadataFields(
     })
     .map(([key, value]) => ({
       label: humanize(key.replace(/_snapshot$/i, "")),
-      value:
-        typeof value === "string"
-          ? humanize(value)
-          : String(value),
+      value: typeof value === "string" ? humanize(value) : String(value),
     }));
 }

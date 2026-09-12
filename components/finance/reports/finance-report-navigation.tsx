@@ -1,8 +1,6 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
 import {
   Select,
@@ -14,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { reportGroups } from "@/components/finance/reports/finance-report-catalog";
+import { BackButton } from "@/components/patterns/page/page-header";
 
 export function FinanceReportNavigation() {
   const pathname = usePathname();
@@ -21,12 +20,13 @@ export function FinanceReportNavigation() {
   const current = reportGroups.flatMap((group) => group.reports).find((report) => report.href === pathname);
 
   return (
-    <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
-      <Link href="/finance/reports" className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="mr-2 h-4 w-4" />All reports
-      </Link>
+    <div className="flex min-w-0 items-center gap-3 border-b border-border pb-3">
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        <BackButton href="/finance/reports" label="All reports" className="-ml-2" />
+        <span className="truncate text-sm font-medium text-muted-foreground">All reports</span>
+      </div>
       <Select value={current?.href} onValueChange={(href) => router.push(href)}>
-        <SelectTrigger className="w-full bg-background sm:w-64" aria-label="Switch report">
+        <SelectTrigger className="h-11 w-[min(15rem,60vw)] rounded-xl bg-background" aria-label="Switch report">
           <SelectValue placeholder="Switch report" />
         </SelectTrigger>
         <SelectContent>

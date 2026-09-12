@@ -16,13 +16,10 @@ import {
 import { parseApiScopeError, type ParsedScopeError } from "@/lib/parse-api-scope-error";
 import { HistoryScopeNotice } from "@/components/shared/history-scope-notice";
 import { 
-  Search, 
-  RefreshCw, 
   LayoutGrid,
   ClipboardList,
   History,
   Receipt,
-  Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
   Filter,
@@ -30,7 +27,6 @@ import {
   ChefHat
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -46,19 +42,22 @@ import { useSubscriptionStore } from "@/hooks/use-subscription";
 import { entitlementLimit } from "@/lib/subscription/entitlements";
 import { Badge } from "@/components/ui/badge";
 import { format, isToday, isYesterday, startOfDay, endOfDay, subDays } from "date-fns";
-import { 
-    Popover,
-    PopoverContent,
-    PopoverTrigger 
-} from "@/components/ui/popover";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { OrderCard } from "@/components/orders/order-card";
 import { OrderHistoryCard } from "@/components/orders/order-history-card";
 import Link from "next/link";
 import { ReceiptDetailSheet } from "@/components/receipts/receipt-detail-sheet";
 import { DateRange } from "react-day-picker";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
-import { OrdersFloatingNewButton } from "@/components/orders/orders-floating-new-button";
+import { OrdersNewOrderSheet } from "@/components/orders/orders-new-order-sheet";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { PageTabs } from "@/components/patterns/navigation/page-tabs";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { FilterBar } from "@/components/patterns/controls/filter-bar";
+import { FilterChip } from "@/components/patterns/controls/filter-chip";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmptyState as SharedEmptyState } from "@/components/patterns/feedback/feedback-state";
 import type { FinanceOrderSettlementSummary } from "@/types/finance-sales";
 
 interface OrdersKotItem {
@@ -99,6 +98,172 @@ interface OrdersKotActivity {
 
 type OrdersKotStatus = "PENDING" | "PREPARING" | "READY" | "SERVED" | "REJECTED";
 
+type OrderDetailFilters = {
+    status: string;
+    channel: string;
+    tableCategory: string;
+    tableName: string;
+    createdBy: string;
+    minTotal: string;
+    maxTotal: string;
+};
+
+type OrderTimeScope = "all" | "today" | "yesterday" | "last7" | "thisMonth";
+
+const orderTimeScopes: Array<{ value: OrderTimeScope; label: string }> = [
+    { value: "today", label: "Today" },
+    { value: "yesterday", label: "Yesterday" },
+    { value: "last7", label: "Last 7 days" },
+    { value: "thisMonth", label: "This month" },
+    { value: "all", label: "All time" },
+];
+
+const emptyOrderDetailFilters: OrderDetailFilters = {
+    status: "",
+    channel: "",
+    tableCategory: "",
+    tableName: "",
+    createdBy: "",
+    minTotal: "",
+    maxTotal: "",
+};
+
+function orderMatchesDetailFilters(order: any, filters: OrderDetailFilters, staffField: "created" | "completed" = "created") {
+    const normalized = (value: unknown) => String(value || "").trim().toLowerCase();
+    if (filters.status && normalized(order.status) !== normalized(filters.status)) return false;
+    if (filters.channel && normalized(order.channel) !== normalized(filters.channel)) return false;
+    if (filters.tableCategory && normalized(order.table_category_name || order.table_category) !== normalized(filters.tableCategory)) return false;
+    if (filters.tableName && normalized(order.table_name) !== normalized(filters.tableName)) return false;
+    const staffName = staffField === "completed"
+        ? order.completed_by_name || order.completed_by?.name || order.completed_by?.full_name
+        : order.created_by_name || order.waiter_name;
+    if (filters.createdBy && normalized(staffName) !== normalized(filters.createdBy)) return false;
+    const total = Number(order.grand_total || 0);
+    const min = Number(filters.minTotal);
+    const max = Number(filters.maxTotal);
+    if (filters.minTotal && Number.isFinite(min) && total < min) return false;
+    if (filters.maxTotal && Number.isFinite(max) && total > max) return false;
+    return true;
+}
+
+function filterCount(filters: OrderDetailFilters) {
+    return Object.values(filters).filter(Boolean).length;
+}
+
+function readableFilterValue(value: string) {
+    return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function matchesOrderTimeScope(value: string | undefined, scope: OrderTimeScope) {
+    if (scope === "all") return true;
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) return false;
+    if (scope === "today") return isToday(date);
+    if (scope === "yesterday") return isYesterday(date);
+    if (scope === "last7") return date >= startOfDay(subDays(new Date(), 6)) && date <= endOfDay(new Date());
+    return date >= startOfDay(new Date(new Date().getFullYear(), new Date().getMonth(), 1)) && date <= endOfDay(new Date());
+}
+
+function dateRangeForTimeScope(scope: OrderTimeScope): DateRange | undefined {
+    const now = new Date();
+    if (scope === "all") return undefined;
+    if (scope === "today") return { from: startOfDay(now), to: endOfDay(now) };
+    if (scope === "yesterday") {
+        const yesterday = subDays(now, 1);
+        return { from: startOfDay(yesterday), to: endOfDay(yesterday) };
+    }
+    if (scope === "last7") return { from: startOfDay(subDays(now, 6)), to: endOfDay(now) };
+    return { from: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)), to: endOfDay(now) };
+}
+
+function TimeScopeChips({ value, onChange }: { value: OrderTimeScope; onChange: (scope: OrderTimeScope) => void }) {
+    return (
+        <section className="space-y-2">
+            <p className="text-sm font-semibold text-foreground">Time period</p>
+            <div className="flex flex-wrap gap-2">
+                {orderTimeScopes.map((scope) => (
+                    <FilterChip key={scope.value} active={value === scope.value} onClick={() => onChange(scope.value)} className="min-h-9 px-3 text-xs">
+                        {scope.label}
+                    </FilterChip>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function ChoiceChips({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
+    if (options.length === 0) return null;
+    return (
+        <section className="space-y-2">
+            <p className="text-sm font-semibold text-foreground">{label}</p>
+            <div className="flex flex-wrap gap-2">
+                <FilterChip active={!value} onClick={() => onChange("")} className="min-h-9 px-3 text-xs">All</FilterChip>
+                {options.map((option) => (
+                    <FilterChip key={option.value} active={value === option.value} onClick={() => onChange(option.value)} className="min-h-9 px-3 text-xs">
+                        {option.label}
+                    </FilterChip>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function OrderDetailFilterFields({
+    orders,
+    filters,
+    onChange,
+    staffLabel = "Created by",
+    staffRead = (order) => order.created_by_name || order.waiter_name,
+}: {
+    orders: any[];
+    filters: OrderDetailFilters;
+    onChange: (next: Partial<OrderDetailFilters>) => void;
+    staffLabel?: string;
+    staffRead?: (order: any) => unknown;
+}) {
+    const options = (read: (order: any) => unknown) => Array.from(
+        new Set(orders.map(read).map((value) => String(value || "").trim()).filter(Boolean)),
+    ).sort();
+    const statuses = ["pending", "confirmed", "preparing", "ready", "scheduled"];
+    const channels = ["table", "pickup", "quick_billing", "delivery", "reservation", "room_service"];
+    const tableCategories = options((order) => order.table_category_name || order.table_category);
+    const tables = options((order) => order.table_name).filter((table) => {
+        if (!filters.tableCategory) return true;
+        return orders.some(
+            (order) => String(order.table_name || "").trim() === table && String(order.table_category_name || order.table_category || "").trim().toLowerCase() === filters.tableCategory.toLowerCase(),
+        );
+    });
+    const users = options(staffRead);
+
+    return (
+        <div className="space-y-4">
+            <ChoiceChips label="Status" value={filters.status} onChange={(status) => onChange({ status })} options={statuses.map((status) => ({ value: status, label: readableFilterValue(status) }))} />
+            <ChoiceChips label="Order type" value={filters.channel} onChange={(channel) => onChange({ channel })} options={channels.map((channel) => ({ value: channel, label: readableFilterValue(channel) }))} />
+            <ChoiceChips label="Table area" value={filters.tableCategory} onChange={(tableCategory) => onChange({ tableCategory, tableName: "" })} options={tableCategories.map((category) => ({ value: category, label: category }))} />
+            <ChoiceChips label="Table" value={filters.tableName} onChange={(tableName) => onChange({ tableName })} options={tables.map((table) => ({ value: table, label: table }))} />
+            <div className="grid gap-2">
+                <p className="text-sm font-semibold text-foreground">{staffLabel}</p>
+                <Select value={filters.createdBy || "all"} onValueChange={(value) => onChange({ createdBy: value === "all" ? "" : value })}>
+                    <SelectTrigger className="h-11 rounded-xl border-border bg-card px-3 text-sm font-medium shadow-none transition-colors focus:border-primary">
+                        <SelectValue placeholder="All staff" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64 rounded-xl border-border p-1 shadow-lg">
+                        <SelectItem value="all" className="rounded-lg py-2.5 text-sm">All staff</SelectItem>
+                        {users.map((user) => <SelectItem key={user} value={user} className="rounded-lg py-2.5 text-sm">{user}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
+            <div>
+                <p className="text-sm font-medium">Total amount</p>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                    <Input inputMode="decimal" type="number" min="0" placeholder="Min NPR" value={filters.minTotal} onChange={(event) => onChange({ minTotal: event.target.value })} className="h-11 rounded-xl" />
+                    <Input inputMode="decimal" type="number" min="0" placeholder="Max NPR" value={filters.maxTotal} onChange={(event) => onChange({ maxTotal: event.target.value })} className="h-11 rounded-xl" />
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function nextKotStatus(status: string): OrdersKotStatus | null {
     switch (String(status || "PENDING").toUpperCase()) {
         case "PENDING": return "PREPARING";
@@ -133,21 +298,6 @@ function getOrderTimeMs(order: any): number {
 
 export default function OrdersPage() {
     const [activeTab, setActiveTab] = useState<"active" | "kot" | "history">("active");
-    const [activeFilter, setActiveFilter] = useState<"today" | "all">("today");
-
-    // Hydrate activeFilter from localStorage on mount
-    useEffect(() => {
-        const saved = localStorage.getItem("orders:activeFilter");
-        if (saved === "all" || saved === "today") {
-            setActiveFilter(saved);
-        }
-    }, []);
-
-    const setPersistedActiveFilter = (val: "today" | "all") => {
-        setActiveFilter(val);
-        localStorage.setItem("orders:activeFilter", val);
-    };
-
     const [orders, setOrders] = useState<any[]>([]);
     const [historyOrders, setHistoryOrders] = useState<any[]>([]);
     const [historySettlements, setHistorySettlements] = useState<Record<number, FinanceOrderSettlementSummary>>({});
@@ -157,6 +307,11 @@ export default function OrdersPage() {
     const [kotLoading, setKotLoading] = useState(false);
     const [kotStatusFilter, setKotStatusFilter] = useState<OrdersKotStatus | "ALL">("ALL");
     const [kotStationFilter, setKotStationFilter] = useState("All");
+    const [kotTableFilter, setKotTableFilter] = useState("All");
+    const [activeTimeScope, setActiveTimeScope] = useState<OrderTimeScope>("all");
+    const [kotTimeScope, setKotTimeScope] = useState<OrderTimeScope>("today");
+    const [activeDetailFilters, setActiveDetailFilters] = useState<OrderDetailFilters>(emptyOrderDetailFilters);
+    const [historyDetailFilters, setHistoryDetailFilters] = useState<OrderDetailFilters>(emptyOrderDetailFilters);
     const [searchQuery, setSearchQuery] = useState("");
     const [dateRange, setDateRange] = useState<DateRange | undefined>();
     const [scopeNotice, setScopeNotice] = useState<ParsedScopeError | null>(null);
@@ -285,17 +440,14 @@ export default function OrdersPage() {
         if (!user?.restaurant_id) return;
         setKotLoading(true);
         try {
-            const start = new Date();
-            start.setHours(0, 0, 0, 0);
-            const end = new Date();
-            end.setHours(23, 59, 59, 999);
             const params = new URLSearchParams({
                 restaurant_id: String(user.restaurant_id),
                 limit: "100",
                 include_printer_config: "false",
-                date_from: start.toISOString(),
-                date_to: end.toISOString(),
             });
+            const range = dateRangeForTimeScope(kotTimeScope);
+            if (range?.from) params.set("date_from", range.from.toISOString());
+            if (range?.to) params.set("date_to", range.to.toISOString());
             const res = await apiClient.get(`${KotApis.searchKots}?${params.toString()}`);
             if (res.data?.status === "success") {
                 const next = Array.isArray(res.data.data) ? res.data.data : [];
@@ -307,7 +459,7 @@ export default function OrdersPage() {
         } finally {
             setKotLoading(false);
         }
-    }, [user?.restaurant_id]);
+    }, [user?.restaurant_id, kotTimeScope]);
 
     // 3. Fetch History Orders
     const fetchHistoryData = useCallback(async () => {
@@ -512,11 +664,16 @@ export default function OrdersPage() {
         }
     }, [fetchKotData, kotStatusUpdating]);
 
+    const filteredHistoryOrders = useMemo(
+        () => historyOrders.filter((order) => orderMatchesDetailFilters(order, historyDetailFilters, "completed")),
+        [historyOrders, historyDetailFilters],
+    );
+
     // Grouping logic for History
     const groupedHistory = useMemo(() => {
         const groups: Record<string, any[]> = {};
         
-        historyOrders.forEach(order => {
+        filteredHistoryOrders.forEach(order => {
             const date = new Date(getOrderTimeMs(order));
             let label = "";
             if (isToday(date)) label = "Today";
@@ -528,16 +685,19 @@ export default function OrdersPage() {
         });
 
         return groups;
-    }, [historyOrders]);
+    }, [filteredHistoryOrders]);
 
     const filteredActive = orders.filter(order => {
         if (order.is_split_parent && order.grand_total === 0) {
             return false;
         }
 
-        if (activeFilter === "today") {
-            const raw = order.started_at || order.created_at || order.updated_at;
-            if (raw && !isToday(new Date(raw))) return false;
+        if (!orderMatchesDetailFilters(order, activeDetailFilters)) {
+            return false;
+        }
+
+        if (!matchesOrderTimeScope(order.started_at || order.created_at || order.updated_at, activeTimeScope)) {
+            return false;
         }
 
         if (!searchQuery.trim()) return true;
@@ -552,8 +712,10 @@ export default function OrdersPage() {
     const filteredKots = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
         return kots
+            .filter((kot) => matchesOrderTimeScope(kot.created_at, kotTimeScope))
             .filter((kot) => kotStatusFilter === "ALL" || String(kot.status).toUpperCase() === kotStatusFilter)
             .filter((kot) => kotStationFilter === "All" || (kot.station || "").toLowerCase() === kotStationFilter.toLowerCase())
+            .filter((kot) => kotTableFilter === "All" || String(kot.table_name || "").toLowerCase() === kotTableFilter.toLowerCase())
             .filter((kot) => {
                 if (!query) return true;
                 const haystack = [
@@ -567,195 +729,152 @@ export default function OrdersPage() {
                 return haystack.includes(query);
             })
             .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }, [kots, kotStatusFilter, kotStationFilter, searchQuery]);
+    }, [kots, kotTimeScope, kotStatusFilter, kotStationFilter, kotTableFilter, searchQuery]);
+
+    const ordersFilterCount = activeTab === "active"
+        ? filterCount(activeDetailFilters) + Number(activeTimeScope !== "all")
+        : activeTab === "kot"
+            ? Number(kotTimeScope !== "today") + Number(kotStatusFilter !== "ALL") + Number(kotStationFilter !== "All") + Number(kotTableFilter !== "All")
+            : filterCount(historyDetailFilters);
+    const mobileOrdersFilterContent = activeTab === "active" ? (
+        <>
+            <TimeScopeChips value={activeTimeScope} onChange={setActiveTimeScope} />
+            <OrderDetailFilterFields orders={orders} filters={activeDetailFilters} onChange={(next) => setActiveDetailFilters((current) => ({ ...current, ...next }))} />
+        </>
+    ) : activeTab === "kot" ? (
+        <>
+            <TimeScopeChips value={kotTimeScope} onChange={setKotTimeScope} />
+            <ChoiceChips label="Kitchen status" value={kotStatusFilter === "ALL" ? "" : kotStatusFilter} onChange={(status) => setKotStatusFilter((status || "ALL") as OrdersKotStatus | "ALL")} options={(["PENDING", "PREPARING", "READY", "SERVED", "REJECTED"] as const).map((status) => ({ value: status, label: kotStatusLabel(status) }))} />
+            <ChoiceChips label="Station" value={kotStationFilter === "All" ? "" : kotStationFilter} onChange={(station) => setKotStationFilter(station || "All")} options={Array.from(new Set(kots.map((kot) => kot.station).filter(Boolean) as string[])).map((station) => ({ value: station, label: station }))} />
+            <ChoiceChips label="Table" value={kotTableFilter === "All" ? "" : kotTableFilter} onChange={(table) => setKotTableFilter(table || "All")} options={Array.from(new Set(kots.map((kot) => kot.table_name).filter(Boolean) as string[])).map((table) => ({ value: table, label: table }))} />
+        </>
+    ) : (
+        <>
+            <TimeScopeChips value={orderTimeScopes.find((scope) => {
+                const range = dateRangeForTimeScope(scope.value);
+                return range?.from?.getTime() === dateRange?.from?.getTime() && range?.to?.getTime() === dateRange?.to?.getTime();
+            })?.value ?? "all"} onChange={(scope) => setDateRange(dateRangeForTimeScope(scope) ?? defaultHistoryDateRange(primaryRole, { user }))} />
+            <label className="grid gap-1 text-sm font-medium">
+                From
+                <Input type="date" value={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : ""} onChange={(event) => setDateRange((current) => ({ from: event.target.value ? startOfDay(new Date(`${event.target.value}T00:00:00`)) : undefined, to: current?.to }))} className="h-11 rounded-xl" />
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+                To
+                <Input type="date" value={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : ""} onChange={(event) => setDateRange((current) => ({ from: current?.from, to: event.target.value ? endOfDay(new Date(`${event.target.value}T00:00:00`)) : undefined }))} className="h-11 rounded-xl" />
+            </label>
+            <OrderDetailFilterFields orders={historyOrders} filters={historyDetailFilters} staffLabel="Completed by" staffRead={(order) => order.completed_by_name || order.completed_by?.name || order.completed_by?.full_name} onChange={(next) => setHistoryDetailFilters((current) => ({ ...current, ...next }))} />
+        </>
+    );
 
     return (
-        <div className="flex flex-col gap-6 max-w-[1600px] mx-auto pb-24 md:pb-10">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-black tracking-tight">Orders</h1>
-                    <div className="flex items-center gap-2 mt-1">
-                        <span className="h-1 w-1 rounded-full bg-primary" />
-                        <p className="text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
-                            {format(new Date(), "PPpp")}
-                        </p>
-                    </div>
-                </div>
-                
-                <div className="flex w-full items-center gap-2 md:w-auto md:gap-4">
-                    <div className="relative group min-w-0 flex-1 md:min-w-[300px]">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                        <Input 
-                            className="pl-10 bg-card border-border/40 h-12 rounded-2xl focus-visible:ring-primary/20 transition-all font-medium text-sm" 
-                            placeholder="Search orders, customers..." 
-                            value={searchQuery} 
-                            onChange={(e) => setSearchQuery(e.target.value)} 
+        <AppPage width="wide" className="pb-24 md:pb-10">
+            <PageHeader
+                title="Orders"
+                actions={
+                    <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
+                        <SearchField
+                            value={searchQuery}
+                            onChange={(event) => setSearchQuery(event.target.value)}
+                            onClear={() => setSearchQuery("")}
+                            placeholder="Search orders or customers"
+                            containerClassName="min-w-0 flex-1 md:w-[320px]"
+                        />
+                        <FilterBar
+                            className="shrink-0 md:hidden"
+                            title={activeTab === "active" ? "Active order filters" : activeTab === "kot" ? "Kitchen ticket filters" : "Order history filters"}
+                            activeCount={ordersFilterCount}
+                            mobileContent={mobileOrdersFilterContent}
+                            mobileFooter={
+                                activeTab === "active" ? <Button variant="outline" className="w-full" onClick={() => { setActiveTimeScope("all"); setActiveDetailFilters(emptyOrderDetailFilters); }}>Clear filters</Button> :
+                                activeTab === "kot" ? <Button variant="outline" className="w-full" onClick={() => { setKotTimeScope("today"); setKotStatusFilter("ALL"); setKotStationFilter("All"); setKotTableFilter("All"); }}>Clear filters</Button> :
+                                <Button variant="outline" className="w-full" onClick={() => { setDateRange(defaultHistoryDateRange(primaryRole, { user })); setHistoryDetailFilters(emptyOrderDetailFilters); }}>Clear filters</Button>
+                            }
+                            mobileTriggerVariant="icon"
                         />
                     </div>
-                    <Button variant="outline" className="h-12 w-12 shrink-0 rounded-2xl p-0" onClick={() => activeTab === "active" ? fetchActiveData() : activeTab === "kot" ? fetchKotData() : fetchHistoryData()}>
-                       <RefreshCw className={cn("h-5 w-5", (loading || historyLoading || kotLoading) && "animate-spin")} />
-                    </Button>
-                </div>
-            </div>
+                }
+            />
 
             {/* Tabs & Filters */}
-            <div className="flex flex-col gap-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/40 pb-4">
-                    <div className="flex items-center gap-6">
-                        <TabButton 
-                            label="Active" 
-                            active={activeTab === "active"} 
-                            onClick={() => setOrdersTab("active")} 
-                            icon={<ClipboardList className="h-4 w-4" />}
-                        />
-                        <TabButton
-                            label="KOT"
-                            active={activeTab === "kot"}
-                            onClick={() => setOrdersTab("kot")}
-                            icon={<ChefHat className="h-4 w-4" />}
-                        />
-                        <TabButton 
-                            label="History" 
-                            active={activeTab === "history"} 
-                            onClick={() => setOrdersTab("history")} 
-                            icon={<History className="h-4 w-4" />}
-                        />
-                    </div>
+            <div className="flex flex-col gap-4 md:gap-5">
+                <PageTabs
+                    value={activeTab}
+                    onValueChange={(value) => setOrdersTab(value as "active" | "kot" | "history")}
+                    mobileMode="equal"
+                    items={[
+                        { value: "active", label: "Active", icon: ClipboardList, count: filteredActive.length },
+                        { value: "kot", label: "KOT", icon: ChefHat, count: filteredKots.length },
+                        { value: "history", label: "History", icon: History },
+                    ]}
+                />
 
-                    {activeTab === "active" && (
-                         <div className="flex items-center bg-muted p-1 rounded-xl border border-border/40 shrink-0">
-                             <button
-                                 onClick={() => setPersistedActiveFilter("today")}
-                                 className={cn(
-                                     "px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wider",
-                                     activeFilter === "today"
-                                         ? "bg-background text-foreground shadow-sm ring-1 ring-black/5"
-                                         : "text-muted-foreground hover:text-foreground"
-                                 )}
-                             >
-                                 Today
-                             </button>
-                             <button
-                                 onClick={() => setPersistedActiveFilter("all")}
-                                 className={cn(
-                                     "px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-wider",
-                                     activeFilter === "all"
-                                         ? "bg-background text-foreground shadow-sm ring-1 ring-black/5"
-                                         : "text-muted-foreground hover:text-foreground"
-                                 )}
-                             >
-                                 All Active
-                             </button>
-                         </div>
-                    )}
+                <div className="min-w-0">
 
                     {activeTab === "history" && (
-                        <div className="flex items-center gap-2">
-                             {canUseExtendedHistory ? (
-                                <Badge variant="secondary" className="h-10 rounded-xl px-3 text-[10px] font-bold uppercase tracking-widest">
-                                    Extended history
-                                </Badge>
-                             ) : null}
-                             <Popover>
-                                <PopoverTrigger asChild>
-                                    <Button variant="outline" className="h-10 rounded-xl gap-2 font-bold text-xs uppercase tracking-widest">
-                                        <CalendarIcon className="h-4 w-4" />
-                                        {dateRange?.from ? (
-                                            dateRange.to ? (
-                                                <>
-                                                    {format(dateRange.from, "LLL dd")} - {format(dateRange.to, "LLL dd, y")}
-                                                </>
-                                            ) : (
-                                                format(dateRange.from, "LLL dd, y")
-                                            )
-                                        ) : (
-                                            "Select Date Range"
-                                        )}
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent
-                                    className="w-auto p-0 flex shadow-2xl border border-border/40 rounded-[24px] overflow-hidden bg-background"
-                                    align="center"
-                                    style={{ fontFamily: "inherit" }}
-                                >
-                                    {/* Quick Select */}
-                                    <div className="flex flex-col p-5 border-r border-border/40 bg-muted/20 w-[140px] shrink-0">
-                                        <p className="text-[9px] font-black uppercase tracking-[0.3em] text-orange-500 mb-4">Quick Select</p>
-                                        <div className="flex flex-col gap-1 flex-1">
-                                            <PresetButton
-                                                label="Today"
-                                                onClick={() => setDateRange({ from: startOfDay(new Date()), to: endOfDay(new Date()) })}
-                                                active={dateRange?.from && isToday(dateRange.from) && (!dateRange.to || isToday(dateRange.to))}
-                                            />
-                                            <PresetButton
-                                                label="Yesterday"
-                                                onClick={() => setDateRange({ from: startOfDay(subDays(new Date(), 1)), to: endOfDay(subDays(new Date(), 1)) })}
-                                                active={dateRange?.from && isYesterday(dateRange.from)}
-                                            />
-                                            <PresetButton
-                                                label="Last 7 Days"
-                                                onClick={() => setDateRange({ from: startOfDay(subDays(new Date(), 7)), to: endOfDay(new Date()) })}
-                                                active={dateRange?.from && format(dateRange.from, 'yyyy-MM-dd') === format(subDays(new Date(), 7), 'yyyy-MM-dd')}
-                                            />
-                                            <PresetButton
-                                                label="Last 30 Days"
-                                                onClick={() => setDateRange({ from: startOfDay(subDays(new Date(), 30)), to: endOfDay(new Date()) })}
-                                                active={dateRange?.from && format(dateRange.from, 'yyyy-MM-dd') === format(subDays(new Date(), 30), 'yyyy-MM-dd')}
-                                            />
-                                        </div>
-                                        <button
-                                            className="text-[9px] font-bold uppercase tracking-widest text-destructive/40 hover:text-destructive transition-colors mt-4 text-left"
-                                            onClick={() => setDateRange(defaultHistoryDateRange(primaryRole, { user }))}
-                                        >
-                                            Reset
-                                        </button>
-                                    </div>
-                                    {/* Calendar */}
-                                    <div className="p-4">
-                                        <CalendarComponent
-                                            initialFocus
-                                            mode="range"
-                                            defaultMonth={dateRange?.from || new Date()}
-                                            selected={dateRange}
-                                            onSelect={setDateRange}
-                                            numberOfMonths={1}
-                                            className="p-0"
-                                            weekStartsOn={1}
-                                        />
-                                    </div>
-                                </PopoverContent>
-                            </Popover>
-                        </div>
+                        <FilterBar className="hidden md:block" title="History filters">
+                            {canUseExtendedHistory ? <Badge variant="secondary" className="h-11 rounded-xl px-3 text-xs">Extended history</Badge> : null}
+                            <label className="grid gap-1 text-xs text-muted-foreground">
+                                From
+                                <Input
+                                    type="date"
+                                    value={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : ""}
+                                    onChange={(event) => setDateRange((current) => ({
+                                        from: event.target.value ? startOfDay(new Date(`${event.target.value}T00:00:00`)) : undefined,
+                                        to: current?.to,
+                                    }))}
+                                    className="h-11 rounded-xl"
+                                />
+                            </label>
+                            <label className="grid gap-1 text-xs text-muted-foreground">
+                                To
+                                <Input
+                                    type="date"
+                                    value={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : ""}
+                                    onChange={(event) => setDateRange((current) => ({
+                                        from: current?.from,
+                                        to: event.target.value ? endOfDay(new Date(`${event.target.value}T00:00:00`)) : undefined,
+                                    }))}
+                                    className="h-11 rounded-xl"
+                                />
+                            </label>
+                            <FilterChip onClick={() => setDateRange({ from: startOfDay(new Date()), to: endOfDay(new Date()) })}>Today</FilterChip>
+                            <FilterChip onClick={() => setDateRange({ from: startOfDay(subDays(new Date(), 7)), to: endOfDay(new Date()) })}>Last 7 days</FilterChip>
+                            <Button variant="ghost" className="h-11 px-3 text-sm" onClick={() => setDateRange(defaultHistoryDateRange(primaryRole, { user }))}>Reset</Button>
+                        </FilterBar>
                     )}
 
                     {activeTab === "kot" && (
-                        <div className="flex flex-wrap items-center gap-2">
+                        <FilterBar className="hidden md:block" title="KOT filters" activeCount={(kotStatusFilter === "ALL" ? 0 : 1) + (kotStationFilter === "All" ? 0 : 1) + (kotTableFilter === "All" ? 0 : 1)}>
                             {(["ALL", "PENDING", "PREPARING", "READY", "SERVED", "REJECTED"] as const).map((status) => (
-                                <button
+                                <FilterChip
                                     key={status}
+                                    active={kotStatusFilter === status}
                                     onClick={() => setKotStatusFilter(status === "ALL" ? "ALL" : status)}
-                                    className={cn(
-                                        "rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors",
-                                        kotStatusFilter === status
-                                            ? "border-primary bg-primary/10 text-primary"
-                                            : "border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground",
-                                    )}
                                 >
-                                    {status === "ALL" ? `All ${kots.length}` : status.replace("_", " ")}
-                                </button>
+                                    {status === "ALL" ? "All" : status.charAt(0) + status.slice(1).toLowerCase()}
+                                </FilterChip>
                             ))}
                             <select
                                 aria-label="Filter kitchen station"
                                 value={kotStationFilter}
                                 onChange={(event) => setKotStationFilter(event.target.value)}
-                                className="h-9 rounded-xl border border-border/50 bg-background px-3 text-xs font-semibold text-muted-foreground outline-none focus:border-primary"
+                                className="h-11 rounded-xl border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none focus:border-primary"
                             >
                                 {Array.from(new Set(["All", ...kots.map((kot) => kot.station).filter(Boolean) as string[]])).map((station) => (
                                     <option key={station} value={station}>{station}</option>
                                 ))}
                             </select>
-                        </div>
+                            <select
+                                aria-label="Filter table"
+                                value={kotTableFilter}
+                                onChange={(event) => setKotTableFilter(event.target.value)}
+                                className="h-11 rounded-xl border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none focus:border-primary"
+                            >
+                                {Array.from(new Set(["All", ...kots.map((kot) => kot.table_name).filter(Boolean) as string[]])).map((table) => (
+                                    <option key={table} value={table}>{table}</option>
+                                ))}
+                            </select>
+                        </FilterBar>
                     )}
                 </div>
 
@@ -774,7 +893,7 @@ export default function OrdersPage() {
                         loading ? (
                             <LoadingGrid />
                         ) : filteredActive.length === 0 ? (
-                            <EmptyState label="No active orders found" icon={<ClipboardList />} />
+                            <SharedEmptyState title="No active orders found" description="Try changing the active-order filter or search." icon={<ClipboardList className="h-5 w-5" />} />
                         ) : (
                             <>
                             <div className="mb-3 flex items-center gap-2 text-base font-bold sm:mb-4 sm:text-lg"><span className="h-2 w-2 rounded-full bg-emerald-500" />Now serving</div>
@@ -791,7 +910,7 @@ export default function OrdersPage() {
                         kotLoading && kots.length === 0 ? (
                             <LoadingGrid />
                         ) : filteredKots.length === 0 ? (
-                            <EmptyState label="No kitchen tickets found" icon={<ChefHat />} />
+                            <SharedEmptyState title="No kitchen tickets found" description="Try changing the KOT filters or search." icon={<ChefHat className="h-5 w-5" />} />
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-5">
                                 {filteredKots.map((kot) => (
@@ -802,7 +921,7 @@ export default function OrdersPage() {
                     ) : scopeNotice ? null : historyLoading ? (
                             <LoadingGrid />
                         ) : historyOrders.length === 0 ? (
-                            <EmptyState label="No order history found" icon={<History />} />
+                            <SharedEmptyState title="No order history found" description="Try a different date range or search." icon={<History className="h-5 w-5" />} />
                         ) : (
                             <div className="flex flex-col gap-8">
                                 {Object.entries(groupedHistory).map(([label, orders]) => (
@@ -837,7 +956,7 @@ export default function OrdersPage() {
                 open={detailsOpen}
                 onOpenChange={setDetailsOpen}
             />
-            <OrdersFloatingNewButton />
+            <OrdersNewOrderSheet />
 
             <Dialog
                 open={kotDetailsOpen}
@@ -1011,7 +1130,7 @@ export default function OrdersPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
+        </AppPage>
     );
 }
 
@@ -1072,23 +1191,6 @@ function KotOrderCard({ kot, onClick }: { kot: OrdersKot; onClick: (kot: OrdersK
     );
 }
 
-function TabButton({ label, active, onClick, icon }: any) {
-    return (
-        <button 
-            onClick={onClick}
-            className={cn(
-                "flex items-center gap-2 pb-4 px-1 border-b-2 transition-all relative",
-                active 
-                    ? "border-primary text-foreground font-black uppercase tracking-widest text-sm" 
-                    : "border-transparent text-muted-foreground font-bold uppercase tracking-widest text-sm hover:text-foreground"
-            )}
-        >
-            {icon}
-            {label}
-        </button>
-    );
-}
-
 function LoadingGrid() {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -1096,36 +1198,5 @@ function LoadingGrid() {
                 <div key={i} className="h-40 rounded-2xl bg-muted/40 animate-pulse border border-border/40" />
             ))}
         </div>
-    );
-}
-
-function EmptyState({ label, icon }: any) {
-    return (
-        <div className="h-96 flex flex-col items-center justify-center text-center gap-6 bg-muted/20 rounded-[40px] border-2 border-dashed border-border/40">
-            <div className="h-24 w-24 rounded-[32px] bg-muted flex items-center justify-center text-muted-foreground">
-                {icon}
-            </div>
-            <div>
-                <h3 className="text-xl font-bold">{label}</h3>
-                <p className="text-muted-foreground text-sm max-w-xs mx-auto mt-2">Try adjusting your filters or search query.</p>
-            </div>
-        </div>
-    );
-}
-
-function PresetButton({ label, onClick, active, className }: any) {
-    return (
-        <button
-            onClick={onClick}
-            className={cn(
-                "flex items-center w-full px-3 py-2.5 rounded-xl text-left text-[10px] font-semibold transition-all duration-200",
-                active
-                    ? "bg-orange-500 text-white shadow-md shadow-orange-500/30"
-                    : "hover:bg-accent text-muted-foreground hover:text-foreground",
-                className
-            )}
-        >
-            {label}
-        </button>
     );
 }

@@ -7,6 +7,12 @@ import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import { ReceiptApis, OrderApis, PrinterApis } from "@/lib/api/endpoints";
 import { useOrderFull } from "@/hooks/use-order-full";
+import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
+
+function ReceiptAppBarTitle({ title }: { title: string }) {
+  useMobileAppBarTitle(title);
+  return null;
+}
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -840,6 +846,11 @@ export default function ReceiptPage() {
   const orderLabel = order.table_name
     ? `${order.table_name} • #${order.restaurant_order_id || order.id}`
     : `Order #${order.restaurant_order_id || order.id}`;
+  const mobileAppBarTitle = order.table_name
+    ? (/^table\b/i.test(order.table_name) ? order.table_name : `Table ${order.table_name}`)
+    : order.channel === "room_service"
+      ? "Room delivery"
+      : "Receipt";
 
   const orderCreatedAt = order.created_at;
   const refundIsHistorical = isOrderRefundHistorical(orderCreatedAt);
@@ -851,6 +862,7 @@ export default function ReceiptPage() {
 
   return (
     <>
+      <ReceiptAppBarTitle title={mobileAppBarTitle} />
       {/* Print-only styles */}
       <style jsx global>{`
         @media print {
@@ -888,7 +900,7 @@ export default function ReceiptPage() {
       <div className="flex flex-col gap-6 max-w-3xl mx-auto pb-8 min-h-screen">
         {/* ── Header (no-print) ── */}
         <div className="flex items-center justify-between no-print px-4 pt-4">
-          <div className="flex items-center gap-4">
+          <div className="hidden items-center gap-4 md:flex">
             <Button variant="ghost" size="icon" onClick={() => {
               if (returnTo) router.push(returnTo);
               else if (receipt?.order?.channel === "room_service") router.push("/hotel");

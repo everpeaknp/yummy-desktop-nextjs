@@ -30,6 +30,9 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { HelpCenterDialog } from "@/components/onboarding/help-center-dialog";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { isPathAccessible } from "@/lib/role-permissions";
@@ -293,21 +296,39 @@ export default function ManagePage() {
     );
 
     return (
-        <div className="mx-auto max-w-[1600px] space-y-12 p-8 pb-24">
-            <div className="space-y-1">
-                <h1 className="text-3xl font-black tracking-tight text-foreground">Settings</h1>
-                <p className="font-medium text-muted-foreground">
-                    Configure your operations, menu, and financial settings.
-                </p>
-            </div>
+        <AppPage width="wide" className="pb-24">
+            <PageHeader
+                className="hidden md:flex"
+                title="Manage"
+                description="Configure operations, menu, finance, and restaurant settings."
+            />
 
-            <div className="space-y-12">
+            <div className="space-y-7 md:space-y-12">
                 {visibleSections.map((section) => (
-                    <div key={section.title} className="space-y-5">
-                        <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
+                    <div key={section.title} className="space-y-2.5 md:space-y-5">
+                        <h2 className="text-xs font-semibold text-muted-foreground md:text-[11px] md:font-black md:uppercase md:tracking-[0.2em] md:text-muted-foreground/70">
                             {section.title}
                         </h2>
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        <div className="md:hidden">
+                            <DataList>
+                                {section.items.map((item) => {
+                                    const row = (
+                                        <ListRow
+                                            leading={<item.icon className={cn("h-4 w-4", item.iconColor)} />}
+                                            title={item.title}
+                                            description={item.description}
+                                            interactive
+                                        />
+                                    );
+                                    return item.action === "help" ? (
+                                        <button key={item.href} type="button" className="block w-full text-left" onClick={() => setHelpOpen(true)}>{row}</button>
+                                    ) : (
+                                        <Link key={item.href} href={item.href} className="block">{row}</Link>
+                                    );
+                                })}
+                            </DataList>
+                        </div>
+                        <div className="hidden grid-cols-1 gap-4 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                             {section.items.map((item) => {
                                 const card = (
                                     <Card className="group h-[90px] cursor-pointer overflow-hidden border-border/40 bg-card/40 backdrop-blur-sm transition-all hover:border-primary/50 hover:shadow-md">
@@ -362,6 +383,6 @@ export default function ManagePage() {
                 open={helpOpen}
                 onOpenChange={setHelpOpen}
             />
-        </div>
+        </AppPage>
     );
 }

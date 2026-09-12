@@ -3,19 +3,20 @@
 import { useState, useEffect, Suspense, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import POSSystem from "@/components/orders/pos-system";
-import { Zap, Truck, ShoppingBag, Sofa, ChevronLeft, Loader2, Armchair, BedDouble, Filter, Table2 } from "lucide-react";
+import { Zap, Truck, ShoppingBag, Sofa, Loader2, Armchair, BedDouble, Filter, Table2 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { cn } from "@/lib/utils";
 import { TableApis, TableTypeApis } from "@/lib/api/endpoints";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { RoomContainer, type TableData } from "@/components/tables/room-container";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useEntitlement } from "@/hooks/use-subscription";
 import { hotelDate, hotelPmsApi } from "@/lib/hotel/api";
 import { MobileNewOrderFlow } from "@/components/orders/mobile-new-order-flow";
+import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
 
 
 interface TableType {
@@ -57,6 +58,7 @@ export default function NewOrderPage() {
     const me = useAuth(state => state.me);
     const restaurant = useRestaurant((s) => s.restaurant);
     const router = useRouter();
+    const searchParams = useSearchParams();
     const hotelEnabled = restaurant?.hotel_enabled ?? false;
     const dineInAccess = useEntitlement("orders.dine_in.enabled", true);
     const takeawayAccess = useEntitlement("orders.takeaway.enabled", true);
@@ -72,6 +74,39 @@ export default function NewOrderPage() {
         (!takeawayAccess.resolved && takeawayAccess.error) ||
         (!deliveryAccess.resolved && deliveryAccess.error) ||
         (!hotelAccess.resolved && hotelAccess.error);
+
+    const requestedStart = searchParams.get("start");
+    const initialMobileFlowStep = requestedStart === "dine_in"
+        ? "tables"
+        : requestedStart === "room_service"
+            ? "rooms"
+            : "channels";
+    const requestedPosChannel = requestedStart === "quick_billing" || requestedStart === "pickup" || requestedStart === "delivery"
+        ? requestedStart
+        : null;
+    const currentTableName = activePOS?.tableId
+        ? tables.find((table) => table.id === activePOS.tableId)?.table_name || `Table ${activePOS.tableId}`
+        : null;
+    const mobileAppBarTitle = activePOS?.channel === "room_service"
+        ? activePOS.roomOrderLabel || "Room order"
+        : activePOS?.tableIds && activePOS.tableIds.length > 1
+            ? `${activePOS.tableIds.length} tables`
+            : currentTableName
+                ? (/^table\b/i.test(currentTableName) ? currentTableName : `Table ${currentTableName}`)
+                : activePOS?.channel === "quick_billing"
+                    ? "Quick bill"
+                    : activePOS?.channel === "pickup"
+                        ? "Pickup order"
+                        : activePOS?.channel === "delivery"
+                            ? "Delivery order"
+                            : "New order";
+
+    useMobileAppBarTitle(mobileAppBarTitle);
+
+    useEffect(() => {
+        if (!requestedPosChannel) return;
+        setActivePOS((current) => current ?? { orderId: "create", channel: requestedPosChannel });
+    }, [requestedPosChannel]);
 
     useEffect(() => {
         if (orderAccessLoading || orderAccessError) return;
@@ -272,7 +307,7 @@ export default function NewOrderPage() {
     }
 
     if (activePOS) {
-        let label = "Table Order";
+        let label = "New order";
         if (activePOS.channel === "room_service") {
             label = `Room Order — ${activePOS.roomOrderLabel || "PMS stay"}`;
         } else if (activePOS.tableIds && activePOS.tableIds.length > 0) {
@@ -287,16 +322,7 @@ export default function NewOrderPage() {
         }
 
         return (
-            <div className="flex flex-col h-full gap-2">
-                <div className="flex items-center gap-2 pb-2">
-                    <Button variant="ghost" size="sm" onClick={() => {
-                        setActivePOS(null);
-                        setSelectedTables([]);
-                    }}>
-                        <ChevronLeft className="h-4 w-4 mr-1" /> Back to Tables/Rooms
-                    </Button>
-                    <h2 className="text-lg font-semibold">{label}</h2>
-                </div>
+            <div className="flex h-full flex-col" aria-label={label}>
                 <Suspense fallback={<div>Loading...</div>}>
                     <POSSystem 
                         orderId={activePOS.orderId} 
@@ -371,6 +397,8 @@ export default function NewOrderPage() {
                 onBrowseTables={() => setActiveTab("tables")}
                 onBrowseRooms={() => setActiveTab("rooms")}
                 onStart={(channel) => setActivePOS({ orderId: "create", channel })}
+                entryPoint={initialMobileFlowStep}
+                onExit={() => router.push("/orders")}
                 onChooseTable={handleTableClick}
                 onChooseRoom={(target) => setActivePOS({ orderId: "create", channel: "room_service", stayAssignmentId: target.assignmentId, roomOrderLabel: `Room ${target.roomNumber} · ${target.guestName}` })}
             />

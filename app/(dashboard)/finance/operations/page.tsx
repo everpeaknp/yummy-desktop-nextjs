@@ -17,6 +17,8 @@ import { toast } from "sonner";
 
 import { PaymentInstrumentsPanel } from "@/components/finance/payment-instruments-panel";
 import { CashDrawerConfigPanel } from "@/components/finance/cash-drawer-config-panel";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -325,32 +327,12 @@ export default function FinanceOperationsPage() {
   const ownerAccounts = managedBanks.filter((account) => account.bank_type === "owner_equity");
 
   return (
-    <div className="min-h-screen bg-background">
-      <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 lg:px-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Cash & Banks</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              See where your money is held, move it between accounts, and manage how customers pay.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            {supportsHotel && supportsRestaurant ? (
-              <Select
-                value={businessLine}
-                onValueChange={(value: "restaurant" | "hotel") => setBusinessLine(value)}
-              >
-                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="restaurant">Restaurant</SelectItem>
-                  <SelectItem value="hotel">Hotel</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : null}
-            <Button variant="outline" size="icon" onClick={() => void load()} disabled={loading} title="Refresh balances">
-              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-              <span className="sr-only">Refresh balances</span>
-            </Button>
+    <AppPage width="wide" density="compact">
+      <PageHeader
+        title="Cash & Banks"
+        description="Balances, transfers, payment methods, and cash-drawer configuration."
+        actions={(
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button onClick={() => setTransferOpen(true)} disabled={accounts.length < 2}>
               <Plus className="mr-2 h-4 w-4" /> Transfer
             </Button>
@@ -360,7 +342,11 @@ export default function FinanceOperationsPage() {
                   <Settings2 className="mr-2 h-4 w-4" /> Manage
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuItem onSelect={() => void load()} disabled={loading}>
+                  <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
+                  Refresh balances
+                </DropdownMenuItem>
                 {canManageAccounts ? (
                   <DropdownMenuItem onSelect={() => openAccountEditor()}>
                     Add bank, safe, or owner funds
@@ -372,7 +358,28 @@ export default function FinanceOperationsPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+        )}
+      />
+
+      {supportsHotel && supportsRestaurant ? (
+        <div className="grid grid-cols-2 rounded-xl bg-muted/60 p-1 sm:w-72">
+          {(["restaurant", "hotel"] as const).map((line) => (
+            <button
+              key={line}
+              type="button"
+              onClick={() => setBusinessLine(line)}
+              className={cn(
+                "min-h-10 rounded-lg px-3 text-sm font-medium capitalize transition-colors",
+                businessLine === line
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground",
+              )}
+            >
+              {line}
+            </button>
+          ))}
         </div>
+      ) : null}
 
         {error ? (
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -380,30 +387,28 @@ export default function FinanceOperationsPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
-            <CardContent className="flex items-center justify-between p-5">
-              <div><p className="text-sm text-muted-foreground">Cash on hand</p><p className="mt-1 text-2xl font-semibold tabular-nums">{money(totals.cash, currency)}</p><p className="mt-1 text-xs text-muted-foreground">Cash currently held in tills.</p></div>
-              <WalletCards className="h-6 w-6 text-primary" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center justify-between p-5">
-              <div><p className="text-sm text-muted-foreground">Money in banks & safes</p><p className="mt-1 text-2xl font-semibold tabular-nums">{money(totals.banks, currency)}</p><p className="mt-1 text-xs text-muted-foreground">Money held outside the cash drawers.</p></div>
-              <Banknote className="h-6 w-6 text-primary" />
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 divide-x rounded-2xl border bg-card">
+          <div className="min-w-0 p-4 sm:p-5">
+            <WalletCards className="mb-3 h-5 w-5 text-primary" />
+            <p className="text-xs font-medium text-muted-foreground">Cash on hand</p>
+            <p className="mt-1 truncate text-lg font-semibold tabular-nums sm:text-2xl">{money(totals.cash, currency)}</p>
+          </div>
+          <div className="min-w-0 p-4 sm:p-5">
+            <Banknote className="mb-3 h-5 w-5 text-primary" />
+            <p className="text-xs font-medium text-muted-foreground">Banks & safes</p>
+            <p className="mt-1 truncate text-lg font-semibold tabular-nums sm:text-2xl">{money(totals.banks, currency)}</p>
+          </div>
         </div>
 
         {loading && accounts.length === 0 ? (
           <div className="flex min-h-[300px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
         ) : (
           <Tabs defaultValue={initialTab} className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="accounts">Where money is held</TabsTrigger>
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 sm:grid-cols-4">
+              <TabsTrigger value="accounts" className="min-h-10">Accounts</TabsTrigger>
               <TabsTrigger value="transfers">Transfers</TabsTrigger>
-              <TabsTrigger value="payment-instruments">Payment Instruments</TabsTrigger>
-              <TabsTrigger value="cash-drawers">Cash Drawers</TabsTrigger>
+              <TabsTrigger value="payment-instruments">Payment methods</TabsTrigger>
+              <TabsTrigger value="cash-drawers">Cash drawers</TabsTrigger>
             </TabsList>
 
             <TabsContent value="accounts" className="space-y-5">
@@ -501,8 +506,6 @@ export default function FinanceOperationsPage() {
 
           </Tabs>
         )}
-      </main>
-
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>Record balance transfer</DialogTitle></DialogHeader>
@@ -551,7 +554,7 @@ export default function FinanceOperationsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }
 

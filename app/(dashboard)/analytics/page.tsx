@@ -52,7 +52,6 @@ import {
   BarChart2,
   Award,
   UserCheck,
-  SlidersHorizontal,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
@@ -80,8 +79,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { PageTabs } from "@/components/patterns/navigation/page-tabs";
+import { FilterBar } from "@/components/patterns/controls/filter-bar";
 import { useRef } from "react";
 import { DateRange } from "react-day-picker";
 import Link from "next/link";
@@ -153,7 +155,6 @@ import {
 
 export default function AnalyticsPage() {
   const [activeRange, setActiveRange] = useState<DateRangePreset>("today");
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [data, setData] = useState<any>(null);
   const [cashControlSummary, setCashControlSummary] =
     useState<DrawerCashControlSummary | null>(null);
@@ -169,6 +170,7 @@ export default function AnalyticsPage() {
   const analyticsRequestGenerationRef = useRef(0);
   const [date, setDate] = useState<DateRange | undefined>();
   const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
+  const [showFinanceBreakdown, setShowFinanceBreakdown] = useState(false);
   const [businessLine, setBusinessLine] = useState<string | undefined>(
     "restaurant",
   );
@@ -1479,7 +1481,7 @@ export default function AnalyticsPage() {
   if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto pb-10">
+    <AppPage width="wide" className="pb-10">
       {scopeNotice ? (
         <HistoryScopeNotice
           error={scopeNotice}
@@ -1511,13 +1513,10 @@ export default function AnalyticsPage() {
       ) : null}
 
       {/* Header & Filters */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-          <p className="text-muted-foreground text-sm text-primary font-semibold">
-            {restaurant?.name || "YUMMY"}
-          </p>
-        </div>
+      <div className="space-y-3">
+        <PageHeader
+          title="Analytics"
+        />
 
         <div className="flex items-center gap-2 sm:hidden">
           <DateRangeDropdown
@@ -1525,24 +1524,20 @@ export default function AnalyticsPage() {
             setActiveRange={setActiveRange}
             date={date}
             setDate={setDate}
-            className="h-9 min-w-0 flex-1 rounded-lg bg-primary/5 px-3 text-sm"
+            className="h-11 min-w-0 flex-1 rounded-xl bg-primary/5 px-3 text-sm"
           />
-          <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 rounded-lg" aria-label="Open analytics filters">
-                <SlidersHorizontal className="h-4 w-4" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="bottom" className="flex max-h-[78dvh] flex-col rounded-t-2xl p-0">
-              <SheetHeader className="border-b px-5 py-4 text-left"><SheetTitle>Filters</SheetTitle></SheetHeader>
-              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <FilterBar
+            className="shrink-0"
+            title="Filters"
+            activeCount={Number(Boolean(selectedDayCloseSession)) + Number(Boolean(station)) + Number(Boolean(businessLine))}
+            mobileContent={
+              <>
                 <div className="space-y-2"><p className="text-xs font-medium text-muted-foreground">Daybook</p><Select value={selectedDayCloseSession ? String(selectedDayCloseSession.id) : "all"} onValueChange={(val) => { if (val === "all") { setSelectedDayCloseSession(null); setFetchTrigger((t) => t + 1); } else { const sess = sessions.find((s) => String(s.id) === val); if (sess) { setStation(undefined); setSelectedDayCloseSession(sess); if (sess.business_line) setBusinessLine(sess.business_line); setFetchTrigger((t) => t + 1); } } }}><SelectTrigger className="h-10 rounded-xl"><SelectValue placeholder="All daybooks" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="all">All daybooks</SelectItem>{sessions.map((sess: any) => <SelectItem key={sess.id} value={String(sess.id)}>{getSessionDateLabel(sess)}</SelectItem>)}</SelectContent></Select></div>
                 <div className="space-y-2"><p className="text-xs font-medium text-muted-foreground">Station</p><Select value={station || "all"} onValueChange={(val) => setStation(toFinanceStationParam(val, { businessLine: businessLine ?? "all", hotelEnabled: Boolean(restaurant?.hotel_enabled), customStations: customFinanceStations }))} disabled={!!selectedDayCloseSession}><SelectTrigger className="h-10 rounded-xl"><SelectValue placeholder="All stations" /></SelectTrigger><SelectContent className="rounded-xl">{stationOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.value === "all" ? "All stations" : option.label}</SelectItem>)}</SelectContent></Select></div>
                 {restaurant?.hotel_enabled && restaurant?.restaurant_enabled ? <div className="space-y-2"><p className="text-xs font-medium text-muted-foreground">Business line</p><Select value={businessLine || "all"} onValueChange={(val) => { setBusinessLine(val === "all" ? undefined : val); setFetchTrigger((t) => t + 1); }}><SelectTrigger className="h-10 rounded-xl"><SelectValue /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="all">All services</SelectItem><SelectItem value="restaurant">Restaurant</SelectItem><SelectItem value="hotel">Hotel / Rooms</SelectItem></SelectContent></Select></div> : null}
-              </div>
-              <div className="border-t p-4"><Button className="w-full" onClick={() => setMobileFiltersOpen(false)}>Done</Button></div>
-            </SheetContent>
-          </Sheet>
+              </>
+            }
+          />
         </div>
 
         <div className="hidden items-center gap-3 sm:flex">
@@ -1699,49 +1694,26 @@ export default function AnalyticsPage() {
           onValueChange={setActiveTab}
           className="w-full space-y-5"
         >
-          <div className="flex items-center gap-2 xl:justify-between">
-            <TabsList className="flex h-10 min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-xl bg-muted p-1 sm:max-w-none sm:flex-none sm:overflow-x-auto no-scrollbar">
-              <TabsTrigger
-                value="overview"
-                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
-              >
-                Overview
-              </TabsTrigger>
-              <TabsTrigger
-                value="orders"
-                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
-              >
-                Orders
-              </TabsTrigger>
-              <TabsTrigger
-                value="finance"
-                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
-              >
-                Finance
-              </TabsTrigger>
-              <TabsTrigger
-                value="menu"
-                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
-              >
-                Menu
-              </TabsTrigger>
-              <TabsTrigger
-                value="staff"
-                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
-              >
-                Staff
-              </TabsTrigger>
-              <TabsTrigger
-                value="nc"
-                className="h-8 min-w-0 flex-1 rounded-lg px-1 text-[10px] font-semibold sm:h-9 sm:w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-sm"
-              >
-                NC
-              </TabsTrigger>
-            </TabsList>
-            <Link href="/analytics/compare">
-              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 rounded-lg sm:w-auto sm:gap-2 sm:px-3" aria-label="Compare periods">
+          <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+            <PageTabs
+              ariaLabel="Analytics sections"
+              className="w-full min-w-0 xl:flex-1"
+              mobileMode="equal"
+              value={activeTab}
+              onValueChange={setActiveTab}
+              items={[
+                { value: "overview", label: "Overview" },
+                { value: "orders", label: "Orders" },
+                { value: "finance", label: "Finance" },
+                { value: "menu", label: "Menu" },
+                { value: "staff", label: "Staff" },
+                { value: "nc", label: "NC" },
+              ]}
+            />
+            <Link href="/analytics/compare" className="hidden xl:block">
+              <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl xl:w-auto xl:gap-2 xl:px-3" aria-label="Compare periods">
                 <ArrowLeftRight className="h-4 w-4" />
-                <span className="hidden text-xs font-semibold sm:inline">Compare</span>
+                <span className="hidden text-xs font-semibold xl:inline">Compare</span>
               </Button>
             </Link>
           </div>
@@ -2530,11 +2502,34 @@ export default function AnalyticsPage() {
                 </div>
               )}
 
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full justify-between rounded-xl px-4 lg:hidden"
+                onClick={() => setShowFinanceBreakdown((visible) => !visible)}
+              >
+                {showFinanceBreakdown
+                  ? "Hide finance breakdown"
+                  : "View finance breakdown"}
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-200",
+                    showFinanceBreakdown && "rotate-180",
+                  )}
+                />
+              </Button>
+
               {/* A supplier-payable running balance isn't fetched on this page
                   yet -- "We Owe Suppliers" is intentionally omitted from the
                   snapshot above rather than shown with a wrong or approximate
                   number. */}
 
+              <div
+                className={cn(
+                  "space-y-5",
+                  !showFinanceBreakdown && "hidden lg:block",
+                )}
+              >
               <FinanceMetricGroup title="Discounts, Refunds & Purchases">
                 <BigMetricCard
                   label="Discounts"
@@ -2663,52 +2658,60 @@ export default function AnalyticsPage() {
                   </>
                 )}
               </FinanceMetricGroup>
+              </div>
             </section>
 
             {/* Receivables detail -- the headline "Customers Owe Us" number
                 already shows in Today's Snapshot; this card is the
                 breakdown behind it. */}
-            <Card className="bg-card border-border shadow-sm">
-              <CardHeader className="pb-2">
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
+            <Card className="border-border bg-card shadow-sm">
+              <CardHeader className="space-y-1 px-4 pb-2 pt-4 sm:px-6 sm:pt-6">
+                  <CardTitle className="flex items-center gap-2 text-base font-semibold">
                     <CreditCard className="w-4 h-4 text-blue-500" /> Receivables
                   </CardTitle>
+                  <CardDescription>Credit sales and customer balances.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
-                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
+                  <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
+                    <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/30 p-3 sm:block sm:space-y-1 sm:p-3.5">
+                      <div>
+                      <span className="text-xs font-medium text-muted-foreground sm:text-[10px] sm:font-black sm:uppercase sm:tracking-wider">
                         Credit Sales
                       </span>
-                      <span className="text-lg font-bold text-foreground">
-                        {fmtShort(receivables.credit_sales ?? 0)}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground font-medium">
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground sm:text-[9px]">
                         {receivables.credit_orders_count ?? 0} credit orders
                       </span>
+                      </div>
+                      <span className="shrink-0 text-base font-semibold text-foreground sm:mt-1 sm:block sm:text-lg sm:font-bold">
+                        {fmtShort(receivables.credit_sales ?? 0)}
+                      </span>
                     </div>
-                    <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3.5 flex flex-col gap-1">
-                      <span className="text-[10px] font-black text-red-500 uppercase tracking-wider">
+                    <div className="flex items-center justify-between gap-4 rounded-xl border border-red-500/15 bg-red-500/5 p-3 sm:block sm:space-y-1 sm:p-3.5">
+                      <div>
+                      <span className="text-xs font-medium text-red-500 sm:text-[10px] sm:font-black sm:uppercase sm:tracking-wider">
                         Outstanding (All Time)
                       </span>
-                      <span className="text-lg font-bold text-foreground">
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground sm:text-[9px]">
+                        Total unpaid credit bills
+                      </span>
+                      </div>
+                      <span className="shrink-0 text-base font-semibold text-foreground sm:mt-1 sm:block sm:text-lg sm:font-bold">
                         {fmtShort(receivables.total_outstanding ?? 0)}
                       </span>
-                      <span className="text-[9px] text-muted-foreground font-medium">
-                        Total unpaid credit bills, not limited to the selected date range
-                      </span>
                     </div>
-                    <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 flex flex-col gap-1">
-                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/30 p-3 sm:block sm:space-y-1 sm:p-3.5">
+                      <div>
+                      <span className="text-xs font-medium text-muted-foreground sm:text-[10px] sm:font-black sm:uppercase sm:tracking-wider">
                         Cash vs Credit
                       </span>
-                      <span className="text-lg font-bold text-foreground">
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground sm:text-[9px]">
+                        of sales on credit
+                      </span>
+                      </div>
+                      <span className="shrink-0 text-base font-semibold text-foreground sm:mt-1 sm:block sm:text-lg sm:font-bold">
                         {grossSalesVal > 0
                           ? `${Math.round(((receivables.credit_sales ?? 0) / grossSalesVal) * 100)}%`
                           : "0%"}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground font-medium">
-                        of sales on credit
                       </span>
                     </div>
                   </div>
@@ -3846,7 +3849,7 @@ export default function AnalyticsPage() {
           businessLine={businessLine as any}
         />
       )}
-    </div>
+    </AppPage>
   );
 }
 
@@ -3857,54 +3860,8 @@ function SnapshotCard({
   value,
   icon,
   color,
-  bgColor,
-  borderColor,
 }: any) {
-  return (
-    <Card
-      className={cn(
-        "border bg-card overflow-hidden relative group shadow-sm transition-all duration-300 hover:shadow-md",
-        borderColor,
-      )}
-    >
-      <div
-        className={cn(
-          "absolute top-0 left-0 w-[4px] h-full opacity-70",
-          color.replace("text-", "bg-"),
-        )}
-      />
-      <div
-        className={cn(
-          "absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity duration-300",
-          bgColor,
-        )}
-      />
-      <CardContent className="relative z-10 p-3 sm:p-6">
-        <div className="mb-2 flex items-start justify-between sm:mb-4">
-          <div className={cn("rounded-lg p-1.5 sm:rounded-xl sm:p-2.5", bgColor)}>
-            <div
-              className={cn(
-                "transition-transform duration-300 group-hover:scale-110",
-                color,
-              )}
-            >
-              {icon}
-            </div>
-          </div>
-        </div>
-        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:mb-1.5">
-          {label}
-        </div>
-        <div className="text-lg font-semibold tracking-tight text-foreground sm:text-2xl sm:font-black">
-          Rs.{" "}
-          {Number(value).toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return <BigMetricCard label={label} value={value} icon={icon} color={color} />;
 }
 
 function BigMetricCard({
@@ -3986,24 +3943,8 @@ function FinanceMetricGroup({
   );
 }
 
-function LiveOrderStat({ label, count, icon, color, bg }: any) {
-  return (
-    <div
-      className={cn(
-        "flex flex-col items-center gap-2 rounded-xl p-4 border",
-        bg,
-        "border-transparent",
-      )}
-    >
-      <div className={cn("p-2 rounded-lg", bg)}>
-        <div className={cn(color)}>{icon}</div>
-      </div>
-      <span className="text-2xl font-black">{count}</span>
-      <span className="text-xs text-muted-foreground font-semibold">
-        {label}
-      </span>
-    </div>
-  );
+function LiveOrderStat({ label, count, icon, color }: any) {
+  return <BigMetricCard label={label} value={count} noCurrency icon={icon} color={color} />;
 }
 
 function TopItemRow({
@@ -4340,15 +4281,15 @@ function RevenueTrendsCard({
   };
 
   return (
-    <Card className="bg-card border-border shadow-sm">
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 gap-2">
+    <Card className="overflow-hidden border-border bg-card shadow-sm">
+      <CardHeader className="space-y-3 px-4 pb-2 pt-4 sm:px-6 sm:pt-6">
         <div>
           <CardTitle className="text-base font-bold">{title}</CardTitle>
           <CardDescription>
             {isHourly ? "Hourly progression" : "Day-wise financial progression"}
           </CardDescription>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex min-w-0 items-center justify-between gap-2">
           {/* Global day picker — shown when data is hourly (single-day view) */}
           {isHourly && globalDayOptions.length > 0 && (
             <Select
@@ -4357,7 +4298,7 @@ function RevenueTrendsCard({
                 if (onDaySelect) onDaySelect(v);
               }}
             >
-              <SelectTrigger className="h-8 rounded-lg text-xs w-[130px] border-border/60 bg-muted font-semibold gap-1">
+              <SelectTrigger className="h-9 w-[120px] shrink-0 rounded-xl border-border/60 bg-muted text-xs font-semibold sm:w-[130px]">
                 <SelectValue placeholder="Today">
                   {currentDayLabel || globalDayOptions[0]?.label || "Today"}
                 </SelectValue>
@@ -4378,7 +4319,7 @@ function RevenueTrendsCard({
           {/* Client-side day filter — shown when data has multiple daily points */}
           {!isHourly && clientDayOptions.length > 1 && (
             <Select value={selectedDay} onValueChange={setSelectedDay}>
-              <SelectTrigger className="h-8 rounded-lg text-xs w-[130px] border-border/60 bg-muted font-semibold gap-1">
+              <SelectTrigger className="h-9 w-[120px] shrink-0 rounded-xl border-border/60 bg-muted text-xs font-semibold sm:w-[130px]">
                 <SelectValue placeholder="All Days" />
               </SelectTrigger>
               <SelectContent className="rounded-xl max-h-[220px]">
@@ -4394,13 +4335,13 @@ function RevenueTrendsCard({
             </Select>
           )}
           {/* Metric toggle */}
-          <div className="flex bg-muted p-0.5 rounded-lg text-xs font-semibold gap-0.5">
+          <div className="grid shrink-0 grid-cols-3 rounded-xl bg-muted p-0.5 text-[11px] font-semibold sm:text-xs">
             {(["revenue", "expense", "profit"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setMetric(m)}
                 className={cn(
-                  "px-2.5 py-1.5 rounded-md transition-all capitalize",
+                  "min-h-8 rounded-lg px-2 transition-colors capitalize sm:px-2.5",
                   metric === m
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
@@ -4417,8 +4358,8 @@ function RevenueTrendsCard({
         </div>
       </CardHeader>
       {/* Big number + trend badge (like Flutter) */}
-      <div className="px-6 pb-2">
-        <div className="bg-gradient-to-br from-card to-muted/30 border border-border/40 rounded-2xl p-4">
+      <div className="px-4 pb-2 sm:px-6">
+        <div className="rounded-xl border border-border/60 bg-muted/25 p-3 sm:rounded-2xl sm:p-4">
           <div className="flex items-end justify-between gap-4">
             <div>
               <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-2">
@@ -4429,7 +4370,7 @@ function RevenueTrendsCard({
                   </span>
                 )}
               </p>
-              <p className="text-2xl font-black text-foreground">
+              <p className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 {fmtShortLocal(displayTotal)}
               </p>
             </div>
@@ -4437,8 +4378,8 @@ function RevenueTrendsCard({
           </div>
         </div>
       </div>
-      <CardContent className="pl-1">
-        <div className="h-[200px] w-full">
+      <CardContent className="px-3 pb-3 pt-1 sm:px-5 sm:pb-5">
+        <div className="h-44 w-full sm:h-[220px]">
           {loading ? (
             <div className="h-full w-full flex items-center justify-center bg-muted/20 animate-pulse rounded-md" />
           ) : chartData.length > 0 ? (
@@ -4472,7 +4413,7 @@ function RevenueTrendsCard({
                 <XAxis
                   dataKey="date"
                   stroke="#888888"
-                  fontSize={10}
+                  fontSize={9}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={fmtLabel}
@@ -4480,13 +4421,13 @@ function RevenueTrendsCard({
                 />
                 <YAxis
                   stroke="#888888"
-                  fontSize={10}
+                  fontSize={9}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) =>
                     `Rs.${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`
                   }
-                  width={55}
+                  width={42}
                 />
                 <RechartsTooltip
                   contentStyle={{
@@ -4645,22 +4586,22 @@ function PerformanceTrendsCard({
   };
 
   return (
-    <Card className="bg-card border-border shadow-sm">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
+    <Card className="overflow-hidden border-border bg-card shadow-sm">
+      <CardHeader className="space-y-3 px-4 pb-2 pt-4 sm:px-6 sm:pt-6">
+        <div className="flex min-w-0 items-start justify-between gap-3">
           <div>
             <CardTitle className="text-base font-bold">
               Performance Trends
             </CardTitle>
             <CardDescription>Cumulative orders progression</CardDescription>
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="shrink-0">
             {isHourly && onDaySelect && globalDayOptions.length > 0 && (
               <Select
                 value={globalDayOptions[0]?.value ?? ""}
                 onValueChange={(v) => onDaySelect(v)}
               >
-                <SelectTrigger className="h-8 rounded-lg text-xs w-[130px] border-border/60 bg-muted font-semibold gap-1">
+                <SelectTrigger className="h-9 w-[120px] rounded-xl border-border/60 bg-muted text-xs font-semibold sm:w-[130px]">
                   <SelectValue placeholder="Today">
                     {currentDayLabel || globalDayOptions[0]?.label || "Today"}
                   </SelectValue>
@@ -4680,7 +4621,7 @@ function PerformanceTrendsCard({
             )}
             {!isHourly && clientDayOptions.length > 1 && (
               <Select value={selectedDay} onValueChange={setSelectedDay}>
-                <SelectTrigger className="h-8 rounded-lg text-xs w-[130px] border-border/60 bg-muted font-semibold gap-1">
+                <SelectTrigger className="h-9 w-[120px] rounded-xl border-border/60 bg-muted text-xs font-semibold sm:w-[130px]">
                   <SelectValue placeholder="All Days" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl max-h-[220px]">
@@ -4699,8 +4640,8 @@ function PerformanceTrendsCard({
         </div>
       </CardHeader>
       {/* Big number + trend badge (like Flutter) */}
-      <div className="px-6 pb-2">
-        <div className="bg-gradient-to-br from-card to-muted/30 border border-border/40 rounded-2xl p-4">
+      <div className="px-4 pb-2 sm:px-6">
+        <div className="rounded-xl border border-border/60 bg-muted/25 p-3 sm:rounded-2xl sm:p-4">
           <div className="flex items-end justify-between gap-4">
             <div>
               <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-2">
@@ -4711,7 +4652,7 @@ function PerformanceTrendsCard({
                   </span>
                 )}
               </p>
-              <p className="text-2xl font-black text-foreground">
+              <p className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 {Number(displayOrders).toLocaleString()} orders
               </p>
             </div>
@@ -4719,8 +4660,8 @@ function PerformanceTrendsCard({
           </div>
         </div>
       </div>
-      <CardContent className="pl-1">
-        <div className="h-[200px] w-full">
+      <CardContent className="px-3 pb-3 pt-1 sm:px-5 sm:pb-5">
+        <div className="h-44 w-full sm:h-[220px]">
           {loading ? (
             <div className="h-full w-full flex items-center justify-center bg-muted/20 animate-pulse rounded-md" />
           ) : filteredData.length > 0 ? (
@@ -4746,7 +4687,7 @@ function PerformanceTrendsCard({
                 <XAxis
                   dataKey="date"
                   stroke="#888888"
-                  fontSize={10}
+                  fontSize={9}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={fmtLabel}
@@ -4754,7 +4695,7 @@ function PerformanceTrendsCard({
                 />
                 <YAxis
                   stroke="#888888"
-                  fontSize={10}
+                  fontSize={9}
                   tickLine={false}
                   axisLine={false}
                   width={40}

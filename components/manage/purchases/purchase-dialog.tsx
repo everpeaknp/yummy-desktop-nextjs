@@ -157,11 +157,12 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
+            <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[500px] flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[90vh] sm:w-full">
+                <DialogHeader className="shrink-0 border-b px-5 py-4 text-left sm:px-6">
                     <DialogTitle>{purchase ? "Edit Purchase" : "New General Purchase"}</DialogTitle>
                 </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+                <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
                     <div className="space-y-2">
                         <Label htmlFor="purchase_name">Item/Service Name*</Label>
                         <Input 
@@ -173,7 +174,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label htmlFor="total_cost">Total Cost*</Label>
                             <Input 
@@ -197,7 +198,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label htmlFor="purchased_date">Date</Label>
                             <Input 
@@ -228,7 +229,7 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label htmlFor="payment_status">Payment Status</Label>
                             <Select 
@@ -299,11 +300,12 @@ export function PurchaseDialog({ open, onOpenChange, purchase, businessLine, onS
                         />
                     </div>
 
-                    <DialogFooter className="pt-4">
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                  </div>
+                    <DialogFooter className="shrink-0 border-t px-5 py-3 sm:px-6">
+                        <Button type="button" className="h-11 flex-1 sm:flex-none" variant="outline" onClick={() => onOpenChange(false)}>
                             Cancel
                         </Button>
-                        <Button type="submit" disabled={loading} className="min-w-[100px]">
+                        <Button type="submit" disabled={loading} className="h-11 flex-[1.3] sm:min-w-[140px] sm:flex-none">
                             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : (purchase ? "Update" : "Record Purchase")}
                         </Button>
                     </DialogFooter>

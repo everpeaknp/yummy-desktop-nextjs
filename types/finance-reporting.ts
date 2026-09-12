@@ -1,10 +1,5 @@
 export type FinanceHeadType =
-  | "asset"
-  | "liability"
-  | "equity"
-  | "income"
-  | "contra_income"
-  | "expense";
+  "asset" | "liability" | "equity" | "income" | "contra_income" | "expense";
 
 export type FinanceNormalSide = "debit" | "credit";
 
@@ -257,6 +252,11 @@ export interface FinanceReportingLedgerLine {
   order_channel: string | null;
   order_customer_name: string | null;
   payment_method: string | null;
+  /** The business document that directly generated this reporting entry. */
+  source_document_type: string | null;
+  source_document_id: number | null;
+  source_document_reference: string | null;
+  related_document_reference: string | null;
   debit: FinanceReportingMoney;
   credit: FinanceReportingMoney;
   running_balance: FinanceReportingMoney;

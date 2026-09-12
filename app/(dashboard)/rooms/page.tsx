@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function LegacyRoomsRedirect() {
-  redirect("/hotel");
+  redirect("/hotel?section=inventory");
 }

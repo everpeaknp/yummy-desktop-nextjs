@@ -5,15 +5,12 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Loader2,
-  RefreshCw,
-  Search,
 } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { FinanceApis, PartyLedgerApis, PurchaseApis, PurchaseReturnApis } from "@/lib/api/endpoints";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
 import { useAuth } from "@/hooks/use-auth";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,6 +33,12 @@ import {
   type TransactionDetailModel,
 } from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
+import { MetricCard } from "@/components/cards/metric-card";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { ReportFilters } from "@/components/reports/report-filters";
 import {
   partyLedgerEntryDetail,
   purchaseDocumentDetail,
@@ -652,26 +655,39 @@ function EventTable({
 
   return (
     <>
-      <div className="divide-y divide-border md:hidden">
+      <DataList className="rounded-none border-x-0 border-y-0 md:hidden">
         {visibleRegisterRows.map((row) => {
           const isIn = row.amountTone === "in";
           const isOut = row.amountTone === "out";
           return (
-            <button
+            <ListRow
               key={row.key}
-              type="button"
+              leading={
+                isIn ? <ArrowDownLeft className="h-4 w-4 text-emerald-600" /> : isOut ? <ArrowUpRight className="h-4 w-4 text-rose-600" /> : null
+              }
+              title={row.reference}
+              description={
+                <span>
+                  {row.particular || row.type} · {new Date(row.source.event_at).toLocaleDateString()}
+                  {row.paymentMode !== paymentMethodLabel() ? ` · ${row.paymentMode}` : ""}
+                </span>
+              }
+              meta={<span className={`font-semibold tabular-nums ${isIn ? "text-emerald-600" : isOut ? "text-rose-600" : ""}`}>{isIn ? "+" : isOut ? "−" : ""}{money(row.amount)}</span>}
+              trailing={<Badge variant="outline" className={`${typeBadgeClass(row.type)} shrink-0`}>{row.type}</Badge>}
+              interactive
+              role="button"
+              tabIndex={0}
               onClick={() => setSelected(row.source)}
-              className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0"><p className="truncate font-medium">{row.reference}</p><p className="mt-1 truncate text-xs text-muted-foreground">{row.particular || row.type} · {new Date(row.source.event_at).toLocaleDateString()}</p></div>
-                <p className={`shrink-0 font-semibold tabular-nums ${isIn ? "text-emerald-600" : isOut ? "text-rose-600" : ""}`}>{isIn ? "+" : isOut ? "−" : ""}{money(row.amount)}</p>
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2"><Badge variant="outline" className={typeBadgeClass(row.type)}>{row.type}</Badge><span className="truncate text-xs text-muted-foreground">{row.status}</span></div>
-            </button>
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setSelected(row.source);
+                }
+              }}
+              />
           );
         })}
-      </div>
+      </DataList>
       <div className="hidden overflow-x-auto md:block">
         <Table>
           <TableHeader>
@@ -822,34 +838,30 @@ export function FinanceTransactionsClient() {
     void load();
   }, [load]);
   return (
-    <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-          Finance
-        </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-          Transactions
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Sales, purchases, returns, and payments. Each business action appears once.
-        </p>
-      </header>
-      <div className="flex flex-col gap-3 rounded-2xl border border-border p-4 md:flex-row md:items-end">
-        <div className="relative min-w-0 flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search reference, party, type, or payment method"
-            className="pl-9"
-          />
-        </div>
+    <AppPage width="wide">
+      <PageHeader
+        title="Transactions"
+        description="Sales, purchases, returns, and payments. Each business action appears once."
+        meta="Finance"
+      />
+      <SearchField
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onClear={() => setQuery("")}
+        placeholder="Search reference, party, type, or payment method"
+      />
+      <ReportFilters
+        title="Date filters"
+        activeCount={Number(Boolean(dateFrom)) + Number(Boolean(dateTo))}
+      >
+        <div className="grid w-full gap-3 md:flex md:items-end">
         <label className="grid gap-1 text-xs text-muted-foreground">
           From
           <Input
             type="date"
             value={dateFrom}
             onChange={(event) => setDateFrom(event.target.value)}
+            className="h-11 rounded-xl"
           />
         </label>
         <label className="grid gap-1 text-xs text-muted-foreground">
@@ -858,13 +870,11 @@ export function FinanceTransactionsClient() {
             type="date"
             value={dateTo}
             onChange={(event) => setDateTo(event.target.value)}
+            className="h-11 rounded-xl"
           />
         </label>
-        <Button variant="outline" onClick={() => void load()}>
-          <RefreshCw className="mr-2 h-4 w-4" />
-          Refresh
-        </Button>
       </div>
+      </ReportFilters>
       <Card className="border-border shadow-none">
         <CardContent className="p-0">
           <EventTable
@@ -875,7 +885,7 @@ export function FinanceTransactionsClient() {
           />
         </CardContent>
       </Card>
-    </div>
+    </AppPage>
   );
 }
 
@@ -903,39 +913,28 @@ export function FinanceReceivablesClient() {
   }, [now, user?.restaurant_id]);
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-          Sales
-        </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-          Customer receivables
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Credit sales create receivables. Later customer payments reduce those
-          balances without creating income again.
-        </p>
-      </header>
-      <div className="grid gap-3 sm:grid-cols-3">
+    <AppPage width="wide">
+      <PageHeader
+        title="Customer receivables"
+        description="Credit sales create receivables. Later customer payments reduce those balances without creating income again."
+        meta="Sales"
+      />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
         {[
           { label: "Credit sales", value: data?.credit_sales },
           { label: "Collected later", value: data?.credit_repayments },
           { label: "Still outstanding", value: data?.outstanding_receivables },
         ].map((item) => (
-          <Card key={item.label} className="shadow-none">
-            <CardContent className="p-5">
-              <p className="text-xs font-medium uppercase text-muted-foreground">
-                {item.label}
-              </p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums">
-                {loading ? (
+          <MetricCard
+            key={item.label}
+            className={item.label === "Still outstanding" ? "col-span-2 sm:col-span-1" : undefined}
+            label={item.label}
+            value={loading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   money(Number(item.value || 0))
                 )}
-              </p>
-            </CardContent>
-          </Card>
+          />
         ))}
       </div>
       <Card className="border-border shadow-none">
@@ -947,6 +946,6 @@ export function FinanceReceivablesClient() {
           />
         </CardContent>
       </Card>
-    </div>
+    </AppPage>
   );
 }

@@ -14,7 +14,6 @@ import {
   Plus, 
   Shield, 
   ShieldCheck, 
-  ArrowLeft, 
   MoreVertical, 
   Edit, 
   Trash2, 
@@ -31,9 +30,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import Link from "next/link";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { SearchField } from "@/components/patterns/controls/search-field";
 
 interface Permission {
   id?: number;
@@ -292,37 +293,13 @@ export default function RolesPage() {
   );
 
   return (
-    <div className="flex flex-col gap-8 max-w-[1600px] mx-auto p-6 md:p-8 pb-32">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/manage">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
-              Roles
-            </h1>
-            <p className="text-muted-foreground font-medium">Create clear job roles and give people the access they need to do their work.</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Find a role..."
-               className="pl-9 bg-card/40 border-border/40 focus:border-primary/50"
-               value={searchQuery}
-               onChange={(e) => setSearchQuery(e.target.value)}
-             />
-          </div>
-          <Button className="bg-primary font-bold shadow-lg shadow-primary/20" onClick={() => handleOpenDialog()}>
-            <Plus className="w-4 h-4 mr-2" /> Create role
-          </Button>
-        </div>
-      </div>
+    <AppPage width="wide" className="pb-24">
+      <PageHeader
+        title="Roles"
+        description="Create clear job roles and give people the access they need."
+        actions={<Button onClick={() => handleOpenDialog()}><Plus className="mr-2 h-4 w-4" />Create role</Button>}
+      />
+      <SearchField placeholder="Find a role" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="md:max-w-sm" />
 
       {loading ? (
         <div className="h-[400px] flex flex-col items-center justify-center gap-4 text-muted-foreground">
@@ -526,7 +503,7 @@ export default function RolesPage() {
           </form>
         </SimpleModal>
       ) : null}
-    </div>
+    </AppPage>
   );
 }
 

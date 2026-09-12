@@ -169,12 +169,13 @@ export function FinanceSalesInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-6xl flex-col overflow-hidden rounded-2xl p-0 md:h-auto md:max-h-[92vh] md:p-6">
+        <DialogHeader className="shrink-0 border-b px-4 py-4 text-left md:border-b-0 md:px-0 md:py-0">
           <DialogTitle>Record sales invoice</DialogTitle>
           <p className="text-sm text-muted-foreground">A finance-only sale. It records revenue and settlement without creating an order or printing a KOT.</p>
         </DialogHeader>
 
+        <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-4 md:px-0 md:pb-0">
         <div className="grid gap-4 md:grid-cols-4">
           <div className="space-y-2 md:col-span-2">
             <Label>Customer {!paid ? "*" : "(optional)"}</Label>
@@ -192,7 +193,39 @@ export function FinanceSalesInvoiceDialog({
           <div className="space-y-2"><Label>Date *</Label><Input type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} /></div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="space-y-3 md:hidden">
+          {lines.map((line, index) => {
+            const lineTotal = money(Number(line.quantity || 0) * Number(line.unit_price || 0) - Number(line.discount_amount || 0) + Number(line.tax_amount || 0));
+            return (
+              <section key={line.key} className="space-y-3 rounded-2xl border border-border bg-card p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">Line {index + 1}</p>
+                  <Button type="button" variant="ghost" size="icon" className="h-9 w-9" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))}>
+                    <Trash2 className="h-4 w-4" />
+                    <span className="sr-only">Remove line {index + 1}</span>
+                  </Button>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Item or service</Label>
+                  <Input value={line.item_name} placeholder="Item or service name" onChange={(event) => updateLine(line.key, { item_name: event.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" min="0.001" step="0.001" value={line.quantity} onChange={(event) => updateLine(line.key, { quantity: Number(event.target.value) })} /></div>
+                  <div className="space-y-1.5"><Label>Rate</Label><Input type="number" min="0" step="0.01" value={line.unit_price} onChange={(event) => updateLine(line.key, { unit_price: Number(event.target.value) })} /></div>
+                  <div className="space-y-1.5"><Label>Discount</Label><Input type="number" min="0" step="0.01" value={line.discount_amount} onChange={(event) => updateLine(line.key, { discount_amount: Number(event.target.value) })} /></div>
+                  <div className="space-y-1.5"><Label>Tax</Label><Input type="number" min="0" step="0.01" value={line.tax_amount} onChange={(event) => updateLine(line.key, { tax_amount: Number(event.target.value) })} /></div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Sales account</Label>
+                  <select className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" value={line.reporting_head_id || ""} onChange={(event) => updateLine(line.key, { reporting_head_id: Number(event.target.value) })}><option value="">Select account</option>{heads.map((head) => <option key={head.id} value={head.id}>{head.hierarchy_path || head.name}</option>)}</select>
+                </div>
+                <div className="flex items-center justify-between border-t border-border pt-3 text-sm"><span className="text-muted-foreground">Line total</span><span className="font-semibold tabular-nums">NPR {lineTotal.toLocaleString()}</span></div>
+              </section>
+            );
+          })}
+        </div>
+
+        <div className="hidden overflow-x-auto rounded-lg border md:block">
           <table className="w-full min-w-[900px] text-sm">
             <thead className="bg-muted/60 text-left"><tr><th className="p-3">Item / service</th><th className="p-3">Qty</th><th className="p-3">Rate</th><th className="p-3">Discount</th><th className="p-3">Tax</th><th className="p-3">Sales head</th><th className="p-3 text-right">Amount</th><th /></tr></thead>
             <tbody>{lines.map((line) => {
@@ -223,8 +256,9 @@ export function FinanceSalesInvoiceDialog({
             <div className="flex items-center justify-between border-t pt-4 text-lg font-semibold"><span>Invoice total</span><span>NPR {total.toLocaleString()}</span></div>
           </div>
         </div>
+        </div>
 
-        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={saving || loading} onClick={submit}>{saving ? "Recording..." : "Record invoice"}</Button></div>
+        <div className="grid grid-cols-2 gap-2 border-t border-border bg-background p-4 md:flex md:justify-end md:border-0 md:p-0"><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={saving || loading} onClick={submit}>{saving ? "Recording..." : "Record invoice"}</Button></div>
       </DialogContent>
     </Dialog>
   );

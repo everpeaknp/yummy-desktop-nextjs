@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useState, useCallback, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import apiClient from "@/lib/api-client";
@@ -24,6 +24,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -39,13 +46,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  ArrowLeft,
   Loader2,
   ShoppingCart,
   Receipt,
@@ -75,6 +75,7 @@ import {
   Calendar,
   Truck,
   Award,
+  MoreHorizontal,
 } from "lucide-react";
 import { 
   getStatusColor, 
@@ -95,6 +96,7 @@ import { usePosBillingPermissions } from "@/hooks/use-pos-billing-permissions";
 import { getRecordedOrderDiscount } from "@/lib/order-totals";
 import { getKOTHeading, getKOTItemDisplay } from "@/lib/order-kot-display";
 import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
+import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
 
 // ── Helpers ──────────────────────────────────────────
 function formatCurrency(amount: number) {
@@ -113,6 +115,11 @@ function timeAgo(dateStr: string) {
 
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function OrderDetailAppBarTitle({ title }: { title: string }) {
+  useMobileAppBarTitle(title);
+  return null;
 }
 
 function computeOrderDiscount(order: Order) {
@@ -625,18 +632,16 @@ export default function OrderDetailPage() {
       primary?.name ||
       displayOrder.table_name ||
       `Table ${primary?.id ?? displayOrder.table_id}`;
-    title = `${primaryLabel} + ${assignedTables.length - 1}`;
+    title = `Table ${primaryLabel} + ${assignedTables.length - 1}`;
   } else if (displayOrder.table_name || assignedTables[0]?.name) {
     const name = displayOrder.table_name || assignedTables[0]?.name;
-    title = displayOrder.table_category_name
-      ? `${displayOrder.table_category_name} - ${name}`
-      : (name as string);
+    title = /^table\b/i.test(name || "") ? String(name) : `Table ${name}`;
   }
 
   // Format Subtitle
   let subtitle = displayOrder.channel.toUpperCase().replace('_', ' ');
   if (displayOrder.channel === 'table' || displayOrder.table_name) subtitle = 'DINE-IN';
-  if (displayOrder.customer_name) subtitle = displayOrder.customer_name;
+  if (isRoomServiceOrder) subtitle = 'ROOM SERVICE';
 
   const tabs: { key: TabKey; label: string; icon: any; count?: number }[] = [
     { key: "details", label: "Details", icon: FileText },
@@ -647,160 +652,110 @@ export default function OrderDetailPage() {
   console.log("Rendering Order Detail", orderId);
 
   return (
-    <div className="flex flex-col gap-6 max-w-7xl mx-auto pb-8">
+    <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-5 pb-24 md:pb-8">
+      <OrderDetailAppBarTitle title={title} />
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-xl hover:bg-muted/50">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-2xl bg-muted/50 flex items-center justify-center flex-shrink-0">
-               <ChannelIcon className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-black tracking-tight leading-none">{title}</h1>
-                <div
-                  className={cn(
-                    "px-2.5 py-1 rounded-xl border text-[10px] font-black uppercase tracking-widest",
-                    statusBadgeColor
-                  )}
-                >
-                  {order.status}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 mt-1 text-muted-foreground">
-                <span className="text-xs font-bold uppercase tracking-wider">{subtitle}</span>
-                <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-                <span className="text-xs font-medium">{timeAgo(order.created_at)}</span>
-              </div>
-            </div>
+      <header className="flex flex-col gap-3 border-b border-border/50 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <ChannelIcon className="h-4 w-4" />
+          </div>
+          <span className="text-xs font-semibold">{subtitle}</span>
+          <span className="h-1 w-1 shrink-0 rounded-full bg-muted-foreground/30" />
+          <span className="truncate text-xs">{timeAgo(order.created_at)}</span>
+          <div
+            className={cn(
+              "ml-auto shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold sm:ml-1",
+              statusBadgeColor
+            )}
+          >
+            {String(order.status).replace(/_/g, " ")}
           </div>
         </div>
 
-          <div className="flex items-center gap-2">
-            {/* Secondary / Icons */}
-            <TooltipProvider delayDuration={200}>
-              <div className="flex items-center gap-1 mr-2 border-r border-border/40 pr-3">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" onClick={handleRefresh} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
-                        <RefreshCw className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Refresh Order</p>
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link href={`/orders/${orderId}/receipt`}>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View Receipt</p>
-                  </TooltipContent>
-                </Tooltip>
-                
-              </div>
-            </TooltipProvider>
-
-            {/* Primary Actions */}
-          {isEditable && (
-            <>
-              {isTableOrder && canTransferOrder && (
-                <Button variant="outline" size="sm" onClick={handleOpenChangeTable} className="gap-2 rounded-xl h-9 font-semibold hover:bg-muted">
-                  <Table2 className="h-4 w-4" /> <span>Change / Merge Table</span>
-                </Button>
-              )}
-
-               <Link href={`/orders/${orderId}/add-items`}>
-                <Button variant="outline" size="sm" className="gap-2 rounded-xl h-9 font-semibold">
-                  <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Add Items</span>
-                </Button>
-              </Link>
-
-              {String(order.status).toLowerCase() === "requested" && (
-                <div className="flex items-center gap-2 border-l border-border/40 pl-3">
-                  <Button 
-                    size="sm" 
-                    className="gap-2 rounded-xl h-9 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-bold"
-                    onClick={handleVerifyOrder}
-                    disabled={verifying}
-                  >
-                    {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                    Verify Order
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="gap-2 rounded-xl h-9 text-destructive hover:text-destructive hover:bg-destructive/10 font-semibold"
-                    onClick={() => {
-                      if (!canVoidOrder) {
-                        toast.error("You do not have permission to void orders.");
-                        return;
-                      }
-                      setCancelReason("Rejected by staff");
-                      setCancelOpen(true);
-                    }}
-                    disabled={!canVoidOrder}
-                  >
-                    <Ban className="h-4 w-4" /> Reject
-                  </Button>
-                </div>
-              )}
-              
-              <Link href={`/orders/${orderId}/checkout`}>
-                <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold">
-                  <Receipt className="h-4 w-4" />
-                  {isRoomServiceOrder ? "Mark delivered" : isFullyPaid ? "Payments" : "Checkout"}
-                </Button>
-              </Link>
-              
-              {!isRoomServiceOrder && isFullyPaid && order.status !== 'completed' && (
-                <Button 
-                  size="sm"
-                  className="gap-2 rounded-xl h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-bold"
-                  onClick={handleComplete}
-                  disabled={completing}
-                >
-                  {completing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                  Complete
-                </Button>
-              )}
-            </>
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+          {isEditable && isTableOrder && canTransferOrder && (
+            <Button variant="outline" size="sm" onClick={handleOpenChangeTable} className="h-10 shrink-0 gap-2 rounded-xl px-3 font-semibold hover:bg-muted">
+              <Table2 className="h-4 w-4" /> <span className="hidden sm:inline">Change table</span><span className="sm:hidden">Table</span>
+            </Button>
           )}
-          
-          {!isRoomServiceOrder && !isEditable && order.status === "completed" && (
-            <Link href={`/orders/${orderId}/checkout`}>
-              <Button size="sm" className="gap-2 rounded-xl h-9 shadow-sm font-bold" variant="outline">
-                <Receipt className="h-4 w-4" /> Payments & Refunds
+
+          {isEditable && (
+            <Link href={`/orders/${orderId}/add-items`} className="shrink-0">
+              <Button variant="outline" size="sm" className="h-10 gap-2 rounded-xl px-3 font-semibold">
+                <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Add items</span><span className="sm:hidden">Add</span>
               </Button>
             </Link>
           )}
-          
-          {/* Destructive Action */}
-          {isCancellable && canVoidOrder && (
-             <Button
-               variant="ghost"
-               size="sm"
-               className="gap-2 rounded-xl h-9 text-destructive hover:text-destructive hover:bg-destructive/10 font-semibold"
-               onClick={() => setCancelOpen(true)}
-             >
-               <Ban className="h-4 w-4" /> <span className="hidden sm:inline">Cancel</span>
-             </Button>
+
+          {String(order.status).toLowerCase() === "requested" ? (
+            <Button
+              size="sm"
+              className="h-10 min-w-0 flex-1 gap-2 rounded-xl bg-indigo-600 px-3 font-semibold text-white shadow-sm hover:bg-indigo-700 sm:flex-none"
+              onClick={handleVerifyOrder}
+              disabled={verifying}
+            >
+              {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              Verify
+            </Button>
+          ) : !isRoomServiceOrder && isEditable && isFullyPaid ? (
+            <Button
+              size="sm"
+              className="h-10 min-w-0 flex-1 gap-2 rounded-xl bg-emerald-600 px-3 font-semibold text-white shadow-sm hover:bg-emerald-700 sm:flex-none"
+              onClick={handleComplete}
+              disabled={completing}
+            >
+              {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              Complete
+            </Button>
+          ) : (
+            <Link href={`/orders/${orderId}/checkout`} className="min-w-0 flex-1 sm:flex-none">
+              <Button size="sm" className="h-10 w-full min-w-0 gap-2 rounded-xl px-3 font-semibold shadow-sm sm:w-auto">
+                <Receipt className="h-4 w-4 shrink-0" />
+                <span className="truncate">
+                  {isRoomServiceOrder ? "Mark delivered" : isFullyPaid ? "Payments" : "Checkout"}
+                </span>
+              </Button>
+            </Link>
           )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-xl" aria-label="More order actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem asChild>
+                <Link href={`/orders/${orderId}/receipt`} className="flex cursor-pointer items-center gap-2">
+                  <Eye className="h-4 w-4" /> View receipt
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleRefresh} className="gap-2">
+                <RefreshCw className="h-4 w-4" /> Refresh order
+              </DropdownMenuItem>
+              {(isCancellable || String(order.status).toLowerCase() === "requested") && canVoidOrder && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="gap-2 text-destructive focus:text-destructive"
+                    onSelect={() => {
+                      setCancelReason(String(order.status).toLowerCase() === "requested" ? "Rejected by staff" : "");
+                      setCancelOpen(true);
+                    }}
+                  >
+                    <Ban className="h-4 w-4" />
+                    {String(order.status).toLowerCase() === "requested" ? "Reject order" : "Cancel order"}
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-      </div>
+      </header>
 
       {/* ── Tab Bar ── */}
-      <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-xl border border-border/40 w-fit">
+      <nav aria-label="Order detail sections" className="grid grid-cols-3 gap-1 rounded-xl border border-border/40 bg-muted/30 p-1">
         {tabs.map((tab) => {
           const TabIcon = tab.icon;
           return (
@@ -808,7 +763,7 @@ export default function OrderDetailPage() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                "flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all duration-200",
+                "flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-xs font-semibold transition-all duration-200",
                 activeTab === tab.key
                   ? "bg-background shadow-sm text-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -827,12 +782,11 @@ export default function OrderDetailPage() {
             </button>
           );
         })}
-      </div>
+      </nav>
 
       {/* ── Content Grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Main Content */}
-        <div className="lg:col-span-2 space-y-4">
+      <div className="w-full max-w-3xl min-w-0">
+        <div className="space-y-4">
           {activeTab === "details" && (
             <DetailsTab
               order={displayOrder}
@@ -841,6 +795,13 @@ export default function OrderDetailPage() {
               canMarkNc={canMarkNc}
               itemOverrides={itemOverrides}
               setItemOverrides={setItemOverrides}
+              summary={
+                <OrderBillSummary
+                  order={displayOrder}
+                  payments={context.payments}
+                  computedDiscount={computedDiscount}
+                />
+              }
             />
           )}
             {activeTab === "kots" && (
@@ -852,77 +813,6 @@ export default function OrderDetailPage() {
               />
             )}
           {activeTab === "events" && <EventsTab events={events} loading={eventsLoading} />}
-        </div>
-
-          {/* Right: Summary Sidebar */}
-        <div className="space-y-4">
-          {/* Order Summary */}
-          <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-            <CardContent className="p-0">
-              <div className="p-5 space-y-3">
-                <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground mb-4">Order Summary</h3>
-
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="tabular-nums font-medium">{formatCurrency(displayOrder.subtotal)}</span>
-                </div>
-
-                {displayOrder.tax_total > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Tax</span>
-                    <span className="tabular-nums font-medium">{formatCurrency(displayOrder.tax_total)}</span>
-                  </div>
-                )}
-
-                {displayOrder.service_charge > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Service Charge</span>
-                    <span className="tabular-nums font-medium">{formatCurrency(displayOrder.service_charge)}</span>
-                  </div>
-                )}
-
-                {computedDiscount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">Discount</span>
-                    <span className="tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">
-                      -{formatCurrency(computedDiscount)}
-                    </span>
-                  </div>
-                )}
-
-                {/* Payments Summary */}
-                {context.payments.length > 0 && (
-                  <>
-                    <Separator />
-                    <div className="space-y-2 pt-2">
-                       <span className="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">Payments</span>
-                       {context.payments.map((p) => (
-                         <div key={p.id} className="flex items-center justify-between text-sm">
-                           <div className="flex items-center gap-2">
-                             <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
-                             <span className="capitalize font-medium">{p.method}</span>
-                           </div>
-                           <span className="tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">
-                             {formatCurrency(p.amount)}
-                           </span>
-                         </div>
-                       ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </CardContent>
-            
-            {/* Total Footer */}
-            <div className="bg-muted/30 px-5 py-4 border-t border-border/20 flex justify-between items-center rounded-b-xl">
-              <span className="text-xs font-black uppercase tracking-[0.1em] text-muted-foreground">Total Amount</span>
-                <span className="text-2xl font-black tracking-tight tabular-nums text-foreground">
-                  <span className="text-sm mr-1.5 font-bold text-muted-foreground/50">Rs.</span>
-                {displayOrder.grand_total.toLocaleString()}
-              </span>
-            </div>
-          </Card>
-
         </div>
       </div>
 
@@ -1107,6 +997,80 @@ export default function OrderDetailPage() {
 }
 
 // ── Details Tab ─────────────────────────────────────
+function OrderBillSummary({
+  order,
+  payments,
+  computedDiscount,
+}: {
+  order: Order;
+  payments: OrderPayment[];
+  computedDiscount: number;
+}) {
+  return (
+    <Card className="overflow-hidden border-border/50 bg-card shadow-sm">
+      <CardContent className="space-y-3 p-4">
+        <h3 className="text-sm font-semibold">Bill summary</h3>
+
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Subtotal</span>
+          <span className="tabular-nums font-medium">{formatCurrency(order.subtotal)}</span>
+        </div>
+
+        {order.tax_total > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Tax</span>
+            <span className="tabular-nums font-medium">{formatCurrency(order.tax_total)}</span>
+          </div>
+        )}
+
+        {order.service_charge > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Service charge</span>
+            <span className="tabular-nums font-medium">{formatCurrency(order.service_charge)}</span>
+          </div>
+        )}
+
+        {computedDiscount > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">Discount</span>
+            <span className="tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
+              -{formatCurrency(computedDiscount)}
+            </span>
+          </div>
+        )}
+
+        {payments.length > 0 && (
+          <>
+            <Separator />
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-medium text-muted-foreground">Payments</p>
+              {payments.map((payment) => (
+                <div key={payment.id} className="flex items-center justify-between text-sm">
+                  <span className="flex min-w-0 items-center gap-2 capitalize">
+                    <CreditCard className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{payment.method}</span>
+                  </span>
+                  <span className="shrink-0 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(payment.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </CardContent>
+
+      <div className="flex items-center justify-between border-t border-border/30 bg-muted/30 px-4 py-3">
+        <span className="text-sm font-semibold">Total</span>
+        <span className="text-xl font-bold tracking-tight tabular-nums text-foreground">
+          <span className="mr-1 text-sm font-medium text-muted-foreground">Rs.</span>
+          {order.grand_total.toLocaleString()}
+        </span>
+      </div>
+    </Card>
+  );
+}
+
 function DetailsTab({
   order,
   tables,
@@ -1114,6 +1078,7 @@ function DetailsTab({
   canMarkNc,
   itemOverrides,
   setItemOverrides,
+  summary,
 }: {
   order: Order;
   tables: OrderTableSummary[];
@@ -1121,6 +1086,7 @@ function DetailsTab({
   canMarkNc: boolean;
   itemOverrides: Record<number, Partial<OrderItem>>;
   setItemOverrides: Dispatch<SetStateAction<Record<number, Partial<OrderItem>>>>;
+  summary: ReactNode;
 }) {
   const router = useRouter();
   const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
@@ -1190,16 +1156,14 @@ function DetailsTab({
   return (
     <div className="space-y-4">
       {/* Items Card */}
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a] overflow-hidden">
+      <Card className="overflow-hidden border-border/50 bg-card shadow-sm">
         <CardContent className="p-0">
-          <div className="px-5 py-4 border-b border-border/30 flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-border/30 px-4 py-3">
             <div className="flex items-center gap-2">
               <Utensils className="h-4 w-4 text-muted-foreground" />
-              <span className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground">
-                Ordered Items
-              </span>
+              <span className="text-sm font-semibold">Items</span>
             </div>
-            <Badge variant="secondary" className="text-[10px] font-black">
+            <Badge variant="secondary" className="text-xs font-medium">
               {displayItems.length} items
             </Badge>
           </div>
@@ -1214,7 +1178,7 @@ function DetailsTab({
                 tabIndex={canEdit ? 0 : undefined}
                 aria-label={canEdit ? `Edit ${item.name_snapshot}` : undefined}
                 className={cn(
-                  "px-5 py-4 transition-colors",
+                  "px-4 py-3.5 transition-colors",
                   canEdit && "cursor-pointer hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40"
                 )}
                 onClick={canEdit ? () => handleOpenItemDetail(item) : undefined}
@@ -1227,9 +1191,9 @@ function DetailsTab({
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm text-foreground">{item.name_snapshot}</p>
+                    <p className="text-sm font-semibold text-foreground">{item.name_snapshot}</p>
                     {item.category_name_snapshot && (
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         {item.category_name_snapshot}
                       </p>
                     )}
@@ -1255,7 +1219,7 @@ function DetailsTab({
                     )}
                   </div>
                   <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5">
                       <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold tabular-nums">
                         ×{item.qty}
                       </span>
@@ -1273,25 +1237,29 @@ function DetailsTab({
         </CardContent>
       </Card>
 
-      {/* Quick Info Card */}
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-        <CardContent className="p-5 space-y-4">
-          <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-muted-foreground">Quick Info</h3>
+      {summary}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Quick Info Card */}
+      <Card className="overflow-hidden border-border/50 bg-card shadow-sm">
+        <CardContent className="p-0">
+          <div className="border-b border-border/30 px-4 py-3">
+            <h3 className="text-sm font-semibold">Order details</h3>
+          </div>
+
+          <div className="grid grid-cols-2 divide-x divide-y divide-border/30">
             {/* Tables */}
             {tables && tables.length > 0 ? (
-              <div className="flex items-start gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-orange-500/10 mt-0.5">
+              <div className="flex min-w-0 items-start gap-2.5 p-3 text-sm">
+                <div className="mt-0.5 rounded-lg bg-orange-500/10 p-2">
                   <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                 </div>
-                <div className="space-y-0.5">
-                  <p className="font-bold text-foreground">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="truncate font-semibold text-foreground">
                     {tables.length > 1
                       ? `${tables.find((t) => t.id === order.table_id)?.name || tables[0]?.name || `Table ${order.table_id}`} + ${tables.length - 1}`
                       : tables.map((t) => t.name || `Table ${t.id}`).join(", ")}
                   </p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider leading-none">
+                  <p className="line-clamp-2 text-[10px] leading-snug text-muted-foreground">
                     {tables.map((t) => t.name || `Table ${t.id}`).join(", ")}
                     {tables.some((t) => t.capacity) && (
                       <span className="block mt-0.5 normal-case">
@@ -1302,87 +1270,87 @@ function DetailsTab({
                 </div>
               </div>
             ) : order.table_ids && order.table_ids.length > 1 ? (
-              <div className="flex items-start gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-orange-500/10 mt-0.5">
+              <div className="flex min-w-0 items-start gap-2.5 p-3 text-sm">
+                <div className="mt-0.5 rounded-lg bg-orange-500/10 p-2">
                   <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                 </div>
-                <div className="space-y-0.5">
-                  <p className="font-bold text-foreground">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="truncate font-semibold text-foreground">
                     {(order.table_name || `Table ${order.table_id}`) + ` + ${order.table_ids.length - 1}`}
                   </p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider leading-none">
+                  <p className="line-clamp-2 text-[10px] leading-snug text-muted-foreground">
                     {order.table_ids.map((id) => `Table ${id}`).join(", ")}
                   </p>
                 </div>
               </div>
             ) : order.table_name ? (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-orange-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-orange-500/10 p-2">
                   <Armchair className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">{order.table_name}</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{order.table_category_name || "Table"}</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">{order.table_name}</p>
+                  <p className="truncate text-[10px] text-muted-foreground">{order.table_category_name || "Table"}</p>
                 </div>
               </div>
             ) : null}
 
             {/* Customer */}
             {order.customer_name ? (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-blue-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-blue-500/10 p-2">
                   <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">{order.customer_name}</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">{order.customer_name}</p>
                   {order.customer_phone && (
                     <p className="text-[10px] text-muted-foreground">{order.customer_phone}</p>
                   )}
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-blue-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-blue-500/10 p-2">
                   <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">Walk-in Customer</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Guest</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">Walk-in customer</p>
+                  <p className="text-[10px] text-muted-foreground">Guest</p>
                 </div>
               </div>
             )}
 
             {/* Guests */}
             {order.number_of_guests ? (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-purple-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-purple-500/10 p-2">
                   <Users className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">{order.number_of_guests} Guests</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Party Size</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">{order.number_of_guests} guests</p>
+                  <p className="text-[10px] text-muted-foreground">Party size</p>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3 text-sm">
-                <div className="p-2 rounded-lg bg-purple-500/10">
+              <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+                <div className="rounded-lg bg-purple-500/10 p-2">
                   <Users className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">1 Guest</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Default Size</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">1 guest</p>
+                  <p className="text-[10px] text-muted-foreground">Party size</p>
                 </div>
               </div>
             )}
 
             {/* Time / Date */}
-            <div className="flex items-center gap-3 text-sm">
-              <div className="p-2 rounded-lg bg-muted">
+            <div className="flex min-w-0 items-center gap-2.5 p-3 text-sm">
+              <div className="rounded-lg bg-muted p-2">
                 <Clock className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div>
-                <p className="font-bold text-foreground">{formatTime(order.created_at)}</p>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+              <div className="min-w-0">
+                <p className="font-semibold text-foreground">{formatTime(order.created_at)}</p>
+                <p className="text-[10px] text-muted-foreground">
                   {new Date(order.created_at).toLocaleDateString()}
                 </p>
               </div>
@@ -1391,7 +1359,7 @@ function DetailsTab({
 
           {/* Notes */}
           {order.notes && (
-            <div className="p-3 rounded-lg bg-muted/50 border border-border/30 text-sm text-muted-foreground italic">
+            <div className="m-3 rounded-lg border border-border/30 bg-muted/50 p-3 text-sm italic text-muted-foreground">
               {order.notes}
             </div>
           )}
@@ -1499,53 +1467,55 @@ function KOTsTab({
 }) {
   if (!kots || kots.length === 0) {
     return (
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-        <CardContent className="p-12 flex flex-col items-center justify-center text-muted-foreground">
-          <ChefHat className="h-12 w-12 mb-3 opacity-30" />
-          <p className="font-bold text-sm">No KOTs Found</p>
-          <p className="text-xs mt-1">Kitchen order tickets will appear here when items are sent to kitchen.</p>
+      <Card className="border-border/50 bg-card shadow-sm">
+        <CardContent className="flex min-h-48 flex-col items-center justify-center p-6 text-center text-muted-foreground">
+          <div className="mb-3 rounded-xl bg-muted p-3">
+            <ChefHat className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-semibold text-foreground">No kitchen tickets yet</p>
+          <p className="mt-1 max-w-xs text-xs leading-relaxed">Kitchen tickets appear when ordered items are sent to the kitchen.</p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {kots.map((kot) => {
         const statusConfig = getKOTStatusConfig(kot.status);
         const next = nextKotStatus(kot.status);
         const action = kotActionLabel(kot.status);
         const isUpdating = updatingKotId === kot.id;
         return (
-          <Card key={kot.id} className={cn("border overflow-hidden bg-white dark:bg-[#1a1a1a]", statusConfig.bg)}>
+          <Card key={kot.id} className={cn("overflow-hidden border-border/50 bg-card shadow-sm", statusConfig.bg)}>
             <CardContent className="p-0">
               {/* KOT Header */}
-              <div className="px-5 py-4 border-b border-border/20 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-background/80">
+              <div className="flex flex-col gap-3 border-b border-border/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="rounded-lg bg-background/80 p-2">
                     <ChefHat className="h-4 w-4" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-black text-sm">{getKOTHeading(kot)}</span>
-                      <Badge variant="secondary" className={cn("text-[10px] font-black uppercase tracking-wider", statusConfig.color)}>
+                      <span className="truncate text-sm font-semibold">{getKOTHeading(kot)}</span>
+                      <Badge variant="secondary" className={cn("shrink-0 text-[10px] font-semibold", statusConfig.color)}>
                         {statusConfig.label}
                       </Badge>
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider capitalize">{kot.station}</span>
+                    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <span className="truncate capitalize">{kot.station}</span>
                       <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider capitalize">{kot.type}</span>
+                      <span className="capitalize">{kot.type}</span>
                       <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-                      <span className="text-[10px] text-muted-foreground">{formatTime(kot.created_at)}</span>
+                      <span>{formatTime(kot.created_at)}</span>
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="flex items-center gap-2 sm:justify-end">
                   {action && next && onStatusChange && (
                     <Button
                       size="sm"
-                      className="h-8 px-3 text-xs"
+                      className="h-8 flex-1 px-3 text-xs sm:flex-none"
                       onClick={() => onStatusChange(kot.id, kot.status)}
                       disabled={isUpdating || Boolean(updatingKotId && updatingKotId !== kot.id)}
                     >
@@ -1575,13 +1545,13 @@ function KOTsTab({
                   const isDeleted = Number(item.is_deleted || 0) === 1;
 
                   return (
-                    <div key={item.id} className="px-5 py-3 flex items-center justify-between gap-4">
+                    <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={cn("text-sm font-medium", isDeleted && "line-through text-muted-foreground")}>
                             {display.name}
                           </span>
-                          <Badge variant="secondary" className={cn("text-[10px]", itemStatus.color)}>
+                          <Badge variant="secondary" className={cn("text-[10px] font-medium", itemStatus.color)}>
                             {isDeleted ? "Cancelled" : itemStatus.label}
                           </Badge>
                         </div>
@@ -1618,14 +1588,14 @@ function KOTsTab({
 function EventsTab({ events, loading }: { events: OrderEvent[]; loading: boolean }) {
   if (loading) {
     return (
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-        <CardContent className="p-6 space-y-6">
+      <Card className="border-border/50 bg-card shadow-sm">
+        <CardContent className="space-y-4 p-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="flex gap-4">
-              <Skeleton className="h-10 w-10 rounded-full flex-shrink-0" />
-              <div className="space-y-2 flex-1">
-                <Skeleton className="h-4 w-48" />
-                <Skeleton className="h-3 w-32" />
+            <div key={i} className="flex gap-3">
+              <Skeleton className="h-9 w-9 shrink-0 rounded-lg" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-28" />
               </div>
             </div>
           ))}
@@ -1636,43 +1606,45 @@ function EventsTab({ events, loading }: { events: OrderEvent[]; loading: boolean
 
   if (events.length === 0) {
     return (
-      <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-        <CardContent className="p-12 flex flex-col items-center justify-center text-muted-foreground">
-          <Activity className="h-12 w-12 mb-3 opacity-30" />
-          <p className="font-bold text-sm">No Events Yet</p>
-          <p className="text-xs mt-1">Order activity will appear here as things happen.</p>
+      <Card className="border-border/50 bg-card shadow-sm">
+        <CardContent className="flex min-h-48 flex-col items-center justify-center p-6 text-center text-muted-foreground">
+          <div className="mb-3 rounded-xl bg-muted p-3">
+            <Activity className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-semibold text-foreground">No activity yet</p>
+          <p className="mt-1 max-w-xs text-xs leading-relaxed">Updates to this order will appear here.</p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="border-border/40 bg-white dark:bg-[#1a1a1a]">
-      <CardContent className="p-5">
+    <Card className="border-border/50 bg-card shadow-sm">
+      <CardContent className="p-4">
         <div className="relative">
           {/* Timeline line */}
-          <div className="absolute left-5 top-3 bottom-3 w-px bg-border/40" />
+          <div className="absolute bottom-3 left-4 top-3 w-px bg-border/40" />
 
           <div className="space-y-0">
             {events.map((event, index) => {
               const isFirst = index === 0;
               return (
-                <div key={event.id} className="relative flex gap-4 pb-6 last:pb-0">
+                <div key={event.id} className="relative flex gap-3 pb-5 last:pb-0">
                   {/* Timeline dot */}
                   <div className={cn(
-                    "relative z-10 h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 border-2",
+                    "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border",
                     isFirst
-                      ? "bg-primary/10 border-primary text-primary"
-                      : "bg-muted border-border/40 text-muted-foreground"
+                      ? "border-primary/30 bg-primary/10 text-primary"
+                      : "border-border/50 bg-muted text-muted-foreground"
                   )}>
-                    <Activity className="h-4 w-4" />
+                    <Activity className="h-3.5 w-3.5" />
                   </div>
 
                   {/* Event Content */}
-                  <div className="flex-1 pt-1.5">
-                    <p className="font-bold text-sm text-foreground">{event.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{event.result}</p>
-                    <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground">
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <p className="text-sm font-semibold text-foreground">{event.title}</p>
+                    {event.result && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{event.result}</p>}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                       {event.triggered_by?.name && (
                         <>
                           <span className="font-medium">{event.triggered_by.name}</span>

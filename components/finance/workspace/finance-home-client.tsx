@@ -14,11 +14,9 @@ import {
   Landmark,
   Loader2,
   Receipt,
-  Search,
   Settings,
   ShoppingCart,
   CircleDollarSign,
-  Users,
   TrendingDown,
   TrendingUp,
   BadgeDollarSign,
@@ -27,12 +25,14 @@ import {
 import apiClient from "@/lib/api-client";
 import { FinanceApis } from "@/lib/api/endpoints";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { SearchField } from "@/components/patterns/controls/search-field";
 import { cn } from "@/lib/utils";
 import type { FinanceOverviewResponse } from "@/types/finance";
 
 type ModuleLink = {
+  group: "Daily work" | "Cash control" | "Books and review";
   title: string;
   description: string;
   href: string;
@@ -44,6 +44,7 @@ type ModuleLink = {
 
 const modules: ModuleLink[] = [
   {
+    group: "Daily work",
     title: "Sales",
     description: "Invoices, completed sales, and sales returns.",
     href: "/finance/sales",
@@ -57,19 +58,21 @@ const modules: ModuleLink[] = [
     ],
   },
   {
+    group: "Daily work",
     title: "Purchases",
     description: "Purchase documents, receiving, payment state, and returns.",
-    href: "/inventory/purchases",
+    href: "/finance/purchases",
     icon: ShoppingCart,
     keywords: "purchase supplier bill return payable settlement inventory",
     tone: "bg-amber-500/10 text-amber-600",
     actions: [
-      { label: "Purchases", href: "/inventory/purchases" },
-      { label: "Purchase returns", href: "/inventory/purchases/returns" },
+      { label: "Purchases", href: "/finance/purchases" },
+      { label: "Purchase returns", href: "/finance/purchases/returns" },
       { label: "Suppliers", href: "/suppliers" },
     ],
   },
   {
+    group: "Daily work",
     title: "Other income",
     description: "Rent, commission, interest, grants, and other non-sales income.",
     href: "/finance/other-income",
@@ -79,6 +82,7 @@ const modules: ModuleLink[] = [
     actions: [{ label: "Open other income", href: "/finance/other-income" }],
   },
   {
+    group: "Daily work",
     title: "Expenses",
     description: "Recognized costs from manual and source-owned workflows.",
     href: "/finance/expenses",
@@ -88,15 +92,7 @@ const modules: ModuleLink[] = [
     actions: [{ label: "Open expenses", href: "/finance/expenses" }],
   },
   {
-    title: "Suppliers",
-    description: "Supplier directory, balances, ledgers, and payments.",
-    href: "/suppliers",
-    icon: Users,
-    keywords: "supplier vendor payable ledger payment",
-    tone: "bg-orange-500/10 text-orange-600",
-    actions: [{ label: "Manage suppliers", href: "/suppliers" }],
-  },
-  {
+    group: "Daily work",
     title: "Payments",
     description: "Customer receipts, supplier payments, staff settlements, and their register.",
     href: "/finance/payments",
@@ -110,6 +106,7 @@ const modules: ModuleLink[] = [
     ],
   },
   {
+    group: "Cash control",
     title: "Cash & banks",
     description: "Where money is held, transfers, payment instruments, and drawer close.",
     href: "/finance/operations",
@@ -123,6 +120,7 @@ const modules: ModuleLink[] = [
     ],
   },
   {
+    group: "Books and review",
     title: "Transactions",
     description: "One chronological day book of every financial event.",
     href: "/finance/transactions",
@@ -132,6 +130,7 @@ const modules: ModuleLink[] = [
     actions: [{ label: "Open day book", href: "/finance/transactions" }],
   },
   {
+    group: "Books and review",
     title: "Journal vouchers",
     description: "Balanced manual adjustments with approval-grade audit history.",
     href: "/finance/journals",
@@ -141,6 +140,7 @@ const modules: ModuleLink[] = [
     actions: [{ label: "Journal register", href: "/finance/journals" }],
   },
   {
+    group: "Books and review",
     title: "Reports",
     description: "Statements, ledgers, tax books, and reconciliation.",
     href: "/finance/reports",
@@ -150,6 +150,7 @@ const modules: ModuleLink[] = [
     actions: [{ label: "All reports", href: "/finance/reports" }],
   },
   {
+    group: "Books and review",
     title: "Finance setup",
     description: "Financial categories, accounts, instruments, drawers, and tax settings.",
     href: "/finance/setup",
@@ -216,6 +217,14 @@ export function FinanceHomeClient() {
     );
   }, [query]);
 
+  const visibleGroups = useMemo(
+    () =>
+      (["Daily work", "Cash control", "Books and review"] as const)
+        .map((label) => ({ label, items: visibleModules.filter((item) => item.group === label) }))
+        .filter((group) => group.items.length > 0),
+    [visibleModules],
+  );
+
   const metrics = overview?.metrics;
   const recognizedExpenses =
     Number(metrics?.manual_operating_expense || 0) +
@@ -236,56 +245,44 @@ export function FinanceHomeClient() {
   ].filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] space-y-7 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Finance workspace</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Finance</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Record each event once in its owning workflow, then review the resulting money, balances, and reports here.
-          </p>
-        </div>
-        <div className="relative w-full lg:w-80">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Find sales, payables, journal..."
-            className="h-11 pl-9"
-          />
-        </div>
-      </header>
+    <AppPage width="wide" density="compact">
+      <PageHeader title="Finance" />
+      <SearchField
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onClear={() => setQuery("")}
+        placeholder="Find a finance task"
+        containerClassName="w-full lg:ml-auto lg:max-w-sm"
+      />
 
-      <section className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
+      <section aria-label="This month" className="grid grid-cols-2 overflow-hidden rounded-2xl border bg-card sm:grid-cols-4">
         {[
-          { label: "Net sales", value: metrics?.net_sales, icon: TrendingUp, help: "Revenue after sales discounts and refunds." },
+          { label: "Sales earned", value: metrics?.net_sales, icon: TrendingUp, help: "Net sales after discounts and refunds." },
           { label: "Money collected", value: metrics?.collections_total, icon: CreditCard, help: "Cash and bank receipts, including collections of older receivables." },
-          { label: "Recognized expenses", value: recognizedExpenses, icon: TrendingDown, help: "Costs recognized in this period; supplier payments are not counted again." },
+          { label: "Costs recognized", value: recognizedExpenses, icon: TrendingDown, help: "Operating costs recognized in this period." },
           { label: "Operating result", value: metrics?.operating_profit, icon: Banknote, help: "Income less recognized operating costs for the selected period." },
         ].map((metric) => (
-          <Card key={metric.label} className="border-border shadow-none">
-            <CardContent className="flex items-start justify-between p-3 sm:p-5">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{metric.label}</p>
-                <p className="mt-1 text-lg font-semibold tabular-nums sm:mt-2 sm:text-2xl">
+          <div key={metric.label} className="flex min-w-0 items-start justify-between gap-2 border-b border-r p-3 even:border-r-0 [&:nth-last-child(-n+2)]:border-b-0 sm:border-b-0 sm:even:border-r sm:last:border-r-0 sm:p-4">
+              <div className="min-w-0">
+                <p className="truncate text-[11px] font-medium text-muted-foreground">{metric.label}</p>
+                <p className="mt-1 truncate text-base font-semibold tabular-nums sm:text-xl">
                   {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : money(metric.value)}
                 </p>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">{metric.help}</p>
+                <p className="mt-1 hidden text-xs leading-5 text-muted-foreground sm:block">{metric.help}</p>
               </div>
-              <metric.icon className="h-5 w-5 text-muted-foreground" />
-            </CardContent>
-          </Card>
+              <metric.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </div>
         ))}
       </section>
 
       {alerts.length > 0 && (
-        <section className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+        <section className="overflow-hidden rounded-2xl border border-amber-500/25 bg-amber-500/5">
+          <div className="flex items-center gap-2 border-b border-amber-500/15 px-4 py-3 text-sm font-semibold">
             <AlertCircle className="h-4 w-4 text-amber-600" /> Needs attention
           </div>
-          <div className="grid gap-2 md:grid-cols-3">
+          <div className="divide-y divide-amber-500/15 md:grid md:grid-cols-3 md:divide-x md:divide-y-0">
             {alerts.map((alert) => (
-              <Link key={alert.label} href={alert.href} className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3 text-sm hover:bg-muted/50">
+              <Link key={alert.label} href={alert.href} className="flex min-h-12 items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-background/70">
                 <span className="text-muted-foreground">{alert.label}</span>
                 <span className="font-semibold tabular-nums">{alert.value}</span>
               </Link>
@@ -294,44 +291,45 @@ export function FinanceHomeClient() {
         </section>
       )}
 
-      <section>
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold">Workspaces</h2>
-          <p className="text-sm text-muted-foreground">Choose the business document you need, not an accounting shortcut.</p>
-        </div>
+      <section className="space-y-4">
         {visibleModules.length ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {visibleModules.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Card key={item.href} className="group border-border shadow-none transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm">
-                  <CardContent className="flex h-full flex-col p-5">
-                    <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", item.tone)}>
-                      <Icon className="h-5 w-5" />
+          visibleGroups.map((group) => (
+            <section key={group.label} className="space-y-2">
+              <h2 className="text-sm font-semibold">{group.label}</h2>
+              <div className="overflow-hidden rounded-2xl border bg-card md:grid md:grid-cols-2 xl:grid-cols-3">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.href} className="border-b last:border-b-0 md:border-r md:[&:nth-child(even)]:border-r-0 xl:[&:nth-child(even)]:border-r xl:[&:nth-child(3n)]:border-r-0">
+                      <Link href={item.href} className="group flex min-h-[68px] items-center gap-3 px-3 py-3 hover:bg-muted/40">
+                        <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", item.tone)}>
+                          <Icon className="h-5 w-5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-semibold">{item.title}</span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{item.description}</span>
+                        </span>
+                        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                      </Link>
+                      <div className="hidden flex-wrap gap-x-3 border-t px-4 py-2 md:flex">
+                        {item.actions.map((action) => (
+                          <Link key={action.href} href={action.href} className="text-xs font-medium text-muted-foreground hover:text-primary">
+                            {action.label}
+                          </Link>
+                        ))}
+                      </div>
                     </div>
-                    <Link href={item.href} className="mt-4 flex items-center justify-between gap-3 font-semibold">
-                      {item.title}
-                      <ArrowRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-primary" />
-                    </Link>
-                    <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">{item.description}</p>
-                    <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 border-t border-border pt-3">
-                      {item.actions.map((action) => (
-                        <Link key={action.href} href={action.href} className="text-xs font-medium text-muted-foreground hover:text-primary">
-                          {action.label}
-                        </Link>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))
         ) : (
           <div className="rounded-2xl border border-dashed border-border px-6 py-12 text-center text-sm text-muted-foreground">
             No finance workspace matches “{query}”.
           </div>
         )}
       </section>
-    </div>
+    </AppPage>
   );
 }

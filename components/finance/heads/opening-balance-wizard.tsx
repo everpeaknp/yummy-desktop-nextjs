@@ -196,7 +196,7 @@ export function OpeningBalanceWizard({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto p-4 sm:p-6">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <div className="flex items-center gap-2">
@@ -247,7 +247,7 @@ export function OpeningBalanceWizard({
                     value={counterpartHeadId}
                     onValueChange={setCounterpartHeadId}
                   >
-                    <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectTrigger className="h-11 bg-background text-sm sm:h-9 sm:text-xs">
                       <SelectValue placeholder="Select Equity Head (e.g. Owner Equity)..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -267,8 +267,76 @@ export function OpeningBalanceWizard({
               </p>
             </div>
 
-            {/* Lines Table */}
-            <div className="rounded-md border overflow-x-auto">
+            {/* Mobile line entry keeps every value reachable without a table scroll. */}
+            <div className="space-y-3 md:hidden">
+              {lines.map((line, index) => (
+                <div key={line.id} className="space-y-3 rounded-2xl border bg-card p-3 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold">Line {index + 1}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-destructive hover:bg-destructive/10"
+                      onClick={() => removeLine(line.id)}
+                      aria-label={`Remove opening balance line ${index + 1}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Select
+                    value={line.reportingHeadId}
+                    onValueChange={(value) => updateLine(line.id, "reportingHeadId", value)}
+                  >
+                    <SelectTrigger className="h-11">
+                      <SelectValue placeholder="Select account head" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {eligibleLeaves.map((head) => (
+                        <SelectItem key={head.id} value={String(head.id)}>
+                          {head.code} - {head.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Debit</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={line.debit}
+                        onChange={(event) => updateLine(line.id, "debit", event.target.value)}
+                        placeholder="0.00"
+                        className="h-11 text-right font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Credit</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={line.credit}
+                        onChange={(event) => updateLine(line.id, "credit", event.target.value)}
+                        placeholder="0.00"
+                        className="h-11 text-right font-mono"
+                      />
+                    </div>
+                  </div>
+                  <Input
+                    value={line.description}
+                    onChange={(event) => updateLine(line.id, "description", event.target.value)}
+                    placeholder="Line memo (optional)"
+                    className="h-11"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop retains the dense accounting table. */}
+            <div className="hidden overflow-x-auto rounded-md border md:block">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
@@ -358,31 +426,30 @@ export function OpeningBalanceWizard({
             </div>
 
             {/* Add Line & Summary */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
+            <div className="space-y-3 pt-1">
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
                 onClick={addLine}
-                className="gap-1 text-xs"
+                className="h-11 w-full gap-1.5 sm:w-auto"
               >
-                <Plus className="h-3.5 w-3.5" /> Add Line
+                <Plus className="h-4 w-4" /> Add line
               </Button>
 
-              <div className="flex items-center gap-4 text-xs font-medium">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Total Debits:</span>
+              <div className="grid grid-cols-3 gap-2 text-xs font-medium">
+                <div className="rounded-xl bg-muted/40 p-2.5">
+                  <span className="block text-muted-foreground">Debits</span>
                   <span className="font-mono font-bold text-foreground">
                     {totalDebit.toFixed(2)}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Total Credits:</span>
+                <div className="rounded-xl bg-muted/40 p-2.5">
+                  <span className="block text-muted-foreground">Credits</span>
                   <span className="font-mono font-bold text-foreground">
                     {totalCredit.toFixed(2)}
                   </span>
                 </div>
-                <div>
+                <div className="flex items-center justify-center rounded-xl border p-2">
                   {isBalanced ? (
                     <Badge className="bg-emerald-500/20 text-emerald-600 border-emerald-300 gap-1">
                       <CheckCircle2 className="h-3 w-3" /> Balanced
@@ -403,19 +470,20 @@ export function OpeningBalanceWizard({
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background p-4 sm:-mx-6 sm:-mb-6 sm:px-6">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
               disabled={loading}
+              className="h-11 flex-1 sm:flex-none"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={loading || (!isBalanced && !canAutoBalance)}
-              className="gap-1"
+              className="h-11 flex-1 gap-1 sm:flex-none"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Post Opening Balances

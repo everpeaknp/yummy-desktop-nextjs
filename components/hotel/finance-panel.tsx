@@ -8,7 +8,6 @@ import {
   CircleDollarSign,
   CreditCard,
   Loader2,
-  RefreshCw,
   RotateCcw,
   Utensils,
   WalletCards,
@@ -85,19 +84,15 @@ export function FinancePanel({ restaurantId, refreshKey }: Props) {
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-        <div>
-          <h2 className="text-2xl font-black tracking-tight">Hotel finance</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Room income, hotel services, guest payments, and unpaid balances.</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2 rounded-2xl border bg-card p-2">
-          <label className="space-y-1"><span className="px-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">From</span><Input className="h-10 w-40 rounded-xl" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
-          <label className="space-y-1"><span className="px-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">To</span><Input className="h-10 w-40 rounded-xl" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
-          <Button variant="outline" size="icon" className="h-10 w-10 rounded-xl" onClick={() => void load()} disabled={loading} aria-label="Refresh hotel finance"><RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /></Button>
+        <p className="text-sm text-muted-foreground">Room income, hotel services, guest payments, and unpaid balances.</p>
+        <div className="grid grid-cols-2 gap-2 rounded-2xl border bg-card p-2">
+          <label className="space-y-1"><span className="px-1 text-xs font-medium text-muted-foreground">From</span><Input className="h-10 w-full rounded-xl" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
+          <label className="space-y-1"><span className="px-1 text-xs font-medium text-muted-foreground">To</span><Input className="h-10 w-full rounded-xl" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => <Card key={metric.label} className="shadow-sm"><CardContent className="flex items-center gap-4 p-5"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${metric.tone}`}><metric.icon className="h-5 w-5" /></span><div className="min-w-0"><p className="text-sm text-muted-foreground">{metric.label}</p><p className="mt-1 truncate text-xl font-black tabular-nums">{money(metric.value, currency)}</p></div></CardContent></Card>)}
+      <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
+        {metrics.map((metric) => <Card key={metric.label} className="shadow-none"><CardContent className="flex items-center gap-3 p-3.5 sm:p-4"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${metric.tone}`}><metric.icon className="h-4 w-4" /></span><div className="min-w-0"><p className="text-xs text-muted-foreground">{metric.label}</p><p className="mt-1 truncate text-base font-bold tabular-nums sm:text-lg">{money(metric.value, currency)}</p></div></CardContent></Card>)}
       </div>
 
       <Card className="border-orange-500/20 bg-orange-500/[0.035] shadow-sm">

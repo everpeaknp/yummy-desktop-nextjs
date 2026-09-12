@@ -29,7 +29,9 @@ export const financeSalesApi = {
     return response.data.data;
   },
 
-  createInvoice: async (payload: FinanceSalesInvoiceInput): Promise<FinanceSalesDocument> => {
+  createInvoice: async (
+    payload: FinanceSalesInvoiceInput,
+  ): Promise<FinanceSalesDocument> => {
     const response = await apiClient.post<ApiResponse<FinanceSalesDocument>>(
       "/finance/sales-documents/invoices",
       payload,
@@ -37,9 +39,23 @@ export const financeSalesApi = {
     return response.data.data;
   },
 
-  getByOrder: async (restaurantId: number, orderId: number): Promise<FinanceSalesDocument> => {
+  getByOrder: async (
+    restaurantId: number,
+    orderId: number,
+  ): Promise<FinanceSalesDocument> => {
     const response = await apiClient.get<ApiResponse<FinanceSalesDocument>>(
       `/finance/sales-documents/orders/${orderId}`,
+      { params: { restaurant_id: restaurantId } },
+    );
+    return response.data.data;
+  },
+
+  get: async (
+    restaurantId: number,
+    documentId: number,
+  ): Promise<FinanceSalesDocument> => {
+    const response = await apiClient.get<ApiResponse<FinanceSalesDocument>>(
+      `/finance/sales-documents/${documentId}`,
       { params: { restaurant_id: restaurantId } },
     );
     return response.data.data;
@@ -49,10 +65,11 @@ export const financeSalesApi = {
     restaurantId: number,
     documentId: number,
   ): Promise<FinanceSalesDocumentSettlement> => {
-    const response = await apiClient.get<ApiResponse<FinanceSalesDocumentSettlement>>(
-      `/finance/sales-documents/${documentId}/settlement`,
-      { params: { restaurant_id: restaurantId } },
-    );
+    const response = await apiClient.get<
+      ApiResponse<FinanceSalesDocumentSettlement>
+    >(`/finance/sales-documents/${documentId}/settlement`, {
+      params: { restaurant_id: restaurantId },
+    });
     return response.data.data;
   },
 
@@ -63,13 +80,15 @@ export const financeSalesApi = {
     if (!orderIds.length) return [];
     const search = new URLSearchParams({ restaurant_id: String(restaurantId) });
     orderIds.forEach((orderId) => search.append("order_ids", String(orderId)));
-    const response = await apiClient.get<ApiResponse<FinanceOrderSettlementSummary[]>>(
-      `/finance/sales-documents/order-settlements?${search.toString()}`,
-    );
+    const response = await apiClient.get<
+      ApiResponse<FinanceOrderSettlementSummary[]>
+    >(`/finance/sales-documents/order-settlements?${search.toString()}`);
     return response.data.data;
   },
 
-  createReturn: async (payload: FinanceSalesReturnInput): Promise<FinanceSalesDocument> => {
+  createReturn: async (
+    payload: FinanceSalesReturnInput,
+  ): Promise<FinanceSalesDocument> => {
     const response = await apiClient.post<ApiResponse<FinanceSalesDocument>>(
       "/finance/sales-documents/returns",
       payload,
@@ -77,7 +96,10 @@ export const financeSalesApi = {
     return response.data.data;
   },
 
-  replaceOrderSettlement: async (orderId: number, payload: OrderSettlementReplacementInput) => {
+  replaceOrderSettlement: async (
+    orderId: number,
+    payload: OrderSettlementReplacementInput,
+  ) => {
     const response = await apiClient.put<ApiResponse<unknown>>(
       `/orders/${orderId}/settlement`,
       payload,

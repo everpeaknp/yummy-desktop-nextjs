@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, CheckCircle2, History, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, History, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api-client";
@@ -21,6 +21,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 import { DaybookReport } from "./daybook-report";
 import type { AccountingDaybook, DaybookCashTransaction } from "@/types/accounting";
 import {
@@ -77,7 +80,19 @@ function TransactionTable({
   if (rows.length === 0) return <EmptyState label={emptyLabel} />;
 
   return (
-    <div className="overflow-x-auto">
+    <>
+      <DataList className="rounded-none border-x-0 border-y-0 md:hidden">
+        {rows.map((row, index) => (
+          <ListRow
+            key={`${row.drawer_session_id ?? "none"}-${row.source_type}-${row.source_id ?? index}`}
+            title={row.label || sourceLabel(row.source_type)}
+            description={`${formatDateTime(row.occurred_at)} · ${row.reference || "No reference"}`}
+            meta={<span className="text-xs capitalize text-muted-foreground">{row.status || "recorded"}</span>}
+            trailing={<span className="font-semibold tabular-nums">{formatMoney(row.signed_amount)}</span>}
+          />
+        ))}
+      </DataList>
+      <div className="hidden overflow-x-auto md:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -132,7 +147,8 @@ function TransactionTable({
           ))}
         </TableBody>
       </Table>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -290,43 +306,28 @@ export function DaybookClient() {
 
   if (!canView) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 p-6">
-        <h1 className="text-2xl font-bold">Daybook</h1>
+      <AppPage width="reading">
+        <PageHeader title="Daybook" />
         <div className="border border-border p-6 text-sm text-muted-foreground">
           Your user does not have finance access.
         </div>
-      </div>
+      </AppPage>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-4 sm:p-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <Button variant="ghost" size="sm" className="mb-2 px-0" onClick={() => router.push("/finance/reports")}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Finance reports
-          </Button>
-          <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">Daybook</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            A structured receipts-and-payments report with the underlying cash, instrument, transfer, and ledger evidence.
-          </p>
-        </div>
-        <Button
-          onClick={() => void (reportMode === "current" ? loadCurrentDaybook() : loadClosedDaybooks())}
-          disabled={loading || !restaurantId}
-          className="w-full sm:w-auto"
-        >
-          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-          Refresh
-        </Button>
-      </div>
+    <AppPage width="wide" className="pb-20">
+      <PageHeader
+        title="Daybook"
+        description="Receipts, payments, transfers, and ledger evidence for a business day."
+        backHref="/finance/reports"
+      />
 
       <Tabs
         value={reportMode}
         onValueChange={(value) => setReportMode(value as "current" | "closed")}
       >
-        <TabsList className="h-auto">
+        <TabsList className="h-auto w-full sm:w-auto">
           <TabsTrigger value="current">Current Daybook</TabsTrigger>
           <TabsTrigger value="closed">
             <History className="mr-2 h-4 w-4" />
@@ -414,12 +415,12 @@ export function DaybookClient() {
         <div className="space-y-5">
           <DaybookReport daybook={daybook} />
           <Tabs defaultValue="cash" className="w-full">
-          <TabsList className="h-auto w-full justify-start overflow-x-auto">
-            <TabsTrigger value="cash">Cash detail</TabsTrigger>
-            <TabsTrigger value="instruments">Payment Instruments</TabsTrigger>
+          <TabsList className="grid h-auto w-full grid-cols-5">
+            <TabsTrigger value="cash">Cash</TabsTrigger>
+            <TabsTrigger value="instruments">Methods</TabsTrigger>
             <TabsTrigger value="transfers">Transfers</TabsTrigger>
-            <TabsTrigger value="ledger">Ledger Impact</TabsTrigger>
-            <TabsTrigger value="exceptions">Exceptions</TabsTrigger>
+            <TabsTrigger value="ledger">Ledger</TabsTrigger>
+            <TabsTrigger value="exceptions">Issues</TabsTrigger>
           </TabsList>
 
           <TabsContent value="cash" className="rounded-md border border-border">
@@ -433,7 +434,19 @@ export function DaybookClient() {
             {daybook.payment_instruments.length === 0 ? (
               <EmptyState label="No card or digital instrument transactions were recorded for this day." />
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="divide-y divide-border md:hidden">
+                {daybook.payment_instruments.map((row) => (
+                  <div key={`${row.payment_method}-${row.instrument ?? "none"}`} className="flex min-h-16 items-center justify-between gap-3 px-4 py-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium capitalize">{row.payment_method}</span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">{row.instrument || "No instrument"} · {row.clearing_status}</span>
+                    </span>
+                    <span className="shrink-0 text-right text-sm"><span className="block font-semibold tabular-nums">{formatMoney(row.expected_amount)}</span><span className="text-xs text-muted-foreground">Settled {formatMoney(row.settled_amount)}</span></span>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -459,6 +472,7 @@ export function DaybookClient() {
                   </TableBody>
                 </Table>
               </div>
+              </>
             )}
           </TabsContent>
 
@@ -494,7 +508,19 @@ export function DaybookClient() {
                 No blocking accounting exceptions for this day.
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="divide-y divide-border md:hidden">
+                {daybook.exceptions.map((row) => (
+                  <div key={row.kind} className="flex min-h-16 items-center justify-between gap-3 px-4 py-3">
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-2 text-sm font-medium">{row.blocking ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" /> : null}<span className="truncate">{row.label}</span></span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">{row.kind} · {row.count} occurrence{row.count === 1 ? "" : "s"}</span>
+                    </span>
+                    <span className="shrink-0 text-sm font-semibold tabular-nums">{formatMoney(row.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -523,11 +549,12 @@ export function DaybookClient() {
                   </TableBody>
                 </Table>
               </div>
+              </>
             )}
           </TabsContent>
           </Tabs>
         </div>
       ) : null}
-    </div>
+    </AppPage>
   );
 }

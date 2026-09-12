@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, UserPlus, Search, Filter, Mail, Phone, MoreVertical, Edit, UserX, Shield, User as UserIcon, ArrowLeft, Wallet, ArrowDownToLine, ArrowUpFromLine, Scale } from "lucide-react";
+import { Loader2, UserPlus, Search, Filter, Mail, Phone, MoreVertical, Edit, UserX, Shield, User as UserIcon, Wallet, ArrowDownToLine, ArrowUpFromLine, Scale } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,6 +26,11 @@ import { toast } from "sonner";
 import { hasPermission } from "@/lib/role-permissions";
 import { staffCreditApi, type StaffBalanceRow } from "@/lib/staff/credit";
 import { PayAllPreviewDialog } from "@/components/staff/pay-all-preview-dialog";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
 
 type StaffProfile = {
   id: number;
@@ -511,44 +516,47 @@ export default function StaffPage() {
     return <Badge variant="outline">{role || 'Staff'}</Badge>;
   };
 
-  return (
-    <div className="flex flex-col gap-8 max-w-[1600px] mx-auto p-6">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/manage">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Staff Management</h1>
-            <p className="text-muted-foreground">Manage employees, permissions, and roles.</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
+  const headerActions = (
+    <>
           {canManageStaff && (
             <Link href="/staff/join-requests">
               <Button variant="outline"><Mail className="mr-2 h-4 w-4" />Join requests</Button>
             </Link>
           )}
-          <Button variant="outline" size="icon" onClick={() => fetchStaff()} disabled={loading} title="Refresh staff list">
-            <Loader2 className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
           {canManageStaff && (
             <Button className="bg-primary hover:bg-primary/90" onClick={() => handleOpenDialog()}>
               <UserPlus className="w-4 h-4 mr-2" /> Invite Staff Member
             </Button>
           )}
-        </div>
+    </>
+  );
+
+  return (
+    <AppPage width="wide" className="pb-20">
+      <PageHeader
+        className="hidden md:flex"
+        title="Staff management"
+        description="Manage employees, permissions, and roles."
+        backHref="/manage"
+        actions={headerActions}
+      />
+      <div className="grid grid-cols-2 gap-2 md:hidden">
+        {canManageStaff ? <Link href="/staff/join-requests"><Button variant="outline" className="h-11 w-full rounded-xl"><Mail className="mr-2 h-4 w-4" />Requests</Button></Link> : null}
+        {canManageStaff ? <Button className="h-11 rounded-xl" onClick={() => handleOpenDialog()}><UserPlus className="mr-2 h-4 w-4" />Invite staff</Button> : null}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 gap-3 md:hidden">
+        <MetricCard label="Staff" value={staff.length} icon={<Shield className="h-4 w-4" />} color="text-blue-500" />
+        <MetricCard label="Salary due" value={money(totalToPay)} icon={<ArrowUpFromLine className="h-4 w-4" />} color="text-amber-500" />
+      </div>
+
+      <div className="hidden grid-cols-1 gap-6 md:grid md:grid-cols-3">
         <MetricCard label="Total Staff" value={staff.length} icon={<Shield className="w-5 h-5" />} color="text-blue-500" />
         <MetricCard label="Active Now" value={staff.filter((member) => member.is_active !== false).length} icon={<UserIcon className="w-5 h-5" />} color="text-emerald-500" />
         <MetricCard label="Managers" value={staff.filter(s => s.role?.toLowerCase() === 'manager' || s.role?.toLowerCase() === 'admin').length} icon={<Shield className="w-5 h-5" />} color="text-indigo-500" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="hidden grid-cols-1 gap-6 md:grid md:grid-cols-3">
         <MetricCard label="To Receive" value={money(totalToReceive)} icon={<ArrowDownToLine className="w-5 h-5" />} color="text-teal-500" />
         <MetricCard label="To Pay" value={money(totalToPay)} icon={<ArrowUpFromLine className="w-5 h-5" />} color="text-amber-500" />
         <MetricCard label="Net" value={money(totalToPay - totalToReceive)} icon={<Scale className="w-5 h-5" />} color="text-indigo-500" />
@@ -569,18 +577,15 @@ export default function StaffPage() {
         onPaid={fetchBalances}
       />
 
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <input 
-            className="pl-8 h-10 w-full rounded-md border border-input bg-muted/50 px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" 
-            placeholder="Search by name or email..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-muted-foreground" />
+      <div className="flex flex-col items-stretch justify-between gap-3 md:flex-row md:items-center md:gap-4">
+        <SearchField
+          className="w-full max-w-sm"
+          placeholder="Search staff"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+        />
+        <div className="flex items-center gap-2 self-end md:self-auto">
+          <Filter className="h-4 w-4 text-muted-foreground" />
           <Select value={roleFilter} onValueChange={setRoleFilter}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="All Roles" />
@@ -598,11 +603,33 @@ export default function StaffPage() {
       </div>
 
       {loading ? (
-        <div className="h-64 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
+        <LoadingState label="Loading staff..." />
       ) : (
-        <Card className="border-border shadow-sm overflow-hidden">
+        <>
+        <div className="md:hidden">
+          {filteredStaff.length === 0 ? (
+            <EmptyState
+              icon={<UserIcon className="h-5 w-5" />}
+              title="No staff members found"
+              description="Change the role or search filter, or invite a staff member."
+            />
+          ) : (
+            <DataList>
+              {filteredStaff.map((member) => (
+                <ListRow
+                  key={member.id}
+                  interactive
+                  onClick={() => router.push(`/staff/${member.id}`)}
+                  leading={member.name?.charAt(0).toUpperCase() || <UserIcon className="h-4 w-4" />}
+                  title={member.name || "Staff member"}
+                  description={`${member.role || "Staff"} · ${member.email || "No email"}`}
+                  meta={<DueAmountLabel netDue={balancesByUserId.get(member.id)?.net_due} />}
+                />
+              ))}
+            </DataList>
+          )}
+        </div>
+        <Card className="hidden overflow-hidden border-border shadow-sm md:block">
           <Table>
             <TableHeader className="bg-muted/30">
               <TableRow>
@@ -704,6 +731,7 @@ export default function StaffPage() {
             </TableBody>
           </Table>
         </Card>
+        </>
       )}
 
       <Dialog open={isPayrollDialogOpen} onOpenChange={setIsPayrollDialogOpen}>
@@ -940,7 +968,7 @@ export default function StaffPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }
 

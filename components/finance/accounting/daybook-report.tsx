@@ -97,6 +97,21 @@ function MoneyRow({ row, strong = false }: { row: ReportRow; strong?: boolean })
   );
 }
 
+function MobileMoneyRow({ row, strong = false }: { row: ReportRow; strong?: boolean }) {
+  return (
+    <div className={strong ? "bg-muted/25 px-4 py-3" : "px-4 py-3"}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 truncate text-sm font-medium">{row.label}</span>
+        <span className="shrink-0 text-sm font-semibold tabular-nums">{money(rowTotal(row))}</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Bank {amount(row.bank)} · Cash {amount(row.counter)} · Other {amount(row.owner)}
+        {Math.abs(row.due) >= 0.005 ? ` · Due ${money(row.due)}` : ""}
+      </p>
+    </div>
+  );
+}
+
 export function DaybookReport({
   daybook,
   outstandingReceivables = 0,
@@ -228,7 +243,20 @@ export function DaybookReport({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="divide-y divide-border/70 md:hidden">
+        <div className="bg-muted/45 px-4 py-2 text-xs font-semibold text-foreground">Opening</div>
+        <MobileMoneyRow row={model.opening} strong />
+        <div className="bg-muted/45 px-4 py-2 text-xs font-semibold text-foreground">Receipts</div>
+        {model.receipts.map((row, index) => <MobileMoneyRow key={`mobile-receipt-${row.label}-${index}`} row={row} />)}
+        <MobileMoneyRow row={{ ...model.receiptTotal, label: "Total receipts" }} strong />
+        <div className="bg-muted/45 px-4 py-2 text-xs font-semibold text-foreground">Payments</div>
+        {model.payments.map((row, index) => <MobileMoneyRow key={`mobile-payment-${row.label}-${index}`} row={row} />)}
+        <MobileMoneyRow row={{ ...model.paymentTotal, label: "Total payments" }} strong />
+        <div className="bg-muted/45 px-4 py-2 text-xs font-semibold text-foreground">Closing position</div>
+        <MobileMoneyRow row={model.closing} strong />
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
         <Table>
           <TableHeader>
             <TableRow>

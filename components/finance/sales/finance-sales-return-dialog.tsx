@@ -184,7 +184,7 @@ export function FinanceSalesReturnDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto">
+      <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>Record sales return / credit note</DialogTitle>
           <p className="text-sm text-muted-foreground">Select the invoice customers recognize. POS and manual sales share this register; internal order IDs stay hidden.</p>
@@ -222,7 +222,20 @@ export function FinanceSalesReturnDialog({
           )}
         </div>
 
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="space-y-3 md:hidden">
+          {rows.map((row, index) => (
+            <div key={row.key} className="space-y-3 rounded-2xl border bg-card p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="min-w-0 flex-1 truncate text-sm font-semibold">{sourceType === "external" ? `Return line ${index + 1}` : row.label}</p>
+                {sourceType === "external" ? <Button variant="ghost" size="icon" disabled={rows.length === 1} onClick={() => setRows((current) => current.filter((item) => item.key !== row.key))} aria-label={`Remove return line ${index + 1}`}><Trash2 className="h-4 w-4" /></Button> : <span className="text-xs text-muted-foreground">Available: {row.available}</span>}
+              </div>
+              {sourceType === "external" ? <Input className="h-11" value={row.item_name || ""} onChange={(event) => updateRow(row.key, { item_name: event.target.value, label: event.target.value })} placeholder="Returned item" /> : null}
+              <div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><Label className="text-xs">Return quantity</Label><Input className="h-11" type="number" min="0" max={row.available} step="0.001" value={row.quantity} onChange={(event) => updateRow(row.key, { quantity: Number(event.target.value) })} /></div>{sourceType === "external" ? <div className="space-y-1.5"><Label className="text-xs">Rate</Label><Input className="h-11" type="number" min="0" step="0.01" value={row.unit_price || 0} onChange={(event) => updateRow(row.key, { unit_price: Number(event.target.value) })} /></div> : null}</div>
+              {sourceType === "external" ? <><div className="space-y-1.5"><Label className="text-xs">Tax</Label><Input className="h-11" type="number" min="0" step="0.01" value={row.tax_amount || 0} onChange={(event) => updateRow(row.key, { tax_amount: Number(event.target.value) })} /></div><select className="h-11 w-full rounded-xl border bg-background px-3 text-sm" value={row.reporting_head_id || ""} onChange={(event) => updateRow(row.key, { reporting_head_id: Number(event.target.value) })}><option value="">Select sales head</option>{heads.map((head) => <option key={head.id} value={head.id}>{head.hierarchy_path || head.name}</option>)}</select></> : null}
+            </div>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto rounded-lg border md:block">
           <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-muted/50 text-left"><tr><th className="p-3">Item</th><th className="p-3">Sold / available</th><th className="p-3">Return qty</th>{sourceType === "external" ? <><th className="p-3">Rate</th><th className="p-3">Tax</th><th className="p-3">Sales head</th></> : null}<th /></tr></thead>
             <tbody>{rows.map((row) => (
@@ -240,9 +253,9 @@ export function FinanceSalesReturnDialog({
             ))}</tbody>
           </table>
         </div>
-        {sourceType === "external" ? <Button variant="outline" className="w-fit" onClick={() => setRows((current) => [...current, { ...manualRow(), reporting_head_id: heads[0]?.id || null }])}><Plus className="mr-2 h-4 w-4" />Add line</Button> : null}
+        {sourceType === "external" ? <Button variant="outline" className="h-11 w-full sm:w-fit" onClick={() => setRows((current) => [...current, { ...manualRow(), reporting_head_id: heads[0]?.id || null }])}><Plus className="mr-2 h-4 w-4" />Add line</Button> : null}
 
-        <div className="grid gap-5 rounded-lg border p-4 lg:grid-cols-[1fr_360px]">
+        <div className="grid gap-4 rounded-2xl border p-4 lg:grid-cols-[1fr_360px]">
           <div className="space-y-4">
             <div className="space-y-2"><Label>Customer {outcome === "customer_credit" ? "*" : "(optional)"}</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={customerId} onChange={(event) => setCustomerId(event.target.value)}><option value="">No customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.full_name || customer.name || `Customer #${customer.id}`}</option>)}</select></div>
             <div className="space-y-2"><Label>Reason *</Label><Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why are these items being returned?" /></div>
@@ -254,7 +267,7 @@ export function FinanceSalesReturnDialog({
             <div className="flex justify-between border-t pt-4 font-semibold"><span>Estimated return</span><span>NPR {estimatedTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
           </div>
         </div>
-        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={saving} onClick={() => void submit()}>{saving ? "Recording..." : "Record credit note"}</Button></div>
+        <div className="sticky bottom-0 flex gap-2 border-t bg-background pt-3"><Button className="h-11 flex-1" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button className="h-11 flex-[1.4]" disabled={saving} onClick={() => void submit()}>{saving ? "Recording..." : "Record credit note"}</Button></div>
       </DialogContent>
     </Dialog>
   );

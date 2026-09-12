@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { AnalyticsApis } from "@/lib/api/endpoints";
@@ -26,6 +25,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { ReportFilters } from "@/components/reports/report-filters";
 import { toast } from "sonner";
 
 type PeriodSummary = { income: number; expense: number; profit: number };
@@ -164,46 +166,27 @@ export default function AnalyticsComparePage() {
   const deltas = data?.deltas;
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto p-6">
+    <AppPage width="wide" className="pb-20">
       {fetchError ? (
         <AnalyticsFetchError message={fetchError} onRetry={fetchCompare} />
       ) : null}
 
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/analytics">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Period Comparison</h1>
-            <p className="text-muted-foreground">Compare income, expense, and operating profit vs the prior period.</p>
-          </div>
-        </div>
-        <Button variant="outline" onClick={fetchCompare} disabled={loading}>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          Refresh
-        </Button>
-      </div>
+      <PageHeader title="Period comparison" description="Compare income, expense, and operating profit against the prior period." />
 
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <ReportFilters title="Comparison filters" activeCount={Number(station !== "all") + Number(businessLine !== "all")}>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <div className="space-y-2">
             <Label>From</Label>
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <Input className="h-11 rounded-xl" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>To</Label>
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <Input className="h-11 rounded-xl" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>Station</Label>
             <Select value={station} onValueChange={setStation}>
-              <SelectTrigger>
+              <SelectTrigger className="h-11 rounded-xl">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -222,7 +205,7 @@ export default function AnalyticsComparePage() {
               onValueChange={setBusinessLine}
               disabled={!showBusinessLine}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-11 rounded-xl">
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
@@ -232,35 +215,23 @@ export default function AnalyticsComparePage() {
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ReportFilters>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {[
           { label: "Income", key: "income" as const, delta: deltas?.income_pct },
           { label: "Expense", key: "expense" as const, delta: deltas?.expense_pct },
           { label: "Operating Profit", key: "profit" as const, delta: deltas?.profit_pct },
         ].map(({ label, key, delta }) => (
-          <Card key={key} className="border-border">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center justify-between gap-2">
-                <span>{label}</span>
+          <Card key={key} className="border-border shadow-sm">
+            <CardContent className="space-y-2 p-3 sm:p-4">
+              <div className="flex items-start justify-between gap-1">
+                <span className="truncate text-xs font-medium text-muted-foreground">{label}</span>
                 {typeof delta === "number" ? <Delta value={delta} /> : null}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Current</span>
-                <span className="font-semibold tabular-nums">
-                  {money.format(current?.[key] ?? 0)}
-                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Previous</span>
-                <span className="font-medium tabular-nums text-muted-foreground">
-                  {money.format(previous?.[key] ?? 0)}
-                </span>
-              </div>
+              <div className="truncate text-base font-semibold tabular-nums sm:text-lg">Rs. {money.format(current?.[key] ?? 0)}</div>
+              <div className="truncate text-xs text-muted-foreground">Before Rs. {money.format(previous?.[key] ?? 0)}</div>
             </CardContent>
           </Card>
         ))}
@@ -273,6 +244,6 @@ export default function AnalyticsComparePage() {
           </CardContent>
         </Card>
       ) : null}
-    </div>
+    </AppPage>
   );
 }

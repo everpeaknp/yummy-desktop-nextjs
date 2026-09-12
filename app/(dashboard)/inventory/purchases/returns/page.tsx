@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, ChevronLeft, Loader2, MoreVertical, Ban } from "lucide-react";
+import { Plus, Loader2, MoreVertical, Ban } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,9 @@ import {
 import apiClient from "@/lib/api-client";
 import { PurchaseApis, PurchaseReturnApis, SupplierApis } from "@/lib/api/endpoints";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { PageSection } from "@/components/patterns/page/page-section";
 
 const REASON_OPTIONS = [
   { value: "damaged_on_delivery", label: "Damaged on delivery" },
@@ -151,7 +154,6 @@ function newReturnLine(): ReturnLineDraft {
 
 export default function InventoryPurchaseReturnsPage() {
   const user = useAuth((state) => state.user);
-  const router = useRouter();
   const searchParams = useSearchParams();
   const requestedPurchaseId = searchParams.get("purchase_id");
   const requestedSupplierId = searchParams.get("supplier_id");
@@ -398,24 +400,15 @@ export default function InventoryPurchaseReturnsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <Button variant="ghost" size="sm" className="mb-2 -ml-2" onClick={() => router.push("/inventory/purchases")}>
-            <ChevronLeft className="w-4 h-4 mr-1" /> Purchases
-          </Button>
-          <h1 className="text-2xl font-bold tracking-tight">Purchase Returns</h1>
-          <p className="text-muted-foreground">
-            Stock returned to a supplier. A manual Reduce Stock for waste or damage is a
-            different thing -- use this only for goods actually going back to the supplier.
-          </p>
-        </div>
-        <Button onClick={openCreate}>
-          <Plus className="w-4 h-4 mr-2" /> Record Return
-        </Button>
-      </div>
+    <AppPage width="wide" className="p-4 pb-24 sm:p-6">
+      <PageHeader
+        backHref="/inventory/purchases"
+        title="Purchase returns"
+        description="Send received goods back to a supplier and preserve the linked supplier credit or refund."
+        actions={<Button className="h-11 w-full rounded-xl sm:w-auto" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Record return</Button>}
+      />
 
-      <div className="overflow-hidden rounded-lg border">
+      <PageSection surface className="overflow-hidden p-0">
         <div className="divide-y divide-border md:hidden">
           {loading ? (
             <div className="flex items-center justify-center p-8 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
@@ -499,21 +492,21 @@ export default function InventoryPurchaseReturnsPage() {
             )}
           </TableBody>
         </Table></div>
-      </div>
+      </PageSection>
 
       {/* Create Return Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[640px] max-h-[92vh] overflow-y-auto">
-          <form onSubmit={handleCreate}>
-            <DialogHeader>
+        <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[640px] flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[92vh] sm:w-full">
+          <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <DialogHeader className="shrink-0 border-b px-5 py-4 text-left sm:px-6">
               <DialogTitle>Record Purchase Return</DialogTitle>
               <DialogDescription>
                 Select the original purchase bill. This keeps returned stock and the
                 supplier credit or refund linked to the correct document.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="grid flex-1 gap-4 overflow-y-auto px-5 py-4 sm:px-6">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Original purchase *</Label>
                   <Select value={createForm.purchase_id} onValueChange={handlePurchaseSelect}>
@@ -547,7 +540,7 @@ export default function InventoryPurchaseReturnsPage() {
                   </Select>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label>Return date</Label>
                   <Input
@@ -664,11 +657,11 @@ export default function InventoryPurchaseReturnsPage() {
                 </Button>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
+            <DialogFooter className="shrink-0 border-t px-5 py-3 sm:px-6">
+              <Button className="h-11 flex-1 sm:flex-none" variant="outline" type="button" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createSubmitting}>
+              <Button className="h-11 flex-[1.3] sm:flex-none" type="submit" disabled={createSubmitting}>
                 {createSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Post Return
               </Button>
@@ -706,6 +699,6 @@ export default function InventoryPurchaseReturnsPage() {
         actionHref={detailReturn?.supplier_id ? `/suppliers/${detailReturn.supplier_id}` : null}
         actionLabel="Open supplier"
       />
-    </div>
+    </AppPage>
   );
 }

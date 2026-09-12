@@ -111,8 +111,8 @@ export function HotelRoomDoor({
   const className = cn(
     "group relative flex shrink-0 flex-col items-center justify-center overflow-hidden rounded-t-[26px] rounded-b-lg border-2 text-center shadow-[inset_0_0_0_2px_rgba(255,255,255,0.12)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500",
     compact
-      ? "h-[112px] w-[84px] p-2 sm:h-[120px] sm:w-[92px]"
-      : "h-[140px] w-[104px] p-3 sm:h-[150px] sm:w-[116px]",
+      ? "h-[88px] w-full max-w-[76px] p-1.5 sm:h-[120px] sm:max-w-[92px] sm:p-2"
+      : "h-[112px] w-full max-w-[104px] p-2 sm:h-[150px] sm:max-w-[116px] sm:p-3",
     tone.tile,
     onSelect
       ? "cursor-pointer hover:-translate-y-1 hover:shadow-lg"
@@ -149,40 +149,33 @@ export function HotelRoomDoor({
       <p
         className={cn(
           "max-w-full truncate font-black tracking-tight",
-          compact ? "text-base" : "text-xl",
+          compact ? "text-base" : "text-lg sm:text-xl",
         )}
       >
         {room.number}
       </p>
-      <p
-        className={cn(
-          "mt-1 max-w-full truncate font-semibold text-muted-foreground",
-          compact ? "text-[9px]" : "text-[10px]",
-        )}
-      >
-        {room.room_type.name}
-      </p>
-      {pricePerNight != null ? (
-        <p
-          className={cn(
-            "mt-1.5 max-w-full whitespace-nowrap font-black text-orange-600 dark:text-orange-400",
-            compact ? "text-[9px]" : "text-[11px]",
-          )}
-        >
-          {hotelCurrency(pricePerNight)}
+      {compact ? (
+        <p className="mt-1 max-w-full truncate text-[9px] font-black text-orange-600 dark:text-orange-400">
+          {pricePerNight != null ? hotelCurrency(pricePerNight) : tone.label}
         </p>
-      ) : null}
-      <span
-        className={cn(
-          "mt-2 inline-flex min-w-0 items-center gap-1 font-semibold",
-          compact ? "text-[9px]" : "text-[10px]",
-        )}
-      >
-          <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", tone.dot)} />
-          <span className="truncate">
-            {available === false ? "Not available" : tone.label}
+      ) : (
+        <>
+          <p className="mt-1 max-w-full truncate text-[9px] font-semibold text-muted-foreground sm:text-[10px]">
+            {room.room_type.name}
+          </p>
+          {pricePerNight != null ? (
+            <p className="mt-1.5 max-w-full whitespace-nowrap text-[10px] font-black text-orange-600 dark:text-orange-400 sm:text-[11px]">
+              {hotelCurrency(pricePerNight)}
+            </p>
+          ) : null}
+          <span className="mt-2 inline-flex min-w-0 items-center gap-1 text-[10px] font-semibold">
+            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", tone.dot)} />
+            <span className="truncate">
+              {available === false ? "Not available" : tone.label}
+            </span>
           </span>
-      </span>
+        </>
+      )}
     </>
   );
 
@@ -578,6 +571,7 @@ export function HotelFloorRoomPlan(props: {
   floor: HotelFloor;
   rooms: HotelRoom[];
   compact?: boolean;
+  showAllRooms?: boolean;
   selectedRoomId?: number | null;
   priceByRoomType?: Record<number, number>;
   availableRoomIds?: Set<number>;
@@ -587,6 +581,7 @@ export function HotelFloorRoomPlan(props: {
     floor,
     rooms,
     compact = false,
+    showAllRooms = false,
     selectedRoomId = null,
     priceByRoomType,
     availableRoomIds,
@@ -602,7 +597,7 @@ export function HotelFloorRoomPlan(props: {
       left.number.localeCompare(right.number, undefined, { numeric: true })
     );
   });
-  const previewLimit = compact ? 8 : orderedRooms.length;
+  const previewLimit = compact && !showAllRooms ? 8 : orderedRooms.length;
   const visibleRooms = orderedRooms.slice(0, previewLimit);
   const remainingRooms = orderedRooms.length - visibleRooms.length;
 
@@ -619,8 +614,8 @@ export function HotelFloorRoomPlan(props: {
           className={cn(
             "grid items-start justify-items-center",
             compact
-              ? "grid-cols-[repeat(auto-fit,minmax(84px,1fr))] gap-3"
-              : "grid-cols-[repeat(auto-fit,minmax(116px,1fr))] gap-4",
+              ? "grid-cols-4 gap-1.5 sm:grid-cols-[repeat(auto-fit,minmax(84px,1fr))] sm:gap-3"
+              : "grid-cols-3 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(116px,1fr))] sm:gap-4",
           )}
         >
           {visibleRooms.map((room) => (
@@ -642,7 +637,7 @@ export function HotelFloorRoomPlan(props: {
           ))}
           {remainingRooms > 0 ? (
             <div
-              className="flex h-[112px] w-[84px] flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/40 text-center sm:h-[120px] sm:w-[92px]"
+              className="flex h-[88px] w-full max-w-[76px] flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/40 text-center sm:h-[120px] sm:max-w-[92px]"
               aria-label={`${remainingRooms} more rooms`}
             >
               <span className="text-lg font-black">+{remainingRooms}</span>
@@ -669,8 +664,11 @@ export function HotelFloorBoard({
   selectedFloor = false,
   onSelectFloor,
   layoutMode = false,
+  compact = false,
+  showAllRooms = false,
   onMoveRoom,
   priceByRoomType,
+  availableRoomIds,
 }: {
   floor: HotelFloor | null;
   rooms: HotelRoom[];
@@ -679,8 +677,11 @@ export function HotelFloorBoard({
   selectedFloor?: boolean;
   onSelectFloor?: () => void;
   layoutMode?: boolean;
+  compact?: boolean;
+  showAllRooms?: boolean;
   onMoveRoom?: (roomId: number, column: number, row: number) => void;
   priceByRoomType?: Record<number, number>;
+  availableRoomIds?: Set<number>;
 }) {
   const ready = rooms.filter(
     (room) => hotelRoomTone(room).label === "Ready",
@@ -704,7 +705,7 @@ export function HotelFloorBoard({
             : undefined
         }
         className={cn(
-          "flex flex-col gap-3 border-b px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5",
+          "flex flex-col gap-2 border-b px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4",
           onSelectFloor && "cursor-pointer hover:bg-muted/30",
         )}
       >
@@ -721,7 +722,7 @@ export function HotelFloorBoard({
             </p>
           </div>
         </div>
-        <HotelRoomLegend />
+        <div className="hidden sm:block"><HotelRoomLegend /></div>
       </header>
       <div className="p-3 sm:p-4">
         {floor ? (
@@ -741,26 +742,32 @@ export function HotelFloorBoard({
                 onSelectRoom={onSelectRoom}
                 onMoveRoom={onMoveRoom}
                 priceByRoomType={priceByRoomType}
+                availableRoomIds={availableRoomIds}
               />
             </>
           ) : (
             <HotelFloorRoomPlan
               floor={floor}
               rooms={rooms}
+              compact={compact}
+              showAllRooms={showAllRooms}
               selectedRoomId={selectedRoomId}
               onSelectRoom={onSelectRoom}
               priceByRoomType={priceByRoomType}
+              availableRoomIds={availableRoomIds}
             />
           )
         ) : (
-          <div className="grid grid-cols-4 gap-4 sm:grid-cols-6 lg:grid-cols-10">
+          <div className={cn("grid", compact ? "grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-3" : "grid-cols-3 gap-2.5 sm:grid-cols-6 sm:gap-4 lg:grid-cols-10")}>
             {rooms.map((room) => (
               <HotelRoomDoor
                 key={room.id}
                 room={room}
+                compact={compact}
                 selected={selectedRoomId === room.id}
                 onSelect={() => onSelectRoom(room)}
                 pricePerNight={priceByRoomType?.[room.room_type_id]}
+                available={availableRoomIds ? availableRoomIds.has(room.id) : undefined}
               />
             ))}
           </div>

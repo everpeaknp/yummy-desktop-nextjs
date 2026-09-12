@@ -10,7 +10,6 @@ import {
   Edit,
   Trash2,
   ChevronLeft,
-  RefreshCw,
   ShoppingCart,
   CheckCircle2,
   XCircle,
@@ -58,6 +57,13 @@ import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
+import { MetricCard } from "@/components/cards/metric-card";
+import { FilterChip } from "@/components/patterns/controls/filter-chip";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 import {
   TransactionDetailSheet,
   type TransactionDetailModel,
@@ -382,45 +388,20 @@ export function PurchasesWorkspace({
     : null;
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          {!financeMode ? (
-            <button
-              onClick={() => router.push("/manage")}
-              className="flex items-center text-sm text-muted-foreground hover:text-primary transition-colors mb-2"
-            >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Back to Manage
-            </button>
-          ) : null}
-          <h1 className="text-3xl font-bold tracking-tight">
-            {returnedOnly ? "Purchase returns" : "Purchases"}
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {returnedOnly
-              ? "Review returned supplier purchases and their financial reversals."
-              : "Supplier and general purchase documents, payment state, and return actions."}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={fetchPurchases}
-            disabled={loading}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
+    <AppPage width="wide" className="p-4 sm:p-6">
+      <PageHeader
+        backHref={!financeMode ? "/manage" : undefined}
+        title={returnedOnly ? "Purchase returns" : "Purchases"}
+        description={returnedOnly ? "Review returned supplier purchases and their financial reversals." : "Supplier and general purchase documents, payment state, and return actions."}
+        actions={<>
           {!returnedOnly ? (
-            <Button onClick={startPurchase}>
+            <Button className="h-11 rounded-xl" onClick={startPurchase}>
               <Plus className="w-4 h-4 mr-2" />
               Record Purchase
             </Button>
           ) : null}
-        </div>
-      </div>
+        </>}
+      />
 
       {financeMode ? (
         <FinanceWorkspaceNav
@@ -437,119 +418,36 @@ export function PurchasesWorkspace({
       ) : null}
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase">
-                Total Orders
-              </p>
-              <h3 className="text-2xl font-bold">{purchases.length}</h3>
-            </div>
-            <div className="p-2 bg-slate-100 rounded-lg">
-              <ShoppingCart className="w-5 h-5 text-slate-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase">
-                Paid (Received)
-              </p>
-              <h3 className="text-2xl font-bold text-green-600">
-                {formatCurrency(totalSpent)}
-              </h3>
-            </div>
-            <div className="p-2 bg-green-50 rounded-lg">
-              <CheckCircle2 className="w-5 h-5 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase">
-                Unpaid Purchases
-              </p>
-              <h3 className="text-2xl font-bold text-rose-600">
-                {formatCurrency(pendingPayables)}
-              </h3>
-            </div>
-            <div className="p-2 bg-rose-50 rounded-lg">
-              <Calculator className="w-5 h-5 text-rose-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase">
-                Returns
-              </p>
-              <h3 className="text-2xl font-bold text-orange-600">
-                {purchases.filter((p) => p.status === "returned").length}
-              </h3>
-            </div>
-            <div className="p-2 bg-orange-50 rounded-lg">
-              <Undo2 className="w-5 h-5 text-orange-600" />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <MetricCard label="Purchases" value={purchases.length} icon={<ShoppingCart className="h-4 w-4" />} tone="neutral" />
+        <MetricCard label="Received" value={formatCurrency(totalSpent)} icon={<CheckCircle2 className="h-4 w-4" />} tone="success" />
+        <MetricCard label="Unpaid" value={formatCurrency(pendingPayables)} icon={<Calculator className="h-4 w-4" />} tone="danger" />
+        <MetricCard label="Returns" value={purchases.filter((p) => p.status === "returned").length} icon={<Undo2 className="h-4 w-4" />} tone="warning" />
       </div>
 
-      {/* Main Table */}
-      <Card>
-        <div className="p-4 border-b flex flex-wrap items-center gap-4">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search items or suppliers..."
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
+      <div className="flex flex-wrap items-center gap-3">
+          <SearchField className="min-w-0 flex-1 md:max-w-md" placeholder="Search items or suppliers" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
           {dualBusinessLines ? (
-            <div className="flex items-center bg-muted/50 p-1 rounded-lg border border-border">
-              <Button
-                variant={businessLine === "all" ? "secondary" : "ghost"}
-                size="sm"
-                className={cn(
-                  "h-8 px-3 text-xs",
-                  businessLine === "all" && "bg-background shadow-sm",
-                )}
-                onClick={() => setBusinessLine("all")}
-              >
-                All
-              </Button>
-              <Button
-                variant={businessLine === "restaurant" ? "secondary" : "ghost"}
-                size="sm"
-                className={cn(
-                  "h-8 px-3 text-xs gap-2",
-                  businessLine === "restaurant" && "bg-background shadow-sm",
-                )}
-                onClick={() => setBusinessLine("restaurant")}
-              >
+            <div className="flex max-w-full gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <FilterChip active={businessLine === "all"} onClick={() => setBusinessLine("all")}>All</FilterChip>
+              <FilterChip active={businessLine === "restaurant"} onClick={() => setBusinessLine("restaurant")}>
                 <Utensils className="h-3.5 w-3.5 text-orange-500" />
                 Restaurant
-              </Button>
-              <Button
-                variant={businessLine === "hotel" ? "secondary" : "ghost"}
-                size="sm"
-                className={cn(
-                  "h-8 px-3 text-xs gap-2",
-                  businessLine === "hotel" && "bg-background shadow-sm",
-                )}
-                onClick={() => setBusinessLine("hotel")}
-              >
+              </FilterChip>
+              <FilterChip active={businessLine === "hotel"} onClick={() => setBusinessLine("hotel")}>
                 <Hotel className="h-3.5 w-3.5 text-blue-500" />
                 Hotel
-              </Button>
+              </FilterChip>
             </div>
           ) : null}
-        </div>
+      </div>
+      {loading ? <LoadingState label="Loading purchases..." /> : filteredPurchases.length === 0 ? <EmptyState title="No purchases recorded" description="Record a purchase to track supplier costs and payment state." /> : <>
+        <DataList className="md:hidden">
+          {filteredPurchases.map((purchase) => (
+            <ListRow key={purchase.id} interactive onClick={() => setDetailPurchase(purchase)} leading={<ShoppingCart className="h-4 w-4" />} title={purchase.purchase_name} description={`${purchase.supplier?.name || "No supplier"} · ${formatDate(purchase.purchased_date)}`} meta={formatCurrency(purchase.total_cost)} trailing={getStatusBadge(purchase.status)} />
+          ))}
+        </DataList>
+        <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -562,29 +460,7 @@ export function PurchasesWorkspace({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className="h-48 text-center text-muted-foreground"
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Loading purchases...
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : filteredPurchases.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className="h-48 text-center text-muted-foreground"
-                >
-                  No purchases recorded yet.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredPurchases.map((purchase) => (
+            {filteredPurchases.map((purchase) => (
                 <TableRow
                   key={purchase.id}
                   tabIndex={0}
@@ -727,11 +603,11 @@ export function PurchasesWorkspace({
                     </div>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
+              ))}
           </TableBody>
         </Table>
-      </Card>
+        </div>
+      </>}
 
       <PurchaseDialog
         open={isDialogOpen}
@@ -806,7 +682,7 @@ export function PurchasesWorkspace({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }
 

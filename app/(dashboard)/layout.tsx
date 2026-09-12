@@ -14,6 +14,7 @@ import { useSessionRestoreState } from "@/hooks/use-session-restore";
 import { ProductTourHost } from "@/components/onboarding/product-tour-host";
 import { canAccessOnboarding } from "@/lib/onboarding";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
+import { FinanceMobileNav } from "@/components/finance/workspace/finance-mobile-nav";
 
 export default function DashboardLayout({
   children,
@@ -152,7 +153,7 @@ export default function DashboardLayout({
   if (isHotelWorkspace) {
     return (
       <div className="h-screen w-full overflow-hidden bg-background">
-        <main className="h-full overflow-hidden">
+        <main className="flex h-full min-h-0 flex-col overflow-hidden">
           <RoleGuard>{children}</RoleGuard>
         </main>
         <GlobalKotPrinter />
@@ -165,6 +166,7 @@ export default function DashboardLayout({
       <Sidebar />
       <div className="flex flex-col flex-1 h-full overflow-hidden">
         <Header />
+        <FinanceMobileNav />
         <main className="flex-1 overflow-y-auto p-4 pb-24 md:pb-4">
           <RoleGuard>{children}</RoleGuard>
         </main>

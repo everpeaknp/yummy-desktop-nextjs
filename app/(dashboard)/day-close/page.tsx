@@ -36,7 +36,6 @@ import {
   Calendar,
   CheckCircle2,
   DollarSign,
-  RefreshCw,
   Wallet,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
@@ -59,6 +58,7 @@ import {
   type DayCloseSnapshotData,
   type BusinessLine,
 } from "@/types/day-close";
+import { AppPage } from "@/components/patterns/page/app-page";
 
 export default function DayClosePage() {
   const searchParams = useSearchParams();
@@ -213,8 +213,8 @@ export default function DayClosePage() {
   const isConfirmed = String(currentClose?.status ?? "").toLowerCase() === "confirmed";
 
   return (
-    <div className="day-close-page day-close-ui flex flex-col gap-10 max-w-[1600px] mx-auto pb-20 px-4">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <AppPage width="wide" className="day-close-page day-close-ui pb-20">
+      <div className="hidden flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
         <div className="space-y-1">
           <h1 className="dc-page-title">{businessLine === "combined" ? "Combined Day Close" : businessLine === "hotel" ? "Hotel Daybook" : "Restaurant Day Close"}</h1>
           <p className="dc-page-subtitle">
@@ -272,7 +272,53 @@ export default function DayClosePage() {
         </div>
       </div>
 
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 gap-2 md:hidden">
+        <div className="col-span-2">
+          <Label htmlFor="day-close-page-date-mobile" className="sr-only">
+            Close date
+          </Label>
+          <Input
+            id="day-close-page-date-mobile"
+            type="date"
+            value={selectedDate}
+            max={(() => {
+              const now = new Date();
+              const pad = (value: number) => String(value).padStart(2, "0");
+              return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+            })()}
+            onChange={(event) => setSelectedDate(event.target.value)}
+            className="h-11 w-full rounded-xl"
+          />
+        </div>
+        {cashControlMode === "combined" ? (
+          <Badge variant="outline" className="col-span-2 h-11 justify-start rounded-xl px-3 text-sm font-medium">
+            Shared drawers · combined close
+          </Badge>
+        ) : showBusinessLinePicker ? (
+          <Select
+            value={businessLine}
+            onValueChange={(value) => setBusinessLine(value as BusinessLine)}
+          >
+            <SelectTrigger className="col-span-2 h-11 rounded-xl font-medium">
+              <SelectValue placeholder="Business line" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="restaurant">Restaurant close</SelectItem>
+              <SelectItem value="hotel">Hotel daybook</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : null}
+        <Button
+          onClick={handlePrimaryAction}
+          className="col-span-2 h-11 rounded-xl font-medium"
+          disabled={!restaurantId}
+        >
+          <CheckCircle2 className="mr-2 h-4 w-4" />
+          {actionLabel}
+        </Button>
+      </div>
+
+      <section className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:gap-6">
         <Card
           className="dc-card lg:col-span-1 relative overflow-hidden group transition-all duration-300"
           role={isConfirmed && currentClose?.id ? "button" : undefined}
@@ -289,29 +335,18 @@ export default function DayClosePage() {
               : undefined
           }
         >
-          <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[80px] -mr-4 -mt-4 transition-transform group-hover:scale-110" />
-          <CardHeader className="pb-3 relative z-10">
-            <div className="flex items-center justify-between gap-3">
+          <div className="absolute top-0 right-0 h-16 w-16 rounded-bl-[56px] bg-primary/5 md:-mr-4 md:-mt-4 md:h-24 md:w-24 md:rounded-bl-[80px]" />
+          <CardHeader className="relative z-10 p-4 pb-2 md:pb-3">
+            <div className="flex items-center gap-3">
               <CardTitle className="dc-card-title flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-primary" />
                 {businessLineLabel}
               </CardTitle>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="dc-filter-control h-8 w-8 rounded-full shrink-0"
-                onClick={loadCurrent}
-                disabled={!restaurantId || currentLoading}
-                aria-label="Refresh current day close"
-              >
-                <RefreshCw className={currentLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-              </Button>
             </div>
           </CardHeader>
-          <CardContent className="relative z-10 space-y-3">
-            <p className="dc-eyebrow">Selected close date</p>
-            <p className="text-lg font-medium tracking-tight break-words text-foreground">
+          <CardContent className="relative z-10 space-y-2 p-4 pt-0 md:space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">Selected close date</p>
+            <p className="text-base font-medium tracking-tight break-words text-foreground md:text-lg">
               {currentClose?.id
                 ? formatDayCloseListHeading({
                     id: currentClose.id,
@@ -331,7 +366,7 @@ export default function DayClosePage() {
           </CardContent>
         </Card>
 
-        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 gap-3 lg:col-span-2 lg:gap-6">
           <DayCloseMetricCard
             label="Net Sales"
             value={formatDayCloseCurrency(displayNetSales)}
@@ -340,6 +375,8 @@ export default function DayClosePage() {
             iconClassName={DC_METRIC_ICON_IN}
             accent={DC_METRIC_ACCENT_IN}
             valueClassName={DC_METRIC_VALUE_IN}
+            compact
+            dense
           />
           <DayCloseMetricCard
             label="Total Expenses"
@@ -349,12 +386,14 @@ export default function DayClosePage() {
             iconClassName={DC_METRIC_ICON_OUT}
             accent={DC_METRIC_ACCENT_OUT}
             valueClassName={DC_METRIC_VALUE_OUT}
+            compact
+            dense
           />
         </div>
       </section>
 
       <Tabs defaultValue="history" className="w-full">
-        <TabsList className="dc-tabs-list grid grid-cols-2 rounded-2xl">
+        <TabsList className="dc-tabs-list grid h-11 grid-cols-2 rounded-xl md:h-auto md:rounded-2xl">
           <TabsTrigger value="history" className="dc-tab-trigger">
             History
           </TabsTrigger>
@@ -363,7 +402,7 @@ export default function DayClosePage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="history" className="mt-5">
+        <TabsContent value="history" className="mt-3 md:mt-5">
           <DayCloseHistory
             ref={dayCloseHistoryRef}
             restaurantId={restaurantId}
@@ -375,9 +414,9 @@ export default function DayClosePage() {
           />
         </TabsContent>
 
-        <TabsContent value="about" className="mt-5">
-          <Card className="shadow-sm rounded-2xl border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
-            <CardContent className="p-8 space-y-4">
+        <TabsContent value="about" className="mt-3 md:mt-5">
+          <Card className="overflow-hidden rounded-xl border-border/50 bg-card/80 shadow-sm backdrop-blur-sm md:rounded-2xl">
+            <CardContent className="space-y-4 p-4 md:p-8">
               <p className="text-sm text-muted-foreground">
                 A Day Close locks in your daily totals (sales, payments, expenses, refunds) and records a cash
                 reconciliation. If you spot a mistake later, you can reopen or adjust the close with a reason so the
@@ -409,6 +448,6 @@ export default function DayClosePage() {
           targetBusinessDate={selectedDate}
         />
       ) : null}
-    </div>
+    </AppPage>
   );
 }

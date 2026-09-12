@@ -7,6 +7,12 @@ import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useOrderFull } from "@/hooks/use-order-full";
+import { useMobileAppBarTitle } from "@/components/layout/mobile-app-bar-title";
+
+function CheckoutAppBarTitle({ title }: { title: string }) {
+  useMobileAppBarTitle(title);
+  return null;
+}
 import { OrderApis, CustomerApis, PaymentApis, DrawerSessionApis, AccountingApis, StaffProfileApis } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2315,12 +2321,18 @@ export default function CheckoutPage() {
   const orderLabel = orderMeta?.table_name
     ? `${orderMeta.table_name} • Order #${orderMeta.restaurant_order_id || orderId}`
     : `Order #${orderMeta?.restaurant_order_id || orderId}`;
+  const mobileAppBarTitle = orderMeta?.table_name
+    ? (/^table\b/i.test(orderMeta.table_name) ? orderMeta.table_name : `Table ${orderMeta.table_name}`)
+    : isRoomServiceOrder
+      ? "Room delivery"
+      : "Checkout";
 
   return (
     <div className="flex flex-col gap-6 max-w-7xl mx-auto pb-8">
+      <CheckoutAppBarTitle title={mobileAppBarTitle} />
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className="hidden items-center gap-4 md:flex">
           <Button variant="ghost" size="icon" onClick={() => {
             if (returnTo) router.push(returnTo);
             else if (orderMeta?.channel === "room_service") router.push("/hotel");
@@ -2423,7 +2435,18 @@ export default function CheckoutPage() {
           {/* Items table */}
           <Card className="border-border/40">
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className="divide-y md:hidden">
+                {displayBillItems.map((displayItem) => {
+                  const item = bill.items.find((source) => source.id === displayItem.id) || displayItem;
+                  return <div key={item.id} className="space-y-2 p-4">
+                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-medium">{displayItem.name_snapshot}</p>{displayItem.category_name_snapshot ? <p className="text-xs text-muted-foreground">{displayItem.category_name_snapshot}</p> : null}</div><p className="shrink-0 font-semibold tabular-nums">{formatCurrency(displayItem.line_total, curr)}</p></div>
+                    {displayItem.modifiers.length > 0 ? <div className="flex flex-wrap gap-1">{displayItem.modifiers.map((modifier) => <Badge key={modifier.id} variant="secondary" className="text-[10px] font-normal">{modifier.modifier_name_snapshot}</Badge>)}</div> : null}
+                    {displayItem.notes ? <p className="text-xs italic text-muted-foreground">{displayItem.notes}</p> : null}
+                    <div className="flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{displayItem.qty} × {formatCurrency(displayItem.unit_price, curr)}</span>{!orderEditLocked ? <Button type="button" variant={displayItem.is_nc ? "default" : "outline"} size="sm" className={cn("h-9 gap-1.5 text-xs", displayItem.is_nc && "bg-orange-500 hover:bg-orange-600 text-white")} disabled={itemUpdating || !canMarkNc} onClick={() => handleNcToggle(item)}><Award className="h-3.5 w-3.5" />NC</Button> : <span className="text-xs text-muted-foreground">Locked</span>}</div>
+                  </div>;
+                })}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b bg-muted/30">

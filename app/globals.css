@@ -96,10 +96,16 @@
   }
 
   /* Prevent Radix select/dialog scroll-lock from shifting the page sideways */
-  body[data-scroll-locked] {
-    margin-right: 0 !important;
-    padding-right: 0 !important;
-  }
+body[data-scroll-locked] {
+  margin-right: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Let modal sheets own the foreground; the Orders launcher is not an action inside them. */
+body[data-scroll-locked] .orders-new-order-cta {
+  opacity: 0;
+  pointer-events: none;
+}
 }
 
 @layer utilities {
@@ -460,6 +466,47 @@
 
 .payment-bar-shimmer {
   animation: payment-bar-shimmer 2.4s ease-in-out infinite;
+}
+
+/* Mobile Orders: expand the chooser from the CTA, then fold it back into it. */
+@keyframes new-order-sheet-expand {
+  from {
+    opacity: 0;
+    transform: translateY(1.5rem) scale(0.12);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes new-order-sheet-collapse {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(1.5rem) scale(0.12);
+  }
+}
+
+.new-order-sheet-motion {
+  transform-origin: center bottom;
+}
+
+.new-order-sheet-motion[data-state="open"] {
+  animation: new-order-sheet-expand 460ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+.new-order-sheet-motion[data-state="closed"] {
+  animation: new-order-sheet-collapse 420ms cubic-bezier(0.55, 0, 1, 0.45) both !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .new-order-sheet-motion[data-state] {
+    animation-duration: 0.01ms !important;
+  }
 }
 
 /* Leaflet: Tailwind preflight breaks tile sizing without this */

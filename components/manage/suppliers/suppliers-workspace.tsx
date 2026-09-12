@@ -17,7 +17,6 @@ import {
     Eye
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
     Table,
     TableBody,
@@ -33,13 +32,18 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { SupplierApis } from "@/lib/api/endpoints";
 import { SupplierDialog } from "@/components/manage/suppliers/supplier-dialog";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/utils";
+import { MetricCard } from "@/components/cards/metric-card";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 
 export function SuppliersWorkspace({
     financeMode = false,
@@ -103,85 +107,69 @@ export function SuppliersWorkspace({
     );
 
     return (
-        <div className="p-6 space-y-6 max-w-[1200px] mx-auto">
-            {/* Header */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-1">
-                    {showBackToManage && !financeMode ? <button 
-                        onClick={() => router.push('/manage')}
-                        className="flex items-center text-sm text-muted-foreground hover:text-primary transition-colors mb-2"
-                    >
-                        <ChevronLeft className="w-4 h-4 mr-1" />
-                        Back to Manage
-                    </button> : null}
-                    <h1 className="text-3xl font-bold tracking-tight">{financeMode ? "Supplier payables" : "Suppliers"}</h1>
-                    <p className="text-muted-foreground text-sm">
-                        Manage your vendors and track outstanding balances.
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" onClick={fetchSuppliers} disabled={loading}>
-                        <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                    </Button>
-                    <Button onClick={() => { setSelectedSupplier(null); setIsDialogOpen(true); }}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Supplier
-                    </Button>
-                </div>
+        <AppPage width="wide" className="p-4 sm:p-6">
+            <div className="hidden md:block">
+                <PageHeader
+                    backHref={showBackToManage && !financeMode ? "/manage" : undefined}
+                    title={financeMode ? "Supplier payables" : "Suppliers"}
+                    description="Manage vendors and track outstanding balances."
+                    actions={<>
+                        <Button variant="outline" size="icon" className="h-11 w-11 rounded-xl" onClick={fetchSuppliers} disabled={loading}>
+                            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                        </Button>
+                        <Button className="h-11 rounded-xl" onClick={() => { setSelectedSupplier(null); setIsDialogOpen(true); }}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add Supplier
+                        </Button>
+                    </>}
+                />
             </div>
 
-            {/* Stats Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="bg-primary/5 border-primary/10">
-                    <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                            <p className="text-xs font-semibold text-primary/60 uppercase tracking-wider">Total Suppliers</p>
-                            <h2 className="text-3xl font-bold mt-1">{suppliers.length}</h2>
-                        </div>
-                        <div className="p-3 bg-primary/10 rounded-full">
-                            <RefreshCw className="w-6 h-6 text-primary" />
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-orange-500/5 border-orange-500/10">
-                    <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                            <p className="text-xs font-semibold text-orange-500/60 uppercase tracking-wider">Total Payable</p>
-                            <h2 className="text-3xl font-bold mt-1 text-orange-600">{formatCurrency(totalPayable)}</h2>
-                        </div>
-                        <div className="p-3 bg-orange-500/10 rounded-full">
-                            <Wallet className="w-6 h-6 text-orange-600" />
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-green-500/5 border-green-500/10">
-                    <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                            <p className="text-xs font-semibold text-green-500/60 uppercase tracking-wider">Active Vendors</p>
-                            <h2 className="text-3xl font-bold mt-1 text-green-600">{suppliers.filter(s => s.is_active).length}</h2>
-                        </div>
-                        <div className="p-3 bg-green-500/10 rounded-full">
-                            <RefreshCw className="w-6 h-6 text-green-600" />
-                        </div>
-                    </CardContent>
-                </Card>
+            <div className="flex min-w-0 items-center gap-2 md:hidden">
+                <SearchField
+                    placeholder="Search suppliers"
+                    className="min-w-0"
+                    containerClassName="flex-1"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                />
+                <Button size="icon" className="h-11 w-11 shrink-0 rounded-xl" aria-label="Add supplier" onClick={() => { setSelectedSupplier(null); setIsDialogOpen(true); }}>
+                    <Plus className="h-5 w-5" />
+                </Button>
             </div>
 
-            {/* Main Content */}
-            <Card>
-                <div className="p-4 border-b flex items-center gap-4">
-                    <div className="relative flex-1 max-w-sm">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input 
-                            placeholder="Search suppliers..." 
-                            className="pl-9"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 md:hidden">
+                <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">Total payable</p>
+                    <p className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">{formatCurrency(totalPayable)}</p>
+                </div>
+                <p className="text-xs text-muted-foreground">{suppliers.filter((supplier) => supplier.is_active).length} active</p>
+            </div>
+
+            <div className="hidden grid-cols-2 gap-3 md:grid-cols-3 md:grid">
+                <MetricCard label="Suppliers" value={suppliers.length} icon={<RefreshCw className="h-4 w-4" />} tone="brand" />
+                <MetricCard label="Total payable" value={formatCurrency(totalPayable)} icon={<Wallet className="h-4 w-4" />} tone="warning" />
+                <MetricCard label="Active vendors" value={suppliers.filter(s => s.is_active).length} icon={<RefreshCw className="h-4 w-4" />} tone="success" className="col-span-2 md:col-span-1" />
+            </div>
+
+            <SearchField containerClassName="hidden max-w-md md:block" placeholder="Search suppliers" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
+
+            {loading ? <LoadingState label="Loading suppliers..." /> : filteredSuppliers.length === 0 ? <EmptyState title="No suppliers found" description="Add a supplier to start tracking purchases and payables." /> : <>
+                <DataList className="md:hidden">
+                    {filteredSuppliers.map((supplier) => (
+                        <ListRow
+                            key={supplier.id}
+                            interactive
+                            onClick={() => router.push(`/suppliers/${supplier.id}`)}
+                            leading={<span className="font-semibold">{supplier.name?.charAt(0) || "S"}</span>}
+                            title={supplier.name}
+                            description={supplier.contact_name || supplier.phone || supplier.email || "No contact details"}
+                            meta={supplier.payable_amount > 0 ? formatCurrency(supplier.payable_amount) : "No debt"}
+                            trailing={<Badge variant={supplier.is_active ? "default" : "secondary"}>{supplier.is_active ? "Active" : "Inactive"}</Badge>}
                         />
-                    </div>
-                </div>
+                    ))}
+                </DataList>
+                <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card md:block">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -193,23 +181,7 @@ export function SuppliersWorkspace({
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {loading ? (
-                            <TableRow>
-                                <TableCell colSpan={5} className="h-48 text-center text-muted-foreground">
-                                    <div className="flex items-center justify-center gap-2">
-                                        <RefreshCw className="w-4 h-4 animate-spin" />
-                                        Loading suppliers...
-                                    </div>
-                                </TableCell>
-                            </TableRow>
-                        ) : filteredSuppliers.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={5} className="h-48 text-center text-muted-foreground">
-                                    No suppliers found.
-                                </TableCell>
-                            </TableRow>
-                        ) : (
-                            filteredSuppliers.map((supplier) => (
+                        {filteredSuppliers.map((supplier) => (
                                 <TableRow key={supplier.id} className="cursor-pointer" onClick={() => router.push(`/suppliers/${supplier.id}`)}>
                                     <TableCell>
                                         <div className="flex flex-col">
@@ -293,11 +265,11 @@ export function SuppliersWorkspace({
                                         </div>
                                     </TableCell>
                                 </TableRow>
-                            ))
-                        )}
+                            ))}
                     </TableBody>
                 </Table>
-            </Card>
+                </div>
+            </>}
 
             <SupplierDialog 
                 open={isDialogOpen} 
@@ -305,7 +277,7 @@ export function SuppliersWorkspace({
                 supplier={selectedSupplier}
                 onSuccess={fetchSuppliers}
             />
-        </div>
+        </AppPage>
     );
 }
 

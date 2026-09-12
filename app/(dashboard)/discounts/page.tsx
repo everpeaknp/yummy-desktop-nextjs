@@ -7,11 +7,15 @@ import apiClient from "@/lib/api-client";
 import { DiscountApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Search, Plus, Percent, Calendar, Loader2, Trash2, Edit, Tag, AlertCircle } from "lucide-react";
+import { Plus, Percent, Calendar, Loader2, Trash2, Edit, Tag } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DiscountDialog } from "@/components/discounts/discount-dialog";
 import { useToast } from "@/components/ui/use-toast";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -146,49 +150,100 @@ export default function DiscountsPage() {
       setDeleteDialogOpen(true);
   };
 
+  const filteredDiscounts = discounts.filter((discount) => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return [discount.name, discount.code, discount.description]
+      .filter(Boolean)
+      .some((value) => value!.toLowerCase().includes(query));
+  });
+
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Discounts</h1>
-          <p className="text-muted-foreground">Manage promo codes and offers.</p>
-        </div>
-        <Button onClick={openCreateDialog} className="bg-orange-600 hover:bg-orange-700 text-white">
-          <Plus className="w-4 h-4 mr-2" /> New Discount
+    <AppPage width="wide">
+      <div className="hidden md:block">
+        <PageHeader
+          title="Discounts"
+          description="Manage promo codes and offers."
+          actions={
+            <Button onClick={openCreateDialog} className="h-11 rounded-xl">
+              <Plus className="mr-1.5 h-4 w-4" /> New discount
+            </Button>
+          }
+        />
+      </div>
+
+      <div className="flex items-center gap-2 md:hidden">
+        <SearchField
+          containerClassName="flex-1"
+          placeholder="Search discounts"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          onClear={() => setSearchQuery("")}
+        />
+        <Button size="icon" onClick={openCreateDialog} className="h-11 w-11 shrink-0 rounded-xl" aria-label="New discount">
+          <Plus className="h-4 w-4" />
         </Button>
       </div>
 
-      <div className="relative w-full md:w-64">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-8 " placeholder="Search discounts..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-      </div>
+      <SearchField
+        containerClassName="hidden max-w-sm md:block"
+        placeholder="Search discounts"
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+        onClear={() => setSearchQuery("")}
+      />
 
       {loading ? (
-        <div className="h-64 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      ) : discounts.length === 0 ? (
-        <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg">
-          <Percent className="w-12 h-12 mb-4 opacity-20" />
-          <p>No active discounts found.</p>
-          <Button variant="link" onClick={openCreateDialog}>Create your first discount</Button>
-        </div>
+        <LoadingState label="Loading discounts..." />
+      ) : filteredDiscounts.length === 0 ? (
+        <EmptyState
+          icon={<Percent className="h-5 w-5" />}
+          title={discounts.length ? "No discounts match your search" : "No discounts yet"}
+          description={discounts.length ? "Try another name or code." : "Create an offer for a menu item or order."}
+          actionLabel={discounts.length ? undefined : "New discount"}
+          onAction={discounts.length ? undefined : openCreateDialog}
+        />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {discounts.filter((d) => {
-            if (!searchQuery.trim()) return true;
-            const q = searchQuery.toLowerCase();
-            return (d.code || "").toLowerCase().includes(q) || (d.description || "").toLowerCase().includes(q);
-          }).map((discount) => (
-            <Card key={discount.id} className="group relative overflow-hidden transition-all hover:shadow-md">
-              <CardContent className="p-6">
+        <>
+          <DataList className="md:hidden">
+            {filteredDiscounts.map((discount) => {
+              const value = discount.type === "percentage" ? `${discount.value}% off` : `Rs. ${discount.value} off`;
+              const expiry = discount.valid_until ? `Ends ${new Date(discount.valid_until).toLocaleDateString()}` : "No expiry";
+              return (
+                <ListRow
+                  key={discount.id}
+                  interactive
+                  onClick={() => openEditDialog(discount)}
+                  leading={<Percent className="h-4 w-4 text-orange-600" />}
+                  title={discount.name}
+                  description={`${discount.code || "Automatic"} · ${expiry}`}
+                  meta={<span className="font-semibold text-foreground">{value}</span>}
+                  trailing={
+                    <button
+                      type="button"
+                      aria-label={`Delete ${discount.name}`}
+                      onClick={(event) => { event.stopPropagation(); openDeleteDialog(discount); }}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  }
+                />
+              );
+            })}
+          </DataList>
+
+          <div className="hidden grid-cols-1 gap-4 md:grid md:grid-cols-2 xl:grid-cols-3">
+            {filteredDiscounts.map((discount) => (
+              <Card key={discount.id} className="group relative overflow-hidden rounded-2xl border-border transition-colors hover:bg-muted/30">
+                <CardContent className="p-4">
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center gap-3">
-                     <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400">
                         <Tag className="h-5 w-5" />
                      </div>
                      <div>
-                        <h3 className="font-bold text-lg">{discount.name}</h3>
+                        <h3 className="font-semibold text-base">{discount.name}</h3>
                         <p className="text-xs text-muted-foreground line-clamp-1">{discount.code || "No code"}</p>
                      </div>
                   </div>
@@ -214,18 +269,19 @@ export default function DiscountsPage() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-dashed">
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => openEditDialog(discount)}>
+                <div className="mt-4 flex items-center gap-2 border-t border-dashed pt-4">
+                    <Button variant="outline" size="sm" className="flex-1 rounded-xl" onClick={() => openEditDialog(discount)}>
                         <Edit className="w-3 h-3 mr-2" /> Edit
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => openDeleteDialog(discount)}>
+                    <Button variant="ghost" size="sm" className="rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => openDeleteDialog(discount)}>
                         <Trash2 className="w-4 h-4" />
                     </Button>
                 </div>
               </CardContent>
             </Card>
           ))}
-        </div>
+          </div>
+        </>
       )}
 
       <DiscountDialog 
@@ -250,6 +306,6 @@ export default function DiscountsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-    </div>
+    </AppPage>
   );
 }

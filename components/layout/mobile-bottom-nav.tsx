@@ -36,7 +36,7 @@ export function MobileBottomNav() {
   const primaryHrefs = new Set([...primaryItems.map((item) => item.href), "/manage/profile"]);
 
   return (
-    <nav aria-label="Primary navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-border/80 bg-background/95 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 backdrop-blur md:hidden">
+    <nav aria-label="Primary navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-border/80 bg-background/95 px-4 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 backdrop-blur md:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5 items-end">
         {primaryItems.map((item) => {
           const Icon = item.icon;

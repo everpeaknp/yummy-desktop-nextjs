@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText, Plus, RefreshCw } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { FinanceSalesInvoiceDialog } from "@/components/finance/sales/finance-sales-invoice-dialog";
 import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
 import type { TransactionDetailModel } from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
+import { MetricCard } from "@/components/cards/metric-card";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
@@ -170,39 +173,26 @@ export function FinanceSalesWorkspace() {
   }, [load]);
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] space-y-6 p-4 md:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
-            Sales &amp; receivables
-          </p>
-          <h1 className="text-2xl font-semibold">Sales</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            One register for completed POS orders and manual sales. POS sales
-            keep their order and kitchen history; manual sales create no KOT.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={() => void load()}
-            disabled={loading}
-          >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/orders/new">
-              <Plus className="mr-2 h-4 w-4" />
-              New POS sale
-            </Link>
-          </Button>
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Manual sale
-          </Button>
-        </div>
-      </div>
+    <AppPage width="wide" density="compact" className="p-4 pb-24 sm:p-6">
+      <PageHeader
+        title="Sales"
+        description="Completed POS and manual sales in one register."
+        meta="Sales & receivables"
+        actions={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button className="h-11 rounded-xl" asChild>
+              <Link href="/orders/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New POS sale
+              </Link>
+            </Button>
+            <Button variant="outline" className="h-11 rounded-xl" onClick={() => setDialogOpen(true)}>
+              <FileText className="mr-2 h-4 w-4" />
+              Manual sale
+            </Button>
+          </div>
+        }
+      />
 
       <FinanceWorkspaceNav
         links={[
@@ -211,37 +201,26 @@ export function FinanceSalesWorkspace() {
         ]}
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border p-4">
-          <p className="text-xs font-medium uppercase text-muted-foreground">
-            All sales
-          </p>
-          <p className="mt-2 text-2xl font-semibold">{documents.length}</p>
-        </div>
-        <div className="rounded-lg border p-4">
-          <p className="text-xs font-medium uppercase text-muted-foreground">
-            Sales value
-          </p>
-          <p className="mt-2 text-2xl font-semibold">
-            {formatMoney(
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+        <MetricCard label="All sales" value={documents.length} />
+        <MetricCard
+          label="Sales value"
+          value={formatMoney(
               documents.reduce(
                 (sum, doc) => sum + Number(doc.grand_total || 0),
                 0,
               ),
             )}
-          </p>
-        </div>
-        <div className="rounded-lg border p-4">
-          <p className="text-xs font-medium uppercase text-muted-foreground">
-            Outstanding
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-amber-600">
-            {formatMoney(
+        />
+        <MetricCard
+          className="col-span-2 sm:col-span-1"
+          label="Outstanding"
+          tone="warning"
+          value={formatMoney(
               documents
                 .reduce((sum, doc) => sum + balanceDue(doc), 0),
             )}
-          </p>
-        </div>
+        />
       </div>
 
       <div className="overflow-hidden rounded-lg border">
@@ -278,7 +257,7 @@ export function FinanceSalesWorkspace() {
               </button>
             ))}
           </div>
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden max-w-full overflow-x-auto md:block">
             <table className="w-full min-w-[960px] text-sm">
               <thead className="bg-muted/40 text-left text-muted-foreground">
                 <tr>
@@ -373,6 +352,6 @@ export function FinanceSalesWorkspace() {
         onOpenChange={(open) => !open && setSelectedDocument(null)}
         document={selectedDocument}
       />
-    </div>
+    </AppPage>
   );
 }

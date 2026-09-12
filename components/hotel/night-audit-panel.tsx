@@ -63,7 +63,7 @@ export function NightAuditPanel({ restaurantId, canRun, refreshKey, onChanged }:
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div><h2 className="text-2xl font-black tracking-tight">Close the hotel day</h2><p className="mt-1 text-sm text-muted-foreground">Check arrivals, departures, and unpaid guest bills before moving to the next day.</p></div>
+        <p className="text-sm text-muted-foreground">Check arrivals, departures, and unpaid guest bills before moving to the next day.</p>
         <div className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2"><div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Current hotel day</p><p className="text-sm font-bold tabular-nums">{businessDate || "Loading..."}</p></div><Button aria-label="Refresh day summary" className="ml-2 h-9 w-9 rounded-xl" variant="ghost" size="icon" onClick={() => void preview()} disabled={loading}><RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /></Button></div>
       </div>
       {loading && !audit ? <div className="flex min-h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin" /></div> : audit ? <>

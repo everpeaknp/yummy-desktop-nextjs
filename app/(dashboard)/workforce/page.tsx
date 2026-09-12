@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Banknote, CalendarCheck, CheckCircle2, Clock3, Loader2, RefreshCw, UserPlus, Users } from "lucide-react";
+import { AlertTriangle, Banknote, CalendarCheck, CheckCircle2, Clock3, Loader2, UserPlus, Users } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { StaffApis } from "@/lib/api/endpoints";
@@ -13,6 +13,8 @@ import { PayAllPreviewDialog } from "@/components/staff/pay-all-preview-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 
 type StaffUser = { id: number; is_active?: boolean };
 
@@ -68,24 +70,33 @@ export default function WorkforcePage() {
   const attendanceReview = entries.filter((entry) => ["draft", "pending", "needs_correction"].includes(entry.approval_status) || Boolean(entry.exception_code));
   const totalToPay = balances.reduce((sum, row) => sum + Number(row.payroll_due || 0), 0);
 
-  return (
-    <div className="mx-auto flex max-w-[1500px] flex-col gap-6 p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Workforce</h1>
-          <p className="mt-1 text-muted-foreground">Today&apos;s staffing, attendance review, and salary status in one place.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline"><Link href="/staff"><Users className="mr-2 h-4 w-4" />Staff</Link></Button>
-          <Button asChild variant="outline"><Link href="/attendance"><CalendarCheck className="mr-2 h-4 w-4" />Attendance</Link></Button>
-          <Button onClick={() => setPayAllPreviewOpen(true)} disabled={totalToPay <= 0}>
-            <Banknote className="mr-2 h-4 w-4" />
-            Pay all outstanding salaries
-          </Button>
-          <Button size="icon" variant="ghost" onClick={load} disabled={loading} aria-label="Refresh workforce"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button>
-        </div>
-      </div>
+  const workspaceActions = (
+    <>
+      <Button asChild variant="outline"><Link href="/staff"><Users className="mr-2 h-4 w-4" />Staff</Link></Button>
+      <Button asChild variant="outline"><Link href="/attendance"><CalendarCheck className="mr-2 h-4 w-4" />Attendance</Link></Button>
+      <Button onClick={() => setPayAllPreviewOpen(true)} disabled={totalToPay <= 0}>
+        <Banknote className="mr-2 h-4 w-4" />
+        Pay outstanding salaries
+      </Button>
+    </>
+  );
 
+  return (
+    <AppPage width="wide" className="pb-20">
+      <PageHeader
+        className="hidden md:flex"
+        title="Workforce"
+        description="Today’s staffing, attendance review, and salary status in one place."
+        actions={workspaceActions}
+      />
+      <div className="grid grid-cols-2 gap-2 md:hidden">
+        <Button asChild variant="outline" className="h-11 rounded-xl"><Link href="/staff"><Users className="mr-2 h-4 w-4" />Staff</Link></Button>
+        <Button asChild variant="outline" className="h-11 rounded-xl"><Link href="/attendance"><CalendarCheck className="mr-2 h-4 w-4" />Attendance</Link></Button>
+        <Button onClick={() => setPayAllPreviewOpen(true)} disabled={totalToPay <= 0} className="col-span-2 h-11 rounded-xl">
+          <Banknote className="mr-2 h-4 w-4" />
+          Pay outstanding salaries
+        </Button>
+      </div>
       <PayAllPreviewDialog
         open={payAllPreviewOpen}
         onOpenChange={setPayAllPreviewOpen}
@@ -94,14 +105,14 @@ export default function WorkforcePage() {
       {warnings.length ? <div className="rounded-xl border border-amber-300/50 bg-amber-500/10 p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4 text-amber-600" />Some workforce data could not be loaded</div><p className="mt-1 text-muted-foreground">{warnings.join(" ")}</p></div> : null}
 
       {loading ? <div className="flex min-h-52 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div> : <>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Metric icon={Users} label="Active employees" value={String(activeStaff)} helper={`${staff.length - activeStaff} inactive`} />
           <Metric icon={Clock3} label="Working now" value={String(workingNow)} helper={`${overview?.total_entries || entries.length} entries today`} />
           <Metric icon={AlertTriangle} label="Attendance review" value={String(attendanceReview.length)} helper="Needs a look before salary is paid" attention={attendanceReview.length > 0} />
           <Metric icon={Banknote} label="Salary due" value={money(totalToPay)} helper={totalToPay > 0 ? "Owed to the team right now" : "Everyone is paid up"} />
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] lg:gap-5">
           <Card>
             <CardHeader><CardTitle>Needs attention</CardTitle><CardDescription>Complete these items to keep the team&apos;s pay accurate.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
@@ -119,12 +130,12 @@ export default function WorkforcePage() {
           </Card>
         </div>
       </>}
-    </div>
+    </AppPage>
   );
 }
 
 function Metric({ icon: Icon, label, value, helper, attention = false }: { icon: typeof Users; label: string; value: string; helper: string; attention?: boolean }) {
-  return <Card className={attention ? "border-amber-400/60" : undefined}><CardContent className="flex items-start gap-3 p-4"><div className={`rounded-xl p-2 ${attention ? "bg-amber-500/10 text-amber-600" : "bg-primary/10 text-primary"}`}><Icon className="h-5 w-5" /></div><div><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-0.5 text-2xl font-bold">{value}</p><p className="mt-1 text-xs text-muted-foreground">{helper}</p></div></CardContent></Card>;
+  return <Card className={attention ? "border-amber-400/60" : undefined}><CardContent className="flex min-w-0 items-start gap-2.5 p-3 sm:gap-3 sm:p-4"><div className={`rounded-xl p-2 ${attention ? "bg-amber-500/10 text-amber-600" : "bg-primary/10 text-primary"}`}><Icon className="h-4 w-4 sm:h-5 sm:w-5" /></div><div className="min-w-0"><p className="truncate text-[11px] font-medium text-muted-foreground sm:text-xs">{label}</p><p className="mt-0.5 truncate text-lg font-semibold sm:text-2xl sm:font-bold">{value}</p><p className="mt-1 hidden text-xs text-muted-foreground sm:block">{helper}</p></div></CardContent></Card>;
 }
 
 function ActionRow({ icon: Icon, title, description, href, action }: { icon: typeof Users; title: string; description: string; href: string; action: string }) {

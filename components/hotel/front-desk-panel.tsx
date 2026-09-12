@@ -8,7 +8,6 @@ import {
   ChevronRight,
   DoorOpen,
   Loader2,
-  RefreshCw,
   UsersRound,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -109,13 +108,13 @@ export function FrontDeskPanel({ restaurantId, refreshKey, onOpenBooking }: Prop
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div><h2 className="text-2xl font-black tracking-tight">Front desk</h2><p className="mt-1 text-sm text-muted-foreground">Arrivals, departures, and guests staying on the selected date.</p></div>
-        <div className="flex gap-2"><Input aria-label="Front desk date" className="h-11 w-full rounded-xl sm:w-44" type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} /><Button aria-label="Refresh front desk" variant="outline" size="icon" className="h-11 w-11 rounded-xl" onClick={() => void load()} disabled={loading}><RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} /></Button></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">Arrivals, departures, and in-house guests.</p>
+        <Input aria-label="Front desk date" className="h-10 w-full rounded-xl sm:w-44" type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} />
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        {metrics.map((metric) => <Card key={metric.label} className="shadow-none"><CardContent className="flex items-center gap-3 p-3.5 sm:p-4"><span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", metric.color)}><metric.icon className="h-5 w-5" /></span><div><p className="text-2xl font-black leading-none">{metric.value}</p><p className="mt-1 text-xs text-muted-foreground">{metric.label}</p></div></CardContent></Card>)}
+        {metrics.map((metric) => <Card key={metric.label} className="shadow-none"><CardContent className="flex items-center gap-2.5 p-3"><span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", metric.color)}><metric.icon className="h-4 w-4" /></span><div><p className="text-xl font-bold leading-none">{metric.value}</p><p className="mt-1 text-xs text-muted-foreground">{metric.label}</p></div></CardContent></Card>)}
       </div>
 
       {data?.unassigned.length ? (

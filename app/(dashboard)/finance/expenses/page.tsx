@@ -25,13 +25,10 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2,
-  TrendingDown,
   Receipt,
   Download,
   Plus,
   Calendar,
-  TrendingUp,
-  DollarSign,
   Utensils,
   Hotel,
   Pencil,
@@ -78,6 +75,10 @@ import {
   TransactionDetailSheet,
   type TransactionDetailModel,
 } from "@/components/finance/transaction-detail/transaction-detail-sheet";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { ReportFilters } from "@/components/reports/report-filters";
 
 function shouldUseFinanceEventMetrics(
   finance: FinanceExpensesResponse | null | undefined,
@@ -587,7 +588,7 @@ export default function ExpensesPage() {
     setSelectedReportingHeadId("all");
   }, [businessLine]);
 
-  const getDateRange = () => {
+  const getDateRange = useCallback(() => {
     const now = new Date();
     let start = "";
     let end = endOfDay(now).toISOString().split("T")[0];
@@ -609,7 +610,7 @@ export default function ExpensesPage() {
       start = subDays(now, 365).toISOString().split("T")[0];
     }
     return { start, end };
-  };
+  }, [customEndDate, customStartDate, dateFilter]);
 
   const fetchData = useCallback(async () => {
     if (!user?.restaurant_id) return;
@@ -716,6 +717,7 @@ export default function ExpensesPage() {
     customStartTime,
     customEndTime,
     customFinanceStations,
+    getDateRange,
   ]);
 
   const handleAddExpense = async () => {
@@ -1060,30 +1062,30 @@ export default function ExpensesPage() {
     );
   };
 
-  return (
-    <div className="flex flex-col gap-8 max-w-[1600px] mx-auto p-6">
-      <div className="flex flex-col gap-4 w-full">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full">
-          <div className="flex items-center gap-4">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-red-600 dark:text-red-500">
-                Expenses
-              </h1>
-              <p className="text-muted-foreground">
-                Recognized costs from manual entries and source-owned workflows.
-                Supplier payments are managed from Suppliers and are not counted
-                again.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end">
+  const openExpenseDialog = () => {
+    resetExpenseForm();
+    setEntryBusinessLine(
+      businessLine === "hotel"
+        ? "hotel"
+        : businessLine === "restaurant"
+          ? "restaurant"
+          : restaurant?.hotel_enabled && !restaurant?.restaurant_enabled
+            ? "hotel"
+            : "restaurant",
+    );
+    setIsAddDialogOpen(true);
+  };
+
+  const filterControls = (
+    <>
+      <div className="grid gap-3 md:flex md:flex-wrap md:items-end">
             {dualBusinessLines ? (
-              <div className="flex items-center bg-muted/50 p-1 rounded-lg border border-border">
+              <div className="grid grid-cols-3 rounded-xl bg-muted/70 p-1 md:w-auto">
                 <Button
                   variant={businessLine === "all" ? "secondary" : "ghost"}
                   size="sm"
                   className={cn(
-                    "h-8 px-3 text-xs gap-2",
+                    "h-9 min-w-0 rounded-lg px-3 text-xs",
                     businessLine === "all" && "bg-background shadow-sm",
                   )}
                   onClick={() => setBusinessLine("all")}
@@ -1096,7 +1098,7 @@ export default function ExpensesPage() {
                   }
                   size="sm"
                   className={cn(
-                    "h-8 px-3 text-xs gap-2",
+                    "h-9 min-w-0 gap-1.5 rounded-lg px-3 text-xs",
                     businessLine === "restaurant" && "bg-background shadow-sm",
                   )}
                   onClick={() => setBusinessLine("restaurant")}
@@ -1108,7 +1110,7 @@ export default function ExpensesPage() {
                   variant={businessLine === "hotel" ? "secondary" : "ghost"}
                   size="sm"
                   className={cn(
-                    "h-8 px-3 text-xs gap-2",
+                    "h-9 min-w-0 gap-1.5 rounded-lg px-3 text-xs",
                     businessLine === "hotel" && "bg-background shadow-sm",
                   )}
                   onClick={() => setBusinessLine("hotel")}
@@ -1119,43 +1121,65 @@ export default function ExpensesPage() {
               </div>
             ) : null}
 
-            <Select value={selectedStation} onValueChange={setSelectedStation}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Station" />
-              </SelectTrigger>
-              <SelectContent>
-                {financeStationOptions({
-                  businessLine,
-                  hotelEnabled: restaurant?.hotel_enabled,
-                  customStations: customFinanceStations,
-                }).map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="grid gap-1.5">
+              <Label className="text-xs text-muted-foreground">Station</Label>
+              <Select value={selectedStation} onValueChange={setSelectedStation}>
+                <SelectTrigger className="h-11 w-full rounded-xl md:w-[160px]">
+                  <SelectValue placeholder="All stations" />
+                </SelectTrigger>
+                <SelectContent>
+                  {financeStationOptions({
+                    businessLine,
+                    hotelEnabled: restaurant?.hotel_enabled,
+                    customStations: customFinanceStations,
+                  }).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <Select value={dateFilter} onValueChange={setDateFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Date Range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="yesterday">Yesterday</SelectItem>
-                <SelectItem value="this_week">This Week</SelectItem>
-                <SelectItem value="this_month">This Month</SelectItem>
-                <SelectItem value="custom">Custom Date</SelectItem>
-                <SelectItem value="all">All Time</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs text-muted-foreground">Period</Label>
+              <Select value={dateFilter} onValueChange={setDateFilter}>
+                <SelectTrigger className="h-11 w-full rounded-xl md:w-[160px]">
+                  <SelectValue placeholder="Date range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="yesterday">Yesterday</SelectItem>
+                  <SelectItem value="this_week">This week</SelectItem>
+                  <SelectItem value="this_month">This month</SelectItem>
+                  <SelectItem value="custom">Custom date</SelectItem>
+                  <SelectItem value="all">All time</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        {dateFilter === "custom" && (
-          <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end w-full animate-in fade-in slide-in-from-top-1 duration-200 bg-muted/30 p-3 rounded-xl border border-border">
-            <span className="text-xs font-semibold text-muted-foreground mr-1">
-              Time Slice:
+            <div className="grid min-w-0 gap-1.5 md:w-[240px]">
+              <Label className="text-xs text-muted-foreground">Expense head</Label>
+              <Select value={selectedReportingHeadId} onValueChange={setSelectedReportingHeadId}>
+                <SelectTrigger className="h-11 w-full rounded-xl">
+                  <SelectValue placeholder="All expense heads" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All expense heads</SelectItem>
+                  {expenseHeadFilterOptions.map((head) => (
+                    <SelectItem key={head.id} value={head.id.toString()}>
+                      {head.path || head.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+      </div>
+
+      {dateFilter === "custom" ? (
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-border bg-muted/30 p-3 md:flex md:flex-wrap md:items-center">
+            <span className="col-span-2 text-xs font-medium text-muted-foreground md:mr-1">
+              Custom period
             </span>
             <input
               type="date"
@@ -1169,7 +1193,7 @@ export default function ExpensesPage() {
               onChange={(e) => setCustomStartTime(e.target.value || "00:00")}
               className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
-            <span className="text-xs text-muted-foreground font-semibold px-1">
+            <span className="hidden px-1 text-xs font-semibold text-muted-foreground md:inline">
               to
             </span>
             <input
@@ -1185,99 +1209,44 @@ export default function ExpensesPage() {
               className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
-        )}
-      </div>
+        ) : null}
+    </>
+  );
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <MetricCard
-          label="Recognized Expenses"
-          value={operatingExpenseTotal}
-          icon={<TrendingDown className="w-5 h-5" />}
-          color="text-red-500"
-          bg="bg-red-50 dark:bg-red-950/20"
-          caption="Excludes supplier purchases (see Suppliers)"
-        />
-        <MetricCard
-          label="Manual Entries"
-          value={manualExpenseCount}
-          isStringValue
-          icon={<Receipt className="w-5 h-5" />}
-          color="text-blue-500"
-          bg="bg-blue-50 dark:bg-blue-950/20"
-        />
-        <MetricCard
-          label="From Other Workflows"
-          value={sourceManagedExpenseCount}
-          isStringValue
-          icon={<Receipt className="w-5 h-5" />}
-          color="text-amber-500"
-          bg="bg-amber-50 dark:bg-amber-950/20"
-        />
-      </div>
+  return (
+    <AppPage width="wide" density="compact" className="p-4 pb-24 sm:p-6 sm:pb-24">
+      <PageHeader
+        title="Expenses"
+        description="Record and review operating costs for the selected period."
+        actions={
+          <Button className="h-11 w-full rounded-xl sm:w-auto" onClick={openExpenseDialog}>
+            <Plus className="mr-2 h-4 w-4" /> Record expense
+          </Button>
+        }
+      />
 
-      <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-        <span>Supplier bills and payments belong to the supplier ledger.</span>
-        <Link
-          href="/suppliers"
-          className="font-semibold text-primary hover:underline"
-        >
-          Open Suppliers
-        </Link>
-        <span>·</span>
-        <Link
-          href="/finance/purchases"
-          className="font-semibold text-primary hover:underline"
-        >
-          Open Purchases
-        </Link>
-      </div>
+      <ReportFilters
+        title="Expense filters"
+        activeCount={
+          Number(businessLine !== "all") +
+          Number(selectedStation !== "all") +
+          Number(dateFilter !== "this_month") +
+          Number(selectedReportingHeadId !== "all")
+        }
+      >
+        {filterControls}
+      </ReportFilters>
 
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Expense head:</span>
-          <Select
-            value={selectedReportingHeadId}
-            onValueChange={setSelectedReportingHeadId}
-          >
-            <SelectTrigger className="w-[220px]">
-              <SelectValue placeholder="All Expense Heads" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Expense Heads</SelectItem>
-              {expenseHeadFilterOptions.map((head) => (
-                <SelectItem key={head.id} value={head.id.toString()}>
-                  {head.path || head.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="min-w-0 p-3.5 sm:p-4">
+          <p className="truncate text-xs font-medium text-muted-foreground">Recognized expenses</p>
+          <p className="mt-1 truncate text-lg font-semibold tabular-nums sm:text-xl">
+            Rs. {Number(operatingExpenseTotal || 0).toLocaleString()}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={handleExport}
-            disabled={!filteredExpenses.length}
-          >
-            <Download className="w-4 h-4 mr-2" /> Export Excel
-          </Button>
-          <Button
-            className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-            onClick={() => {
-              resetExpenseForm();
-              setEntryBusinessLine(
-                businessLine === "hotel"
-                  ? "hotel"
-                  : businessLine === "restaurant"
-                    ? "restaurant"
-                    : restaurant?.hotel_enabled && !restaurant?.restaurant_enabled
-                      ? "hotel"
-                      : "restaurant",
-              );
-              setIsAddDialogOpen(true);
-            }}
-          >
-            <Plus className="w-4 h-4 mr-2" /> Add Expense
-          </Button>
+        <div className="min-w-0 border-l border-border p-3.5 sm:p-4">
+          <p className="truncate text-xs font-medium text-muted-foreground">Manual entries</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums sm:text-xl">{manualExpenseCount}</p>
         </div>
       </div>
 
@@ -1600,7 +1569,24 @@ export default function ExpensesPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="w-full">
+      <section className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <h2 className="font-medium">Expense register</h2>
+            <p className="truncate text-xs text-muted-foreground">
+              {filteredExpenses.length} visible entries
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={!filteredExpenses.length}
+            className="h-9 shrink-0 rounded-lg"
+          >
+            <Download className="mr-2 h-4 w-4" /> Export
+          </Button>
+        </div>
         {loading ? (
           <div className="h-64 flex items-center justify-center">
             <Loader2 className="w-8 h-8 animate-spin text-red-500" />
@@ -1611,7 +1597,14 @@ export default function ExpensesPage() {
             <p>No expenses found for the selected period.</p>
           </div>
         ) : (
-          <Card className="border-border">
+          <>
+          <ExpenseMobileList
+            expenses={filteredExpenses}
+            onSelect={setSelectedExpense}
+            onEdit={handleEditExpense}
+            onDelete={handleDeleteExpense}
+          />
+          <Card className="hidden border-border md:block">
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
@@ -1763,8 +1756,9 @@ export default function ExpensesPage() {
               )}
             </CardContent>
           </Card>
+          </>
         )}
-      </div>
+      </section>
       <TransactionDetailSheet
         open={selectedExpense != null}
         onOpenChange={(open) => !open && setSelectedExpense(null)}
@@ -1777,53 +1771,123 @@ export default function ExpensesPage() {
         }
         actionLabel="Open inventory activity"
       />
-    </div>
+    </AppPage>
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  icon,
-  color,
-  bg,
-  href,
-  isStringValue,
-  caption,
-}: any) {
-  const content = (
-    <Card
-      className={cn(
-        "overflow-hidden border-border bg-card transition-colors",
-        href && "hover:bg-muted/50 cursor-pointer",
-      )}
-    >
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
-              {label}
-            </p>
-            <h3 className="text-2xl font-bold">
-              {isStringValue
-                ? value
-                : `Rs. ${Number(value || 0).toLocaleString()}`}
-            </h3>
-            {caption && (
-              <p className="mt-1 text-xs text-muted-foreground">{caption}</p>
-            )}
+function ExpenseMobileList({
+  expenses,
+  onSelect,
+  onEdit,
+  onDelete,
+}: {
+  expenses: any[];
+  onSelect: (expense: any) => void;
+  onEdit: (expense: any) => void;
+  onDelete: (expense: any) => void;
+}) {
+  return (
+    <DataList className="md:hidden">
+      {expenses.map((expense: any) => {
+        const readOnlyFinanceRow = isFinanceEventExpense(expense);
+        const inventoryFinanceRow = isInventoryFinanceExpense(expense);
+        const sourceStatus = String(expense.source_status || "").toLowerCase();
+        const superseded = ["cancelled", "corrected"].includes(sourceStatus);
+        const status = readOnlyFinanceRow
+          ? sourceStatus || "Recorded"
+          : expense.status || "Completed";
+
+        return (
+          <div
+            key={`${expense.source_type || "expense"}-${expense.id}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(expense)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(expense);
+              }
+            }}
+            className="cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none"
+          >
+            <ListRow
+              leading={<Receipt className="h-4 w-4" />}
+              title={
+                <span className={cn(superseded && "text-muted-foreground line-through")}>
+                  {expense.description || "Untitled"}
+                </span>
+              }
+              description={`${expense.category?.name || "General"} · ${new Date(
+                expense.expense_date || expense.paid_on,
+              ).toLocaleDateString()}`}
+              meta={
+                <span
+                  className={cn(
+                    "font-semibold tabular-nums text-destructive",
+                    superseded && "text-muted-foreground line-through",
+                  )}
+                >
+                  - Rs. {Number(expense.amount || 0).toLocaleString()}
+                </span>
+              }
+              interactive
+            />
+            <div
+              className="flex min-h-10 items-center justify-between gap-2 border-t border-border/60 bg-muted/20 px-3 py-2"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <div className="min-w-0">
+                <Badge variant="outline" className="max-w-full capitalize text-[11px] text-muted-foreground">
+                  {status}
+                </Badge>
+                {expense.party_name ? (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {expense.party_name}
+                  </span>
+                ) : null}
+              </div>
+              {readOnlyFinanceRow ? (
+                inventoryFinanceRow && expense.source_id ? (
+                  <Button asChild size="sm" variant="outline" className="h-8 text-xs">
+                    <Link href={`/inventory?view=activity&adjustment=${expense.source_id}`}>
+                      Inventory
+                    </Link>
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Finance event</span>
+                )
+              ) : (
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => onEdit(expense)}
+                    aria-label="Edit expense"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                    onClick={() => onDelete(expense)}
+                    aria-label="Delete expense"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
-          <div className={`p-3 rounded-xl ${bg} ${color}`}>{icon}</div>
-        </div>
-      </CardContent>
-    </Card>
+        );
+      })}
+    </DataList>
   );
-
-  if (href) {
-    return <Link href={href}>{content}</Link>;
-  }
-
-  return content;
 }
 
 function MiniMetric({ label, value }: { label: string; value: number }) {

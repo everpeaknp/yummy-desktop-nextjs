@@ -47,7 +47,10 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { TransactionsApis } from "@/lib/api/endpoints";
-import { useRouter } from "next/navigation";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 
 function formatLogDateTime(dateStr: string | Date) {
     if (!dateStr) return "";
@@ -78,7 +81,6 @@ function getEventTitle(log: any) {
 
 export default function AuditLogsPage() {
     const user = useAuth(state => state.user);
-    const router = useRouter();
     const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
@@ -196,43 +198,16 @@ export default function AuditLogsPage() {
     });
 
     return (
-        <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
-            {/* Header */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-1">
-                    <button 
-                        onClick={() => router.push('/manage')}
-                        className="flex items-center text-sm text-muted-foreground hover:text-primary transition-colors mb-2"
-                    >
-                        <ChevronLeft className="w-4 h-4 mr-1" />
-                        Back to Manage
-                    </button>
-                    <h1 className="text-3xl font-bold tracking-tight">Audit Logs</h1>
-                    <p className="text-muted-foreground text-sm">
-                        Track all administrative changes and system activity for compliance.
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" onClick={fetchLogs} disabled={loading}>
-                        <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                    </Button>
-                </div>
-            </div>
+        <AppPage className="pb-24" width="wide">
+            <PageHeader title="Audit logs" description="Administrative and operational activity from the last 30 days." />
 
             {/* Filters */}
-            <Card className="p-4 flex flex-col md:flex-row gap-4">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input 
-                        placeholder="Search by event, actor, entity, or ID..." 
-                        className="pl-9"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                </div>
-                <div className="flex gap-2 w-full md:w-auto">
+            <Card className="rounded-xl p-3 sm:p-4">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                    <SearchField placeholder="Search activity" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="flex-1" />
+                    <div className="grid grid-cols-2 gap-2 md:flex md:w-auto">
                     <Select value={entityFilter} onValueChange={setEntityFilter}>
-                        <SelectTrigger className="w-[180px]">
+                        <SelectTrigger className="h-11 w-full md:w-[180px]">
                             <SelectValue placeholder="Entity Type" />
                         </SelectTrigger>
                         <SelectContent>
@@ -246,7 +221,7 @@ export default function AuditLogsPage() {
                         </SelectContent>
                     </Select>
                     <Select value={actionFilter} onValueChange={setActionFilter}>
-                        <SelectTrigger className="w-[150px]">
+                        <SelectTrigger className="h-11 w-full md:w-[150px]">
                             <SelectValue placeholder="Action" />
                         </SelectTrigger>
                         <SelectContent>
@@ -256,11 +231,31 @@ export default function AuditLogsPage() {
                             <SelectItem value="delete">Delete</SelectItem>
                         </SelectContent>
                     </Select>
+                    </div>
                 </div>
             </Card>
 
             {/* Table */}
-            <Card>
+            <Card className="overflow-hidden rounded-xl">
+                <div className="md:hidden">
+                    <DataList>
+                        {loading ? (
+                            <div className="flex items-center justify-center gap-2 px-4 py-12 text-sm text-muted-foreground"><RefreshCw className="h-4 w-4 animate-spin" />Loading activity...</div>
+                        ) : filteredLogs.length === 0 ? (
+                            <div className="px-4 py-12 text-center text-sm text-muted-foreground">No activity matches these filters.</div>
+                        ) : filteredLogs.map((log) => (
+                            <ListRow
+                                key={log.id}
+                                onClick={() => setSelectedLog(log)}
+                                icon={<User className="h-4 w-4 text-primary" />}
+                                title={getEventTitle(log)}
+                                description={`${log.actor_name || "System"} · ${formatLogDateTime(log.created_at)}`}
+                                value={getActionBadge(log.event)}
+                            />
+                        ))}
+                    </DataList>
+                </div>
+                <div className="hidden md:block">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -340,6 +335,7 @@ export default function AuditLogsPage() {
                         )}
                     </TableBody>
                 </Table>
+                </div>
             </Card>
 
             {/* Detail Dialog */}
@@ -605,6 +601,6 @@ export default function AuditLogsPage() {
                     )}
                 </DialogContent>
             </Dialog>
-        </div>
+        </AppPage>
     );
 }
