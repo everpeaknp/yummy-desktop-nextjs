@@ -26,7 +26,11 @@ import { useAuth } from "@/hooks/use-auth";
 import apiClient from "@/lib/api-client";
 import { AccountingApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
-import type { PaymentInstrument, PaymentInstrumentInput } from "@/types/accounting";
+import { cn } from "@/lib/utils";
+import type {
+  PaymentInstrument,
+  PaymentInstrumentInput,
+} from "@/types/accounting";
 
 type PaymentBank = {
   id: number;
@@ -37,7 +41,10 @@ type PaymentBank = {
 
 type InstrumentRow = PaymentInstrument & { bank_name?: string | null };
 
-const instrumentTypesByMethod: Record<string, { value: string; label: string }[]> = {
+const instrumentTypesByMethod: Record<
+  string,
+  { value: string; label: string }[]
+> = {
   card: [{ value: "terminal", label: "Card terminal" }],
   digital: [
     { value: "qr", label: "QR" },
@@ -87,17 +94,29 @@ export function PaymentInstrumentsPanel({
   const [dynamicFonepay, setDynamicFonepay] = useState(false);
   const migratedLegacyRef = useRef(false);
   const isCard = method === "card";
-  const isCheckoutQr = !isCard && ["qr", "bank_qr", "static_qr"].includes(instrumentType);
-  const isDynamicFonepay = method === "fonepay" && instrumentType === "qr" && dynamicFonepay;
-  const basePermittedTypes = instrumentTypesByMethod[method] ?? instrumentTypesByMethod.card;
+  const isCheckoutQr =
+    !isCard && ["qr", "bank_qr", "static_qr"].includes(instrumentType);
+  const isDynamicFonepay =
+    method === "fonepay" && instrumentType === "qr" && dynamicFonepay;
+  const basePermittedTypes =
+    instrumentTypesByMethod[method] ?? instrumentTypesByMethod.card;
   // Existing rows may use a historical type. Keep it visible during editing so
   // the user can deliberately replace it with a valid current type.
-  const permittedTypes = basePermittedTypes.some((item) => item.value === instrumentType)
+  const permittedTypes = basePermittedTypes.some(
+    (item) => item.value === instrumentType,
+  )
     ? basePermittedTypes
-    : [{ value: instrumentType, label: `Legacy type: ${titleCase(instrumentType)} — change it` }, ...basePermittedTypes];
+    : [
+        {
+          value: instrumentType,
+          label: `Legacy type: ${titleCase(instrumentType)} — change it`,
+        },
+        ...basePermittedTypes,
+      ];
 
   const changeMethod = (nextMethod: string) => {
-    const permitted = instrumentTypesByMethod[nextMethod] ?? instrumentTypesByMethod.card;
+    const permitted =
+      instrumentTypesByMethod[nextMethod] ?? instrumentTypesByMethod.card;
     setMethod(nextMethod);
     if (nextMethod !== "fonepay") setDynamicFonepay(false);
     if (!permitted.some((item) => item.value === instrumentType)) {
@@ -115,7 +134,10 @@ export function PaymentInstrumentsPanel({
     try {
       if (!migratedLegacyRef.current && canManage) {
         await apiClient.post(
-          AccountingApis.migrateLegacyPaymentInstruments(restaurantId, businessLine),
+          AccountingApis.migrateLegacyPaymentInstruments(
+            restaurantId,
+            businessLine,
+          ),
         );
         migratedLegacyRef.current = true;
       }
@@ -130,7 +152,9 @@ export function PaymentInstrumentsPanel({
         apiClient.get(AccountingApis.paymentBanks(restaurantId)),
       ]);
       setInstruments(readList<InstrumentRow>(instrumentResponse));
-      setBanks(readList<PaymentBank>(bankResponse).filter((bank) => bank.is_active));
+      setBanks(
+        readList<PaymentBank>(bankResponse).filter((bank) => bank.is_active),
+      );
     } catch (error: any) {
       toast.error(
         error.response?.data?.detail ||
@@ -158,9 +182,10 @@ export function PaymentInstrumentsPanel({
   );
 
   const openEditor = (instrument?: InstrumentRow) => {
-    const metadata = instrument?.metadata_json && typeof instrument.metadata_json === "object"
-      ? instrument.metadata_json
-      : {};
+    const metadata =
+      instrument?.metadata_json && typeof instrument.metadata_json === "object"
+        ? instrument.metadata_json
+        : {};
     setEditing(instrument ?? null);
     setMethod(instrument?.payment_method ?? "card");
     setInstrumentType(instrument?.instrument_type ?? "terminal");
@@ -193,10 +218,15 @@ export function PaymentInstrumentsPanel({
       toast.error("Select the FonePay settlement account.");
       return;
     }
-    if (!isDynamicFonepay && isCheckoutQr && checkoutEnabled && !checkoutDetail.trim()) {
+    if (
+      !isDynamicFonepay &&
+      isCheckoutQr &&
+      checkoutEnabled &&
+      !checkoutDetail.trim()
+    ) {
       toast.error(
         "Add the QR payment payload before saving -- checkout needs it to render the QR code. " +
-          "Turn off \"Available at checkout\" instead if it's not ready yet.",
+          'Turn off "Available at checkout" instead if it\'s not ready yet.',
       );
       return;
     }
@@ -211,13 +241,22 @@ export function PaymentInstrumentsPanel({
         is_active: true,
         metadata_json: {
           checkout_enabled: checkoutEnabled,
-          ...(isCard && checkoutDetail.trim() ? { identifier: checkoutDetail.trim() } : {}),
-          ...(!isDynamicFonepay && isCheckoutQr && checkoutDetail.trim() ? { payload: checkoutDetail.trim() } : {}),
-          ...(isDynamicFonepay ? { provider_integration: "fonepay_dynamic_qr" } : {}),
+          ...(isCard && checkoutDetail.trim()
+            ? { identifier: checkoutDetail.trim() }
+            : {}),
+          ...(!isDynamicFonepay && isCheckoutQr && checkoutDetail.trim()
+            ? { payload: checkoutDetail.trim() }
+            : {}),
+          ...(isDynamicFonepay
+            ? { provider_integration: "fonepay_dynamic_qr" }
+            : {}),
         },
       };
       if (editing) {
-        await apiClient.patch(AccountingApis.updatePaymentInstrument(editing.id), payload);
+        await apiClient.patch(
+          AccountingApis.updatePaymentInstrument(editing.id),
+          payload,
+        );
         toast.success("Payment instrument updated.");
       } else {
         await apiClient.post(AccountingApis.createPaymentInstrument(), {
@@ -241,13 +280,28 @@ export function PaymentInstrumentsPanel({
     }
   };
 
-  const setInstrumentActive = async (instrument: InstrumentRow, isActive: boolean) => {
+  const setInstrumentActive = async (
+    instrument: InstrumentRow,
+    isActive: boolean,
+  ) => {
     const action = isActive ? "reactivate" : "archive";
-    if (!window.confirm(`${action[0].toUpperCase()}${action.slice(1)} payment instrument "${instrument.name}"?`)) return;
+    if (
+      !window.confirm(
+        `${action[0].toUpperCase()}${action.slice(1)} payment instrument "${instrument.name}"?`,
+      )
+    )
+      return;
     setSaving(true);
     try {
-      await apiClient.patch(AccountingApis.updatePaymentInstrument(instrument.id), { is_active: isActive });
-      toast.success(isActive ? `Reactivated ${instrument.name}.` : `Archived ${instrument.name}.`);
+      await apiClient.patch(
+        AccountingApis.updatePaymentInstrument(instrument.id),
+        { is_active: isActive },
+      );
+      toast.success(
+        isActive
+          ? `Reactivated ${instrument.name}.`
+          : `Archived ${instrument.name}.`,
+      );
       await load();
     } catch (error: any) {
       toast.error(
@@ -270,13 +324,20 @@ export function PaymentInstrumentsPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {instruments.filter((item) => item.is_active).length} active of{" "}
-          {instruments.length} configured
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Payment methods</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {instruments.filter((item) => item.is_active).length} active of{" "}
+            {instruments.length} configured for checkout and settlement.
+          </p>
+        </div>
         {canManage ? (
-          <Button onClick={() => openEditor()} disabled={saving}>
+          <Button
+            className="h-11 shrink-0 rounded-xl"
+            onClick={() => openEditor()}
+            disabled={saving}
+          >
             <Plus className="mr-2 h-4 w-4" /> Add instrument
           </Button>
         ) : null}
@@ -287,10 +348,16 @@ export function PaymentInstrumentsPanel({
           No payment instruments are configured.
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
           {instruments.map((instrument) => (
-            <Card key={instrument.id}>
-              <CardContent className="flex items-start justify-between gap-3 p-5">
+            <Card
+              key={instrument.id}
+              className={cn(
+                "rounded-none border-0 shadow-none",
+                !instrument.is_active && "opacity-60",
+              )}
+            >
+              <CardContent className="flex min-h-16 items-center justify-between gap-3 p-4">
                 <div className="flex min-w-0 gap-3">
                   {instrument.payment_method === "card" ? (
                     <CreditCard className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
@@ -300,15 +367,37 @@ export function PaymentInstrumentsPanel({
                   <div className="min-w-0">
                     <p className="truncate font-semibold">{instrument.name}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {titleCase(instrument.payment_method)} · {titleCase(instrument.instrument_type)}
+                      {titleCase(instrument.payment_method)} ·{" "}
+                      {titleCase(instrument.instrument_type)}
                       {instrument.bank_name ? ` · ${instrument.bank_name}` : ""}
+                      {instrument.is_active ? " · Enabled" : " · Disabled"}
                     </p>
                   </div>
                 </div>
                 {canManage ? (
                   <div className="flex shrink-0 gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => openEditor(instrument)} disabled={saving} aria-label={`Edit ${instrument.name}`}><Pencil className="h-4 w-4" /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => void setInstrumentActive(instrument, !instrument.is_active)} disabled={saving}>{instrument.is_active ? "Archive" : "Reactivate"}</Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openEditor(instrument)}
+                      disabled={saving}
+                      aria-label={`Edit ${instrument.name}`}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        void setInstrumentActive(
+                          instrument,
+                          !instrument.is_active,
+                        )
+                      }
+                      disabled={saving}
+                    >
+                      {instrument.is_active ? "Archive" : "Reactivate"}
+                    </Button>
                   </div>
                 ) : (
                   <span className="text-xs text-muted-foreground">
@@ -321,16 +410,27 @@ export function PaymentInstrumentsPanel({
         </div>
       )}
 
-      <Dialog open={open} onOpenChange={(nextOpen) => nextOpen ? setOpen(true) : closeEditor()}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => (nextOpen ? setOpen(true) : closeEditor())}
+      >
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit payment instrument" : "Add payment instrument"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit payment instrument" : "Add payment instrument"}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Payment method</Label>
-              <Select value={method} onValueChange={changeMethod} disabled={Boolean(editing)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={method}
+                onValueChange={changeMethod}
+                disabled={Boolean(editing)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="card">Card</SelectItem>
                   <SelectItem value="digital">Digital</SelectItem>
@@ -340,9 +440,20 @@ export function PaymentInstrumentsPanel({
             </div>
             <div className="space-y-2">
               <Label>Instrument type</Label>
-              <Select value={instrumentType} onValueChange={changeInstrumentType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{permittedTypes.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}</SelectContent>
+              <Select
+                value={instrumentType}
+                onValueChange={changeInstrumentType}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {permittedTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
             <div className="space-y-2 sm:col-span-2">
@@ -368,7 +479,9 @@ export function PaymentInstrumentsPanel({
             <div className="space-y-2">
               <Label>Settlement bank</Label>
               <Select value={bankId} onValueChange={setBankId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Automatic default</SelectItem>
                   {banks.map((bank) => (
@@ -382,14 +495,25 @@ export function PaymentInstrumentsPanel({
             {method === "fonepay" && instrumentType === "qr" ? (
               <div className="space-y-2 sm:col-span-2">
                 <Label>FonePay dynamic QR connection</Label>
-                <Select value={dynamicFonepay ? "yes" : "no"} onValueChange={(value) => setDynamicFonepay(value === "yes")}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select
+                  value={dynamicFonepay ? "yes" : "no"}
+                  onValueChange={(value) => setDynamicFonepay(value === "yes")}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="yes">Use this for FonePay&apos;s generated QR</SelectItem>
+                    <SelectItem value="yes">
+                      Use this for FonePay&apos;s generated QR
+                    </SelectItem>
                     <SelectItem value="no">Manual QR only</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Exactly one active instrument can receive automated FonePay collections. Its settlement bank is the accounting destination.</p>
+                <p className="text-xs text-muted-foreground">
+                  Exactly one active instrument can receive automated FonePay
+                  collections. Its settlement bank is the accounting
+                  destination.
+                </p>
               </div>
             ) : null}
             <div className="space-y-2 sm:col-span-2">
@@ -397,10 +521,10 @@ export function PaymentInstrumentsPanel({
                 {isDynamicFonepay
                   ? "Dynamic QR payload"
                   : isCard
-                  ? "Terminal or merchant identifier"
-                  : isCheckoutQr
-                    ? "QR payment payload"
-                    : "Checkout detail (optional)"}
+                    ? "Terminal or merchant identifier"
+                    : isCheckoutQr
+                      ? "QR payment payload"
+                      : "Checkout detail (optional)"}
               </Label>
               <Input
                 id="checkout-detail"
@@ -412,23 +536,39 @@ export function PaymentInstrumentsPanel({
                   isDynamicFonepay
                     ? "Generated separately by FonePay for every sale"
                     : isCard
-                    ? "Terminal ID or last four digits"
-                    : isCheckoutQr
-                      ? "Paste the QR payment string"
-                      : "Optional checkout detail"
+                      ? "Terminal ID or last four digits"
+                      : isCheckoutQr
+                        ? "Paste the QR payment string"
+                        : "Optional checkout detail"
                 }
               />
-              {isDynamicFonepay ? <p className="text-xs text-muted-foreground">FonePay generates a fresh QR for every sale; no static payload is stored in this instrument.</p> : isCheckoutQr && !checkoutDetail.trim() ? (
-                <p className="text-xs text-amber-600">A QR needs its payment payload before checkout can offer it.</p>
+              {isDynamicFonepay ? (
+                <p className="text-xs text-muted-foreground">
+                  FonePay generates a fresh QR for every sale; no static payload
+                  is stored in this instrument.
+                </p>
+              ) : isCheckoutQr && !checkoutDetail.trim() ? (
+                <p className="text-xs text-amber-600">
+                  A QR needs its payment payload before checkout can offer it.
+                </p>
               ) : null}
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label>Available at checkout</Label>
-              <Select value={checkoutEnabled ? "yes" : "no"} onValueChange={(value) => setCheckoutEnabled(value === "yes")}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={checkoutEnabled ? "yes" : "no"}
+                onValueChange={(value) => setCheckoutEnabled(value === "yes")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="yes">Yes — cashiers can select it</SelectItem>
-                  <SelectItem value="no">No — finance/settlement only</SelectItem>
+                  <SelectItem value="yes">
+                    Yes — cashiers can select it
+                  </SelectItem>
+                  <SelectItem value="no">
+                    No — finance/settlement only
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -437,8 +577,13 @@ export function PaymentInstrumentsPanel({
             <Button variant="outline" onClick={closeEditor} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={() => void save()} disabled={saving || !name.trim()}>
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button
+              onClick={() => void save()}
+              disabled={saving || !name.trim()}
+            >
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               {editing ? "Save changes" : "Add"}
             </Button>
           </DialogFooter>

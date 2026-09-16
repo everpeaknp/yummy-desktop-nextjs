@@ -1,8 +1,13 @@
-import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+import {
+  configuredProductCurrency,
+  formatMoney,
+  formatProductDate,
+} from "@/lib/presentation-format";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 export function getImageUrl(path?: string) {
   if (!path) return "";
@@ -15,30 +20,31 @@ export function getImageUrl(path?: string) {
   return path;
 }
 
-export function formatCurrency(amount: number | string | null | undefined) {
-  const num = typeof amount === "string" ? parseFloat(amount) : amount;
-  const safeNum = typeof num === "number" && Number.isFinite(num) ? num : 0;
-  return `Rs. ${safeNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
- }
-
-export function formatDate(dateStr: string | Date) {
-  if (!dateStr) return "";
-  const date = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  });
+export function formatCurrency(
+  amount: number | string | null | undefined,
+  currency?: string | null,
+) {
+  return formatMoney(amount, { currency, emptyValue: "NPR 0.00" });
 }
 
-export function formatDateTime(dateStr: string | Date) {
-  if (!dateStr) return "";
-  const date = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+/** Compact product-UI money presentation for constrained chart axes. */
+export function formatCompactCurrency(
+  amount: number | string | null | undefined,
+  currency?: string | null,
+) {
+  const numeric = Number(amount);
+  const code = currency?.trim().toUpperCase() || configuredProductCurrency;
+  const value = Number.isFinite(numeric) ? numeric : 0;
+  return `${code} ${value.toLocaleString(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  })}`;
+}
+
+export function formatDate(dateStr: string | Date | null | undefined) {
+  return formatProductDate(dateStr, "business-date");
+}
+
+export function formatDateTime(dateStr: string | Date | null | undefined) {
+  return formatProductDate(dateStr, "timestamp");
 }

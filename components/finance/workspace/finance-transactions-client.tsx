@@ -1,15 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  Loader2,
-} from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Loader2 } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
-import { FinanceApis, PartyLedgerApis, PurchaseApis, PurchaseReturnApis } from "@/lib/api/endpoints";
+import {
+  FinanceApis,
+  PartyLedgerApis,
+  PurchaseApis,
+  PurchaseReturnApis,
+} from "@/lib/api/endpoints";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,9 +52,7 @@ function yyyyMmDd(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function money(value: number) {
-  return `NPR ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+const money = formatCurrency;
 
 function titleCase(value: string) {
   return value
@@ -79,15 +79,16 @@ function salesDocumentForTransaction(
   return (
     documents.find(
       (document) =>
-        row.source_type === "finance_sales_invoice" &&
-        document.id === sourceId,
+        row.source_type === "finance_sales_invoice" && document.id === sourceId,
     ) ||
     documents.find(
       (document) =>
         document.source_type === "pos_order" &&
         (document.source_id === sourceId || document.source_id === orderId),
     ) ||
-    documents.find((document) => document.document_number === row.invoice_number) ||
+    documents.find(
+      (document) => document.document_number === row.invoice_number,
+    ) ||
     null
   );
 }
@@ -177,7 +178,11 @@ function paymentStatusClass(status: string) {
   if (["paid", "refunded"].includes(value)) {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
-  if (["partially paid", "unpaid", "customer credit", "supplier credit"].includes(value)) {
+  if (
+    ["partially paid", "unpaid", "customer credit", "supplier credit"].includes(
+      value,
+    )
+  ) {
     return "border-orange-200 bg-orange-50 text-orange-700";
   }
   return "border-border bg-muted text-muted-foreground";
@@ -202,15 +207,20 @@ function salesReturnDocumentForTransaction(
 ) {
   const source = String(row.source_type || "").toLowerCase();
   if (source === "finance_sales_credit_note") {
-    return documents.find((document) => document.id === Number(row.source_id)) || null;
+    return (
+      documents.find((document) => document.id === Number(row.source_id)) ||
+      null
+    );
   }
   if (row.order_id) {
-    return documents.find(
-      (document) =>
-        document.document_kind === "credit_note" &&
-        document.source_type === "pos_order" &&
-        Number(document.source_id) === Number(row.order_id),
-    ) || null;
+    return (
+      documents.find(
+        (document) =>
+          document.document_kind === "credit_note" &&
+          document.source_type === "pos_order" &&
+          Number(document.source_id) === Number(row.order_id),
+      ) || null
+    );
   }
   return null;
 }
@@ -221,8 +231,10 @@ function buildRegisterRows(
 ): RegisterRow[] {
   const result: RegisterRow[] = [];
   const consumed = new Set<number>();
-  const sourceType = (row: FinanceTransactionRow) => String(row.source_type || "").toLowerCase();
-  const eventType = (row: FinanceTransactionRow) => String(row.event_type || "").toLowerCase();
+  const sourceType = (row: FinanceTransactionRow) =>
+    String(row.source_type || "").toLowerCase();
+  const eventType = (row: FinanceTransactionRow) =>
+    String(row.event_type || "").toLowerCase();
   const consume = (row: FinanceTransactionRow) => consumed.add(row.id);
   const isConsumed = (row: FinanceTransactionRow) => consumed.has(row.id);
 
@@ -252,19 +264,24 @@ function buildRegisterRows(
       0,
     );
     const total = Math.abs(Number(sale.amount || 0));
-    const status = document?.settlement_status === "paid" || paidNow >= total - 0.004
-      ? "Paid"
-      : paidNow > 0 || document?.settlement_status === "partially_paid"
-        ? "Partially paid"
-        : linkedCredit.length || document?.settlement_status === "unpaid"
-          ? "Unpaid"
-          : "Recorded";
+    const status =
+      document?.settlement_status === "paid" || paidNow >= total - 0.004
+        ? "Paid"
+        : paidNow > 0 || document?.settlement_status === "partially_paid"
+          ? "Partially paid"
+          : linkedCredit.length || document?.settlement_status === "unpaid"
+            ? "Unpaid"
+            : "Recorded";
     result.push({
       key: `sale:${sale.id}`,
       source: sale,
       type: "Sales",
-      reference: document?.document_number || sale.invoice_number || eventReference(sale),
-      particular: document?.customer_name || sale.customer_name || "Walk-in customer",
+      reference:
+        document?.document_number ||
+        sale.invoice_number ||
+        eventReference(sale),
+      particular:
+        document?.customer_name || sale.customer_name || "Walk-in customer",
       paymentMode: linkedCheckoutPayments.length
         ? paymentMethods(linkedCheckoutPayments)
         : linkedCredit.length
@@ -292,7 +309,9 @@ function buildRegisterRows(
     "supplier_payable_created",
   ];
   purchaseGroups.forEach((group, key) => {
-    const recognised = group.filter((row) => recognitionPriority.includes(eventType(row)));
+    const recognised = group.filter((row) =>
+      recognitionPriority.includes(eventType(row)),
+    );
     if (!recognised.length) return;
     const lines = new Map<string, FinanceTransactionRow[]>();
     recognised.forEach((row) => {
@@ -300,18 +319,28 @@ function buildRegisterRows(
       const lineKey = lineId == null ? `event:${row.id}` : `line:${lineId}`;
       lines.set(lineKey, [...(lines.get(lineKey) || []), row]);
     });
-    const sourceRows = Array.from(lines.values()).map((lineEvents) =>
-      [...lineEvents].sort(
-        (left, right) => recognitionPriority.indexOf(eventType(left)) - recognitionPriority.indexOf(eventType(right)),
-      )[0],
+    const sourceRows = Array.from(lines.values()).map(
+      (lineEvents) =>
+        [...lineEvents].sort(
+          (left, right) =>
+            recognitionPriority.indexOf(eventType(left)) -
+            recognitionPriority.indexOf(eventType(right)),
+        )[0],
     );
     const source = sourceRows[0];
     if (!source) return;
-    const amount = sourceRows.reduce((total, row) => total + Math.abs(Number(row.amount || 0)), 0);
+    const amount = sourceRows.reduce(
+      (total, row) => total + Math.abs(Number(row.amount || 0)),
+      0,
+    );
     const payments = [
-      ...group.filter((row) =>
-        ["inventory_cash_outflow", "supplier_payment_made"].includes(eventType(row)) ||
-        (eventType(row) === "inventory_purchase_expensed" && Boolean(row.payment_method)),
+      ...group.filter(
+        (row) =>
+          ["inventory_cash_outflow", "supplier_payment_made"].includes(
+            eventType(row),
+          ) ||
+          (eventType(row) === "inventory_purchase_expensed" &&
+            Boolean(row.payment_method)),
       ),
       ...rows.filter(
         (row) =>
@@ -320,7 +349,10 @@ function buildRegisterRows(
           eventType(row) === "supplier_payment_made",
       ),
     ];
-    const paid = payments.reduce((total, row) => total + Math.abs(Number(row.amount || 0)), 0);
+    const paid = payments.reduce(
+      (total, row) => total + Math.abs(Number(row.amount || 0)),
+      0,
+    );
     result.push({
       key: `purchase:${key}`,
       source,
@@ -328,7 +360,12 @@ function buildRegisterRows(
       reference: `Purchase #${source.source_id}`,
       particular: source.supplier_name || "Supplier purchase",
       paymentMode: paymentMethods(payments),
-      status: paid >= amount - 0.004 ? "Paid" : paid > 0 ? "Partially paid" : "Unpaid",
+      status:
+        paid >= amount - 0.004
+          ? "Paid"
+          : paid > 0
+            ? "Partially paid"
+            : "Unpaid",
       amount,
       amountTone: "out",
     });
@@ -366,7 +403,8 @@ function buildRegisterRows(
         source: row,
         type: "Sales return",
         reference: document?.document_number || reference,
-        particular: document?.customer_name || row.customer_name || "Walk-in customer",
+        particular:
+          document?.customer_name || row.customer_name || "Walk-in customer",
         paymentMode: paymentMethodLabel(row.payment_method),
         status: type === "refund_processed" ? "Refunded" : "Customer credit",
         amount,
@@ -421,24 +459,66 @@ function buildRegisterRows(
     }
 
     if (type === "manual_income_received") {
-      result.push({ key: `income:${row.id}`, source: row, type: "Other income", reference, particular: reference, paymentMode: paymentMethodLabel(row.payment_method), status: "Recorded", amount, amountTone: "in" });
+      result.push({
+        key: `income:${row.id}`,
+        source: row,
+        type: "Other income",
+        reference,
+        particular: reference,
+        paymentMode: paymentMethodLabel(row.payment_method),
+        status: "Recorded",
+        amount,
+        amountTone: "in",
+      });
       continue;
     }
     if (type === "manual_expense_paid") {
-      result.push({ key: `expense:${row.id}`, source: row, type: "Expense", reference, particular: reference, paymentMode: paymentMethodLabel(row.payment_method), status: "Recorded", amount, amountTone: "out" });
+      result.push({
+        key: `expense:${row.id}`,
+        source: row,
+        type: "Expense",
+        reference,
+        particular: reference,
+        paymentMode: paymentMethodLabel(row.payment_method),
+        status: "Recorded",
+        amount,
+        amountTone: "out",
+      });
       continue;
     }
     if (type.includes("transfer") || type.includes("deposit")) {
-      result.push({ key: `transfer:${row.id}`, source: row, type: "Transfer", reference, particular: reference, paymentMode: paymentMethodLabel(row.payment_method), status: "Recorded", amount, amountTone: "neutral" });
+      result.push({
+        key: `transfer:${row.id}`,
+        source: row,
+        type: "Transfer",
+        reference,
+        particular: reference,
+        paymentMode: paymentMethodLabel(row.payment_method),
+        status: "Recorded",
+        amount,
+        amountTone: "neutral",
+      });
       continue;
     }
     if (type.includes("variance") || type.includes("reversed")) {
-      result.push({ key: `adjustment:${row.id}`, source: row, type: "Adjustment", reference, particular: reference, paymentMode: "—", status: "Recorded", amount, amountTone: "neutral" });
+      result.push({
+        key: `adjustment:${row.id}`,
+        source: row,
+        type: "Adjustment",
+        reference,
+        particular: reference,
+        paymentMode: "—",
+        status: "Recorded",
+        amount,
+        amountTone: "neutral",
+      });
     }
   }
 
   return result.sort(
-    (left, right) => new Date(right.source.event_at).getTime() - new Date(left.source.event_at).getTime(),
+    (left, right) =>
+      new Date(right.source.event_at).getTime() -
+      new Date(left.source.event_at).getTime(),
   );
 }
 
@@ -455,7 +535,8 @@ function EventTable({
 }) {
   const user = useAuth((state) => state.user);
   const [selected, setSelected] = useState<FinanceTransactionRow | null>(null);
-  const [sourceDetail, setSourceDetail] = useState<TransactionDetailModel | null>(null);
+  const [sourceDetail, setSourceDetail] =
+    useState<TransactionDetailModel | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
   const registerRows = useMemo(
     () => buildRegisterRows(rows, salesDocuments),
@@ -486,7 +567,8 @@ function EventTable({
 
     const customerId = Number(selected.customer_id || 0);
     const supplierId = Number(selected.supplier_id || 0);
-    const party = customerId > 0 ? "customer" : supplierId > 0 ? "supplier" : null;
+    const party =
+      customerId > 0 ? "customer" : supplierId > 0 ? "supplier" : null;
     const partyId = customerId || supplierId;
     const source = String(selected.source_type || "").toLowerCase();
     const sourceId = Number(selected.source_id || 0);
@@ -496,7 +578,9 @@ function EventTable({
       setSourceLoading(true);
       try {
         if (source.includes("inventory_purchase_return") && sourceId > 0) {
-          const returnResponse = await apiClient.get(PurchaseReturnApis.get(sourceId, restaurantId));
+          const returnResponse = await apiClient.get(
+            PurchaseReturnApis.get(sourceId, restaurantId),
+          );
           if (!cancelled) {
             setSourceDetail(purchaseReturnDetail(returnResponse.data.data));
           }
@@ -504,16 +588,24 @@ function EventTable({
         }
 
         if (source.includes("inventory_purchase") && sourceId > 0) {
-          const purchaseResponse = await apiClient.get(PurchaseApis.get(sourceId, restaurantId));
+          const purchaseResponse = await apiClient.get(
+            PurchaseApis.get(sourceId, restaurantId),
+          );
           const purchase = purchaseResponse.data.data;
           if (!purchase || cancelled) return;
           const purchaseSupplierId = Number(purchase.supplier_id || supplierId);
           if (purchaseSupplierId > 0) {
             const statementResponse = await apiClient.get(
-              PartyLedgerApis.statement("supplier", purchaseSupplierId, restaurantId),
+              PartyLedgerApis.statement(
+                "supplier",
+                purchaseSupplierId,
+                restaurantId,
+              ),
             );
             if (cancelled) return;
-            setSourceDetail(purchaseDocumentDetail(purchase, statementResponse.data.data));
+            setSourceDetail(
+              purchaseDocumentDetail(purchase, statementResponse.data.data),
+            );
           } else {
             setSourceDetail(purchaseDocumentDetail(purchase));
           }
@@ -527,18 +619,26 @@ function EventTable({
           if (cancelled) return;
           const statement = response.data.data;
           const entry = (statement?.entries || []).find((candidate: any) => {
-            const candidateSource = String(candidate.source_type || "").toLowerCase();
+            const candidateSource = String(
+              candidate.source_type || "",
+            ).toLowerCase();
             return (
               Number(candidate.id) === sourceId ||
-              (candidateSource === source && Number(candidate.source_id) === sourceId)
+              (candidateSource === source &&
+                Number(candidate.source_id) === sourceId)
             );
           });
           if (entry) {
-            setSourceDetail(partyLedgerEntryDetail(entry, party, statement?.allocations || []));
+            setSourceDetail(
+              partyLedgerEntryDetail(
+                entry,
+                party,
+                statement?.allocations || [],
+              ),
+            );
           }
           return;
         }
-
       } catch (error) {
         console.warn("Transaction source details are unavailable", error);
       } finally {
@@ -566,26 +666,34 @@ function EventTable({
     );
 
   const selectedSalesDocument = selected
-    ? salesDocumentForTransaction(selected, salesDocuments) || salesReturnDocumentForTransaction(selected, salesDocuments)
+    ? salesDocumentForTransaction(selected, salesDocuments) ||
+      salesReturnDocumentForTransaction(selected, salesDocuments)
     : null;
-  const selectedHref = selectedSalesDocument?.source_type === "pos_order" && selectedSalesDocument.source_id
-    ? `/orders/${selectedSalesDocument.source_id}`
-    : selected
-      ? ownerLink(selected)
-      : null;
+  const selectedHref =
+    selectedSalesDocument?.source_type === "pos_order" &&
+    selectedSalesDocument.source_id
+      ? `/orders/${selectedSalesDocument.source_id}`
+      : selected
+        ? ownerLink(selected)
+        : null;
   const selectedRegisterRow = selected
     ? registerRows.find((row) => row.source.id === selected.id) || null
     : null;
-  const selectedDirection = selectedRegisterRow?.amountTone || (selected ? movementDirection(selected) : null);
+  const selectedDirection =
+    selectedRegisterRow?.amountTone ||
+    (selected ? movementDirection(selected) : null);
   const selectedDetail: TransactionDetailModel | null = selected
     ? {
         eyebrow: selectedRegisterRow?.type || "Transaction",
         title: selectedRegisterRow?.reference || "Transaction details",
         reference: selectedRegisterRow?.particular || eventReference(selected),
-        subtitle: selectedRegisterRow?.type ? `${selectedRegisterRow.type} details.` : "Transaction details.",
+        subtitle: selectedRegisterRow?.type
+          ? `${selectedRegisterRow.type} details.`
+          : "Transaction details.",
         occurredAt: selected.event_at,
         status: selectedRegisterRow?.status || "Recorded",
-        amount: selectedRegisterRow?.amount ?? Math.abs(Number(selected.amount || 0)),
+        amount:
+          selectedRegisterRow?.amount ?? Math.abs(Number(selected.amount || 0)),
         amountLabel:
           selectedDirection === "in"
             ? "Money in"
@@ -600,9 +708,10 @@ function EventTable({
               { label: "Business date", value: selected.business_date },
               {
                 label: "Order",
-                value: selected.invoice_number || selected.order_number
-                  ? eventReference(selected)
-                  : null,
+                value:
+                  selected.invoice_number || selected.order_number
+                    ? eventReference(selected)
+                    : null,
               },
               {
                 label: "Customer",
@@ -614,11 +723,16 @@ function EventTable({
               },
             ],
           },
-          ...(selectedRegisterRow?.paymentMode && selectedRegisterRow.paymentMode !== "—"
-            ? [{
-                title: "Payment",
-                fields: [{ label: "Method", value: selectedRegisterRow.paymentMode }],
-              }]
+          ...(selectedRegisterRow?.paymentMode &&
+          selectedRegisterRow.paymentMode !== "—"
+            ? [
+                {
+                  title: "Payment",
+                  fields: [
+                    { label: "Method", value: selectedRegisterRow.paymentMode },
+                  ],
+                },
+              ]
             : []),
         ],
       }
@@ -632,10 +746,16 @@ function EventTable({
             ...section,
             fields: section.fields?.map((field) => {
               if (field.label === "Customer") {
-                return { ...field, value: selected.customer_name || "Walk-in customer" };
+                return {
+                  ...field,
+                  value: selected.customer_name || "Walk-in customer",
+                };
               }
               if (field.label === "Supplier") {
-                return { ...field, value: selected.supplier_name || "No supplier" };
+                return {
+                  ...field,
+                  value: selected.supplier_name || "No supplier",
+                };
               }
               if (field.label === "Order") {
                 return {
@@ -655,7 +775,7 @@ function EventTable({
 
   return (
     <>
-      <DataList className="rounded-none border-x-0 border-y-0 md:hidden">
+      <DataList className="rounded-none border-x-0 border-y-0 lg:hidden">
         {visibleRegisterRows.map((row) => {
           const isIn = row.amountTone === "in";
           const isOut = row.amountTone === "out";
@@ -663,17 +783,38 @@ function EventTable({
             <ListRow
               key={row.key}
               leading={
-                isIn ? <ArrowDownLeft className="h-4 w-4 text-emerald-600" /> : isOut ? <ArrowUpRight className="h-4 w-4 text-rose-600" /> : null
+                isIn ? (
+                  <ArrowDownLeft className="h-4 w-4 text-emerald-600" />
+                ) : isOut ? (
+                  <ArrowUpRight className="h-4 w-4 text-rose-600" />
+                ) : null
               }
               title={row.reference}
               description={
                 <span>
-                  {row.particular || row.type} · {new Date(row.source.event_at).toLocaleDateString()}
-                  {row.paymentMode !== paymentMethodLabel() ? ` · ${row.paymentMode}` : ""}
+                  {row.particular || row.type} ·{" "}
+                  {formatDate(row.source.event_at)}
+                  {row.paymentMode !== paymentMethodLabel()
+                    ? ` · ${row.paymentMode}`
+                    : ""}
                 </span>
               }
-              meta={<span className={`font-semibold tabular-nums ${isIn ? "text-emerald-600" : isOut ? "text-rose-600" : ""}`}>{isIn ? "+" : isOut ? "−" : ""}{money(row.amount)}</span>}
-              trailing={<Badge variant="outline" className={`${typeBadgeClass(row.type)} shrink-0`}>{row.type}</Badge>}
+              meta={
+                <span
+                  className={`font-semibold tabular-nums ${isIn ? "text-emerald-600" : isOut ? "text-rose-600" : ""}`}
+                >
+                  {isIn ? "+" : isOut ? "−" : ""}
+                  {money(row.amount)}
+                </span>
+              }
+              trailing={
+                <Badge
+                  variant="outline"
+                  className={`${typeBadgeClass(row.type)} shrink-0`}
+                >
+                  {row.type}
+                </Badge>
+              }
               interactive
               role="button"
               tabIndex={0}
@@ -684,11 +825,11 @@ function EventTable({
                   setSelected(row.source);
                 }
               }}
-              />
+            />
           );
         })}
       </DataList>
-      <div className="hidden overflow-x-auto md:block">
+      <div className="hidden overflow-x-auto lg:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -721,7 +862,7 @@ function EventTable({
                 >
                   <TableCell>
                     <p className="font-medium">
-                      {new Date(row.source.event_at).toLocaleDateString()}
+                      {formatDate(row.source.event_at)}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(row.source.event_at).toLocaleTimeString([], {
@@ -737,16 +878,17 @@ function EventTable({
                       ) : isOut ? (
                         <ArrowUpRight className="h-4 w-4 text-rose-600" />
                       ) : null}
-                      <span className="font-medium">
-                        {row.reference}
-                      </span>
+                      <span className="font-medium">{row.reference}</span>
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {row.particular}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={typeBadgeClass(row.type)}>
+                    <Badge
+                      variant="outline"
+                      className={typeBadgeClass(row.type)}
+                    >
                       {row.type}
                     </Badge>
                   </TableCell>
@@ -754,7 +896,10 @@ function EventTable({
                     {row.paymentMode}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={paymentStatusClass(row.status)}>
+                    <Badge
+                      variant="outline"
+                      className={paymentStatusClass(row.status)}
+                    >
                       {row.status}
                     </Badge>
                   </TableCell>
@@ -804,7 +949,9 @@ export function FinanceTransactionsClient() {
   const [dateTo, setDateTo] = useState(yyyyMmDd(now));
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<FinanceTransactionRow[]>([]);
-  const [salesDocuments, setSalesDocuments] = useState<FinanceSalesDocument[]>([]);
+  const [salesDocuments, setSalesDocuments] = useState<FinanceSalesDocument[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -855,25 +1002,25 @@ export function FinanceTransactionsClient() {
         activeCount={Number(Boolean(dateFrom)) + Number(Boolean(dateTo))}
       >
         <div className="grid w-full gap-3 md:flex md:items-end">
-        <label className="grid gap-1 text-xs text-muted-foreground">
-          From
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(event) => setDateFrom(event.target.value)}
-            className="h-11 rounded-xl"
-          />
-        </label>
-        <label className="grid gap-1 text-xs text-muted-foreground">
-          To
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(event) => setDateTo(event.target.value)}
-            className="h-11 rounded-xl"
-          />
-        </label>
-      </div>
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            From
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+              className="h-11 rounded-xl"
+            />
+          </label>
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            To
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+              className="h-11 rounded-xl"
+            />
+          </label>
+        </div>
       </ReportFilters>
       <Card className="border-border shadow-none">
         <CardContent className="p-0">
@@ -927,13 +1074,19 @@ export function FinanceReceivablesClient() {
         ].map((item) => (
           <MetricCard
             key={item.label}
-            className={item.label === "Still outstanding" ? "col-span-2 sm:col-span-1" : undefined}
+            className={
+              item.label === "Still outstanding"
+                ? "col-span-2 sm:col-span-1"
+                : undefined
+            }
             label={item.label}
-            value={loading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  money(Number(item.value || 0))
-                )}
+            value={
+              loading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                money(Number(item.value || 0))
+              )
+            }
           />
         ))}
       </div>

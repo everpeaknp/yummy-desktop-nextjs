@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertCircle, Building2, Loader2, RefreshCw } from "lucide-react";
 
-import { FinanceReportNavigation } from "@/components/finance/reports/finance-report-navigation";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import { ReportFilters } from "@/components/reports/report-filters";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,12 +22,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { financeReportingApi } from "@/lib/api/finance-reporting-api";
+import { formatCurrency } from "@/lib/utils";
 import type { FinanceReportingDepartmentBreakdownRead } from "@/types/finance-reporting";
-
-function formatMoney(value: string | number | null | undefined): string {
-  const num = Number(value ?? 0);
-  return `NPR ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 function localIso(date: Date): string {
   const timezoneOffset = date.getTimezoneOffset() * 60_000;
@@ -43,7 +42,21 @@ function monthStartIso(): string {
 
 function departmentName(value: string): string {
   if (value === "unassigned") return "Unassigned";
-  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function reportError(error: unknown) {
+  const candidate = error as {
+    response?: { data?: { detail?: string } };
+    message?: string;
+  };
+  return (
+    candidate.response?.data?.detail ||
+    candidate.message ||
+    "Failed to load report"
+  );
 }
 
 export function DepartmentBreakdownReportClient() {
@@ -51,101 +64,154 @@ export function DepartmentBreakdownReportClient() {
   const [dateTo, setDateTo] = useState(todayIso());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<FinanceReportingDepartmentBreakdownRead | null>(null);
+  const [report, setReport] =
+    useState<FinanceReportingDepartmentBreakdownRead | null>(null);
 
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await financeReportingApi.getDepartmentBreakdown({
-        date_from: dateFrom,
-        date_to: dateTo,
-      });
-      setReport(data);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || "Failed to load report");
+      setReport(
+        await financeReportingApi.getDepartmentBreakdown({
+          date_from: dateFrom,
+          date_to: dateTo,
+        }),
+      );
+    } catch (requestError: unknown) {
+      setError(reportError(requestError));
     } finally {
       setLoading(false);
     }
-  };
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
-    fetchReport();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void fetchReport();
+  }, [fetchReport]);
 
   return (
-    <div className="space-y-6">
-      <FinanceReportNavigation />
+    <AppPage width="report">
+      <PageHeader
+        title="Performance by Department"
+        description="Revenue, expenses, and net result by reporting department. Activity without a department remains Unassigned."
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Performance by Department</CardTitle>
-          <CardDescription>
-            Revenue, expenses, and net result for each department in the selected period. Activity without
-            a department is shown separately as Unassigned.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="grid gap-1.5">
-              <Label htmlFor="date_from">From</Label>
-              <Input id="date_from" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="date_to">To</Label>
-              <Input id="date_to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-            </div>
-            <Button onClick={fetchReport} disabled={loading}>
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Refresh
-            </Button>
+      <ReportFilters
+        title="Report filters"
+        responsiveAt="lg"
+        actions={
+          <Button onClick={() => void fetchReport()} disabled={loading}>
+            {loading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            Apply
+          </Button>
+        }
+      >
+        <div className="grid gap-3 sm:grid-cols-2 lg:flex lg:items-end">
+          <div className="grid gap-1.5">
+            <Label
+              htmlFor="date_from"
+              className="text-xs text-muted-foreground"
+            >
+              From
+            </Label>
+            <Input
+              id="date_from"
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+              className="h-11 rounded-xl lg:w-40"
+            />
           </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="date_to" className="text-xs text-muted-foreground">
+              To
+            </Label>
+            <Input
+              id="date_to"
+              type="date"
+              min={dateFrom}
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+              className="h-11 rounded-xl lg:w-40"
+            />
+          </div>
+        </div>
+      </ReportFilters>
 
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Could not load report</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+      {error ? (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Could not load report</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
           {loading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-10 w-full" />
+            <div className="space-y-2 p-4">
+              {[1, 2, 3].map((item) => (
+                <Skeleton key={item} className="h-12 w-full" />
               ))}
             </div>
           ) : report && report.departments.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Department</TableHead>
-                  <TableHead className="text-right">Revenue</TableHead>
-                  <TableHead className="text-right">Expenses</TableHead>
-                  <TableHead className="text-right">Net Profit</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {report.departments.map((dept) => (
-                  <TableRow key={dept.station}>
-                    <TableCell className="font-medium">{departmentName(dept.station)}</TableCell>
-                    <TableCell className="text-right">{formatMoney(dept.total_income)}</TableCell>
-                    <TableCell className="text-right">{formatMoney(dept.total_expenses)}</TableCell>
-                    <TableCell
-                      className={`text-right font-semibold ${Number(dept.net_profit) < 0 ? "text-destructive" : ""}`}
-                    >
-                      {formatMoney(dept.net_profit)}
-                    </TableCell>
-                  </TableRow>
+            <>
+              <DataList className="rounded-none border-0 lg:hidden">
+                {report.departments.map((department) => (
+                  <ListRow
+                    key={department.station}
+                    leading={<Building2 className="h-4 w-4 text-primary" />}
+                    title={departmentName(department.station)}
+                    description={`Revenue ${formatCurrency(department.total_income)} · Expenses ${formatCurrency(department.total_expenses)}`}
+                    meta={
+                      <span className="font-semibold tabular-nums text-foreground">
+                        {formatCurrency(department.net_profit)}
+                      </span>
+                    }
+                  />
                 ))}
-              </TableBody>
-            </Table>
-          ) : (
-            !error && <p className="py-8 text-center text-sm text-muted-foreground">No department activity in this period. Try a wider date range.</p>
-          )}
+              </DataList>
+              <div className="hidden overflow-x-auto lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Department</TableHead>
+                      <TableHead className="text-right">Revenue</TableHead>
+                      <TableHead className="text-right">Expenses</TableHead>
+                      <TableHead className="text-right">Net result</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.departments.map((department) => (
+                      <TableRow key={department.station}>
+                        <TableCell className="font-medium">
+                          {departmentName(department.station)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCurrency(department.total_income)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCurrency(department.total_expenses)}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">
+                          {formatCurrency(department.net_profit)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          ) : !error ? (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+              No department activity in this period. Try a wider date range.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
-    </div>
+    </AppPage>
   );
 }

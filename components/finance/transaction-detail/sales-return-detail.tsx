@@ -1,19 +1,30 @@
 import type { TransactionDetailModel } from "@/components/finance/transaction-detail/transaction-detail-sheet";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import type { FinanceSalesDocument } from "@/types/finance-sales";
 
-function formatMoney(value: number | string) {
-  return `NPR ${Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+function documentReference(value: string) {
+  return value.replace(/^([a-z]{2,4})-/i, (prefix) => prefix.toUpperCase());
+}
+
+export function salesSettlementLabel(value: string) {
+  const labels: Record<string, string> = {
+    customer_credit: "Customer credit",
+    pending: "Pending",
+    refund_now: "Refunded",
+    refunded: "Refunded",
+  };
+  return labels[value.trim().toLowerCase()] || "Recorded";
 }
 
 export function originalSaleLabel(
   document: FinanceSalesDocument,
   originalSale?: FinanceSalesDocument,
 ) {
-  if (originalSale?.document_number) return `Sale ${originalSale.document_number}`;
-  if (document.external_reference) return `External sale ${document.external_reference}`;
+  if (originalSale?.document_number) {
+    return `Sale ${documentReference(originalSale.document_number)}`;
+  }
+  if (document.external_reference)
+    return `External sale ${document.external_reference}`;
   return "Original sale not available";
 }
 
@@ -22,13 +33,15 @@ export function salesReturnDetail(
   originalSale?: FinanceSalesDocument,
 ): TransactionDetailModel {
   const originalSaleReference = originalSaleLabel(document, originalSale);
-  const refunded = ["refund_now", "refunded"].includes(document.settlement_status);
+  const refunded = ["refund_now", "refunded"].includes(
+    document.settlement_status,
+  );
 
   return {
     eyebrow: "Sales return",
-    title: document.document_number,
+    title: documentReference(document.document_number),
     reference: document.external_reference || "Credit note",
-    subtitle: `Return against ${originalSaleReference.toLowerCase()}`,
+    subtitle: `Return against ${originalSaleReference.replace(/^Sale /, "sale ")}`,
     occurredAt: document.created_at || document.business_date,
     status: document.status,
     amount: document.grand_total,
@@ -38,11 +51,21 @@ export function salesReturnDetail(
       {
         title: "Return overview",
         fields: [
-          { label: "Business date", value: document.business_date },
-          { label: "Customer", value: document.customer_name || "Cash customer" },
+          { label: "Business date", value: formatDate(document.business_date) },
+          {
+            label: "Customer",
+            value: document.customer_name || "Cash customer",
+          },
           { label: "Original sale", value: originalSaleReference },
-          { label: "Settlement", value: document.settlement_status.replaceAll("_", " ") },
-          { label: "Reason", value: document.reason || "Not recorded", fullWidth: true },
+          {
+            label: "Settlement",
+            value: salesSettlementLabel(document.settlement_status),
+          },
+          {
+            label: "Reason",
+            value: document.reason || "Not recorded",
+            fullWidth: true,
+          },
         ],
       },
       {
@@ -53,8 +76,8 @@ export function salesReturnDetail(
           rows: document.lines.map((line) => [
             line.item_name,
             Number(line.quantity || 0).toLocaleString(),
-            formatMoney(line.unit_price),
-            formatMoney(line.line_total),
+            formatCurrency(line.unit_price),
+            formatCurrency(line.line_total),
           ]),
         },
       },
@@ -62,7 +85,12 @@ export function salesReturnDetail(
         title: "Totals",
         fields: [
           ...(Number(document.tax_total) > 0
-            ? [{ label: "Tax reversed", value: formatMoney(document.tax_total) }]
+            ? [
+                {
+                  label: "Tax reversed",
+                  value: formatCurrency(document.tax_total),
+                },
+              ]
             : []),
           { label: "Notes", value: document.notes || "None", fullWidth: true },
         ],

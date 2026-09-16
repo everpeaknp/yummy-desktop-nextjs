@@ -67,7 +67,7 @@ import {
   DrawerSessionApis,
   ItemCategoryApis,
 } from "@/lib/api/endpoints";
-import { cn } from "@/lib/utils";
+import { cn, formatCompactCurrency, formatCurrency } from "@/lib/utils";
 import {
   DateRangeDropdown,
   DateRangePreset,
@@ -188,8 +188,13 @@ export default function AnalyticsPage() {
   const user = useAuth((state) => state.user);
   const { ready, canViewAnalytics } = useAnalyticsViewAccess();
   const restaurant = useRestaurant((s) => s.restaurant);
-  const subscriptionEntitlements = useSubscriptionStore((state) => state.current?.entitlements);
-  const historyDays = entitlementLimit(subscriptionEntitlements, "finance.history_days");
+  const subscriptionEntitlements = useSubscriptionStore(
+    (state) => state.current?.entitlements,
+  );
+  const historyDays = entitlementLimit(
+    subscriptionEntitlements,
+    "finance.history_days",
+  );
   const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
   const customFinanceStations = useCustomFinanceStations(user?.restaurant_id);
 
@@ -314,10 +319,15 @@ export default function AnalyticsPage() {
       startTime = selectedDayCloseSession.period_start_at;
       endTime = selectedDayCloseSession.period_end_at;
       queryBusinessLine = selectedDayCloseSession.business_line;
-    } else if (activeRange === "today" && !station && dayCloseAlignedTodaySession) {
+    } else if (
+      activeRange === "today" &&
+      !station &&
+      dayCloseAlignedTodaySession
+    ) {
       startTime = dayCloseAlignedTodaySession.period_start_at;
       endTime = dayCloseAlignedTodaySession.period_end_at;
-      queryBusinessLine = dayCloseAlignedTodaySession.business_line ?? businessLine;
+      queryBusinessLine =
+        dayCloseAlignedTodaySession.business_line ?? businessLine;
     } else if (activeRange === "custom" && date?.from) {
       startTime = date.from.toISOString();
       endTime = date.to ? date.to.toISOString() : date.from.toISOString();
@@ -585,10 +595,13 @@ export default function AnalyticsPage() {
     }
   }, []);
 
-  const formatSessionCoveredRange = useCallback((session: any) => {
-    if (!session) return "";
-    return `Covers ${getSessionRangeLabel(session)}`;
-  }, [getSessionRangeLabel]);
+  const formatSessionCoveredRange = useCallback(
+    (session: any) => {
+      if (!session) return "";
+      return `Covers ${getSessionRangeLabel(session)}`;
+    },
+    [getSessionRangeLabel],
+  );
 
   const financeSummaryScopeLabel = useMemo(() => {
     const dates = getActiveDates();
@@ -598,7 +611,9 @@ export default function AnalyticsPage() {
       const sessionLabel = formatSessionCoveredRange(selectedDayCloseSession);
       parts.push(sessionLabel || "Selected day-close session");
     } else if (dayCloseAlignedToday && dayCloseAlignedTodaySession) {
-      const sessionLabel = formatSessionCoveredRange(dayCloseAlignedTodaySession);
+      const sessionLabel = formatSessionCoveredRange(
+        dayCloseAlignedTodaySession,
+      );
       parts.push(sessionLabel || "Current day-close window");
     } else {
       const dateLabel =
@@ -609,7 +624,9 @@ export default function AnalyticsPage() {
     }
 
     parts.push(`Business line: ${dates.businessLine || "all"}`);
-    parts.push(`Station: ${financeStationLabel(station, customFinanceStations)}`);
+    parts.push(
+      `Station: ${financeStationLabel(station, customFinanceStations)}`,
+    );
 
     return parts.join(" | ");
   }, [
@@ -957,13 +974,6 @@ export default function AnalyticsPage() {
     {};
   const trendsChart =
     data?.tabs?.overview?.trends_chart || data?.trends_chart || {};
-
-  // today snapshot (Flutter: todayIncome / todayExpense)
-  const todaySnapshot = data?.tabs?.overview?.today_snapshot || {};
-  const todayExpense = todaySnapshot.expense ?? 0;
-  const todayGrossSales = todaySnapshot.gross_sales ?? 0;
-  const todayRefunds = todaySnapshot.refunds ?? 0;
-  const todayNetSales = todaySnapshot.net_sales ?? 0;
 
   // executive summary metrics
   const v2 = useMemo(() => {
@@ -1468,9 +1478,8 @@ export default function AnalyticsPage() {
     data?.tabs?.orders?.top_selling_tables?.items || topSellingTables;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  const fmt = (n: number) =>
-    `Rs. ${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtShort = (n: number) => `Rs. ${Number(n || 0).toLocaleString()}`;
+  const fmt = (n: number) => formatCurrency(n);
+  const fmtShort = (n: number) => formatCurrency(n);
   const fmtCount = (n: number) => Number(n || 0).toLocaleString();
 
   const menuSnapshot = data?.tabs?.menu?.menu_snapshot || {};
@@ -1481,7 +1490,7 @@ export default function AnalyticsPage() {
   if (!canViewAnalytics) return <AnalyticsAccessDenied />;
 
   return (
-    <AppPage width="wide" className="pb-10">
+    <AppPage width="report" density="compact" className="pb-10">
       {scopeNotice ? (
         <HistoryScopeNotice
           error={scopeNotice}
@@ -1514,9 +1523,7 @@ export default function AnalyticsPage() {
 
       {/* Header & Filters */}
       <div className="space-y-3">
-        <PageHeader
-          title="Analytics"
-        />
+        <PageHeader title="Analytics" titleClassName="md:hidden lg:block" />
 
         <div className="flex items-center gap-2 sm:hidden">
           <DateRangeDropdown
@@ -1529,12 +1536,106 @@ export default function AnalyticsPage() {
           <FilterBar
             className="shrink-0"
             title="Filters"
-            activeCount={Number(Boolean(selectedDayCloseSession)) + Number(Boolean(station)) + Number(Boolean(businessLine))}
+            activeCount={
+              Number(Boolean(selectedDayCloseSession)) +
+              Number(Boolean(station)) +
+              Number(Boolean(businessLine))
+            }
             mobileContent={
               <>
-                <div className="space-y-2"><p className="text-xs font-medium text-muted-foreground">Daybook</p><Select value={selectedDayCloseSession ? String(selectedDayCloseSession.id) : "all"} onValueChange={(val) => { if (val === "all") { setSelectedDayCloseSession(null); setFetchTrigger((t) => t + 1); } else { const sess = sessions.find((s) => String(s.id) === val); if (sess) { setStation(undefined); setSelectedDayCloseSession(sess); if (sess.business_line) setBusinessLine(sess.business_line); setFetchTrigger((t) => t + 1); } } }}><SelectTrigger className="h-10 rounded-xl"><SelectValue placeholder="All daybooks" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="all">All daybooks</SelectItem>{sessions.map((sess: any) => <SelectItem key={sess.id} value={String(sess.id)}>{getSessionDateLabel(sess)}</SelectItem>)}</SelectContent></Select></div>
-                <div className="space-y-2"><p className="text-xs font-medium text-muted-foreground">Station</p><Select value={station || "all"} onValueChange={(val) => setStation(toFinanceStationParam(val, { businessLine: businessLine ?? "all", hotelEnabled: Boolean(restaurant?.hotel_enabled), customStations: customFinanceStations }))} disabled={!!selectedDayCloseSession}><SelectTrigger className="h-10 rounded-xl"><SelectValue placeholder="All stations" /></SelectTrigger><SelectContent className="rounded-xl">{stationOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.value === "all" ? "All stations" : option.label}</SelectItem>)}</SelectContent></Select></div>
-                {restaurant?.hotel_enabled && restaurant?.restaurant_enabled ? <div className="space-y-2"><p className="text-xs font-medium text-muted-foreground">Business line</p><Select value={businessLine || "all"} onValueChange={(val) => { setBusinessLine(val === "all" ? undefined : val); setFetchTrigger((t) => t + 1); }}><SelectTrigger className="h-10 rounded-xl"><SelectValue /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="all">All services</SelectItem><SelectItem value="restaurant">Restaurant</SelectItem><SelectItem value="hotel">Hotel / Rooms</SelectItem></SelectContent></Select></div> : null}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Daybook
+                  </p>
+                  <Select
+                    value={
+                      selectedDayCloseSession
+                        ? String(selectedDayCloseSession.id)
+                        : "all"
+                    }
+                    onValueChange={(val) => {
+                      if (val === "all") {
+                        setSelectedDayCloseSession(null);
+                        setFetchTrigger((t) => t + 1);
+                      } else {
+                        const sess = sessions.find((s) => String(s.id) === val);
+                        if (sess) {
+                          setStation(undefined);
+                          setSelectedDayCloseSession(sess);
+                          if (sess.business_line)
+                            setBusinessLine(sess.business_line);
+                          setFetchTrigger((t) => t + 1);
+                        }
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-10 rounded-xl">
+                      <SelectValue placeholder="All daybooks" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all">All daybooks</SelectItem>
+                      {sessions.map((sess: any) => (
+                        <SelectItem key={sess.id} value={String(sess.id)}>
+                          {getSessionDateLabel(sess)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Station
+                  </p>
+                  <Select
+                    value={station || "all"}
+                    onValueChange={(val) =>
+                      setStation(
+                        toFinanceStationParam(val, {
+                          businessLine: businessLine ?? "all",
+                          hotelEnabled: Boolean(restaurant?.hotel_enabled),
+                          customStations: customFinanceStations,
+                        }),
+                      )
+                    }
+                    disabled={!!selectedDayCloseSession}
+                  >
+                    <SelectTrigger className="h-10 rounded-xl">
+                      <SelectValue placeholder="All stations" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {stationOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.value === "all"
+                            ? "All stations"
+                            : option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {restaurant?.hotel_enabled && restaurant?.restaurant_enabled ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Business line
+                    </p>
+                    <Select
+                      value={businessLine || "all"}
+                      onValueChange={(val) => {
+                        setBusinessLine(val === "all" ? undefined : val);
+                        setFetchTrigger((t) => t + 1);
+                      }}
+                    >
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="all">All services</SelectItem>
+                        <SelectItem value="restaurant">Restaurant</SelectItem>
+                        <SelectItem value="hotel">Hotel / Rooms</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
               </>
             }
           />
@@ -1670,6 +1771,15 @@ export default function AnalyticsPage() {
               </Select>
             </div>
           )}
+          <Link href="/analytics/compare" className="ml-auto hidden xl:block">
+            <Button
+              variant="outline"
+              className="h-10 shrink-0 gap-2 rounded-xl px-3"
+            >
+              <ArrowLeftRight className="h-4 w-4" />
+              <span className="text-xs font-semibold">Compare</span>
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -1698,7 +1808,7 @@ export default function AnalyticsPage() {
             <PageTabs
               ariaLabel="Analytics sections"
               className="w-full min-w-0 xl:flex-1"
-              mobileMode="equal"
+              mobileMode="scroll"
               value={activeTab}
               onValueChange={setActiveTab}
               items={[
@@ -1707,70 +1817,16 @@ export default function AnalyticsPage() {
                 { value: "finance", label: "Finance" },
                 { value: "menu", label: "Menu" },
                 { value: "staff", label: "Staff" },
-                { value: "nc", label: "NC" },
+                { value: "nc", label: "Non-chargeable" },
               ]}
             />
-            <Link href="/analytics/compare" className="hidden xl:block">
-              <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl xl:w-auto xl:gap-2 xl:px-3" aria-label="Compare periods">
-                <ArrowLeftRight className="h-4 w-4" />
-                <span className="hidden text-xs font-semibold xl:inline">Compare</span>
-              </Button>
-            </Link>
           </div>
 
           {/* ══════════════════════════════════════════════════ OVERVIEW TAB */}
           <TabsContent value="overview" className="space-y-6 outline-none">
-            {/* Today Snapshot */}
             <section className="space-y-3">
-              <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">
-                Today Snapshot
-              </h3>
-              <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
-                <SnapshotCard
-                  label="GROSS SALES"
-                  value={todayGrossSales}
-                  icon={<Banknote className="w-4 h-4" />}
-                  color="text-blue-500"
-                  bgColor="bg-blue-500/10"
-                  borderColor="border-blue-500/20"
-                />
-                <SnapshotCard
-                  label="REFUNDS"
-                  value={todayRefunds}
-                  icon={<ArrowDownRight className="w-4 h-4" />}
-                  color="text-red-500"
-                  bgColor="bg-red-500/10"
-                  borderColor="border-red-500/20"
-                />
-                <SnapshotCard
-                  label="NET SALES"
-                  value={
-                    dayCloseAlignedToday && dayCloseNetSalesOverride != null
-                      ? dayCloseNetSalesOverride
-                      : todayNetSales
-                  }
-                  icon={<Wallet className="w-4 h-4" />}
-                  color="text-orange-500"
-                  bgColor="bg-orange-500/10"
-                  borderColor="border-orange-500/20"
-                />
-                <SnapshotCard
-                  label="CURRENT EXPENSE"
-                  value={todayExpense}
-                  icon={<TrendingDown className="w-4 h-4" />}
-                  color="text-red-500"
-                  bgColor="bg-red-500/10"
-                  borderColor="border-red-500/20"
-                />
-              </div>
-            </section>
-
-            {/* Summary */}
-            <section className="space-y-3">
-              <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">
-                Summary
-              </h3>
-              <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
+              <h3 className="text-base font-semibold">Snapshot</h3>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
                 <BigMetricCard
                   label="Sales"
                   value={
@@ -1788,7 +1844,7 @@ export default function AnalyticsPage() {
                   }
                 />
                 <BigMetricCard
-                  label="Order"
+                  label="Orders"
                   value={totalOrdersVal}
                   noCurrency
                   icon={<ReceiptText className="w-4.5 h-4.5" />}
@@ -1801,19 +1857,13 @@ export default function AnalyticsPage() {
                   }
                 />
                 <BigMetricCard
-                  label="Income"
-                  value={currentIncome}
-                  icon={<Wallet className="w-4.5 h-4.5" />}
-                  color="text-emerald-500"
-                  trend={v2?.incomeDelta ?? compIncomeDelta}
-                  tagColor={
-                    Number(v2?.incomeDelta ?? compIncomeDelta) >= 0
-                      ? "bg-emerald-500/10 text-emerald-500"
-                      : "bg-red-500/10 text-red-500"
-                  }
+                  label="Refunds"
+                  value={currentRefunds}
+                  icon={<ArrowDownRight className="w-4.5 h-4.5" />}
+                  color="text-orange-500"
                 />
                 <BigMetricCard
-                  label="Expense"
+                  label="Expenses"
                   value={currentExpense}
                   icon={<TrendingDown className="w-4.5 h-4.5" />}
                   color="text-red-500"
@@ -1824,106 +1874,124 @@ export default function AnalyticsPage() {
                       : "bg-red-500/10 text-red-500"
                   }
                 />
+                <BigMetricCard
+                  label="Operating result"
+                  value={currentProfit}
+                  icon={<TrendingUp className="w-4.5 h-4.5" />}
+                  color="text-emerald-500"
+                  trend={compProfitDelta}
+                  tagColor={
+                    Number(compProfitDelta) >= 0
+                      ? "bg-emerald-500/10 text-emerald-500"
+                      : "bg-red-500/10 text-red-500"
+                  }
+                  className="col-span-2 sm:col-span-1"
+                />
               </div>
             </section>
 
             {/* Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <RevenueTrendsCard
-                data={revenueTrendsData}
-                loading={loading}
-                activeRange={activeRange}
-                currentDayLabel={revenueCardDayLabel || undefined}
-                onDaySelect={(dateStr) => {
-                  // Build a friendly label for the selected day
-                  try {
-                    const d = new Date(dateStr);
-                    const now = new Date();
-                    const today = new Date(
-                      now.getFullYear(),
-                      now.getMonth(),
-                      now.getDate(),
-                    );
-                    const yesterday = new Date(today);
-                    yesterday.setDate(today.getDate() - 1);
-                    const sel = new Date(
-                      d.getFullYear(),
-                      d.getMonth(),
-                      d.getDate(),
-                    );
-                    const label =
-                      sel.getTime() === today.getTime()
-                        ? "Today"
-                        : sel.getTime() === yesterday.getTime()
-                          ? "Yesterday"
-                          : d.toLocaleDateString(undefined, {
-                              weekday: "short",
-                              month: "short",
-                              day: "numeric",
-                            });
-                    setRevenueCardDay(dateStr);
-                    setRevenueCardDayLabel(label);
-                    // Switch to custom single-day range to refetch hourly data
-                    const from = new Date(dateStr);
-                    from.setHours(0, 0, 0, 0);
-                    const to = new Date(dateStr);
-                    to.setHours(23, 59, 59, 999);
-                    setActiveRange("custom");
-                    setDate({ from, to });
-                    setFetchTrigger((t) => t + 1);
-                  } catch {
-                    /* ignore */
-                  }
-                }}
-              />
-              <PerformanceTrendsCard
-                data={performanceTrendsData}
-                loading={loading}
-                totalOrders={totalOrdersVal}
-                ordersDelta={v2?.ordersDelta ?? 0}
-                activeRange={activeRange}
-                currentDayLabel={revenueCardDayLabel || undefined}
-                onDaySelect={(dateStr) => {
-                  try {
-                    const d = new Date(dateStr);
-                    const now = new Date();
-                    const today = new Date(
-                      now.getFullYear(),
-                      now.getMonth(),
-                      now.getDate(),
-                    );
-                    const yesterday = new Date(today);
-                    yesterday.setDate(today.getDate() - 1);
-                    const sel = new Date(
-                      d.getFullYear(),
-                      d.getMonth(),
-                      d.getDate(),
-                    );
-                    const label =
-                      sel.getTime() === today.getTime()
-                        ? "Today"
-                        : sel.getTime() === yesterday.getTime()
-                          ? "Yesterday"
-                          : d.toLocaleDateString(undefined, {
-                              weekday: "short",
-                              month: "short",
-                              day: "numeric",
-                            });
-                    setRevenueCardDay(dateStr);
-                    setRevenueCardDayLabel(label);
-                    const from = new Date(dateStr);
-                    from.setHours(0, 0, 0, 0);
-                    const to = new Date(dateStr);
-                    to.setHours(23, 59, 59, 999);
-                    setActiveRange("custom");
-                    setDate({ from, to });
-                    setFetchTrigger((t) => t + 1);
-                  } catch {
-                    /* ignore */
-                  }
-                }}
-              />
-            </div>
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold">Performance</h3>
+              </div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <RevenueTrendsCard
+                  data={revenueTrendsData}
+                  loading={loading}
+                  activeRange={activeRange}
+                  currentDayLabel={revenueCardDayLabel || undefined}
+                  onDaySelect={(dateStr) => {
+                    // Build a friendly label for the selected day
+                    try {
+                      const d = new Date(dateStr);
+                      const now = new Date();
+                      const today = new Date(
+                        now.getFullYear(),
+                        now.getMonth(),
+                        now.getDate(),
+                      );
+                      const yesterday = new Date(today);
+                      yesterday.setDate(today.getDate() - 1);
+                      const sel = new Date(
+                        d.getFullYear(),
+                        d.getMonth(),
+                        d.getDate(),
+                      );
+                      const label =
+                        sel.getTime() === today.getTime()
+                          ? "Today"
+                          : sel.getTime() === yesterday.getTime()
+                            ? "Yesterday"
+                            : d.toLocaleDateString(undefined, {
+                                weekday: "short",
+                                month: "short",
+                                day: "numeric",
+                              });
+                      setRevenueCardDay(dateStr);
+                      setRevenueCardDayLabel(label);
+                      // Switch to custom single-day range to refetch hourly data
+                      const from = new Date(dateStr);
+                      from.setHours(0, 0, 0, 0);
+                      const to = new Date(dateStr);
+                      to.setHours(23, 59, 59, 999);
+                      setActiveRange("custom");
+                      setDate({ from, to });
+                      setFetchTrigger((t) => t + 1);
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                />
+                <PerformanceTrendsCard
+                  data={performanceTrendsData}
+                  loading={loading}
+                  totalOrders={totalOrdersVal}
+                  ordersDelta={v2?.ordersDelta ?? 0}
+                  activeRange={activeRange}
+                  currentDayLabel={revenueCardDayLabel || undefined}
+                  onDaySelect={(dateStr) => {
+                    try {
+                      const d = new Date(dateStr);
+                      const now = new Date();
+                      const today = new Date(
+                        now.getFullYear(),
+                        now.getMonth(),
+                        now.getDate(),
+                      );
+                      const yesterday = new Date(today);
+                      yesterday.setDate(today.getDate() - 1);
+                      const sel = new Date(
+                        d.getFullYear(),
+                        d.getMonth(),
+                        d.getDate(),
+                      );
+                      const label =
+                        sel.getTime() === today.getTime()
+                          ? "Today"
+                          : sel.getTime() === yesterday.getTime()
+                            ? "Yesterday"
+                            : d.toLocaleDateString(undefined, {
+                                weekday: "short",
+                                month: "short",
+                                day: "numeric",
+                              });
+                      setRevenueCardDay(dateStr);
+                      setRevenueCardDayLabel(label);
+                      const from = new Date(dateStr);
+                      from.setHours(0, 0, 0, 0);
+                      const to = new Date(dateStr);
+                      to.setHours(23, 59, 59, 999);
+                      setActiveRange("custom");
+                      setDate({ from, to });
+                      setFetchTrigger((t) => t + 1);
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                />
+              </div>
+            </section>
 
             {/* Table Utilization & Payment Methods */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2408,19 +2476,30 @@ export default function AnalyticsPage() {
             {/* Finance Summary Cards */}
             <section className="space-y-3">
               <div className="space-y-2">
-                <h3 className="text-base font-semibold tracking-tight text-foreground">Finance summary</h3>
-                <p className="text-xs text-muted-foreground">{financeSummaryScopeLabel.split(" | ")[0]}</p>
+                <h3 className="text-base font-semibold tracking-tight text-foreground">
+                  Finance summary
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {financeSummaryScopeLabel.split(" | ")[0]}
+                </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {financeSummaryScopeLabel.split(" | ").slice(1).map((scope) => (
-                    <span key={scope} className="rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                      {scope.replace("Business line: ", "").replace("Station: ", "")}
-                    </span>
-                  ))}
+                  {financeSummaryScopeLabel
+                    .split(" | ")
+                    .slice(1)
+                    .map((scope) => (
+                      <span
+                        key={scope}
+                        className="rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground"
+                      >
+                        {scope
+                          .replace("Business line: ", "")
+                          .replace("Station: ", "")}
+                      </span>
+                    ))}
                 </div>
               </div>
 
-              {/* Today's Snapshot -- the only numbers most owners/staff need */}
-              <FinanceMetricGroup title="Today's Snapshot">
+              <FinanceMetricGroup title="Period flow">
                 <BigMetricCard
                   label="Sales"
                   value={v2?.netSales ?? currentIncome}
@@ -2479,6 +2558,8 @@ export default function AnalyticsPage() {
                       : "bg-red-500/10 text-red-500"
                   }
                 />
+              </FinanceMetricGroup>
+              <FinanceMetricGroup title="Financial position">
                 {hasConcreteCashControlScope && cashControlSummary ? (
                   <BigMetricCard
                     label="Cash in Hand"
@@ -2530,193 +2611,195 @@ export default function AnalyticsPage() {
                   !showFinanceBreakdown && "hidden lg:block",
                 )}
               >
-              <FinanceMetricGroup title="Discounts, Refunds & Purchases">
-                <BigMetricCard
-                  label="Discounts"
-                  value={v2?.discountTotal ?? currentDiscounts}
-                  icon={<Tag className="w-4.5 h-4.5" />}
-                  color="text-amber-500"
-                  tagColor="bg-amber-500/10 text-amber-500"
-                />
-                <BigMetricCard
-                  label="Refunds"
-                  value={v2?.refundTotal ?? currentRefunds}
-                  icon={<TrendingDown className="w-4.5 h-4.5" />}
-                  color="text-red-500"
-                  tagColor="bg-red-500/10 text-red-500"
-                />
-                <BigMetricCard
-                  label="Inventory Purchases"
-                  value={
-                    accountingMode
-                      ? (v2?.inventoryCashOutflow ?? 0)
-                      : simpleInventoryPurchases
-                  }
-                  icon={<Package className="w-4.5 h-4.5" />}
-                  color="text-orange-500"
-                  tagColor="bg-orange-500/10 text-orange-500"
-                />
-              </FinanceMetricGroup>
-              <FinanceMetricGroup title="Exceptions">
-                <BigMetricCard
-                  label="Paid Open Orders"
-                  value={v2?.paidOpenOrdersCount ?? 0}
-                  noCurrency
-                  icon={<AlertCircle className="w-4.5 h-4.5" />}
-                  color={
-                    Number(v2?.paidOpenOrdersCount ?? 0) > 0
-                      ? "text-red-500"
-                      : "text-muted-foreground"
-                  }
-                  tagColor="bg-red-500/10 text-red-500"
-                />
-                <BigMetricCard
-                  label="Paid Open Amount"
-                  value={v2?.paidOpenOrdersAmount ?? 0}
-                  icon={<Wallet className="w-4.5 h-4.5" />}
-                  color={
-                    Number(v2?.paidOpenOrdersAmount ?? 0) > 0
-                      ? "text-red-500"
-                      : "text-muted-foreground"
-                  }
-                  tagColor="bg-red-500/10 text-red-500"
-                />
-              </FinanceMetricGroup>
+                <FinanceMetricGroup title="Discounts, Refunds & Purchases">
+                  <BigMetricCard
+                    label="Discounts"
+                    value={v2?.discountTotal ?? currentDiscounts}
+                    icon={<Tag className="w-4.5 h-4.5" />}
+                    color="text-amber-500"
+                    tagColor="bg-amber-500/10 text-amber-500"
+                  />
+                  <BigMetricCard
+                    label="Refunds"
+                    value={v2?.refundTotal ?? currentRefunds}
+                    icon={<TrendingDown className="w-4.5 h-4.5" />}
+                    color="text-red-500"
+                    tagColor="bg-red-500/10 text-red-500"
+                  />
+                  <BigMetricCard
+                    label="Inventory Purchases"
+                    value={
+                      accountingMode
+                        ? (v2?.inventoryCashOutflow ?? 0)
+                        : simpleInventoryPurchases
+                    }
+                    icon={<Package className="w-4.5 h-4.5" />}
+                    color="text-orange-500"
+                    tagColor="bg-orange-500/10 text-orange-500"
+                  />
+                </FinanceMetricGroup>
+                <FinanceMetricGroup title="Exceptions">
+                  <BigMetricCard
+                    label="Paid Open Orders"
+                    value={v2?.paidOpenOrdersCount ?? 0}
+                    noCurrency
+                    icon={<AlertCircle className="w-4.5 h-4.5" />}
+                    color={
+                      Number(v2?.paidOpenOrdersCount ?? 0) > 0
+                        ? "text-red-500"
+                        : "text-muted-foreground"
+                    }
+                    tagColor="bg-red-500/10 text-red-500"
+                  />
+                  <BigMetricCard
+                    label="Paid Open Amount"
+                    value={v2?.paidOpenOrdersAmount ?? 0}
+                    icon={<Wallet className="w-4.5 h-4.5" />}
+                    color={
+                      Number(v2?.paidOpenOrdersAmount ?? 0) > 0
+                        ? "text-red-500"
+                        : "text-muted-foreground"
+                    }
+                    tagColor="bg-red-500/10 text-red-500"
+                  />
+                </FinanceMetricGroup>
 
-              <FinanceMetricGroup title="Sales Breakdown">
-                <BigMetricCard
-                  label="Gross Sales"
-                  value={
-                    (v2?.netSales ?? currentIncome) +
-                    (v2?.refundTotal ?? currentRefunds ?? 0) +
-                    (v2?.discountTotal ?? currentDiscounts ?? 0)
-                  }
-                  icon={<DollarSign className="w-4.5 h-4.5" />}
-                  color="text-emerald-500"
-                  tagColor="bg-emerald-500/10 text-emerald-500"
-                />
-                <BigMetricCard
-                  label="Collections"
-                  value={v2?.collectionsTotal ?? currentIncome}
-                  icon={<CreditCard className="w-4.5 h-4.5" />}
-                  color="text-indigo-500"
-                  tagColor="bg-indigo-500/10 text-indigo-500"
-                />
-                <BigMetricCard
-                  label="Manual Income"
-                  value={v2?.manualIncomeTotal ?? 0}
-                  icon={<DollarSign className="w-4.5 h-4.5" />}
-                  color="text-emerald-500"
-                  tagColor="bg-emerald-500/10 text-emerald-500"
-                />
-                <BigMetricCard
-                  label="Net Cash Movement (Today)"
-                  value={v2?.cashExpected ?? 0}
-                  icon={<Wallet className="w-4.5 h-4.5" />}
-                  color="text-cyan-500"
-                  tagColor="bg-cyan-500/10 text-cyan-500"
-                />
-              </FinanceMetricGroup>
-              <FinanceMetricGroup title="Expense Breakdown">
-                <BigMetricCard
-                  label="Operating Expenses"
-                  value={v2?.manualOperatingExpense ?? 0}
-                  icon={<TrendingDown className="w-4.5 h-4.5" />}
-                  color="text-rose-500"
-                  tagColor="bg-rose-500/10 text-rose-500"
-                />
-                <BigMetricCard
-                  label="Inventory Direct Expense"
-                  value={v2?.inventoryDirectExpense ?? 0}
-                  icon={<Package className="w-4.5 h-4.5" />}
-                  color="text-orange-500"
-                  tagColor="bg-orange-500/10 text-orange-500"
-                />
-                {accountingMode && (
-                  <>
-                    <BigMetricCard
-                      label="COGS"
-                      value={v2?.inventoryCogs ?? 0}
-                      icon={<Boxes className="w-4.5 h-4.5" />}
-                      color="text-amber-500"
-                      tagColor="bg-amber-500/10 text-amber-500"
-                    />
-                    <BigMetricCard
-                      label="Wastage"
-                      value={v2?.inventoryWastage ?? 0}
-                      icon={<TrendingDown className="w-4.5 h-4.5" />}
-                      color="text-red-500"
-                      tagColor="bg-red-500/10 text-red-500"
-                    />
-                    <BigMetricCard
-                      label="Variance"
-                      value={v2?.inventoryVariance ?? 0}
-                      icon={<ArrowLeftRight className="w-4.5 h-4.5" />}
-                      color="text-purple-500"
-                      tagColor="bg-purple-500/10 text-purple-500"
-                    />
-                  </>
-                )}
-              </FinanceMetricGroup>
+                <FinanceMetricGroup title="Sales Breakdown">
+                  <BigMetricCard
+                    label="Gross Sales"
+                    value={
+                      (v2?.netSales ?? currentIncome) +
+                      (v2?.refundTotal ?? currentRefunds ?? 0) +
+                      (v2?.discountTotal ?? currentDiscounts ?? 0)
+                    }
+                    icon={<DollarSign className="w-4.5 h-4.5" />}
+                    color="text-emerald-500"
+                    tagColor="bg-emerald-500/10 text-emerald-500"
+                  />
+                  <BigMetricCard
+                    label="Collections"
+                    value={v2?.collectionsTotal ?? currentIncome}
+                    icon={<CreditCard className="w-4.5 h-4.5" />}
+                    color="text-indigo-500"
+                    tagColor="bg-indigo-500/10 text-indigo-500"
+                  />
+                  <BigMetricCard
+                    label="Manual Income"
+                    value={v2?.manualIncomeTotal ?? 0}
+                    icon={<DollarSign className="w-4.5 h-4.5" />}
+                    color="text-emerald-500"
+                    tagColor="bg-emerald-500/10 text-emerald-500"
+                  />
+                  <BigMetricCard
+                    label="Net Cash Movement (Today)"
+                    value={v2?.cashExpected ?? 0}
+                    icon={<Wallet className="w-4.5 h-4.5" />}
+                    color="text-cyan-500"
+                    tagColor="bg-cyan-500/10 text-cyan-500"
+                  />
+                </FinanceMetricGroup>
+                <FinanceMetricGroup title="Expense Breakdown">
+                  <BigMetricCard
+                    label="Operating Expenses"
+                    value={v2?.manualOperatingExpense ?? 0}
+                    icon={<TrendingDown className="w-4.5 h-4.5" />}
+                    color="text-rose-500"
+                    tagColor="bg-rose-500/10 text-rose-500"
+                  />
+                  <BigMetricCard
+                    label="Inventory Direct Expense"
+                    value={v2?.inventoryDirectExpense ?? 0}
+                    icon={<Package className="w-4.5 h-4.5" />}
+                    color="text-orange-500"
+                    tagColor="bg-orange-500/10 text-orange-500"
+                  />
+                  {accountingMode && (
+                    <>
+                      <BigMetricCard
+                        label="COGS"
+                        value={v2?.inventoryCogs ?? 0}
+                        icon={<Boxes className="w-4.5 h-4.5" />}
+                        color="text-amber-500"
+                        tagColor="bg-amber-500/10 text-amber-500"
+                      />
+                      <BigMetricCard
+                        label="Wastage"
+                        value={v2?.inventoryWastage ?? 0}
+                        icon={<TrendingDown className="w-4.5 h-4.5" />}
+                        color="text-red-500"
+                        tagColor="bg-red-500/10 text-red-500"
+                      />
+                      <BigMetricCard
+                        label="Variance"
+                        value={v2?.inventoryVariance ?? 0}
+                        icon={<ArrowLeftRight className="w-4.5 h-4.5" />}
+                        color="text-purple-500"
+                        tagColor="bg-purple-500/10 text-purple-500"
+                      />
+                    </>
+                  )}
+                </FinanceMetricGroup>
               </div>
             </section>
 
             {/* Receivables detail -- the headline "Customers Owe Us" number
-                already shows in Today's Snapshot; this card is the
+                already shows in Financial position; this card is the
                 breakdown behind it. */}
             <Card className="border-border bg-card shadow-sm">
               <CardHeader className="space-y-1 px-4 pb-2 pt-4 sm:px-6 sm:pt-6">
-                  <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                    <CreditCard className="w-4 h-4 text-blue-500" /> Receivables
-                  </CardTitle>
-                  <CardDescription>Credit sales and customer balances.</CardDescription>
-                </CardHeader>
-                <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
-                  <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
-                    <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/30 p-3 sm:block sm:space-y-1 sm:p-3.5">
-                      <div>
+                <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                  <CreditCard className="w-4 h-4 text-blue-500" /> Receivables
+                </CardTitle>
+                <CardDescription>
+                  Credit sales and customer balances.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
+                <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
+                  <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/30 p-3 sm:block sm:space-y-1 sm:p-3.5">
+                    <div>
                       <span className="text-xs font-medium text-muted-foreground sm:text-[10px] sm:font-black sm:uppercase sm:tracking-wider">
                         Credit Sales
                       </span>
                       <span className="mt-0.5 block text-[11px] text-muted-foreground sm:text-[9px]">
                         {receivables.credit_orders_count ?? 0} credit orders
                       </span>
-                      </div>
-                      <span className="shrink-0 text-base font-semibold text-foreground sm:mt-1 sm:block sm:text-lg sm:font-bold">
-                        {fmtShort(receivables.credit_sales ?? 0)}
-                      </span>
                     </div>
-                    <div className="flex items-center justify-between gap-4 rounded-xl border border-red-500/15 bg-red-500/5 p-3 sm:block sm:space-y-1 sm:p-3.5">
-                      <div>
+                    <span className="shrink-0 text-base font-semibold text-foreground sm:mt-1 sm:block sm:text-lg sm:font-bold">
+                      {fmtShort(receivables.credit_sales ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 rounded-xl border border-red-500/15 bg-red-500/5 p-3 sm:block sm:space-y-1 sm:p-3.5">
+                    <div>
                       <span className="text-xs font-medium text-red-500 sm:text-[10px] sm:font-black sm:uppercase sm:tracking-wider">
                         Outstanding (All Time)
                       </span>
                       <span className="mt-0.5 block text-[11px] text-muted-foreground sm:text-[9px]">
                         Total unpaid credit bills
                       </span>
-                      </div>
-                      <span className="shrink-0 text-base font-semibold text-foreground sm:mt-1 sm:block sm:text-lg sm:font-bold">
-                        {fmtShort(receivables.total_outstanding ?? 0)}
-                      </span>
                     </div>
-                    <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/30 p-3 sm:block sm:space-y-1 sm:p-3.5">
-                      <div>
+                    <span className="shrink-0 text-base font-semibold text-foreground sm:mt-1 sm:block sm:text-lg sm:font-bold">
+                      {fmtShort(receivables.total_outstanding ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/30 p-3 sm:block sm:space-y-1 sm:p-3.5">
+                    <div>
                       <span className="text-xs font-medium text-muted-foreground sm:text-[10px] sm:font-black sm:uppercase sm:tracking-wider">
                         Cash vs Credit
                       </span>
                       <span className="mt-0.5 block text-[11px] text-muted-foreground sm:text-[9px]">
                         of sales on credit
                       </span>
-                      </div>
-                      <span className="shrink-0 text-base font-semibold text-foreground sm:mt-1 sm:block sm:text-lg sm:font-bold">
-                        {grossSalesVal > 0
-                          ? `${Math.round(((receivables.credit_sales ?? 0) / grossSalesVal) * 100)}%`
-                          : "0%"}
-                      </span>
                     </div>
+                    <span className="shrink-0 text-base font-semibold text-foreground sm:mt-1 sm:block sm:text-lg sm:font-bold">
+                      {grossSalesVal > 0
+                        ? `${Math.round(((receivables.credit_sales ?? 0) / grossSalesVal) * 100)}%`
+                        : "0%"}
+                    </span>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Non-Chargeable (NC) Snapshot */}
             {ncTotalItems > 0 && (
@@ -2732,10 +2815,7 @@ export default function AnalyticsPage() {
                         Total Value
                       </p>
                       <p className="text-lg font-black text-foreground">
-                        Rs.{" "}
-                        {Number(ncTotalValue).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
+                        {fmtShort(ncTotalValue)}
                       </p>
                     </div>
                   </div>
@@ -2804,7 +2884,7 @@ export default function AnalyticsPage() {
                             </div>
                             <div className="text-right">
                               <p className="text-xs font-bold">
-                                Rs. {Number(item.value).toLocaleString()}
+                                {fmtShort(item.value)}
                               </p>
                               <p className="text-[10px] text-muted-foreground">
                                 {item.qty} items
@@ -2843,7 +2923,7 @@ export default function AnalyticsPage() {
                               </div>
                               <div className="text-right">
                                 <p className="text-xs font-bold">
-                                  Rs. {Number(customer.value).toLocaleString()}
+                                  {fmtShort(customer.value)}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground">
                                   {customer.orders_count} orders •{" "}
@@ -2896,7 +2976,7 @@ export default function AnalyticsPage() {
                               </span>
                             </div>
                             <span className="text-xs font-bold">
-                              Rs. {Number(row.nc_total_value).toLocaleString()}
+                              {fmtShort(row.nc_total_value)}
                             </span>
                           </div>
                         );
@@ -2989,24 +3069,24 @@ export default function AnalyticsPage() {
           <TabsContent value="nc" className="space-y-6 outline-none">
             <section className="space-y-3">
               <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wider">
-                NC Summary
+                Non-chargeable summary
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <BigMetricCard
-                  label="NC Value"
+                  label="Non-chargeable value"
                   value={ncTotalValue}
                   icon={<Tag className="w-4.5 h-4.5" />}
                   color="text-orange-500"
                 />
                 <BigMetricCard
-                  label="NC Items"
+                  label="Non-chargeable items"
                   value={ncTotalItems}
                   noCurrency
                   icon={<Utensils className="w-4.5 h-4.5" />}
                   color="text-blue-500"
                 />
                 <BigMetricCard
-                  label="NC Orders"
+                  label="Non-chargeable orders"
                   value={ncOrdersCount}
                   noCurrency
                   icon={<ReceiptText className="w-4.5 h-4.5" />}
@@ -3538,62 +3618,83 @@ export default function AnalyticsPage() {
                   </div>
                 ) : (
                   <>
-                  <div className="space-y-1 md:hidden">
-                    {(menuData?.items || []).map((item: any, i: number) => (
-                      <div key={item.id ?? i} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{item.name}</p>
-                          <p className="text-xs text-muted-foreground">{item.category || "Uncategorised"} · {fmtCount(item.quantity_sold || item.quantitySold || 0)} sold</p>
-                        </div>
-                        <p className="shrink-0 text-sm font-semibold">{fmtShort(item.revenue || 0)}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="hidden overflow-x-auto rounded-xl border border-border md:block">
-                    <Table>
-                      <TableHeader className="bg-muted/40">
-                        <TableRow>
-                          <TableHead className="w-[40px]">#</TableHead>
-                          <TableHead>Item</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead className="text-right">Qty Sold</TableHead>
-                          <TableHead className="text-right">Revenue</TableHead>
-                          <TableHead className="text-right">
-                            Avg Price
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(menuData?.items || []).map((item: any, i: number) => (
-                          <TableRow
-                            key={item.id ?? i}
-                            className="hover:bg-muted/10"
-                          >
-                            <TableCell className="text-muted-foreground text-xs font-medium">
-                              {(menuPage - 1) * menuPageSize + i + 1}
-                            </TableCell>
-                            <TableCell className="font-semibold">
+                    <div className="space-y-1 md:hidden">
+                      {(menuData?.items || []).map((item: any, i: number) => (
+                        <div
+                          key={item.id ?? i}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
                               {item.name}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {item.category || "—"}
-                            </TableCell>
-                            <TableCell className="text-right font-medium">
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.category || "Uncategorised"} ·{" "}
                               {fmtCount(
                                 item.quantity_sold || item.quantitySold || 0,
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">
-                              {fmtShort(item.revenue || 0)}
-                            </TableCell>
-                            <TableCell className="text-right text-muted-foreground text-xs">
-                              {fmtShort(item.avg_sale_price ?? 0)}
-                            </TableCell>
+                              )}{" "}
+                              sold
+                            </p>
+                          </div>
+                          <p className="shrink-0 text-sm font-semibold">
+                            {fmtShort(item.revenue || 0)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="hidden overflow-x-auto rounded-xl border border-border md:block">
+                      <Table>
+                        <TableHeader className="bg-muted/40">
+                          <TableRow>
+                            <TableHead className="w-[40px]">#</TableHead>
+                            <TableHead>Item</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead className="text-right">
+                              Qty Sold
+                            </TableHead>
+                            <TableHead className="text-right">
+                              Revenue
+                            </TableHead>
+                            <TableHead className="text-right">
+                              Avg Price
+                            </TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                        </TableHeader>
+                        <TableBody>
+                          {(menuData?.items || []).map(
+                            (item: any, i: number) => (
+                              <TableRow
+                                key={item.id ?? i}
+                                className="hover:bg-muted/10"
+                              >
+                                <TableCell className="text-muted-foreground text-xs font-medium">
+                                  {(menuPage - 1) * menuPageSize + i + 1}
+                                </TableCell>
+                                <TableCell className="font-semibold">
+                                  {item.name}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {item.category || "—"}
+                                </TableCell>
+                                <TableCell className="text-right font-medium">
+                                  {fmtCount(
+                                    item.quantity_sold ||
+                                      item.quantitySold ||
+                                      0,
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right font-semibold">
+                                  {fmtShort(item.revenue || 0)}
+                                </TableCell>
+                                <TableCell className="text-right text-muted-foreground text-xs">
+                                  {fmtShort(item.avg_sale_price ?? 0)}
+                                </TableCell>
+                              </TableRow>
+                            ),
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </>
                 )}
                 {(menuData?.total_pages || 0) > 1 && (
@@ -3855,15 +3956,6 @@ export default function AnalyticsPage() {
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
-function SnapshotCard({
-  label,
-  value,
-  icon,
-  color,
-}: any) {
-  return <BigMetricCard label={label} value={value} icon={icon} color={color} />;
-}
-
 function BigMetricCard({
   label,
   value,
@@ -3872,21 +3964,21 @@ function BigMetricCard({
   color,
   tagColor,
   noCurrency,
+  className,
 }: any) {
   const hasTrend = trend !== undefined && trend !== null && trend !== 0;
   return (
-    <Card className="group relative overflow-hidden border-border bg-card shadow-sm transition-all duration-300 hover:shadow-md">
-      <div
-        className={cn(
-          "absolute bottom-0 left-0 w-full h-[3px] opacity-0 group-hover:opacity-100 transition-opacity",
-          color.replace("text-", "bg-"),
-        )}
-      />
-      <CardContent className="flex min-h-24 flex-col justify-between p-3 sm:h-36 sm:p-5">
+    <Card
+      className={cn(
+        "overflow-hidden border-border bg-card shadow-sm",
+        className,
+      )}
+    >
+      <CardContent className="flex min-h-[104px] flex-col justify-between p-3.5 sm:min-h-[112px] sm:p-4">
         <div className="flex justify-between items-start">
           <div
             className={cn(
-              "rounded-lg border border-border bg-muted p-1.5 transition-transform duration-300 group-hover:scale-110 sm:rounded-xl sm:p-2",
+              "rounded-lg border border-border bg-muted p-1.5 sm:p-2",
               color,
             )}
           >
@@ -3910,13 +4002,11 @@ function BigMetricCard({
           )}
         </div>
         <div>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="mb-1 text-xs font-medium text-muted-foreground">
             {label}
           </div>
-          <div className="text-lg font-semibold tracking-tight text-foreground sm:text-xl sm:font-black">
-            {noCurrency
-              ? value
-              : `Rs. ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          <div className="text-lg font-semibold tracking-tight text-foreground tabular-nums sm:text-xl">
+            {noCurrency ? value : formatCurrency(Number(value || 0))}
           </div>
         </div>
       </CardContent>
@@ -3944,7 +4034,15 @@ function FinanceMetricGroup({
 }
 
 function LiveOrderStat({ label, count, icon, color }: any) {
-  return <BigMetricCard label={label} value={count} noCurrency icon={icon} color={color} />;
+  return (
+    <BigMetricCard
+      label={label}
+      value={count}
+      noCurrency
+      icon={icon}
+      color={color}
+    />
+  );
 }
 
 function TopItemRow({
@@ -3972,7 +4070,7 @@ function TopItemRow({
           {qty} sold
         </span>
         <span className="text-sm font-bold shrink-0">
-          Rs. {Number(revenue).toLocaleString()}
+          {formatCurrency(revenue)}
         </span>
       </div>
       <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden ml-7">
@@ -4251,7 +4349,7 @@ function RevenueTrendsCard({
         })()
       : null);
 
-  const fmtShortLocal = (n: number) => `Rs. ${Number(n || 0).toLocaleString()}`;
+  const fmtShortLocal = (n: number) => formatCurrency(n);
   const fmtDayLabel = (val: string) => {
     if (!val) return val;
     try {
@@ -4359,23 +4457,24 @@ function RevenueTrendsCard({
       </CardHeader>
       {/* Big number + trend badge (like Flutter) */}
       <div className="px-4 pb-2 sm:px-6">
-        <div className="rounded-xl border border-border/60 bg-muted/25 p-3 sm:rounded-2xl sm:p-4">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-2">
-                {selected.label}
-                {activeDayBadge && (
-                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-bold border border-border/40">
-                    {activeDayBadge}
-                  </span>
-                )}
-              </p>
-              <p className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                {fmtShortLocal(displayTotal)}
-              </p>
-            </div>
-            <TrendBadge pct={changePct} />
+        <div className="flex items-end justify-between gap-4 border-b border-border/60 pb-3">
+          <div>
+            <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-2">
+              {selected.label}
+              {activeDayBadge && (
+                <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-bold border border-border/40">
+                  {activeDayBadge}
+                </span>
+              )}
+            </p>
+            <p className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+              {fmtShortLocal(displayTotal)}
+            </p>
           </div>
+          <TrendBadge
+            pct={changePct}
+            favorableWhen={metric === "expense" ? "down" : "up"}
+          />
         </div>
       </div>
       <CardContent className="px-3 pb-3 pt-1 sm:px-5 sm:pb-5">
@@ -4424,10 +4523,8 @@ function RevenueTrendsCard({
                   fontSize={9}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(v) =>
-                    `Rs.${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`
-                  }
-                  width={42}
+                  tickFormatter={(value) => formatCompactCurrency(value)}
+                  width={52}
                 />
                 <RechartsTooltip
                   contentStyle={{
@@ -4436,8 +4533,8 @@ function RevenueTrendsCard({
                     border: "none",
                     fontSize: "11px",
                   }}
-                  formatter={(value: any) => [
-                    `Rs. ${Number(value).toLocaleString()}`,
+                  formatter={(value: number | undefined) => [
+                    formatCurrency(value),
                     selected.label,
                   ]}
                   labelFormatter={fmtLabel as any}
@@ -4641,23 +4738,21 @@ function PerformanceTrendsCard({
       </CardHeader>
       {/* Big number + trend badge (like Flutter) */}
       <div className="px-4 pb-2 sm:px-6">
-        <div className="rounded-xl border border-border/60 bg-muted/25 p-3 sm:rounded-2xl sm:p-4">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-2">
-                Orders
-                {activeDayBadge && (
-                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-bold border border-border/40">
-                    {activeDayBadge}
-                  </span>
-                )}
-              </p>
-              <p className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                {Number(displayOrders).toLocaleString()} orders
-              </p>
-            </div>
-            <TrendBadge pct={changePct} />
+        <div className="flex items-end justify-between gap-4 border-b border-border/60 pb-3">
+          <div>
+            <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-2">
+              Orders
+              {activeDayBadge && (
+                <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-bold border border-border/40">
+                  {activeDayBadge}
+                </span>
+              )}
+            </p>
+            <p className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+              {Number(displayOrders).toLocaleString()} orders
+            </p>
           </div>
+          <TrendBadge pct={changePct} favorableWhen="up" />
         </div>
       </div>
       <CardContent className="px-3 pb-3 pt-1 sm:px-5 sm:pb-5">
@@ -4737,23 +4832,33 @@ function PerformanceTrendsCard({
 }
 
 // ── Trend Badge ───────────────────────────────────────────────────────────
-function TrendBadge({ pct }: { pct: number }) {
-  const positive = pct >= 0;
+function TrendBadge({
+  pct,
+  favorableWhen = "up",
+}: {
+  pct: number;
+  favorableWhen?: "up" | "down" | "neutral";
+}) {
+  const isUp = pct >= 0;
+  const positive =
+    favorableWhen === "neutral" ? null : favorableWhen === "up" ? isUp : !isUp;
   return (
     <div
       className={cn(
         "flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold border",
-        positive
-          ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-          : "bg-red-500/10 text-red-500 border-red-500/20",
+        positive === null
+          ? "bg-muted text-muted-foreground border-border"
+          : positive
+            ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+            : "bg-red-500/10 text-red-500 border-red-500/20",
       )}
     >
-      {positive ? (
+      {isUp ? (
         <ArrowUpRight className="w-3.5 h-3.5" />
       ) : (
         <ArrowDownRight className="w-3.5 h-3.5" />
       )}
-      {positive ? "+" : ""}
+      {isUp ? "+" : ""}
       {Number(pct).toFixed(2)}%
     </div>
   );
@@ -4782,8 +4887,8 @@ function TableUtilizationCard({
       </CardHeader>
       <CardContent className="space-y-4">
         {!available ? (
-          <div className="text-muted-foreground text-xs py-4 text-center">
-            Table utilization stats not available for this scope
+          <div className="rounded-lg border border-dashed border-border/70 px-3 py-3 text-xs text-muted-foreground">
+            No table-utilization data for this period.
           </div>
         ) : (
           <>
@@ -4866,7 +4971,7 @@ function TableUtilizationCard({
                         {t.orders_count || 0} orders
                       </span>
                       <span className="font-bold">
-                        Rs. {Number(t.amount || 0).toLocaleString()}
+                        {formatCurrency(t.amount || 0)}
                       </span>
                     </div>
                   </div>
@@ -5051,7 +5156,7 @@ function PaymentMethodsBreakdownCard({
                       </p>
                     </div>
                     <p className="font-bold text-sm shrink-0">
-                      Rs. {Number(amount).toLocaleString()}
+                      {formatCurrency(amount)}
                     </p>
                   </div>
                   <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
@@ -5072,7 +5177,7 @@ function PaymentMethodsBreakdownCard({
                   Total Income Captured:
                 </span>
                 <span className="font-extrabold text-foreground text-sm">
-                  Rs. {Number(total).toLocaleString()}
+                  {formatCurrency(total)}
                 </span>
               </div>
             )}
@@ -5125,7 +5230,7 @@ function PaymentMethodsBreakdownCard({
                       </p>
                     </div>
                     <p className="font-bold shrink-0">
-                      Rs. {Number(amount).toLocaleString()}
+                      {formatCurrency(amount)}
                     </p>
                   </div>
                   <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
@@ -5163,10 +5268,7 @@ function PaymentMethodsBreakdownCard({
                         </p>
                       </div>
                       <p className="font-bold text-sm shrink-0">
-                        Rs.{" "}
-                        {Number(
-                          cust.amount || cust.total_spent || 0,
-                        ).toLocaleString()}
+                        {formatCurrency(cust.amount || cust.total_spent || 0)}
                       </p>
                     </div>
                   ))}
@@ -5175,9 +5277,7 @@ function PaymentMethodsBreakdownCard({
             )}
             <div className="flex justify-between items-center bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-sm font-bold">
               <span>Total Income Captured</span>
-              <span className="text-emerald-500">
-                Rs. {Number(total).toLocaleString()}
-              </span>
+              <span className="text-emerald-500">{formatCurrency(total)}</span>
             </div>
           </div>
         </DialogContent>

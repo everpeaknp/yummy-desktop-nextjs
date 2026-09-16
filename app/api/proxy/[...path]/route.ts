@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 function getBackendBaseUrl() {
-  const explicit = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL;
+  const explicit =
+    process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL;
   if (explicit) return explicit;
   // if (process.env.NODE_ENV !== "production") {
   //   return "http://127.0.0.1:8001";
@@ -40,16 +41,22 @@ function filterResponseHeaders(upstream: Response): Headers {
   upstream.headers.forEach((value, key) => {
     if (allow.has(key.toLowerCase())) headers.set(key, value);
   });
-  
+
   // Force disable browser caching for dashboard API proxy
-  headers.set("cache-control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  headers.set(
+    "cache-control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate",
+  );
   headers.set("pragma", "no-cache");
   headers.set("expires", "0");
-  
+
   return headers;
 }
 
-async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+async function handler(
+  req: NextRequest,
+  ctx: { params: Promise<{ path: string[] }> },
+) {
   const { path } = await ctx.params;
   const backend = getBackendBaseUrl().replace(/\/+$/, "");
   const joined = path.join("/");
@@ -60,17 +67,19 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
       ? "roles/"
       : joined === "orders"
         ? "orders/"
-        : joined === "expenses"
-          ? "expenses/"
-          : joined === "restaurants"
-            ? "restaurants/"
-          : joined === "tax-config"
-            ? "tax-config/"
-          : /^users\/[^/]+\/permissions$/.test(joined)
-            ? `${joined}/`
-          : /^users\/[^/]+\/access-scopes$/.test(joined)
-            ? `${joined}/`
-          : joined;
+        : joined === "discounts"
+          ? "discounts/"
+          : joined === "expenses"
+            ? "expenses/"
+            : joined === "restaurants"
+              ? "restaurants/"
+              : joined === "tax-config"
+                ? "tax-config/"
+                : /^users\/[^/]+\/permissions$/.test(joined)
+                  ? `${joined}/`
+                  : /^users\/[^/]+\/access-scopes$/.test(joined)
+                    ? `${joined}/`
+                    : joined;
   const url = new URL(`${backend}/${normalizedPath}`);
   req.nextUrl.searchParams.forEach((v, k) => url.searchParams.append(k, v));
 
@@ -98,14 +107,19 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
     if (!upstream.ok) {
       const snippet = new TextDecoder().decode(resBody).slice(0, 1000);
       console.error(
-        `[PROXY DEBUG] upstream error method=${method} url=${url.toString()} status=${upstream.status} body=${snippet}`
+        `[PROXY DEBUG] upstream error method=${method} url=${url.toString()} status=${upstream.status} body=${snippet}`,
       );
     }
-    
-    // DEBUG LOG
-    console.log(`[PROXY DEBUG] method=${method} url=${url.toString()} status=${upstream.status}`);
 
-    return new Response(resBody, { status: upstream.status, headers: resHeaders });
+    // DEBUG LOG
+    console.log(
+      `[PROXY DEBUG] method=${method} url=${url.toString()} status=${upstream.status}`,
+    );
+
+    return new Response(resBody, {
+      status: upstream.status,
+      headers: resHeaders,
+    });
   } catch (err: any) {
     console.error("[api/proxy] Upstream fetch failed", {
       method,
@@ -125,7 +139,7 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
           "content-type": "application/json",
           "cache-control": "no-store",
         },
-      }
+      },
     );
   }
 }

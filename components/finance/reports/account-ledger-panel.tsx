@@ -53,7 +53,7 @@ import {
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
 import { useAuth } from "@/hooks/use-auth";
 import { financeReportingApi } from "@/lib/api/finance-reporting-api";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import type {
   FinanceReportingAccountLedgerRead,
   FinanceReportingLedgerLine,
@@ -77,11 +77,7 @@ import {
 import { salesReturnDetail } from "@/components/finance/transaction-detail/sales-return-detail";
 
 function money(value: number | string | null | undefined) {
-  const parsed = Number(value ?? 0);
-  return (Number.isFinite(parsed) ? parsed : 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  return formatCurrency(value);
 }
 
 function humanize(value: string | null | undefined) {
@@ -230,24 +226,19 @@ function businessTypeClass(type: BusinessTransactionType) {
   return "border-border bg-muted text-muted-foreground";
 }
 
+// Debit and credit identify accounting direction. They are deliberately
+// neutral so they are not confused with semantic success or error states.
+const ACCOUNTING_DIRECTION_AMOUNT_CLASS =
+  "text-right align-top font-mono text-xs tabular-nums text-foreground";
+
 function dateTime(value: string | null | undefined) {
   if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(value);
 }
 
 function mobileDateTime(value: string | null | undefined) {
   if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return `${parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" })} · ${parsed.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+  return formatDateTime(value);
 }
 
 function readError(error: unknown) {
@@ -670,7 +661,7 @@ export function AccountLedgerPanel({
         open={headId != null}
         onOpenChange={(open) => !open && onOpenChange(false)}
       >
-        <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl">
+        <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-none lg:max-w-4xl xl:max-w-5xl">
           {loading && !report ? (
             <div className="flex flex-1 items-center justify-center">
               <Loader2 className="h-7 w-7 animate-spin text-primary" />
@@ -695,7 +686,7 @@ export function AccountLedgerPanel({
           ) : report ? (
             <>
               {/* Header */}
-              <SheetHeader className="border-b bg-background px-4 py-3 pr-12 text-left md:hidden">
+              <SheetHeader className="border-b bg-background px-4 py-3 pr-12 text-left lg:hidden">
                 <SheetTitle className="text-lg">Account statement</SheetTitle>
                 <div className="pt-1">
                   <p className="text-base font-semibold text-foreground">
@@ -706,7 +697,7 @@ export function AccountLedgerPanel({
                   </p>
                 </div>
               </SheetHeader>
-              <SheetHeader className="hidden space-y-3 border-b bg-muted/20 px-6 py-5 text-left md:flex">
+              <SheetHeader className="hidden space-y-3 border-b bg-muted/20 px-6 py-5 text-left lg:flex">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -774,7 +765,7 @@ export function AccountLedgerPanel({
               </SheetHeader>
 
               {/* Summary */}
-              <div className="px-4 pb-3 pt-4 md:hidden">
+              <div className="px-4 pb-3 pt-4 lg:hidden">
                 <section
                   aria-label="Account balance summary"
                   className="rounded-lg border bg-muted/30 p-4"
@@ -807,7 +798,7 @@ export function AccountLedgerPanel({
                   </div>
                 </section>
               </div>
-              <div className="hidden grid-cols-2 gap-3 border-b px-6 py-5 md:grid md:grid-cols-4">
+              <div className="hidden grid-cols-2 gap-3 border-b px-6 py-5 lg:grid lg:grid-cols-4">
                 <div className="rounded-lg border bg-card p-3">
                   <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Opening
@@ -820,7 +811,7 @@ export function AccountLedgerPanel({
                   <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Current
                   </p>
-                  <p className="mt-1 font-mono text-base font-semibold tabular-nums text-primary">
+                  <p className="mt-1 font-mono text-base font-semibold tabular-nums">
                     {money(report.closing_balance)}
                   </p>
                 </div>
@@ -828,7 +819,7 @@ export function AccountLedgerPanel({
                   <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     <ArrowUpCircle className="h-3 w-3" /> Debit
                   </p>
-                  <p className="mt-1 font-mono text-base font-semibold tabular-nums text-emerald-600">
+                  <p className="mt-1 font-mono text-base font-semibold tabular-nums">
                     {money(report.total_debit)}
                   </p>
                 </div>
@@ -836,13 +827,13 @@ export function AccountLedgerPanel({
                   <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     <ArrowDownCircle className="h-3 w-3" /> Credit
                   </p>
-                  <p className="mt-1 font-mono text-base font-semibold tabular-nums text-rose-600">
+                  <p className="mt-1 font-mono text-base font-semibold tabular-nums">
                     {money(report.total_credit)}
                   </p>
                 </div>
               </div>
 
-              <div className="hidden border-b px-6 py-3 md:block">
+              <div className="hidden border-b px-6 py-3 lg:block">
                 <div className="flex items-center justify-between gap-2">
                   <Button
                     variant="ghost"
@@ -972,7 +963,7 @@ export function AccountLedgerPanel({
 
               {/* Ledger */}
               <div className="flex-1 overflow-y-auto">
-                <div className="border-t px-4 pb-3 pt-4 md:hidden">
+                <div className="border-t px-4 pb-3 pt-4 lg:hidden">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h3 className="text-base font-semibold text-foreground">
@@ -1103,7 +1094,7 @@ export function AccountLedgerPanel({
                   </div>
                 ) : (
                   <>
-                    <div className="divide-y border-t md:hidden">
+                    <div className="divide-y border-t lg:hidden">
                       {report.lines.map((line) => {
                         const label = ledgerLineLabel(line);
                         const type = businessTransactionType(line);
@@ -1200,7 +1191,7 @@ export function AccountLedgerPanel({
                               className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
                             >
                               <TableCell className="align-top text-xs">
-                                <div>{line.business_date}</div>
+                                <div>{formatDate(line.business_date)}</div>
                                 <div className="text-[11px] text-muted-foreground">
                                   {dateTime(line.occurred_at)}
                                 </div>
@@ -1234,10 +1225,14 @@ export function AccountLedgerPanel({
                                   {type}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-right align-top font-mono text-xs tabular-nums text-emerald-600">
+                              <TableCell
+                                className={ACCOUNTING_DIRECTION_AMOUNT_CLASS}
+                              >
                                 {Number(line.debit) ? money(line.debit) : "—"}
                               </TableCell>
-                              <TableCell className="text-right align-top font-mono text-xs tabular-nums text-rose-600">
+                              <TableCell
+                                className={ACCOUNTING_DIRECTION_AMOUNT_CLASS}
+                              >
                                 {Number(line.credit) ? money(line.credit) : "—"}
                               </TableCell>
                               <TableCell className="text-right align-top font-mono text-xs font-semibold tabular-nums">
@@ -1255,7 +1250,7 @@ export function AccountLedgerPanel({
               {/* Pagination */}
               {report.total > 0 && (
                 <>
-                  <div className="hidden items-center justify-between gap-2 border-t px-6 py-3 text-xs text-muted-foreground md:flex">
+                  <div className="hidden items-center justify-between gap-2 border-t px-6 py-3 text-xs text-muted-foreground lg:flex">
                     <span>
                       Showing {start}–{end} of {report.total}
                     </span>
@@ -1283,7 +1278,7 @@ export function AccountLedgerPanel({
                     </div>
                   </div>
                   {hasPreviousPage || hasNextPage ? (
-                    <div className="flex items-center justify-between gap-2 border-t px-4 py-2.5 text-xs text-muted-foreground md:hidden">
+                    <div className="flex items-center justify-between gap-2 border-t px-4 py-2.5 text-xs text-muted-foreground lg:hidden">
                       <span className="tabular-nums">
                         {start}–{end} of {report.total}
                       </span>

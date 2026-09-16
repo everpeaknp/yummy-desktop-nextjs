@@ -177,7 +177,10 @@ test("reporting screens send All as an explicit business-line scope", () => {
   const staffSource = read("app/(dashboard)/analytics/staff/page.tsx");
 
   assert.match(analyticsSource, /businessLine: queryBusinessLine \?\? "all"/);
-  assert.match(compareSource, /businessLine: showBusinessLine \? businessLine : "all"/);
+  assert.match(
+    compareSource,
+    /businessLine: showBusinessLine \? businessLine : "all"/,
+  );
   assert.match(incomeSource, /business_line: businessLine/);
   assert.doesNotMatch(incomeSource, /businessLine === 'all' \? undefined/);
   assert.match(expensesSource, /const listBusinessLineParam = businessLine;/);
@@ -186,7 +189,10 @@ test("reporting screens send All as an explicit business-line scope", () => {
   assert.match(menuSource, /businessLine: "all"/);
   assert.match(inventorySource, /businessLine: "all"/);
   for (const source of [kitchenSource, staffSource]) {
-    assert.match(source, /businessLine: showBusinessLine \? businessLine : "all"/);
+    assert.match(
+      source,
+      /businessLine: showBusinessLine \? businessLine : "all"/,
+    );
   }
 });
 
@@ -240,13 +246,17 @@ test("executive dashboard reads sectioned analytics finance metrics", () => {
 });
 
 test("operational finance reports are exposed as real UI routes", () => {
-  const tabs = read("components/finance/finance-section-tabs.tsx");
+  const directory = read("app/(dashboard)/finance/reports/page.tsx");
+  const catalog = read("components/finance/reports/finance-report-catalog.ts");
   const client = read(
     "components/finance/reports/operational-finance-report-client.tsx",
   );
 
-  assert.match(tabs, /href: "\/finance\/reports"/);
-  assert.match(tabs, /label: "Reports"/);
+  assert.match(directory, /reportGroups\.map/);
+  assert.match(directory, /Choose the business question/);
+  assert.doesNotMatch(client, /FinanceReportNavigation|showReportNavigation/);
+  assert.match(catalog, /href: "\/finance\/reports\/refunds"/);
+  assert.match(catalog, /href: "\/finance\/reports\/vat-sales"/);
 
   for (const route of [
     "app/(dashboard)/finance/reports/page.tsx",
@@ -270,10 +280,10 @@ test("operational finance reports are exposed as real UI routes", () => {
   }
 
   for (const label of [
-    "Sales Book",
+    "Sales report",
     "Invoices",
     "Payments",
-    "Refunds",
+    "Sales returns & refunds",
     "VAT Sales",
   ]) {
     assert.match(client, new RegExp(label));
@@ -402,10 +412,7 @@ test("paid purchase receipts require an explicit cash-out account, and every pur
   const source = read("app/(dashboard)/inventory/purchases/page.tsx");
 
   assert.match(source, /CashBankAccountSelect/);
-  assert.match(
-    source,
-    /receivePaymentStatus === "paid" && !receiveAccount/,
-  );
+  assert.match(source, /receivePaymentStatus === "paid" && !receiveAccount/);
   assert.match(source, /!user\?\.restaurant_id \|\| !createForm\.supplier_id/);
 });
 

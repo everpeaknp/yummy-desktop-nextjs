@@ -1,6 +1,11 @@
 /** Display formatting for day close — no financial calculations. */
 
-import type { DayCloseDetail, DayCloseListItem, DayCloseSession } from "@/types/day-close";
+import type {
+  DayCloseDetail,
+  DayCloseListItem,
+  DayCloseSession,
+} from "@/types/day-close";
+import { formatMoney } from "@/lib/presentation-format";
 
 type BackendNumeric = number | string | null | undefined;
 
@@ -14,10 +19,7 @@ function parseBackendNumber(value: BackendNumeric): number | undefined {
 export function formatDayCloseCurrency(value: BackendNumeric): string {
   const amount = parseBackendNumber(value);
   if (amount == null) return "—";
-  return `Rs. ${amount.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatMoney(amount);
 }
 
 export function formatDayCloseNumber(value: BackendNumeric): string {
@@ -29,7 +31,7 @@ export function formatDayCloseNumber(value: BackendNumeric): string {
 export function formatDayClosePeriod(
   periodStart?: string | null,
   periodEnd?: string | null,
-  timezone?: string
+  timezone?: string,
 ): string {
   if (!periodStart || !periodEnd) return "—";
   const tz = timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -143,7 +145,10 @@ export function formatDayCloseExportFilename(
 ): string {
   const line = String(detail.business_line ?? "restaurant").toLowerCase();
   const prefix = line === "hotel" ? "hotel_daybook" : "day_close";
-  const period = formatDayClosePeriod(detail.period_start_at, detail.period_end_at);
+  const period = formatDayClosePeriod(
+    detail.period_start_at,
+    detail.period_end_at,
+  );
   if (period !== "—") {
     const safe = period
       .replace(/[^\w\d-]+/g, "_")
@@ -155,7 +160,9 @@ export function formatDayCloseExportFilename(
   return `${prefix}_${detail.id}.${extension}`;
 }
 
-export function dayCloseSessionToListItem(session: DayCloseSession): DayCloseListItem {
+export function dayCloseSessionToListItem(
+  session: DayCloseSession,
+): DayCloseListItem {
   return {
     id: session.id,
     business_date: session.business_date,

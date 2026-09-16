@@ -2,6 +2,7 @@ import type {
   FinanceSalesDocument,
   FinanceSalesDocumentSettlement,
 } from "@/types/finance-sales";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 import type { TransactionDetailModel } from "./transaction-detail-sheet";
 
@@ -21,7 +22,9 @@ function amountToneForEntry(
   const type = String(entry.entry_type || "").toLowerCase();
   if (entry.entry_side === "debt") return "neutral";
   if (party === "customer") {
-    return type.includes("payment_out") || type.includes("refund") ? "out" : "in";
+    return type.includes("payment_out") || type.includes("refund")
+      ? "out"
+      : "in";
   }
   return type.includes("refund") || type.includes("received") ? "in" : "out";
 }
@@ -37,7 +40,8 @@ function allocationHistory(
       ? Number(allocation.target_entry_id) === Number(entry.id)
       : Number(allocation.source_entry_id) === Number(entry.id),
   );
-  const documentLabel = party === "customer" ? "Sales invoice" : "Purchase bill";
+  const documentLabel =
+    party === "customer" ? "Sales invoice" : "Purchase bill";
   return {
     title: isDebt ? "Settlement history" : "Applied to",
     description: isDebt
@@ -47,10 +51,14 @@ function allocationHistory(
       columns: [isDebt ? "Payment or credit" : documentLabel, "Date", "Amount"],
       rows: relevant.map((allocation) => [
         isDebt
-          ? allocation.source_reference || allocation.source_display_name || "Recorded payment"
-          : allocation.target_reference || allocation.target_display_name || documentLabel,
-        allocation.financial_date || allocation.allocation_date || "Not recorded",
-        `NPR ${value(allocation.amount).toFixed(2)}`,
+          ? allocation.source_reference ||
+            allocation.source_display_name ||
+            "Recorded payment"
+          : allocation.target_reference ||
+            allocation.target_display_name ||
+            documentLabel,
+        formatDate(allocation.financial_date || allocation.allocation_date),
+        formatCurrency(value(allocation.amount)),
       ]),
     },
     emptyText: isDebt
@@ -102,10 +110,13 @@ export function partyLedgerEntryDetail(
       {
         title: isDebt ? "Document details" : "Payment details",
         fields: [
-          { label: "Business date", value: entry.business_date || "Not recorded" },
+          { label: "Business date", value: formatDate(entry.business_date) },
           ...(!isDebt
             ? [
-                { label: "Payment method", value: readable(entry.payment_method) },
+                {
+                  label: "Payment method",
+                  value: readable(entry.payment_method),
+                },
                 {
                   label: tone === "out" ? "Paid from" : "Received into",
                   value: entry.account_name || readable(entry.account_type),
@@ -121,20 +132,24 @@ export function partyLedgerEntryDetail(
       },
       {
         title: "Settlement",
-        description: "This shows how much of this open item remains after all recorded allocations.",
+        description:
+          "This shows how much of this open item remains after all recorded allocations.",
         fields: [
           ...(value(entry.allocated_amount) > 0
             ? [
                 {
                   label: "Amount applied",
-                  value: `NPR ${value(entry.allocated_amount).toFixed(2)}`,
+                  value: formatCurrency(value(entry.allocated_amount)),
                 },
               ]
             : []),
           ...(openAmount > 0.004
-            ? [{ label: openLabel, value: `NPR ${openAmount.toFixed(2)}` }]
+            ? [{ label: openLabel, value: formatCurrency(openAmount) }]
             : []),
-          { label: "Settlement status", value: openAmount <= 0.004 ? "Fully settled" : "Open" },
+          {
+            label: "Settlement status",
+            value: openAmount <= 0.004 ? "Fully settled" : "Open",
+          },
         ],
       },
       allocationHistory(entry, party, allocations),
@@ -149,7 +164,10 @@ export function salesDocumentDetail(
   const isReturn = document.document_kind === "credit_note";
   const received = value(settlement?.amount_received);
   const balanceDue = value(settlement?.balance_due);
-  const settlementStatus = settlement?.settlement_status || document.settlement_status || document.status;
+  const settlementStatus =
+    settlement?.settlement_status ||
+    document.settlement_status ||
+    document.status;
   return {
     eyebrow: isReturn
       ? "Sales return"
@@ -177,8 +195,11 @@ export function salesDocumentDetail(
       {
         title: isReturn ? "Return overview" : "Invoice overview",
         fields: [
-          { label: "Business date", value: document.business_date },
-          { label: "Customer", value: document.customer_name || "Cash customer" },
+          { label: "Business date", value: formatDate(document.business_date) },
+          {
+            label: "Customer",
+            value: document.customer_name || "Cash customer",
+          },
           {
             label: isReturn ? "Reason" : "Notes",
             value: document.reason || document.notes || "Not recorded",
@@ -196,8 +217,8 @@ export function salesDocumentDetail(
           rows: (document.lines || []).map((line) => [
             line.item_name,
             String(line.quantity),
-            `NPR ${value(line.unit_price).toFixed(2)}`,
-            `NPR ${value(line.line_total).toFixed(2)}`,
+            formatCurrency(value(line.unit_price)),
+            formatCurrency(value(line.line_total)),
           ]),
         },
         emptyText: "No line items were returned for this document.",
@@ -212,10 +233,15 @@ export function salesDocumentDetail(
                   : "Payments recorded against this invoice.",
               fields: [
                 ...(balanceDue > 0.004
-                  ? [{ label: "Sold on credit", value: `NPR ${value(document.grand_total).toFixed(2)}` }]
+                  ? [
+                      {
+                        label: "Sold on credit",
+                        value: formatCurrency(value(document.grand_total)),
+                      },
+                    ]
                   : []),
-                { label: "Received", value: `NPR ${received.toFixed(2)}` },
-                { label: "Remaining", value: `NPR ${balanceDue.toFixed(2)}` },
+                { label: "Received", value: formatCurrency(received) },
+                { label: "Remaining", value: formatCurrency(balanceDue) },
               ],
             },
             {
@@ -226,7 +252,7 @@ export function salesDocumentDetail(
                 rows: (settlement.payments || []).map((payment) => [
                   payment.received_at,
                   readable(payment.payment_method, "Payment received"),
-                  `NPR ${value(payment.amount).toFixed(2)}`,
+                  formatCurrency(value(payment.amount)),
                 ]),
               },
               emptyText: "No payment has been received for this invoice yet.",
@@ -236,13 +262,23 @@ export function salesDocumentDetail(
       ...(value(document.discount_total) > 0 || value(document.tax_total) > 0
         ? [
             {
-            title: "Invoice totals",
+              title: "Invoice totals",
               fields: [
                 ...(value(document.discount_total) > 0
-                  ? [{ label: "Discount", value: `NPR ${value(document.discount_total).toFixed(2)}` }]
+                  ? [
+                      {
+                        label: "Discount",
+                        value: formatCurrency(value(document.discount_total)),
+                      },
+                    ]
                   : []),
                 ...(value(document.tax_total) > 0
-                  ? [{ label: "Tax", value: `NPR ${value(document.tax_total).toFixed(2)}` }]
+                  ? [
+                      {
+                        label: "Tax",
+                        value: formatCurrency(value(document.tax_total)),
+                      },
+                    ]
                   : []),
                 ...(!isReturn
                   ? [
@@ -277,39 +313,57 @@ export function purchaseDocumentDetail(
   statement?: { entries?: any[]; allocations?: any[] } | null,
   relatedReturns: any[] = [],
 ): TransactionDetailModel {
-  const lines = purchase.items || purchase.purchase_items || purchase.lines || [];
+  const lines =
+    purchase.items || purchase.purchase_items || purchase.lines || [];
   const ledgerEntry = (statement?.entries || []).find(
     (entry: any) =>
       String(entry.source_type || "").toLowerCase() === "inventory_purchase" &&
       Number(entry.source_id) === Number(purchase.id),
   );
-  const paidAmount = ledgerEntry ? value(ledgerEntry.allocated_amount) : value(purchase.paid_amount);
-  const balanceDue = ledgerEntry ? value(ledgerEntry.open_amount) : value(purchase.remaining_amount);
-  const paymentStatus = balanceDue <= 0.004
-    ? "Fully paid"
-    : paidAmount > 0
-      ? "Partially paid"
-      : "Unpaid";
+  const paidAmount = ledgerEntry
+    ? value(ledgerEntry.allocated_amount)
+    : value(purchase.paid_amount);
+  const balanceDue = ledgerEntry
+    ? value(ledgerEntry.open_amount)
+    : value(purchase.remaining_amount);
+  const paymentStatus =
+    balanceDue <= 0.004
+      ? "Fully paid"
+      : paidAmount > 0
+        ? "Partially paid"
+        : "Unpaid";
   const paymentRows = ledgerEntry
     ? (statement?.allocations || [])
-        .filter((allocation: any) => Number(allocation.target_entry_id) === Number(ledgerEntry.id))
+        .filter(
+          (allocation: any) =>
+            Number(allocation.target_entry_id) === Number(ledgerEntry.id),
+        )
         .map((allocation: any) => [
-          allocation.source_reference || allocation.source_display_name || "Supplier payment",
-          allocation.financial_date || allocation.allocation_date || "Not recorded",
-          `NPR ${value(allocation.amount).toFixed(2)}`,
+          allocation.source_reference ||
+            allocation.source_display_name ||
+            "Supplier payment",
+          formatDate(allocation.financial_date || allocation.allocation_date),
+          formatCurrency(value(allocation.amount)),
         ])
     : [];
   const returnRows = relatedReturns
-    .filter((purchaseReturn) => Number(purchaseReturn.purchase_id) === Number(purchase.id))
+    .filter(
+      (purchaseReturn) =>
+        Number(purchaseReturn.purchase_id) === Number(purchase.id),
+    )
     .map((purchaseReturn) => [
       purchaseReturn.return_number || `Purchase return #${purchaseReturn.id}`,
-      purchaseReturn.return_date || purchaseReturn.created_at || "Not recorded",
-      `NPR ${value(purchaseReturn.total_cost).toFixed(2)}`,
+      formatDate(purchaseReturn.return_date || purchaseReturn.created_at),
+      formatCurrency(value(purchaseReturn.total_cost)),
     ]);
   return {
     eyebrow: "Purchase bill",
     title: `Purchase #${purchase.id}`,
-    reference: purchase.reference_number || purchase.invoice_number || purchase.external_reference || null,
+    reference:
+      purchase.reference_number ||
+      purchase.invoice_number ||
+      purchase.external_reference ||
+      null,
     subtitle: purchase.supplier_name || "Supplier purchase",
     occurredAt: purchase.created_at || purchase.purchase_date,
     status: paymentStatus,
@@ -320,9 +374,15 @@ export function purchaseDocumentDetail(
       {
         title: "Purchase overview",
         fields: [
-          { label: "Supplier", value: purchase.supplier_name || "Not recorded" },
-          { label: "Purchase date", value: purchase.purchase_date || "Not recorded" },
-          { label: "Supplier reference", value: purchase.reference_number || "Not recorded" },
+          {
+            label: "Supplier",
+            value: purchase.supplier_name || "Not recorded",
+          },
+          { label: "Purchase date", value: formatDate(purchase.purchase_date) },
+          {
+            label: "Supplier reference",
+            value: purchase.reference_number || "Not recorded",
+          },
           {
             label: "Remarks",
             value: purchase.remarks || purchase.notes || "Not recorded",
@@ -336,13 +396,18 @@ export function purchaseDocumentDetail(
         table: {
           columns: ["Item", "Ordered", "Received", "Unit cost", "Amount"],
           rows: lines.map((line: any) => {
-            const unit = line.purchase_unit || line.item_unit || line.unit || "";
+            const unit =
+              line.purchase_unit || line.item_unit || line.unit || "";
             return [
               line.item_name || line.name || "Item",
               `${line.ordered_quantity ?? line.quantity ?? "—"}${unit ? ` ${unit}` : ""}`,
               `${line.received_quantity ?? line.quantity ?? "—"}${unit ? ` ${unit}` : ""}`,
-              `NPR ${value(line.unit_cost ?? line.rate ?? line.unit_price).toFixed(2)}`,
-              `NPR ${value(line.total_cost ?? line.line_total ?? line.amount).toFixed(2)}`,
+              formatCurrency(
+                value(line.unit_cost ?? line.rate ?? line.unit_price),
+              ),
+              formatCurrency(
+                value(line.total_cost ?? line.line_total ?? line.amount),
+              ),
             ];
           }),
         },
@@ -352,8 +417,8 @@ export function purchaseDocumentDetail(
         title: "Settlement",
         description: "Payments recorded against this supplier bill.",
         fields: [
-          { label: "Paid", value: `NPR ${paidAmount.toFixed(2)}` },
-          { label: "Balance due", value: `NPR ${balanceDue.toFixed(2)}` },
+          { label: "Paid", value: formatCurrency(paidAmount) },
+          { label: "Balance due", value: formatCurrency(balanceDue) },
           { label: "Payment status", value: paymentStatus },
         ],
       },
@@ -367,25 +432,37 @@ export function purchaseDocumentDetail(
         emptyText: "No payment has been applied to this purchase yet.",
       },
       ...(returnRows.length
-        ? [{
-            title: "Related returns",
-            table: {
-              columns: ["Return", "Date", "Amount"],
-              rows: returnRows,
+        ? [
+            {
+              title: "Related returns",
+              table: {
+                columns: ["Return", "Date", "Amount"],
+                rows: returnRows,
+              },
             },
-          }]
+          ]
         : []),
     ],
   };
 }
 
-export function purchaseReturnDetail(purchaseReturn: any): TransactionDetailModel {
-  const lines = purchaseReturn.items || purchaseReturn.return_items || purchaseReturn.lines || [];
+export function purchaseReturnDetail(
+  purchaseReturn: any,
+): TransactionDetailModel {
+  const lines =
+    purchaseReturn.items ||
+    purchaseReturn.return_items ||
+    purchaseReturn.lines ||
+    [];
   const refundReceived = purchaseReturn.settlement_type === "refund_received";
   return {
     eyebrow: "Purchase return",
-    title: purchaseReturn.return_number || `Purchase return #${purchaseReturn.id}`,
-    reference: purchaseReturn.reference_number || purchaseReturn.purchase_reference || null,
+    title:
+      purchaseReturn.return_number || `Purchase return #${purchaseReturn.id}`,
+    reference:
+      purchaseReturn.reference_number ||
+      purchaseReturn.purchase_reference ||
+      null,
     subtitle: refundReceived
       ? "Returned stock and refund received details."
       : "Returned stock and supplier credit details.",
@@ -398,9 +475,25 @@ export function purchaseReturnDetail(purchaseReturn: any): TransactionDetailMode
       {
         title: "Return overview",
         fields: [
-          { label: "Supplier", value: purchaseReturn.supplier_name || "Not recorded" },
-          { label: "Original purchase", value: purchaseReturn.purchase_reference || (purchaseReturn.purchase_id ? "Linked purchase" : "Not recorded") },
-          { label: "Reason", value: readable(purchaseReturn.reason_code || purchaseReturn.reason || purchaseReturn.notes), fullWidth: true },
+          {
+            label: "Supplier",
+            value: purchaseReturn.supplier_name || "Not recorded",
+          },
+          {
+            label: "Original purchase",
+            value:
+              purchaseReturn.purchase_reference ||
+              (purchaseReturn.purchase_id ? "Linked purchase" : "Not recorded"),
+          },
+          {
+            label: "Reason",
+            value: readable(
+              purchaseReturn.reason_code ||
+                purchaseReturn.reason ||
+                purchaseReturn.notes,
+            ),
+            fullWidth: true,
+          },
         ],
       },
       {
@@ -410,11 +503,16 @@ export function purchaseReturnDetail(purchaseReturn: any): TransactionDetailMode
           rows: lines.map((line: any) => [
             line.item_name || line.name || "Item",
             `${line.quantity ?? "—"}${line.unit ? ` ${line.unit}` : ""}`,
-            `NPR ${value(line.unit_cost ?? line.rate ?? line.unit_price).toFixed(2)}`,
-            `NPR ${value(line.total_cost ?? line.line_total ?? line.amount).toFixed(2)}`,
+            formatCurrency(
+              value(line.unit_cost ?? line.rate ?? line.unit_price),
+            ),
+            formatCurrency(
+              value(line.total_cost ?? line.line_total ?? line.amount),
+            ),
           ]),
         },
-        emptyText: "No returned-item detail was returned for this purchase return.",
+        emptyText:
+          "No returned-item detail was returned for this purchase return.",
       },
       {
         title: "Settlement",
@@ -422,9 +520,17 @@ export function purchaseReturnDetail(purchaseReturn: any): TransactionDetailMode
           ? "The supplier refunded this purchase return."
           : "This return was recorded as supplier credit.",
         fields: [
-          { label: "Settlement type", value: readable(purchaseReturn.settlement_type) },
+          {
+            label: "Settlement type",
+            value: readable(purchaseReturn.settlement_type),
+          },
           ...(refundReceived
-            ? [{ label: "Received into", value: readable(purchaseReturn.account_type) }]
+            ? [
+                {
+                  label: "Received into",
+                  value: readable(purchaseReturn.account_type),
+                },
+              ]
             : []),
         ],
       },
@@ -440,8 +546,10 @@ export function settlementAllocationDetail(
   return {
     eyebrow: `${isCustomer ? "Customer" : "Supplier"} settlement`,
     title: "Payment allocation",
-    reference: allocation.source_reference || allocation.target_reference || null,
-    subtitle: "A recorded allocation between a payment or credit and an open document.",
+    reference:
+      allocation.source_reference || allocation.target_reference || null,
+    subtitle:
+      "A recorded allocation between a payment or credit and an open document.",
     occurredAt: allocation.created_at || allocation.financial_date,
     status: allocation.status || "posted",
     amount: allocation.amount,
@@ -451,8 +559,22 @@ export function settlementAllocationDetail(
       {
         title: "Allocation overview",
         fields: [
-          { label: isCustomer ? "Payment or credit" : "Payment or supplier credit", value: allocation.source_reference || allocation.source_display_name || "Recorded settlement" },
-          { label: isCustomer ? "Sales invoice" : "Purchase bill", value: allocation.target_reference || allocation.target_display_name || "Open document" },
+          {
+            label: isCustomer
+              ? "Payment or credit"
+              : "Payment or supplier credit",
+            value:
+              allocation.source_reference ||
+              allocation.source_display_name ||
+              "Recorded settlement",
+          },
+          {
+            label: isCustomer ? "Sales invoice" : "Purchase bill",
+            value:
+              allocation.target_reference ||
+              allocation.target_display_name ||
+              "Open document",
+          },
         ],
       },
     ],

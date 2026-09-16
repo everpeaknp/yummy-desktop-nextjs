@@ -19,6 +19,7 @@ export interface ResponsiveDataViewProps<T> {
   className?: string;
   mobileClassName?: string;
   tableMinWidth?: string;
+  tableBreakpoint?: "tablet" | "desktop";
   onItemClick?: (item: T) => void;
   getItemLabel?: (item: T) => string;
   embedded?: boolean;
@@ -33,28 +34,49 @@ export function ResponsiveDataView<T>({
   className,
   mobileClassName,
   tableMinWidth = "720px",
+  tableBreakpoint = "desktop",
   onItemClick,
   getItemLabel,
   embedded = false,
 }: ResponsiveDataViewProps<T>) {
   if (data.length === 0) return <>{emptyState ?? null}</>;
 
+  const tableClasses = tableBreakpoint === "tablet" ? "md:block" : "lg:block";
+  const mobileClasses =
+    tableBreakpoint === "tablet" ? "md:hidden" : "lg:hidden";
+
   return (
     <div className={cn("min-w-0", className)}>
-      <div className={cn("space-y-2 md:hidden", mobileClassName)}>
-        {data.map((item) => <React.Fragment key={getKey(item)}>{renderMobileItem(item)}</React.Fragment>)}
+      <div className={cn("space-y-2", mobileClasses, mobileClassName)}>
+        {data.map((item) => (
+          <React.Fragment key={getKey(item)}>
+            {renderMobileItem(item)}
+          </React.Fragment>
+        ))}
       </div>
       <div
         className={cn(
-          "hidden max-w-full overflow-x-auto bg-card md:block",
-          !embedded && "rounded-2xl border border-border"
+          "hidden max-w-full overflow-x-auto bg-card",
+          tableClasses,
+          !embedded && "rounded-2xl border border-border",
         )}
       >
-        <table className="w-full border-collapse text-sm" style={{ minWidth: tableMinWidth }}>
+        <table
+          className="w-full border-collapse text-sm"
+          style={{ minWidth: tableMinWidth }}
+        >
           <thead className="bg-muted/70 text-left text-xs font-medium text-muted-foreground">
             <tr>
               {columns.map((column) => (
-                <th key={column.key} className={cn("whitespace-nowrap px-4 py-3", column.headerClassName)}>{column.header}</th>
+                <th
+                  key={column.key}
+                  className={cn(
+                    "whitespace-nowrap px-4 py-3",
+                    column.headerClassName,
+                  )}
+                >
+                  {column.header}
+                </th>
               ))}
             </tr>
           </thead>
@@ -78,11 +100,17 @@ export function ResponsiveDataView<T>({
                 }
                 className={cn(
                   "transition-colors hover:bg-muted/40",
-                  onItemClick && "cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none"
+                  onItemClick &&
+                    "cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none",
                 )}
               >
                 {columns.map((column) => (
-                  <td key={column.key} className={cn("px-4 py-3 align-middle", column.className)}>{column.cell(item)}</td>
+                  <td
+                    key={column.key}
+                    className={cn("px-4 py-3 align-middle", column.className)}
+                  >
+                    {column.cell(item)}
+                  </td>
                 ))}
               </tr>
             ))}

@@ -2,7 +2,13 @@
 
 import * as React from "react";
 
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -47,19 +53,33 @@ export function PageTabs({
   ariaLabel = "Page sections",
   className,
 }: PageTabsProps) {
-  const equalStyle = mobileMode === "equal" ? { gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` } : undefined;
+  const equalStyle =
+    mobileMode === "equal"
+      ? { gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }
+      : undefined;
   const denseEqualTabs = mobileMode === "equal" && items.length > 4;
 
   return (
-    <Tabs value={value} onValueChange={onValueChange} className={cn("min-w-0", className)}>
+    <Tabs
+      value={value}
+      onValueChange={onValueChange}
+      className={cn("min-w-0", className)}
+    >
       {mobileMode === "select" ? (
         <Select value={value} onValueChange={onValueChange}>
-          <SelectTrigger aria-label={ariaLabel} className="h-11 w-full rounded-xl border md:hidden">
+          <SelectTrigger
+            aria-label={ariaLabel}
+            className="h-11 w-full rounded-xl border md:hidden"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {items.map((item) => (
-              <SelectItem key={item.value} value={item.value} disabled={item.disabled}>
+              <SelectItem
+                key={item.value}
+                value={item.value}
+                disabled={item.disabled}
+              >
                 {item.mobileLabel ?? item.label}
               </SelectItem>
             ))}
@@ -71,7 +91,8 @@ export function PageTabs({
         className={cn(
           "min-w-0",
           mobileMode === "select" && "hidden md:block",
-          mobileMode === "scroll" && "overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          mobileMode === "scroll" &&
+            "overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         )}
       >
         <TabsList
@@ -79,7 +100,9 @@ export function PageTabs({
           style={equalStyle}
           className={cn(
             "h-auto min-h-11 rounded-xl bg-muted/70 p-1",
-            mobileMode === "equal" ? "grid w-full" : "inline-flex w-max min-w-full justify-start md:w-auto md:min-w-0"
+            mobileMode === "equal"
+              ? "grid w-full"
+              : "inline-flex w-max min-w-full justify-start md:w-auto md:min-w-0",
           )}
         >
           {items.map((item) => (
@@ -88,8 +111,9 @@ export function PageTabs({
               value={item.value}
               disabled={item.disabled}
               className={cn(
-                "group min-h-9 min-w-0 gap-1.5 rounded-lg px-3 text-xs shadow-none data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm",
-                denseEqualTabs && "gap-0.5 px-1 text-[10px] sm:gap-1.5 sm:px-3 sm:text-sm",
+                "group min-h-11 min-w-0 gap-1.5 rounded-lg px-3 text-xs shadow-none data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm",
+                denseEqualTabs &&
+                  "gap-0.5 px-1 text-[10px] sm:gap-1.5 sm:px-3 sm:text-sm",
               )}
             >
               <TabLabel item={item} />

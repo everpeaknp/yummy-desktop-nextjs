@@ -13,6 +13,7 @@ import {
   ChefHat,
   DollarSign,
   ArrowLeft,
+  Settings2,
   Zap,
   Download,
 } from "lucide-react";
@@ -24,6 +25,11 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useEffect, useState, useCallback } from "react";
 import { useSidebarItems } from "@/hooks/use-sidebar-items";
+import {
+  getMobileRoutePresentation,
+  isMobileSecondaryModuleRoute,
+  shouldMobileBottomNavBeVisible,
+} from "@/lib/mobile-module-navigation";
 import { cn, getImageUrl } from "@/lib/utils";
 import {
   useNotifications,
@@ -36,6 +42,7 @@ import { hasPermission } from "@/lib/role-permissions";
 
 import { memo } from "react";
 import { MOBILE_APP_BAR_TITLE_EVENT } from "@/components/layout/mobile-app-bar-title";
+import { MobileAppBar } from "@/components/patterns/navigation/mobile-app-bar";
 
 function formatRoleLabel(role: string) {
   return role.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
@@ -77,14 +84,15 @@ function mobileAppBarTitle(pathname: string) {
     ["/orders/history", "Order history"],
     ["/orders", "Orders"],
     ["/analytics", "Analytics"],
-    ["/manage/additional-settings", "Additional settings"],
+    ["/manage/additional-settings", "Settings"],
     ["/manage/audit-logs", "Audit logs"],
     ["/manage/receipt-designer", "Receipt designer"],
     ["/manage/kot-designer", "KOT designer"],
     ["/manage/taxes", "Taxes & fees"],
-    ["/manage/settings", "System settings"],
+    ["/manage/settings", "Restaurant operations"],
     ["/manage/roles", "Roles"],
-    ["/manage/profile", "Profile"],
+    ["/manage/profile", "Business profile"],
+    ["/settings", "Settings"],
     ["/manage", "Manage"],
     ["/finance/purchases/returns", "Purchase returns"],
     ["/finance/purchases", "Purchases"],
@@ -159,11 +167,19 @@ function mobileAppBarBackHref(pathname: string) {
   if (/^\/orders\/(?:new|history|\d+)/.test(pathname)) return "/orders";
 
   if (pathname.startsWith("/inventory/purchases")) return "/inventory";
+  if (
+    pathname.startsWith("/menu/items") ||
+    pathname.startsWith("/menu/categories") ||
+    pathname.startsWith("/menu/modifiers") ||
+    pathname.startsWith("/discounts")
+  )
+    return "/manage";
   if (pathname.startsWith("/finance/reports/")) return "/finance/reports";
   if (pathname.startsWith("/finance/sales/")) return "/finance/sales";
   if (pathname.startsWith("/finance/purchases/")) return "/finance/purchases";
   if (pathname.startsWith("/finance/accounting/")) return "/finance/reports";
   if (pathname === "/finance/heads") return "/finance/setup";
+  if (pathname === "/finance") return null;
   if (pathname.startsWith("/finance/")) return "/finance";
   if (pathname.startsWith("/manage/") && pathname !== "/manage/profile")
     return "/manage/profile";
@@ -175,13 +191,7 @@ function mobileAppBarBackHref(pathname: string) {
 }
 
 function hasMobileAppBarBack(pathname: string) {
-  return ![
-    "/dashboard",
-    "/orders",
-    "/analytics",
-    "/manage",
-    "/manage/profile",
-  ].includes(pathname);
+  return !shouldMobileBottomNavBeVisible(pathname);
 }
 
 const LiveStats = memo(function LiveStats() {
@@ -243,7 +253,7 @@ const LiveStats = memo(function LiveStats() {
 
   if (!stats) return null;
 
-  const currency = "Rs.";
+  const currency = restaurant?.currency || user?.currency || "NPR";
   const formatSales = (n: number) => {
     if (n >= 100000) return `${(n / 1000).toFixed(0)}k`;
     if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
@@ -251,7 +261,7 @@ const LiveStats = memo(function LiveStats() {
   };
 
   return (
-    <div className="hidden md:flex items-center gap-2">
+    <div className="hidden items-center gap-2 lg:flex">
       <Link
         href="/orders"
         data-tour="navbar-stat-orders"
@@ -345,9 +355,10 @@ export const Header = memo(function Header() {
   const appBarTitle =
     pathname === "/dashboard"
       ? restaurant?.name || "Yummy"
-      : mobileAppBarTitle(pathname);
+      : getMobileRoutePresentation(pathname).title;
   const isDashboard = pathname === "/dashboard";
   const showMobileBack = hasMobileAppBarBack(pathname);
+  const mobilePresentation = getMobileRoutePresentation(pathname);
   const [contextualTitle, setContextualTitle] = useState<string | null>(null);
 
   const [isFromManage, setIsFromManage] = useState(false);
@@ -403,7 +414,7 @@ export const Header = memo(function Header() {
       {isDashboard ? (
         <Link
           href="/dashboard"
-          className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-foreground md:hidden"
+          className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-foreground lg:hidden"
         >
           <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-primary/10 text-primary">
             {restaurant?.profile_picture ? (
@@ -420,25 +431,45 @@ export const Header = memo(function Header() {
           </span>
           <span className="truncate">{displayedAppBarTitle}</span>
         </Link>
-      ) : showMobileBack ? (
-        <div className="flex min-w-0 items-center gap-1 md:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="-ml-2 h-9 w-9 shrink-0 rounded-lg"
-            onClick={() => router.push(mobileAppBarBackHref(pathname))}
-          >
-            <ArrowLeft className="h-5 w-5" />
-            <span className="sr-only">Back</span>
-          </Button>
-          <p className="min-w-0 truncate text-sm font-semibold tracking-tight text-foreground">
-            {displayedAppBarTitle}
-          </p>
-        </div>
       ) : (
-        <p className="min-w-0 truncate text-sm font-semibold tracking-tight text-foreground md:hidden">
-          {displayedAppBarTitle}
-        </p>
+        <MobileAppBar
+          title={displayedAppBarTitle}
+          navigation={mobilePresentation.navigationLevel}
+          onBack={
+            showMobileBack
+              ? () => {
+                  if (pathname === "/settings") {
+                    router.push("/manage");
+                    return;
+                  }
+                  if (isMobileSecondaryModuleRoute(pathname || "")) {
+                    router.back();
+                    return;
+                  }
+                  const href = mobileAppBarBackHref(pathname);
+                  if (href) router.push(href);
+                  else router.back();
+                }
+              : undefined
+          }
+          actions={
+            pathname === "/cash-drawers" ? (
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 rounded-xl md:hidden"
+                aria-label="Configure drawers"
+                title="Configure drawers"
+              >
+                <Link href="/finance/operations?tab=cash-drawers">
+                  <Settings2 className="h-5 w-5" aria-hidden="true" />
+                </Link>
+              </Button>
+            ) : null
+          }
+          className="min-w-0"
+        />
       )}
 
       {/* Live stats — active orders, KOT pending, today's sales */}

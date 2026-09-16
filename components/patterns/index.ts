@@ -3,10 +3,16 @@ export * from "./controls/filter-bar";
 export * from "./controls/filter-chip";
 export * from "./controls/search-field";
 export * from "./data/data-list";
+export * from "./data/detail-grid";
+export * from "./data/metric-grid";
 export * from "./data/responsive-data-view";
 export * from "./feedback/feedback-state";
+export * from "./feedback/status-badge";
+export * from "./forms/form-section";
+export * from "./navigation/mobile-app-bar";
 export * from "./navigation/page-tabs";
+export * from "./navigation/segmented-control";
 export * from "./page/app-page";
 export * from "./page/page-header";
 export * from "./page/page-section";
-
+export * from "./surfaces/surface";

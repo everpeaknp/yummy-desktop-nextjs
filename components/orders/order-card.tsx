@@ -1,41 +1,112 @@
 import { Badge } from "@/components/ui/badge";
 import { Order } from "@/types/order";
-import { Clock, Utensils, MapPin, ShoppingBag, Zap, Calendar, Truck, User, BedDouble, CheckCircle2 } from "lucide-react";
+import {
+  Clock,
+  Utensils,
+  MapPin,
+  ShoppingBag,
+  Zap,
+  Calendar,
+  Truck,
+  User,
+  BedDouble,
+  CheckCircle2,
+} from "lucide-react";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 
 interface OrderCardProps {
   order: Order;
   onClick?: () => void;
 }
 
-const statusStyles: Record<string, { badge: string; border: string; dot: string }> = {
-  pending: { badge: "bg-blue-50 text-blue-700 border-blue-200", border: "border-l-blue-500", dot: "bg-blue-500" },
-  confirmed: { badge: "bg-blue-50 text-blue-700 border-blue-200", border: "border-l-blue-500", dot: "bg-blue-500" },
-  running: { badge: "bg-blue-50 text-blue-700 border-blue-200", border: "border-l-blue-500", dot: "bg-blue-500" },
-  scheduled: { badge: "bg-indigo-50 text-indigo-700 border-indigo-200", border: "border-l-indigo-500", dot: "bg-indigo-500" },
-  requested: { badge: "bg-indigo-50 text-indigo-700 border-indigo-200", border: "border-l-indigo-500", dot: "bg-indigo-500" },
-  preparing: { badge: "bg-amber-50 text-amber-700 border-amber-200", border: "border-l-amber-500", dot: "bg-amber-500" },
-  ready: { badge: "bg-emerald-50 text-emerald-700 border-emerald-200", border: "border-l-emerald-500", dot: "bg-emerald-500" },
-  ready_for_pickup: { badge: "bg-emerald-50 text-emerald-700 border-emerald-200", border: "border-l-emerald-500", dot: "bg-emerald-500" },
-  out_for_delivery: { badge: "bg-amber-50 text-amber-700 border-amber-200", border: "border-l-amber-500", dot: "bg-amber-500" },
-  completed: { badge: "bg-emerald-50 text-emerald-700 border-emerald-200", border: "border-l-emerald-500", dot: "bg-emerald-500" },
-  canceled: { badge: "bg-slate-50 text-slate-600 border-slate-200", border: "border-l-slate-400", dot: "bg-slate-400" },
-  cancelled: { badge: "bg-slate-50 text-slate-600 border-slate-200", border: "border-l-slate-400", dot: "bg-slate-400" },
+const statusStyles: Record<
+  string,
+  { badge: string; border: string; dot: string }
+> = {
+  pending: {
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    border: "border-l-blue-500",
+    dot: "bg-blue-500",
+  },
+  confirmed: {
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    border: "border-l-blue-500",
+    dot: "bg-blue-500",
+  },
+  running: {
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    border: "border-l-blue-500",
+    dot: "bg-blue-500",
+  },
+  scheduled: {
+    badge: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    border: "border-l-indigo-500",
+    dot: "bg-indigo-500",
+  },
+  requested: {
+    badge: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    border: "border-l-indigo-500",
+    dot: "bg-indigo-500",
+  },
+  preparing: {
+    badge: "bg-amber-50 text-amber-700 border-amber-200",
+    border: "border-l-amber-500",
+    dot: "bg-amber-500",
+  },
+  ready: {
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    border: "border-l-emerald-500",
+    dot: "bg-emerald-500",
+  },
+  ready_for_pickup: {
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    border: "border-l-emerald-500",
+    dot: "bg-emerald-500",
+  },
+  out_for_delivery: {
+    badge: "bg-amber-50 text-amber-700 border-amber-200",
+    border: "border-l-amber-500",
+    dot: "bg-amber-500",
+  },
+  completed: {
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    border: "border-l-emerald-500",
+    dot: "bg-emerald-500",
+  },
+  canceled: {
+    badge: "bg-slate-50 text-slate-600 border-slate-200",
+    border: "border-l-slate-400",
+    dot: "bg-slate-400",
+  },
+  cancelled: {
+    badge: "bg-slate-50 text-slate-600 border-slate-200",
+    border: "border-l-slate-400",
+    dot: "bg-slate-400",
+  },
 };
 
-export const getStatusColor = (status: string) => statusStyles[String(status).toLowerCase()]?.badge || "bg-muted text-muted-foreground border-border";
+export const getStatusColor = (status: string) =>
+  statusStyles[String(status).toLowerCase()]?.badge ||
+  "bg-muted text-muted-foreground border-border";
 export const getStatusBadgeColor = getStatusColor;
 
 export const getChannelIcon = (channel: string) => {
   switch (String(channel).toLowerCase()) {
-    case "table": return MapPin;
-    case "pickup": return ShoppingBag;
-    case "quick_billing": return Zap;
-    case "delivery": return Truck;
-    case "reservation": return Calendar;
-    case "room_service": return BedDouble;
-    default: return Utensils;
+    case "table":
+      return MapPin;
+    case "pickup":
+      return ShoppingBag;
+    case "quick_billing":
+      return Zap;
+    case "delivery":
+      return Truck;
+    case "reservation":
+      return Calendar;
+    case "room_service":
+      return BedDouble;
+    default:
+      return Utensils;
   }
 };
 
@@ -44,7 +115,10 @@ function elapsedLabel(raw: string | undefined, terminal: boolean) {
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return "";
   const end = terminal ? date : new Date();
-  const minutes = Math.max(0, Math.floor((end.getTime() - date.getTime()) / 60000));
+  const minutes = Math.max(
+    0,
+    Math.floor((end.getTime() - date.getTime()) / 60000),
+  );
   if (minutes < 1) return "now";
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
@@ -53,13 +127,16 @@ function elapsedLabel(raw: string | undefined, terminal: boolean) {
 }
 
 export function OrderCard({ order, onClick }: OrderCardProps) {
-  const currency = useRestaurant((s) => s.restaurant?.currency || "Rs.");
+  const currency = useRestaurant((s) => s.restaurant?.currency || "NPR");
   const status = String(order.status || "pending").toLowerCase();
   const style = statusStyles[status] || statusStyles.pending;
   const ChannelIcon = getChannelIcon(order.channel);
-  const terminal = status === "completed" || status === "canceled" || status === "cancelled";
+  const terminal =
+    status === "completed" || status === "canceled" || status === "cancelled";
   const rawOrder = order as any;
-  const timestamp = terminal ? rawOrder.completed_at || rawOrder.canceled_at || order.updated_at : rawOrder.started_at || order.created_at;
+  const timestamp = terminal
+    ? rawOrder.completed_at || rawOrder.canceled_at || order.updated_at
+    : rawOrder.started_at || order.created_at;
   const title = order.table_name
     ? order.table_name
     : order.channel === "room_service"
@@ -67,8 +144,13 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
       : `Order #${order.restaurant_order_id || order.id}`;
   const orderNumber = order.restaurant_order_id || order.id;
   const titleIsOrderNumber = title === `Order #${orderNumber}`;
-  const channelLabel = order.channel === "table" ? "Dine-in" : String(order.channel || "").replace(/_/g, " ");
-  const customer = order.customer_name || (order.channel === "table" ? "Walk-in guest" : "Walk-in");
+  const channelLabel =
+    order.channel === "table"
+      ? "Dine-in"
+      : String(order.channel || "").replace(/_/g, " ");
+  const customer =
+    order.customer_name ||
+    (order.channel === "table" ? "Walk-in guest" : "Walk-in");
   const items = Array.isArray(order.items) ? order.items : [];
   // Legacy responses use `quantity`; current responses use `qty`.
   const itemQuantity = (item: any) => {
@@ -76,20 +158,30 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
     return Number.isFinite(value) && value > 0 ? value : 0;
   };
   const itemLineCount = items.length;
-  const itemQuantityTotal = items.reduce((sum, item) => sum + itemQuantity(item), 0);
+  const itemQuantityTotal = items.reduce(
+    (sum, item) => sum + itemQuantity(item),
+    0,
+  );
   const readyCount = items.reduce((sum, item) => {
     const quantity = itemQuantity(item);
     const readyValue = Number(
       (item as any).qty_ready ??
-      (item as any).fulfilled_qty ??
-      (((item as any).status || "").toLowerCase() === "ready" ? quantity : 0),
+        (item as any).fulfilled_qty ??
+        (((item as any).status || "").toLowerCase() === "ready" ? quantity : 0),
     );
     const ready = Number.isFinite(readyValue) ? readyValue : 0;
     return sum + Math.min(quantity, Math.max(0, ready));
   }, 0);
-  const paid = (order.payments || []).filter((p) => p.status !== "failed" && p.status !== "refunded").reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const paid = (order.payments || [])
+    .filter((p) => p.status !== "failed" && p.status !== "refunded")
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
   const balance = Math.max(0, Number(order.grand_total || 0) - paid);
-  const displayItems = items.filter((item) => !String(item.name_snapshot || item.item_name || "").toLowerCase().includes("room charge"));
+  const displayItems = items.filter(
+    (item) =>
+      !String(item.name_snapshot || item.item_name || "")
+        .toLowerCase()
+        .includes("room charge"),
+  );
   const previewItems = displayItems.slice(0, 5);
 
   return (
@@ -97,7 +189,9 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
       onClick={onClick}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
-      onKeyDown={(event) => { if (onClick && (event.key === "Enter" || event.key === " ")) onClick(); }}
+      onKeyDown={(event) => {
+        if (onClick && (event.key === "Enter" || event.key === " ")) onClick();
+      }}
       className={cn(
         "group relative min-h-[214px] overflow-hidden rounded-xl border border-border/70 border-l-[3px] bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg sm:h-[340px] sm:rounded-2xl sm:border-l-4",
         onClick && "cursor-pointer",
@@ -108,16 +202,34 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="mb-1 flex items-center gap-1.5 sm:mb-1.5 sm:gap-2">
-              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full sm:h-2 sm:w-2", style.dot)} />
-              <Badge variant="outline" className={cn("h-5 rounded-md px-1.5 text-[9px] font-bold uppercase tracking-wide sm:h-6 sm:px-2 sm:text-[10px]", style.badge)}>
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full sm:h-2 sm:w-2",
+                  style.dot,
+                )}
+              />
+              <Badge
+                variant="outline"
+                className={cn(
+                  "h-5 rounded-md px-1.5 text-[9px] font-bold uppercase tracking-wide sm:h-6 sm:px-2 sm:text-[10px]",
+                  style.badge,
+                )}
+              >
                 {status === "requested" ? "Pending" : status}
               </Badge>
               <span className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground sm:text-xs">
-                <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> {elapsedLabel(timestamp, terminal)}
+                <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{" "}
+                {elapsedLabel(timestamp, terminal)}
               </span>
             </div>
-            <h3 className="truncate text-[15px] font-bold leading-5 text-foreground sm:text-base">{title}</h3>
-            {!titleIsOrderNumber && <p className="mt-0.5 text-[10px] font-medium text-muted-foreground sm:text-xs">Order #{orderNumber}</p>}
+            <h3 className="truncate text-[15px] font-bold leading-5 text-foreground sm:text-base">
+              {title}
+            </h3>
+            {!titleIsOrderNumber && (
+              <p className="mt-0.5 text-[10px] font-medium text-muted-foreground sm:text-xs">
+                Order #{orderNumber}
+              </p>
+            )}
           </div>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground sm:h-9 sm:w-9 sm:rounded-xl">
             <ChannelIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -125,35 +237,68 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
         </div>
 
         <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground sm:mt-3 sm:gap-2 sm:text-xs">
-          <User className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> <span className="max-w-[55%] truncate">{customer}</span>
+          <User className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{" "}
+          <span className="max-w-[55%] truncate">{customer}</span>
           <span className="text-border">•</span>
           <span className="truncate capitalize">{channelLabel}</span>
         </div>
 
         <div className="mt-2 flex h-[84px] shrink-0 flex-col overflow-hidden border-t border-dashed border-border/70 pt-2 sm:mt-3 sm:h-[128px] sm:pt-3">
           <div className="space-y-0.5 sm:space-y-1">
-          {previewItems.length ? previewItems.map((item) => (
-            <div key={item.id} className="flex items-center justify-between gap-1 text-[11px] leading-[14px] sm:gap-2 sm:text-[13px] sm:leading-4">
-              <span className="truncate text-foreground">{item.name_snapshot || item.item_name || "Item"}</span>
-              <span className="shrink-0 font-semibold text-muted-foreground">×{itemQuantity(item)}</span>
-            </div>
-          )) : <span className="text-xs text-muted-foreground">No items recorded</span>}
+            {previewItems.length ? (
+              previewItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between gap-1 text-[11px] leading-[14px] sm:gap-2 sm:text-[13px] sm:leading-4"
+                >
+                  <span className="truncate text-foreground">
+                    {item.name_snapshot || item.item_name || "Item"}
+                  </span>
+                  <span className="shrink-0 font-semibold text-muted-foreground">
+                    ×{itemQuantity(item)}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                No items recorded
+              </span>
+            )}
           </div>
         </div>
 
         {itemQuantityTotal > 0 && !terminal && (
           <div className="mt-1 flex items-center justify-between text-[10px] font-semibold sm:text-xs">
-            <span className={cn("flex items-center gap-1", readyCount === itemQuantityTotal ? "text-emerald-600" : "text-blue-600")}>
-              {readyCount === itemQuantityTotal && <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />}
+            <span
+              className={cn(
+                "flex items-center gap-1",
+                readyCount === itemQuantityTotal
+                  ? "text-emerald-600"
+                  : "text-blue-600",
+              )}
+            >
+              {readyCount === itemQuantityTotal && (
+                <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+              )}
               {readyCount}/{itemQuantityTotal} ready
             </span>
-            <span className={balance > 0 ? "text-muted-foreground" : "text-emerald-600"}>{balance > 0 ? "Unpaid" : "Paid"}</span>
+            <span
+              className={
+                balance > 0 ? "text-muted-foreground" : "text-emerald-600"
+              }
+            >
+              {balance > 0 ? "Unpaid" : "Paid"}
+            </span>
           </div>
         )}
 
         <div className="mt-auto flex items-center justify-between border-t border-border/70 pt-1.5 sm:mt-2 sm:pt-2">
-          <span className="text-[10px] font-semibold text-muted-foreground sm:text-xs">{itemLineCount} item{itemLineCount === 1 ? "" : "s"}</span>
-          <span className="text-sm font-black text-foreground sm:text-base">{currency} {Number(order.grand_total || 0).toLocaleString()}</span>
+          <span className="text-[10px] font-semibold text-muted-foreground sm:text-xs">
+            {itemLineCount} item{itemLineCount === 1 ? "" : "s"}
+          </span>
+          <span className="text-sm font-black tabular-nums text-foreground sm:text-base">
+            {formatCurrency(order.grand_total, currency)}
+          </span>
         </div>
       </div>
     </article>

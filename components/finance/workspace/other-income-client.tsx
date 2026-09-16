@@ -22,6 +22,7 @@ import {
 } from "@/components/finance/cash-bank-account-select";
 import { StationPicker } from "@/components/stations/station-picker";
 import { legacyStationBucketForStationName } from "@/lib/finance-station-scope";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -92,9 +93,7 @@ function yyyyMmDd(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function money(value: number) {
-  return `NPR ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+const money = formatCurrency;
 
 export function OtherIncomeClient() {
   const searchParams = useSearchParams();
@@ -121,7 +120,10 @@ export function OtherIncomeClient() {
   const now = useMemo(() => new Date(), []);
 
   useEffect(() => {
-    if (searchParams.get("business_line") === "hotel" && restaurant?.hotel_enabled) {
+    if (
+      searchParams.get("business_line") === "hotel" &&
+      restaurant?.hotel_enabled
+    ) {
       setBusinessLine("hotel");
     }
   }, [restaurant?.hotel_enabled, searchParams]);
@@ -341,12 +343,12 @@ export function OtherIncomeClient() {
       <PageHeader
         title="Other income"
         description="Non-sales income such as rent, commission, interest, and grants."
-        actions={(
+        actions={
           <Button className="w-full sm:w-auto" onClick={openCreate}>
             <Plus className="mr-2 h-4 w-4" />
             Record income
           </Button>
-        )}
+        }
       />
       <Card className="max-w-sm border-border shadow-none">
         <CardContent className="flex items-center justify-between p-4">
@@ -369,70 +371,74 @@ export function OtherIncomeClient() {
             </div>
           ) : rows.length ? (
             <>
-            <div className="divide-y sm:hidden">
-              {rows.map((row, index) => (
-                <button
-                  key={row.id || `${row.paid_at}:${index}`}
-                  type="button"
-                  onClick={() => void openIncome(row)}
-                  className="flex min-h-20 w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{row.description || "Other income"}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {new Date(row.paid_at).toLocaleDateString()} · {row.payment_method?.replaceAll("_", " ") || "Method not specified"}
-                    </p>
-                  </div>
-                  <p className="shrink-0 text-sm font-semibold tabular-nums text-emerald-600">+ {money(row.amount)}</p>
-                </button>
-              ))}
-            </div>
-            <div className="hidden overflow-x-auto sm:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Received through</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row, index) => (
-                    <TableRow
-                      key={row.id || `${row.paid_at}:${index}`}
-                      tabIndex={0}
-                      role="button"
-                      onClick={() => void openIncome(row)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          void openIncome(row);
-                        }
-                      }}
-                      className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
-                    >
-                      <TableCell>
-                        {new Date(row.paid_at).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="font-medium">
+              <div className="divide-y sm:hidden">
+                {rows.map((row, index) => (
+                  <button
+                    key={row.id || `${row.paid_at}:${index}`}
+                    type="button"
+                    onClick={() => void openIncome(row)}
+                    className="flex min-h-20 w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
                         {row.description || "Other income"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">Other income</Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {row.payment_method?.replaceAll("_", " ") || "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-emerald-600">
-                        + {money(row.amount)}
-                      </TableCell>
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {formatDate(row.paid_at)} ·{" "}
+                        {row.payment_method?.replaceAll("_", " ") ||
+                          "Method not specified"}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-semibold tabular-nums text-emerald-600">
+                      + {money(row.amount)}
+                    </p>
+                  </button>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead>Received through</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row, index) => (
+                      <TableRow
+                        key={row.id || `${row.paid_at}:${index}`}
+                        tabIndex={0}
+                        role="button"
+                        onClick={() => void openIncome(row)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            void openIncome(row);
+                          }
+                        }}
+                        className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+                      >
+                        <TableCell>{formatDate(row.paid_at)}</TableCell>
+                        <TableCell className="font-medium">
+                          {row.description || "Other income"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">Other income</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {row.payment_method?.replaceAll("_", " ") || "—"}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-emerald-600">
+                          + {money(row.amount)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </>
           ) : (
             <div className="flex min-h-64 items-center justify-center text-sm text-muted-foreground">

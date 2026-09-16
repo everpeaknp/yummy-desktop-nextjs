@@ -1,5 +1,7 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import AdditionalSettingsPage from "../manage/additional-settings/page";
 
 export default function SettingsPage() {
-  redirect("/manage/settings");
+  return <AdditionalSettingsPage />;
 }

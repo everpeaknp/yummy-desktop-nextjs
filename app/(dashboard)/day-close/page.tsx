@@ -22,29 +22,12 @@ import {
   DayCloseHistory,
   type DayCloseHistoryHandle,
 } from "@/components/analytics/day-close-history";
-import {
-  DayCloseMetricCard,
-  DC_METRIC_ACCENT_IN,
-  DC_METRIC_ACCENT_OUT,
-  DC_METRIC_ICON_IN,
-  DC_METRIC_ICON_OUT,
-  DC_METRIC_VALUE_IN,
-  DC_METRIC_VALUE_OUT,
-} from "@/components/analytics/day-close-metric-card";
 import { cn } from "@/lib/utils";
-import {
-  Calendar,
-  CheckCircle2,
-  DollarSign,
-  Wallet,
-} from "lucide-react";
+import { Calendar, CheckCircle2 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
 import { DayCloseApis, DrawerSessionApis } from "@/lib/api/endpoints";
-import {
-  canAccessBusinessModule,
-  hasPermission,
-} from "@/lib/role-permissions";
+import { canAccessBusinessModule, hasPermission } from "@/lib/role-permissions";
 import {
   formatDayCloseCurrency,
   formatDayCloseListHeading,
@@ -78,29 +61,44 @@ export default function DayClosePage() {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   });
   const [currentLoading, setCurrentLoading] = useState(false);
-  const [currentClose, setCurrentClose] = useState<DayCloseCurrent | null>(null);
-  const [snapshotPreview, setSnapshotPreview] = useState<DayCloseSnapshotData | null>(null);
-  const [cashControlMode, setCashControlMode] = useState<"separate" | "combined">("separate");
+  const [currentClose, setCurrentClose] = useState<DayCloseCurrent | null>(
+    null,
+  );
+  const [snapshotPreview, setSnapshotPreview] =
+    useState<DayCloseSnapshotData | null>(null);
+  const [cashControlMode, setCashControlMode] = useState<
+    "separate" | "combined"
+  >("separate");
   const dayCloseHistoryRef = useRef<DayCloseHistoryHandle | null>(null);
 
   const canUseRestaurantClose = canAccessBusinessModule(user, "restaurant");
-  const canUseHotelDaybook = Boolean(restaurant?.hotel_enabled) &&
+  const canUseHotelDaybook =
+    Boolean(restaurant?.hotel_enabled) &&
     canAccessBusinessModule(user, "hotel") &&
     hasPermission(user, "reports.dayclose.view");
 
   const showBusinessLinePicker = Boolean(
-    restaurant?.hotel_enabled && restaurant?.restaurant_enabled &&
-      canUseRestaurantClose && canUseHotelDaybook,
+    restaurant?.hotel_enabled &&
+    restaurant?.restaurant_enabled &&
+    canUseRestaurantClose &&
+    canUseHotelDaybook,
   );
 
   useEffect(() => {
     if (!restaurantId) return;
     let active = true;
     void apiClient
-      .get(DrawerSessionApis.cashControlPolicy({ restaurantId, effectiveDate: selectedDate }))
+      .get(
+        DrawerSessionApis.cashControlPolicy({
+          restaurantId,
+          effectiveDate: selectedDate,
+        }),
+      )
       .then((response) => {
         if (!active) return;
-        setCashControlMode(response.data?.data?.mode === "combined" ? "combined" : "separate");
+        setCashControlMode(
+          response.data?.data?.mode === "combined" ? "combined" : "separate",
+        );
       })
       .catch(() => {
         if (active) setCashControlMode("separate");
@@ -117,12 +115,20 @@ export default function DayClosePage() {
     }
     if (requestedBusinessLine === "hotel" && canUseHotelDaybook) {
       setBusinessLine(requestedBusinessLine);
-    } else if (requestedBusinessLine === "restaurant" && canUseRestaurantClose) {
+    } else if (
+      requestedBusinessLine === "restaurant" &&
+      canUseRestaurantClose
+    ) {
       setBusinessLine(requestedBusinessLine);
     } else if (!canUseRestaurantClose && canUseHotelDaybook) {
       setBusinessLine("hotel");
     }
-  }, [canUseHotelDaybook, canUseRestaurantClose, cashControlMode, requestedBusinessLine]);
+  }, [
+    canUseHotelDaybook,
+    canUseRestaurantClose,
+    cashControlMode,
+    requestedBusinessLine,
+  ]);
 
   const loadCurrent = useCallback(async () => {
     if (!restaurantId) return;
@@ -152,7 +158,9 @@ export default function DayClosePage() {
       }
 
       if (snapshotRes.data?.status === "success") {
-        setSnapshotPreview(unwrapApiData(snapshotRes.data, parseDayCloseSnapshotData));
+        setSnapshotPreview(
+          unwrapApiData(snapshotRes.data, parseDayCloseSnapshotData),
+        );
       } else {
         setSnapshotPreview(null);
       }
@@ -160,9 +168,10 @@ export default function DayClosePage() {
       setCurrentClose(null);
       setSnapshotPreview(null);
       const message =
-        (err as { response?: { data?: { message?: string; detail?: string } } })?.response?.data
-          ?.message ??
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        (err as { response?: { data?: { message?: string; detail?: string } } })
+          ?.response?.data?.message ??
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ??
         "Failed to load day close data.";
       toast.error(message);
     } finally {
@@ -184,7 +193,10 @@ export default function DayClosePage() {
   }, [currentClose?.action_label, currentClose?.status]);
 
   const handlePrimaryAction = useCallback(async () => {
-    if (currentClose?.id && String(currentClose.status).toLowerCase() === "confirmed") {
+    if (
+      currentClose?.id &&
+      String(currentClose.status).toLowerCase() === "confirmed"
+    ) {
       await dayCloseHistoryRef.current?.openDayCloseDetail(currentClose.id);
       return;
     }
@@ -200,29 +212,45 @@ export default function DayClosePage() {
     currentClose?.snapshot_preview?.expense_total,
   );
 
-  const businessLineLabel = businessLine === "combined" ? "Combined Day Close" : businessLine === "hotel" ? "Hotel Daybook" : "Restaurant Close";
+  const businessLineLabel =
+    businessLine === "combined"
+      ? "Combined Day Close"
+      : businessLine === "hotel"
+        ? "Hotel Daybook"
+        : "Restaurant Close";
   const statusLabel = String(currentClose?.status ?? "—").replace(/_/g, " ");
   const statusTone = (() => {
     const normalized = statusLabel.toLowerCase();
-    if (normalized === "open") return "bg-emerald-500/10 text-emerald-600 border-emerald-200";
-    if (normalized === "confirmed") return "bg-primary/10 text-primary border-primary/20";
-    if (normalized === "pending") return "bg-amber-500/10 text-amber-600 border-amber-200";
-    if (normalized === "reopened") return "bg-blue-500/10 text-blue-600 border-blue-200";
+    if (normalized === "open")
+      return "bg-emerald-500/10 text-emerald-600 border-emerald-200";
+    if (normalized === "confirmed")
+      return "bg-primary/10 text-primary border-primary/20";
+    if (normalized === "pending")
+      return "bg-amber-500/10 text-amber-600 border-amber-200";
+    if (normalized === "reopened")
+      return "bg-blue-500/10 text-blue-600 border-blue-200";
     return "bg-muted text-muted-foreground border-border";
   })();
-  const isConfirmed = String(currentClose?.status ?? "").toLowerCase() === "confirmed";
+  const isConfirmed =
+    String(currentClose?.status ?? "").toLowerCase() === "confirmed";
 
   return (
     <AppPage width="wide" className="day-close-page day-close-ui pb-20">
-      <div className="hidden flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+      <div className="hidden flex-col justify-between gap-4 lg:flex lg:flex-row lg:items-center">
         <div className="space-y-1">
-          <h1 className="dc-page-title">{businessLine === "combined" ? "Combined Day Close" : businessLine === "hotel" ? "Hotel Daybook" : "Restaurant Day Close"}</h1>
+          <h1 className="dc-page-title">
+            {businessLine === "combined"
+              ? "Combined Day Close"
+              : businessLine === "hotel"
+                ? "Hotel Daybook"
+                : "Restaurant Day Close"}
+          </h1>
           <p className="dc-page-subtitle">
             {businessLine === "combined"
               ? "One cash reconciliation for shared drawers; Hotel and Restaurant reporting remains separate."
               : businessLine === "hotel"
-              ? "Settle hotel drawers, then save an audited daily hotel daybook."
-              : "Settle drawers, review the daybook, and confirm one audited restaurant close."}
+                ? "Settle hotel drawers, then save an audited daily hotel daybook."
+                : "Settle drawers, review the daybook, and confirm one audited restaurant close."}
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
@@ -244,7 +272,10 @@ export default function DayClosePage() {
             />
           </div>
           {cashControlMode === "combined" ? (
-            <Badge variant="outline" className="h-11 rounded-2xl px-4 text-sm font-medium">
+            <Badge
+              variant="outline"
+              className="h-11 rounded-2xl px-4 text-sm font-medium"
+            >
               Shared drawers · combined close
             </Badge>
           ) : showBusinessLinePicker ? (
@@ -272,7 +303,7 @@ export default function DayClosePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:hidden">
+      <div className="grid grid-cols-2 gap-2 lg:hidden">
         <div className="col-span-2">
           <Label htmlFor="day-close-page-date-mobile" className="sr-only">
             Close date
@@ -291,7 +322,10 @@ export default function DayClosePage() {
           />
         </div>
         {cashControlMode === "combined" ? (
-          <Badge variant="outline" className="col-span-2 h-11 justify-start rounded-xl px-3 text-sm font-medium">
+          <Badge
+            variant="outline"
+            className="col-span-2 h-11 justify-start rounded-xl px-3 text-sm font-medium"
+          >
             Shared drawers · combined close
           </Badge>
         ) : showBusinessLinePicker ? (
@@ -318,12 +352,19 @@ export default function DayClosePage() {
         </Button>
       </div>
 
-      <section className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:gap-6">
+      <section
+        className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:gap-6"
+        aria-label="Day close summary"
+      >
         <Card
           className="dc-card lg:col-span-1 relative overflow-hidden group transition-all duration-300"
           role={isConfirmed && currentClose?.id ? "button" : undefined}
           tabIndex={isConfirmed && currentClose?.id ? 0 : undefined}
-          onClick={isConfirmed && currentClose?.id ? () => void handlePrimaryAction() : undefined}
+          onClick={
+            isConfirmed && currentClose?.id
+              ? () => void handlePrimaryAction()
+              : undefined
+          }
           onKeyDown={
             isConfirmed && currentClose?.id
               ? (event) => {
@@ -345,7 +386,9 @@ export default function DayClosePage() {
             </div>
           </CardHeader>
           <CardContent className="relative z-10 space-y-2 p-4 pt-0 md:space-y-3">
-            <p className="text-xs font-medium text-muted-foreground">Selected close date</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              Selected close date
+            </p>
             <p className="text-base font-medium tracking-tight break-words text-foreground md:text-lg">
               {currentClose?.id
                 ? formatDayCloseListHeading({
@@ -366,30 +409,24 @@ export default function DayClosePage() {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-2 gap-3 lg:col-span-2 lg:gap-6">
-          <DayCloseMetricCard
-            label="Net Sales"
-            value={formatDayCloseCurrency(displayNetSales)}
-            icon={<DollarSign className="h-4 w-4" />}
-            iconPosition="top-right"
-            iconClassName={DC_METRIC_ICON_IN}
-            accent={DC_METRIC_ACCENT_IN}
-            valueClassName={DC_METRIC_VALUE_IN}
-            compact
-            dense
-          />
-          <DayCloseMetricCard
-            label="Total Expenses"
-            value={formatDayCloseCurrency(displayExpenseTotal)}
-            icon={<Wallet className="h-4 w-4" />}
-            iconPosition="top-right"
-            iconClassName={DC_METRIC_ICON_OUT}
-            accent={DC_METRIC_ACCENT_OUT}
-            valueClassName={DC_METRIC_VALUE_OUT}
-            compact
-            dense
-          />
-        </div>
+        <dl className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card lg:col-span-2">
+          <div className="border-r px-4 py-3 sm:px-5 lg:py-5">
+            <dt className="text-xs font-medium text-muted-foreground">
+              Net sales
+            </dt>
+            <dd className="mt-1 text-base font-semibold tabular-nums sm:text-lg">
+              {formatDayCloseCurrency(displayNetSales)}
+            </dd>
+          </div>
+          <div className="px-4 py-3 sm:px-5 lg:py-5">
+            <dt className="text-xs font-medium text-muted-foreground">
+              Total expenses
+            </dt>
+            <dd className="mt-1 text-base font-semibold tabular-nums sm:text-lg">
+              {formatDayCloseCurrency(displayExpenseTotal)}
+            </dd>
+          </div>
+        </dl>
       </section>
 
       <Tabs defaultValue="history" className="w-full">
@@ -418,17 +455,24 @@ export default function DayClosePage() {
           <Card className="overflow-hidden rounded-xl border-border/50 bg-card/80 shadow-sm backdrop-blur-sm md:rounded-2xl">
             <CardContent className="space-y-4 p-4 md:p-8">
               <p className="text-sm text-muted-foreground">
-                A Day Close locks in your daily totals (sales, payments, expenses, refunds) and records a cash
-                reconciliation. If you spot a mistake later, you can reopen or adjust the close with a reason so the
-                system keeps an audit trail.
+                A Day Close locks in your daily totals (sales, payments,
+                expenses, refunds) and records a cash reconciliation. If you
+                spot a mistake later, you can reopen or adjust the close with a
+                reason so the system keeps an audit trail.
               </p>
               <div className="text-sm text-muted-foreground space-y-2">
                 <p>
-                  Use <span className="font-semibold text-foreground">{actionLabel}</span> to run the close wizard.
+                  Use{" "}
+                  <span className="font-semibold text-foreground">
+                    {actionLabel}
+                  </span>{" "}
+                  to run the close wizard.
                 </p>
                 <p>
-                  Use <span className="font-semibold text-foreground">History</span> to export PDF/Excel and review
-                  saved snapshots from the backend.
+                  Use{" "}
+                  <span className="font-semibold text-foreground">History</span>{" "}
+                  to export PDF/Excel and review saved snapshots from the
+                  backend.
                 </p>
               </div>
             </CardContent>

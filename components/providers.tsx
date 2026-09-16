@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { SessionBootstrap } from "@/components/auth/session-bootstrap";
 import { useAuth } from "@/hooks/use-auth";
 import { MembershipEventsProvider } from "@/components/membership-events-provider";
 import { SubscriptionSyncProvider } from "@/components/subscription/subscription-sync-provider";
+import { isDevelopmentUiGalleryPath } from "@/lib/development-routes";
 
 function SessionExpiredListener() {
   const router = useRouter();
@@ -24,6 +25,15 @@ function SessionExpiredListener() {
 }
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname() || "/";
+  const isDevelopmentGallery =
+    process.env.NODE_ENV !== "production" &&
+    isDevelopmentUiGalleryPath(pathname);
+
+  if (isDevelopmentGallery) {
+    return <>{children}</>;
+  }
+
   return (
     <>
       {children}

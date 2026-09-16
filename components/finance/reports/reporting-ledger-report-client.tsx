@@ -2,7 +2,9 @@
 
 import {
   Suspense,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
   useCallback,
   useEffect,
   useMemo,
@@ -19,7 +21,6 @@ import {
   Search,
 } from "lucide-react";
 
-import { FinanceReportNavigation } from "@/components/finance/reports/finance-report-navigation";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
 import { FilterBar } from "@/components/patterns/controls/filter-bar";
@@ -56,8 +57,12 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/hooks/use-auth";
 import { financeReportingApi } from "@/lib/api/finance-reporting-api";
+import {
+  abnormalNormalBalanceMessage,
+  type AccountingNormalSide,
+} from "@/lib/finance-statement-presentation";
 import { hasPermission } from "@/lib/role-permissions";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import type {
   FinanceCustodyReconciliationRead,
   FinanceReportingAccountLedgerRead,
@@ -145,20 +150,9 @@ function firstDayOfMonth() {
 }
 
 function periodLabel(dateFrom: string, dateTo: string) {
-  const format = (value: string) => {
-    const date = new Date(`${value}T00:00:00`);
-    return Number.isNaN(date.getTime())
-      ? value
-      : date.toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
-  };
-
   return dateFrom === dateTo
-    ? format(dateFrom)
-    : `${format(dateFrom)} - ${format(dateTo)}`;
+    ? formatDate(dateFrom)
+    : `${formatDate(dateFrom)} – ${formatDate(dateTo)}`;
 }
 
 function asNumber(value: FinanceReportingMoney | null | undefined) {
@@ -167,10 +161,7 @@ function asNumber(value: FinanceReportingMoney | null | undefined) {
 }
 
 function money(value: FinanceReportingMoney | null | undefined) {
-  return `NPR ${asNumber(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatCurrency(asNumber(value));
 }
 
 function humanize(value: string | null | undefined) {
@@ -182,15 +173,7 @@ function humanize(value: string | null | undefined) {
 
 function dateTime(value: string | null | undefined) {
   if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(value);
 }
 
 function readError(error: unknown) {
@@ -302,7 +285,7 @@ function HeadAmountTable({
           </p>
         ) : (
           <>
-            <div className="divide-y divide-border md:hidden">
+            <div className="divide-y divide-border lg:hidden">
               {rows.map((row) => (
                 <button
                   key={row.head_id}
@@ -322,7 +305,7 @@ function HeadAmountTable({
                 </button>
               ))}
             </div>
-            <div className="hidden overflow-x-auto md:block">
+            <div className="hidden overflow-x-auto lg:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -370,6 +353,172 @@ function HeadAmountTable({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ReportSummary({
+  items,
+  ariaLabel,
+}: {
+  items: Array<{
+    label: string;
+    value: string;
+    emphasis?: boolean;
+    status?: "success" | "warning" | "danger";
+  }>;
+  ariaLabel: string;
+}) {
+  return (
+    <dl
+      aria-label={ariaLabel}
+      className="grid overflow-hidden rounded-xl border border-border bg-background sm:grid-cols-2 lg:grid-cols-4"
+    >
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="border-b border-border px-4 py-3 last:border-b-0 sm:border-r sm:[&:nth-last-child(-n+2)]:border-b-0 lg:border-b-0 lg:last:border-r-0"
+        >
+          <dt className="text-xs font-medium text-muted-foreground">
+            {item.label}
+          </dt>
+          <dd
+            className={cn(
+              "mt-1 tabular-nums",
+              item.emphasis ? "text-lg font-semibold" : "font-semibold",
+              item.status === "success" && "text-emerald-700",
+              item.status === "warning" && "text-amber-700",
+              item.status === "danger" && "text-rose-700",
+            )}
+          >
+            {item.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function StatementSection({
+  title,
+  rows,
+  normalSide,
+  supplementalRows = [],
+  totalLabel,
+  total,
+  onSelectHead,
+}: {
+  title: string;
+  rows: FinanceReportingHeadAmount[];
+  normalSide?: AccountingNormalSide;
+  supplementalRows?: Array<{
+    label: string;
+    value: FinanceReportingMoney;
+  }>;
+  totalLabel: string;
+  total: FinanceReportingMoney;
+  onSelectHead: (headId: number) => void;
+}) {
+  const sectionNames: Record<string, string[]> = {
+    Assets: ["asset", "assets"],
+    Liabilities: ["liability", "liabilities"],
+    Equity: ["equity"],
+  };
+  const rootRow = rows[0];
+  const rootName = rootRow?.name.trim().toLowerCase();
+  const redundantRoot = Boolean(
+    rootRow &&
+    rootRow.parent_id == null &&
+    sectionNames[title]?.includes(rootName) &&
+    rows.some((row) => row.parent_id === rootRow.head_id),
+  );
+  const visibleRows = redundantRoot ? rows.slice(1) : rows;
+  const depthOffset = redundantRoot ? rootRow.depth + 1 : 0;
+
+  return (
+    <section aria-labelledby={`statement-${title.toLowerCase()}`}>
+      <div className="flex items-center justify-between gap-4 border-b border-foreground/20 bg-muted/30 px-4 py-2.5">
+        {redundantRoot && rootRow ? (
+          <button
+            id={`statement-${title.toLowerCase()}`}
+            type="button"
+            onClick={() => onSelectHead(rootRow.head_id)}
+            className="group -my-2.5 flex min-h-11 items-center gap-1 text-sm font-semibold hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          >
+            {title}
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </button>
+        ) : (
+          <h3
+            id={`statement-${title.toLowerCase()}`}
+            className="text-sm font-semibold"
+          >
+            {title}
+          </h3>
+        )}
+        <span className="text-xs font-medium text-muted-foreground">
+          Amount
+        </span>
+      </div>
+      {visibleRows.length ? (
+        <div className="divide-y divide-border/70">
+          {visibleRows.map((row) => {
+            const reconciliationWarning = normalSide
+              ? abnormalNormalBalanceMessage(normalSide, row.amount)
+              : null;
+
+            return (
+              <button
+                key={row.head_id}
+                type="button"
+                onClick={() => onSelectHead(row.head_id)}
+                className="flex min-h-12 w-full items-center justify-between gap-4 px-4 py-2.5 text-left hover:bg-muted/35 focus-visible:bg-muted/35 focus-visible:outline-none"
+              >
+                <span
+                  className={cn("min-w-0", row.depth === 0 && "font-semibold")}
+                  style={{
+                    paddingLeft: `${Math.max(0, row.depth - depthOffset) * 12}px`,
+                  }}
+                >
+                  <span className="line-clamp-2 block break-words text-sm leading-5">
+                    {row.name}
+                  </span>
+                  <span className="block font-mono text-[11px] text-muted-foreground">
+                    {row.code}
+                  </span>
+                  {reconciliationWarning ? (
+                    <span className="mt-0.5 block text-xs font-normal text-amber-700 dark:text-amber-400">
+                      {reconciliationWarning}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-sm font-medium tabular-nums">
+                  {money(row.amount)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="px-4 py-5 text-sm text-muted-foreground">
+          No {title.toLowerCase()} posted.
+        </p>
+      )}
+      {supplementalRows.map((row) => (
+        <div
+          key={row.label}
+          className="flex min-h-12 items-center justify-between gap-4 border-t border-border/70 px-4 py-2.5"
+        >
+          <span className="text-sm">{row.label}</span>
+          <span className="shrink-0 text-sm font-medium tabular-nums">
+            {money(row.value)}
+          </span>
+        </div>
+      ))}
+      <div className="flex items-center justify-between gap-4 border-y border-foreground/20 px-4 py-3 font-semibold">
+        <span>{totalLabel}</span>
+        <span className="tabular-nums">{money(total)}</span>
+      </div>
+    </section>
   );
 }
 
@@ -674,9 +823,7 @@ function ProfitAndLossView({
       className={cn(
         "grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-y px-3 py-3 sm:px-4",
         final
-          ? amount >= 0
-            ? "border-emerald-500/25 bg-emerald-500/10"
-            : "border-destructive/25 bg-destructive/10"
+          ? "border-foreground/20 bg-foreground/[0.04]"
           : "border-border bg-muted/45",
       )}
     >
@@ -696,8 +843,7 @@ function ProfitAndLossView({
         className={cn(
           "shrink-0 text-right text-sm font-semibold tabular-nums",
           final && "text-base",
-          final && amount < 0 && "text-destructive",
-          final && amount >= 0 && "text-emerald-700 dark:text-emerald-400",
+          final && "text-foreground",
         )}
       >
         {money(amount)}
@@ -736,14 +882,7 @@ function ProfitAndLossView({
             <span className="text-xs text-muted-foreground">
               {netProfit >= 0 ? "Net profit" : "Net loss"}
             </span>
-            <span
-              className={cn(
-                "text-sm font-bold tabular-nums lg:mt-1 lg:block",
-                netProfit >= 0
-                  ? "text-emerald-700 dark:text-emerald-400"
-                  : "text-destructive",
-              )}
-            >
+            <span className="text-sm font-bold tabular-nums text-foreground lg:mt-1 lg:block">
               {money(netProfit)}
             </span>
             {grossMargin !== null ? (
@@ -903,173 +1042,313 @@ function TrialBalanceView({
     asNumber(report.total_closing_debit) -
       asNumber(report.total_closing_credit),
   );
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<number>>(
+    new Set(),
+  );
+  const [expandedDetailIds, setExpandedDetailIds] = useState<Set<number>>(
+    new Set(),
+  );
+  const rowsById = useMemo(
+    () => new Map(report.rows.map((row) => [row.head_id, row])),
+    [report.rows],
+  );
+  const groupIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const row of report.rows) {
+      if (row.parent_id !== null) ids.add(row.parent_id);
+    }
+    return ids;
+  }, [report.rows]);
+  const childrenByParent = useMemo(() => {
+    const children = new Map<number, FinanceReportingTrialBalanceRow[]>();
+    for (const row of report.rows) {
+      if (row.parent_id === null) continue;
+      const siblings = children.get(row.parent_id) ?? [];
+      siblings.push(row);
+      children.set(row.parent_id, siblings);
+    }
+    return children;
+  }, [report.rows]);
+  const visibleMobileRows = useMemo(() => {
+    const visibleRows: FinanceReportingTrialBalanceRow[] = [];
+    const visited = new Set<number>();
+    const appendBranch = (row: FinanceReportingTrialBalanceRow) => {
+      if (visited.has(row.head_id)) return;
+      visited.add(row.head_id);
+      visibleRows.push(row);
+      if (!expandedGroupIds.has(row.head_id)) return;
+      for (const child of childrenByParent.get(row.head_id) ?? []) {
+        appendBranch(child);
+      }
+    };
+
+    for (const row of report.rows) {
+      if (row.parent_id === null || !rowsById.has(row.parent_id)) {
+        appendBranch(row);
+      }
+    }
+
+    return visibleRows;
+  }, [childrenByParent, expandedGroupIds, report.rows, rowsById]);
+  const toggleSetValue = (
+    setter: Dispatch<SetStateAction<Set<number>>>,
+    headId: number,
+  ) => {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(headId)) next.delete(headId);
+      else next.add(headId);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-4">
       <ClosureNotice closure={report.closure} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          label="Period debits"
-          value={money(report.total_period_debit)}
-        />
-        <MetricCard
-          label="Period credits"
-          value={money(report.total_period_credit)}
-        />
-        <MetricCard
-          label="Closing debits"
-          value={money(report.total_closing_debit)}
-        />
-        <MetricCard
-          label={report.is_balanced ? "Balanced" : "Difference"}
-          value={
-            report.is_balanced
-              ? money(report.total_closing_credit)
-              : money(difference)
-          }
-          tone={report.is_balanced ? "positive" : "negative"}
-        />
-      </div>
+      <section
+        aria-label="Trial balance reconciliation"
+        className="overflow-hidden rounded-xl border border-border bg-background"
+      >
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="font-semibold">Trial balance summary</h2>
+        </div>
+        <dl className="grid gap-x-8 px-4 py-2 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            ["Period debit", money(report.total_period_debit)],
+            ["Period credit", money(report.total_period_credit)],
+            ["Closing debit", money(report.total_closing_debit)],
+            ["Closing credit", money(report.total_closing_credit)],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="flex items-center justify-between gap-4 border-b border-border/60 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0"
+            >
+              <dt className="text-sm text-muted-foreground">{label}</dt>
+              <dd className="text-sm font-semibold tabular-nums">{value}</dd>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-4 py-2.5 sm:col-span-2 lg:col-span-1">
+            <dt className="text-sm text-muted-foreground">
+              {report.is_balanced ? "Reconciliation" : "Difference"}
+            </dt>
+            <dd
+              className={cn(
+                "text-sm font-semibold tabular-nums",
+                report.is_balanced ? "text-emerald-700" : "text-rose-700",
+              )}
+            >
+              {report.is_balanced ? "Balanced" : money(difference)}
+            </dd>
+          </div>
+        </dl>
+      </section>
       {report.rows.length === 0 ? (
         <EmptyReport message="No account-head balances match these filters." />
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="divide-y divide-border md:hidden">
-              {report.rows.map((row) => (
-                <button
-                  key={row.head_id}
-                  type="button"
-                  disabled={!row.is_postable}
-                  onClick={() => row.is_postable && onSelectHead(row.head_id)}
-                  className={cn(
-                    "w-full px-4 py-3 text-left",
-                    row.is_postable
-                      ? "hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
-                      : "bg-muted/30",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">
-                        <span className="mr-2 font-mono text-xs text-muted-foreground">
-                          {row.code}
-                        </span>
-                        {row.name}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Opening {money(row.opening_debit)} Dr ·{" "}
-                        {money(row.opening_credit)} Cr
-                      </p>
-                    </div>
-                    <p className="shrink-0 font-semibold tabular-nums">
-                      {money(
-                        asNumber(row.closing_debit) -
-                          asNumber(row.closing_credit),
-                      )}
-                    </p>
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <span>
-                      Period Dr{" "}
-                      <b className="ml-1 text-foreground">
-                        {money(row.period_debit)}
-                      </b>
-                    </span>
-                    <span>
-                      Period Cr{" "}
-                      <b className="ml-1 text-foreground">
-                        {money(row.period_credit)}
-                      </b>
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="hidden overflow-x-auto md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-64">Account head</TableHead>
-                    <TableHead className="text-right">Opening Dr</TableHead>
-                    <TableHead className="text-right">Opening Cr</TableHead>
-                    <TableHead className="text-right">Period Dr</TableHead>
-                    <TableHead className="text-right">Period Cr</TableHead>
-                    <TableHead className="text-right">Closing Dr</TableHead>
-                    <TableHead className="text-right">Closing Cr</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {report.rows.map((row) => (
-                    <TableRow
-                      key={row.head_id}
-                      role={row.is_postable ? "button" : undefined}
-                      tabIndex={row.is_postable ? 0 : undefined}
-                      onClick={() =>
-                        row.is_postable && onSelectHead(row.head_id)
-                      }
-                      onKeyDown={(event) => {
-                        if (
-                          row.is_postable &&
-                          (event.key === "Enter" || event.key === " ")
-                        ) {
-                          event.preventDefault();
-                          onSelectHead(row.head_id);
-                        }
-                      }}
-                      className={cn(
-                        row.is_postable &&
-                          "cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none",
-                        !row.is_postable && "bg-muted/30 font-semibold",
-                      )}
-                    >
-                      <TableCell>
-                        <div style={{ paddingLeft: `${row.depth * 14}px` }}>
-                          {row.is_postable ? (
-                            <span className="hover:text-primary hover:underline">
-                              <span className="mr-2 font-mono text-xs text-muted-foreground">
-                                {row.code}
-                              </span>
-                              {row.name}
-                            </span>
-                          ) : (
-                            <>
-                              <span className="mr-2 font-mono text-xs text-muted-foreground">
-                                {row.code}
-                              </span>
-                              {row.name}
-                            </>
-                          )}
-                          <span className="ml-2 text-[11px] font-normal uppercase text-muted-foreground">
-                            {row.head_type}
-                          </span>
-                        </div>
-                      </TableCell>
-                      {[
-                        row.opening_debit,
-                        row.opening_credit,
-                        row.period_debit,
-                        row.period_credit,
-                        row.closing_debit,
-                        row.closing_credit,
-                      ].map((value, index) => (
-                        <TableCell
-                          key={index}
-                          className="text-right font-mono tabular-nums"
+        <section className="overflow-hidden rounded-xl border border-border bg-background">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="font-semibold">Account balances</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Opening position, period movement, and closing position.
+            </p>
+          </div>
+          <div className="divide-y divide-border lg:hidden">
+            {visibleMobileRows.map((row) => {
+              const isGroup = groupIds.has(row.head_id);
+              const groupExpanded = expandedGroupIds.has(row.head_id);
+              const detailExpanded = expandedDetailIds.has(row.head_id);
+              const closingBalance =
+                asNumber(row.closing_debit) - asNumber(row.closing_credit);
+
+              return (
+                <div key={row.head_id} className={cn(isGroup && "bg-muted/30")}>
+                  <div
+                    className="py-3 pr-3"
+                    style={{
+                      paddingLeft: `${16 + Math.min(Math.max(0, row.depth), 3) * 12}px`,
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        {row.is_postable ? (
+                          <button
+                            type="button"
+                            onClick={() => onSelectHead(row.head_id)}
+                            className={cn(
+                              "line-clamp-2 text-left text-sm leading-5 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                              isGroup ? "font-semibold" : "font-medium",
+                            )}
+                          >
+                            {row.name}
+                          </button>
+                        ) : (
+                          <p
+                            className={cn(
+                              "line-clamp-2 text-sm leading-5",
+                              isGroup ? "font-semibold" : "font-medium",
+                            )}
+                          >
+                            {row.name}
+                          </p>
+                        )}
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {row.code} · {humanize(row.head_type)}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-start gap-1">
+                        <p className="pt-1 text-sm font-semibold tabular-nums">
+                          {money(closingBalance)}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleSetValue(
+                              isGroup
+                                ? setExpandedGroupIds
+                                : setExpandedDetailIds,
+                              row.head_id,
+                            )
+                          }
+                          className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                          aria-expanded={
+                            isGroup ? groupExpanded : detailExpanded
+                          }
+                          aria-label={
+                            isGroup
+                              ? `${groupExpanded ? "Collapse" : "Expand"} ${row.name}`
+                              : `${detailExpanded ? "Hide" : "Show"} accounting details for ${row.name}`
+                          }
                         >
-                          {money(value)}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                  <TableRow className="border-t-2 font-semibold">
-                    <TableCell>Total</TableCell>
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 transition-transform",
+                              (isGroup ? groupExpanded : detailExpanded) &&
+                                "rotate-180",
+                            )}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    {!isGroup && detailExpanded ? (
+                      <div className="mt-3 space-y-3 border-t border-border/60 pt-3">
+                        <section>
+                          <h3 className="text-xs font-semibold text-muted-foreground">
+                            Opening
+                          </h3>
+                          <dl className="mt-1">
+                            <div className="flex justify-between gap-4 py-1 text-sm">
+                              <dt>Debit</dt>
+                              <dd className="tabular-nums">
+                                {money(row.opening_debit)}
+                              </dd>
+                            </div>
+                            <div className="flex justify-between gap-4 py-1 text-sm">
+                              <dt>Credit</dt>
+                              <dd className="tabular-nums">
+                                {money(row.opening_credit)}
+                              </dd>
+                            </div>
+                          </dl>
+                        </section>
+                        <section>
+                          <h3 className="text-xs font-semibold text-muted-foreground">
+                            Period movement
+                          </h3>
+                          <dl className="mt-1">
+                            <div className="flex justify-between gap-4 py-1 text-sm">
+                              <dt>Debit</dt>
+                              <dd className="tabular-nums">
+                                {money(row.period_debit)}
+                              </dd>
+                            </div>
+                            <div className="flex justify-between gap-4 py-1 text-sm">
+                              <dt>Credit</dt>
+                              <dd className="tabular-nums">
+                                {money(row.period_credit)}
+                              </dd>
+                            </div>
+                          </dl>
+                        </section>
+                        <section className="flex items-center justify-between gap-4 border-t border-border/60 pt-3">
+                          <h3 className="text-sm font-medium text-muted-foreground">
+                            Closing
+                          </h3>
+                          <p className="text-sm font-semibold tabular-nums">
+                            {money(closingBalance)}
+                          </p>
+                        </section>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="hidden overflow-x-auto lg:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-64">Account head</TableHead>
+                  <TableHead className="text-right">Opening Dr</TableHead>
+                  <TableHead className="text-right">Opening Cr</TableHead>
+                  <TableHead className="text-right">Period Dr</TableHead>
+                  <TableHead className="text-right">Period Cr</TableHead>
+                  <TableHead className="text-right">Closing Dr</TableHead>
+                  <TableHead className="text-right">Closing Cr</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.rows.map((row) => (
+                  <TableRow
+                    key={row.head_id}
+                    role={row.is_postable ? "button" : undefined}
+                    tabIndex={row.is_postable ? 0 : undefined}
+                    onClick={() => row.is_postable && onSelectHead(row.head_id)}
+                    onKeyDown={(event) => {
+                      if (
+                        row.is_postable &&
+                        (event.key === "Enter" || event.key === " ")
+                      ) {
+                        event.preventDefault();
+                        onSelectHead(row.head_id);
+                      }
+                    }}
+                    className={cn(
+                      row.is_postable &&
+                        "cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none",
+                      !row.is_postable && "bg-muted/30 font-semibold",
+                    )}
+                  >
+                    <TableCell>
+                      <div style={{ paddingLeft: `${row.depth * 14}px` }}>
+                        {row.is_postable ? (
+                          <span className="hover:text-primary hover:underline">
+                            <span className="mr-2 font-mono text-xs text-muted-foreground">
+                              {row.code}
+                            </span>
+                            {row.name}
+                          </span>
+                        ) : (
+                          <>
+                            <span className="mr-2 font-mono text-xs text-muted-foreground">
+                              {row.code}
+                            </span>
+                            {row.name}
+                          </>
+                        )}
+                        <span className="ml-2 text-[11px] font-normal uppercase text-muted-foreground">
+                          {row.head_type}
+                        </span>
+                      </div>
+                    </TableCell>
                     {[
-                      report.total_opening_debit,
-                      report.total_opening_credit,
-                      report.total_period_debit,
-                      report.total_period_credit,
-                      report.total_closing_debit,
-                      report.total_closing_credit,
+                      row.opening_debit,
+                      row.opening_credit,
+                      row.period_debit,
+                      row.period_credit,
+                      row.closing_debit,
+                      row.closing_credit,
                     ].map((value, index) => (
                       <TableCell
                         key={index}
@@ -1079,11 +1358,29 @@ function TrialBalanceView({
                       </TableCell>
                     ))}
                   </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+                <TableRow className="border-t-2 font-semibold">
+                  <TableCell>Total</TableCell>
+                  {[
+                    report.total_opening_debit,
+                    report.total_opening_credit,
+                    report.total_period_debit,
+                    report.total_period_credit,
+                    report.total_closing_debit,
+                    report.total_closing_credit,
+                  ].map((value, index) => (
+                    <TableCell
+                      key={index}
+                      className="text-right font-mono tabular-nums"
+                    >
+                      {money(value)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </section>
       )}
     </div>
   );
@@ -1184,7 +1481,7 @@ function AccountLedgerListView({
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div className="divide-y divide-border md:hidden">
+            <div className="divide-y divide-border lg:hidden">
               {groupedRows.map((item) => {
                 if (item.kind === "group") {
                   return (
@@ -1226,7 +1523,7 @@ function AccountLedgerListView({
                 );
               })}
             </div>
-            <div className="hidden overflow-x-auto md:block">
+            <div className="hidden overflow-x-auto lg:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1286,12 +1583,12 @@ function AccountLedgerListView({
                         <TableCell className="text-right font-mono tabular-nums">
                           {money(opening)}
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums text-emerald-600">
+                        <TableCell className="text-right font-mono tabular-nums">
                           {row.period_debit && asNumber(row.period_debit)
                             ? money(row.period_debit)
                             : "—"}
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums text-rose-600">
+                        <TableCell className="text-right font-mono tabular-nums">
                           {row.period_credit && asNumber(row.period_credit)
                             ? money(row.period_credit)
                             : "—"}
@@ -1322,141 +1619,151 @@ function CustodyReconciliationView({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-1 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-        <span>Live custody snapshot for business date {report.as_of_date}</span>
+        <span>
+          Live custody snapshot for business date{" "}
+          {formatDate(report.as_of_date)}
+        </span>
         <span>Generated {dateTime(report.snapshot_at)}</span>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          label="Custody balances"
-          value={money(report.total_custody_balance)}
-        />
-        <MetricCard
-          label="Reporting balances"
-          value={money(report.total_reporting_balance)}
-        />
-        <MetricCard
-          label="Difference"
-          value={money(report.total_difference)}
-          tone={report.balanced ? "positive" : "negative"}
-        />
-        <MetricCard
-          label="Unlinked accounts"
-          value={String(report.unlinked_count)}
-          tone={report.unlinked_count ? "warning" : "positive"}
-        />
-      </div>
+      <ReportSummary
+        ariaLabel="Custody reconciliation summary"
+        items={[
+          {
+            label: "Expected in custody",
+            value: money(report.total_custody_balance),
+          },
+          {
+            label: "Recorded in reporting",
+            value: money(report.total_reporting_balance),
+          },
+          {
+            label: "Variance",
+            value: money(report.total_difference),
+            status: report.balanced ? "success" : "danger",
+          },
+          {
+            label: "Reconciliation status",
+            value: report.balanced
+              ? "Balanced"
+              : `${report.unlinked_count} unlinked account${report.unlinked_count === 1 ? "" : "s"}`,
+            status: report.balanced ? "success" : "warning",
+          },
+        ]}
+      />
       {report.rows.length === 0 ? (
         <EmptyReport message="No cash drawers, bank accounts, or custom custody accounts are configured." />
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="divide-y divide-border md:hidden">
-              {report.rows.map((row) => (
-                <button
-                  key={`${row.account_type}:${row.account_id}`}
-                  type="button"
-                  disabled={!row.reporting_head_id}
-                  onClick={() =>
-                    row.reporting_head_id && onSelectHead(row.reporting_head_id)
-                  }
-                  className="flex min-h-16 w-full items-center justify-between gap-3 px-4 py-3 text-left disabled:cursor-default focus-visible:bg-muted/40 focus-visible:outline-none"
+        <section className="overflow-hidden rounded-xl border border-border bg-background">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="font-semibold">Custody accounts</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Compare controlled funds with the linked reporting head.
+            </p>
+          </div>
+          <div className="divide-y divide-border lg:hidden">
+            {report.rows.map((row) => (
+              <button
+                key={`${row.account_type}:${row.account_id}`}
+                type="button"
+                disabled={!row.reporting_head_id}
+                onClick={() =>
+                  row.reporting_head_id && onSelectHead(row.reporting_head_id)
+                }
+                className="flex min-h-16 w-full items-center justify-between gap-3 px-4 py-3 text-left disabled:cursor-default focus-visible:bg-muted/40 focus-visible:outline-none"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">
+                    {row.account_name}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                    {row.reporting_head_name || "Not linked"} ·{" "}
+                    {humanize(row.status)}
+                  </span>
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 font-mono text-sm font-semibold tabular-nums",
+                    Math.abs(asNumber(row.difference)) > 0.005 &&
+                      "text-rose-600",
+                  )}
                 >
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">
-                      {row.account_name}
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {row.reporting_head_name || "Not linked"} ·{" "}
-                      {humanize(row.status)}
-                    </span>
-                  </span>
-                  <span
-                    className={cn(
-                      "shrink-0 font-mono text-sm font-semibold tabular-nums",
-                      Math.abs(asNumber(row.difference)) > 0.005 &&
-                        "text-rose-600",
-                    )}
-                  >
-                    {money(row.difference)}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="hidden overflow-x-auto md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-52">Custody account</TableHead>
-                    <TableHead className="min-w-52">Reporting head</TableHead>
-                    <TableHead className="text-right">
-                      Custody balance
-                    </TableHead>
-                    <TableHead className="text-right">
-                      Reporting balance
-                    </TableHead>
-                    <TableHead className="text-right">Difference</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {report.rows.map((row) => (
-                    <TableRow key={`${row.account_type}:${row.account_id}`}>
-                      <TableCell>
-                        <div className="font-medium">{row.account_name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {humanize(row.account_type)} ·{" "}
-                          {humanize(row.account_subtype)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {row.reporting_head_id ? (
-                          <button
-                            type="button"
-                            onClick={() => onSelectHead(row.reporting_head_id!)}
-                            className="font-medium hover:text-primary hover:underline"
-                          >
-                            {row.reporting_head_name ||
-                              `Head #${row.reporting_head_id}`}
-                          </button>
-                        ) : (
-                          <span className="text-amber-600">Not linked</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {money(row.custody_balance)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {money(row.reporting_balance)}
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-right font-mono font-semibold tabular-nums",
-                          Math.abs(asNumber(row.difference)) > 0.005 &&
-                            "text-rose-600",
-                        )}
-                      >
-                        {money(row.difference)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            row.status === "balanced"
-                              ? "success"
-                              : row.status === "unlinked"
-                                ? "warning"
-                                : "destructive"
-                          }
+                  {money(row.difference)}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto lg:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-52">Custody account</TableHead>
+                  <TableHead className="min-w-52">Reporting head</TableHead>
+                  <TableHead className="text-right">Custody balance</TableHead>
+                  <TableHead className="text-right">
+                    Reporting balance
+                  </TableHead>
+                  <TableHead className="text-right">Difference</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.rows.map((row) => (
+                  <TableRow key={`${row.account_type}:${row.account_id}`}>
+                    <TableCell>
+                      <div className="font-medium">{row.account_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {humanize(row.account_type)} ·{" "}
+                        {humanize(row.account_subtype)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {row.reporting_head_id ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectHead(row.reporting_head_id!)}
+                          className="font-medium hover:text-primary hover:underline"
                         >
-                          {humanize(row.status)}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                          {row.reporting_head_name ||
+                            `Head #${row.reporting_head_id}`}
+                        </button>
+                      ) : (
+                        <span className="text-amber-600">Not linked</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {money(row.custody_balance)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {money(row.reporting_balance)}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-right font-mono font-semibold tabular-nums",
+                        Math.abs(asNumber(row.difference)) > 0.005 &&
+                          "text-rose-600",
+                      )}
+                    >
+                      {money(row.difference)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          row.status === "balanced"
+                            ? "success"
+                            : row.status === "unlinked"
+                              ? "warning"
+                              : "destructive"
+                        }
+                      >
+                        {humanize(row.status)}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
       )}
     </div>
   );
@@ -1476,50 +1783,72 @@ function BalanceSheetView({
   return (
     <div className="space-y-4">
       <ClosureNotice closure={report.closure} />
-      <p className="text-sm text-muted-foreground">
-        Balances as of {report.as_of_date || dateTo}
+      <p className="hidden text-sm text-muted-foreground lg:block">
+        Balances as of {formatDate(report.as_of_date || dateTo)}
       </p>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard label="Assets" value={money(report.total_assets)} />
-        <MetricCard
-          label="Liabilities"
-          value={money(report.total_liabilities)}
-        />
-        <MetricCard label="Equity" value={money(report.total_equity)} />
-        <MetricCard
-          label="Current earnings"
-          value={money(report.current_earnings)}
-        />
-        <MetricCard
-          label={report.is_balanced ? "Balanced total" : "Difference"}
-          value={
-            report.is_balanced
-              ? money(report.total_liabilities_and_equity)
-              : money(report.difference)
-          }
-          tone={report.is_balanced ? "positive" : "negative"}
-        />
-      </div>
       {!hasRows ? (
         <EmptyReport message="No asset, liability, or equity balances exist as of this date." />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <HeadAmountTable
+        <div className="overflow-hidden rounded-xl border border-border bg-background">
+          <div className="border-b border-border px-4 py-4 sm:px-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Statement of financial position
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Assets compared with liabilities and equity.
+                </p>
+              </div>
+              <Badge variant={report.is_balanced ? "success" : "destructive"}>
+                {report.is_balanced ? "Balanced" : "Out of balance"}
+              </Badge>
+            </div>
+          </div>
+          <StatementSection
             title="Assets"
             rows={report.assets}
+            normalSide="debit"
+            totalLabel="Total assets"
+            total={report.total_assets}
             onSelectHead={onSelectHead}
           />
-          <div className="space-y-4">
-            <HeadAmountTable
-              title="Liabilities"
-              rows={report.liabilities}
-              onSelectHead={onSelectHead}
-            />
-            <HeadAmountTable
-              title="Equity"
-              rows={report.equity}
-              onSelectHead={onSelectHead}
-            />
+          <StatementSection
+            title="Liabilities"
+            rows={report.liabilities}
+            normalSide="credit"
+            totalLabel="Total liabilities"
+            total={report.total_liabilities}
+            onSelectHead={onSelectHead}
+          />
+          <StatementSection
+            title="Equity"
+            rows={report.equity}
+            supplementalRows={[
+              {
+                label: "Current earnings",
+                value: report.current_earnings,
+              },
+            ]}
+            totalLabel="Total equity"
+            total={report.total_equity}
+            onSelectHead={onSelectHead}
+          />
+          <div className="divide-y divide-border/70 bg-muted/20">
+            <div className="flex items-center justify-between gap-4 px-4 py-4 text-base font-semibold">
+              <span>Total liabilities and equity</span>
+              <span className="tabular-nums">
+                {money(report.total_liabilities_and_equity)}
+              </span>
+            </div>
+            {!report.is_balanced ? (
+              <div className="flex items-center justify-between gap-4 px-4 py-3 text-sm text-rose-700">
+                <span>Difference requiring attention</span>
+                <span className="font-semibold tabular-nums">
+                  {money(report.difference)}
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
@@ -1539,186 +1868,197 @@ function PartyBalancesView({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Outstanding balances as of {report.as_of_date || dateTo}
+        Outstanding balances as of {formatDate(report.as_of_date || dateTo)}
       </p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <MetricCard
-          label="Receivables"
-          value={money(report.total_receivables)}
-          tone="positive"
-        />
-        <MetricCard
-          label="Payables"
-          value={money(report.total_payables)}
-          tone="warning"
-        />
-      </div>
+      <ReportSummary
+        ariaLabel="Party balance summary"
+        items={[
+          {
+            label: "Total receivables",
+            value: money(report.total_receivables),
+            emphasis: true,
+          },
+          {
+            label: "Total payables",
+            value: money(report.total_payables),
+            emphasis: true,
+          },
+        ]}
+      />
       {report.rows.length === 0 ? (
         <EmptyReport message="No outstanding party receivables or payables match these filters." />
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="divide-y divide-border md:hidden">
-              {report.rows.map((row) => (
-                <button
-                  key={`${row.party_type}:${row.party_id}:${row.reporting_head_id}`}
-                  type="button"
-                  onClick={() => onSelectHead(row.reporting_head_id)}
-                  className="flex min-h-16 w-full items-center justify-between gap-3 px-4 py-3 text-left focus-visible:bg-muted/40 focus-visible:outline-none"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">
-                      {row.party_name ||
-                        `${humanize(row.party_type)} #${row.party_id}`}
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {humanize(row.balance_type)} · {row.reporting_head_name}
-                    </span>
+        <section className="overflow-hidden rounded-xl border border-border bg-background">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="font-semibold">Outstanding by party</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Select a party balance to inspect its account activity.
+            </p>
+          </div>
+          <div className="divide-y divide-border lg:hidden">
+            {report.rows.map((row) => (
+              <button
+                key={`${row.party_type}:${row.party_id}:${row.reporting_head_id}`}
+                type="button"
+                onClick={() => onSelectHead(row.reporting_head_id)}
+                className="flex min-h-16 w-full items-center justify-between gap-3 px-4 py-3 text-left focus-visible:bg-muted/40 focus-visible:outline-none"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">
+                    {row.party_name ||
+                      `${humanize(row.party_type)} #${row.party_id}`}
                   </span>
-                  <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
-                    {money(row.balance)}
+                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                    {humanize(row.balance_type)} · {row.reporting_head_name}
                   </span>
-                </button>
-              ))}
-            </div>
-            <div className="hidden overflow-x-auto md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-56">Party</TableHead>
-                    <TableHead>Balance type</TableHead>
-                    <TableHead className="min-w-52">Account head</TableHead>
-                    <TableHead className="text-right">Outstanding</TableHead>
+                </span>
+                <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
+                  {money(row.balance)}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto lg:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-56">Party</TableHead>
+                  <TableHead>Balance type</TableHead>
+                  <TableHead className="min-w-52">Account head</TableHead>
+                  <TableHead className="text-right">Outstanding</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.rows.map((row) => (
+                  <TableRow
+                    key={`${row.party_type}:${row.party_id}:${row.reporting_head_id}`}
+                  >
+                    <TableCell>
+                      <div className="font-medium">
+                        {row.party_name ||
+                          `${humanize(row.party_type)} #${row.party_id}`}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {humanize(row.party_type)} · ID {row.party_id}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          row.balance_type === "receivable" ? "info" : "warning"
+                        }
+                      >
+                        {humanize(row.balance_type)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        onClick={() => onSelectHead(row.reporting_head_id)}
+                        className="font-medium hover:text-primary hover:underline"
+                      >
+                        {row.reporting_head_name}
+                      </button>
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-semibold tabular-nums">
+                      {money(row.balance)}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {report.rows.map((row) => (
-                    <TableRow
-                      key={`${row.party_type}:${row.party_id}:${row.reporting_head_id}`}
-                    >
-                      <TableCell>
-                        <div className="font-medium">
-                          {row.party_name ||
-                            `${humanize(row.party_type)} #${row.party_id}`}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {humanize(row.party_type)} · ID {row.party_id}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            row.balance_type === "receivable"
-                              ? "info"
-                              : "warning"
-                          }
-                        >
-                          {humanize(row.balance_type)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <button
-                          type="button"
-                          onClick={() => onSelectHead(row.reporting_head_id)}
-                          className="font-medium hover:text-primary hover:underline"
-                        >
-                          {row.reporting_head_name}
-                        </button>
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-semibold tabular-nums">
-                        {money(row.balance)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
       )}
     </div>
   );
 }
 
 function CashFlowView({ report }: { report: FinanceReportingCashFlowRead }) {
-  const net = asNumber(report.net_cash_flow);
   return (
     <div className="space-y-4">
       <ClosureNotice closure={report.closure} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Operating" value={money(report.operating_net)} />
-        <MetricCard label="Investing" value={money(report.investing_net)} />
-        <MetricCard label="Financing" value={money(report.financing_net)} />
-        <MetricCard
-          label="Net cash flow"
-          value={money(report.net_cash_flow)}
-          tone={net >= 0 ? "positive" : "negative"}
-        />
-      </div>
+      <ReportSummary
+        ariaLabel="Cash flow summary"
+        items={[
+          { label: "Operating activities", value: money(report.operating_net) },
+          { label: "Investing activities", value: money(report.investing_net) },
+          { label: "Financing activities", value: money(report.financing_net) },
+          {
+            label: "Net cash flow",
+            value: money(report.net_cash_flow),
+            emphasis: true,
+          },
+        ]}
+      />
       {report.rows.length === 0 ? (
         <EmptyReport message="No custody-linked inflows or outflows match this period." />
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="divide-y divide-border md:hidden">
-              {report.rows.map((row) => (
-                <div
-                  key={`${row.activity_type}:${row.source_type}`}
-                  className="flex min-h-16 items-center justify-between gap-3 px-4 py-3"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">
+        <section className="overflow-hidden rounded-xl border border-border bg-background">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="font-semibold">Cash movements</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Inflows and outflows grouped by source and activity.
+            </p>
+          </div>
+          <div className="divide-y divide-border lg:hidden">
+            {report.rows.map((row) => (
+              <div
+                key={`${row.activity_type}:${row.source_type}`}
+                className="flex min-h-16 items-center justify-between gap-3 px-4 py-3"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">
+                    {humanize(row.source_type)}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {humanize(row.activity_type)} · In {money(row.inflow)} · Out{" "}
+                    {money(row.outflow)}
+                  </span>
+                </span>
+                <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
+                  {money(row.net_cash_flow)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto lg:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-56">Source</TableHead>
+                  <TableHead>Activity</TableHead>
+                  <TableHead className="text-right">Inflows</TableHead>
+                  <TableHead className="text-right">Outflows</TableHead>
+                  <TableHead className="text-right">Net cash flow</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.rows.map((row) => (
+                  <TableRow key={`${row.activity_type}:${row.source_type}`}>
+                    <TableCell className="font-medium">
                       {humanize(row.source_type)}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">
-                      {humanize(row.activity_type)} · In {money(row.inflow)} ·
-                      Out {money(row.outflow)}
-                    </span>
-                  </span>
-                  <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
-                    {money(row.net_cash_flow)}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="hidden overflow-x-auto md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-56">Source</TableHead>
-                    <TableHead>Activity</TableHead>
-                    <TableHead className="text-right">Inflows</TableHead>
-                    <TableHead className="text-right">Outflows</TableHead>
-                    <TableHead className="text-right">Net cash flow</TableHead>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {humanize(row.activity_type)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {money(row.inflow)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {money(row.outflow)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-semibold tabular-nums">
+                      {money(row.net_cash_flow)}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {report.rows.map((row) => (
-                    <TableRow key={`${row.activity_type}:${row.source_type}`}>
-                      <TableCell className="font-medium">
-                        {humanize(row.source_type)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {humanize(row.activity_type)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-emerald-600 tabular-nums">
-                        {money(row.inflow)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-rose-600 tabular-nums">
-                        {money(row.outflow)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-semibold tabular-nums">
-                        {money(row.net_cash_flow)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
       )}
     </div>
   );
@@ -1869,9 +2209,19 @@ function ReportingLedgerReportContent({
   const showAsOfDate = mode === "balance-sheet" || mode === "party-balances";
   const isProfitLoss = mode === "profit-and-loss";
   const FilterSurface = isProfitLoss ? FilterBar : ReportFilters;
+  const compactMobilePeriod = showAsOfDate
+    ? formatDate(dateTo)
+    : showPeriodDates
+      ? periodLabel(dateFrom, dateTo)
+      : null;
+  const showCompactMobilePeriod = [
+    "profit-and-loss",
+    "trial-balance",
+    "balance-sheet",
+  ].includes(mode);
 
   return (
-    <AppPage width="wide">
+    <AppPage width="report">
       <PageHeader
         title={meta.title}
         description={
@@ -1879,12 +2229,12 @@ function ReportingLedgerReportContent({
             ? "Income and expenses for the selected period."
             : meta.description
         }
-        className={isProfitLoss ? "hidden md:flex" : undefined}
       />
-      {!isProfitLoss ? <FinanceReportNavigation /> : null}
 
       <FilterSurface
         title={isProfitLoss ? "Filters" : "Report filters"}
+        {...(!isProfitLoss ? { variant: "flat" as const } : {})}
+        responsiveAt="lg"
         activeCount={
           Number(businessLine !== "all") +
           Number(includeZero) +
@@ -1892,12 +2242,12 @@ function ReportingLedgerReportContent({
           Number(Boolean(accountSearch))
         }
         actions={
-          isProfitLoss ? (
+          showCompactMobilePeriod && compactMobilePeriod ? (
             <div
-              className="flex h-11 min-w-0 max-w-[calc(100vw-9rem)] items-center truncate rounded-xl border border-border bg-background px-3 text-xs font-medium text-foreground md:hidden"
-              aria-label={`Selected period: ${periodLabel(dateFrom, dateTo)}`}
+              className="flex h-11 min-w-0 max-w-[calc(100vw-8.5rem)] items-center truncate rounded-xl border border-border bg-background px-3 text-xs font-medium text-foreground lg:hidden"
+              aria-label={`Selected report date: ${compactMobilePeriod}`}
             >
-              {periodLabel(dateFrom, dateTo)}
+              {compactMobilePeriod}
             </div>
           ) : undefined
         }

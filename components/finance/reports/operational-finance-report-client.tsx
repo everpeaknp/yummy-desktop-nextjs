@@ -2,14 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
+import {
+  endOfDay,
+  endOfMonth,
+  format,
+  startOfDay,
+  startOfMonth,
+  subDays,
+} from "date-fns";
 import {
   BadgeDollarSign,
+  Download,
   FileText,
   Loader2,
   ReceiptText,
   RotateCcw,
-  Download,
 } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
@@ -18,6 +25,7 @@ import apiClient from "@/lib/api-client";
 import { FinanceReportApis } from "@/lib/api/endpoints";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
 import { hasPermission } from "@/lib/role-permissions";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,7 +50,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FinanceReportNavigation } from "@/components/finance/reports/finance-report-navigation";
 import { SalesDocumentDetailSheet } from "@/components/finance/transaction-detail/sales-document-detail-sheet";
 import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
 import { AppPage } from "@/components/patterns/page/app-page";
@@ -74,7 +81,8 @@ type BaseResponse<T> = {
   message?: string;
 };
 
-type ReportMode = "sales-book" | "invoices" | "payments" | "refunds" | "vat-sales";
+type ReportMode =
+  "sales-book" | "invoices" | "payments" | "refunds" | "vat-sales";
 
 type ReportResponse =
   | SalesBookReportResponse
@@ -85,7 +93,6 @@ type ReportResponse =
 
 type OperationalFinanceReportClientProps = {
   mode: ReportMode;
-  showReportNavigation?: boolean;
   workspace?: "sales";
   showHeader?: boolean;
 };
@@ -93,23 +100,28 @@ type OperationalFinanceReportClientProps = {
 const reportMeta: Record<ReportMode, { title: string; description: string }> = {
   "sales-book": {
     title: "Sales report",
-    description: "Date-filtered sales, tax, discount, settlement, and balance for review or export.",
+    description:
+      "Date-filtered sales, tax, discount, settlement, and balance for review or export.",
   },
   invoices: {
     title: "Invoices",
-    description: "Invoice-level view for bill lookup, customer settlement, and receivable checks.",
+    description:
+      "Invoice-level view for bill lookup, customer settlement, and receivable checks.",
   },
   payments: {
     title: "Payments",
-    description: "Successful payment collections by business date, method, instrument, and invoice.",
+    description:
+      "Successful payment collections by business date, method, instrument, and invoice.",
   },
   refunds: {
     title: "Sales returns & refunds",
-    description: "Refunds created from completed orders, with the original invoice and settlement method.",
+    description:
+      "Refunds created from completed orders, with the original invoice and settlement method.",
   },
   "vat-sales": {
     title: "VAT Sales",
-    description: "Taxable sales and VAT amounts for sales materialized reporting.",
+    description:
+      "Taxable sales and VAT amounts for sales materialized reporting.",
   },
 };
 
@@ -131,46 +143,57 @@ function presetToRange(preset: DateRangePreset): DateRange {
     const day = subDays(now, 1);
     return { from: startOfDay(day), to: endOfDay(day) };
   }
-  if (preset === "last7") return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) };
-  if (preset === "last30") return { from: startOfDay(subDays(now, 30)), to: endOfDay(now) };
+  if (preset === "last7")
+    return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) };
+  if (preset === "last30")
+    return { from: startOfDay(subDays(now, 30)), to: endOfDay(now) };
   return { from: startOfMonth(now), to: endOfMonth(now) };
 }
 
-function formatMoney(value: number | null | undefined) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+const formatMoney = formatCurrency;
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function humanizeEnum(value: string | null | undefined) {
+  const normalized = String(value || "")
+    .trim()
+    .replaceAll("_", " ")
+    .toLowerCase();
+  return normalized
+    ? normalized.charAt(0).toUpperCase() + normalized.slice(1)
+    : "Not specified";
 }
 
 function settlementLabel(row: SalesBookRow | InvoiceRow) {
-  return row.settlement_status.replace(/_/g, " ");
+  const labels: Record<string, string> = {
+    customer_credit: "Customer credit",
+    paid: "Paid",
+    partially_paid: "Partially paid",
+    pending: "Pending",
+    returned: "Returned",
+    unpaid: "Unpaid",
+  };
+  return labels[row.settlement_status.toLowerCase()] || "Recorded";
 }
 
-function isPaymentReport(data: ReportResponse | null): data is PaymentReportResponse {
-  return !!data && "paid_amount" in data.totals && !("grand_total" in data.totals);
+function isPaymentReport(
+  data: ReportResponse | null,
+): data is PaymentReportResponse {
+  return (
+    !!data && "paid_amount" in data.totals && !("grand_total" in data.totals)
+  );
 }
 
-function isRefundReport(data: ReportResponse | null): data is RefundReportResponse {
-  return !!data && "refund_amount" in data.totals && !("grand_total" in data.totals);
+function isRefundReport(
+  data: ReportResponse | null,
+): data is RefundReportResponse {
+  return (
+    !!data && "refund_amount" in data.totals && !("grand_total" in data.totals)
+  );
 }
 
 function isSalesLikeReport(
-  data: ReportResponse | null
-): data is SalesBookReportResponse | InvoiceReportResponse | VatSalesReportResponse {
+  data: ReportResponse | null,
+): data is
+  SalesBookReportResponse | InvoiceReportResponse | VatSalesReportResponse {
   return !!data && "grand_total" in data.totals;
 }
 
@@ -193,12 +216,18 @@ function reportBalanceDue(data: ReportResponse | null) {
   return isSalesLikeReport(data) ? data.totals.balance_due : 0;
 }
 
-function SummaryStrip({ data, mode }: { data: ReportResponse | null; mode: ReportMode }) {
+function SummaryStrip({
+  data,
+  mode,
+}: {
+  data: ReportResponse | null;
+  mode: ReportMode;
+}) {
   if (mode === "payments" || mode === "refunds") {
     const isPayments = mode === "payments";
     const count = Number(data?.total ?? 0);
     return (
-      <section className="rounded-2xl border border-border bg-card px-4 py-3 shadow-sm sm:px-5 sm:py-4">
+      <section className="border-y border-border py-3 sm:px-1 sm:py-4">
         <div className="flex items-end justify-between gap-4">
           <div className="min-w-0">
             <p className="text-sm font-medium text-muted-foreground">
@@ -216,23 +245,29 @@ function SummaryStrip({ data, mode }: { data: ReportResponse | null; mode: Repor
     );
   }
 
-  const amountLabel = mode === "payments" ? "Collected" : mode === "refunds" ? "Refunded" : "Grand Total";
   const items = [
-    { label: amountLabel, value: formatMoney(reportTotalAmount(data)) },
+    { label: "Grand Total", value: formatMoney(reportTotalAmount(data)) },
     { label: "VAT", value: formatMoney(reportTaxAmount(data)) },
     { label: "Discount", value: formatMoney(reportDiscountAmount(data)) },
     { label: "Balance Due", value: formatMoney(reportBalanceDue(data)) },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+    <dl className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card lg:grid-cols-4">
       {items.map((item) => (
-        <div key={item.label} className="rounded-2xl border border-border bg-card px-3 py-3 shadow-sm sm:px-4">
-          <div className="text-xs font-medium text-muted-foreground">{item.label}</div>
-          <div className="mt-1 truncate text-base font-semibold tabular-nums sm:text-lg">{item.value}</div>
+        <div
+          key={item.label}
+          className="border-b border-r px-3 py-3 even:border-r-0 [&:nth-last-child(-n+2)]:border-b-0 lg:border-b-0 lg:even:border-r lg:last:border-r-0 lg:px-4"
+        >
+          <dt className="text-xs font-medium text-muted-foreground">
+            {item.label}
+          </dt>
+          <dd className="mt-1 truncate text-base font-semibold tabular-nums sm:text-lg">
+            {item.value}
+          </dd>
         </div>
       ))}
-    </div>
+    </dl>
   );
 }
 
@@ -246,90 +281,116 @@ function SalesLikeTable({
   onSelectSale: (orderId: number) => void;
 }) {
   if (rows.length === 0) {
-    return <div className="p-8 text-center text-sm text-muted-foreground">No report rows found.</div>;
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground">
+        No report rows found.
+      </div>
+    );
   }
 
   const includeSettlement = mode !== "vat-sales";
 
   return (
     <>
-    <DataList className="rounded-none border-x-0 border-y-0 md:hidden">
-      {rows.map((row) => (
-        <ListRow
-          key={`${row.order_id}-${row.invoice_number}`}
-          leading={<FileText className="h-4 w-4 text-primary" />}
-          title={row.invoice_number}
-          description={`${row.customer_name ?? "Walk-in"} · ${row.business_date}${includeSettlement && "settlement_status" in row ? ` · ${settlementLabel(row)}` : ""}`}
-          meta={<span className="font-semibold tabular-nums text-foreground">{formatMoney(row.grand_total)}</span>}
-          interactive
-          role="button"
-          tabIndex={0}
-          onClick={() => onSelectSale(row.order_id)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              onSelectSale(row.order_id);
+      <DataList className="rounded-none border-x-0 border-y-0 lg:hidden">
+        {rows.map((row) => (
+          <ListRow
+            key={`${row.order_id}-${row.invoice_number}`}
+            leading={<FileText className="h-4 w-4 text-primary" />}
+            title={row.invoice_number}
+            description={`${row.customer_name ?? "Walk-in"} · ${formatDate(row.business_date)}${includeSettlement && "settlement_status" in row ? ` · ${settlementLabel(row)}` : ""}`}
+            meta={
+              <span className="font-semibold tabular-nums text-foreground">
+                {formatMoney(row.grand_total)}
+              </span>
             }
-          }}
-        />
-      ))}
-    </DataList>
-    <div className="hidden overflow-x-auto md:block">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="min-w-[150px]">Business Date</TableHead>
-            <TableHead className="min-w-[160px]">Invoice</TableHead>
-            <TableHead className="min-w-[190px]">Completed</TableHead>
-            <TableHead className="min-w-[190px]">Customer</TableHead>
-            <TableHead className="text-right">Taxable</TableHead>
-            <TableHead className="text-right">VAT</TableHead>
-            <TableHead className="text-right">Grand Total</TableHead>
-            {includeSettlement && <TableHead className="text-right">Paid</TableHead>}
-            {includeSettlement && <TableHead className="text-right">Balance</TableHead>}
-            {includeSettlement && <TableHead className="min-w-[130px]">Settlement</TableHead>}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow
-              key={`${row.order_id}-${row.invoice_number}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelectSale(row.order_id)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelectSale(row.order_id);
-                }
-              }}
-              className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
-            >
-              <TableCell>{row.business_date}</TableCell>
-              <TableCell>
-                <div className="font-medium">{row.invoice_number}</div>
-              </TableCell>
-              <TableCell>{formatDateTime(row.completed_at)}</TableCell>
-              <TableCell>
-                <div>{row.customer_name ?? "Walk-in"}</div>
-              </TableCell>
-              <TableCell className="text-right font-mono">{formatMoney(row.taxable_sales)}</TableCell>
-              <TableCell className="text-right font-mono">{formatMoney(row.tax_amount)}</TableCell>
-              <TableCell className="text-right font-mono">{formatMoney(row.grand_total)}</TableCell>
-              {includeSettlement && "paid_amount" in row && (
-                <TableCell className="text-right font-mono">{formatMoney(row.paid_amount)}</TableCell>
+            interactive
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelectSale(row.order_id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelectSale(row.order_id);
+              }
+            }}
+          />
+        ))}
+      </DataList>
+      <div className="hidden overflow-x-auto lg:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-[150px]">Business Date</TableHead>
+              <TableHead className="min-w-[160px]">Invoice</TableHead>
+              <TableHead className="min-w-[190px]">Completed</TableHead>
+              <TableHead className="min-w-[190px]">Customer</TableHead>
+              <TableHead className="text-right">Taxable</TableHead>
+              <TableHead className="text-right">VAT</TableHead>
+              <TableHead className="text-right">Grand Total</TableHead>
+              {includeSettlement && (
+                <TableHead className="text-right">Paid</TableHead>
               )}
-              {includeSettlement && "balance_due" in row && (
-                <TableCell className="text-right font-mono">{formatMoney(row.balance_due)}</TableCell>
+              {includeSettlement && (
+                <TableHead className="text-right">Balance</TableHead>
               )}
-              {includeSettlement && "settlement_status" in row && (
-                <TableCell className="capitalize">{settlementLabel(row)}</TableCell>
+              {includeSettlement && (
+                <TableHead className="min-w-[130px]">Settlement</TableHead>
               )}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow
+                key={`${row.order_id}-${row.invoice_number}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelectSale(row.order_id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelectSale(row.order_id);
+                  }
+                }}
+                className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+              >
+                <TableCell>{formatDate(row.business_date)}</TableCell>
+                <TableCell>
+                  <div className="font-medium">{row.invoice_number}</div>
+                </TableCell>
+                <TableCell>{formatDateTime(row.completed_at)}</TableCell>
+                <TableCell>
+                  <div>{row.customer_name ?? "Walk-in"}</div>
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatMoney(row.taxable_sales)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatMoney(row.tax_amount)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatMoney(row.grand_total)}
+                </TableCell>
+                {includeSettlement && "paid_amount" in row && (
+                  <TableCell className="text-right font-mono">
+                    {formatMoney(row.paid_amount)}
+                  </TableCell>
+                )}
+                {includeSettlement && "balance_due" in row && (
+                  <TableCell className="text-right font-mono">
+                    {formatMoney(row.balance_due)}
+                  </TableCell>
+                )}
+                {includeSettlement && "settlement_status" in row && (
+                  <TableCell className="capitalize">
+                    {settlementLabel(row)}
+                  </TableCell>
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </>
   );
 }
@@ -341,9 +402,15 @@ function PaymentTable({
   rows: Array<PaymentReportRow | RefundReportRow>;
   mode: "payments" | "refunds";
 }) {
-  const [selected, setSelected] = useState<PaymentReportRow | RefundReportRow | null>(null);
+  const [selected, setSelected] = useState<
+    PaymentReportRow | RefundReportRow | null
+  >(null);
   if (rows.length === 0) {
-    return <div className="p-8 text-center text-sm text-muted-foreground">No report rows found.</div>;
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground">
+        No report rows found.
+      </div>
+    );
   }
 
   const selectedAt = selected
@@ -358,30 +425,60 @@ function PaymentTable({
         reference: selected.reference || selected.invoice_number,
         subtitle:
           selected.customer_name ||
-          (mode === "payments" ? "Walk-in customer payment" : "Customer refund"),
+          (mode === "payments"
+            ? "Walk-in customer payment"
+            : "Customer refund"),
         occurredAt: selectedAt,
         status: mode === "payments" ? "successful" : "refunded",
         amount: selected.amount,
-        amountLabel: mode === "payments" ? "Amount collected" : "Amount refunded",
+        amountLabel:
+          mode === "payments" ? "Amount collected" : "Amount refunded",
         amountTone: mode === "payments" ? "in" : "out",
-        badges: [selected.payment_method, selected.instrument_type].filter(Boolean) as string[],
+        badges: [
+          humanizeEnum(selected.payment_method),
+          selected.instrument_type
+            ? humanizeEnum(selected.instrument_type)
+            : null,
+        ].filter(Boolean) as string[],
         sections: [
           {
             title: "Payment overview",
             fields: [
               { label: "Invoice", value: selected.invoice_number },
-              { label: "Customer", value: selected.customer_name || "Walk-in customer" },
-              { label: "Business date", value: selected.business_date },
-              { label: mode === "payments" ? "Paid at" : "Refunded at", value: formatDateTime(selectedAt) },
-              { label: "Reference", value: selected.reference || "Not provided", fullWidth: true },
+              {
+                label: "Customer",
+                value: selected.customer_name || "Walk-in customer",
+              },
+              {
+                label: "Business date",
+                value: formatDate(selected.business_date),
+              },
+              {
+                label: mode === "payments" ? "Paid at" : "Refunded at",
+                value: formatDateTime(selectedAt),
+              },
+              {
+                label: "Reference",
+                value: selected.reference || "Not provided",
+                fullWidth: true,
+              },
             ],
           },
           {
             title: "Settlement",
             fields: [
-              { label: "Payment method", value: selected.payment_method.replaceAll("_", " ") },
-              { label: "Instrument type", value: selected.instrument_type?.replaceAll("_", " ") || "Not specified" },
-              { label: "Instrument", value: selected.instrument_name || "Not specified" },
+              {
+                label: "Payment method",
+                value: humanizeEnum(selected.payment_method),
+              },
+              {
+                label: "Instrument type",
+                value: humanizeEnum(selected.instrument_type),
+              },
+              {
+                label: "Instrument",
+                value: selected.instrument_name || "Not specified",
+              },
               { label: "Amount", value: formatMoney(selected.amount) },
             ],
           },
@@ -391,96 +488,135 @@ function PaymentTable({
 
   return (
     <>
-    <DataList className="rounded-none border-x-0 border-y-0 md:hidden">
-      {rows.map((row) => {
-        const happenedAt = "paid_at" in row ? row.paid_at : row.refunded_at;
-        return (
-          <ListRow
-            key={`${row.payment_id}-${row.order_id}`}
-            leading={<BadgeDollarSign className="h-4 w-4 text-primary" />}
-            title={row.invoice_number}
-            description={`${row.customer_name ?? "Walk-in"} · ${String(row.payment_method).replaceAll("_", " ")} · ${formatDateTime(happenedAt)}`}
-            meta={<span className="font-semibold tabular-nums text-foreground">{formatMoney(row.amount)}</span>}
-            interactive
-            role="button"
-            tabIndex={0}
-            onClick={() => setSelected(row)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setSelected(row);
+      <DataList className="rounded-none border-x-0 border-y-0 lg:hidden">
+        {rows.map((row) => {
+          const happenedAt = "paid_at" in row ? row.paid_at : row.refunded_at;
+          return (
+            <ListRow
+              key={`${row.payment_id}-${row.order_id}`}
+              leading={<BadgeDollarSign className="h-4 w-4 text-primary" />}
+              title={row.invoice_number}
+              description={`${row.customer_name ?? "Walk-in"} · ${humanizeEnum(row.payment_method)} · ${formatDateTime(happenedAt)}`}
+              meta={
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatMoney(row.amount)}
+                </span>
               }
-            }}
-          />
-        );
-      })}
-    </DataList>
-    <div className="hidden overflow-x-auto md:block">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="min-w-[150px]">Business Date</TableHead>
-            <TableHead className="min-w-[180px]">{mode === "payments" ? "Paid At" : "Refunded At"}</TableHead>
-            <TableHead className="min-w-[160px]">Invoice</TableHead>
-            <TableHead className="min-w-[150px]">Method</TableHead>
-            <TableHead className="min-w-[180px]">Instrument</TableHead>
-            <TableHead className="min-w-[180px]">Customer</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
-            <TableHead className="min-w-[180px]">Reference</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => {
-            const happenedAt = "paid_at" in row ? row.paid_at : row.refunded_at;
-            return (
-              <TableRow
-                key={`${row.payment_id}-${row.order_id}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelected(row)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelected(row);
-                  }
-                }}
-                className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
-              >
-                <TableCell>{row.business_date}</TableCell>
-                <TableCell>{formatDateTime(happenedAt)}</TableCell>
-                <TableCell>
-                  <div className="font-medium">{row.invoice_number}</div>
-                </TableCell>
-                <TableCell className="capitalize">{row.payment_method}</TableCell>
-                <TableCell>
-                  <div>{row.instrument_name ?? "-"}</div>
-                  <div className="text-xs text-muted-foreground">{row.instrument_type ?? "-"}</div>
-                </TableCell>
-                <TableCell>
-                  <div>{row.customer_name ?? "Walk-in"}</div>
-                </TableCell>
-                <TableCell className="text-right font-mono">{formatMoney(row.amount)}</TableCell>
-                <TableCell className="font-mono text-xs">{row.reference ?? "-"}</TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
-    <TransactionDetailSheet
-      open={selected != null}
-      onOpenChange={(open) => !open && setSelected(null)}
-      detail={selectedDetail}
-      actionHref={selected ? `/orders/${selected.order_id}` : null}
-      actionLabel="Open invoice"
-    />
+              interactive
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelected(row)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setSelected(row);
+                }
+              }}
+            />
+          );
+        })}
+      </DataList>
+      <div className="hidden overflow-x-auto lg:block">
+        <Table className="w-full table-fixed">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[112px] whitespace-nowrap">
+                Business Date
+              </TableHead>
+              <TableHead className="w-[154px] whitespace-nowrap">
+                {mode === "payments" ? "Paid At" : "Refunded At"}
+              </TableHead>
+              <TableHead className="w-[108px] whitespace-nowrap">
+                Invoice
+              </TableHead>
+              <TableHead className="w-[140px] whitespace-nowrap">
+                Method
+              </TableHead>
+              <TableHead className="w-[136px]">Instrument</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead className="w-[124px] whitespace-nowrap text-right">
+                Amount
+              </TableHead>
+              <TableHead className="w-[122px]">Reference</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => {
+              const happenedAt =
+                "paid_at" in row ? row.paid_at : row.refunded_at;
+              return (
+                <TableRow
+                  key={`${row.payment_id}-${row.order_id}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelected(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelected(row);
+                    }
+                  }}
+                  className="cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none"
+                >
+                  <TableCell className="whitespace-nowrap">
+                    {formatDate(row.business_date)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {formatDateTime(happenedAt)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <div className="truncate font-medium">
+                      {row.invoice_number}
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-0">
+                    <span className="block truncate whitespace-nowrap">
+                      {humanizeEnum(row.payment_method)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="min-w-0">
+                    <div className="truncate">{row.instrument_name ?? "—"}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {row.instrument_type
+                        ? humanizeEnum(row.instrument_type)
+                        : "—"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-0">
+                    <div className="truncate">
+                      {row.customer_name ?? "Walk-in"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-mono">
+                    {formatMoney(row.amount)}
+                  </TableCell>
+                  <TableCell className="min-w-0 font-mono text-xs">
+                    <span
+                      className="block truncate"
+                      title={row.reference ?? undefined}
+                    >
+                      {row.reference ?? "—"}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      <TransactionDetailSheet
+        open={selected != null}
+        onOpenChange={(open) => !open && setSelected(null)}
+        detail={selectedDetail}
+        actionHref={selected ? `/orders/${selected.order_id}` : null}
+        actionLabel="Open invoice"
+      />
     </>
   );
 }
 
 export function OperationalFinanceReportClient({
   mode,
-  showReportNavigation = true,
   workspace,
   showHeader = true,
 }: OperationalFinanceReportClientProps) {
@@ -490,13 +626,19 @@ export function OperationalFinanceReportClient({
   const [dateFrom, setDateFrom] = useState(defaultStartDate);
   const [dateTo, setDateTo] = useState(() => yyyyMmDd(new Date()));
   const [datePreset, setDatePreset] = useState<DateRangePreset>("last30");
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => presetToRange("last30"));
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() =>
+    presetToRange("last30"),
+  );
   const [billNumber, setBillNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
-  const [availablePaymentMethods, setAvailablePaymentMethods] = useState<string[]>([]);
+  const [availablePaymentMethods, setAvailablePaymentMethods] = useState<
+    string[]
+  >([]);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ReportResponse | null>(null);
-  const [selectedSale, setSelectedSale] = useState<FinanceSalesDocument | null>(null);
+  const [selectedSale, setSelectedSale] = useState<FinanceSalesDocument | null>(
+    null,
+  );
 
   const canView = hasPermission(user, "finance.income.view");
   const restaurantId = user?.restaurant_id;
@@ -504,7 +646,10 @@ export function OperationalFinanceReportClient({
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && token) await me();
       if (!user && !token) router.push("/");
     };
@@ -538,7 +683,7 @@ export function OperationalFinanceReportClient({
       limit: 100,
       offset: 0,
     }),
-    [restaurantId, dateFrom, dateTo, billNumber, paymentMethod]
+    [restaurantId, dateFrom, dateTo, billNumber, paymentMethod],
   );
 
   const loadReport = useCallback(async () => {
@@ -560,7 +705,9 @@ export function OperationalFinanceReportClient({
       const nextReport = res.data?.data ?? null;
       setReport(nextReport);
       if (nextReport && (mode === "payments" || mode === "refunds")) {
-        const methods = (nextReport.rows as Array<PaymentReportRow | RefundReportRow>)
+        const methods = (
+          nextReport.rows as Array<PaymentReportRow | RefundReportRow>
+        )
           .map((row) => String(row.payment_method || "").trim())
           .filter(Boolean);
         setAvailablePaymentMethods((current) =>
@@ -582,10 +729,15 @@ export function OperationalFinanceReportClient({
   const exportReport = async () => {
     if (!report || report.rows.length === 0) return;
     const XLSX = await import("xlsx");
-    const ws = XLSX.utils.json_to_sheet(report.rows as Array<Record<string, unknown>>);
+    const ws = XLSX.utils.json_to_sheet(
+      report.rows as Array<Record<string, unknown>>,
+    );
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, meta.title.slice(0, 31));
-    XLSX.writeFile(wb, `${meta.title.replace(/\s+/g, "_")}_${dateFrom}_${dateTo}.xlsx`);
+    XLSX.writeFile(
+      wb,
+      `${meta.title.replace(/\s+/g, "_")}_${dateFrom}_${dateTo}.xlsx`,
+    );
   };
 
   const clearFilters = () => {
@@ -628,114 +780,137 @@ export function OperationalFinanceReportClient({
   }
 
   return (
-    <AppPage width="wide">
-      {showHeader || showReportNavigation || workspace === "sales" ? (
-      <div className="flex flex-col gap-4">
-        {showHeader ? (
-        <PageHeader
-          title={meta.title}
-          description={meta.description}
-          leading={mode === "payments" ? (
-            <BadgeDollarSign className="hidden h-6 w-6 text-muted-foreground md:block" />
-          ) : mode === "refunds" ? (
-            <RotateCcw className="hidden h-6 w-6 text-muted-foreground md:block" />
-          ) : mode === "vat-sales" ? (
-            <ReceiptText className="hidden h-6 w-6 text-muted-foreground md:block" />
-          ) : (
-            <FileText className="hidden h-6 w-6 text-muted-foreground md:block" />
-          )}
-        />
-        ) : null}
-        {showReportNavigation ? <FinanceReportNavigation /> : null}
-        {workspace === "sales" ? (
-          <FinanceWorkspaceNav
-            links={[
-              { label: "Invoices", href: "/finance/sales" },
-              { label: "Sales returns", href: "/finance/sales/returns" },
-            ]}
-            action={
-              mode === "refunds"
-                ? { label: "Select invoice", href: "/finance/sales" }
-                : { label: "New sale", href: "/orders/new" }
-            }
-          />
-        ) : null}
-      </div>
+    <AppPage width="report">
+      {showHeader || workspace === "sales" ? (
+        <div className="flex flex-col gap-4">
+          {showHeader ? (
+            <PageHeader
+              title={meta.title}
+              description={meta.description}
+              leading={
+                mode === "payments" ? (
+                  <BadgeDollarSign className="hidden h-6 w-6 text-muted-foreground md:block" />
+                ) : mode === "refunds" ? (
+                  <RotateCcw className="hidden h-6 w-6 text-muted-foreground md:block" />
+                ) : mode === "vat-sales" ? (
+                  <ReceiptText className="hidden h-6 w-6 text-muted-foreground md:block" />
+                ) : (
+                  <FileText className="hidden h-6 w-6 text-muted-foreground md:block" />
+                )
+              }
+            />
+          ) : null}
+          {workspace === "sales" ? (
+            <FinanceWorkspaceNav
+              links={[
+                { label: "Invoices", href: "/finance/sales" },
+                { label: "Sales returns", href: "/finance/sales/returns" },
+              ]}
+              action={
+                mode === "refunds"
+                  ? { label: "Select invoice", href: "/finance/sales" }
+                  : { label: "New sale", href: "/orders/new" }
+              }
+            />
+          ) : null}
+        </div>
       ) : null}
 
       <ReportFilters
         title="Report filters"
-        activeCount={Number(Boolean(billNumber)) + Number(Boolean(paymentMethod))}
+        responsiveAt="lg"
+        activeCount={
+          Number(Boolean(billNumber)) + Number(Boolean(paymentMethod))
+        }
       >
-      <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="grid min-w-0 flex-1 gap-3 md:flex md:flex-wrap md:items-end">
-          <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">
-              Date range
-            </Label>
-            <DateRangeDropdown
-              activeRange={datePreset}
-              setActiveRange={setDatePreset}
-              date={dateRange}
-              className="h-11 w-full rounded-xl md:w-auto"
-              setDate={(value) => {
-                setDatePreset("custom");
-                setDateRange(value);
-                const from = value?.from;
-                const to = value?.to;
-                if (from) {
-                  setDateFrom(format(from, "yyyy-MM-dd"));
-                }
-                if (to) {
-                  setDateTo(format(to, "yyyy-MM-dd"));
-                } else if (from) {
-                  setDateTo(format(from, "yyyy-MM-dd"));
-                }
-              }}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="report-bill-number" className="text-xs text-muted-foreground">
-              Bill
-            </Label>
-            <Input
-              id="report-bill-number"
-              value={billNumber}
-              onChange={(event) => setBillNumber(event.target.value)}
-              placeholder="Bill number"
-              className="h-11 w-full rounded-xl md:w-[170px]"
-            />
-          </div>
-          {(mode === "payments" || mode === "refunds") ? (
-          <div className="grid gap-1.5">
-            <Label htmlFor="report-payment-method" className="text-xs text-muted-foreground">
-              Method
-            </Label>
-            <Select value={paymentMethod || "all"} onValueChange={(value) => setPaymentMethod(value === "all" ? "" : value)}>
-              <SelectTrigger
-              id="report-payment-method"
-              className="h-11 w-full rounded-xl md:w-[170px]"
+        <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="grid min-w-0 flex-1 gap-3 md:flex md:flex-wrap md:items-end">
+            <div className="grid gap-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Date range
+              </Label>
+              <DateRangeDropdown
+                activeRange={datePreset}
+                setActiveRange={setDatePreset}
+                date={dateRange}
+                className="h-11 w-full rounded-xl md:w-auto"
+                setDate={(value) => {
+                  setDatePreset("custom");
+                  setDateRange(value);
+                  const from = value?.from;
+                  const to = value?.to;
+                  if (from) {
+                    setDateFrom(format(from, "yyyy-MM-dd"));
+                  }
+                  if (to) {
+                    setDateTo(format(to, "yyyy-MM-dd"));
+                  } else if (from) {
+                    setDateTo(format(from, "yyyy-MM-dd"));
+                  }
+                }}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label
+                htmlFor="report-bill-number"
+                className="text-xs text-muted-foreground"
               >
-                <SelectValue placeholder="All methods" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All methods</SelectItem>
-                {availablePaymentMethods.map((method) => (
-                  <SelectItem key={method} value={method} className="capitalize">
-                    {method.replaceAll("_", " ")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                Bill
+              </Label>
+              <Input
+                id="report-bill-number"
+                value={billNumber}
+                onChange={(event) => setBillNumber(event.target.value)}
+                placeholder="Bill number"
+                className="h-11 w-full rounded-xl md:w-[170px]"
+              />
+            </div>
+            {mode === "payments" || mode === "refunds" ? (
+              <div className="grid gap-1.5">
+                <Label
+                  htmlFor="report-payment-method"
+                  className="text-xs text-muted-foreground"
+                >
+                  Method
+                </Label>
+                <Select
+                  value={paymentMethod || "all"}
+                  onValueChange={(value) =>
+                    setPaymentMethod(value === "all" ? "" : value)
+                  }
+                >
+                  <SelectTrigger
+                    id="report-payment-method"
+                    className="h-11 w-full rounded-xl md:w-[170px]"
+                  >
+                    <SelectValue placeholder="All methods" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All methods</SelectItem>
+                    {availablePaymentMethods.map((method) => (
+                      <SelectItem
+                        key={method}
+                        value={method}
+                        className="capitalize"
+                      >
+                        {method.replaceAll("_", " ")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
           </div>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl"
+              onClick={clearFilters}
+            >
+              Clear
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" className="h-11 rounded-xl" onClick={clearFilters}>
-            Clear
-          </Button>
-        </div>
-      </div>
       </ReportFilters>
 
       <SummaryStrip data={report} mode={mode} />
@@ -758,11 +933,19 @@ export function OperationalFinanceReportClient({
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">Loading {meta.title.toLowerCase()}...</div>
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              Loading {meta.title.toLowerCase()}...
+            </div>
           ) : mode === "payments" && report ? (
-            <PaymentTable rows={(report as PaymentReportResponse).rows} mode="payments" />
+            <PaymentTable
+              rows={(report as PaymentReportResponse).rows}
+              mode="payments"
+            />
           ) : mode === "refunds" && report ? (
-            <PaymentTable rows={(report as RefundReportResponse).rows} mode="refunds" />
+            <PaymentTable
+              rows={(report as RefundReportResponse).rows}
+              mode="refunds"
+            />
           ) : report ? (
             <SalesLikeTable
               rows={
@@ -772,7 +955,9 @@ export function OperationalFinanceReportClient({
               onSelectSale={openSaleDetail}
             />
           ) : (
-            <div className="p-8 text-center text-sm text-muted-foreground">No report loaded.</div>
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              No report loaded.
+            </div>
           )}
         </CardContent>
       </Card>

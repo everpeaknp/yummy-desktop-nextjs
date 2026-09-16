@@ -9,7 +9,12 @@ import {
   type CashBankAccountOption,
 } from "@/components/finance/cash-bank-account-select";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,10 +23,19 @@ import apiClient from "@/lib/api-client";
 import { CustomerApis } from "@/lib/api/endpoints";
 import { financeReportingApi } from "@/lib/api/finance-reporting-api";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
+import { formatCurrency } from "@/lib/utils";
 import type { FinanceReportingHeadRead } from "@/types/finance-reporting";
-import type { FinanceSalesDocument, FinanceSalesInvoiceLineInput } from "@/types/finance-sales";
+import type {
+  FinanceSalesDocument,
+  FinanceSalesInvoiceLineInput,
+} from "@/types/finance-sales";
 
-type CustomerOption = { id: number; name?: string; full_name?: string; phone?: string };
+type CustomerOption = {
+  id: number;
+  name?: string;
+  full_name?: string;
+  phone?: string;
+};
 type DraftLine = FinanceSalesInvoiceLineInput & { key: string };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -51,7 +65,9 @@ export function FinanceSalesInvoiceDialog({
   const restaurantId = useAuth((state) => state.user?.restaurant_id);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [heads, setHeads] = useState<FinanceReportingHeadRead[]>([]);
-  const [businessLine, setBusinessLine] = useState<"restaurant" | "hotel">("restaurant");
+  const [businessLine, setBusinessLine] = useState<"restaurant" | "hotel">(
+    "restaurant",
+  );
   const [businessDate, setBusinessDate] = useState(today());
   const [customerId, setCustomerId] = useState("");
   const [reference, setReference] = useState("");
@@ -77,16 +93,25 @@ export function FinanceSalesInvoiceDialog({
         if (cancelled) return;
         setCustomers(customerResponse.data?.data?.customers || []);
         setHeads(eligibleHeads);
-        setLines((current) => current.map((line) => ({
-          ...line,
-          reporting_head_id: line.reporting_head_id || eligibleHeads[0]?.id || null,
-        })));
+        setLines((current) =>
+          current.map((line) => ({
+            ...line,
+            reporting_head_id:
+              line.reporting_head_id || eligibleHeads[0]?.id || null,
+          })),
+        );
       })
       .catch((error) => {
-        if (!cancelled) toast.error(error.response?.data?.detail || "Could not load sales invoice options.");
+        if (!cancelled)
+          toast.error(
+            error.response?.data?.detail ||
+              "Could not load sales invoice options.",
+          );
       })
       .finally(() => !cancelled && setLoading(false));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [businessLine, open, restaurantId]);
 
   useEffect(() => {
@@ -95,12 +120,25 @@ export function FinanceSalesInvoiceDialog({
   }, [initialCustomerId, open]);
 
   const total = useMemo(
-    () => money(lines.reduce((sum, line) => sum + Math.max(0, Number(line.quantity || 0)) * Math.max(0, Number(line.unit_price || 0)) - Math.max(0, Number(line.discount_amount || 0)) + Math.max(0, Number(line.tax_amount || 0)), 0)),
+    () =>
+      money(
+        lines.reduce(
+          (sum, line) =>
+            sum +
+            Math.max(0, Number(line.quantity || 0)) *
+              Math.max(0, Number(line.unit_price || 0)) -
+            Math.max(0, Number(line.discount_amount || 0)) +
+            Math.max(0, Number(line.tax_amount || 0)),
+          0,
+        ),
+      ),
     [lines],
   );
 
   const updateLine = (key: string, patch: Partial<DraftLine>) => {
-    setLines((current) => current.map((line) => line.key === key ? { ...line, ...patch } : line));
+    setLines((current) =>
+      current.map((line) => (line.key === key ? { ...line, ...patch } : line)),
+    );
   };
 
   const reset = () => {
@@ -115,7 +153,16 @@ export function FinanceSalesInvoiceDialog({
 
   const submit = async () => {
     if (!restaurantId) return;
-    if (!lines.length || lines.some((line) => !line.item_name.trim() || Number(line.quantity) <= 0 || Number(line.unit_price) <= 0 || !line.reporting_head_id)) {
+    if (
+      !lines.length ||
+      lines.some(
+        (line) =>
+          !line.item_name.trim() ||
+          Number(line.quantity) <= 0 ||
+          Number(line.unit_price) <= 0 ||
+          !line.reporting_head_id,
+      )
+    ) {
       toast.error("Complete every item and choose a sales account head.");
       return;
     }
@@ -150,18 +197,23 @@ export function FinanceSalesInvoiceDialog({
           tax_amount: money(Number(line.tax_amount || 0)),
           description: line.description?.trim() || null,
         })),
-        settlement: paid && account ? {
-          account_type: account.account_type,
-          account_id: account.id,
-          reference: reference.trim() || null,
-        } : null,
+        settlement:
+          paid && account
+            ? {
+                account_type: account.account_type,
+                account_id: account.id,
+                reference: reference.trim() || null,
+              }
+            : null,
       });
       toast.success(`Sales invoice ${document.document_number} recorded.`);
       onCreated?.(document);
       onOpenChange(false);
       reset();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Could not record sales invoice.");
+      toast.error(
+        error.response?.data?.detail || "Could not record sales invoice.",
+      );
     } finally {
       setSaving(false);
     }
@@ -172,93 +224,394 @@ export function FinanceSalesInvoiceDialog({
       <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-6xl flex-col overflow-hidden rounded-2xl p-0 md:h-auto md:max-h-[92vh] md:p-6">
         <DialogHeader className="shrink-0 border-b px-4 py-4 text-left md:border-b-0 md:px-0 md:py-0">
           <DialogTitle>Record sales invoice</DialogTitle>
-          <p className="text-sm text-muted-foreground">A finance-only sale. It records revenue and settlement without creating an order or printing a KOT.</p>
+          <p className="text-sm text-muted-foreground">
+            A finance-only sale. It records revenue and settlement without
+            creating an order or printing a KOT.
+          </p>
         </DialogHeader>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-4 md:px-0 md:pb-0">
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-2 md:col-span-2">
-            <Label>Customer {!paid ? "*" : "(optional)"}</Label>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-              <option value="">Walk-in / no customer</option>
-              {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.full_name || customer.name || `Customer #${customer.id}`}</option>)}
-            </select>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="space-y-2 md:col-span-2">
+              <Label>Customer {!paid ? "*" : "(optional)"}</Label>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={customerId}
+                onChange={(event) => setCustomerId(event.target.value)}
+              >
+                <option value="">Walk-in / no customer</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.full_name ||
+                      customer.name ||
+                      `Customer #${customer.id}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Business</Label>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={businessLine}
+                onChange={(event) =>
+                  setBusinessLine(event.target.value as "restaurant" | "hotel")
+                }
+              >
+                <option value="restaurant">Restaurant</option>
+                <option value="hotel">Hotel</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Date *</Label>
+              <Input
+                type="date"
+                value={businessDate}
+                onChange={(event) => setBusinessDate(event.target.value)}
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Business</Label>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={businessLine} onChange={(event) => setBusinessLine(event.target.value as "restaurant" | "hotel")}>
-              <option value="restaurant">Restaurant</option><option value="hotel">Hotel</option>
-            </select>
+
+          <div className="space-y-3 lg:hidden">
+            {lines.map((line, index) => {
+              const lineTotal = money(
+                Number(line.quantity || 0) * Number(line.unit_price || 0) -
+                  Number(line.discount_amount || 0) +
+                  Number(line.tax_amount || 0),
+              );
+              return (
+                <section
+                  key={line.key}
+                  className="space-y-3 rounded-2xl border border-border bg-card p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold">Line {index + 1}</p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9"
+                      disabled={lines.length === 1}
+                      onClick={() =>
+                        setLines((current) =>
+                          current.filter((item) => item.key !== line.key),
+                        )
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Remove line {index + 1}</span>
+                    </Button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Item or service</Label>
+                    <Input
+                      value={line.item_name}
+                      placeholder="Item or service name"
+                      onChange={(event) =>
+                        updateLine(line.key, { item_name: event.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Quantity</Label>
+                      <Input
+                        type="number"
+                        min="0.001"
+                        step="0.001"
+                        value={line.quantity}
+                        onChange={(event) =>
+                          updateLine(line.key, {
+                            quantity: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Rate</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.unit_price}
+                        onChange={(event) =>
+                          updateLine(line.key, {
+                            unit_price: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Discount</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.discount_amount}
+                        onChange={(event) =>
+                          updateLine(line.key, {
+                            discount_amount: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Tax</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.tax_amount}
+                        onChange={(event) =>
+                          updateLine(line.key, {
+                            tax_amount: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Sales account</Label>
+                    <select
+                      className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                      value={line.reporting_head_id || ""}
+                      onChange={(event) =>
+                        updateLine(line.key, {
+                          reporting_head_id: Number(event.target.value),
+                        })
+                      }
+                    >
+                      <option value="">Select account</option>
+                      {heads.map((head) => (
+                        <option key={head.id} value={head.id}>
+                          {head.hierarchy_path || head.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
+                    <span className="text-muted-foreground">Line total</span>
+                    <span className="font-semibold tabular-nums">
+                      {formatCurrency(lineTotal)}
+                    </span>
+                  </div>
+                </section>
+              );
+            })}
           </div>
-          <div className="space-y-2"><Label>Date *</Label><Input type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} /></div>
+
+          <div className="hidden overflow-x-auto rounded-lg border lg:block">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead className="bg-muted/60 text-left">
+                <tr>
+                  <th className="p-3">Item / service</th>
+                  <th className="p-3">Qty</th>
+                  <th className="p-3">Rate</th>
+                  <th className="p-3">Discount</th>
+                  <th className="p-3">Tax</th>
+                  <th className="p-3">Sales head</th>
+                  <th className="p-3 text-right">Amount</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line) => {
+                  const lineTotal = money(
+                    Number(line.quantity || 0) * Number(line.unit_price || 0) -
+                      Number(line.discount_amount || 0) +
+                      Number(line.tax_amount || 0),
+                  );
+                  return (
+                    <tr key={line.key} className="border-t align-top">
+                      <td className="p-2">
+                        <Input
+                          value={line.item_name}
+                          placeholder="Item or service name"
+                          onChange={(event) =>
+                            updateLine(line.key, {
+                              item_name: event.target.value,
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          className="w-24"
+                          type="number"
+                          min="0.001"
+                          step="0.001"
+                          value={line.quantity}
+                          onChange={(event) =>
+                            updateLine(line.key, {
+                              quantity: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          className="w-28"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.unit_price}
+                          onChange={(event) =>
+                            updateLine(line.key, {
+                              unit_price: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          className="w-28"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.discount_amount}
+                          onChange={(event) =>
+                            updateLine(line.key, {
+                              discount_amount: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          className="w-28"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.tax_amount}
+                          onChange={(event) =>
+                            updateLine(line.key, {
+                              tax_amount: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="p-2">
+                        <select
+                          className="h-10 min-w-52 rounded-md border border-input bg-background px-2"
+                          value={line.reporting_head_id || ""}
+                          onChange={(event) =>
+                            updateLine(line.key, {
+                              reporting_head_id: Number(event.target.value),
+                            })
+                          }
+                        >
+                          <option value="">Select head</option>
+                          {heads.map((head) => (
+                            <option key={head.id} value={head.id}>
+                              {head.hierarchy_path || head.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-3 text-right font-medium">
+                        {formatCurrency(lineTotal)}
+                      </td>
+                      <td className="p-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={lines.length === 1}
+                          onClick={() =>
+                            setLines((current) =>
+                              current.filter((item) => item.key !== line.key),
+                            )
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-fit"
+            onClick={() =>
+              setLines((current) => [
+                ...current,
+                { ...newLine(), reporting_head_id: heads[0]?.id || null },
+              ])
+            }
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add line
+          </Button>
+
+          <div className="grid gap-5 rounded-lg border p-4 lg:grid-cols-[1fr_360px]">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Reference</Label>
+                <Input
+                  value={reference}
+                  onChange={(event) => setReference(event.target.value)}
+                  placeholder="Optional invoice or receipt reference"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Notes</Label>
+                <Textarea
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  placeholder="Optional details"
+                />
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
+                <Button
+                  type="button"
+                  variant={paid ? "default" : "ghost"}
+                  onClick={() => setPaid(true)}
+                >
+                  Paid now
+                </Button>
+                <Button
+                  type="button"
+                  variant={!paid ? "default" : "ghost"}
+                  onClick={() => setPaid(false)}
+                >
+                  Unpaid / credit
+                </Button>
+              </div>
+              {paid ? (
+                <CashBankAccountSelect
+                  value={account}
+                  onChange={setAccount}
+                  businessLine={businessLine}
+                  label="Receive into *"
+                />
+              ) : (
+                <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                  The invoice becomes customer receivable. Record the collection
+                  later from the customer payment workflow.
+                </p>
+              )}
+              <div className="flex items-center justify-between border-t pt-4 text-lg font-semibold">
+                <span>Invoice total</span>
+                <span>{formatCurrency(total)}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="space-y-3 md:hidden">
-          {lines.map((line, index) => {
-            const lineTotal = money(Number(line.quantity || 0) * Number(line.unit_price || 0) - Number(line.discount_amount || 0) + Number(line.tax_amount || 0));
-            return (
-              <section key={line.key} className="space-y-3 rounded-2xl border border-border bg-card p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold">Line {index + 1}</p>
-                  <Button type="button" variant="ghost" size="icon" className="h-9 w-9" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))}>
-                    <Trash2 className="h-4 w-4" />
-                    <span className="sr-only">Remove line {index + 1}</span>
-                  </Button>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Item or service</Label>
-                  <Input value={line.item_name} placeholder="Item or service name" onChange={(event) => updateLine(line.key, { item_name: event.target.value })} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" min="0.001" step="0.001" value={line.quantity} onChange={(event) => updateLine(line.key, { quantity: Number(event.target.value) })} /></div>
-                  <div className="space-y-1.5"><Label>Rate</Label><Input type="number" min="0" step="0.01" value={line.unit_price} onChange={(event) => updateLine(line.key, { unit_price: Number(event.target.value) })} /></div>
-                  <div className="space-y-1.5"><Label>Discount</Label><Input type="number" min="0" step="0.01" value={line.discount_amount} onChange={(event) => updateLine(line.key, { discount_amount: Number(event.target.value) })} /></div>
-                  <div className="space-y-1.5"><Label>Tax</Label><Input type="number" min="0" step="0.01" value={line.tax_amount} onChange={(event) => updateLine(line.key, { tax_amount: Number(event.target.value) })} /></div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Sales account</Label>
-                  <select className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" value={line.reporting_head_id || ""} onChange={(event) => updateLine(line.key, { reporting_head_id: Number(event.target.value) })}><option value="">Select account</option>{heads.map((head) => <option key={head.id} value={head.id}>{head.hierarchy_path || head.name}</option>)}</select>
-                </div>
-                <div className="flex items-center justify-between border-t border-border pt-3 text-sm"><span className="text-muted-foreground">Line total</span><span className="font-semibold tabular-nums">NPR {lineTotal.toLocaleString()}</span></div>
-              </section>
-            );
-          })}
+        <div className="grid grid-cols-2 gap-2 border-t border-border bg-background p-4 md:flex md:justify-end md:border-0 md:p-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button disabled={saving || loading} onClick={submit}>
+            {saving ? "Recording..." : "Record invoice"}
+          </Button>
         </div>
-
-        <div className="hidden overflow-x-auto rounded-lg border md:block">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead className="bg-muted/60 text-left"><tr><th className="p-3">Item / service</th><th className="p-3">Qty</th><th className="p-3">Rate</th><th className="p-3">Discount</th><th className="p-3">Tax</th><th className="p-3">Sales head</th><th className="p-3 text-right">Amount</th><th /></tr></thead>
-            <tbody>{lines.map((line) => {
-              const lineTotal = money(Number(line.quantity || 0) * Number(line.unit_price || 0) - Number(line.discount_amount || 0) + Number(line.tax_amount || 0));
-              return <tr key={line.key} className="border-t align-top">
-                <td className="p-2"><Input value={line.item_name} placeholder="Item or service name" onChange={(event) => updateLine(line.key, { item_name: event.target.value })} /></td>
-                <td className="p-2"><Input className="w-24" type="number" min="0.001" step="0.001" value={line.quantity} onChange={(event) => updateLine(line.key, { quantity: Number(event.target.value) })} /></td>
-                <td className="p-2"><Input className="w-28" type="number" min="0" step="0.01" value={line.unit_price} onChange={(event) => updateLine(line.key, { unit_price: Number(event.target.value) })} /></td>
-                <td className="p-2"><Input className="w-28" type="number" min="0" step="0.01" value={line.discount_amount} onChange={(event) => updateLine(line.key, { discount_amount: Number(event.target.value) })} /></td>
-                <td className="p-2"><Input className="w-28" type="number" min="0" step="0.01" value={line.tax_amount} onChange={(event) => updateLine(line.key, { tax_amount: Number(event.target.value) })} /></td>
-                <td className="p-2"><select className="h-10 min-w-52 rounded-md border border-input bg-background px-2" value={line.reporting_head_id || ""} onChange={(event) => updateLine(line.key, { reporting_head_id: Number(event.target.value) })}><option value="">Select head</option>{heads.map((head) => <option key={head.id} value={head.id}>{head.hierarchy_path || head.name}</option>)}</select></td>
-                <td className="p-3 text-right font-medium">NPR {lineTotal.toLocaleString()}</td>
-                <td className="p-2"><Button type="button" variant="ghost" size="icon" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))}><Trash2 className="h-4 w-4" /></Button></td>
-              </tr>;
-            })}</tbody>
-          </table>
-        </div>
-        <Button type="button" variant="outline" className="w-fit" onClick={() => setLines((current) => [...current, { ...newLine(), reporting_head_id: heads[0]?.id || null }])}><Plus className="mr-2 h-4 w-4" />Add line</Button>
-
-        <div className="grid gap-5 rounded-lg border p-4 lg:grid-cols-[1fr_360px]">
-          <div className="space-y-4">
-            <div className="space-y-2"><Label>Reference</Label><Input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Optional invoice or receipt reference" /></div>
-            <div className="space-y-2"><Label>Notes</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Optional details" /></div>
-          </div>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 rounded-lg bg-muted p-1"><Button type="button" variant={paid ? "default" : "ghost"} onClick={() => setPaid(true)}>Paid now</Button><Button type="button" variant={!paid ? "default" : "ghost"} onClick={() => setPaid(false)}>Unpaid / credit</Button></div>
-            {paid ? <CashBankAccountSelect value={account} onChange={setAccount} businessLine={businessLine} label="Receive into *" /> : <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">The invoice becomes customer receivable. Record the collection later from the customer payment workflow.</p>}
-            <div className="flex items-center justify-between border-t pt-4 text-lg font-semibold"><span>Invoice total</span><span>NPR {total.toLocaleString()}</span></div>
-          </div>
-        </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 border-t border-border bg-background p-4 md:flex md:justify-end md:border-0 md:p-0"><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={saving || loading} onClick={submit}>{saving ? "Recording..." : "Record invoice"}</Button></div>
       </DialogContent>
     </Dialog>
   );

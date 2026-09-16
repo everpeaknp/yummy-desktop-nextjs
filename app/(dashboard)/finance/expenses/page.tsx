@@ -35,7 +35,7 @@ import {
   Trash2,
   PackageSearch,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useCustomFinanceStations } from "@/hooks/use-custom-finance-stations";
@@ -220,6 +220,28 @@ function isInventoryFinanceExpense(expense: any): boolean {
   );
 }
 
+function expenseStatusLabel(value: unknown) {
+  const labels: Record<string, string> = {
+    cancelled: "Cancelled",
+    completed: "Completed",
+    corrected: "Corrected",
+    paid: "Paid",
+    pending: "Pending",
+    posted: "Posted",
+    recorded: "Recorded",
+    reversed: "Reversed",
+    unpaid: "Unpaid",
+    voided: "Voided",
+  };
+  return (
+    labels[
+      String(value || "")
+        .trim()
+        .toLowerCase()
+    ] || "Recorded"
+  );
+}
+
 export default function ExpensesPage() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -234,7 +256,9 @@ export default function ExpensesPage() {
   // The page filter controls what is shown. The entry itself owns the
   // business line so a combined view can still create a correctly scoped
   // Hotel or Restaurant expense.
-  const [entryBusinessLine, setEntryBusinessLine] = useState<"restaurant" | "hotel">("restaurant");
+  const [entryBusinessLine, setEntryBusinessLine] = useState<
+    "restaurant" | "hotel"
+  >("restaurant");
   const [selectedStation, setSelectedStation] = useState("all");
   const [selectedReportingHeadId, setSelectedReportingHeadId] = useState("all");
   const [expenseHeadFilterOptions, setExpenseHeadFilterOptions] = useState<
@@ -303,7 +327,11 @@ export default function ExpensesPage() {
       return "hotel";
     }
     return entryBusinessLine;
-  }, [entryBusinessLine, restaurant?.hotel_enabled, restaurant?.restaurant_enabled]);
+  }, [
+    entryBusinessLine,
+    restaurant?.hotel_enabled,
+    restaurant?.restaurant_enabled,
+  ]);
   const expenseWriteBusinessLine = useMemo((): "restaurant" | "hotel" => {
     const existingBusinessLine = String(
       editingExpense?.business_line ?? "",
@@ -933,9 +961,9 @@ export default function ExpensesPage() {
             fields: [
               {
                 label: "Expense date",
-                value: new Date(
+                value: formatDate(
                   selectedExpense.expense_date || selectedExpense.paid_on,
-                ).toLocaleDateString(),
+                ),
               },
               {
                 label: "Category",
@@ -971,7 +999,7 @@ export default function ExpensesPage() {
                         ? `Account #${line.reporting_head_id}`
                         : "Expense"),
                     line.description || "—",
-                    `Rs. ${Number(line.amount || 0).toLocaleString()}`,
+                    formatCurrency(line.amount || 0),
                   ]),
                 }
               : undefined,
@@ -1007,7 +1035,8 @@ export default function ExpensesPage() {
   const handleEditExpense = (expense: any) => {
     setEditingExpense(expense);
     setEntryBusinessLine(
-      String(expense.business_line ?? "").toLowerCase() === "hotel" || expense.station === "rooms"
+      String(expense.business_line ?? "").toLowerCase() === "hotel" ||
+        expense.station === "rooms"
         ? "hotel"
         : "restaurant",
     );
@@ -1047,10 +1076,8 @@ export default function ExpensesPage() {
       Description: expense.description || "Untitled",
       Category: expense.category?.name || "General",
       Amount: expense.amount,
-      Date: new Date(
-        expense.expense_date || expense.paid_on,
-      ).toLocaleDateString(),
-      Status: expense.status || "Completed",
+      Date: formatDate(expense.expense_date || expense.paid_on),
+      Status: expenseStatusLabel(expense.status || "completed"),
     }));
 
     const ws = XLSX.utils.json_to_sheet(dataToExport);
@@ -1079,147 +1106,155 @@ export default function ExpensesPage() {
   const filterControls = (
     <>
       <div className="grid gap-3 md:flex md:flex-wrap md:items-end">
-            {dualBusinessLines ? (
-              <div className="grid grid-cols-3 rounded-xl bg-muted/70 p-1 md:w-auto">
-                <Button
-                  variant={businessLine === "all" ? "secondary" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-9 min-w-0 rounded-lg px-3 text-xs",
-                    businessLine === "all" && "bg-background shadow-sm",
-                  )}
-                  onClick={() => setBusinessLine("all")}
-                >
-                  All
-                </Button>
-                <Button
-                  variant={
-                    businessLine === "restaurant" ? "secondary" : "ghost"
-                  }
-                  size="sm"
-                  className={cn(
-                    "h-9 min-w-0 gap-1.5 rounded-lg px-3 text-xs",
-                    businessLine === "restaurant" && "bg-background shadow-sm",
-                  )}
-                  onClick={() => setBusinessLine("restaurant")}
-                >
-                  <Utensils className="h-3.5 w-3.5 text-orange-500" />
-                  Restaurant
-                </Button>
-                <Button
-                  variant={businessLine === "hotel" ? "secondary" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-9 min-w-0 gap-1.5 rounded-lg px-3 text-xs",
-                    businessLine === "hotel" && "bg-background shadow-sm",
-                  )}
-                  onClick={() => setBusinessLine("hotel")}
-                >
-                  <Hotel className="h-3.5 w-3.5 text-blue-500" />
-                  Hotel
-                </Button>
-              </div>
-            ) : null}
+        {dualBusinessLines ? (
+          <div className="grid grid-cols-3 rounded-xl bg-muted/70 p-1 md:w-auto">
+            <Button
+              variant={businessLine === "all" ? "secondary" : "ghost"}
+              size="sm"
+              className={cn(
+                "h-9 min-w-0 rounded-lg px-3 text-xs",
+                businessLine === "all" && "bg-background shadow-sm",
+              )}
+              onClick={() => setBusinessLine("all")}
+            >
+              All
+            </Button>
+            <Button
+              variant={businessLine === "restaurant" ? "secondary" : "ghost"}
+              size="sm"
+              className={cn(
+                "h-9 min-w-0 gap-1.5 rounded-lg px-3 text-xs",
+                businessLine === "restaurant" && "bg-background shadow-sm",
+              )}
+              onClick={() => setBusinessLine("restaurant")}
+            >
+              <Utensils className="h-3.5 w-3.5 text-orange-500" />
+              Restaurant
+            </Button>
+            <Button
+              variant={businessLine === "hotel" ? "secondary" : "ghost"}
+              size="sm"
+              className={cn(
+                "h-9 min-w-0 gap-1.5 rounded-lg px-3 text-xs",
+                businessLine === "hotel" && "bg-background shadow-sm",
+              )}
+              onClick={() => setBusinessLine("hotel")}
+            >
+              <Hotel className="h-3.5 w-3.5 text-blue-500" />
+              Hotel
+            </Button>
+          </div>
+        ) : null}
 
-            <div className="grid gap-1.5">
-              <Label className="text-xs text-muted-foreground">Station</Label>
-              <Select value={selectedStation} onValueChange={setSelectedStation}>
-                <SelectTrigger className="h-11 w-full rounded-xl md:w-[160px]">
-                  <SelectValue placeholder="All stations" />
-                </SelectTrigger>
-                <SelectContent>
-                  {financeStationOptions({
-                    businessLine,
-                    hotelEnabled: restaurant?.hotel_enabled,
-                    customStations: customFinanceStations,
-                  }).map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="grid gap-1.5">
+          <Label className="text-xs text-muted-foreground">Station</Label>
+          <Select value={selectedStation} onValueChange={setSelectedStation}>
+            <SelectTrigger className="h-11 w-full rounded-xl md:w-[160px]">
+              <SelectValue placeholder="All stations" />
+            </SelectTrigger>
+            <SelectContent>
+              {financeStationOptions({
+                businessLine,
+                hotelEnabled: restaurant?.hotel_enabled,
+                customStations: customFinanceStations,
+              }).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-            <div className="grid gap-1.5">
-              <Label className="text-xs text-muted-foreground">Period</Label>
-              <Select value={dateFilter} onValueChange={setDateFilter}>
-                <SelectTrigger className="h-11 w-full rounded-xl md:w-[160px]">
-                  <SelectValue placeholder="Date range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="yesterday">Yesterday</SelectItem>
-                  <SelectItem value="this_week">This week</SelectItem>
-                  <SelectItem value="this_month">This month</SelectItem>
-                  <SelectItem value="custom">Custom date</SelectItem>
-                  <SelectItem value="all">All time</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="grid gap-1.5">
+          <Label className="text-xs text-muted-foreground">Period</Label>
+          <Select value={dateFilter} onValueChange={setDateFilter}>
+            <SelectTrigger className="h-11 w-full rounded-xl md:w-[160px]">
+              <SelectValue placeholder="Date range" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="yesterday">Yesterday</SelectItem>
+              <SelectItem value="this_week">This week</SelectItem>
+              <SelectItem value="this_month">This month</SelectItem>
+              <SelectItem value="custom">Custom date</SelectItem>
+              <SelectItem value="all">All time</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-            <div className="grid min-w-0 gap-1.5 md:w-[240px]">
-              <Label className="text-xs text-muted-foreground">Expense head</Label>
-              <Select value={selectedReportingHeadId} onValueChange={setSelectedReportingHeadId}>
-                <SelectTrigger className="h-11 w-full rounded-xl">
-                  <SelectValue placeholder="All expense heads" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All expense heads</SelectItem>
-                  {expenseHeadFilterOptions.map((head) => (
-                    <SelectItem key={head.id} value={head.id.toString()}>
-                      {head.path || head.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="grid min-w-0 gap-1.5 md:w-[240px]">
+          <Label className="text-xs text-muted-foreground">Expense head</Label>
+          <Select
+            value={selectedReportingHeadId}
+            onValueChange={setSelectedReportingHeadId}
+          >
+            <SelectTrigger className="h-11 w-full rounded-xl">
+              <SelectValue placeholder="All expense heads" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All expense heads</SelectItem>
+              {expenseHeadFilterOptions.map((head) => (
+                <SelectItem key={head.id} value={head.id.toString()}>
+                  {head.path || head.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {dateFilter === "custom" ? (
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-border bg-muted/30 p-3 md:flex md:flex-wrap md:items-center">
-            <span className="col-span-2 text-xs font-medium text-muted-foreground md:mr-1">
-              Custom period
-            </span>
-            <input
-              type="date"
-              value={customStartDate}
-              onChange={(e) => setCustomStartDate(e.target.value)}
-              className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <input
-              type="time"
-              value={customStartTime}
-              onChange={(e) => setCustomStartTime(e.target.value || "00:00")}
-              className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <span className="hidden px-1 text-xs font-semibold text-muted-foreground md:inline">
-              to
-            </span>
-            <input
-              type="date"
-              value={customEndDate}
-              onChange={(e) => setCustomEndDate(e.target.value)}
-              className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <input
-              type="time"
-              value={customEndTime}
-              onChange={(e) => setCustomEndTime(e.target.value || "23:59")}
-              className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-          </div>
-        ) : null}
+        <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-border bg-muted/30 p-3 md:flex md:flex-wrap md:items-center">
+          <span className="col-span-2 text-xs font-medium text-muted-foreground md:mr-1">
+            Custom period
+          </span>
+          <input
+            type="date"
+            value={customStartDate}
+            onChange={(e) => setCustomStartDate(e.target.value)}
+            className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <input
+            type="time"
+            value={customStartTime}
+            onChange={(e) => setCustomStartTime(e.target.value || "00:00")}
+            className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <span className="hidden px-1 text-xs font-semibold text-muted-foreground md:inline">
+            to
+          </span>
+          <input
+            type="date"
+            value={customEndDate}
+            onChange={(e) => setCustomEndDate(e.target.value)}
+            className="flex h-9 w-[130px] rounded-md border border-input bg-background dark:bg-muted/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <input
+            type="time"
+            value={customEndTime}
+            onChange={(e) => setCustomEndTime(e.target.value || "23:59")}
+            className="flex h-9 w-[100px] rounded-md border border-input bg-background dark:bg-muted/50 px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+        </div>
+      ) : null}
     </>
   );
 
   return (
-    <AppPage width="wide" density="compact" className="p-4 pb-24 sm:p-6 sm:pb-24">
+    <AppPage
+      width="wide"
+      density="compact"
+      className="p-4 pb-24 sm:p-6 sm:pb-24"
+    >
       <PageHeader
         title="Expenses"
         description="Record and review operating costs for the selected period."
         actions={
-          <Button className="h-11 w-full rounded-xl sm:w-auto" onClick={openExpenseDialog}>
+          <Button
+            className="h-11 w-full rounded-xl sm:w-auto"
+            onClick={openExpenseDialog}
+          >
             <Plus className="mr-2 h-4 w-4" /> Record expense
           </Button>
         }
@@ -1239,14 +1274,20 @@ export default function ExpensesPage() {
 
       <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="min-w-0 p-3.5 sm:p-4">
-          <p className="truncate text-xs font-medium text-muted-foreground">Recognized expenses</p>
+          <p className="truncate text-xs font-medium text-muted-foreground">
+            Recognized expenses
+          </p>
           <p className="mt-1 truncate text-lg font-semibold tabular-nums sm:text-xl">
-            Rs. {Number(operatingExpenseTotal || 0).toLocaleString()}
+            {formatCurrency(operatingExpenseTotal || 0)}
           </p>
         </div>
         <div className="min-w-0 border-l border-border p-3.5 sm:p-4">
-          <p className="truncate text-xs font-medium text-muted-foreground">Manual entries</p>
-          <p className="mt-1 text-lg font-semibold tabular-nums sm:text-xl">{manualExpenseCount}</p>
+          <p className="truncate text-xs font-medium text-muted-foreground">
+            Manual entries
+          </p>
+          <p className="mt-1 text-lg font-semibold tabular-nums sm:text-xl">
+            {manualExpenseCount}
+          </p>
         </div>
       </div>
 
@@ -1293,7 +1334,10 @@ export default function ExpensesPage() {
                     <SelectItem value="hotel">Hotel</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">This controls the financial owner of the expense. The page filter only controls what you are viewing.</p>
+                <p className="text-xs text-muted-foreground">
+                  This controls the financial owner of the expense. The page
+                  filter only controls what you are viewing.
+                </p>
               </div>
             ) : null}
             <div className="grid gap-2">
@@ -1496,8 +1540,8 @@ export default function ExpensesPage() {
                         key={`${account.account_type}:${account.id}`}
                         value={`${account.account_type}:${account.id}`}
                       >
-                        {account.name} · Rs.{" "}
-                        {Number(account.current_balance || 0).toLocaleString()}
+                        {account.name} ·{" "}
+                        {formatCurrency(account.current_balance || 0)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1598,164 +1642,167 @@ export default function ExpensesPage() {
           </div>
         ) : (
           <>
-          <ExpenseMobileList
-            expenses={filteredExpenses}
-            onSelect={setSelectedExpense}
-            onEdit={handleEditExpense}
-            onDelete={handleDeleteExpense}
-          />
-          <Card className="hidden border-border md:block">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
-                    <tr>
-                      <th className="px-6 py-4">Description</th>
-                      <th className="px-6 py-4">Category</th>
-                      <th className="px-6 py-4">Party</th>
-                      <th className="px-6 py-4">Amount</th>
-                      <th className="px-6 py-4">Date</th>
-                      <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {filteredExpenses.map((expense: any) => {
-                      const readOnlyFinanceRow = isFinanceEventExpense(expense);
-                      const inventoryFinanceRow =
-                        isInventoryFinanceExpense(expense);
-                      const sourceStatus = String(
-                        expense.source_status || "",
-                      ).toLowerCase();
-                      const superseded = ["cancelled", "corrected"].includes(
-                        sourceStatus,
-                      );
-                      return (
-                        <tr
-                          key={`${expense.source_type || "expense"}-${expense.id}`}
-                          tabIndex={0}
-                          role="button"
-                          onClick={() => setSelectedExpense(expense)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              setSelectedExpense(expense);
-                            }
-                          }}
-                          className="cursor-pointer transition-colors hover:bg-muted/30 focus-visible:bg-muted/40 focus-visible:outline-none"
-                        >
-                          <td
-                            className={cn(
-                              "px-6 py-4 font-medium",
-                              superseded &&
-                                "text-muted-foreground line-through",
-                            )}
+            <ExpenseMobileList
+              expenses={filteredExpenses}
+              onSelect={setSelectedExpense}
+              onEdit={handleEditExpense}
+              onDelete={handleDeleteExpense}
+            />
+            <Card className="hidden border-border lg:block">
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
+                      <tr>
+                        <th className="px-6 py-4">Description</th>
+                        <th className="px-6 py-4">Category</th>
+                        <th className="px-6 py-4">Party</th>
+                        <th className="px-6 py-4">Amount</th>
+                        <th className="px-6 py-4">Date</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filteredExpenses.map((expense: any) => {
+                        const readOnlyFinanceRow =
+                          isFinanceEventExpense(expense);
+                        const inventoryFinanceRow =
+                          isInventoryFinanceExpense(expense);
+                        const sourceStatus = String(
+                          expense.source_status || "",
+                        ).toLowerCase();
+                        const superseded = ["cancelled", "corrected"].includes(
+                          sourceStatus,
+                        );
+                        return (
+                          <tr
+                            key={`${expense.source_type || "expense"}-${expense.id}`}
+                            tabIndex={0}
+                            role="button"
+                            onClick={() => setSelectedExpense(expense)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setSelectedExpense(expense);
+                              }
+                            }}
+                            className="cursor-pointer transition-colors hover:bg-muted/30 focus-visible:bg-muted/40 focus-visible:outline-none"
                           >
-                            {expense.description || "Untitled"}
-                          </td>
-                          <td className="px-6 py-4 text-muted-foreground">
-                            {expense.category?.name || "General"}
-                          </td>
-                          <td className="px-6 py-4 text-muted-foreground">
-                            {expense.party_name ||
-                              (expense.party_type
-                                ? `${expense.party_type} #${expense.party_id}`
-                                : "—")}
-                          </td>
-                          <td
-                            className={cn(
-                              "px-6 py-4 font-bold text-red-600 dark:text-red-500",
-                              superseded &&
-                                "text-muted-foreground line-through dark:text-muted-foreground",
-                            )}
-                          >
-                            - Rs. {Number(expense.amount).toLocaleString()}
-                          </td>
-                          <td className="px-6 py-4 text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <Calendar className="w-3.5 h-3.5" />
-                              {new Date(
-                                expense.expense_date || expense.paid_on,
-                              ).toLocaleDateString()}
-                            </div>
-                          </td>
-                          <td
-                            className="px-6 py-4"
-                            onClick={(event) => event.stopPropagation()}
-                            onKeyDown={(event) => event.stopPropagation()}
-                          >
-                            <Badge
-                              variant="outline"
-                              className="border-border text-muted-foreground capitalize"
+                            <td
+                              className={cn(
+                                "px-6 py-4 font-medium",
+                                superseded &&
+                                  "text-muted-foreground line-through",
+                              )}
                             >
-                              {readOnlyFinanceRow
-                                ? sourceStatus || "Recorded"
-                                : expense.status || "Completed"}
-                            </Badge>
-                          </td>
-                          <td className="px-6 py-4">
-                            {readOnlyFinanceRow ? (
-                              <div className="flex justify-end">
-                                {inventoryFinanceRow && expense.source_id ? (
-                                  <Button asChild size="sm" variant="outline">
-                                    <Link
-                                      href={`/inventory?view=activity&adjustment=${expense.source_id}`}
-                                    >
-                                      <PackageSearch className="mr-2 h-4 w-4" />{" "}
-                                      Manage in inventory
-                                    </Link>
-                                  </Button>
-                                ) : (
-                                  <Badge variant="secondary">
-                                    Finance event
-                                  </Badge>
+                              {expense.description || "Untitled"}
+                            </td>
+                            <td className="px-6 py-4 text-muted-foreground">
+                              {expense.category?.name || "General"}
+                            </td>
+                            <td className="px-6 py-4 text-muted-foreground">
+                              {expense.party_name ||
+                                (expense.party_type
+                                  ? `${expense.party_type} #${expense.party_id}`
+                                  : "—")}
+                            </td>
+                            <td
+                              className={cn(
+                                "px-6 py-4 font-bold text-red-600 dark:text-red-500",
+                                superseded &&
+                                  "text-muted-foreground line-through dark:text-muted-foreground",
+                              )}
+                            >
+                              - {formatCurrency(expense.amount)}
+                            </td>
+                            <td className="px-6 py-4 text-muted-foreground">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-3.5 h-3.5" />
+                                {formatDate(
+                                  expense.expense_date || expense.paid_on,
                                 )}
                               </div>
-                            ) : (
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-8 w-8"
-                                  onClick={() => handleEditExpense(expense)}
-                                  aria-label="Edit expense"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-8 w-8 text-destructive hover:text-destructive"
-                                  onClick={() => handleDeleteExpense(expense)}
-                                  aria-label="Delete expense"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {(expenseTotalCount || expenses.length) > expenses.length && (
-                <div className="p-4 border-t border-border flex justify-center bg-muted/10">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 font-semibold"
-                    onClick={() => setRecentLimit((prev) => prev + 25)}
-                  >
-                    View More Expenses
-                  </Button>
+                            </td>
+                            <td
+                              className="px-6 py-4"
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
+                              <Badge
+                                variant="outline"
+                                className="border-border text-muted-foreground capitalize"
+                              >
+                                {expenseStatusLabel(
+                                  readOnlyFinanceRow
+                                    ? sourceStatus || "recorded"
+                                    : expense.status || "completed",
+                                )}
+                              </Badge>
+                            </td>
+                            <td className="px-6 py-4">
+                              {readOnlyFinanceRow ? (
+                                <div className="flex justify-end">
+                                  {inventoryFinanceRow && expense.source_id ? (
+                                    <Button asChild size="sm" variant="outline">
+                                      <Link
+                                        href={`/inventory?view=activity&adjustment=${expense.source_id}`}
+                                      >
+                                        <PackageSearch className="mr-2 h-4 w-4" />{" "}
+                                        Manage in inventory
+                                      </Link>
+                                    </Button>
+                                  ) : (
+                                    <Badge variant="secondary">
+                                      Finance event
+                                    </Badge>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    onClick={() => handleEditExpense(expense)}
+                                    aria-label="Edit expense"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    onClick={() => handleDeleteExpense(expense)}
+                                    aria-label="Delete expense"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+                {(expenseTotalCount || expenses.length) > expenses.length && (
+                  <div className="p-4 border-t border-border flex justify-center bg-muted/10">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 font-semibold"
+                      onClick={() => setRecentLimit((prev) => prev + 25)}
+                    >
+                      View More Expenses
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </>
         )}
       </section>
@@ -1787,15 +1834,17 @@ function ExpenseMobileList({
   onDelete: (expense: any) => void;
 }) {
   return (
-    <DataList className="md:hidden">
+    <DataList className="lg:hidden">
       {expenses.map((expense: any) => {
         const readOnlyFinanceRow = isFinanceEventExpense(expense);
         const inventoryFinanceRow = isInventoryFinanceExpense(expense);
         const sourceStatus = String(expense.source_status || "").toLowerCase();
         const superseded = ["cancelled", "corrected"].includes(sourceStatus);
-        const status = readOnlyFinanceRow
-          ? sourceStatus || "Recorded"
-          : expense.status || "Completed";
+        const status = expenseStatusLabel(
+          readOnlyFinanceRow
+            ? sourceStatus || "recorded"
+            : expense.status || "completed",
+        );
 
         return (
           <div
@@ -1814,13 +1863,17 @@ function ExpenseMobileList({
             <ListRow
               leading={<Receipt className="h-4 w-4" />}
               title={
-                <span className={cn(superseded && "text-muted-foreground line-through")}>
+                <span
+                  className={cn(
+                    superseded && "text-muted-foreground line-through",
+                  )}
+                >
                   {expense.description || "Untitled"}
                 </span>
               }
-              description={`${expense.category?.name || "General"} · ${new Date(
+              description={`${expense.category?.name || "General"} · ${formatDate(
                 expense.expense_date || expense.paid_on,
-              ).toLocaleDateString()}`}
+              )}${expense.party_name ? ` · ${expense.party_name}` : ""}`}
               meta={
                 <span
                   className={cn(
@@ -1828,61 +1881,65 @@ function ExpenseMobileList({
                     superseded && "text-muted-foreground line-through",
                   )}
                 >
-                  - Rs. {Number(expense.amount || 0).toLocaleString()}
+                  - {formatCurrency(expense.amount || 0)}
                 </span>
+              }
+              trailing={
+                <Badge
+                  variant="outline"
+                  className="max-w-24 truncate text-[11px] text-muted-foreground"
+                >
+                  {status}
+                </Badge>
               }
               interactive
             />
-            <div
-              className="flex min-h-10 items-center justify-between gap-2 border-t border-border/60 bg-muted/20 px-3 py-2"
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
-            >
-              <div className="min-w-0">
-                <Badge variant="outline" className="max-w-full capitalize text-[11px] text-muted-foreground">
-                  {status}
-                </Badge>
-                {expense.party_name ? (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {expense.party_name}
-                  </span>
-                ) : null}
-              </div>
-              {readOnlyFinanceRow ? (
-                inventoryFinanceRow && expense.source_id ? (
-                  <Button asChild size="sm" variant="outline" className="h-8 text-xs">
-                    <Link href={`/inventory?view=activity&adjustment=${expense.source_id}`}>
+            {!readOnlyFinanceRow ||
+            (inventoryFinanceRow && expense.source_id) ? (
+              <div
+                className="flex min-h-10 items-center justify-end gap-2 border-t border-border/60 px-3 py-1.5"
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                {readOnlyFinanceRow ? (
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                  >
+                    <Link
+                      href={`/inventory?view=activity&adjustment=${expense.source_id}`}
+                    >
                       Inventory
                     </Link>
                   </Button>
                 ) : (
-                  <span className="text-xs text-muted-foreground">Finance event</span>
-                )
-              ) : (
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={() => onEdit(expense)}
-                    aria-label="Edit expense"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => onDelete(expense)}
-                    aria-label="Delete expense"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-            </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => onEdit(expense)}
+                      aria-label="Edit expense"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => onDelete(expense)}
+                      aria-label="Delete expense"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         );
       })}
@@ -1896,13 +1953,7 @@ function MiniMetric({ label, value }: { label: string; value: number }) {
       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
-      <div className="mt-1 text-sm font-bold">
-        Rs.{" "}
-        {Number(value || 0).toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
-      </div>
+      <div className="mt-1 text-sm font-bold">{formatCurrency(value || 0)}</div>
     </div>
   );
 }

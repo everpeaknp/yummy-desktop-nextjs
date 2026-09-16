@@ -10,8 +10,8 @@ import {
 
 describe("day close formatters", () => {
   it("formats backend decimal strings as currency", () => {
-    expect(formatDayCloseCurrency("600.00")).toBe("Rs. 600.00");
-    expect(formatDayCloseCurrency("-100.5")).toBe("Rs. -100.50");
+    expect(formatDayCloseCurrency("600.00")).toBe("NPR 600.00");
+    expect(formatDayCloseCurrency("-100.5")).toBe("NPR -100.50");
   });
 
   it("formats backend decimal strings as plain numbers", () => {
@@ -29,11 +29,16 @@ describe("day close formatters", () => {
 
   it("labels and exports hotel closes as hotel daybooks", () => {
     expect(formatDayCloseCloseName("hotel")).toBe("Hotel Daybook");
-    expect(formatDayCloseExportFilename({
-      id: 42,
-      business_line: "hotel",
-      period_start_at: null,
-      period_end_at: null,
-    }, "pdf")).toBe("hotel_daybook_42.pdf");
+    expect(
+      formatDayCloseExportFilename(
+        {
+          id: 42,
+          business_line: "hotel",
+          period_start_at: null,
+          period_end_at: null,
+        },
+        "pdf",
+      ),
+    ).toBe("hotel_daybook_42.pdf");
   });
 });

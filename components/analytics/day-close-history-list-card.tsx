@@ -97,25 +97,19 @@ export function DayCloseHistoryListCard({
           >
             <div className="grid grid-cols-3 gap-3 sm:gap-5 flex-1 min-w-0">
               <div className="min-w-0">
-                <p className="dc-metric-label">
-                  Net
-                </p>
+                <p className="dc-metric-label">Net</p>
                 <p className="text-sm dc-amount truncate mt-0.5">
                   {formatDayCloseCurrency(item.net_sales)}
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="dc-metric-label">
-                  Expected
-                </p>
+                <p className="dc-metric-label">Expected</p>
                 <p className="text-sm dc-amount truncate mt-0.5">
                   {formatDayCloseCurrency(item.expected_cash)}
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="dc-metric-label">
-                  Actual
-                </p>
+                <p className="dc-metric-label">Actual</p>
                 <p className="text-sm dc-amount truncate mt-0.5">
                   {formatDayCloseCurrency(item.actual_cash)}
                 </p>
@@ -126,7 +120,8 @@ export function DayCloseHistoryListCard({
               {statusBadge(item.status)}
               {isOpen && onClose ? (
                 <Button
-                  className="h-9 px-4 rounded-2xl font-medium bg-orange-600 hover:bg-orange-700 text-white"
+                  variant="outline"
+                  className="h-11 rounded-xl px-4 font-medium shadow-none"
                   onClick={onClose}
                 >
                   Close

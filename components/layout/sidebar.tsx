@@ -39,10 +39,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  useSidebarItems,
-  type SidebarItem
-} from "@/hooks/use-sidebar-items";
+import { useSidebarItems, type SidebarItem } from "@/hooks/use-sidebar-items";
 import { isPathAccessible } from "@/lib/role-permissions";
 import { GlobalSearch } from "./global-search";
 import {
@@ -54,6 +51,28 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { HelpCenterDialog } from "@/components/onboarding/help-center-dialog";
+
+// Purchase documents are inventory-backed routes, but Finance owns their
+// navigation entry. Exclude them before the broader Inventory prefix match.
+const activeRouteExclusions: Record<string, string[]> = {
+  "/inventory": ["/inventory/purchases"],
+};
+
+// Index destinations own only their exact route. Without this boundary,
+// `/finance` also matches every Finance child and makes Overview compete with
+// the actual report, setup, or register destination.
+const exactActiveRoutes = new Set(["/finance"]);
+
+function matchesRoute(pathname: string | null, href: string) {
+  if (exactActiveRoutes.has(href)) return pathname === href;
+  return pathname === href || Boolean(pathname?.startsWith(`${href}/`));
+}
+
+function isExcludedRoute(pathname: string | null, href: string) {
+  return (activeRouteExclusions[href] || []).some((excludedHref) =>
+    matchesRoute(pathname, excludedHref),
+  );
+}
 
 function SidebarNavLink({
   item,
@@ -77,8 +96,8 @@ function SidebarNavLink({
     isActive && !item.isNestedChild
       ? "bg-primary/10 text-primary font-semibold"
       : isActive && item.isNestedChild
-      ? "text-primary font-semibold"
-      : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
+        ? "text-primary font-semibold"
+        : "text-muted-foreground hover:bg-primary/5 hover:text-primary",
   );
 
   const content = (
@@ -86,10 +105,29 @@ function SidebarNavLink({
       {isActive && !collapsed && !item.isNestedChild && (
         <div className="absolute left-0 top-1/2 -translate-y-1/2 h-2/3 w-1 bg-primary rounded-r-md" />
       )}
-      <item.icon className={cn("shrink-0 transition-colors", item.isNestedChild ? "h-4 w-4" : "h-5 w-5")} />
-      {!collapsed && <span className={cn("flex-1 truncate", item.isNestedChild ? "text-[13px]" : "text-sm")}>{item.title}</span>}
+      <item.icon
+        className={cn(
+          "shrink-0 transition-colors",
+          item.isNestedChild ? "h-4 w-4" : "h-5 w-5",
+        )}
+      />
+      {!collapsed && (
+        <span
+          className={cn(
+            "flex-1 truncate",
+            item.isNestedChild ? "text-[13px]" : "text-sm",
+          )}
+        >
+          {item.title}
+        </span>
+      )}
       {!collapsed && hasSubItems && (
-        <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", isOpen && "rotate-90")} />
+        <ChevronRight
+          className={cn(
+            "h-4 w-4 shrink-0 transition-transform",
+            isOpen && "rotate-90",
+          )}
+        />
       )}
     </>
   );
@@ -116,7 +154,11 @@ function SidebarNavLink({
 
   if (hasSubItems) {
     return (
-      <button onClick={onToggle} className={cn(classes, "w-full text-left")} {...tourAttr}>
+      <button
+        onClick={onToggle}
+        className={cn(classes, "w-full text-left")}
+        {...tourAttr}
+      >
         {content}
       </button>
     );
@@ -136,7 +178,7 @@ function SidebarNavLink({
 
 function tourAttrForHref(
   href?: string,
-  options?: { isGroup?: boolean; title?: string }
+  options?: { isGroup?: boolean; title?: string },
 ): { "data-tour"?: string } {
   if (options?.isGroup) {
     const key = (options.title || href || "group")
@@ -168,12 +210,17 @@ export function Sidebar() {
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [helpOpen, setHelpOpen] = useState(false);
   const resizingRef = useRef(false);
-  const planDisplayName = currentPlanDisplayName(currentSubscription, restaurant);
+  const planDisplayName = currentPlanDisplayName(
+    currentSubscription,
+    restaurant,
+  );
 
   // Expand all sidebar groups while the product tour is active
   useEffect(() => {
     const onTour = (event: Event) => {
-      const active = Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active);
+      const active = Boolean(
+        (event as CustomEvent<{ active?: boolean }>).detail?.active,
+      );
       if (!active) return;
       setCollapsed(false);
       const next: Record<string, boolean> = {};
@@ -210,8 +257,8 @@ export function Sidebar() {
       let changed = false;
       items.forEach((item) => {
         if (item.subItems) {
-          const hasActiveChild = item.subItems.some(
-            (sub) => pathname === sub.href || (pathname && pathname.startsWith(sub.href + "/"))
+          const hasActiveChild = item.subItems.some((sub) =>
+            matchesRoute(pathname, sub.href),
           );
           if (hasActiveChild && !next[item.title]) {
             next[item.title] = true;
@@ -285,11 +332,14 @@ export function Sidebar() {
   };
 
   const isItemActive = (item: SidebarItem) => {
-    if (pathname === item.href || (pathname && pathname.startsWith(item.href + "/"))) {
+    if (
+      !isExcludedRoute(pathname, item.href) &&
+      matchesRoute(pathname, item.href)
+    ) {
       return true;
     }
     if (item.subItems) {
-      return item.subItems.some((sub) => pathname === sub.href || (pathname && pathname.startsWith(sub.href + "/")));
+      return item.subItems.some((sub) => matchesRoute(pathname, sub.href));
     }
     return false;
   };
@@ -299,25 +349,42 @@ export function Sidebar() {
       <div
         data-tour="sidebar"
         className={cn(
-          "hidden md:flex h-full flex-col border-r bg-background transition-[width] duration-300 ease-in-out shrink-0 relative",
-          collapsed ? "w-[68px]" : ""
+          "hidden h-full shrink-0 flex-col border-r bg-background transition-[width] duration-300 ease-in-out lg:flex relative",
+          collapsed ? "w-[68px]" : "",
         )}
-        style={collapsed ? undefined : { width: `${Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, width || 260))}px` }}
+        style={
+          collapsed
+            ? undefined
+            : {
+                width: `${Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, width || 260))}px`,
+              }
+        }
       >
         <div
           className={cn(
-          "flex items-center justify-between border-b border-border/50",
-          collapsed ? "flex-col gap-2 py-3 px-2" : "h-14 px-4"
-        )}>
+            "flex items-center justify-between border-b border-border/50",
+            collapsed ? "flex-col gap-2 py-3 px-2" : "h-14 px-4",
+          )}
+        >
           <Link
             href={homeHref}
             data-tour="sidebar-brand"
             className={cn(
-            "flex items-center font-bold hover:opacity-90 transition-opacity",
-            collapsed ? "justify-center" : "gap-2 text-lg overflow-hidden min-w-0"
-          )}>
+              "flex items-center font-bold hover:opacity-90 transition-opacity",
+              collapsed
+                ? "justify-center"
+                : "gap-2 text-lg overflow-hidden min-w-0",
+            )}
+          >
             <div className="relative h-6 w-6 min-w-6 flex items-center justify-center shrink-0">
-              <Image src="/logos/yummy_logo.png" alt="Logo" width={24} height={24} className="rounded" unoptimized />
+              <Image
+                src="/logos/yummy_logo.png"
+                alt="Logo"
+                width={24}
+                height={24}
+                className="rounded"
+                unoptimized
+              />
             </div>
             {!collapsed && (
               <span className="truncate text-foreground tracking-tight">
@@ -325,8 +392,13 @@ export function Sidebar() {
               </span>
             )}
           </Link>
-          
-          <div className={cn("flex items-center", collapsed ? "flex-col gap-2" : "gap-1")}>
+
+          <div
+            className={cn(
+              "flex items-center",
+              collapsed ? "flex-col gap-2" : "gap-1",
+            )}
+          >
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -345,7 +417,11 @@ export function Sidebar() {
               onClick={toggle}
               className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
-              {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+              {collapsed ? (
+                <ChevronsRight className="h-4 w-4" />
+              ) : (
+                <ChevronsLeft className="h-4 w-4" />
+              )}
             </button>
           </div>
         </div>
@@ -358,17 +434,29 @@ export function Sidebar() {
               <button
                 data-tour="sidebar-outlet"
                 className={cn(
-                "w-full rounded-xl border border-border/50 bg-card transition-all hover:border-primary/30 outline-none focus-visible:ring-2 focus-visible:ring-primary overflow-hidden text-left shadow-sm",
-                collapsed ? "p-2" : ""
-              )}>
-                <div className={cn("flex items-center", collapsed ? "justify-center" : "p-3 gap-3")}>
+                  "w-full rounded-xl border border-border/50 bg-card transition-all hover:border-primary/30 outline-none focus-visible:ring-2 focus-visible:ring-primary overflow-hidden text-left shadow-sm",
+                  collapsed ? "p-2" : "",
+                )}
+              >
+                <div
+                  className={cn(
+                    "flex items-center",
+                    collapsed ? "justify-center" : "p-3 gap-3",
+                  )}
+                >
                   <div className="relative h-9 w-9 min-w-9 flex items-center justify-center shrink-0">
                     {restaurant?.profile_picture ? (
-                       <Image src={getImageUrl(restaurant.profile_picture)} alt="Logo" className="object-cover rounded-lg" fill unoptimized />
+                      <Image
+                        src={getImageUrl(restaurant.profile_picture)}
+                        alt="Logo"
+                        className="object-cover rounded-lg"
+                        fill
+                        unoptimized
+                      />
                     ) : (
-                       <div className="bg-primary/10 w-full h-full rounded-lg flex items-center justify-center">
-                         <Store className="h-5 w-5 text-primary" />
-                       </div>
+                      <div className="bg-primary/10 w-full h-full rounded-lg flex items-center justify-center">
+                        <Store className="h-5 w-5 text-primary" />
+                      </div>
                     )}
                   </div>
                   {!collapsed && (
@@ -382,7 +470,9 @@ export function Sidebar() {
                       </div>
                     </div>
                   )}
-                  {!collapsed && <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
+                  {!collapsed && (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                  )}
                 </div>
                 {!collapsed && (
                   <div className="bg-primary/5 text-primary text-[11px] font-semibold px-3 py-1.5 text-center border-t border-primary/10 hover:bg-primary/10 transition-colors flex items-center justify-center gap-1 uppercase tracking-wider">
@@ -391,27 +481,45 @@ export function Sidebar() {
                 )}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-[300px] p-2 rounded-2xl" align="start" side="right" sideOffset={16}>
+            <DropdownMenuContent
+              className="w-[300px] p-2 rounded-2xl"
+              align="start"
+              side="right"
+              sideOffset={16}
+            >
               <div className="flex items-center justify-between p-2 mb-2">
                 <div className="flex items-center gap-3">
                   <div className="relative h-11 w-11 min-w-11 flex items-center justify-center shrink-0">
                     {restaurant?.profile_picture ? (
-                       <Image src={getImageUrl(restaurant.profile_picture)} alt="Logo" className="object-cover rounded-xl" fill unoptimized />
+                      <Image
+                        src={getImageUrl(restaurant.profile_picture)}
+                        alt="Logo"
+                        className="object-cover rounded-xl"
+                        fill
+                        unoptimized
+                      />
                     ) : (
-                       <div className="bg-primary/10 w-full h-full rounded-xl flex items-center justify-center">
-                         <Store className="h-5 w-5 text-primary" />
-                       </div>
+                      <div className="bg-primary/10 w-full h-full rounded-xl flex items-center justify-center">
+                        <Store className="h-5 w-5 text-primary" />
+                      </div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-[15px] truncate leading-tight text-foreground">{restaurant?.name || "Yummy"}</p>
+                    <p className="font-bold text-[15px] truncate leading-tight text-foreground">
+                      {restaurant?.name || "Yummy"}
+                    </p>
                     <div className="flex items-center gap-2 mt-1.5">
                       <div className="flex items-center gap-1 text-[11px] text-amber-500 font-bold tracking-tight">
                         <Crown className="h-3 w-3 fill-amber-500" />
                         {planDisplayName}
                       </div>
                       <div className="text-[10px] font-bold bg-muted px-2 py-0.5 rounded-md text-foreground/80 tracking-tight">
-                        Role: {user?.roles?.filter(r => !r.startsWith("__user_"))?.[0] || user?.role || "Admin"}
+                        Role:{" "}
+                        {user?.roles?.filter(
+                          (r) => !r.startsWith("__user_"),
+                        )?.[0] ||
+                          user?.role ||
+                          "Admin"}
                       </div>
                     </div>
                   </div>
@@ -421,19 +529,28 @@ export function Sidebar() {
 
               <div className="py-1">
                 {isPathAccessible("/premium", user) && (
-                  <DropdownMenuItem onClick={() => router.push("/premium")} className="cursor-pointer gap-4 py-2.5 px-3 text-[14px] font-medium text-foreground/90 hover:text-foreground">
+                  <DropdownMenuItem
+                    onClick={() => router.push("/premium")}
+                    className="cursor-pointer gap-4 py-2.5 px-3 text-[14px] font-medium text-foreground/90 hover:text-foreground"
+                  >
                     <DollarSign className="h-4 w-4" /> Billing & Subscription
                   </DropdownMenuItem>
                 )}
 
                 {isPathAccessible("/staff", user) && (
-                  <DropdownMenuItem onClick={() => router.push("/staff")} className="cursor-pointer gap-4 py-2.5 px-3 text-[14px] font-medium text-foreground/90 hover:text-foreground">
+                  <DropdownMenuItem
+                    onClick={() => router.push("/staff")}
+                    className="cursor-pointer gap-4 py-2.5 px-3 text-[14px] font-medium text-foreground/90 hover:text-foreground"
+                  >
                     <User className="h-4 w-4" /> Manage Staff
                   </DropdownMenuItem>
                 )}
 
                 {isPathAccessible("/manage/settings", user) && (
-                  <DropdownMenuItem onClick={() => router.push("/manage/settings")} className="cursor-pointer gap-4 py-2.5 px-3 text-[14px] font-medium text-foreground/90 hover:text-foreground">
+                  <DropdownMenuItem
+                    onClick={() => router.push("/settings")}
+                    className="cursor-pointer gap-4 py-2.5 px-3 text-[14px] font-medium text-foreground/90 hover:text-foreground"
+                  >
                     <Settings className="h-4 w-4" /> Settings
                   </DropdownMenuItem>
                 )}
@@ -447,7 +564,7 @@ export function Sidebar() {
             {items.map((item, index) => {
               const active = isItemActive(item);
               const isOpen = openMenus[item.title];
-              
+
               return (
                 <div key={index} className="flex flex-col">
                   {collapsed ? (
@@ -477,27 +594,32 @@ export function Sidebar() {
                     />
                   )}
 
-                  {!collapsed && item.subItems && item.subItems.length > 0 && isOpen && (
-                    <div className="ml-5 mt-1 flex flex-col gap-1 border-l pl-4 border-border/50">
-                      {item.subItems.map((sub, sIdx) => {
-                        const subActive = pathname === sub.href || (!!pathname && pathname.startsWith(sub.href + "/"));
-                        const subTour = tourAttrForHref(sub.href);
-                        return (
-                          <Link
-                            key={sIdx}
-                            href={sub.href}
-                            {...subTour}
-                            className={cn(
-                              "text-[13px] py-1.5 px-3 rounded-md transition-all font-medium",
-                              subActive ? "text-primary bg-primary/5" : "text-muted-foreground hover:text-primary hover:bg-primary/5"
-                            )}
-                          >
-                            {sub.title}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
+                  {!collapsed &&
+                    item.subItems &&
+                    item.subItems.length > 0 &&
+                    isOpen && (
+                      <div className="ml-5 mt-1 flex flex-col gap-1 border-l pl-4 border-border/50">
+                        {item.subItems.map((sub, sIdx) => {
+                          const subActive = matchesRoute(pathname, sub.href);
+                          const subTour = tourAttrForHref(sub.href);
+                          return (
+                            <Link
+                              key={sIdx}
+                              href={sub.href}
+                              {...subTour}
+                              className={cn(
+                                "text-[13px] py-1.5 px-3 rounded-md transition-all font-medium",
+                                subActive
+                                  ? "text-primary bg-primary/5"
+                                  : "text-muted-foreground hover:text-primary hover:bg-primary/5",
+                              )}
+                            >
+                              {sub.title}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
                 </div>
               );
             })}
@@ -507,10 +629,12 @@ export function Sidebar() {
         <div className="p-3 mt-auto" data-tour="sidebar-account">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className={cn(
-                "w-full flex items-center rounded-xl border border-border/50 bg-card p-2 transition-all hover:bg-muted/50 outline-none focus-visible:ring-2 focus-visible:ring-primary shadow-sm",
-                collapsed ? "justify-center" : "gap-3"
-              )}>
+              <button
+                className={cn(
+                  "w-full flex items-center rounded-xl border border-border/50 bg-card p-2 transition-all hover:bg-muted/50 outline-none focus-visible:ring-2 focus-visible:ring-primary shadow-sm",
+                  collapsed ? "justify-center" : "gap-3",
+                )}
+              >
                 <div className="h-9 w-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0 text-sm">
                   {(user?.full_name && !user.full_name.includes("@")
                     ? user.full_name
@@ -533,7 +657,12 @@ export function Sidebar() {
                 )}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="right" align="end" sideOffset={16} className="w-[300px] p-2 rounded-2xl mb-2">
+            <DropdownMenuContent
+              side="right"
+              align="end"
+              sideOffset={16}
+              className="w-[300px] p-2 rounded-2xl mb-2"
+            >
               <div className="flex items-center gap-3 p-2 mb-1">
                 <div className="h-12 w-12 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xl shrink-0">
                   {(user?.full_name && !user.full_name.includes("@")
@@ -554,39 +683,62 @@ export function Sidebar() {
                   </span>
                 </div>
               </div>
-              
+
               <DropdownMenuSeparator className="mx-2 bg-border/50" />
-              
+
               <div className="py-1">
-                <DropdownMenuItem onClick={() => router.push("/manage/profile")} className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground">
-                  <Pencil className="h-4 w-4" /> Profile Setting
+                <DropdownMenuItem
+                  onClick={() => router.push("/manage/profile")}
+                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
+                >
+                  <Pencil className="h-4 w-4" /> Business Profile
                 </DropdownMenuItem>
 
-                <DropdownMenuItem onClick={() => router.push("/feedback")} className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground">
+                <DropdownMenuItem
+                  onClick={() => router.push("/feedback")}
+                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
+                >
                   <ThumbsUp className="h-4 w-4" /> Give Feedback
                 </DropdownMenuItem>
 
-                <DropdownMenuItem onClick={() => setHelpOpen(true)} className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground">
+                <DropdownMenuItem
+                  onClick={() => setHelpOpen(true)}
+                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
+                >
                   <HelpCircle className="h-4 w-4" /> Help
                 </DropdownMenuItem>
 
-                <DropdownMenuItem className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground flex items-center justify-between" onSelect={(e) => e.preventDefault()}>
+                <DropdownMenuItem
+                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground flex items-center justify-between"
+                  onSelect={(e) => e.preventDefault()}
+                >
                   <div className="flex items-center gap-3">
                     <Sun className="h-4 w-4" /> Dark Theme
                   </div>
-                  <Switch checked={theme === "dark"} onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")} />
+                  <Switch
+                    checked={theme === "dark"}
+                    onCheckedChange={(checked) =>
+                      setTheme(checked ? "dark" : "light")
+                    }
+                  />
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator className="mx-2 bg-border/50" />
 
-                <DropdownMenuItem onClick={() => router.push("/manage/settings")} className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground">
-                  <Settings className="h-4 w-4" /> Manage Settings
+                <DropdownMenuItem
+                  onClick={() => router.push("/settings")}
+                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
+                >
+                  <Settings className="h-4 w-4" /> Settings
                 </DropdownMenuItem>
               </div>
 
               <div className="pt-2 px-1 pb-1">
                 <button
-                  onClick={() => { logout(); router.push("/"); }}
+                  onClick={() => {
+                    logout();
+                    router.push("/");
+                  }}
                   className="w-full flex items-center justify-center gap-2 bg-muted/40 hover:bg-muted text-foreground py-2.5 rounded-xl text-[13px] font-bold transition-colors border border-transparent hover:border-border/50"
                 >
                   <LogOut className="h-4 w-4 text-foreground/60" /> Log out

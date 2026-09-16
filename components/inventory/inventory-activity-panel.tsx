@@ -1,18 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Ban,
-  Loader2,
-  PencilLine,
-  RefreshCw,
-  RotateCcw,
-  Search,
-} from "lucide-react";
+import { Ban, Loader2, PencilLine, RefreshCw, RotateCcw } from "lucide-react";
 
 import apiClient from "@/lib/api-client";
 import { InventoryApis } from "@/lib/api/endpoints";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,6 +25,17 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { ListRow } from "@/components/patterns/data/data-list";
+import {
+  EmptyState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
+import {
+  StatusBadge,
+  statusToneFor,
+} from "@/components/patterns/feedback/status-badge";
+import { formatMoney } from "@/lib/presentation-format";
 import {
   TransactionDetailSheet,
   type TransactionDetailModel,
@@ -96,21 +99,6 @@ const humanize = (value?: string | null) =>
   String(value || "unknown")
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
-
-const statusClass = (status: string) => {
-  switch (status) {
-    case "posted":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400";
-    case "cancelled":
-    case "returned":
-      return "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300";
-    case "corrected":
-    case "partially_returned":
-      return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400";
-    default:
-      return "";
-  }
-};
 
 export function InventoryActivityPanel({
   restaurantId,
@@ -352,9 +340,10 @@ export function InventoryActivityPanel({
       });
       return;
     }
-    const drawer = selectedNeedsCashDrawer && selectedCashDrawerSessionId
-      ? { drawer_session_id: Number(selectedCashDrawerSessionId) }
-      : {};
+    const drawer =
+      selectedNeedsCashDrawer && selectedCashDrawerSessionId
+        ? { drawer_session_id: Number(selectedCashDrawerSessionId) }
+        : {};
     const reason = form.reason.trim();
     let endpoint: string;
     let payload: Record<string, unknown>;
@@ -410,7 +399,7 @@ export function InventoryActivityPanel({
 
   return (
     <>
-      <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Inventory activity</h2>
@@ -432,16 +421,13 @@ export function InventoryActivityPanel({
           </Button>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_180px_190px]">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              placeholder="Search item, user, supplier or reason"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
+        <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_180px_190px]">
+          <SearchField
+            placeholder="Search item, user, supplier or reason"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onClear={() => setSearch("")}
+          />
           <Select value={activityType} onValueChange={setActivityType}>
             <SelectTrigger>
               <SelectValue placeholder="Activity type" />
@@ -472,166 +458,194 @@ export function InventoryActivityPanel({
         </div>
 
         {loading ? (
-          <div className="flex h-56 items-center justify-center text-muted-foreground">
-            <Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading activity…
-          </div>
+          <LoadingState label="Loading inventory activity" />
         ) : visibleActivities.length === 0 ? (
-          <div className="flex h-56 items-center justify-center rounded-lg border border-dashed text-muted-foreground">
-            No matching inventory activity.
-          </div>
+          <EmptyState
+            title="No matching inventory activity"
+            description="Try a different search term or activity filter."
+          />
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[1120px] text-left text-sm">
-              <thead className="border-b bg-muted text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">Item / activity</th>
-                  <th className="px-4 py-3">Stock change</th>
-                  <th className="px-4 py-3">Cost / payment</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Recorded by</th>
-                  <th className="px-4 py-3 text-right">Manage</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {visibleActivities.map((row) => {
-                  const highlighted =
-                    Number(row.adjustment_id) === Number(focusAdjustmentId);
-                  const quantity = Number(row.quantity_delta || 0);
-                  return (
-                    <tr
-                      key={row.id}
-                      tabIndex={0}
-                      role="button"
-                      onClick={() => setSelectedActivity(row)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setSelectedActivity(row);
-                        }
-                      }}
-                      className={cn(
-                        "cursor-pointer align-top hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
-                        highlighted && "bg-orange-50 dark:bg-orange-950/20",
-                      )}
-                    >
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-foreground">
-                          {row.item_name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {humanize(row.activity_type)}
-                          {row.reason ? ` · ${row.reason}` : ""}
-                        </p>
-                        {row.supplier_name ? (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Supplier: {row.supplier_name}
-                          </p>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3">
-                        <p
-                          className={cn(
-                            "font-semibold",
-                            quantity >= 0 ? "text-emerald-600" : "text-red-600",
-                          )}
-                        >
-                          {quantity >= 0 ? "+" : ""}
-                          {quantity.toLocaleString()} {row.item_unit}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {Number(row.previous_stock).toLocaleString()} →{" "}
-                          {Number(row.resulting_stock).toLocaleString()}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p>
-                          {row.cost == null
-                            ? "—"
-                            : `Rs. ${Number(row.cost).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-                        </p>
-                        <p className="text-xs capitalize text-muted-foreground">
-                          {[row.payment_method, row.payment_status]
-                            .filter(Boolean)
-                            .join(" · ") || "No payment"}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge
-                          variant="outline"
-                          className={statusClass(row.lifecycle_status)}
-                        >
-                          {humanize(row.lifecycle_status)}
-                        </Badge>
-                        {row.replacement_adjustment_id ? (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Replacement #{row.replacement_adjustment_id}
-                          </p>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3">
-                        <p>{row.created_by_name || "System"}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(row.created_at).toLocaleString()}
-                        </p>
-                      </td>
-                      <td
-                        className="px-4 py-3 text-right"
-                        onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        {canManage &&
-                        row.adjustment_id &&
-                        (row.can_correct ||
-                          row.can_cancel ||
-                          row.can_return) ? (
-                          <div className="flex justify-end gap-1">
-                            {row.can_correct ? (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => openAction(row, "correct")}
-                                title="Correct purchase"
-                              >
-                                <PencilLine className="h-4 w-4" />
-                              </Button>
-                            ) : null}
-                            {row.can_return ? (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => openAction(row, "return")}
-                                title="Return to supplier"
-                              >
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                            ) : null}
-                            {row.can_cancel ? (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() => openAction(row, "cancel")}
-                                title="Cancel purchase"
-                              >
-                                <Ban className="h-4 w-4" />
-                              </Button>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <span
-                            className="text-xs text-muted-foreground"
-                            title={row.management_block_reason || undefined}
-                          >
-                            Audit only
-                          </span>
+          <>
+            <div className="overflow-hidden rounded-xl border border-border bg-card lg:hidden">
+              {visibleActivities.map((row) => {
+                const quantity = Number(row.quantity_delta || 0);
+                return (
+                  <ListRow
+                    key={row.id}
+                    role="button"
+                    tabIndex={0}
+                    title={row.item_name}
+                    description={`${humanize(row.activity_type)}${row.reason ? ` · ${row.reason}` : ""}`}
+                    meta={
+                      <span className="tabular-nums">
+                        {quantity >= 0 ? "+" : ""}
+                        {quantity.toLocaleString()} {row.item_unit}
+                      </span>
+                    }
+                    trailing={
+                      <StatusBadge tone={statusToneFor(row.lifecycle_status)}>
+                        {humanize(row.lifecycle_status)}
+                      </StatusBadge>
+                    }
+                    interactive
+                    onClick={() => setSelectedActivity(row)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedActivity(row);
+                      }
+                    }}
+                  />
+                );
+              })}
+            </div>
+            <div className="hidden overflow-x-auto rounded-xl border border-border lg:block">
+              <table className="w-full min-w-[1120px] text-left text-sm">
+                <thead className="border-b bg-muted text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">Item / activity</th>
+                    <th className="px-4 py-3">Stock change</th>
+                    <th className="px-4 py-3">Cost / payment</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Recorded by</th>
+                    <th className="px-4 py-3 text-right">Manage</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {visibleActivities.map((row) => {
+                    const highlighted =
+                      Number(row.adjustment_id) === Number(focusAdjustmentId);
+                    const quantity = Number(row.quantity_delta || 0);
+                    return (
+                      <tr
+                        key={row.id}
+                        tabIndex={0}
+                        role="button"
+                        onClick={() => setSelectedActivity(row)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedActivity(row);
+                          }
+                        }}
+                        className={cn(
+                          "cursor-pointer align-top hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+                          highlighted && "bg-orange-50 dark:bg-orange-950/20",
                         )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-foreground">
+                            {row.item_name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {humanize(row.activity_type)}
+                            {row.reason ? ` · ${row.reason}` : ""}
+                          </p>
+                          {row.supplier_name ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Supplier: {row.supplier_name}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-semibold tabular-nums">
+                            {quantity >= 0 ? "+" : ""}
+                            {quantity.toLocaleString()} {row.item_unit}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {Number(row.previous_stock).toLocaleString()} →{" "}
+                            {Number(row.resulting_stock).toLocaleString()}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p>
+                            {row.cost == null
+                              ? "—"
+                              : formatMoney(Number(row.cost))}
+                          </p>
+                          <p className="text-xs capitalize text-muted-foreground">
+                            {[row.payment_method, row.payment_status]
+                              .filter(Boolean)
+                              .join(" · ") || "No payment"}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge
+                            tone={statusToneFor(row.lifecycle_status)}
+                          >
+                            {humanize(row.lifecycle_status)}
+                          </StatusBadge>
+                          {row.replacement_adjustment_id ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Replacement #{row.replacement_adjustment_id}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p>{row.created_by_name || "System"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(row.created_at).toLocaleString()}
+                          </p>
+                        </td>
+                        <td
+                          className="px-4 py-3 text-right"
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        >
+                          {canManage &&
+                          row.adjustment_id &&
+                          (row.can_correct ||
+                            row.can_cancel ||
+                            row.can_return) ? (
+                            <div className="flex justify-end gap-1">
+                              {row.can_correct ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openAction(row, "correct")}
+                                  title="Correct purchase"
+                                >
+                                  <PencilLine className="h-4 w-4" />
+                                </Button>
+                              ) : null}
+                              {row.can_return ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openAction(row, "return")}
+                                  title="Return to supplier"
+                                >
+                                  <RotateCcw className="h-4 w-4" />
+                                </Button>
+                              ) : null}
+                              {row.can_cancel ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-destructive hover:text-destructive"
+                                  onClick={() => openAction(row, "cancel")}
+                                  title="Cancel purchase"
+                                >
+                                  <Ban className="h-4 w-4" />
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span
+                              className="text-xs text-muted-foreground"
+                              title={row.management_block_reason || undefined}
+                            >
+                              Audit only
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

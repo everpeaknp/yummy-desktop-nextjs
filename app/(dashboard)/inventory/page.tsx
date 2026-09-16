@@ -4,21 +4,35 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
-import { DrawerSessionApis, InventoryApis, SupplierApis } from "@/lib/api/endpoints";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  DrawerSessionApis,
+  InventoryApis,
+  SupplierApis,
+} from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Package, AlertTriangle, ArrowUpDown, Loader2, Filter, History, Utensils } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import {
+  Plus,
+  Package,
+  AlertTriangle,
+  Loader2,
+  History,
+  Utensils,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
-import { MetricCard } from "@/components/cards/metric-card";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
-import { PageTabs } from "@/components/patterns/navigation/page-tabs";
+import { SegmentedControl } from "@/components/patterns/navigation/segmented-control";
 import { SearchField } from "@/components/patterns/controls/search-field";
-import { DataList, ListRow } from "@/components/patterns/data/data-list";
-import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
+import { ListRow } from "@/components/patterns/data/data-list";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
+import { StatusBadge } from "@/components/patterns/feedback/status-badge";
+import { formatMoney, formatProductDate } from "@/lib/presentation-format";
 
 import {
   Dialog,
@@ -45,17 +59,81 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { InventoryConsumptionDialog } from "@/components/inventory/inventory-consumption-dialog";
 import { InventoryActivityPanel } from "@/components/inventory/inventory-activity-panel";
-import { CashBankAccountSelect, type CashBankAccountOption } from "@/components/finance/cash-bank-account-select";
+import {
+  CashBankAccountSelect,
+  type CashBankAccountOption,
+} from "@/components/finance/cash-bank-account-select";
 import { ReasonCodeSelect } from "@/components/inventory/reason-code-select";
 import { InventoryItemDetailsSheet } from "@/components/inventory/inventory-item-details-sheet";
 import { StationPicker } from "@/components/stations/station-picker";
 
+function inventoryMovementLabel(movement: any): string {
+  const sourceType = String(movement?.source_type || "")
+    .trim()
+    .toLowerCase();
+  if (
+    sourceType.includes("manual_decrease") ||
+    sourceType.includes("manual_increase")
+  )
+    return "Manual adjustment";
+  if (sourceType.includes("stock_count") || sourceType.includes("count"))
+    return "Stock count";
+  if (sourceType.includes("purchase_return")) return "Purchase return";
+  if (sourceType.includes("purchase")) return "Purchase received";
+  if (sourceType.includes("kot") || sourceType.includes("sale"))
+    return "Used in an order";
+  if (sourceType.includes("transfer")) return "Stock transfer";
+  if (sourceType.includes("consumption")) return "Stock consumed";
+  return Number(movement?.qty_delta || 0) >= 0
+    ? "Stock added"
+    : "Stock reduced";
+}
+
+function inventoryMovementReason(movement: any): string | null {
+  const reason = String(movement?.reason || movement?.description || "").trim();
+  if (!reason) return null;
+  return reason
+    .replace(/menu_item=\d+/gi, "menu item")
+    .replace(/\b(manual_decrease|manual_increase|stock_count)\b/gi, (value) =>
+      value.replaceAll("_", " ").toLowerCase(),
+    );
+}
+
+function inventoryMovementReference(movement: any): string | null {
+  const sourceType = String(movement?.source_type || "").toLowerCase();
+  const orderReference =
+    movement?.order_number ?? movement?.order_reference ?? movement?.order_id;
+  if (
+    (sourceType.includes("kot") || sourceType.includes("sale")) &&
+    orderReference != null
+  ) {
+    return `Order #${orderReference}`;
+  }
+  const reference =
+    movement?.source_reference ??
+    movement?.reference ??
+    movement?.purchase_reference;
+  return reference ? String(reference) : null;
+}
+
+function formatQuantity(value: unknown): string {
+  const quantity = Number(value);
+  return Number.isFinite(quantity)
+    ? quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })
+    : String(value ?? 0);
+}
+
 export default function InventoryPage() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inventoryError, setInventoryError] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
-  const [inventoryView, setInventoryView] = useState<"items" | "activity">("items");
-  const [focusAdjustmentId, setFocusAdjustmentId] = useState<number | null>(null);
+  const [inventoryView, setInventoryView] = useState<"items" | "activity">(
+    "items",
+  );
+  const [focusAdjustmentId, setFocusAdjustmentId] = useState<number | null>(
+    null,
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [valuation, setValuation] = useState<any | null>(null);
 
@@ -68,7 +146,11 @@ export default function InventoryPage() {
   const [opsOpen, setOpsOpen] = useState(false);
   const [opsItem, setOpsItem] = useState<any | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
-  const [ledger, setLedger] = useState<{ movements: any[]; total: number } | null>(null);
+  const [ledgerError, setLedgerError] = useState(false);
+  const [ledger, setLedger] = useState<{
+    movements: any[];
+    total: number;
+  } | null>(null);
 
   // Add Stock modal state -- never creates a purchase, expense, supplier
   // payable, payment, or supplier ledger entry, only a stock movement.
@@ -95,7 +177,10 @@ export default function InventoryPage() {
   // Count Stock modal state -- records the delta between system and
   // counted quantity as a single Add/Reduce Stock movement.
   const [countStockItem, setCountStockItem] = useState<any>(null);
-  const [countStockForm, setCountStockForm] = useState({ counted_quantity: "", notes: "" });
+  const [countStockForm, setCountStockForm] = useState({
+    counted_quantity: "",
+    notes: "",
+  });
   const [countStockSubmitting, setCountStockSubmitting] = useState(false);
 
   // Add/Edit Modal State
@@ -118,22 +203,27 @@ export default function InventoryPage() {
     is_active: true,
   });
   const [itemSubmitting, setItemSubmitting] = useState(false);
-  const [openingPaymentAccount, setOpeningPaymentAccount] = useState<CashBankAccountOption | null>(null);
+  const [openingPaymentAccount, setOpeningPaymentAccount] =
+    useState<CashBankAccountOption | null>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] = useState(false);
+  const [cashDrawerControlsEnabled, setCashDrawerControlsEnabled] =
+    useState(false);
   const [cashDrawerSessions, setCashDrawerSessions] = useState<any[]>([]);
-  const [selectedCashDrawerSessionId, setSelectedCashDrawerSessionId] = useState<string>("");
+  const [selectedCashDrawerSessionId, setSelectedCashDrawerSessionId] =
+    useState<string>("");
   const [consumeOpen, setConsumeOpen] = useState(false);
-
 
   const { toast } = useToast();
 
-  const user = useAuth(state => state.user);
-  const me = useAuth(state => state.me);
+  const user = useAuth((state) => state.user);
+  const me = useAuth((state) => state.me);
   const router = useRouter();
   const permissionKeys = new Set(user?.permissions || []);
-  const normalizedRole = String(user?.role || user?.primary_role || "").toLowerCase();
-  const isInventoryAdmin = normalizedRole === "admin" || normalizedRole === "superadmin";
+  const normalizedRole = String(
+    user?.role || user?.primary_role || "",
+  ).toLowerCase();
+  const isInventoryAdmin =
+    normalizedRole === "admin" || normalizedRole === "superadmin";
   const canConsumeInventory =
     isInventoryAdmin ||
     permissionKeys.has("inventory.consume") ||
@@ -148,11 +238,17 @@ export default function InventoryPage() {
   // 1. Session Restoration & Auth Guard
   useEffect(() => {
     const checkAuth = async () => {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && token) await me();
 
-      const updatedToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-      if (!user && !updatedToken) router.push('/');
+      const updatedToken =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
+      if (!user && !updatedToken) router.push("/");
     };
     const timer = setTimeout(checkAuth, 500);
     return () => clearTimeout(timer);
@@ -180,29 +276,41 @@ export default function InventoryPage() {
   const fetchInventory = async () => {
     if (!user?.restaurant_id) return;
     setLoading(true);
+    setInventoryError(false);
 
     try {
       const url = InventoryApis.listInventoryWithQuery({
         restaurantId: user.restaurant_id,
-        lowStockOnly: activeTab === 'low_stock'
+        lowStockOnly: activeTab === "low_stock",
       });
 
       const [inventoryResult, valuationResult] = await Promise.allSettled([
         apiClient.get(url),
         apiClient.get(InventoryApis.valuation(user.restaurant_id)),
       ]);
-      if (inventoryResult.status === "fulfilled" && inventoryResult.value.data.status === "success") {
-        setItems(inventoryResult.value.data.data.items || inventoryResult.value.data.data || []);
+      if (
+        inventoryResult.status === "fulfilled" &&
+        inventoryResult.value.data.status === "success"
+      ) {
+        setItems(
+          inventoryResult.value.data.data.items ||
+            inventoryResult.value.data.data ||
+            [],
+        );
       } else if (inventoryResult.status === "rejected") {
         throw inventoryResult.reason;
       }
-      if (valuationResult.status === "fulfilled" && valuationResult.value.data.status === "success") {
+      if (
+        valuationResult.status === "fulfilled" &&
+        valuationResult.value.data.status === "success"
+      ) {
         setValuation(valuationResult.value.data.data || null);
       } else {
         setValuation(null);
       }
     } catch (err) {
       console.error("Failed to fetch inventory:", err);
+      setInventoryError(true);
     } finally {
       setLoading(false);
     }
@@ -211,7 +319,9 @@ export default function InventoryPage() {
   const fetchSuppliers = async () => {
     if (!user?.restaurant_id) return;
     try {
-      const response = await apiClient.get(SupplierApis.listSuppliers(user.restaurant_id));
+      const response = await apiClient.get(
+        SupplierApis.listSuppliers(user.restaurant_id),
+      );
       if (response.data.status === "success") {
         const supplierData = response.data.data?.suppliers || [];
         setSuppliers(Array.isArray(supplierData) ? supplierData : []);
@@ -225,10 +335,12 @@ export default function InventoryPage() {
   const fetchCashDrawers = async () => {
     if (!user?.restaurant_id) return;
     try {
-      const res = await apiClient.get(DrawerSessionApis.active({
-        restaurantId: user.restaurant_id,
-        businessLine: "restaurant",
-      }));
+      const res = await apiClient.get(
+        DrawerSessionApis.active({
+          restaurantId: user.restaurant_id,
+          businessLine: "restaurant",
+        }),
+      );
       const message = String(res.data?.message || "").toLowerCase();
       if (message.includes("controls are disabled")) {
         setCashDrawerControlsEnabled(false);
@@ -238,12 +350,18 @@ export default function InventoryPage() {
       }
       const rows = Array.isArray(res.data?.data) ? res.data.data : [];
       const paymentReady = rows.filter((session: any) =>
-        ["opened", "closing_count_required", "reopened"].includes(String(session.status || "").toLowerCase())
+        ["opened", "closing_count_required", "reopened"].includes(
+          String(session.status || "").toLowerCase(),
+        ),
       );
       setCashDrawerControlsEnabled(true);
       setCashDrawerSessions(paymentReady);
       setSelectedCashDrawerSessionId((current) => {
-        if (current && paymentReady.some((session: any) => String(session.id) === current)) return current;
+        if (
+          current &&
+          paymentReady.some((session: any) => String(session.id) === current)
+        )
+          return current;
         return paymentReady[0]?.id ? String(paymentReady[0].id) : "";
       });
     } catch (err) {
@@ -253,7 +371,6 @@ export default function InventoryPage() {
       setSelectedCashDrawerSessionId("");
     }
   };
-
 
   useEffect(() => {
     if (user?.restaurant_id) {
@@ -277,7 +394,10 @@ export default function InventoryPage() {
     return (
       <div className="grid gap-2">
         <Label htmlFor={id}>Cash Drawer</Label>
-        <Select value={selectedCashDrawerSessionId} onValueChange={setSelectedCashDrawerSessionId}>
+        <Select
+          value={selectedCashDrawerSessionId}
+          onValueChange={setSelectedCashDrawerSessionId}
+        >
           <SelectTrigger id={id}>
             <SelectValue placeholder="Automatic drawer" />
           </SelectTrigger>
@@ -304,7 +424,10 @@ export default function InventoryPage() {
     );
   };
 
-  const timezone = typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+  const timezone =
+    typeof window !== "undefined"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : undefined;
 
   const openOps = (item: any) => {
     setOpsItem(item);
@@ -313,8 +436,14 @@ export default function InventoryPage() {
 
   const fetchLedger = async (itemId: number) => {
     setLedgerLoading(true);
+    setLedgerError(false);
     try {
-      const url = InventoryApis.getLedger({ itemId, skip: 0, limit: 200, timezone });
+      const url = InventoryApis.getLedger({
+        itemId,
+        skip: 0,
+        limit: 200,
+        timezone,
+      });
       const res = await apiClient.get(url);
       if (res.data?.status === "success") {
         const data = res.data?.data;
@@ -326,6 +455,7 @@ export default function InventoryPage() {
         setLedger({ movements: [], total: 0 });
       }
     } catch (err: any) {
+      setLedgerError(true);
       toast({
         title: "Ledger Failed",
         description: err.response?.data?.detail || "Could not load ledger.",
@@ -343,7 +473,6 @@ export default function InventoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opsOpen, opsItem?.id]);
 
-
   const handleAddStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addStockItem || !addStockForm.quantity) return;
@@ -354,9 +483,14 @@ export default function InventoryPage() {
         quantity: Number(addStockForm.quantity),
         reason_code: addStockForm.reason_code,
         notes: addStockForm.notes.trim() || undefined,
-        unit_cost: addStockForm.unit_cost ? Number(addStockForm.unit_cost) : undefined,
+        unit_cost: addStockForm.unit_cost
+          ? Number(addStockForm.unit_cost)
+          : undefined,
       };
-      const response = await apiClient.post(InventoryApis.addStock(addStockItem.id), payload);
+      const response = await apiClient.post(
+        InventoryApis.addStock(addStockItem.id),
+        payload,
+      );
       const result = response.data?.data;
 
       toast({
@@ -367,7 +501,12 @@ export default function InventoryPage() {
       });
 
       setAddStockItem(null);
-      setAddStockForm({ quantity: "", reason_code: "stock_count_correction", unit_cost: "", notes: "" });
+      setAddStockForm({
+        quantity: "",
+        reason_code: "stock_count_correction",
+        unit_cost: "",
+        notes: "",
+      });
       await fetchInventory();
     } catch (err: any) {
       toast({
@@ -392,7 +531,10 @@ export default function InventoryPage() {
         notes: reduceStockForm.notes.trim() || undefined,
         allow_negative: reduceStockForm.allow_negative,
       };
-      const response = await apiClient.post(InventoryApis.reduceStock(reduceStockItem.id), payload);
+      const response = await apiClient.post(
+        InventoryApis.reduceStock(reduceStockItem.id),
+        payload,
+      );
       const result = response.data?.data;
 
       toast({
@@ -403,7 +545,12 @@ export default function InventoryPage() {
       });
 
       setReduceStockItem(null);
-      setReduceStockForm({ quantity: "", reason_code: "waste", notes: "", allow_negative: false });
+      setReduceStockForm({
+        quantity: "",
+        reason_code: "waste",
+        notes: "",
+        allow_negative: false,
+      });
       await fetchInventory();
     } catch (err: any) {
       toast({
@@ -427,7 +574,10 @@ export default function InventoryPage() {
         notes: countStockForm.notes.trim() || undefined,
         allow_negative: canOverrideNegativeStock,
       };
-      const response = await apiClient.post(InventoryApis.stockCountCorrection(countStockItem.id), payload);
+      const response = await apiClient.post(
+        InventoryApis.stockCountCorrection(countStockItem.id),
+        payload,
+      );
       const result = response.data?.data;
 
       toast({
@@ -443,7 +593,8 @@ export default function InventoryPage() {
     } catch (err: any) {
       toast({
         title: "Stock Count Failed",
-        description: err.response?.data?.detail || "Could not record stock count.",
+        description:
+          err.response?.data?.detail || "Could not record stock count.",
         variant: "destructive",
       });
     } finally {
@@ -458,14 +609,16 @@ export default function InventoryPage() {
     const openingQuantity = Number(itemForm.current_stock || 0);
     const openingCost = Number(itemForm.opening_stock_total_cost || 0);
     const isCostedOpeningStock =
-      !editingItem &&
-      openingQuantity > 0 &&
-      openingCost > 0;
+      !editingItem && openingQuantity > 0 && openingCost > 0;
 
-    if (isCostedOpeningStock && (!itemForm.supplier_id || itemForm.supplier_id === "none")) {
+    if (
+      isCostedOpeningStock &&
+      (!itemForm.supplier_id || itemForm.supplier_id === "none")
+    ) {
       toast({
         title: "Supplier Required",
-        description: "Supplier is required for every costed inventory purchase.",
+        description:
+          "Supplier is required for every costed inventory purchase.",
         variant: "destructive",
       });
       return;
@@ -486,17 +639,31 @@ export default function InventoryPage() {
           ...(!isCapitalized && itemForm.cost_per_unit
             ? { cost_per_unit: Number(itemForm.cost_per_unit) }
             : {}),
-          supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
+          supplier_id:
+            itemForm.supplier_id && itemForm.supplier_id !== "none"
+              ? Number(itemForm.supplier_id)
+              : null,
           storage_location: itemForm.location || null,
           station: itemForm.station,
           station_id: itemForm.station_id,
           is_active: itemForm.is_active,
         };
-        await apiClient.patch(InventoryApis.updateInventoryItem(editingItem.id), updatePayload);
+        await apiClient.patch(
+          InventoryApis.updateInventoryItem(editingItem.id),
+          updatePayload,
+        );
       } else {
-        if (isCostedOpeningStock && itemForm.opening_stock_payment_status === "paid") {
+        if (
+          isCostedOpeningStock &&
+          itemForm.opening_stock_payment_status === "paid"
+        ) {
           if (!openingPaymentAccount) {
-            toast({ title: "Account Required", description: "Select the account used to pay for the opening stock.", variant: "destructive" });
+            toast({
+              title: "Account Required",
+              description:
+                "Select the account used to pay for the opening stock.",
+              variant: "destructive",
+            });
             return;
           }
         }
@@ -509,35 +676,44 @@ export default function InventoryPage() {
           unit: itemForm.unit,
           current_stock: Number(itemForm.current_stock),
           min_stock_level: Number(itemForm.min_stock_level),
-          opening_stock_total_cost: itemForm.opening_stock_total_cost ? Number(itemForm.opening_stock_total_cost) : null,
+          opening_stock_total_cost: itemForm.opening_stock_total_cost
+            ? Number(itemForm.opening_stock_total_cost)
+            : null,
           opening_stock_payment_status: itemForm.opening_stock_payment_status,
           opening_stock_account_type:
-            isCostedOpeningStock && itemForm.opening_stock_payment_status === "paid"
-              ? openingPaymentAccount?.account_type ?? null
+            isCostedOpeningStock &&
+            itemForm.opening_stock_payment_status === "paid"
+              ? (openingPaymentAccount?.account_type ?? null)
               : null,
           opening_stock_account_id:
-            isCostedOpeningStock && itemForm.opening_stock_payment_status === "paid"
-              ? openingPaymentAccount?.id ?? null
+            isCostedOpeningStock &&
+            itemForm.opening_stock_payment_status === "paid"
+              ? (openingPaymentAccount?.id ?? null)
               : null,
-          supplier_id: (itemForm.supplier_id && itemForm.supplier_id !== "none") ? Number(itemForm.supplier_id) : null,
+          supplier_id:
+            itemForm.supplier_id && itemForm.supplier_id !== "none"
+              ? Number(itemForm.supplier_id)
+              : null,
           storage_location: itemForm.location || null,
           is_active: itemForm.is_active,
         };
         await apiClient.post(InventoryApis.createInventoryItem, createPayload);
       }
-      
+
       toast({
         title: "Success",
-        description: `Successfully ${editingItem ? 'updated' : 'added'} ${itemForm.name}`,
+        description: `Successfully ${editingItem ? "updated" : "added"} ${itemForm.name}`,
       });
-      
+
       setIsAddDialogOpen(false);
       setEditingItem(null);
       fetchInventory();
     } catch (err: any) {
       toast({
         title: "Action Failed",
-        description: err.response?.data?.detail || `Could not ${editingItem ? 'update' : 'add'} item.`,
+        description:
+          err.response?.data?.detail ||
+          `Could not ${editingItem ? "update" : "add"} item.`,
         variant: "destructive",
       });
     } finally {
@@ -547,17 +723,30 @@ export default function InventoryPage() {
 
   const openAddStock = (item: any) => {
     setAddStockItem(item);
-    setAddStockForm({ quantity: "", reason_code: "stock_count_correction", unit_cost: "", notes: "" });
+    setAddStockForm({
+      quantity: "",
+      reason_code: "stock_count_correction",
+      unit_cost: "",
+      notes: "",
+    });
   };
 
   const openReduceStock = (item: any) => {
     setReduceStockItem(item);
-    setReduceStockForm({ quantity: "", reason_code: "waste", notes: "", allow_negative: false });
+    setReduceStockForm({
+      quantity: "",
+      reason_code: "waste",
+      notes: "",
+      allow_negative: false,
+    });
   };
 
   const openCountStock = (item: any) => {
     setCountStockItem(item);
-    setCountStockForm({ counted_quantity: String(item.current_stock ?? ""), notes: "" });
+    setCountStockForm({
+      counted_quantity: String(item.current_stock ?? ""),
+      notes: "",
+    });
   };
 
   const openAdd = () => {
@@ -605,39 +794,55 @@ export default function InventoryPage() {
   };
 
   const valuationByItemId = new Map<number, any>(
-    (valuation?.items || []).map((row: any) => [Number(row.inventory_item_id), row]),
+    (valuation?.items || []).map((row: any) => [
+      Number(row.inventory_item_id),
+      row,
+    ]),
   );
   const visibleItems = items.filter((item) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
-    return (item.name || "").toLowerCase().includes(query) || (item.category || "").toLowerCase().includes(query);
+    return (
+      (item.name || "").toLowerCase().includes(query) ||
+      (item.category || "").toLowerCase().includes(query)
+    );
   });
 
   return (
-    <AppPage width="wide">
-      <div className="hidden md:block">
+    <AppPage width="register" className="pb-24 lg:pb-8">
+      <div className="hidden lg:block">
         <PageHeader
           title="Inventory"
           description="Track stock levels, book value, and stock activity."
           actions={
             <>
               {inventoryView === "items" && canConsumeInventory ? (
-                <Button variant="outline" className="h-11 rounded-xl" onClick={() => setConsumeOpen(true)}>
+                <Button
+                  variant="outline"
+                  className="h-11 rounded-xl"
+                  onClick={() => setConsumeOpen(true)}
+                >
                   <Utensils className="mr-2 h-4 w-4" /> Consume
                 </Button>
               ) : null}
-              {inventoryView === "items" ? <Button className="h-11 rounded-xl" onClick={openAdd}>
-                <Plus className="mr-2 h-4 w-4" /> Add Item
-              </Button> : null}
+              {inventoryView === "items" ? (
+                <Button className="h-11 rounded-xl" onClick={openAdd}>
+                  <Plus className="mr-2 h-4 w-4" /> Add Item
+                </Button>
+              ) : null}
             </>
           }
         />
       </div>
 
       {inventoryView === "items" ? (
-        <div className="flex gap-2 md:hidden">
+        <div className="flex gap-2 lg:hidden">
           {canConsumeInventory ? (
-            <Button variant="outline" className="h-11 flex-1 rounded-xl" onClick={() => setConsumeOpen(true)}>
+            <Button
+              variant="outline"
+              className="h-11 flex-1 rounded-xl"
+              onClick={() => setConsumeOpen(true)}
+            >
               <Utensils className="mr-2 h-4 w-4" /> Consume
             </Button>
           ) : null}
@@ -658,231 +863,282 @@ export default function InventoryPage() {
         />
       ) : null}
 
-      <PageTabs
+      <SegmentedControl
         value={inventoryView}
-        onValueChange={(value) => changeInventoryView(value as "items" | "activity")}
-        mobileMode="equal"
+        onValueChange={(value) =>
+          changeInventoryView(value as "items" | "activity")
+        }
         ariaLabel="Inventory sections"
         items={[
-          { value: "items", label: "Stock items", icon: Package },
-          { value: "activity", label: "Activity", icon: History },
+          { value: "items", label: "Stock items" },
+          { value: "activity", label: "Activity" },
         ]}
       />
 
       {inventoryView === "items" ? (
         <>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 lg:hidden">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-muted-foreground">
+                Inventory value
+              </p>
+              <p className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
+                {formatMoney(valuation?.total_value || 0)}
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-1 text-right">
+              <span className="text-xs text-muted-foreground">
+                {items.length} items
+              </span>
+              {Number(valuation?.unvalued_items || 0) > 0 ? (
+                <StatusBadge tone="warning">
+                  {Number(valuation?.unvalued_items || 0)} need value
+                </StatusBadge>
+              ) : null}
+            </div>
+          </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 md:hidden">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">Inventory value</p>
-          <p className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
-            Rs. {Number(valuation?.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-1 text-right">
-          <span className="text-xs text-muted-foreground">{items.length} items</span>
-          {Number(valuation?.unvalued_items || 0) > 0 ? (
-            <Badge variant="outline" className="border-amber-500/40 text-[10px] text-amber-700 dark:text-amber-400">
-              {Number(valuation?.unvalued_items || 0)} need value
-            </Badge>
-          ) : null}
-        </div>
-      </div>
+          <div className="hidden items-center justify-between gap-6 rounded-2xl border border-border bg-card px-5 py-4 lg:flex">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">
+                Inventory value
+              </p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                {formatMoney(valuation?.total_value || 0)}
+              </p>
+            </div>
+            <div className="flex items-center gap-5 text-sm text-muted-foreground">
+              <span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {items.length}
+                </span>{" "}
+                items
+              </span>
+              <span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {Number(valuation?.valued_items || 0)}
+                </span>{" "}
+                valued
+              </span>
+              {Number(valuation?.unvalued_items || 0) > 0 ? (
+                <StatusBadge tone="warning">
+                  {Number(valuation?.unvalued_items || 0)} need value
+                </StatusBadge>
+              ) : null}
+            </div>
+          </div>
 
-      <div className="hidden grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid">
-        <MetricCard
-          className="col-span-2 sm:col-span-1"
-          label="Book inventory value"
-          value={`Rs. ${Number(valuation?.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-          detail="Reconciles to the inventory asset."
-        />
-        <MetricCard label="Book-valued items" value={Number(valuation?.valued_items || 0)} />
-        <MetricCard
-          label="Missing valuation"
-          value={Number(valuation?.unvalued_items || 0)}
-          tone={Number(valuation?.unvalued_items || 0) > 0 ? "warning" : "neutral"}
-        />
-      </div>
-
-      <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(18rem,25rem)_minmax(16rem,1fr)]">
-        <SearchField
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          onClear={() => setSearchQuery("")}
-          placeholder="Search inventory items"
-          className="md:col-start-2"
-        />
-        <PageTabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          mobileMode="equal"
-          ariaLabel="Stock filters"
-          items={[
-            { value: "all", label: "All items" },
-            { value: "low_stock", label: "Low stock", icon: AlertTriangle },
-          ]}
-        />
-      </div>
-
-      {loading ? (
-        <LoadingState label="Loading inventory" />
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={<Package className="h-5 w-5" />}
-          title="No inventory items found"
-          description="Add the first stock item to start tracking quantity and value."
-          actionLabel="Add item"
-          onAction={openAdd}
-        />
-      ) : visibleItems.length === 0 ? (
-        <EmptyState
-          icon={<Package className="h-5 w-5" />}
-          title="No matching inventory items"
-          description={`No stock items match “${searchQuery}”.`}
-          actionLabel="Clear search"
-          onAction={() => setSearchQuery("")}
-        />
-      ) : (
-        <>
-        <DataList className="md:hidden">
-          {visibleItems.map((item) => (
-            <ListRow
-              key={item.id}
-              role="button"
-              tabIndex={0}
-              leading={<Package className="h-4 w-4" />}
-              title={item.name}
-              description={`${item.station || "General"} · ${item.unit}${item.storage_location ? ` · ${item.storage_location}` : ""}`}
-              meta={`${item.current_stock} ${item.unit}`}
-              trailing={item.is_low_stock ? <Badge variant="outline" className="border-red-500/40 text-[10px] text-red-600">Low</Badge> : undefined}
-              interactive
-              onClick={() => {
-                setDetailsItem(item);
-                setDetailsOpen(true);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  setDetailsItem(item);
-                  setDetailsOpen(true);
-                }
-              }}
+          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(18rem,25rem)_auto] lg:items-center">
+            <SearchField
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onClear={() => setSearchQuery("")}
+              placeholder="Search inventory items"
+              className="lg:col-start-1"
             />
-          ))}
-        </DataList>
-        <div className="hidden max-w-full overflow-x-auto rounded-2xl border border-border bg-card shadow-sm md:block">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-muted text-muted-foreground font-medium border-b border-border">
-              <tr>
-                <th className="px-6 py-4">Item Name</th>
-                <th className="px-6 py-4">Station</th>
-                <th className="px-6 py-4">Unit</th>
-                <th className="px-6 py-4">Stock Level</th>
-                <th className="px-6 py-4">Book cost</th>
-                <th className="px-6 py-4">Book value</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+            <SegmentedControl
+              value={activeTab}
+              onValueChange={setActiveTab}
+              ariaLabel="Stock filters"
+              items={[
+                { value: "all", label: "All items" },
+                { value: "low_stock", label: "Low stock" },
+              ]}
+            />
+          </div>
 
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {visibleItems.map((item) => (
-                <tr
-                  key={item.id}
-                  className="hover:bg-muted/50 transition-colors cursor-pointer"
-                  onClick={() => {
-                    setDetailsItem(item);
-                    setDetailsOpen(true);
-                  }}
-                >
-                  <td className="px-6 py-4 font-medium text-foreground">
-                    <div className="flex flex-col">
-                      <div className="flex items-center">
-                        {item.name}
-                        {item.is_low_stock && (
-                          <Badge variant="outline" className="ml-2 border-red-500/50 bg-red-100 text-red-700 dark:bg-red-950/20 dark:text-red-500 text-[10px] px-1 py-0 h-auto">
-                            LOW
-                          </Badge>
-                        )}
-                        {!item.is_active && (
-                          <Badge variant="secondary" className="ml-2 text-[10px] px-1 py-0 h-auto">
-                            INACTIVE
-                          </Badge>
-                        )}
-                      </div>
-                      {item.storage_location && (
-                        <span className="text-[10px] text-muted-foreground">Loc: {item.storage_location}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-muted-foreground capitalize">{item.station || "General"}</td>
-                  <td className="px-6 py-4 text-muted-foreground">{item.unit}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        "font-bold",
-                        item.is_low_stock ? "text-red-500" : "text-emerald-500"
-                      )}>
-                        {item.current_stock}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-muted-foreground">
-                    Rs. {Number(valuationByItemId.get(Number(item.id))?.book_unit_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-6 py-4 font-medium">
-                    Rs. {Number(valuationByItemId.get(Number(item.id))?.inventory_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-6 py-4 text-right space-x-2" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 text-muted-foreground hover:text-foreground"
-                      onClick={() => openOps(item)}
-                      title="View ledger"
-                    >
-                      <History className="w-4 h-4 mr-1.5" />
-                      History
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 text-muted-foreground hover:text-foreground"
-                      onClick={() => openEdit(item)}
-                    >
-                      Edit
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 text-primary hover:text-primary/80"
+          {loading ? (
+            <LoadingState label="Loading inventory" />
+          ) : inventoryError ? (
+            <ErrorState
+              title="Could not load inventory"
+              description="Check the connection and try again."
+              actionLabel="Try again"
+              onAction={() => void fetchInventory()}
+            />
+          ) : items.length === 0 ? (
+            <EmptyState
+              icon={<Package className="h-5 w-5" />}
+              title="No inventory items found"
+              description="Add the first stock item to start tracking quantity and value."
+              actionLabel="Add item"
+              onAction={openAdd}
+            />
+          ) : visibleItems.length === 0 ? (
+            <EmptyState
+              icon={<Package className="h-5 w-5" />}
+              title="No matching inventory items"
+              description={`No stock items match “${searchQuery}”.`}
+              actionLabel="Clear search"
+              onAction={() => setSearchQuery("")}
+            />
+          ) : (
+            <>
+              <div className="overflow-hidden rounded-xl border border-border bg-card lg:hidden">
+                {visibleItems.map((item) => (
+                  <ListRow
+                    key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    leading={<Package className="h-4 w-4" />}
+                    title={item.name}
+                    description={`${item.station || "General"} · ${item.unit}${item.storage_location ? ` · ${item.storage_location}` : ""}`}
+                    meta={`${item.current_stock} ${item.unit}`}
+                    trailing={
+                      item.is_low_stock ? (
+                        <StatusBadge tone="warning">Low</StatusBadge>
+                      ) : undefined
+                    }
+                    interactive
+                    onClick={() => {
+                      setDetailsItem(item);
+                      setDetailsOpen(true);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setDetailsItem(item);
+                        setDetailsOpen(true);
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="hidden max-w-full overflow-x-auto rounded-xl border border-border bg-card lg:block">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-muted text-muted-foreground font-medium border-b border-border">
+                    <tr>
+                      <th className="px-6 py-4">Item Name</th>
+                      <th className="px-6 py-4">Station</th>
+                      <th className="px-6 py-4">Unit</th>
+                      <th className="px-6 py-4">Stock Level</th>
+                      <th className="px-6 py-4">Book cost</th>
+                      <th className="px-6 py-4">Book value</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {visibleItems.map((item) => (
+                      <tr
+                        key={item.id}
+                        className="hover:bg-muted/50 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setDetailsItem(item);
+                          setDetailsOpen(true);
+                        }}
+                      >
+                        <td className="px-6 py-4 font-medium text-foreground">
+                          <div className="flex flex-col">
+                            <div className="flex items-center">
+                              {item.name}
+                              {item.is_low_stock ? (
+                                <StatusBadge
+                                  tone="warning"
+                                  icon={<AlertTriangle className="h-3 w-3" />}
+                                >
+                                  Low
+                                </StatusBadge>
+                              ) : null}
+                              {!item.is_active ? (
+                                <StatusBadge tone="neutral">
+                                  Inactive
+                                </StatusBadge>
+                              ) : null}
+                            </div>
+                            {item.storage_location && (
+                              <span className="text-[10px] text-muted-foreground">
+                                Loc: {item.storage_location}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-muted-foreground capitalize">
+                          {item.station || "General"}
+                        </td>
+                        <td className="px-6 py-4 text-muted-foreground">
+                          {item.unit}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium tabular-nums">
+                              {item.current_stock}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-muted-foreground">
+                          {formatMoney(
+                            Number(
+                              valuationByItemId.get(Number(item.id))
+                                ?.book_unit_cost || 0,
+                            ),
+                          )}
+                        </td>
+                        <td className="px-6 py-4 font-medium">
+                          {formatMoney(
+                            Number(
+                              valuationByItemId.get(Number(item.id))
+                                ?.inventory_value || 0,
+                            ),
+                          )}
+                        </td>
+                        <td
+                          className="px-6 py-4 text-right space-x-2"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          Stock
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openAddStock(item)}>
-                          Add Stock
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openReduceStock(item)}>
-                          Reduce Stock
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openCountStock(item)}>
-                          Count Stock
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                </tr>
-
-              ))}
-            </tbody>
-          </table>
-        </div>
-        </>
-      )}
-
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-muted-foreground hover:text-foreground"
+                            onClick={() => openOps(item)}
+                            title="View ledger"
+                          >
+                            <History className="w-4 h-4 mr-1.5" />
+                            History
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-muted-foreground hover:text-foreground"
+                            onClick={() => openEdit(item)}
+                          >
+                            Edit
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-primary hover:text-primary/80"
+                              >
+                                Stock
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => openAddStock(item)}
+                              >
+                                Add Stock
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => openReduceStock(item)}
+                              >
+                                Reduce Stock
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => openCountStock(item)}
+                              >
+                                Count Stock
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
       ) : user?.restaurant_id ? (
         <InventoryActivityPanel
@@ -898,34 +1154,48 @@ export default function InventoryPage() {
       ) : null}
 
       {/* Add Stock Dialog */}
-      <Dialog open={!!addStockItem} onOpenChange={(open) => !open && setAddStockItem(null)}>
+      <Dialog
+        open={!!addStockItem}
+        onOpenChange={(open) => !open && setAddStockItem(null)}
+      >
         <DialogContent className="sm:max-w-[425px]">
           <form onSubmit={handleAddStock}>
             <DialogHeader>
               <DialogTitle>Add Stock: {addStockItem?.name}</DialogTitle>
               <DialogDescription>
-                Use this only for a verified count surplus or genuinely free stock. It updates
-                inventory value and posts the matching variance or inventory-gain entry. Stock
-                received from a supplier must be recorded in Purchases.
+                Use this only for a verified count surplus or genuinely free
+                stock. It updates inventory value and posts the matching
+                variance or inventory-gain entry. Stock received from a supplier
+                must be recorded in Purchases.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-4 bg-muted/50 p-3 rounded-lg border border-border">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-muted-foreground">Current Stock:</span>
-                  <span className="text-sm font-bold">{addStockItem?.current_stock} {addStockItem?.unit}</span>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Current Stock:
+                  </span>
+                  <span className="text-sm font-bold">
+                    {addStockItem?.current_stock} {addStockItem?.unit}
+                  </span>
                 </div>
                 {addStockForm.quantity && (
                   <div className="flex justify-between items-center pt-2 border-t border-border">
-                    <span className="text-sm font-medium text-muted-foreground">New Total:</span>
+                    <span className="text-sm font-medium text-muted-foreground">
+                      New Total:
+                    </span>
                     <span className="text-sm font-bold text-emerald-600">
-                      {Number(addStockItem?.current_stock || 0) + Number(addStockForm.quantity)} {addStockItem?.unit}
+                      {Number(addStockItem?.current_stock || 0) +
+                        Number(addStockForm.quantity)}{" "}
+                      {addStockItem?.unit}
                     </span>
                   </div>
                 )}
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="add_quantity">Quantity ({addStockItem?.unit})</Label>
+                <Label htmlFor="add_quantity">
+                  Quantity ({addStockItem?.unit})
+                </Label>
                 <Input
                   id="add_quantity"
                   type="number"
@@ -934,13 +1204,20 @@ export default function InventoryPage() {
                   required
                   placeholder="0.00"
                   value={addStockForm.quantity}
-                  onChange={(e) => setAddStockForm({ ...addStockForm, quantity: e.target.value })}
+                  onChange={(e) =>
+                    setAddStockForm({
+                      ...addStockForm,
+                      quantity: e.target.value,
+                    })
+                  }
                 />
               </div>
               <ReasonCodeSelect
                 operation="add"
                 value={addStockForm.reason_code}
-                onChange={(v) => setAddStockForm({ ...addStockForm, reason_code: v })}
+                onChange={(v) =>
+                  setAddStockForm({ ...addStockForm, reason_code: v })
+                }
               />
               <div className="grid gap-2">
                 <Label htmlFor="add_unit_cost">Unit Cost (NPR, optional)</Label>
@@ -951,10 +1228,16 @@ export default function InventoryPage() {
                   min="0"
                   placeholder="0.00"
                   value={addStockForm.unit_cost}
-                  onChange={(e) => setAddStockForm({ ...addStockForm, unit_cost: e.target.value })}
+                  onChange={(e) =>
+                    setAddStockForm({
+                      ...addStockForm,
+                      unit_cost: e.target.value,
+                    })
+                  }
                 />
                 <p className="text-xs text-muted-foreground">
-                  Used for valuation only -- does not create an expense or payment.
+                  Used for valuation only -- does not create an expense or
+                  payment.
                 </p>
               </div>
               <div className="grid gap-2">
@@ -963,15 +1246,26 @@ export default function InventoryPage() {
                   id="add_notes"
                   placeholder="e.g. Complimentary sample from supplier"
                   value={addStockForm.notes}
-                  onChange={(e) => setAddStockForm({ ...addStockForm, notes: e.target.value })}
+                  onChange={(e) =>
+                    setAddStockForm({ ...addStockForm, notes: e.target.value })
+                  }
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setAddStockItem(null)} disabled={addStockSubmitting}>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setAddStockItem(null)}
+                disabled={addStockSubmitting}
+              >
                 Cancel
               </Button>
-              <Button type="submit" className="bg-orange-600 hover:bg-orange-700 text-white" disabled={addStockSubmitting}>
+              <Button
+                type="submit"
+                className="bg-orange-600 hover:bg-orange-700 text-white"
+                disabled={addStockSubmitting}
+              >
                 {addStockSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -987,39 +1281,57 @@ export default function InventoryPage() {
       </Dialog>
 
       {/* Reduce Stock Dialog */}
-      <Dialog open={!!reduceStockItem} onOpenChange={(open) => !open && setReduceStockItem(null)}>
+      <Dialog
+        open={!!reduceStockItem}
+        onOpenChange={(open) => !open && setReduceStockItem(null)}
+      >
         <DialogContent className="sm:max-w-[425px]">
           <form onSubmit={handleReduceStock}>
             <DialogHeader>
               <DialogTitle>Reduce Stock: {reduceStockItem?.name}</DialogTitle>
               <DialogDescription>
-                Use this only for waste, damage, expiry, or a verified count shortage. It reduces
-                inventory value and records the matching expense or variance. Preparation, staff
-                meals, complimentary items, and testing belong in Consume stock.
+                Use this only for waste, damage, expiry, or a verified count
+                shortage. It reduces inventory value and records the matching
+                expense or variance. Preparation, staff meals, complimentary
+                items, and testing belong in Consume stock.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-4 bg-muted/50 p-3 rounded-lg border border-border">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-muted-foreground">Current Stock:</span>
-                  <span className="text-sm font-bold">{reduceStockItem?.current_stock} {reduceStockItem?.unit}</span>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Current Stock:
+                  </span>
+                  <span className="text-sm font-bold">
+                    {reduceStockItem?.current_stock} {reduceStockItem?.unit}
+                  </span>
                 </div>
                 {reduceStockForm.quantity && (
                   <div className="flex justify-between items-center pt-2 border-t border-border">
-                    <span className="text-sm font-medium text-muted-foreground">New Total:</span>
-                    <span className={cn(
-                      "text-sm font-bold",
-                      Number(reduceStockItem?.current_stock || 0) - Number(reduceStockForm.quantity) >= 0
-                        ? "text-emerald-600"
-                        : "text-red-500"
-                    )}>
-                      {Number(reduceStockItem?.current_stock || 0) - Number(reduceStockForm.quantity)} {reduceStockItem?.unit}
+                    <span className="text-sm font-medium text-muted-foreground">
+                      New Total:
+                    </span>
+                    <span
+                      className={cn(
+                        "text-sm font-bold",
+                        Number(reduceStockItem?.current_stock || 0) -
+                          Number(reduceStockForm.quantity) >=
+                          0
+                          ? "text-emerald-600"
+                          : "text-red-500",
+                      )}
+                    >
+                      {Number(reduceStockItem?.current_stock || 0) -
+                        Number(reduceStockForm.quantity)}{" "}
+                      {reduceStockItem?.unit}
                     </span>
                   </div>
                 )}
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="reduce_quantity">Quantity ({reduceStockItem?.unit})</Label>
+                <Label htmlFor="reduce_quantity">
+                  Quantity ({reduceStockItem?.unit})
+                </Label>
                 <Input
                   id="reduce_quantity"
                   type="number"
@@ -1028,13 +1340,20 @@ export default function InventoryPage() {
                   required
                   placeholder="0.00"
                   value={reduceStockForm.quantity}
-                  onChange={(e) => setReduceStockForm({ ...reduceStockForm, quantity: e.target.value })}
+                  onChange={(e) =>
+                    setReduceStockForm({
+                      ...reduceStockForm,
+                      quantity: e.target.value,
+                    })
+                  }
                 />
               </div>
               <ReasonCodeSelect
                 operation="reduce"
                 value={reduceStockForm.reason_code}
-                onChange={(v) => setReduceStockForm({ ...reduceStockForm, reason_code: v })}
+                onChange={(v) =>
+                  setReduceStockForm({ ...reduceStockForm, reason_code: v })
+                }
               />
               <div className="grid gap-2">
                 <Label htmlFor="reduce_notes">Notes</Label>
@@ -1042,30 +1361,52 @@ export default function InventoryPage() {
                   id="reduce_notes"
                   placeholder="e.g. Bottle broken during service"
                   value={reduceStockForm.notes}
-                  onChange={(e) => setReduceStockForm({ ...reduceStockForm, notes: e.target.value })}
+                  onChange={(e) =>
+                    setReduceStockForm({
+                      ...reduceStockForm,
+                      notes: e.target.value,
+                    })
+                  }
                 />
               </div>
               {canOverrideNegativeStock && (
                 <div className="flex items-center justify-between rounded-lg border p-3">
                   <div className="space-y-0.5">
-                    <Label htmlFor="reduce_allow_negative">Allow negative stock</Label>
+                    <Label htmlFor="reduce_allow_negative">
+                      Allow negative stock
+                    </Label>
                     <p className="text-xs text-muted-foreground">
-                      Requires the restaurant&apos;s negative-stock setting to be enabled too.
+                      Requires the restaurant&apos;s negative-stock setting to
+                      be enabled too.
                     </p>
                   </div>
                   <Switch
                     id="reduce_allow_negative"
                     checked={reduceStockForm.allow_negative}
-                    onCheckedChange={(checked) => setReduceStockForm({ ...reduceStockForm, allow_negative: checked })}
+                    onCheckedChange={(checked) =>
+                      setReduceStockForm({
+                        ...reduceStockForm,
+                        allow_negative: checked,
+                      })
+                    }
                   />
                 </div>
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setReduceStockItem(null)} disabled={reduceStockSubmitting}>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setReduceStockItem(null)}
+                disabled={reduceStockSubmitting}
+              >
                 Cancel
               </Button>
-              <Button type="submit" className="bg-orange-600 hover:bg-orange-700 text-white" disabled={reduceStockSubmitting}>
+              <Button
+                type="submit"
+                className="bg-orange-600 hover:bg-orange-700 text-white"
+                disabled={reduceStockSubmitting}
+              >
                 {reduceStockSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1081,7 +1422,10 @@ export default function InventoryPage() {
       </Dialog>
 
       {/* Count Stock Dialog */}
-      <Dialog open={!!countStockItem} onOpenChange={(open) => !open && setCountStockItem(null)}>
+      <Dialog
+        open={!!countStockItem}
+        onOpenChange={(open) => !open && setCountStockItem(null)}
+      >
         <DialogContent className="sm:max-w-[425px]">
           <form onSubmit={handleCountStock}>
             <DialogHeader>
@@ -1095,26 +1439,44 @@ export default function InventoryPage() {
             <div className="grid gap-4 py-4">
               <div className="grid gap-4 bg-muted/50 p-3 rounded-lg border border-border">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-muted-foreground">System Quantity:</span>
-                  <span className="text-sm font-bold">{countStockItem?.current_stock} {countStockItem?.unit}</span>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    System Quantity:
+                  </span>
+                  <span className="text-sm font-bold">
+                    {countStockItem?.current_stock} {countStockItem?.unit}
+                  </span>
                 </div>
                 {countStockForm.counted_quantity !== "" && (
                   <div className="flex justify-between items-center pt-2 border-t border-border">
-                    <span className="text-sm font-medium text-muted-foreground">Variance:</span>
-                    <span className={cn(
-                      "text-sm font-bold",
-                      Number(countStockForm.counted_quantity) - Number(countStockItem?.current_stock || 0) >= 0
-                        ? "text-emerald-600"
-                        : "text-red-500"
-                    )}>
-                      {Number(countStockForm.counted_quantity) - Number(countStockItem?.current_stock || 0) >= 0 ? "+" : ""}
-                      {Number(countStockForm.counted_quantity) - Number(countStockItem?.current_stock || 0)} {countStockItem?.unit}
+                    <span className="text-sm font-medium text-muted-foreground">
+                      Variance:
+                    </span>
+                    <span
+                      className={cn(
+                        "text-sm font-bold",
+                        Number(countStockForm.counted_quantity) -
+                          Number(countStockItem?.current_stock || 0) >=
+                          0
+                          ? "text-emerald-600"
+                          : "text-red-500",
+                      )}
+                    >
+                      {Number(countStockForm.counted_quantity) -
+                        Number(countStockItem?.current_stock || 0) >=
+                      0
+                        ? "+"
+                        : ""}
+                      {Number(countStockForm.counted_quantity) -
+                        Number(countStockItem?.current_stock || 0)}{" "}
+                      {countStockItem?.unit}
                     </span>
                   </div>
                 )}
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="counted_quantity">Counted Quantity ({countStockItem?.unit})</Label>
+                <Label htmlFor="counted_quantity">
+                  Counted Quantity ({countStockItem?.unit})
+                </Label>
                 <Input
                   id="counted_quantity"
                   type="number"
@@ -1123,7 +1485,12 @@ export default function InventoryPage() {
                   required
                   placeholder="0.00"
                   value={countStockForm.counted_quantity}
-                  onChange={(e) => setCountStockForm({ ...countStockForm, counted_quantity: e.target.value })}
+                  onChange={(e) =>
+                    setCountStockForm({
+                      ...countStockForm,
+                      counted_quantity: e.target.value,
+                    })
+                  }
                 />
               </div>
               <div className="grid gap-2">
@@ -1132,15 +1499,29 @@ export default function InventoryPage() {
                   id="count_notes"
                   placeholder="e.g. Monthly physical count"
                   value={countStockForm.notes}
-                  onChange={(e) => setCountStockForm({ ...countStockForm, notes: e.target.value })}
+                  onChange={(e) =>
+                    setCountStockForm({
+                      ...countStockForm,
+                      notes: e.target.value,
+                    })
+                  }
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setCountStockItem(null)} disabled={countStockSubmitting}>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setCountStockItem(null)}
+                disabled={countStockSubmitting}
+              >
                 Cancel
               </Button>
-              <Button type="submit" className="bg-orange-600 hover:bg-orange-700 text-white" disabled={countStockSubmitting}>
+              <Button
+                type="submit"
+                className="bg-orange-600 hover:bg-orange-700 text-white"
+                disabled={countStockSubmitting}
+              >
                 {countStockSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1159,9 +1540,12 @@ export default function InventoryPage() {
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleSaveItem}>
             <DialogHeader>
-              <DialogTitle>{editingItem ? 'Edit Inventory Item' : 'Add New Inventory Item'}</DialogTitle>
+              <DialogTitle>
+                {editingItem ? "Edit Inventory Item" : "Add New Inventory Item"}
+              </DialogTitle>
               <DialogDescription>
-                Fill in the details for the inventory item. All fields with * are required.
+                Fill in the details for the inventory item. All fields with *
+                are required.
               </DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
@@ -1172,7 +1556,9 @@ export default function InventoryPage() {
                   required
                   placeholder="e.g. Tomato, Olive Oil..."
                   value={itemForm.name}
-                  onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, name: e.target.value })
+                  }
                 />
               </div>
               <div className="grid gap-2">
@@ -1181,7 +1567,9 @@ export default function InventoryPage() {
                     label="Station"
                     restaurantId={user.restaurant_id}
                     value={itemForm.station_id}
-                    onChange={(stationId) => setItemForm({ ...itemForm, station_id: stationId })}
+                    onChange={(stationId) =>
+                      setItemForm({ ...itemForm, station_id: stationId })
+                    }
                   />
                 )}
               </div>
@@ -1191,7 +1579,9 @@ export default function InventoryPage() {
                   id="description"
                   placeholder="Additional details about the item..."
                   value={itemForm.description}
-                  onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, description: e.target.value })
+                  }
                 />
               </div>
               <div className="grid gap-2">
@@ -1201,41 +1591,61 @@ export default function InventoryPage() {
                   required
                   placeholder="e.g. kg, liters, pieces..."
                   value={itemForm.unit}
-                  onChange={(e) => setItemForm({ ...itemForm, unit: e.target.value })}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, unit: e.target.value })
+                  }
                 />
               </div>
-              
+
               {!editingItem && (
                 <>
                   <div className="grid gap-2">
-                    <Label htmlFor="opening_stock_total_cost">Opening Stock Total Cost (NPR)</Label>
+                    <Label htmlFor="opening_stock_total_cost">
+                      Opening Stock Total Cost (NPR)
+                    </Label>
                     <Input
                       id="opening_stock_total_cost"
                       type="number"
                       step="0.01"
                       placeholder="0.00"
                       value={itemForm.opening_stock_total_cost}
-                      onChange={(e) => setItemForm({ ...itemForm, opening_stock_total_cost: e.target.value })}
+                      onChange={(e) =>
+                        setItemForm({
+                          ...itemForm,
+                          opening_stock_total_cost: e.target.value,
+                        })
+                      }
                     />
                   </div>
                   {Number(itemForm.opening_stock_total_cost || 0) > 0 && (
                     <>
                       <div className="grid gap-2">
-                        <Label htmlFor="opening_payment_status">Opening stock settlement</Label>
+                        <Label htmlFor="opening_payment_status">
+                          Opening stock settlement
+                        </Label>
                         <Select
                           value={itemForm.opening_stock_payment_status}
-                          onValueChange={(v) => setItemForm({ ...itemForm, opening_stock_payment_status: v })}
+                          onValueChange={(v) =>
+                            setItemForm({
+                              ...itemForm,
+                              opening_stock_payment_status: v,
+                            })
+                          }
                         >
                           <SelectTrigger id="opening_payment_status">
                             <SelectValue placeholder="Select settlement" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="paid">Paid now</SelectItem>
-                            <SelectItem value="pending">Unpaid - supplier payable</SelectItem>
+                            <SelectItem value="pending">
+                              Unpaid - supplier payable
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          This is a stock purchase. A payment method is derived from its custody account and is not selected separately.
+                          This is a stock purchase. A payment method is derived
+                          from its custody account and is not selected
+                          separately.
                         </p>
                       </div>
                       {itemForm.opening_stock_payment_status === "paid" && (
@@ -1246,7 +1656,9 @@ export default function InventoryPage() {
                             onChange={setOpeningPaymentAccount}
                           />
                           <p className="text-xs text-muted-foreground">
-                            Choose the drawer, safe, bank, or owner account that paid for this stock. The selected account—not a payment method—will be reduced.
+                            Choose the drawer, safe, bank, or owner account that
+                            paid for this stock. The selected account—not a
+                            payment method—will be reduced.
                           </p>
                         </div>
                       )}
@@ -1264,11 +1676,18 @@ export default function InventoryPage() {
                   placeholder="0.000"
                   value={itemForm.current_stock}
                   readOnly={Boolean(editingItem)}
-                  className={editingItem ? "cursor-not-allowed bg-muted" : undefined}
-                  onChange={(e) => setItemForm({ ...itemForm, current_stock: e.target.value })}
+                  className={
+                    editingItem ? "cursor-not-allowed bg-muted" : undefined
+                  }
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, current_stock: e.target.value })
+                  }
                 />
                 {editingItem ? (
-                  <p className="text-xs text-muted-foreground">Use Adjust Stock or Activity to preserve the inventory audit trail.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Use Adjust Stock or Activity to preserve the inventory audit
+                    trail.
+                  </p>
                 ) : null}
               </div>
               <div className="grid gap-2">
@@ -1280,17 +1699,29 @@ export default function InventoryPage() {
                   required
                   placeholder="0.000"
                   value={itemForm.min_stock_level}
-                  onChange={(e) => setItemForm({ ...itemForm, min_stock_level: e.target.value })}
+                  onChange={(e) =>
+                    setItemForm({
+                      ...itemForm,
+                      min_stock_level: e.target.value,
+                    })
+                  }
                 />
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="supplier">
-                  Supplier {!editingItem && Number(itemForm.current_stock || 0) > 0 && Number(itemForm.opening_stock_total_cost || 0) > 0 ? "*" : ""}
+                  Supplier{" "}
+                  {!editingItem &&
+                  Number(itemForm.current_stock || 0) > 0 &&
+                  Number(itemForm.opening_stock_total_cost || 0) > 0
+                    ? "*"
+                    : ""}
                 </Label>
-                <Select 
-                  value={itemForm.supplier_id || "none"} 
-                  onValueChange={(v) => setItemForm({ ...itemForm, supplier_id: v })}
+                <Select
+                  value={itemForm.supplier_id || "none"}
+                  onValueChange={(v) =>
+                    setItemForm({ ...itemForm, supplier_id: v })
+                  }
                 >
                   <SelectTrigger id="supplier">
                     <SelectValue placeholder="Select supplier" />
@@ -1298,13 +1729,20 @@ export default function InventoryPage() {
                   <SelectContent>
                     <SelectItem
                       value="none"
-                      disabled={!editingItem && Number(itemForm.current_stock || 0) > 0 && Number(itemForm.opening_stock_total_cost || 0) > 0}
+                      disabled={
+                        !editingItem &&
+                        Number(itemForm.current_stock || 0) > 0 &&
+                        Number(itemForm.opening_stock_total_cost || 0) > 0
+                      }
                     >
                       No Supplier
                     </SelectItem>
-                    {Array.isArray(suppliers) && suppliers.map((s) => (
-                      <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
-                    ))}
+                    {Array.isArray(suppliers) &&
+                      suppliers.map((s) => (
+                        <SelectItem key={s.id} value={s.id.toString()}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1314,33 +1752,50 @@ export default function InventoryPage() {
                   id="location"
                   placeholder="e.g. Shelf A1, Cooler..."
                   value={itemForm.location}
-                  onChange={(e) => setItemForm({ ...itemForm, location: e.target.value })}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, location: e.target.value })
+                  }
                 />
               </div>
               {editingItem && (
                 <div className="grid gap-2">
-                  {editingItem.accounting_profile?.treatment === "inventory_asset" ||
+                  {editingItem.accounting_profile?.treatment ===
+                    "inventory_asset" ||
                   Number(editingItem.book_quantity || 0) !== 0 ||
                   Number(editingItem.book_unit_cost || 0) !== 0 ? (
                     <div className="rounded-lg border border-border bg-muted/30 p-3">
-                      <p className="text-sm font-medium">Inventory cost: Rs. {Number(editingItem.book_unit_cost || 0).toLocaleString()}</p>
+                      <p className="text-sm font-medium">
+                        Inventory cost: Rs.{" "}
+                        {Number(
+                          editingItem.book_unit_cost || 0,
+                        ).toLocaleString()}
+                      </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        This weighted-average cost is derived from received purchases and approved valuation corrections.
+                        This weighted-average cost is derived from received
+                        purchases and approved valuation corrections.
                       </p>
                     </div>
                   ) : (
                     <>
-                      <Label htmlFor="cost_per_unit">Reference cost per unit (NPR)</Label>
+                      <Label htmlFor="cost_per_unit">
+                        Reference cost per unit (NPR)
+                      </Label>
                       <Input
                         id="cost_per_unit"
                         type="number"
                         step="0.01"
                         placeholder="0.00"
                         value={itemForm.cost_per_unit}
-                        onChange={(e) => setItemForm({ ...itemForm, cost_per_unit: e.target.value })}
+                        onChange={(e) =>
+                          setItemForm({
+                            ...itemForm,
+                            cost_per_unit: e.target.value,
+                          })
+                        }
                       />
                       <p className="text-xs text-muted-foreground">
-                        Used for recipe and waste estimates only. This direct-expense item has no Balance Sheet value.
+                        Used for recipe and waste estimates only. This
+                        direct-expense item has no Balance Sheet value.
                       </p>
                     </>
                   )}
@@ -1356,22 +1811,23 @@ export default function InventoryPage() {
                 <Switch
                   id="is_active"
                   checked={itemForm.is_active}
-                  onCheckedChange={(checked) => setItemForm({ ...itemForm, is_active: checked })}
+                  onCheckedChange={(checked) =>
+                    setItemForm({ ...itemForm, is_active: checked })
+                  }
                 />
               </div>
-
             </div>
             <DialogFooter className="mt-6">
-              <Button 
-                variant="outline" 
-                type="button" 
+              <Button
+                variant="outline"
+                type="button"
                 onClick={() => setIsAddDialogOpen(false)}
                 disabled={itemSubmitting}
               >
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="bg-orange-600 hover:bg-orange-700 text-white"
                 disabled={itemSubmitting}
               >
@@ -1380,8 +1836,10 @@ export default function InventoryPage() {
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Saving...
                   </>
+                ) : editingItem ? (
+                  "Update Item"
                 ) : (
-                  editingItem ? 'Update Item' : 'Add Item'
+                  "Add Item"
                 )}
               </Button>
             </DialogFooter>
@@ -1426,6 +1884,7 @@ export default function InventoryPage() {
           if (!open) {
             setOpsItem(null);
             setLedger(null);
+            setLedgerError(false);
           }
         }}
       >
@@ -1435,74 +1894,166 @@ export default function InventoryPage() {
               Inventory History
             </DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
-              Ledger movements for <span className="font-semibold text-foreground">{opsItem?.name || "item"}</span>.
+              Ledger movements for{" "}
+              <span className="font-semibold text-foreground">
+                {opsItem?.name || "item"}
+              </span>
+              .
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-6 flex-1 min-h-0 overflow-auto">
+          <div className="min-h-0 flex-1 overflow-auto p-5 sm:p-6">
             {ledgerLoading ? (
-              <div className="h-48 flex items-center justify-center text-muted-foreground">
-                <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading ledger…
-              </div>
+              <LoadingState label="Loading stock movements" />
+            ) : ledgerError ? (
+              <ErrorState
+                title="Could not load stock movements"
+                description="Check the connection and try again."
+                actionLabel="Try again"
+                onAction={() => opsItem && void fetchLedger(opsItem.id)}
+              />
             ) : (ledger?.movements || []).length === 0 ? (
-              <div className="h-48 flex items-center justify-center text-muted-foreground border border-dashed border-border rounded-2xl bg-muted/10">
-                No ledger movements found.
-              </div>
+              <EmptyState
+                title="No stock movements yet"
+                description="Movement history will appear here after stock is added, counted, received, or consumed."
+              />
             ) : (
-              <div className="border border-border/60 rounded-2xl overflow-hidden">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border">
-                    <tr>
-                      <th className="px-5 py-3">Time</th>
-                      <th className="px-5 py-3">Source</th>
-                      <th className="px-5 py-3">Reason</th>
-                      <th className="px-5 py-3 text-right">Delta</th>
-                      <th className="px-5 py-3 text-right">Balance</th>
-                      <th className="px-5 py-3 text-right">Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {(ledger?.movements || []).map((m, idx) => {
-                      const delta = Number(m.qty_delta ?? 0);
-                      const neg = !!m.is_negative || delta < 0;
-                      const balance = m.resulting_balance ?? m.resultingBalance;
-                      const unitCost = m.unit_cost ?? m.unitCost ?? m.unit_cost_snapshot;
-                      const totalCost = m.total_cost ?? m.totalCost ?? m.value_delta_snapshot;
-                      return (
-                        <tr key={m.id || idx} className="hover:bg-muted/20 transition-colors">
-                          <td className="px-5 py-3 font-semibold">
-                            {m.created_at ? new Date(m.created_at).toLocaleString() : "—"}
-                          </td>
-                          <td className="px-5 py-3 text-muted-foreground">{m.source_type || "—"}</td>
-                          <td className="px-5 py-3 text-muted-foreground">{m.reason || "—"}</td>
-                          <td className={cn("px-5 py-3 text-right font-bold", neg ? "text-red-500" : "text-emerald-500")}>
-                            {delta.toLocaleString()}
-                          </td>
-                          <td className="px-5 py-3 text-right font-bold">{Number(balance ?? 0).toLocaleString()}</td>
-                          <td className="px-5 py-3 text-right text-muted-foreground">
-                            {totalCost != null
-                              ? `Rs. ${Number(totalCost).toLocaleString()}`
-                              : unitCost != null
-                              ? `Rs. ${Number(unitCost).toLocaleString()}/unit`
-                              : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <div className="overflow-hidden rounded-xl border border-border lg:hidden">
+                  {(ledger?.movements || []).map((m, idx) => {
+                    const delta = Number(m.qty_delta ?? 0);
+                    const balance = m.resulting_balance ?? m.resultingBalance;
+                    const reference = inventoryMovementReference(m);
+                    const reason = inventoryMovementReason(m);
+                    return (
+                      <div
+                        key={m.id || idx}
+                        className="border-b border-border px-4 py-3.5 last:border-b-0"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground">
+                              {formatProductDate(m.created_at, "timestamp")}
+                            </p>
+                            <p className="mt-1 font-semibold">
+                              {inventoryMovementLabel(m)}
+                            </p>
+                          </div>
+                          <span
+                            className={cn(
+                              "shrink-0 font-semibold tabular-nums",
+                              delta < 0
+                                ? "text-rose-600"
+                                : delta > 0
+                                  ? "text-emerald-600"
+                                  : "text-muted-foreground",
+                            )}
+                          >
+                            {delta > 0 ? "+" : ""}
+                            {formatQuantity(delta)} {opsItem?.unit || "units"}
+                          </span>
+                        </div>
+                        {reference ? (
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {reference}
+                          </p>
+                        ) : null}
+                        {reason ? (
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {reason}
+                          </p>
+                        ) : null}
+                        {balance != null ? (
+                          <div className="mt-3 flex items-center justify-between border-t border-border pt-2 text-xs">
+                            <span className="text-muted-foreground">
+                              Balance after movement
+                            </span>
+                            <span className="font-medium tabular-nums">
+                              {formatQuantity(balance)}{" "}
+                              {opsItem?.unit || "units"}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="hidden overflow-x-auto rounded-xl border border-border lg:block">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border">
+                      <tr>
+                        <th className="px-5 py-3">Date &amp; time</th>
+                        <th className="px-5 py-3">Movement</th>
+                        <th className="px-5 py-3">Source</th>
+                        <th className="px-5 py-3">Reason</th>
+                        <th className="px-5 py-3 text-right">Delta</th>
+                        <th className="px-5 py-3 text-right">Balance</th>
+                        <th className="px-5 py-3 text-right">Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {(ledger?.movements || []).map((m, idx) => {
+                        const delta = Number(m.qty_delta ?? 0);
+                        const neg = !!m.is_negative || delta < 0;
+                        const balance =
+                          m.resulting_balance ?? m.resultingBalance;
+                        const unitCost =
+                          m.unit_cost ?? m.unitCost ?? m.unit_cost_snapshot;
+                        const totalCost =
+                          m.total_cost ?? m.totalCost ?? m.value_delta_snapshot;
+                        return (
+                          <tr
+                            key={m.id || idx}
+                            className="hover:bg-muted/20 transition-colors"
+                          >
+                            <td className="px-5 py-3 font-medium">
+                              {formatProductDate(m.created_at, "timestamp")}
+                            </td>
+                            <td className="px-5 py-3 font-medium">
+                              {inventoryMovementLabel(m)}
+                            </td>
+                            <td className="px-5 py-3 text-muted-foreground">
+                              {inventoryMovementReference(m) || "—"}
+                            </td>
+                            <td className="px-5 py-3 text-muted-foreground">
+                              {inventoryMovementReason(m) || "—"}
+                            </td>
+                            <td
+                              className={cn(
+                                "px-5 py-3 text-right font-bold",
+                                neg
+                                  ? "text-rose-600"
+                                  : delta > 0
+                                    ? "text-emerald-600"
+                                    : "text-muted-foreground",
+                              )}
+                            >
+                              {delta > 0 ? "+" : ""}
+                              {formatQuantity(delta)} {opsItem?.unit || "units"}
+                            </td>
+                            <td className="px-5 py-3 text-right font-bold">
+                              {balance != null
+                                ? `${formatQuantity(balance)} ${opsItem?.unit || "units"}`
+                                : "—"}
+                            </td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">
+                              {totalCost != null
+                                ? formatMoney(Number(totalCost))
+                                : unitCost != null
+                                  ? `${formatMoney(Number(unitCost))}/unit`
+                                  : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
-
-          <DialogFooter className="p-6 border-t border-border/60 bg-muted/20">
-            <Button variant="outline" className="h-11 rounded-xl w-full" onClick={() => setOpsOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AppPage>
-
   );
 }

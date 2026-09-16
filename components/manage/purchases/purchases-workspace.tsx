@@ -5,11 +5,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import {
   Plus,
-  Search,
   MoreVertical,
   Edit,
   Trash2,
-  ChevronLeft,
   ShoppingCart,
   CheckCircle2,
   XCircle,
@@ -53,15 +51,17 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { GeneralPurchaseApis } from "@/lib/api/endpoints";
 import { PurchaseDialog } from "@/components/manage/purchases/purchase-dialog";
-import { useRouter } from "next/navigation";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { FinanceWorkspaceNav } from "@/components/finance/workspace/finance-workspace-nav";
 import { MetricCard } from "@/components/cards/metric-card";
 import { FilterChip } from "@/components/patterns/controls/filter-chip";
 import { SearchField } from "@/components/patterns/controls/search-field";
 import { DataList, ListRow } from "@/components/patterns/data/data-list";
-import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
+import {
+  EmptyState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
 import {
@@ -71,6 +71,31 @@ import {
 
 type BusinessLineFilter = "all" | "restaurant" | "hotel";
 
+const purchaseStatusLabels: Record<string, string> = {
+  cancelled: "Cancelled",
+  draft: "Draft",
+  received: "Received",
+  returned: "Returned",
+};
+
+const purchasePaymentLabels: Record<string, string> = {
+  paid: "Paid",
+  partial: "Partially paid",
+  partially_paid: "Partially paid",
+  pending: "Pending",
+  unpaid: "Unpaid",
+};
+
+function purchaseStatusLabel(value: string | null | undefined) {
+  return purchaseStatusLabels[String(value || "").toLowerCase()] || "Recorded";
+}
+
+function purchasePaymentLabel(value: string | null | undefined) {
+  return (
+    purchasePaymentLabels[String(value || "").toLowerCase()] || "Not recorded"
+  );
+}
+
 export function PurchasesWorkspace({
   financeMode = false,
   returnedOnly = false,
@@ -79,7 +104,6 @@ export function PurchasesWorkspace({
   returnedOnly?: boolean;
 } = {}) {
   const user = useAuth((state) => state.user);
-  const router = useRouter();
   const restaurant = useRestaurant((s) => s.restaurant);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -252,19 +276,25 @@ export function PurchasesWorkspace({
           </Badge>
         );
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return <Badge variant="outline">Recorded</Badge>;
     }
   };
 
   const getPaymentBadge = (status: string) => {
-    return status === "paid" ? (
-      <Badge
-        variant="outline"
-        className="text-emerald-600 border-emerald-200 bg-emerald-50"
-      >
-        Paid
-      </Badge>
-    ) : (
+    if (status === "paid") {
+      return (
+        <Badge
+          variant="outline"
+          className="text-emerald-600 border-emerald-200 bg-emerald-50"
+        >
+          Paid
+        </Badge>
+      );
+    }
+    if (status === "pending") {
+      return <Badge variant="outline">Pending</Badge>;
+    }
+    return (
       <Badge
         variant="outline"
         className="text-rose-600 border-rose-200 bg-rose-50"
@@ -352,7 +382,7 @@ export function PurchasesWorkspace({
               },
               {
                 label: "Payment status",
-                value: detailPurchase.payment_status || "—",
+                value: purchasePaymentLabel(detailPurchase.payment_status),
               },
               {
                 label: "Payment method",
@@ -362,7 +392,7 @@ export function PurchasesWorkspace({
               },
               {
                 label: "Lifecycle status",
-                value: detailPurchase.status || "—",
+                value: purchaseStatusLabel(detailPurchase.status),
               },
             ],
           },
@@ -372,13 +402,13 @@ export function PurchasesWorkspace({
               {
                 label: "Created",
                 value: detailPurchase.created_at
-                  ? new Date(detailPurchase.created_at).toLocaleString()
+                  ? formatDateTime(detailPurchase.created_at)
                   : "—",
               },
               {
                 label: "Last updated",
                 value: detailPurchase.updated_at
-                  ? new Date(detailPurchase.updated_at).toLocaleString()
+                  ? formatDateTime(detailPurchase.updated_at)
                   : "—",
               },
             ],
@@ -390,17 +420,22 @@ export function PurchasesWorkspace({
   return (
     <AppPage width="wide" className="p-4 sm:p-6">
       <PageHeader
-        backHref={!financeMode ? "/manage" : undefined}
         title={returnedOnly ? "Purchase returns" : "Purchases"}
-        description={returnedOnly ? "Review returned supplier purchases and their financial reversals." : "Supplier and general purchase documents, payment state, and return actions."}
-        actions={<>
-          {!returnedOnly ? (
-            <Button className="h-11 rounded-xl" onClick={startPurchase}>
-              <Plus className="w-4 h-4 mr-2" />
-              Record Purchase
-            </Button>
-          ) : null}
-        </>}
+        description={
+          returnedOnly
+            ? "Review returned supplier purchases and their financial reversals."
+            : "Supplier and general purchase documents, payment state, and return actions."
+        }
+        actions={
+          <>
+            {!returnedOnly ? (
+              <Button className="h-11 rounded-xl" onClick={startPurchase}>
+                <Plus className="w-4 h-4 mr-2" />
+                Record Purchase
+              </Button>
+            ) : null}
+          </>
+        }
       />
 
       {financeMode ? (
@@ -419,195 +454,254 @@ export function PurchasesWorkspace({
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <MetricCard label="Purchases" value={purchases.length} icon={<ShoppingCart className="h-4 w-4" />} tone="neutral" />
-        <MetricCard label="Received" value={formatCurrency(totalSpent)} icon={<CheckCircle2 className="h-4 w-4" />} tone="success" />
-        <MetricCard label="Unpaid" value={formatCurrency(pendingPayables)} icon={<Calculator className="h-4 w-4" />} tone="danger" />
-        <MetricCard label="Returns" value={purchases.filter((p) => p.status === "returned").length} icon={<Undo2 className="h-4 w-4" />} tone="warning" />
+        <MetricCard
+          label="Purchases"
+          value={purchases.length}
+          icon={<ShoppingCart className="h-4 w-4" />}
+          tone="neutral"
+        />
+        <MetricCard
+          label="Received"
+          value={formatCurrency(totalSpent)}
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          tone="success"
+        />
+        <MetricCard
+          label="Unpaid"
+          value={formatCurrency(pendingPayables)}
+          icon={<Calculator className="h-4 w-4" />}
+          tone="danger"
+        />
+        <MetricCard
+          label="Returns"
+          value={purchases.filter((p) => p.status === "returned").length}
+          icon={<Undo2 className="h-4 w-4" />}
+          tone="warning"
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-          <SearchField className="min-w-0 flex-1 md:max-w-md" placeholder="Search items or suppliers" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
-          {dualBusinessLines ? (
-            <div className="flex max-w-full gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <FilterChip active={businessLine === "all"} onClick={() => setBusinessLine("all")}>All</FilterChip>
-              <FilterChip active={businessLine === "restaurant"} onClick={() => setBusinessLine("restaurant")}>
-                <Utensils className="h-3.5 w-3.5 text-orange-500" />
-                Restaurant
-              </FilterChip>
-              <FilterChip active={businessLine === "hotel"} onClick={() => setBusinessLine("hotel")}>
-                <Hotel className="h-3.5 w-3.5 text-blue-500" />
-                Hotel
-              </FilterChip>
-            </div>
-          ) : null}
+        <SearchField
+          className="min-w-0 flex-1 md:max-w-md"
+          placeholder="Search items or suppliers"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+        />
+        {dualBusinessLines ? (
+          <div className="flex max-w-full gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <FilterChip
+              active={businessLine === "all"}
+              onClick={() => setBusinessLine("all")}
+            >
+              All
+            </FilterChip>
+            <FilterChip
+              active={businessLine === "restaurant"}
+              onClick={() => setBusinessLine("restaurant")}
+            >
+              <Utensils className="h-3.5 w-3.5 text-orange-500" />
+              Restaurant
+            </FilterChip>
+            <FilterChip
+              active={businessLine === "hotel"}
+              onClick={() => setBusinessLine("hotel")}
+            >
+              <Hotel className="h-3.5 w-3.5 text-blue-500" />
+              Hotel
+            </FilterChip>
+          </div>
+        ) : null}
       </div>
-      {loading ? <LoadingState label="Loading purchases..." /> : filteredPurchases.length === 0 ? <EmptyState title="No purchases recorded" description="Record a purchase to track supplier costs and payment state." /> : <>
-        <DataList className="md:hidden">
-          {filteredPurchases.map((purchase) => (
-            <ListRow key={purchase.id} interactive onClick={() => setDetailPurchase(purchase)} leading={<ShoppingCart className="h-4 w-4" />} title={purchase.purchase_name} description={`${purchase.supplier?.name || "No supplier"} · ${formatDate(purchase.purchased_date)}`} meta={formatCurrency(purchase.total_cost)} trailing={getStatusBadge(purchase.status)} />
-          ))}
-        </DataList>
-        <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date / Item</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Payment</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+      {loading ? (
+        <LoadingState label="Loading purchases..." />
+      ) : filteredPurchases.length === 0 ? (
+        <EmptyState
+          title="No purchases recorded"
+          description="Record a purchase to track supplier costs and payment state."
+        />
+      ) : (
+        <>
+          <DataList className="lg:hidden">
             {filteredPurchases.map((purchase) => (
-                <TableRow
-                  key={purchase.id}
-                  tabIndex={0}
-                  role="button"
-                  onClick={() => setDetailPurchase(purchase)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setDetailPurchase(purchase);
-                    }
-                  }}
-                  className={cn(
-                    "cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none",
-                    purchase.status === "cancelled" && "opacity-60",
-                  )}
-                >
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-sm">
-                        {purchase.purchase_name}
-                      </span>
-                      <div className="flex items-center gap-2 mt-1 text-[11px] text-muted-foreground">
-                        <Calendar className="w-3 h-3" />
-                        {formatDate(purchase.purchased_date)}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 bg-slate-100 rounded-full flex items-center justify-center">
-                        <User className="w-3.5 h-3.5 text-slate-500" />
-                      </div>
-                      <span className="text-sm font-medium">
-                        {purchase.supplier?.name || "No Supplier"}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-bold">
-                        {formatCurrency(purchase.total_cost)}
-                      </span>
-                      {purchase.unit && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {purchase.unit}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {getPaymentBadge(purchase.payment_status)}
-                  </TableCell>
-                  <TableCell>{getStatusBadge(purchase.status)}</TableCell>
-                  <TableCell className="text-right">
-                    <div
-                      className="flex items-center justify-end gap-1"
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
-                    >
-                      {purchase.status === "received" ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openReturn(purchase)}
-                          className="text-orange-700"
-                        >
-                          <Undo2 className="mr-2 h-4 w-4" />
-                          Return
-                        </Button>
-                      ) : null}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          {purchase.status === "draft" && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                handleAction(purchase.id, "receive")
-                              }
-                            >
-                              <CheckCircle2 className="w-4 h-4 mr-2 text-green-600" />
-                              Mark as Received
-                            </DropdownMenuItem>
-                          )}
-                          {purchase.status === "received" && (
-                            <DropdownMenuItem
-                              onClick={() => openReturn(purchase)}
-                            >
-                              <Undo2 className="w-4 h-4 mr-2 text-orange-600" />
-                              Return Item
-                            </DropdownMenuItem>
-                          )}
-
-                          <DropdownMenuSeparator />
-
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setSelectedPurchase(purchase);
-                              setIsDialogOpen(true);
-                            }}
-                            disabled={
-                              purchase.status === "cancelled" ||
-                              purchase.status === "returned"
-                            }
-                          >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit Record
-                          </DropdownMenuItem>
-
-                          {purchase.status === "draft" && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                handleAction(purchase.id, "delete")
-                              }
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete Draft
-                            </DropdownMenuItem>
-                          )}
-
-                          {(purchase.status === "draft" ||
-                            (purchase.status === "received" &&
-                              purchase.payment_status !== "paid")) && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                handleAction(purchase.id, "cancel")
-                              }
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <XCircle className="w-4 h-4 mr-2" />
-                              Cancel Purchase
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </TableCell>
+              <ListRow
+                key={purchase.id}
+                interactive
+                onClick={() => setDetailPurchase(purchase)}
+                leading={<ShoppingCart className="h-4 w-4" />}
+                title={purchase.purchase_name}
+                description={`${purchase.supplier?.name || "No supplier"} · ${formatDate(purchase.purchased_date)}`}
+                meta={formatCurrency(purchase.total_cost)}
+                trailing={getStatusBadge(purchase.status)}
+              />
+            ))}
+          </DataList>
+          <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card lg:block">
+            <Table className="min-w-[920px] table-fixed">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[27%] min-w-[220px]">
+                    Date / item
+                  </TableHead>
+                  <TableHead className="w-[22%] min-w-[180px]">
+                    Supplier
+                  </TableHead>
+                  <TableHead className="w-[150px] whitespace-nowrap">
+                    Amount
+                  </TableHead>
+                  <TableHead className="w-[120px] whitespace-nowrap">
+                    Payment
+                  </TableHead>
+                  <TableHead className="w-[120px] whitespace-nowrap">
+                    Status
+                  </TableHead>
+                  <TableHead className="w-16 text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-          </TableBody>
-        </Table>
-        </div>
-      </>}
+              </TableHeader>
+              <TableBody>
+                {filteredPurchases.map((purchase) => (
+                  <TableRow
+                    key={purchase.id}
+                    tabIndex={0}
+                    role="button"
+                    onClick={() => setDetailPurchase(purchase)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setDetailPurchase(purchase);
+                      }
+                    }}
+                    className={cn(
+                      "cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-none",
+                      purchase.status === "cancelled" && "opacity-60",
+                    )}
+                  >
+                    <TableCell className="min-w-[220px]">
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-sm">
+                          {purchase.purchase_name}
+                        </span>
+                        <div className="flex items-center gap-2 mt-1 text-[11px] text-muted-foreground">
+                          <Calendar className="w-3 h-3" />
+                          {formatDate(purchase.purchased_date)}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="min-w-[180px]">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="w-7 h-7 bg-slate-100 rounded-full flex items-center justify-center">
+                          <User className="w-3.5 h-3.5 text-slate-500" />
+                        </div>
+                        <span className="truncate text-sm font-medium">
+                          {purchase.supplier?.name || "No Supplier"}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <div className="flex flex-col">
+                        <span className="font-bold">
+                          {formatCurrency(purchase.total_cost)}
+                        </span>
+                        {purchase.unit && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {purchase.unit}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {getPaymentBadge(purchase.payment_status)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {getStatusBadge(purchase.status)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right">
+                      <div
+                        className="flex items-center justify-end gap-1"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Actions for ${purchase.purchase_name}`}
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            {purchase.status === "draft" && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleAction(purchase.id, "receive")
+                                }
+                              >
+                                <CheckCircle2 className="w-4 h-4 mr-2 text-green-600" />
+                                Mark as Received
+                              </DropdownMenuItem>
+                            )}
+                            {purchase.status === "received" && (
+                              <DropdownMenuItem
+                                onClick={() => openReturn(purchase)}
+                              >
+                                <Undo2 className="w-4 h-4 mr-2 text-orange-600" />
+                                Return Item
+                              </DropdownMenuItem>
+                            )}
+
+                            <DropdownMenuSeparator />
+
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedPurchase(purchase);
+                                setIsDialogOpen(true);
+                              }}
+                              disabled={
+                                purchase.status === "cancelled" ||
+                                purchase.status === "returned"
+                              }
+                            >
+                              <Edit className="w-4 h-4 mr-2" />
+                              Edit Record
+                            </DropdownMenuItem>
+
+                            {purchase.status === "draft" && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleAction(purchase.id, "delete")
+                                }
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete Draft
+                              </DropdownMenuItem>
+                            )}
+
+                            {(purchase.status === "draft" ||
+                              (purchase.status === "received" &&
+                                purchase.payment_status !== "paid")) && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleAction(purchase.id, "cancel")
+                                }
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <XCircle className="w-4 h-4 mr-2" />
+                                Cancel Purchase
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
 
       <PurchaseDialog
         open={isDialogOpen}

@@ -80,7 +80,7 @@ export function CategoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>
             {initialData ? "Edit Category" : "Add Category"}
@@ -92,41 +92,53 @@ export function CategoryDialog({
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. Appetizers" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="station_id"
-              render={({ field }) => (
-                <FormItem>
-                  <StationPicker
-                    restaurantId={restaurantId}
-                    value={field.value ?? null}
-                    onChange={(stationId) => field.onChange(stationId ?? undefined)}
-                    label="Station"
-                    placeholder="Select a station"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Attributes this category to a cost centre for KOT routing and reporting.
-                  </p>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          <form
+            onSubmit={form.handleSubmit(handleSubmit)}
+            className="space-y-5"
+          >
+            <div className="border-t pt-5">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Appetizers" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="station_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <StationPicker
+                      restaurantId={restaurantId}
+                      value={field.value ?? null}
+                      onChange={(stationId) =>
+                        field.onChange(stationId ?? undefined)
+                      }
+                      label="Station"
+                      placeholder="Select a station"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Routes items in this category to the selected preparation
+                      station.
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onOpenChange(false)}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={form.formState.isSubmitting}>

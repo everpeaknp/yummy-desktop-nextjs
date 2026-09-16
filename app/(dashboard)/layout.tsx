@@ -14,7 +14,8 @@ import { useSessionRestoreState } from "@/hooks/use-session-restore";
 import { ProductTourHost } from "@/components/onboarding/product-tour-host";
 import { canAccessOnboarding } from "@/lib/onboarding";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
-import { FinanceMobileNav } from "@/components/finance/workspace/finance-mobile-nav";
+import { isMobileSecondaryModuleRoute } from "@/lib/mobile-module-navigation";
+import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({
   children,
@@ -93,17 +94,18 @@ export default function DashboardLayout({
     }
 
     // Restaurant-only properties cannot enter hotel routes from old bookmarks.
-    if (!hotelEnabled && restEnabled && (pathname === "/hotel" || pathname.startsWith("/hotel/") || pathname === "/rooms" || pathname.startsWith("/rooms/") || pathname === "/gateway")) {
+    if (
+      !hotelEnabled &&
+      restEnabled &&
+      (pathname === "/hotel" ||
+        pathname.startsWith("/hotel/") ||
+        pathname === "/rooms" ||
+        pathname.startsWith("/rooms/") ||
+        pathname === "/gateway")
+    ) {
       router.replace("/dashboard");
     }
-  }, [
-    restaurant,
-    pathname,
-    router,
-    loading,
-    mounted,
-    storeHydrated,
-  ]);
+  }, [restaurant, pathname, router, loading, mounted, storeHydrated]);
 
   const showShell = mounted && !waitingForAuth && (restaurant || !loading);
 
@@ -149,7 +151,9 @@ export default function DashboardLayout({
     );
   }
 
-  const isHotelWorkspace = pathname === "/hotel" || pathname.startsWith("/hotel/");
+  const isHotelWorkspace =
+    pathname === "/hotel" || pathname.startsWith("/hotel/");
+  const isSecondaryMobileModule = isMobileSecondaryModuleRoute(pathname);
   if (isHotelWorkspace) {
     return (
       <div className="h-screen w-full overflow-hidden bg-background">
@@ -162,12 +166,18 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen w-full flex-col bg-background md:flex-row overflow-hidden">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background lg:flex-row">
       <Sidebar />
       <div className="flex flex-col flex-1 h-full overflow-hidden">
         <Header />
-        <FinanceMobileNav />
-        <main className="flex-1 overflow-y-auto p-4 pb-24 md:pb-4">
+        <main
+          className={cn(
+            "flex-1 overflow-y-auto p-4 lg:pb-4",
+            isSecondaryMobileModule
+              ? "pb-[max(env(safe-area-inset-bottom),1rem)]"
+              : "pb-24",
+          )}
+        >
           <RoleGuard>{children}</RoleGuard>
         </main>
       </div>

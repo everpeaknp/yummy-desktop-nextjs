@@ -51,7 +51,11 @@ import {
   type TransactionDetailModel,
 } from "@/components/finance/transaction-detail/transaction-detail-sheet";
 import apiClient from "@/lib/api-client";
-import { PurchaseApis, PurchaseReturnApis, SupplierApis } from "@/lib/api/endpoints";
+import {
+  PurchaseApis,
+  PurchaseReturnApis,
+  SupplierApis,
+} from "@/lib/api/endpoints";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
@@ -73,41 +77,88 @@ const isRefundCustodyAccount = (account: CashBankAccountOption) =>
 function statusBadge(status: string) {
   switch (status) {
     case "draft":
-      return <Badge variant="secondary" className="capitalize">Draft</Badge>;
+      return (
+        <Badge variant="secondary" className="capitalize">
+          Draft
+        </Badge>
+      );
     case "posted":
-      return <Badge variant="default" className="bg-green-600 hover:bg-green-700 capitalize">Posted</Badge>;
+      return (
+        <Badge
+          variant="default"
+          className="bg-green-600 hover:bg-green-700 capitalize"
+        >
+          Posted
+        </Badge>
+      );
     case "voided":
-      return <Badge variant="destructive" className="capitalize">Voided</Badge>;
+      return (
+        <Badge variant="destructive" className="capitalize">
+          Voided
+        </Badge>
+      );
     default:
-      return <Badge variant="outline">{status}</Badge>;
+      return <Badge variant="outline">Recorded</Badge>;
   }
 }
 
+function reasonLabel(value: string | null | undefined) {
+  return (
+    REASON_OPTIONS.find((option) => option.value === value)?.label || "Return"
+  );
+}
+
 function purchaseReturnDetail(entry: any): TransactionDetailModel {
-  const settlement = String(entry.settlement_type || "supplier_credit").replaceAll("_", " ");
+  const settlement =
+    entry.settlement_type === "refund_received"
+      ? "Refund received"
+      : "Supplier credit";
   return {
     eyebrow: "Purchase return",
     title: entry.return_number || "Purchase return",
     reference: null,
-    subtitle: entry.supplier_name ? `Return to ${entry.supplier_name}` : "Supplier return",
+    subtitle: entry.supplier_name
+      ? `Return to ${entry.supplier_name}`
+      : "Supplier return",
     occurredAt: entry.posted_at || entry.created_at || entry.return_date,
     status: entry.status,
     amount: entry.total_cost,
-    amountLabel: entry.settlement_type === "refund_received" ? "Refund received" : "Supplier credit",
+    amountLabel:
+      entry.settlement_type === "refund_received"
+        ? "Refund received"
+        : "Supplier credit",
     amountTone: "in",
     sections: [
       {
         title: "Return overview",
         fields: [
           { label: "Supplier", value: entry.supplier_name || "Supplier" },
-          { label: "Reason", value: String(entry.reason_code || "other").replaceAll("_", " "), fullWidth: true },
-          { label: "Stock outcome", value: entry.goods_physically_returned ? "Goods returned to the supplier" : "Financial credit only" },
-          ...(entry.void_reason ? [{ label: "Void reason", value: entry.void_reason, fullWidth: true }] : []),
+          {
+            label: "Reason",
+            value: reasonLabel(entry.reason_code),
+            fullWidth: true,
+          },
+          {
+            label: "Stock outcome",
+            value: entry.goods_physically_returned
+              ? "Goods returned to the supplier"
+              : "Financial credit only",
+          },
+          ...(entry.void_reason
+            ? [
+                {
+                  label: "Void reason",
+                  value: entry.void_reason,
+                  fullWidth: true,
+                },
+              ]
+            : []),
         ],
       },
       {
         title: "Returned items",
-        description: "Quantities and values removed from the original purchase.",
+        description:
+          "Quantities and values removed from the original purchase.",
         table: {
           columns: ["Item", "Quantity", "Unit", "Rate", "Amount"],
           rows: (entry.lines || []).map((line: any) => [
@@ -115,20 +166,28 @@ function purchaseReturnDetail(entry: any): TransactionDetailModel {
             Number(line.quantity || 0).toLocaleString(),
             line.unit || "-",
             formatCurrency(line.unit_cost),
-            <span key={`purchase-return-line-${line.id}`} className="font-medium tabular-nums">{formatCurrency(line.line_total)}</span>,
+            <span
+              key={`purchase-return-line-${line.id}`}
+              className="font-medium tabular-nums"
+            >
+              {formatCurrency(line.line_total)}
+            </span>,
           ]),
         },
         emptyText: "No return lines were recorded.",
       },
       {
         title: "Settlement impact",
-        fields: [{
-          label: "What happened",
-          value: entry.settlement_type === "refund_received"
-            ? "The supplier refund increased the selected cash or bank account."
-            : "A supplier credit was created against the linked purchase bill.",
-          fullWidth: true,
-        }],
+        fields: [
+          {
+            label: "What happened",
+            value:
+              entry.settlement_type === "refund_received"
+                ? "The supplier refund increased the selected cash or bank account."
+                : "A supplier credit was created against the linked purchase bill.",
+            fullWidth: true,
+          },
+        ],
       },
     ],
   };
@@ -174,8 +233,11 @@ export default function InventoryPurchaseReturnsPage() {
     settlement_type: "supplier_credit",
     goods_physically_returned: true,
   });
-  const [createLines, setCreateLines] = useState<ReturnLineDraft[]>([newReturnLine()]);
-  const [refundAccount, setRefundAccount] = useState<CashBankAccountOption | null>(null);
+  const [createLines, setCreateLines] = useState<ReturnLineDraft[]>([
+    newReturnLine(),
+  ]);
+  const [refundAccount, setRefundAccount] =
+    useState<CashBankAccountOption | null>(null);
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
   const [voidReturn, setVoidReturn] = useState<any | null>(null);
@@ -187,7 +249,9 @@ export default function InventoryPurchaseReturnsPage() {
     if (!user?.restaurant_id) return;
     setLoading(true);
     try {
-      const response = await apiClient.get(PurchaseReturnApis.list({ restaurantId: user.restaurant_id }));
+      const response = await apiClient.get(
+        PurchaseReturnApis.list({ restaurantId: user.restaurant_id }),
+      );
       if (response.data.status === "success") {
         setReturns(response.data.data?.purchase_returns || []);
       }
@@ -201,8 +265,11 @@ export default function InventoryPurchaseReturnsPage() {
   const fetchSuppliers = useCallback(async () => {
     if (!user?.restaurant_id) return;
     try {
-      const response = await apiClient.get(SupplierApis.listSuppliers(user.restaurant_id, true));
-      if (response.data.status === "success") setSuppliers(response.data.data?.suppliers || []);
+      const response = await apiClient.get(
+        SupplierApis.listSuppliers(user.restaurant_id, true),
+      );
+      if (response.data.status === "success")
+        setSuppliers(response.data.data?.suppliers || []);
     } catch (err) {
       console.error("Failed to fetch suppliers:", err);
     }
@@ -211,8 +278,14 @@ export default function InventoryPurchaseReturnsPage() {
   const fetchPostedPurchases = useCallback(async () => {
     if (!user?.restaurant_id) return;
     try {
-      const response = await apiClient.get(PurchaseApis.list({ restaurantId: user.restaurant_id, status: "posted" }));
-      if (response.data.status === "success") setPostedPurchases(response.data.data?.purchases || []);
+      const response = await apiClient.get(
+        PurchaseApis.list({
+          restaurantId: user.restaurant_id,
+          status: "posted",
+        }),
+      );
+      if (response.data.status === "success")
+        setPostedPurchases(response.data.data?.purchases || []);
     } catch (err) {
       console.error("Failed to fetch posted purchases:", err);
     }
@@ -228,7 +301,9 @@ export default function InventoryPurchaseReturnsPage() {
     if (!requestedReturnId || !user?.restaurant_id) return;
     let active = true;
     void apiClient
-      .get(PurchaseReturnApis.get(Number(requestedReturnId), user.restaurant_id))
+      .get(
+        PurchaseReturnApis.get(Number(requestedReturnId), user.restaurant_id),
+      )
       .then((response) => {
         if (active && response.data.status === "success") {
           setDetailReturn(response.data.data);
@@ -238,12 +313,18 @@ export default function InventoryPurchaseReturnsPage() {
         console.error("Failed to fetch purchase return detail:", error);
         if (active) toast.error("Could not load this purchase return.");
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [requestedReturnId, user?.restaurant_id]);
 
-  const selectedPurchase = postedPurchases.find((p) => String(p.id) === createForm.purchase_id) || null;
+  const selectedPurchase =
+    postedPurchases.find((p) => String(p.id) === createForm.purchase_id) ||
+    null;
   const eligiblePurchases = createForm.supplier_id
-    ? postedPurchases.filter((purchase) => String(purchase.supplier_id) === createForm.supplier_id)
+    ? postedPurchases.filter(
+        (purchase) => String(purchase.supplier_id) === createForm.supplier_id,
+      )
     : postedPurchases;
 
   const openCreate = () => {
@@ -265,14 +346,18 @@ export default function InventoryPurchaseReturnsPage() {
     setCreateForm({
       ...createForm,
       purchase_id: purchaseId,
-      supplier_id: purchase ? String(purchase.supplier_id) : createForm.supplier_id,
+      supplier_id: purchase
+        ? String(purchase.supplier_id)
+        : createForm.supplier_id,
     });
     if (purchase?.lines?.length) {
       setCreateLines(
         purchase.lines
           .filter((l: any) => Number(l.received_quantity) - 0 > 0)
           .map((l: any) => ({
-            key: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+            key:
+              globalThis.crypto?.randomUUID?.() ??
+              `${Date.now()}-${Math.random()}`,
             purchase_line_id: l.id,
             inventory_item_id: l.inventory_item_id,
             quantity: "",
@@ -286,7 +371,9 @@ export default function InventoryPurchaseReturnsPage() {
   // the form. Returns always stay linked to their original purchase bill.
   useEffect(() => {
     if (!requestedPurchaseId || !postedPurchases.length) return;
-    const purchase = postedPurchases.find((row) => String(row.id) === requestedPurchaseId);
+    const purchase = postedPurchases.find(
+      (row) => String(row.id) === requestedPurchaseId,
+    );
     if (!purchase || createForm.purchase_id === requestedPurchaseId) return;
 
     setCreateForm((current) => ({
@@ -298,7 +385,9 @@ export default function InventoryPurchaseReturnsPage() {
       (purchase.lines || [])
         .filter((line: any) => Number(line.received_quantity || 0) > 0)
         .map((line: any) => ({
-          key: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+          key:
+            globalThis.crypto?.randomUUID?.() ??
+            `${Date.now()}-${Math.random()}`,
           purchase_line_id: line.id,
           inventory_item_id: line.inventory_item_id,
           quantity: "",
@@ -316,7 +405,10 @@ export default function InventoryPurchaseReturnsPage() {
     setCreateForm((current) => ({
       ...current,
       supplier_id: requestedSupplierId,
-      settlement_type: requestedSettlement === "refund_received" ? "refund_received" : current.settlement_type,
+      settlement_type:
+        requestedSettlement === "refund_received"
+          ? "refund_received"
+          : current.settlement_type,
     }));
     setCreateOpen(true);
   }, [requestedPurchaseId, requestedSettlement, requestedSupplierId]);
@@ -337,13 +429,17 @@ export default function InventoryPurchaseReturnsPage() {
       toast.error("Select the original purchase bill being returned.");
       return;
     }
-    const lines = createLines.filter((l) => l.inventory_item_id != null && Number(l.quantity) > 0);
+    const lines = createLines.filter(
+      (l) => l.inventory_item_id != null && Number(l.quantity) > 0,
+    );
     if (lines.length === 0) {
       toast.error("Add at least one return line with a quantity.");
       return;
     }
     if (createForm.settlement_type === "refund_received" && !refundAccount) {
-      toast.error("Select the bank or cash drawer that received the supplier refund.");
+      toast.error(
+        "Select the bank or cash drawer that received the supplier refund.",
+      );
       return;
     }
 
@@ -357,9 +453,13 @@ export default function InventoryPurchaseReturnsPage() {
         reason_code: createForm.reason_code,
         settlement_type: createForm.settlement_type,
         account_type:
-          createForm.settlement_type === "refund_received" ? refundAccount?.account_type : undefined,
+          createForm.settlement_type === "refund_received"
+            ? refundAccount?.account_type
+            : undefined,
         account_id:
-          createForm.settlement_type === "refund_received" ? refundAccount?.id : undefined,
+          createForm.settlement_type === "refund_received"
+            ? refundAccount?.id
+            : undefined,
         goods_physically_returned: createForm.goods_physically_returned,
         lines: lines.map((l) => ({
           purchase_line_id: l.purchase_line_id || undefined,
@@ -373,7 +473,9 @@ export default function InventoryPurchaseReturnsPage() {
       setCreateOpen(false);
       await fetchReturns();
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Failed to post purchase return.");
+      toast.error(
+        err.response?.data?.detail || "Failed to post purchase return.",
+      );
     } finally {
       setCreateSubmitting(false);
     }
@@ -387,13 +489,18 @@ export default function InventoryPurchaseReturnsPage() {
     }
     setVoidSubmitting(true);
     try {
-      await apiClient.post(PurchaseReturnApis.void(voidReturn.id, user.restaurant_id), { reason: voidReason.trim() });
+      await apiClient.post(
+        PurchaseReturnApis.void(voidReturn.id, user.restaurant_id),
+        { reason: voidReason.trim() },
+      );
       toast.success("Purchase return voided.");
       setVoidReturn(null);
       setVoidReason("");
       await fetchReturns();
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Failed to void purchase return.");
+      toast.error(
+        err.response?.data?.detail || "Failed to void purchase return.",
+      );
     } finally {
       setVoidSubmitting(false);
     }
@@ -402,121 +509,225 @@ export default function InventoryPurchaseReturnsPage() {
   return (
     <AppPage width="wide" className="p-4 pb-24 sm:p-6">
       <PageHeader
-        backHref="/inventory/purchases"
         title="Purchase returns"
         description="Send received goods back to a supplier and preserve the linked supplier credit or refund."
-        actions={<Button className="h-11 w-full rounded-xl sm:w-auto" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Record return</Button>}
+        actions={
+          <Button
+            className="h-11 w-full rounded-xl sm:w-auto"
+            onClick={openCreate}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Record return
+          </Button>
+        }
       />
 
       <PageSection surface className="overflow-hidden p-0">
-        <div className="divide-y divide-border md:hidden">
+        <div className="divide-y divide-border lg:hidden">
           {loading ? (
-            <div className="flex items-center justify-center p-8 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
-          ) : returns.length === 0 ? (
-            <p className="p-8 text-center text-sm text-muted-foreground">No purchase returns yet.</p>
-          ) : returns.map((r) => (
-            <div key={r.id} className="p-4">
-              <button type="button" onClick={() => setDetailReturn(r)} className="w-full text-left"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium">{r.supplier_name || "Unknown supplier"}</p><p className="mt-1 text-xs capitalize text-muted-foreground">{formatDate(r.return_date)} · {r.reason_code?.replace(/_/g, " ") || "Return"}</p></div><p className="shrink-0 font-semibold tabular-nums">{formatCurrency(r.total_cost)}</p></div><div className="mt-2">{statusBadge(r.status)}</div></button>
-              {r.status === "posted" ? <Button size="sm" variant="ghost" className="mt-3 text-destructive hover:text-destructive" onClick={() => { setVoidReturn(r); setVoidReason(""); }}>Void return</Button> : null}
+            <div className="flex items-center justify-center p-8 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
             </div>
-          ))}
-        </div>
-        <div className="hidden overflow-x-auto md:block"><Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Reason</TableHead>
-              <TableHead>Total</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                </TableCell>
-              </TableRow>
-            ) : returns.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  No purchase returns yet.
-                </TableCell>
-              </TableRow>
-            ) : (
-              returns.map((r) => (
-                <TableRow
-                  key={r.id}
-                  role="button"
-                  tabIndex={0}
+          ) : returns.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted-foreground">
+              No purchase returns yet.
+            </p>
+          ) : (
+            returns.map((r) => (
+              <div key={r.id} className="p-4">
+                <button
+                  type="button"
                   onClick={() => setDetailReturn(r)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setDetailReturn(r);
-                    }
-                  }}
-                  className="cursor-pointer transition-colors hover:bg-muted/40 focus-visible:bg-muted/40"
+                  className="w-full text-left"
                 >
-                  <TableCell>{formatDate(r.return_date)}</TableCell>
-                  <TableCell>{r.supplier_name || "Unknown"}</TableCell>
-                  <TableCell className="capitalize">{r.reason_code?.replace(/_/g, " ")}</TableCell>
-                  <TableCell className="font-medium">{formatCurrency(r.total_cost)}</TableCell>
-                  <TableCell>{statusBadge(r.status)}</TableCell>
-                  <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                    {r.status === "posted" && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setVoidReturn(r);
-                              setVoidReason("");
-                            }}
-                            className="text-red-600"
-                          >
-                            <Ban className="w-4 h-4 mr-2" /> Void
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">
+                        {r.supplier_name || "Unknown supplier"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {formatDate(r.return_date)} ·{" "}
+                        {reasonLabel(r.reason_code)}
+                      </p>
+                    </div>
+                    <p className="shrink-0 font-semibold tabular-nums">
+                      {formatCurrency(r.total_cost)}
+                    </p>
+                  </div>
+                </button>
+                <div className="mt-2 flex min-h-9 items-center justify-between gap-2 border-t border-border/60 pt-2">
+                  {statusBadge(r.status)}
+                  {r.status === "posted" ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9"
+                          aria-label={`Actions for purchase return ${r.id}`}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setVoidReturn(r);
+                            setVoidReason("");
+                          }}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Ban className="mr-2 h-4 w-4" /> Void return
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="hidden overflow-x-auto lg:block">
+          <Table className="min-w-[820px] table-fixed">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[130px] whitespace-nowrap">
+                  Date
+                </TableHead>
+                <TableHead className="w-[28%] min-w-[190px]">
+                  Supplier
+                </TableHead>
+                <TableHead className="w-[28%] min-w-[180px]">Reason</TableHead>
+                <TableHead className="w-[150px] whitespace-nowrap">
+                  Total
+                </TableHead>
+                <TableHead className="w-[110px] whitespace-nowrap">
+                  Status
+                </TableHead>
+                <TableHead className="w-16 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="text-center py-8 text-muted-foreground"
+                  >
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table></div>
+              ) : returns.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="text-center py-8 text-muted-foreground"
+                  >
+                    No purchase returns yet.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                returns.map((r) => (
+                  <TableRow
+                    key={r.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setDetailReturn(r)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setDetailReturn(r);
+                      }
+                    }}
+                    className="cursor-pointer transition-colors hover:bg-muted/40 focus-visible:bg-muted/40"
+                  >
+                    <TableCell className="whitespace-nowrap">
+                      {formatDate(r.return_date)}
+                    </TableCell>
+                    <TableCell>
+                      <span className="block truncate">
+                        {r.supplier_name || "Unknown"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="block truncate">
+                        {reasonLabel(r.reason_code)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">
+                      {formatCurrency(r.total_cost)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {statusBadge(r.status)}
+                    </TableCell>
+                    <TableCell
+                      className="whitespace-nowrap text-right"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {r.status === "posted" && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label={`Actions for purchase return ${r.id}`}
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setVoidReturn(r);
+                                setVoidReason("");
+                              }}
+                              className="text-red-600"
+                            >
+                              <Ban className="w-4 h-4 mr-2" /> Void
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </PageSection>
 
       {/* Create Return Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[640px] flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[92vh] sm:w-full">
-          <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <form
+            onSubmit={handleCreate}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
             <DialogHeader className="shrink-0 border-b px-5 py-4 text-left sm:px-6">
               <DialogTitle>Record Purchase Return</DialogTitle>
               <DialogDescription>
-                Select the original purchase bill. This keeps returned stock and the
-                supplier credit or refund linked to the correct document.
+                Select the original purchase bill. This keeps returned stock and
+                the supplier credit or refund linked to the correct document.
               </DialogDescription>
             </DialogHeader>
             <div className="grid flex-1 gap-4 overflow-y-auto px-5 py-4 sm:px-6">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Original purchase *</Label>
-                  <Select value={createForm.purchase_id} onValueChange={handlePurchaseSelect}>
+                  <Select
+                    value={createForm.purchase_id}
+                    onValueChange={handlePurchaseSelect}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select the bill being returned" />
                     </SelectTrigger>
                     <SelectContent>
                       {eligiblePurchases.map((p) => (
                         <SelectItem key={p.id} value={String(p.id)}>
-                          #{p.id} · {p.supplier_name} · {formatDate(p.purchase_date)}
+                          #{p.id} · {p.supplier_name} ·{" "}
+                          {formatDate(p.purchase_date)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -526,7 +737,13 @@ export default function InventoryPurchaseReturnsPage() {
                   <Label>Supplier *</Label>
                   <Select
                     value={createForm.supplier_id}
-                    onValueChange={(v) => setCreateForm({ ...createForm, supplier_id: v, purchase_id: "" })}
+                    onValueChange={(v) =>
+                      setCreateForm({
+                        ...createForm,
+                        supplier_id: v,
+                        purchase_id: "",
+                      })
+                    }
                     disabled={!!selectedPurchase}
                   >
                     <SelectTrigger>
@@ -534,7 +751,9 @@ export default function InventoryPurchaseReturnsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {suppliers.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                        <SelectItem key={s.id} value={String(s.id)}>
+                          {s.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -546,18 +765,30 @@ export default function InventoryPurchaseReturnsPage() {
                   <Input
                     type="date"
                     value={createForm.return_date}
-                    onChange={(e) => setCreateForm({ ...createForm, return_date: e.target.value })}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        return_date: e.target.value,
+                      })
+                    }
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Reason</Label>
-                  <Select value={createForm.reason_code} onValueChange={(v) => setCreateForm({ ...createForm, reason_code: v })}>
+                  <Select
+                    value={createForm.reason_code}
+                    onValueChange={(v) =>
+                      setCreateForm({ ...createForm, reason_code: v })
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {REASON_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -575,8 +806,12 @@ export default function InventoryPurchaseReturnsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="supplier_credit">Supplier credit</SelectItem>
-                      <SelectItem value="refund_received">Refund received</SelectItem>
+                      <SelectItem value="supplier_credit">
+                        Supplier credit
+                      </SelectItem>
+                      <SelectItem value="refund_received">
+                        Refund received
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -591,7 +826,8 @@ export default function InventoryPurchaseReturnsPage() {
                     accountFilter={isRefundCustodyAccount}
                   />
                   <p className="text-xs text-muted-foreground">
-                    This account balance increases now. Voiding the return removes the same amount from it.
+                    This account balance increases now. Voiding the return
+                    removes the same amount from it.
                   </p>
                 </div>
               ) : null}
@@ -600,24 +836,35 @@ export default function InventoryPurchaseReturnsPage() {
                 <div className="space-y-0.5">
                   <Label>Goods physically returned</Label>
                   <p className="text-xs text-muted-foreground">
-                    Turn off for a price-dispute credit where nothing physically leaves.
+                    Turn off for a price-dispute credit where nothing physically
+                    leaves.
                   </p>
                 </div>
                 <Switch
                   checked={createForm.goods_physically_returned}
-                  onCheckedChange={(checked) => setCreateForm({ ...createForm, goods_physically_returned: checked })}
+                  onCheckedChange={(checked) =>
+                    setCreateForm({
+                      ...createForm,
+                      goods_physically_returned: checked,
+                    })
+                  }
                 />
               </div>
 
               <div className="space-y-3 border rounded-lg p-4 bg-muted/20">
                 <Label className="text-sm font-semibold">Return Lines</Label>
                 {createLines.map((line, index) => (
-                  <div key={line.key} className="rounded-md border bg-background p-3 space-y-2">
+                  <div
+                    key={line.key}
+                    className="rounded-md border bg-background p-3 space-y-2"
+                  >
                     {user?.restaurant_id && (
                       <InventoryItemSelect
                         restaurantId={user.restaurant_id}
                         value={line.inventory_item_id}
-                        onChange={(itemId) => updateLine(index, { inventory_item_id: itemId })}
+                        onChange={(itemId) =>
+                          updateLine(index, { inventory_item_id: itemId })
+                        }
                         label="Item"
                         disabled={!!line.purchase_line_id}
                       />
@@ -630,7 +877,9 @@ export default function InventoryPurchaseReturnsPage() {
                           step="0.001"
                           min="0.001"
                           value={line.quantity}
-                          onChange={(e) => updateLine(index, { quantity: e.target.value })}
+                          onChange={(e) =>
+                            updateLine(index, { quantity: e.target.value })
+                          }
                         />
                       </div>
                       <div className="space-y-1">
@@ -640,7 +889,9 @@ export default function InventoryPurchaseReturnsPage() {
                           step="0.01"
                           min="0"
                           value={line.unit_cost}
-                          onChange={(e) => updateLine(index, { unit_cost: e.target.value })}
+                          onChange={(e) =>
+                            updateLine(index, { unit_cost: e.target.value })
+                          }
                           placeholder="Defaults to purchase unit cost"
                         />
                       </div>
@@ -651,18 +902,32 @@ export default function InventoryPurchaseReturnsPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setCreateLines([...createLines, newReturnLine()])}
+                  onClick={() =>
+                    setCreateLines([...createLines, newReturnLine()])
+                  }
                 >
                   <Plus className="h-3.5 w-3.5 mr-1" /> Add line
                 </Button>
               </div>
             </div>
             <DialogFooter className="shrink-0 border-t px-5 py-3 sm:px-6">
-              <Button className="h-11 flex-1 sm:flex-none" variant="outline" type="button" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
+              <Button
+                className="h-11 flex-1 sm:flex-none"
+                variant="outline"
+                type="button"
+                onClick={() => setCreateOpen(false)}
+                disabled={createSubmitting}
+              >
                 Cancel
               </Button>
-              <Button className="h-11 flex-[1.3] sm:flex-none" type="submit" disabled={createSubmitting}>
-                {createSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              <Button
+                className="h-11 flex-[1.3] sm:flex-none"
+                type="submit"
+                disabled={createSubmitting}
+              >
+                {createSubmitting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
                 Post Return
               </Button>
             </DialogFooter>
@@ -671,22 +936,40 @@ export default function InventoryPurchaseReturnsPage() {
       </Dialog>
 
       {/* Void Dialog */}
-      <Dialog open={!!voidReturn} onOpenChange={(open) => !open && setVoidReturn(null)}>
+      <Dialog
+        open={!!voidReturn}
+        onOpenChange={(open) => !open && setVoidReturn(null)}
+      >
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Void Purchase Return</DialogTitle>
-            <DialogDescription>This restores the returned stock and reverses the credit.</DialogDescription>
+            <DialogDescription>
+              This restores the returned stock and reverses the credit.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
             <Label>Reason *</Label>
-            <Textarea value={voidReason} onChange={(e) => setVoidReason(e.target.value)} />
+            <Textarea
+              value={voidReason}
+              onChange={(e) => setVoidReason(e.target.value)}
+            />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setVoidReturn(null)} disabled={voidSubmitting}>
+            <Button
+              variant="outline"
+              onClick={() => setVoidReturn(null)}
+              disabled={voidSubmitting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleVoid} disabled={voidSubmitting}>
-              {voidSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button
+              variant="destructive"
+              onClick={handleVoid}
+              disabled={voidSubmitting}
+            >
+              {voidSubmitting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               Void Return
             </Button>
           </DialogFooter>
@@ -696,7 +979,11 @@ export default function InventoryPurchaseReturnsPage() {
         open={detailReturn != null}
         onOpenChange={(open) => !open && setDetailReturn(null)}
         detail={detailReturn ? purchaseReturnDetail(detailReturn) : null}
-        actionHref={detailReturn?.supplier_id ? `/suppliers/${detailReturn.supplier_id}` : null}
+        actionHref={
+          detailReturn?.supplier_id
+            ? `/suppliers/${detailReturn.supplier_id}`
+            : null
+        }
         actionLabel="Open supplier"
       />
     </AppPage>

@@ -15,16 +15,26 @@ import { PageHeader } from "@/components/patterns/page/page-header";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import type {
   FinanceOrderSettlementSummary,
   FinanceSalesDocument,
 } from "@/types/finance-sales";
 
-const formatMoney = (value: number | string) =>
-  `NPR ${Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+const formatMoney = formatCurrency;
+
+function settlementLabel(value: string) {
+  const labels: Record<string, string> = {
+    customer_credit: "Customer credit",
+    paid: "Paid",
+    partially_paid: "Partially paid",
+    partially_returned: "Partially returned",
+    pending: "Pending",
+    returned: "Returned",
+    unpaid: "Unpaid",
+  };
+  return labels[value.trim().toLowerCase()] || "Recorded";
+}
 
 export function documentDetail(
   document: FinanceSalesDocument,
@@ -48,7 +58,7 @@ export function documentDetail(
       {
         title: "Sale overview",
         fields: [
-          { label: "Business date", value: document.business_date },
+          { label: "Business date", value: formatDate(document.business_date) },
           {
             label: "Customer",
             value: document.customer_name || "Cash customer",
@@ -89,7 +99,12 @@ export function documentDetail(
         title: "Totals & settlement",
         fields: [
           ...(Number(document.discount_total) > 0
-            ? [{ label: "Discount", value: formatMoney(document.discount_total) }]
+            ? [
+                {
+                  label: "Discount",
+                  value: formatMoney(document.discount_total),
+                },
+              ]
             : []),
           ...(Number(document.tax_total) > 0
             ? [{ label: "Tax", value: formatMoney(document.tax_total) }]
@@ -186,7 +201,11 @@ export function FinanceSalesWorkspace() {
                 New POS sale
               </Link>
             </Button>
-            <Button variant="outline" className="h-11 rounded-xl" onClick={() => setDialogOpen(true)}>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl"
+              onClick={() => setDialogOpen(true)}
+            >
               <FileText className="mr-2 h-4 w-4" />
               Manual sale
             </Button>
@@ -206,20 +225,19 @@ export function FinanceSalesWorkspace() {
         <MetricCard
           label="Sales value"
           value={formatMoney(
-              documents.reduce(
-                (sum, doc) => sum + Number(doc.grand_total || 0),
-                0,
-              ),
-            )}
+            documents.reduce(
+              (sum, doc) => sum + Number(doc.grand_total || 0),
+              0,
+            ),
+          )}
         />
         <MetricCard
           className="col-span-2 sm:col-span-1"
           label="Outstanding"
           tone="warning"
           value={formatMoney(
-              documents
-                .reduce((sum, doc) => sum + balanceDue(doc), 0),
-            )}
+            documents.reduce((sum, doc) => sum + balanceDue(doc), 0),
+          )}
         />
       </div>
 
@@ -235,101 +253,122 @@ export function FinanceSalesWorkspace() {
         </div>
         {documents.length ? (
           <>
-          <div className="divide-y divide-border md:hidden">
-            {documents.map((document) => (
-              <button
-                key={document.id}
-                type="button"
-                onClick={() => setSelectedDocument(document)}
-                className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{document.document_number}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{document.business_date} · {document.daily_order_number ? `Daily order #${document.daily_order_number}` : document.external_reference || "Manual sale"}</p>
-                  </div>
-                  <p className="shrink-0 text-sm font-semibold tabular-nums">{formatMoney(document.grand_total)}</p>
-                </div>
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <span className="rounded-full bg-muted px-2 py-1 text-xs capitalize">{settlementStatus(document).replaceAll("_", " ")}</span>
-                  <Link onClick={(event) => event.stopPropagation()} className="text-xs font-medium text-primary" href={`/finance/sales/returns?invoice_id=${document.id}`}>Return</Link>
-                </div>
-              </button>
-            ))}
-          </div>
-          <div className="hidden max-w-full overflow-x-auto md:block">
-            <table className="w-full min-w-[960px] text-sm">
-              <thead className="bg-muted/40 text-left text-muted-foreground">
-                <tr>
-                  <th className="p-3">Date</th>
-                  <th className="p-3">Sale</th>
-                  <th className="p-3">Source</th>
-                  <th className="p-3">Order / reference</th>
-                  <th className="p-3">Items</th>
-                  <th className="p-3">Settlement</th>
-                  <th className="p-3 text-right">Total</th>
-                  <th className="p-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map((document) => (
-                  <tr
-                    key={document.id}
-                    tabIndex={0}
-                    role="button"
-                    onClick={() => setSelectedDocument(document)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setSelectedDocument(document);
-                      }
-                    }}
-                    className="cursor-pointer border-t transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
-                  >
-                    <td className="p-3">{document.business_date}</td>
-                    <td className="p-3">
-                      <p className="font-medium">{document.document_number}</p>
-                      {document.fiscal_document_number ? (
-                        <p className="text-xs text-muted-foreground">
-                          Fiscal invoice: {document.fiscal_document_number}
-                        </p>
-                      ) : null}
-                    </td>
-                    <td className="p-3">
-                      <span className="rounded-full bg-muted px-2 py-1 text-xs">
-                        {document.source_type === "pos_order"
-                          ? "POS"
-                          : "Manual"}
-                      </span>
-                    </td>
-                    <td className="p-3 text-muted-foreground">
-                      {document.daily_order_number
-                        ? `Daily order #${document.daily_order_number}`
-                        : document.external_reference || "—"}
-                    </td>
-                    <td className="p-3">{document.lines.length}</td>
-                    <td className="p-3">
-                      <span className="rounded-full bg-muted px-2 py-1 text-xs capitalize">
-                        {settlementStatus(document).replaceAll("_", " ")}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right font-medium">
+            <div className="divide-y divide-border lg:hidden">
+              {documents.map((document) => (
+                <button
+                  key={document.id}
+                  type="button"
+                  onClick={() => setSelectedDocument(document)}
+                  className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">
+                        {document.document_number}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {formatDate(document.business_date)} ·{" "}
+                        {document.daily_order_number
+                          ? `Daily order #${document.daily_order_number}`
+                          : document.external_reference || "Manual sale"}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-semibold tabular-nums">
                       {formatMoney(document.grand_total)}
-                    </td>
-                    <td className="p-3 text-right">
-                      <Link
-                        onClick={(event) => event.stopPropagation()}
-                        className="text-primary hover:underline"
-                        href={`/finance/sales/returns?invoice_id=${document.id}`}
-                      >
-                        Return
-                      </Link>
-                    </td>
+                    </p>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-muted px-2 py-1 text-xs">
+                      {settlementLabel(settlementStatus(document))}
+                    </span>
+                    <Link
+                      onClick={(event) => event.stopPropagation()}
+                      className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      href={`/finance/sales/returns?invoice_id=${document.id}`}
+                    >
+                      Return
+                    </Link>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="hidden max-w-full overflow-x-auto lg:block">
+              <table className="w-full min-w-[960px] text-sm">
+                <thead className="bg-muted/40 text-left text-muted-foreground">
+                  <tr>
+                    <th className="p-3">Date</th>
+                    <th className="p-3">Sale</th>
+                    <th className="p-3">Source</th>
+                    <th className="p-3">Order / reference</th>
+                    <th className="p-3">Items</th>
+                    <th className="p-3">Settlement</th>
+                    <th className="p-3 text-right">Total</th>
+                    <th className="p-3" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {documents.map((document) => (
+                    <tr
+                      key={document.id}
+                      tabIndex={0}
+                      role="button"
+                      onClick={() => setSelectedDocument(document)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedDocument(document);
+                        }
+                      }}
+                      className="cursor-pointer border-t transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                    >
+                      <td className="p-3">
+                        {formatDate(document.business_date)}
+                      </td>
+                      <td className="p-3">
+                        <p className="font-medium">
+                          {document.document_number}
+                        </p>
+                        {document.fiscal_document_number ? (
+                          <p className="text-xs text-muted-foreground">
+                            Fiscal invoice: {document.fiscal_document_number}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="p-3">
+                        <span className="rounded-full bg-muted px-2 py-1 text-xs">
+                          {document.source_type === "pos_order"
+                            ? "POS"
+                            : "Manual"}
+                        </span>
+                      </td>
+                      <td className="p-3 text-muted-foreground">
+                        {document.daily_order_number
+                          ? `Daily order #${document.daily_order_number}`
+                          : document.external_reference || "—"}
+                      </td>
+                      <td className="p-3">{document.lines.length}</td>
+                      <td className="p-3">
+                        <span className="rounded-full bg-muted px-2 py-1 text-xs">
+                          {settlementLabel(settlementStatus(document))}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-medium">
+                        {formatMoney(document.grand_total)}
+                      </td>
+                      <td className="p-3 text-right">
+                        <Link
+                          onClick={(event) => event.stopPropagation()}
+                          className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                          href={`/finance/sales/returns?invoice_id=${document.id}`}
+                        >
+                          Return
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         ) : (
           <div className="p-12 text-center">

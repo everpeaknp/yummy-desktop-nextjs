@@ -76,7 +76,7 @@ test("cashier day-close UI has drawer opening closing and operational status com
     "Settlement pending",
     "Expected cash",
     "Cash sales",
-    "Drops/transfers",
+    "Drops / transfers",
     "previous_retained_float",
     "Confirm and open",
     "Report different amount",

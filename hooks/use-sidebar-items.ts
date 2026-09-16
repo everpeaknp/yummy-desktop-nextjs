@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import {
   LayoutDashboard,
+  LayoutGrid,
   UtensilsCrossed,
   ChefHat,
   ClipboardList,
@@ -63,6 +64,8 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/cash-drawers": Banknote,
   "/transactions": ArrowDownUp,
   "/menu/items": UtensilsCrossed,
+  "/menu/categories": LayoutGrid,
+  "/menu/modifiers": Settings,
   "/kitchen": ChefHat,
   "/inventory": Package,
   "/suppliers": Truck,
@@ -83,7 +86,7 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/tables": Armchair,
   "/reservations": Calendar,
   "/discounts": Percent,
-  "/manage": Settings,
+  "/settings": Settings,
   "/feedback": MessageSquare,
   "/premium": Zap,
 };
@@ -105,7 +108,7 @@ const HOTEL_SIDEBAR_BASE: SidebarItem[] = [
     section: "Hotel",
   },
   { title: "Customers", href: "/customers", icon: Users, section: "Hotel" },
-  { title: "Manage", href: "/manage", icon: Settings, section: "Hotel" },
+  { title: "Settings", href: "/settings", icon: Settings, section: "Hotel" },
 ];
 
 function getHotelSidebarItems(
@@ -136,8 +139,8 @@ function getHotelSidebarItems(
   }
 
   if (financeIndex < 0) {
-    const manageIndex = base.findIndex((item) => item.href === "/manage");
-    const insertAt = manageIndex >= 0 ? manageIndex : base.length;
+    const settingsIndex = base.findIndex((item) => item.href === "/settings");
+    const insertAt = settingsIndex >= 0 ? settingsIndex : base.length;
     return [...base.slice(0, insertAt), analyticsItem, ...base.slice(insertAt)];
   }
 
@@ -221,7 +224,6 @@ export function useSidebarItems(): SidebarItem[] {
           "/manage/suppliers": "inventory.suppliers.enabled",
           "/reservations": "reservations.enabled",
           "/finance/accounting": "finance.accounting.enabled",
-          "/menu/modifiers": "menu.modifiers.enabled",
           "/finance/income": "finance.income_expense.enabled",
           "/finance/expenses": "finance.income_expense.enabled",
           "/cash-drawers": "finance.cash_drawer.enabled",
@@ -305,13 +307,17 @@ export function useSidebarItems(): SidebarItem[] {
           "/finance/income",
         );
         group.subItems!.push(item);
-      } else if (["/manage", "/settings"].includes(item.href)) {
-        const group = getGroup("settings", "Settings", Settings, "/manage");
-        if (item.href !== "/manage") group.subItems!.push(item);
+      } else if (item.href === "/settings") {
+        result.push(item);
       } else if (item.href === "/inventory") {
         result.push(item);
       } else if (["/suppliers", "/manage/suppliers"].includes(item.href)) {
-        result.push({ ...item, title: "Suppliers", href: "/suppliers", icon: Truck });
+        result.push({
+          ...item,
+          title: "Suppliers",
+          href: "/suppliers",
+          icon: Truck,
+        });
       } else {
         result.push(item);
       }
@@ -346,11 +352,13 @@ export function useSidebarItems(): SidebarItem[] {
     }
 
     if (
-      ([
-        "finance.daybook.view",
-        "finance.drawer.transfer.to_safe",
-        "finance.cash.transfer.to_bank",
-      ] as const).some((permission) => hasPermission(user, permission))
+      (
+        [
+          "finance.daybook.view",
+          "finance.drawer.transfer.to_safe",
+          "finance.cash.transfer.to_bank",
+        ] as const
+      ).some((permission) => hasPermission(user, permission))
     ) {
       const group = getGroup(
         "finance",
@@ -429,21 +437,58 @@ export function useSidebarItems(): SidebarItem[] {
     const financeGroup = groups.finance;
     if (financeGroup && hasPermission(user, "finance.income.view")) {
       const financeItems: SidebarItem[] = [
-        { title: "Overview", href: "/finance", icon: CreditCard, isNestedChild: true },
-        { title: "Sales", href: "/finance/sales", icon: Receipt, isNestedChild: true },
-        { title: "Purchases", href: "/inventory/purchases", icon: ShoppingCart, isNestedChild: true },
-        { title: "Other Income", href: "/finance/other-income", icon: CreditCard, isNestedChild: true },
-        { title: "Expenses", href: "/finance/expenses", icon: CreditCard, isNestedChild: true },
-        { title: "Payments", href: "/finance/payments", icon: BadgeDollarSign, isNestedChild: true },
-        { title: "Transactions", href: "/finance/transactions", icon: ArrowDownUp, isNestedChild: true },
+        {
+          title: "Overview",
+          href: "/finance",
+          icon: CreditCard,
+          isNestedChild: true,
+        },
+        {
+          title: "Sales",
+          href: "/finance/sales",
+          icon: Receipt,
+          isNestedChild: true,
+        },
+        {
+          title: "Purchases",
+          href: "/inventory/purchases",
+          icon: ShoppingCart,
+          isNestedChild: true,
+        },
+        {
+          title: "Other Income",
+          href: "/finance/other-income",
+          icon: CreditCard,
+          isNestedChild: true,
+        },
+        {
+          title: "Expenses",
+          href: "/finance/expenses",
+          icon: CreditCard,
+          isNestedChild: true,
+        },
+        {
+          title: "Payments",
+          href: "/finance/payments",
+          icon: BadgeDollarSign,
+          isNestedChild: true,
+        },
+        {
+          title: "Transactions",
+          href: "/finance/transactions",
+          icon: ArrowDownUp,
+          isNestedChild: true,
+        },
       ];
 
       if (
-        ([
-          "finance.daybook.view",
-          "finance.drawer.transfer.to_safe",
-          "finance.cash.transfer.to_bank",
-        ] as const).some((permission) => hasPermission(user, permission))
+        (
+          [
+            "finance.daybook.view",
+            "finance.drawer.transfer.to_safe",
+            "finance.cash.transfer.to_bank",
+          ] as const
+        ).some((permission) => hasPermission(user, permission))
       ) {
         financeItems.splice(6, 0, {
           title: "Cash & Banks",
@@ -457,13 +502,19 @@ export function useSidebarItems(): SidebarItem[] {
         hasPermission(user, "day_close.drawer.open") &&
         !isExplicitlyLocked("finance.cash_drawer.enabled")
       ) {
-        const cashBanksIndex = financeItems.findIndex((item) => item.href === "/finance/operations");
-        financeItems.splice(cashBanksIndex >= 0 ? cashBanksIndex + 1 : financeItems.length, 0, {
-          title: "Cash Drawers",
-          href: "/cash-drawers",
-          icon: Banknote,
-          isNestedChild: true,
-        });
+        const cashBanksIndex = financeItems.findIndex(
+          (item) => item.href === "/finance/operations",
+        );
+        financeItems.splice(
+          cashBanksIndex >= 0 ? cashBanksIndex + 1 : financeItems.length,
+          0,
+          {
+            title: "Cash Drawers",
+            href: "/cash-drawers",
+            icon: Banknote,
+            isNestedChild: true,
+          },
+        );
       }
 
       if (
@@ -520,12 +571,25 @@ export function useSidebarItems(): SidebarItem[] {
 
     if (hotelAvailable) {
       const hotelItem = filterSidebarLinksByAccess(
-        [{ title: "Hotel PMS", href: "/hotel", icon: BedDouble, section: "Hotel" }],
+        [
+          {
+            title: "Hotel PMS",
+            href: "/hotel",
+            icon: BedDouble,
+            section: "Hotel",
+          },
+        ],
         user,
       )[0];
       if (hotelItem && !result.some((item) => item.href === hotelItem.href)) {
-        const dashboardIndex = result.findIndex((item) => item.href === "/dashboard");
-        result.splice(dashboardIndex >= 0 ? dashboardIndex + 1 : 0, 0, hotelItem);
+        const dashboardIndex = result.findIndex(
+          (item) => item.href === "/dashboard",
+        );
+        result.splice(
+          dashboardIndex >= 0 ? dashboardIndex + 1 : 0,
+          0,
+          hotelItem,
+        );
       }
     }
 

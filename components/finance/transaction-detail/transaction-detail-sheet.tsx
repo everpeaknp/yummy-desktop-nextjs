@@ -12,7 +12,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatDateTime } from "@/lib/utils";
 
 export type TransactionDetailField = {
   label: string;
@@ -68,15 +68,38 @@ function humanize(value: string) {
 
 function dateTime(value: string | null | undefined) {
   if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const formatted = formatDateTime(value);
+  return formatted === "—" ? null : formatted;
+}
+
+const statusLabels: Record<string, string> = {
+  cancelled: "Cancelled",
+  completed: "Completed",
+  corrected: "Corrected",
+  customer_credit: "Customer credit",
+  draft: "Draft",
+  failed: "Failed",
+  fully_paid: "Fully paid",
+  fully_settled: "Fully settled",
+  open: "Open",
+  paid: "Paid",
+  partial: "Partial",
+  partially_paid: "Partially paid",
+  pending: "Pending",
+  posted: "Posted",
+  received: "Received",
+  recorded: "Recorded",
+  refunded: "Refunded",
+  returned: "Returned",
+  reversed: "Reversed",
+  settled: "Settled",
+  successful: "Successful",
+  unpaid: "Unpaid",
+  voided: "Voided",
+};
+
+function statusLabel(value: string) {
+  return statusLabels[value.trim().toLowerCase()] || humanize(value);
 }
 
 function statusBadgeTone(status: string | null | undefined) {
@@ -313,7 +336,7 @@ export function TransactionDetailSheet({
                     statusBadgeTone(detail.status),
                   )}
                 >
-                  {humanize(detail.status)}
+                  {statusLabel(detail.status)}
                 </Badge>
               ) : null}
               {detail.badges?.map((badge) => (

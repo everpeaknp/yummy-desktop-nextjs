@@ -12,7 +12,6 @@ import {
   RefreshCw,
   RotateCcw,
   Settings2,
-  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,6 +19,7 @@ import apiClient from "@/lib/api-client";
 import { DrawerSessionApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
 import { getApiErrorMessage } from "@/lib/api-error-message";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import {
   resolveCashDrawerBusinessLine,
   safeCashDrawerReturnPath,
@@ -27,7 +27,6 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -59,11 +58,10 @@ type BaseResponse<T> = {
   data?: T;
 };
 
-function formatMoney(value: number) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+const formatMoney = formatCurrency;
+
+function activeDrawerCountLabel(count: number) {
+  return `${count} active ${count === 1 ? "drawer" : "drawers"}`;
 }
 
 export default function CashDrawersPage() {
@@ -129,37 +127,34 @@ export default function CashDrawersPage() {
 
   const workspaceActions = (
     <>
-          {showBusinessLinePicker ? (
-            <Select
-              value={businessLine}
-              onValueChange={(value) =>
-                changeBusinessLine(value as BusinessLine)
-              }
-            >
-              <SelectTrigger className="h-10 min-w-[190px]">
-                <SelectValue placeholder="Business line" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="restaurant">Restaurant drawers</SelectItem>
-                <SelectItem value="hotel">Hotel drawers</SelectItem>
-              </SelectContent>
-            </Select>
-          ) : null}
-          {returnTo ? (
-            <Button asChild variant="outline" size="sm" className="gap-2">
-              <Link href={returnTo}>
-                <ArrowLeft className="h-4 w-4" />
-                Return to hotel
-              </Link>
-            </Button>
-          ) : null}
-          <Button asChild size="sm" className="gap-2">
-            <Link href="/finance/operations?tab=cash-drawers">
-              <Settings2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Configure drawers</span>
-              <span className="sm:hidden">Configure</span>
-            </Link>
-          </Button>
+      {showBusinessLinePicker ? (
+        <Select
+          value={businessLine}
+          onValueChange={(value) => changeBusinessLine(value as BusinessLine)}
+        >
+          <SelectTrigger className="h-10 min-w-[190px]">
+            <SelectValue placeholder="Business line" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="restaurant">Restaurant drawers</SelectItem>
+            <SelectItem value="hotel">Hotel drawers</SelectItem>
+          </SelectContent>
+        </Select>
+      ) : null}
+      {returnTo ? (
+        <Button asChild variant="outline" size="sm" className="gap-2">
+          <Link href={returnTo}>
+            <ArrowLeft className="h-4 w-4" />
+            Return to hotel
+          </Link>
+        </Button>
+      ) : null}
+      <Button asChild variant="outline" size="sm" className="gap-2">
+        <Link href="/finance/operations?tab=cash-drawers">
+          <Settings2 className="h-4 w-4" />
+          Configure drawers
+        </Link>
+      </Button>
     </>
   );
 
@@ -177,87 +172,76 @@ export default function CashDrawersPage() {
         actions={workspaceActions}
       />
 
-      <div className="flex items-center gap-2 md:hidden">
-        {showBusinessLinePicker ? (
-          <div className="min-w-0 flex-1">
-            <Select
-              value={businessLine}
-              onValueChange={(value) => changeBusinessLine(value as BusinessLine)}
+      {showBusinessLinePicker || returnTo ? (
+        <div className="flex items-center gap-2 md:hidden">
+          {showBusinessLinePicker ? (
+            <div className="min-w-0 flex-1">
+              <Select
+                value={businessLine}
+                onValueChange={(value) =>
+                  changeBusinessLine(value as BusinessLine)
+                }
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue placeholder="Business line" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="restaurant">Restaurant drawers</SelectItem>
+                  <SelectItem value="hotel">Hotel drawers</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          {returnTo ? (
+            <Button
+              asChild
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 shrink-0"
+              aria-label="Return to hotel"
             >
-              <SelectTrigger className="h-11 w-full">
-                <SelectValue placeholder="Business line" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="restaurant">Restaurant drawers</SelectItem>
-                <SelectItem value="hotel">Hotel drawers</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
-        {returnTo ? (
-          <Button asChild variant="outline" size="icon" className="h-11 w-11 shrink-0" aria-label="Return to hotel">
-            <Link href={returnTo}>
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-        ) : null}
-        <Button asChild variant="outline" size="icon" className="h-11 w-11 shrink-0" aria-label="Configure drawers">
-          <Link href="/finance/operations?tab=cash-drawers">
-            <Settings2 className="h-4 w-4" />
-          </Link>
-        </Button>
-      </div>
+              <Link href={returnTo}>
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {!restaurantId ? (
-        <Card className="border-border/70">
-          <CardContent className="flex items-center gap-3 p-5 text-sm text-muted-foreground">
-            <RefreshCw className="h-4 w-4" />
-            Loading restaurant context...
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-3 border-y border-border/70 py-5 text-sm text-muted-foreground">
+          <RefreshCw className="h-4 w-4" />
+          Loading restaurant context...
+        </div>
       ) : (
         <>
-          <Card className="overflow-hidden border-border/70">
-            <CardContent className="flex flex-col gap-3 bg-emerald-500/[0.035] p-4 sm:flex-row sm:items-center sm:justify-between md:p-5">
-              <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 md:h-14 md:w-14 md:rounded-2xl">
-                  <Wallet className="h-5 w-5 text-emerald-600 md:h-7 md:w-7" />
-                </span>
-                <div>
-                  <div className="text-xs font-medium text-muted-foreground">
-                    Cash currently in drawers
-                  </div>
-                  <div className="mt-0.5 text-2xl font-semibold tabular-nums md:mt-1 md:text-3xl md:font-bold">
-                    {formatMoney(activeDrawerCash)}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:border-t-0 sm:pt-0">
-                <span className="rounded-full bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground ring-1 ring-border/70">
-                  {drawerSummary.activeSessionCount} active session
-                  {drawerSummary.activeSessionCount === 1 ? "" : "s"}
-                </span>
-                {drawerSummary.unopenedRetainedCash > 0 ? (
-                  <span className="rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 ring-1 ring-amber-300/60">
-                    {formatMoney(drawerSummary.unopenedRetainedCash)} retained,
-                    unopened
-                  </span>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
+          <section
+            aria-label="Current drawer cash"
+            className="flex items-end justify-between gap-4 border-b border-border/70 pb-4"
+          >
+            <div>
+              <p className="text-sm text-muted-foreground">Cash in drawers</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums sm:text-3xl">
+                {formatMoney(activeDrawerCash)}
+              </p>
+            </div>
+            <div className="max-w-[11rem] pb-0.5 text-right text-xs text-muted-foreground">
+              <p>{activeDrawerCountLabel(drawerSummary.activeSessionCount)}</p>
+              {drawerSummary.unopenedRetainedCash > 0 ? (
+                <p className="mt-1 text-amber-700 dark:text-amber-400">
+                  {formatMoney(drawerSummary.unopenedRetainedCash)} retained
+                </p>
+              ) : null}
+            </div>
+          </section>
 
           <DrawerSessionPanel
             key={drawerWorkspaceKey}
             restaurantId={restaurantId}
             businessLine={businessLine}
-            title={
-              businessLine === "hotel"
-                ? "Hotel drawer workspace"
-                : "Restaurant drawer workspace"
-            }
-            description={`Use this workspace for ${businessLine} opening float, drawer count, settlement, cash movement review, and expected cash checks.`}
-            footerNote="Checkout automatically uses the logged-in cashier's active drawer. Day close only verifies that drawers are closed and settled."
+            title="Active drawer"
+            presentation="flat"
+            footerNote="Checkout uses the logged-in cashier's active drawer. Day close verifies closure and settlement."
             includeAllActiveSessions
             onCashSummaryChange={handleDrawerCashSummary}
           />
@@ -359,31 +343,29 @@ function DrawerHistoryCard({
 
   const items = history?.items ?? [];
   return (
-    <Card className="border-border/70">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center justify-between gap-3 text-base">
-          <span className="flex items-center gap-2">
-            <History className="h-4 w-4" />
-            Drawer history
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="gap-2"
-            onClick={loadHistory}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Refresh
-          </Button>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <section className="space-y-3 border-t border-border/70 pt-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="flex min-h-11 items-center gap-2 text-base font-semibold">
+          <History className="h-4 w-4" />
+          Drawer history
+        </h2>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="shrink-0 gap-2"
+          onClick={loadHistory}
+          disabled={loading}
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+          Refresh
+        </Button>
+      </div>
+      <div className="space-y-3">
         {loading && items.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -395,7 +377,15 @@ function DrawerHistoryCard({
           </div>
         ) : (
           <>
-            <div className="divide-y rounded-md border">
+            <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
+              <div className="hidden grid-cols-[150px_minmax(160px,1fr)_150px_120px_120px_auto] gap-4 bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground lg:grid">
+                <span>Drawer</span>
+                <span>Date</span>
+                <span>Cashier</span>
+                <span className="text-right">Opening</span>
+                <span className="text-right">Closing</span>
+                <span className="text-right">Status / actions</span>
+              </div>
               {items.map((session) => {
                 const hasLaterSameDaySession = items.some(
                   (candidate) =>
@@ -410,7 +400,7 @@ function DrawerHistoryCard({
                     key={session.id}
                     role="button"
                     tabIndex={0}
-                    className="group cursor-pointer px-4 py-3 transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                    className="group cursor-pointer px-4 py-3.5 transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                     onClick={() => setSelectedSession(session)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
@@ -419,37 +409,54 @@ function DrawerHistoryCard({
                       }
                     }}
                   >
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <div className="font-medium">
-                          {session.station} / {session.drawer_key}
+                    <div className="grid gap-3 lg:grid-cols-[150px_minmax(160px,1fr)_150px_120px_120px_auto] lg:items-center">
+                      <div className="min-w-0">
+                        <div className="flex items-start justify-between gap-3 lg:block">
+                          <div className="font-medium">
+                            {session.station} / {session.drawer_key}
+                          </div>
+                          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium capitalize text-muted-foreground lg:hidden">
+                            {statusLabel(session.status)}
+                          </span>
                         </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {session.business_date} ·{" "}
-                          {statusLabel(session.status)}
+                        <div className="mt-1 text-xs text-muted-foreground lg:hidden">
+                          {session.opened_at
+                            ? formatDateTime(session.opened_at)
+                            : formatDate(session.business_date)}
                           {session.cashier_name
-                            ? ` · Cashier ${session.cashier_name}`
+                            ? ` · ${session.cashier_name}`
                             : session.cashier_id
                               ? ` · Cashier #${session.cashier_id}`
                               : ""}
                         </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-sm">
-                        <div className="rounded-lg border border-border/70 bg-background px-3 py-1.5">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <div className="hidden text-sm text-muted-foreground lg:block">
+                        {session.opened_at
+                          ? formatDateTime(session.opened_at)
+                          : formatDate(session.business_date)}
+                      </div>
+                      <div className="hidden min-w-0 truncate text-sm text-muted-foreground lg:block">
+                        {session.cashier_name ||
+                          (session.cashier_id
+                            ? `Cashier #${session.cashier_id}`
+                            : "—")}
+                      </div>
+                      <dl className="grid grid-cols-2 gap-3 text-sm lg:contents">
+                        <div className="flex items-center justify-between gap-3 lg:block lg:text-right">
+                          <dt className="text-xs text-muted-foreground lg:sr-only">
                             Opening
-                          </div>
-                          <div className="font-semibold tabular-nums">
+                          </dt>
+                          <dd className="font-medium tabular-nums lg:mt-0.5">
                             {formatMoney(
                               Number(session.counted_opening_cash ?? 0),
                             )}
-                          </div>
+                          </dd>
                         </div>
-                        <div className="rounded-lg border border-border/70 bg-background px-3 py-1.5">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <div className="flex items-center justify-between gap-3 lg:block lg:text-right">
+                          <dt className="text-xs text-muted-foreground lg:sr-only">
                             Closing
-                          </div>
-                          <div className="font-semibold tabular-nums">
+                          </dt>
+                          <dd className="font-medium tabular-nums lg:mt-0.5">
                             {formatMoney(
                               Number(
                                 session.counted_closing_cash ??
@@ -457,17 +464,22 @@ function DrawerHistoryCard({
                                   0,
                               ),
                             )}
-                          </div>
+                          </dd>
                         </div>
+                      </dl>
+                      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                        <span className="hidden rounded-full bg-muted px-2.5 py-1 text-xs font-medium capitalize text-muted-foreground lg:inline-flex">
+                          {statusLabel(session.status)}
+                        </span>
                         {session.cash_variance != null &&
                         Number(session.cash_variance) !== 0 ? (
-                          <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+                          <span className="rounded-md bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive">
                             Variance{" "}
                             {formatMoney(Number(session.cash_variance))}
                           </span>
                         ) : null}
                         {hasLaterSameDaySession ? (
-                          <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+                          <span className="rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-400">
                             Earlier session - correct latest session
                           </span>
                         ) : null}
@@ -508,68 +520,68 @@ function DrawerHistoryCard({
             ) : null}
           </>
         )}
-      </CardContent>
-      <DrawerHistoryDialog
-        session={selectedSession}
-        open={Boolean(selectedSession)}
-        onOpenChange={(open) => {
-          if (!open) setSelectedSession(null);
-        }}
-      />
-      <Dialog
-        open={Boolean(reopenSession)}
-        onOpenChange={(open) => {
-          if (!open && !reopening) {
-            setReopenSession(null);
-            setReopenReason("");
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reopen drawer for correction?</DialogTitle>
-            <DialogDescription>
-              {reopenSession?.settlement_mode &&
-              reopenSession.settlement_mode !== "retain_all"
-                ? "This creates a compensating reversal for the recorded safe or bank transfer, keeps the original audit trail, and reopens this same session."
-                : "This keeps the original activity and records who reopened it. Recount and settle the drawer again after reopening."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="drawer-reopen-reason">Correction reason</Label>
-            <Textarea
-              id="drawer-reopen-reason"
-              value={reopenReason}
-              onChange={(event) => setReopenReason(event.target.value)}
-              placeholder="Example: Closing cash was entered incorrectly"
-              disabled={reopening}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setReopenSession(null)}
-              disabled={reopening}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void submitReopen()}
-              disabled={reopening}
-            >
-              {reopening ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RotateCcw className="mr-2 h-4 w-4" />
-              )}
-              Reopen drawer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
+        <DrawerHistoryDialog
+          session={selectedSession}
+          open={Boolean(selectedSession)}
+          onOpenChange={(open) => {
+            if (!open) setSelectedSession(null);
+          }}
+        />
+        <Dialog
+          open={Boolean(reopenSession)}
+          onOpenChange={(open) => {
+            if (!open && !reopening) {
+              setReopenSession(null);
+              setReopenReason("");
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reopen drawer for correction?</DialogTitle>
+              <DialogDescription>
+                {reopenSession?.settlement_mode &&
+                reopenSession.settlement_mode !== "retain_all"
+                  ? "This creates a compensating reversal for the recorded safe or bank transfer, keeps the original audit trail, and reopens this same session."
+                  : "This keeps the original activity and records who reopened it. Recount and settle the drawer again after reopening."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="drawer-reopen-reason">Correction reason</Label>
+              <Textarea
+                id="drawer-reopen-reason"
+                value={reopenReason}
+                onChange={(event) => setReopenReason(event.target.value)}
+                placeholder="Example: Closing cash was entered incorrectly"
+                disabled={reopening}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReopenSession(null)}
+                disabled={reopening}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void submitReopen()}
+                disabled={reopening}
+              >
+                {reopening ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                )}
+                Reopen drawer
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </section>
   );
 }
 

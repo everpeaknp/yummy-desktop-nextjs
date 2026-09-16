@@ -24,8 +24,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
 import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import {
+  formatCurrency,
+  formatDate,
+  formatDateTime as formatProductDateTime,
+} from "@/lib/utils";
 import { DaybookReport } from "./daybook-report";
-import type { AccountingDaybook, DaybookCashTransaction } from "@/types/accounting";
+import type {
+  AccountingDaybook,
+  DaybookCashTransaction,
+} from "@/types/accounting";
 import {
   parseDayCloseCurrent,
   parseDayCloseList,
@@ -43,31 +51,25 @@ function yyyyMmDd(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function formatMoney(value: number) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+const formatMoney = formatCurrency;
+const formatDateTime = formatProductDateTime;
 
 function sourceLabel(value: string) {
   return value.replace(/_/g, " ");
 }
 
+function exceptionalStatus(value?: string | null) {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized || normalized === "recorded" || normalized === "confirmed") {
+    return null;
+  }
+  return sourceLabel(normalized);
+}
+
 function EmptyState({ label }: { label: string }) {
-  return <div className="p-8 text-center text-sm text-muted-foreground">{label}</div>;
+  return (
+    <div className="p-8 text-center text-sm text-muted-foreground">{label}</div>
+  );
 }
 
 function TransactionTable({
@@ -81,72 +83,110 @@ function TransactionTable({
 
   return (
     <>
-      <DataList className="rounded-none border-x-0 border-y-0 md:hidden">
-        {rows.map((row, index) => (
-          <ListRow
-            key={`${row.drawer_session_id ?? "none"}-${row.source_type}-${row.source_id ?? index}`}
-            title={row.label || sourceLabel(row.source_type)}
-            description={`${formatDateTime(row.occurred_at)} · ${row.reference || "No reference"}`}
-            meta={<span className="text-xs capitalize text-muted-foreground">{row.status || "recorded"}</span>}
-            trailing={<span className="font-semibold tabular-nums">{formatMoney(row.signed_amount)}</span>}
-          />
-        ))}
+      <DataList className="rounded-none border-x-0 border-y-0 lg:hidden">
+        {rows.map((row, index) => {
+          const status = exceptionalStatus(row.status);
+          return (
+            <ListRow
+              key={`${row.drawer_session_id ?? "none"}-${row.source_type}-${row.source_id ?? index}`}
+              title={row.label || sourceLabel(row.source_type)}
+              description={[
+                formatDateTime(row.occurred_at),
+                row.reference?.trim() || null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              meta={
+                status ? (
+                  <span className="text-xs capitalize text-muted-foreground">
+                    {status}
+                  </span>
+                ) : undefined
+              }
+              trailing={
+                <span className="font-semibold tabular-nums">
+                  {formatMoney(row.signed_amount)}
+                </span>
+              }
+            />
+          );
+        })}
       </DataList>
-      <div className="hidden overflow-x-auto md:block">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="min-w-[150px]">Time</TableHead>
-            <TableHead className="min-w-[180px]">Type</TableHead>
-            <TableHead className="min-w-[140px]">Drawer</TableHead>
-            <TableHead className="min-w-[120px]">Cashier</TableHead>
-            <TableHead className="min-w-[180px]">Route</TableHead>
-            <TableHead className="min-w-[140px]">Reference</TableHead>
-            <TableHead className="min-w-[110px]">Status</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
-            <TableHead className="text-right">Signed</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row, index) => (
-            <TableRow key={`${row.drawer_session_id ?? "none"}-${row.source_type}-${row.source_id ?? index}`}>
-              <TableCell>{formatDateTime(row.occurred_at)}</TableCell>
-              <TableCell>
-                <div className="font-medium capitalize">{row.label || sourceLabel(row.source_type)}</div>
-                <div className="font-mono text-xs text-muted-foreground">{row.source_type}</div>
-              </TableCell>
-              <TableCell>{row.drawer_session_id ?? "-"}</TableCell>
-              <TableCell>{row.cashier_id ?? "-"}</TableCell>
-              <TableCell>
-                {row.source_account || row.destination_account ? (
-                  <div className="text-sm">
-                    <span>{row.source_account || "-"}</span>
-                    <span className="px-1 text-muted-foreground">to</span>
-                    <span>{row.destination_account || "-"}</span>
-                  </div>
-                ) : (
-                  "-"
-                )}
-              </TableCell>
-              <TableCell>
-                {row.reference ? (
-                  <div>
-                    <div>{row.reference}</div>
-                    {row.journal_entry_id ? <div className="text-xs text-muted-foreground">Journal #{row.journal_entry_id}</div> : null}
-                  </div>
-                ) : row.journal_entry_id ? (
-                  <span className="text-xs text-muted-foreground">Journal #{row.journal_entry_id}</span>
-                ) : (
-                  "-"
-                )}
-              </TableCell>
-              <TableCell className="capitalize">{row.status || "-"}</TableCell>
-              <TableCell className="text-right">{formatMoney(row.amount)}</TableCell>
-              <TableCell className="text-right">{formatMoney(row.signed_amount)}</TableCell>
+      <div className="hidden overflow-x-auto lg:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-[150px]">Time</TableHead>
+              <TableHead className="min-w-[180px]">Type</TableHead>
+              <TableHead className="min-w-[140px]">Drawer</TableHead>
+              <TableHead className="min-w-[120px]">Cashier</TableHead>
+              <TableHead className="min-w-[180px]">Route</TableHead>
+              <TableHead className="min-w-[140px]">Reference</TableHead>
+              <TableHead className="min-w-[110px]">Status</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead className="text-right">Signed</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row, index) => (
+              <TableRow
+                key={`${row.drawer_session_id ?? "none"}-${row.source_type}-${row.source_id ?? index}`}
+              >
+                <TableCell>{formatDateTime(row.occurred_at)}</TableCell>
+                <TableCell>
+                  <div className="font-medium capitalize">
+                    {row.label || sourceLabel(row.source_type)}
+                  </div>
+                  {row.label ? (
+                    <div className="text-xs capitalize text-muted-foreground">
+                      {sourceLabel(row.source_type)}
+                    </div>
+                  ) : null}
+                </TableCell>
+                <TableCell>{row.drawer_session_id ?? "-"}</TableCell>
+                <TableCell>{row.cashier_id ?? "-"}</TableCell>
+                <TableCell>
+                  {row.source_account || row.destination_account ? (
+                    <div className="text-sm">
+                      <span>{row.source_account || "-"}</span>
+                      <span className="px-1 text-muted-foreground">to</span>
+                      <span>{row.destination_account || "-"}</span>
+                    </div>
+                  ) : (
+                    "-"
+                  )}
+                </TableCell>
+                <TableCell>
+                  {row.reference ? (
+                    <div>
+                      <div>{row.reference}</div>
+                      {row.journal_entry_id ? (
+                        <div className="text-xs text-muted-foreground">
+                          Journal #{row.journal_entry_id}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : row.journal_entry_id ? (
+                    <span className="text-xs text-muted-foreground">
+                      Journal #{row.journal_entry_id}
+                    </span>
+                  ) : (
+                    "-"
+                  )}
+                </TableCell>
+                <TableCell className="capitalize">
+                  {exceptionalStatus(row.status) || "—"}
+                </TableCell>
+                <TableCell className="text-right">
+                  {formatMoney(row.amount)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {formatMoney(row.signed_amount)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     </>
   );
@@ -160,7 +200,9 @@ export function DaybookClient() {
   const [businessLine, setBusinessLine] = useState("restaurant");
   const [reportMode, setReportMode] = useState<"current" | "closed">("current");
   const [closedDaybooks, setClosedDaybooks] = useState<DayCloseListItem[]>([]);
-  const [selectedClose, setSelectedClose] = useState<DayCloseListItem | null>(null);
+  const [selectedClose, setSelectedClose] = useState<DayCloseListItem | null>(
+    null,
+  );
   const [daybook, setDaybook] = useState<AccountingDaybook | null>(null);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -170,48 +212,54 @@ export function DaybookClient() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && token) await me();
       if (!user && !token) router.push("/");
     };
     void checkAuth();
   }, [user, me, router]);
 
-  const fetchDaybook = useCallback(async ({
-    date,
-    periodStartAt,
-    periodEndAt,
-    dayCloseId,
-  }: {
-    date: string;
-    periodStartAt?: string;
-    periodEndAt?: string;
-    dayCloseId?: number;
-  }) => {
-    if (!restaurantId || !canView) return;
-    setLoading(true);
-    try {
-      const res = await apiClient.get<BaseResponse<AccountingDaybook>>(
-        AccountingApis.daybook({
-          restaurantId,
-          businessDate: date,
-          businessLine,
-          periodStartAt,
-          periodEndAt,
-          dayCloseId,
-        })
-      );
-      setDaybook(res.data?.data ?? null);
-      setLoaded(true);
-    } catch (error) {
-      console.error("Failed to load accounting daybook", error);
-      setDaybook(null);
-      setLoaded(true);
-      toast.error("Failed to load accounting daybook");
-    } finally {
-      setLoading(false);
-    }
-  }, [restaurantId, canView, businessLine]);
+  const fetchDaybook = useCallback(
+    async ({
+      date,
+      periodStartAt,
+      periodEndAt,
+      dayCloseId,
+    }: {
+      date: string;
+      periodStartAt?: string;
+      periodEndAt?: string;
+      dayCloseId?: number;
+    }) => {
+      if (!restaurantId || !canView) return;
+      setLoading(true);
+      try {
+        const res = await apiClient.get<BaseResponse<AccountingDaybook>>(
+          AccountingApis.daybook({
+            restaurantId,
+            businessDate: date,
+            businessLine,
+            periodStartAt,
+            periodEndAt,
+            dayCloseId,
+          }),
+        );
+        setDaybook(res.data?.data ?? null);
+        setLoaded(true);
+      } catch (error) {
+        console.error("Failed to load accounting daybook", error);
+        setDaybook(null);
+        setLoaded(true);
+        toast.error("Failed to load accounting daybook");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [restaurantId, canView, businessLine],
+  );
 
   const loadCurrentDaybook = useCallback(async () => {
     if (!restaurantId || !canView) return;
@@ -277,16 +325,19 @@ export function DaybookClient() {
     }
   }, [restaurantId, canView, businessLine, fetchDaybook]);
 
-  const selectClosedDaybook = useCallback(async (close: DayCloseListItem) => {
-    if (!close.business_date) return;
-    setSelectedClose(close);
-    await fetchDaybook({
-      date: close.business_date,
-      periodStartAt: close.period_start_at,
-      periodEndAt: close.period_end_at,
-      dayCloseId: close.id,
-    });
-  }, [fetchDaybook]);
+  const selectClosedDaybook = useCallback(
+    async (close: DayCloseListItem) => {
+      if (!close.business_date) return;
+      setSelectedClose(close);
+      await fetchDaybook({
+        date: close.business_date,
+        periodStartAt: close.period_start_at,
+        periodEndAt: close.period_end_at,
+        dayCloseId: close.id,
+      });
+    },
+    [fetchDaybook],
+  );
 
   useEffect(() => {
     if (reportMode === "current") {
@@ -316,11 +367,10 @@ export function DaybookClient() {
   }
 
   return (
-    <AppPage width="wide" className="pb-20">
+    <AppPage width="report" className="pb-20">
       <PageHeader
         title="Daybook"
         description="Receipts, payments, transfers, and ledger evidence for a business day."
-        backHref="/finance/reports"
       />
 
       <Tabs
@@ -338,26 +388,31 @@ export function DaybookClient() {
 
       {reportMode === "current" ? (
         <div className="grid gap-3 rounded-md border border-border p-4 md:grid-cols-[180px_auto] md:items-end">
-        <div className="space-y-2">
-          <Label htmlFor="business-line">Business line</Label>
-          <Input
-            id="business-line"
-            value={businessLine}
-            onChange={(event) => setBusinessLine(event.target.value.trim().toLowerCase() || "restaurant")}
-          />
-        </div>
-        <div className="text-sm text-muted-foreground">
-          {restaurantId
-            ? `Live open period for restaurant #${restaurantId}`
-            : "Restaurant scope unavailable"}
-        </div>
+          <div className="space-y-2">
+            <Label htmlFor="business-line">Business line</Label>
+            <Input
+              id="business-line"
+              value={businessLine}
+              onChange={(event) =>
+                setBusinessLine(
+                  event.target.value.trim().toLowerCase() || "restaurant",
+                )
+              }
+            />
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {restaurantId
+              ? `Live open period for restaurant #${restaurantId}`
+              : "Restaurant scope unavailable"}
+          </div>
         </div>
       ) : (
         <div className="rounded-md border border-border">
           <div className="border-b border-border px-4 py-3">
             <h2 className="text-sm font-semibold">Past closed Daybooks</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Each report uses the exact period frozen by its confirmed Day Close.
+              Each report uses the exact period frozen by its confirmed Day
+              Close.
             </p>
           </div>
           {closedDaybooks.length ? (
@@ -375,18 +430,15 @@ export function DaybookClient() {
                 >
                   <div className="text-sm font-semibold">
                     {close.business_date
-                      ? new Date(`${close.business_date}T00:00:00`).toLocaleDateString(undefined, {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })
+                      ? formatDate(close.business_date)
                       : `Day Close #${close.id}`}
                   </div>
                   <div className="mt-1 text-xs capitalize text-muted-foreground">
                     {close.business_line || "restaurant"} · Confirmed
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
-                    {formatDateTime(close.period_start_at)} – {formatDateTime(close.period_end_at)}
+                    {formatDateTime(close.period_start_at)} –{" "}
+                    {formatDateTime(close.period_end_at)}
                   </div>
                 </button>
               ))}
@@ -415,143 +467,235 @@ export function DaybookClient() {
         <div className="space-y-5">
           <DaybookReport daybook={daybook} />
           <Tabs defaultValue="cash" className="w-full">
-          <TabsList className="grid h-auto w-full grid-cols-5">
-            <TabsTrigger value="cash">Cash</TabsTrigger>
-            <TabsTrigger value="instruments">Methods</TabsTrigger>
-            <TabsTrigger value="transfers">Transfers</TabsTrigger>
-            <TabsTrigger value="ledger">Ledger</TabsTrigger>
-            <TabsTrigger value="exceptions">Issues</TabsTrigger>
-          </TabsList>
+            <TabsList className="flex h-auto w-full justify-start overflow-x-auto">
+              <TabsTrigger value="cash" className="min-w-24 flex-1">
+                Cash
+              </TabsTrigger>
+              <TabsTrigger value="instruments" className="min-w-24 flex-1">
+                Methods
+              </TabsTrigger>
+              <TabsTrigger value="transfers" className="min-w-24 flex-1">
+                Transfers
+              </TabsTrigger>
+              <TabsTrigger value="ledger" className="min-w-24 flex-1">
+                Ledger
+              </TabsTrigger>
+              <TabsTrigger value="exceptions" className="min-w-24 flex-1">
+                Issues
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="cash" className="rounded-md border border-border">
-            <TransactionTable
-              rows={daybook.cash_control.rows}
-              emptyLabel="No drawer cash movements were recorded for this day."
-            />
-          </TabsContent>
+            <TabsContent
+              value="cash"
+              className="rounded-md border border-border"
+            >
+              <TransactionTable
+                rows={daybook.cash_control.rows}
+                emptyLabel="No drawer cash movements were recorded for this day."
+              />
+            </TabsContent>
 
-          <TabsContent value="instruments" className="rounded-md border border-border">
-            {daybook.payment_instruments.length === 0 ? (
-              <EmptyState label="No card or digital instrument transactions were recorded for this day." />
-            ) : (
-              <>
-              <div className="divide-y divide-border md:hidden">
-                {daybook.payment_instruments.map((row) => (
-                  <div key={`${row.payment_method}-${row.instrument ?? "none"}`} className="flex min-h-16 items-center justify-between gap-3 px-4 py-3">
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium capitalize">{row.payment_method}</span>
-                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">{row.instrument || "No instrument"} · {row.clearing_status}</span>
-                    </span>
-                    <span className="shrink-0 text-right text-sm"><span className="block font-semibold tabular-nums">{formatMoney(row.expected_amount)}</span><span className="text-xs text-muted-foreground">Settled {formatMoney(row.settled_amount)}</span></span>
-                  </div>
-                ))}
-              </div>
-              <div className="hidden overflow-x-auto md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Payment method</TableHead>
-                      <TableHead>Instrument</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Settlement</TableHead>
-                      <TableHead className="text-right">Expected</TableHead>
-                      <TableHead className="text-right">Settled</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+            <TabsContent
+              value="instruments"
+              className="rounded-md border border-border"
+            >
+              {daybook.payment_instruments.length === 0 ? (
+                <EmptyState label="No card or digital instrument transactions were recorded for this day." />
+              ) : (
+                <>
+                  <div className="divide-y divide-border lg:hidden">
                     {daybook.payment_instruments.map((row) => (
-                      <TableRow key={`${row.payment_method}-${row.instrument ?? "none"}`}>
-                        <TableCell className="capitalize">{row.payment_method}</TableCell>
-                        <TableCell>{row.instrument || "-"}</TableCell>
-                        <TableCell className="capitalize">{row.clearing_status}</TableCell>
-                        <TableCell>{row.settlement_batch_id ? `Batch #${row.settlement_batch_id}` : "-"}</TableCell>
-                        <TableCell className="text-right">{formatMoney(row.expected_amount)}</TableCell>
-                        <TableCell className="text-right">{formatMoney(row.settled_amount)}</TableCell>
-                      </TableRow>
+                      <div
+                        key={`${row.payment_method}-${row.instrument ?? "none"}`}
+                        className="flex min-h-16 items-center justify-between gap-3 px-4 py-3"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium capitalize">
+                            {sourceLabel(row.payment_method)}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            {row.instrument || "No instrument"} ·{" "}
+                            {sourceLabel(row.clearing_status)}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right text-sm">
+                          <span className="block font-semibold tabular-nums">
+                            {formatMoney(row.expected_amount)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            Settled {formatMoney(row.settled_amount)}
+                          </span>
+                        </span>
+                      </div>
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
-              </>
-            )}
-          </TabsContent>
-
-          <TabsContent value="transfers" className="rounded-md border border-border">
-            <TransactionTable rows={daybook.transfers} emptyLabel="No drawer transfers were recorded for this day." />
-          </TabsContent>
-
-          <TabsContent value="ledger" className="rounded-md border border-border p-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <div className="text-sm text-muted-foreground">Finance events</div>
-                <div className="text-2xl font-semibold">{daybook.ledger_impact.finance_event_count}</div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">Journals</div>
-                <div className="text-2xl font-semibold">{daybook.ledger_impact.journal_count}</div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">Total debit</div>
-                <div className="text-2xl font-semibold">{formatMoney(daybook.ledger_impact.total_debit)}</div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">Total credit</div>
-                <div className="text-2xl font-semibold">{formatMoney(daybook.ledger_impact.total_credit)}</div>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="exceptions" className="rounded-md border border-border">
-            {daybook.exceptions.length === 0 ? (
-              <div className="flex items-center gap-2 p-6 text-sm text-emerald-700 dark:text-emerald-300">
-                <CheckCircle2 className="h-4 w-4" />
-                No blocking accounting exceptions for this day.
-              </div>
-            ) : (
-              <>
-              <div className="divide-y divide-border md:hidden">
-                {daybook.exceptions.map((row) => (
-                  <div key={row.kind} className="flex min-h-16 items-center justify-between gap-3 px-4 py-3">
-                    <span className="min-w-0">
-                      <span className="flex items-center gap-2 text-sm font-medium">{row.blocking ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" /> : null}<span className="truncate">{row.label}</span></span>
-                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">{row.kind} · {row.count} occurrence{row.count === 1 ? "" : "s"}</span>
-                    </span>
-                    <span className="shrink-0 text-sm font-semibold tabular-nums">{formatMoney(row.amount)}</span>
                   </div>
-                ))}
+                  <div className="hidden overflow-x-auto lg:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Payment method</TableHead>
+                          <TableHead>Instrument</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Settlement</TableHead>
+                          <TableHead className="text-right">Expected</TableHead>
+                          <TableHead className="text-right">Settled</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {daybook.payment_instruments.map((row) => (
+                          <TableRow
+                            key={`${row.payment_method}-${row.instrument ?? "none"}`}
+                          >
+                            <TableCell className="capitalize">
+                              {sourceLabel(row.payment_method)}
+                            </TableCell>
+                            <TableCell>{row.instrument || "-"}</TableCell>
+                            <TableCell className="capitalize">
+                              {sourceLabel(row.clearing_status)}
+                            </TableCell>
+                            <TableCell>
+                              {row.settlement_batch_id
+                                ? `Batch #${row.settlement_batch_id}`
+                                : "-"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatMoney(row.expected_amount)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatMoney(row.settled_amount)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent
+              value="transfers"
+              className="rounded-md border border-border"
+            >
+              <TransactionTable
+                rows={daybook.transfers}
+                emptyLabel="No drawer transfers were recorded for this day."
+              />
+            </TabsContent>
+
+            <TabsContent
+              value="ledger"
+              className="rounded-md border border-border p-4"
+            >
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <div className="text-sm text-muted-foreground">
+                    Finance events
+                  </div>
+                  <div className="text-2xl font-semibold">
+                    {daybook.ledger_impact.finance_event_count}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Journals</div>
+                  <div className="text-2xl font-semibold">
+                    {daybook.ledger_impact.journal_count}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">
+                    Total debit
+                  </div>
+                  <div className="text-2xl font-semibold">
+                    {formatMoney(daybook.ledger_impact.total_debit)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">
+                    Total credit
+                  </div>
+                  <div className="text-2xl font-semibold">
+                    {formatMoney(daybook.ledger_impact.total_credit)}
+                  </div>
+                </div>
               </div>
-              <div className="hidden overflow-x-auto md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Exception</TableHead>
-                      <TableHead>Kind</TableHead>
-                      <TableHead>Blocking</TableHead>
-                      <TableHead className="text-right">Count</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+            </TabsContent>
+
+            <TabsContent
+              value="exceptions"
+              className="rounded-md border border-border"
+            >
+              {daybook.exceptions.length === 0 ? (
+                <div className="flex items-center gap-2 p-6 text-sm text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle2 className="h-4 w-4" />
+                  No blocking accounting exceptions for this day.
+                </div>
+              ) : (
+                <>
+                  <div className="divide-y divide-border lg:hidden">
                     {daybook.exceptions.map((row) => (
-                      <TableRow key={row.kind}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {row.blocking ? <AlertTriangle className="h-4 w-4 text-amber-600" /> : null}
-                            <span>{row.label}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>{row.kind}</TableCell>
-                        <TableCell>{row.blocking ? "Yes" : "No"}</TableCell>
-                        <TableCell className="text-right">{row.count}</TableCell>
-                        <TableCell className="text-right">{formatMoney(row.amount)}</TableCell>
-                      </TableRow>
+                      <div
+                        key={row.kind}
+                        className="flex min-h-16 items-center justify-between gap-3 px-4 py-3"
+                      >
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-2 text-sm font-medium">
+                            {row.blocking ? (
+                              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                            ) : null}
+                            <span className="truncate">{row.label}</span>
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            {sourceLabel(row.kind)} · {row.count} occurrence
+                            {row.count === 1 ? "" : "s"}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums">
+                          {formatMoney(row.amount)}
+                        </span>
+                      </div>
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
-              </>
-            )}
-          </TabsContent>
+                  </div>
+                  <div className="hidden overflow-x-auto lg:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Exception</TableHead>
+                          <TableHead>Kind</TableHead>
+                          <TableHead>Blocking</TableHead>
+                          <TableHead className="text-right">Count</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {daybook.exceptions.map((row) => (
+                          <TableRow key={row.kind}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {row.blocking ? (
+                                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                ) : null}
+                                <span>{row.label}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="capitalize">
+                              {sourceLabel(row.kind)}
+                            </TableCell>
+                            <TableCell>{row.blocking ? "Yes" : "No"}</TableCell>
+                            <TableCell className="text-right">
+                              {row.count}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatMoney(row.amount)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
+            </TabsContent>
           </Tabs>
         </div>
       ) : null}

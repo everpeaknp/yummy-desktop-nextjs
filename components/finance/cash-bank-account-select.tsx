@@ -16,6 +16,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import apiClient from "@/lib/api-client";
 import { CashAndBanksApis } from "@/lib/api/endpoints";
+import { formatCurrency } from "@/lib/utils";
 
 export interface CashBankAccountOption {
   account_type: "drawer" | "bank";
@@ -28,14 +29,17 @@ export interface CashBankAccountOption {
 }
 
 function accountLabel(account: CashBankAccountOption): string {
-  const balance = `Rs. ${Number(account.current_balance || 0).toLocaleString()}`;
+  const balance = formatCurrency(account.current_balance);
   if (account.account_type === "drawer") {
     return `${account.name} · ${balance}`;
   }
   switch (account.bank_type) {
-    case "custom": return `${account.name} · ${balance}`;
-    case "owner_equity": return `${account.name} · ${balance}`;
-    default: return `${account.name} · ${balance}`;
+    case "custom":
+      return `${account.name} · ${balance}`;
+    case "owner_equity":
+      return `${account.name} · ${balance}`;
+    default:
+      return `${account.name} · ${balance}`;
   }
 }
 
@@ -94,7 +98,8 @@ export function CashBankAccountSelect({
         setAccounts([]);
         onChange(null);
         toast.error(
-          error.response?.data?.detail || "Could not load Cash & Banks accounts.",
+          error.response?.data?.detail ||
+            "Could not load Cash & Banks accounts.",
         );
       } finally {
         if (!cancelled) setLoading(false);
@@ -112,7 +117,12 @@ export function CashBankAccountSelect({
     const group = groupLabel(account);
     (groups[group] ??= []).push(account);
   }
-  const groupOrder = ["Cash Drawers", "Safe & Cash Accounts", "Bank Accounts", "Owner Accounts"];
+  const groupOrder = [
+    "Cash Drawers",
+    "Safe & Cash Accounts",
+    "Bank Accounts",
+    "Owner Accounts",
+  ];
 
   const selectedKey = value ? `${value.account_type}:${value.id}` : "";
 
@@ -131,7 +141,9 @@ export function CashBankAccountSelect({
         }
       >
         <SelectTrigger>
-          <SelectValue placeholder={loading ? "Loading accounts..." : "Select account"} />
+          <SelectValue
+            placeholder={loading ? "Loading accounts..." : "Select account"}
+          />
         </SelectTrigger>
         <SelectContent>
           {groupOrder
@@ -153,7 +165,8 @@ export function CashBankAccountSelect({
       </Select>
       {!loading && accounts.length === 0 ? (
         <p className="text-xs text-destructive">
-          No accounts available. Add a safe, bank, or owner account under Cash &amp; Banks, or open a cash drawer.
+          No accounts available. Add a safe, bank, or owner account under Cash
+          &amp; Banks, or open a cash drawer.
         </p>
       ) : null}
     </div>

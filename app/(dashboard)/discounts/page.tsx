@@ -1,21 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAuth } from "@/hooks/use-auth";
+import { useCallback, useEffect, useState } from "react";
+import { Calendar, Edit, Percent, Plus, Tag, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+
 import apiClient from "@/lib/api-client";
 import { DiscountApis } from "@/lib/api/endpoints";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Plus, Percent, Calendar, Loader2, Trash2, Edit, Tag } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { DiscountDialog } from "@/components/discounts/discount-dialog";
+import { formatDate } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { useRestaurant } from "@/hooks/use-restaurant";
 import { useToast } from "@/components/ui/use-toast";
-import { AppPage } from "@/components/patterns/page/app-page";
-import { PageHeader } from "@/components/patterns/page/page-header";
-import { SearchField } from "@/components/patterns/controls/search-field";
-import { DataList, ListRow } from "@/components/patterns/data/data-list";
-import { EmptyState, LoadingState } from "@/components/patterns/feedback/feedback-state";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,98 +22,129 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-interface Discount {
-  id: number;
-  name: string;
-  code?: string;
-  type: string;
-  value: number;
-  description?: string;
-  min_order_amount?: number;
-  valid_from?: string;
-  valid_until?: string;
-  max_discount_amount?: number;
-}
+import { DiscountDialog } from "@/components/discounts/discount-dialog";
+import {
+  discountApplicabilityLabel,
+  discountTypeLabel,
+  discountValueLabel,
+  type DiscountRecord,
+} from "@/components/discounts/discount-presentation";
+import { SearchField } from "@/components/patterns/controls/search-field";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
+import {
+  EmptyState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
+import { AppPage } from "@/components/patterns/page/app-page";
+import { PageHeader } from "@/components/patterns/page/page-header";
 
 export default function DiscountsPage() {
-  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [discounts, setDiscounts] = useState<DiscountRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingDiscount, setEditingDiscount] = useState<DiscountRecord | null>(
+    null,
+  );
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [discountToDelete, setDiscountToDelete] =
+    useState<DiscountRecord | null>(null);
+  const user = useAuth((state) => state.user);
+  const me = useAuth((state) => state.me);
+  const restaurant = useRestaurant((state) => state.restaurant);
+  const router = useRouter();
   const { toast } = useToast();
 
-  const user = useAuth(state => state.user);
-  const me = useAuth(state => state.me);
-  const router = useRouter();
-
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
-
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [discountToDelete, setDiscountToDelete] = useState<Discount | null>(null);
-
-  // 1. Session Restoration
   useEffect(() => {
     const checkAuth = async () => {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && token) await me();
-      if (!user && !token) router.push('/');
+      if (!user && !token) router.push("/");
     };
     const timer = setTimeout(checkAuth, 500);
     return () => clearTimeout(timer);
   }, [user, me, router]);
 
-  // 2. Fetch Discounts
-  const fetchDiscounts = async () => {
+  const fetchDiscounts = useCallback(async () => {
     if (!user?.restaurant_id) return;
     setLoading(true);
-
     try {
-      const url = DiscountApis.listDiscountsForRestaurant(user.restaurant_id);
-      const response = await apiClient.get(url);
+      const response = await apiClient.get(
+        DiscountApis.listDiscountsForRestaurant(user.restaurant_id),
+      );
       if (response.data.status === "success") {
         setDiscounts(response.data.data.discounts || response.data.data || []);
       }
-    } catch (err) {
-      console.error("Failed to fetch discounts:", err);
-      toast({ title: "Error", description: "Failed to load discounts.", variant: "destructive" });
+    } catch (error) {
+      console.error("Failed to fetch discounts:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load discounts.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast, user?.restaurant_id]);
 
   useEffect(() => {
-    if (user?.restaurant_id) {
-      fetchDiscounts();
-    }
-  }, [user]);
+    if (user?.restaurant_id) fetchDiscounts();
+  }, [fetchDiscounts, user?.restaurant_id]);
 
-  const handleCreate = async (data: any) => {
+  const handleCreate = async (data: Omit<DiscountRecord, "id">) => {
     if (!user?.restaurant_id) return;
     try {
       await apiClient.post(DiscountApis.createDiscount, {
         ...data,
-        restaurant_id: user.restaurant_id
+        restaurant_id: user.restaurant_id,
       });
-      toast({ title: "Success", description: "Discount created successfully." });
+      toast({ title: "Discount created" });
       fetchDiscounts();
-    } catch (error: any) {
-        console.error(error);
-        const msg = error.response?.data?.message || "Failed to create discount.";
-        toast({ title: "Error", description: msg, variant: "destructive" });
+    } catch (error: unknown) {
+      const message =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof error.response === "object" &&
+        error.response !== null &&
+        "data" in error.response &&
+        typeof error.response.data === "object" &&
+        error.response.data !== null &&
+        "message" in error.response.data &&
+        typeof error.response.data.message === "string"
+          ? error.response.data.message
+          : "Failed to create discount.";
+      toast({ title: "Error", description: message, variant: "destructive" });
     }
   };
 
-  const handleUpdate = async (data: any) => {
+  const handleUpdate = async (data: Omit<DiscountRecord, "id">) => {
     if (!editingDiscount) return;
     try {
-      await apiClient.patch(DiscountApis.updateDiscount(editingDiscount.id), data);
-      toast({ title: "Success", description: "Discount updated successfully." });
+      await apiClient.patch(
+        DiscountApis.updateDiscount(editingDiscount.id),
+        data,
+      );
+      toast({ title: "Discount updated" });
       fetchDiscounts();
-    } catch (error: any) {
-        console.error(error);
-        const msg = error.response?.data?.message || "Failed to update discount.";
-        toast({ title: "Error", description: msg, variant: "destructive" });
+    } catch (error: unknown) {
+      const message =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof error.response === "object" &&
+        error.response !== null &&
+        "data" in error.response &&
+        typeof error.response.data === "object" &&
+        error.response.data !== null &&
+        "message" in error.response.data &&
+        typeof error.response.data.message === "string"
+          ? error.response.data.message
+          : "Failed to update discount.";
+      toast({ title: "Error", description: message, variant: "destructive" });
     }
   };
 
@@ -125,54 +152,48 @@ export default function DiscountsPage() {
     if (!discountToDelete) return;
     try {
       await apiClient.delete(DiscountApis.deleteDiscount(discountToDelete.id));
-      toast({ title: "Success", description: "Discount deleted successfully." });
+      toast({ title: "Discount deleted" });
       fetchDiscounts();
     } catch (error) {
-        toast({ title: "Error", description: "Failed to delete discount.", variant: "destructive" });
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to delete discount.",
+        variant: "destructive",
+      });
     } finally {
-        setDeleteDialogOpen(false);
-        setDiscountToDelete(null);
+      setDeleteDialogOpen(false);
+      setDiscountToDelete(null);
     }
   };
+
+  const filteredDiscounts = discounts.filter((discount) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+    return [discount.name, discount.code, discount.description]
+      .filter(Boolean)
+      .some((value) => value?.toLowerCase().includes(query));
+  });
 
   const openCreateDialog = () => {
     setEditingDiscount(null);
     setDialogOpen(true);
   };
 
-  const openEditDialog = (discount: Discount) => {
-    setEditingDiscount(discount);
-    setDialogOpen(true);
-  };
-
-  const openDeleteDialog = (discount: Discount) => {
-      setDiscountToDelete(discount);
-      setDeleteDialogOpen(true);
-  };
-
-  const filteredDiscounts = discounts.filter((discount) => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return [discount.name, discount.code, discount.description]
-      .filter(Boolean)
-      .some((value) => value!.toLowerCase().includes(query));
-  });
-
   return (
-    <AppPage width="wide">
-      <div className="hidden md:block">
-        <PageHeader
-          title="Discounts"
-          description="Manage promo codes and offers."
-          actions={
-            <Button onClick={openCreateDialog} className="h-11 rounded-xl">
-              <Plus className="mr-1.5 h-4 w-4" /> New discount
-            </Button>
-          }
-        />
-      </div>
+    <AppPage width="standard">
+      <PageHeader
+        className="hidden lg:flex"
+        title="Discounts"
+        description="Configure customer offers, eligibility, and pricing rules."
+        actions={
+          <Button onClick={openCreateDialog} className="h-11 rounded-xl">
+            <Plus className="mr-1.5 h-4 w-4" /> New discount
+          </Button>
+        }
+      />
 
-      <div className="flex items-center gap-2 md:hidden">
+      <div className="flex items-center gap-2 lg:hidden">
         <SearchField
           containerClassName="flex-1"
           placeholder="Search discounts"
@@ -180,13 +201,18 @@ export default function DiscountsPage() {
           onChange={(event) => setSearchQuery(event.target.value)}
           onClear={() => setSearchQuery("")}
         />
-        <Button size="icon" onClick={openCreateDialog} className="h-11 w-11 shrink-0 rounded-xl" aria-label="New discount">
-          <Plus className="h-4 w-4" />
+        <Button
+          size="icon"
+          onClick={openCreateDialog}
+          className="h-11 w-11 shrink-0 rounded-xl"
+          aria-label="New discount"
+        >
+          <Plus className="h-5 w-5" />
         </Button>
       </div>
 
       <SearchField
-        containerClassName="hidden max-w-sm md:block"
+        containerClassName="hidden max-w-sm lg:block"
         placeholder="Search discounts"
         value={searchQuery}
         onChange={(event) => setSearchQuery(event.target.value)}
@@ -198,95 +224,89 @@ export default function DiscountsPage() {
       ) : filteredDiscounts.length === 0 ? (
         <EmptyState
           icon={<Percent className="h-5 w-5" />}
-          title={discounts.length ? "No discounts match your search" : "No discounts yet"}
-          description={discounts.length ? "Try another name or code." : "Create an offer for a menu item or order."}
+          title={
+            discounts.length
+              ? "No discounts match your search"
+              : "No discounts yet"
+          }
+          description={
+            discounts.length
+              ? "Try another name or code."
+              : "Create an offer for all menu items, selected items, or categories."
+          }
           actionLabel={discounts.length ? undefined : "New discount"}
           onAction={discounts.length ? undefined : openCreateDialog}
         />
       ) : (
-        <>
-          <DataList className="md:hidden">
-            {filteredDiscounts.map((discount) => {
-              const value = discount.type === "percentage" ? `${discount.value}% off` : `Rs. ${discount.value} off`;
-              const expiry = discount.valid_until ? `Ends ${new Date(discount.valid_until).toLocaleDateString()}` : "No expiry";
-              return (
-                <ListRow
-                  key={discount.id}
-                  interactive
-                  onClick={() => openEditDialog(discount)}
-                  leading={<Percent className="h-4 w-4 text-orange-600" />}
-                  title={discount.name}
-                  description={`${discount.code || "Automatic"} · ${expiry}`}
-                  meta={<span className="font-semibold text-foreground">{value}</span>}
-                  trailing={
-                    <button
-                      type="button"
+        <DataList>
+          {filteredDiscounts.map((discount) => {
+            const period = discount.valid_until
+              ? `Ends ${formatDate(discount.valid_until)}`
+              : "No end date";
+            return (
+              <ListRow
+                key={discount.id}
+                interactive
+                onClick={() => {
+                  setEditingDiscount(discount);
+                  setDialogOpen(true);
+                }}
+                leading={<Tag className="h-4 w-4" />}
+                title={discount.name}
+                description={`${discount.code ? `Code: ${discount.code}` : "Automatic"} · ${discountApplicabilityLabel(discount)} · ${period}`}
+                meta={
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={
+                        discount.is_active === false ? "outline" : "secondary"
+                      }
+                    >
+                      {discount.is_active === false ? "Inactive" : "Active"}
+                    </Badge>
+                    <span className="whitespace-nowrap font-semibold tabular-nums text-foreground">
+                      {discountValueLabel(discount, restaurant?.currency)}
+                    </span>
+                  </div>
+                }
+                trailing={
+                  <div className="flex items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-11 w-11 rounded-xl"
+                      aria-label={`Edit ${discount.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setEditingDiscount(discount);
+                        setDialogOpen(true);
+                      }}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-11 w-11 rounded-xl text-destructive hover:text-destructive"
                       aria-label={`Delete ${discount.name}`}
-                      onClick={(event) => { event.stopPropagation(); openDeleteDialog(discount); }}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setDiscountToDelete(discount);
+                        setDeleteDialogOpen(true);
+                      }}
                     >
                       <Trash2 className="h-4 w-4" />
-                    </button>
-                  }
-                />
-              );
-            })}
-          </DataList>
-
-          <div className="hidden grid-cols-1 gap-4 md:grid md:grid-cols-2 xl:grid-cols-3">
-            {filteredDiscounts.map((discount) => (
-              <Card key={discount.id} className="group relative overflow-hidden rounded-2xl border-border transition-colors hover:bg-muted/30">
-                <CardContent className="p-4">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center gap-3">
-                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400">
-                        <Tag className="h-5 w-5" />
-                     </div>
-                     <div>
-                        <h3 className="font-semibold text-base">{discount.name}</h3>
-                        <p className="text-xs text-muted-foreground line-clamp-1">{discount.code || "No code"}</p>
-                     </div>
-                  </div>
-                  <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900">
-                    {discount.type === 'percentage' ? `${discount.value}% OFF` : `Rs. ${discount.value} OFF`}
-                  </Badge>
-                </div>
-
-                <div className="space-y-2 text-sm text-muted-foreground mb-4">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 opacity-70" />
-                    <span>Expires: {discount.valid_until ? new Date(discount.valid_until).toLocaleDateString() : 'Never'}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                     <span className="opacity-70">Min Order:</span>
-                     <span className="font-medium text-foreground">Rs. {discount.min_order_amount || 0}</span>
-                  </div>
-                  {discount.max_discount_amount && (
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="opacity-70">Max Cap:</span>
-                        <span className="font-medium text-foreground">Rs. {discount.max_discount_amount}</span>
-                     </div>
-                  )}
-                </div>
-
-                <div className="mt-4 flex items-center gap-2 border-t border-dashed pt-4">
-                    <Button variant="outline" size="sm" className="flex-1 rounded-xl" onClick={() => openEditDialog(discount)}>
-                        <Edit className="w-3 h-3 mr-2" /> Edit
                     </Button>
-                    <Button variant="ghost" size="sm" className="rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => openDeleteDialog(discount)}>
-                        <Trash2 className="w-4 h-4" />
-                    </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          </div>
-        </>
+                  </div>
+                }
+              />
+            );
+          })}
+        </DataList>
       )}
 
-      <DiscountDialog 
-        open={dialogOpen} 
-        onOpenChange={setDialogOpen} 
+      <DiscountDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
         onSubmit={editingDiscount ? handleUpdate : handleCreate}
         initialData={editingDiscount}
       />
@@ -294,18 +314,26 @@ export default function DiscountsPage() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Discount?</AlertDialogTitle>
+            <AlertDialogTitle>Delete discount?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete <span className="font-bold">{discountToDelete?.code}</span>? This action cannot be undone.
+              This permanently deletes
+              <span className="font-semibold text-foreground">
+                {` ${discountToDelete?.name || "this discount"}`}
+              </span>
+              .
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={handleDelete}>Delete</AlertDialogAction>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={handleDelete}
+            >
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </AppPage>
   );
 }

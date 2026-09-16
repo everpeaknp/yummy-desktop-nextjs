@@ -14,6 +14,7 @@ import {
 import { StationPicker } from "@/components/stations/station-picker";
 import apiClient from "@/lib/api-client";
 import { InventoryApis } from "@/lib/api/endpoints";
+import { formatCurrency } from "@/lib/utils";
 
 export interface PurchaseLineDraft {
   key: string;
@@ -43,7 +44,14 @@ export function newPurchaseLineDraft(): PurchaseLineDraft {
     mode: "existing",
     inventoryItemId: null,
     stationId: null,
-    newItem: { name: "", unit: "", min_stock_level: "0", station: "general", stationId: null, storage_location: "" },
+    newItem: {
+      name: "",
+      unit: "",
+      min_stock_level: "0",
+      station: "general",
+      stationId: null,
+      storage_location: "",
+    },
     orderedQuantity: "",
     purchaseUnit: "",
     unitConversionFactor: "1",
@@ -84,7 +92,9 @@ function DuplicateItemWarning({
         setMatches(response.data.data || []);
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Could not check for similar items.");
+      toast.error(
+        error.response?.data?.detail || "Could not check for similar items.",
+      );
     } finally {
       setChecking(false);
       setChecked(true);
@@ -93,14 +103,22 @@ function DuplicateItemWarning({
 
   return (
     <div className="space-y-1">
-      <Button type="button" variant="ghost" size="sm" onClick={runCheck} disabled={checking} className="h-7 text-xs gap-1 px-2">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={runCheck}
+        disabled={checking}
+        className="h-7 text-xs gap-1 px-2"
+      >
         <Search className="h-3 w-3" />
         {checking ? "Checking..." : "Check for similar items"}
       </Button>
       {checked && matches.length > 0 ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-2 text-xs space-y-1">
           <p className="font-medium text-amber-800 dark:text-amber-300">
-            Similar items already exist -- pick one instead of creating a duplicate?
+            Similar items already exist -- pick one instead of creating a
+            duplicate?
           </p>
           {matches.map((item) => (
             <button
@@ -142,7 +160,10 @@ export function PurchaseLineItemsEditor({
     onChange(updated);
   };
 
-  const updateNewItem = (index: number, patch: Partial<PurchaseLineDraft["newItem"]>) => {
+  const updateNewItem = (
+    index: number,
+    patch: Partial<PurchaseLineDraft["newItem"]>,
+  ) => {
     updateLine(index, { newItem: { ...lines[index].newItem, ...patch } });
   };
 
@@ -153,18 +174,21 @@ export function PurchaseLineItemsEditor({
       <div className="flex items-center justify-between">
         <Label className="text-sm font-semibold">Purchase Lines</Label>
         <span className="text-xs text-muted-foreground">
-          Total: Rs. {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          Total: {formatCurrency(total)}
         </span>
       </div>
 
       {lines.length === 0 ? (
         <div className="text-center py-4 text-xs text-muted-foreground border border-dashed rounded-md">
-          No lines yet. Add at least one item you're buying.
+          No lines yet. Add at least one item you are buying.
         </div>
       ) : (
         <div className="space-y-3">
           {lines.map((line, index) => (
-            <div key={line.key} className="rounded-md border bg-background p-3 space-y-3">
+            <div
+              key={line.key}
+              className="rounded-md border bg-background p-3 space-y-3"
+            >
               <div className="flex items-center justify-between">
                 <div className="flex gap-1">
                   <Button
@@ -183,7 +207,9 @@ export function PurchaseLineItemsEditor({
                     variant={line.mode === "new" ? "default" : "outline"}
                     className="h-7 text-xs"
                     disabled={disabled}
-                    onClick={() => updateLine(index, { mode: "new", inventoryItemId: null })}
+                    onClick={() =>
+                      updateLine(index, { mode: "new", inventoryItemId: null })
+                    }
                   >
                     Create new item
                   </Button>
@@ -193,7 +219,9 @@ export function PurchaseLineItemsEditor({
                   variant="ghost"
                   size="icon"
                   disabled={disabled || lines.length === 1}
-                  onClick={() => onChange(lines.filter((l) => l.key !== line.key))}
+                  onClick={() =>
+                    onChange(lines.filter((l) => l.key !== line.key))
+                  }
                   className="h-7 w-7 text-muted-foreground hover:text-red-600"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -221,7 +249,9 @@ export function PurchaseLineItemsEditor({
                       <Label className="text-xs">Item name *</Label>
                       <Input
                         value={line.newItem.name}
-                        onChange={(e) => updateNewItem(index, { name: e.target.value })}
+                        onChange={(e) =>
+                          updateNewItem(index, { name: e.target.value })
+                        }
                         disabled={disabled}
                         placeholder="e.g. Chicken breast"
                       />
@@ -230,7 +260,9 @@ export function PurchaseLineItemsEditor({
                       <Label className="text-xs">Unit *</Label>
                       <Input
                         value={line.newItem.unit}
-                        onChange={(e) => updateNewItem(index, { unit: e.target.value })}
+                        onChange={(e) =>
+                          updateNewItem(index, { unit: e.target.value })
+                        }
                         disabled={disabled}
                         placeholder="e.g. kg"
                       />
@@ -243,7 +275,11 @@ export function PurchaseLineItemsEditor({
                         type="number"
                         step="0.01"
                         value={line.newItem.min_stock_level}
-                        onChange={(e) => updateNewItem(index, { min_stock_level: e.target.value })}
+                        onChange={(e) =>
+                          updateNewItem(index, {
+                            min_stock_level: e.target.value,
+                          })
+                        }
                         disabled={disabled}
                       />
                     </div>
@@ -251,7 +287,11 @@ export function PurchaseLineItemsEditor({
                       <Label className="text-xs">Storage location</Label>
                       <Input
                         value={line.newItem.storage_location}
-                        onChange={(e) => updateNewItem(index, { storage_location: e.target.value })}
+                        onChange={(e) =>
+                          updateNewItem(index, {
+                            storage_location: e.target.value,
+                          })
+                        }
                         disabled={disabled}
                       />
                     </div>
@@ -260,7 +300,9 @@ export function PurchaseLineItemsEditor({
                     label="Station"
                     restaurantId={restaurantId}
                     value={line.newItem.stationId}
-                    onChange={(stationId) => updateNewItem(index, { stationId })}
+                    onChange={(stationId) =>
+                      updateNewItem(index, { stationId })
+                    }
                     disabled={disabled}
                   />
                   <DuplicateItemWarning
@@ -285,7 +327,9 @@ export function PurchaseLineItemsEditor({
                     step="0.001"
                     min="0.001"
                     value={line.orderedQuantity}
-                    onChange={(e) => updateLine(index, { orderedQuantity: e.target.value })}
+                    onChange={(e) =>
+                      updateLine(index, { orderedQuantity: e.target.value })
+                    }
                     disabled={disabled}
                   />
                 </div>
@@ -293,7 +337,9 @@ export function PurchaseLineItemsEditor({
                   <Label className="text-xs">Purchase unit</Label>
                   <Input
                     value={line.purchaseUnit}
-                    onChange={(e) => updateLine(index, { purchaseUnit: e.target.value })}
+                    onChange={(e) =>
+                      updateLine(index, { purchaseUnit: e.target.value })
+                    }
                     disabled={disabled}
                     placeholder="e.g. box"
                   />
@@ -305,7 +351,9 @@ export function PurchaseLineItemsEditor({
                     step="0.01"
                     min="0"
                     value={line.unitCost}
-                    onChange={(e) => updateLine(index, { unitCost: e.target.value })}
+                    onChange={(e) =>
+                      updateLine(index, { unitCost: e.target.value })
+                    }
                     disabled={disabled}
                   />
                 </div>
@@ -317,13 +365,15 @@ export function PurchaseLineItemsEditor({
                     min="0"
                     max="100"
                     value={line.taxRate}
-                    onChange={(e) => updateLine(index, { taxRate: e.target.value })}
+                    onChange={(e) =>
+                      updateLine(index, { taxRate: e.target.value })
+                    }
                     disabled={disabled}
                   />
                 </div>
               </div>
               <p className="text-xs text-muted-foreground text-right">
-                Line total: Rs. {lineTotal(line).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                Line total: {formatCurrency(lineTotal(line))}
               </p>
             </div>
           ))}
