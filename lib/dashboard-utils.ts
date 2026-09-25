@@ -35,17 +35,21 @@ export type DateRangePreset =
   | "last30"
   | "month"
   | "lastMonth"
+  | "lifetime"
   | "custom"
 
 export function resolveDateRange(
   activeRange: DateRangePreset,
-  customRange?: { from?: Date; to?: Date }
+  customRange?: { from?: Date; to?: Date },
+  presetRange?: { date_from?: string; date_to?: string }
 ): { dateFrom: string; dateTo: string; startTime?: string; endTime?: string } {
   const now = new Date()
   let dateFrom = formatDateYmd(now)
   let dateTo = formatDateYmd(now)
 
-  if (activeRange === "yesterday") {
+  if (activeRange === "lifetime") {
+    dateFrom = presetRange?.date_from ?? dateFrom
+  } else if (activeRange === "yesterday") {
     const y = new Date(now)
     y.setDate(y.getDate() - 1)
     dateFrom = formatDateYmd(y)
@@ -69,6 +73,11 @@ export function resolveDateRange(
   } else if (activeRange === "custom" && customRange?.from) {
     dateFrom = formatDateYmd(customRange.from)
     dateTo = customRange.to ? formatDateYmd(customRange.to) : dateFrom
+  }
+
+  if (activeRange !== "custom" && presetRange?.date_from && presetRange.date_to) {
+    dateFrom = presetRange.date_from
+    dateTo = presetRange.date_to
   }
 
   let startTime: string | undefined
@@ -97,6 +106,8 @@ export function getPeriodLabel(activeRange: DateRangePreset): string {
       return "This month"
     case "lastMonth":
       return "Last month"
+    case "lifetime":
+      return "Lifetime"
     case "custom":
       return "Custom range"
     default:

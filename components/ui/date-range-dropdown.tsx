@@ -14,7 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-export type DateRangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'lastMonth' | 'custom'
+export type DateRangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'lastMonth' | 'lifetime' | 'custom'
 
 export const DATE_PRESETS: ReadonlyArray<{ label: string; value: Exclude<DateRangePreset, 'custom'> }> = [
   { label: "Today", value: "today" },
@@ -23,13 +23,23 @@ export const DATE_PRESETS: ReadonlyArray<{ label: string; value: Exclude<DateRan
   { label: "Last 30 Days", value: "last30" },
   { label: "This Month", value: "month" },
   { label: "Last Month", value: "lastMonth" },
+  { label: "Lifetime", value: "lifetime" },
 ]
+
+export type DateRangePresetOption = {
+  label: string
+  value: DateRangePreset
+  date_from?: string
+  date_to?: string
+}
 
 interface DateRangeDropdownProps {
   activeRange: DateRangePreset
   setActiveRange: (range: DateRangePreset) => void
   date: DateRange | undefined
   setDate: (date: DateRange | undefined) => void
+  showLifetime?: boolean
+  presetOptions?: ReadonlyArray<DateRangePresetOption>
   className?: string
 }
 
@@ -38,6 +48,8 @@ export function DateRangeDropdown({
   setActiveRange,
   date,
   setDate,
+  showLifetime = false,
+  presetOptions,
   className,
 }: DateRangeDropdownProps) {
   const [open, setOpen] = React.useState(false)
@@ -73,9 +85,9 @@ export function DateRangeDropdown({
           return `${format(date.from, "LLL dd, y")} - ${format(date.to, "LLL dd, y")}`
         }
       }
-      return "Custom Range"
+      return presetOptions?.find((preset) => preset.value === "custom")?.label ?? "Custom Range"
     }
-    const preset = DATE_PRESETS.find((p) => p.value === activeRange)
+    const preset = (presetOptions ?? DATE_PRESETS).find((p) => p.value === activeRange)
     return preset?.label || "Select Date"
   }
 
@@ -100,7 +112,7 @@ export function DateRangeDropdown({
       <PopoverContent className="w-auto p-0 rounded-2xl" align="end">
         <div className="flex flex-col sm:flex-row divide-y sm:divide-y-0 sm:divide-x divide-border">
           <div className="p-2 w-full sm:w-[160px] flex flex-col gap-1">
-            {DATE_PRESETS.map((preset) => (
+            {(presetOptions ?? DATE_PRESETS).filter((preset) => preset.value !== "custom" && (showLifetime || preset.value !== "lifetime")).map((preset) => (
               <button
                 key={preset.value}
                 onClick={() => {
@@ -124,7 +136,7 @@ export function DateRangeDropdown({
                 activeRange === "custom" && "dc-filter-chip-active",
               )}
             >
-              Custom Range
+              {presetOptions?.find((preset) => preset.value === "custom")?.label ?? "Custom Range"}
               {activeRange === 'custom' && <Check className="h-4 w-4" />}
             </button>
           </div>

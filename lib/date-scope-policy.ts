@@ -71,6 +71,7 @@ export type AnalyticsPreset =
   | "last30"
   | "month"
   | "lastMonth"
+  | "lifetime"
   | "custom";
 
 export function getAnalyticsPresetRange(
@@ -98,6 +99,8 @@ export function getAnalyticsPresetRange(
       const previousMonth = subMonths(now, 1);
       return { from: startOfMonth(previousMonth), to: endOfMonth(previousMonth) };
     }
+    case "lifetime":
+      return { from: startOfDay(new Date(1970, 0, 1)), to: endOfDay(now) };
     case "custom":
       return customRange;
     default:

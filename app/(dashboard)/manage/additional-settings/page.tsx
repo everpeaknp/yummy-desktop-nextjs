@@ -41,6 +41,7 @@ import {
   Camera,
   ImagePlus,
   Image as ImageIcon,
+  User as UserIcon,
 } from "lucide-react";
 import { MenuGalleryDialog } from "@/components/menu/menu-gallery-dialog";
 import { MenuGalleryItem } from "@/lib/constants/menu-gallery";
@@ -337,6 +338,14 @@ const categories = [
   {
     title: "Personal",
     items: [
+      {
+        id: "profile",
+        title: "Profile",
+        description: "Name & profile photo",
+        icon: UserIcon,
+        iconColor: "text-orange-500",
+        iconBg: "bg-orange-50 dark:bg-orange-900/20",
+      },
       legacySettingItems.appearance,
       legacySettingItems.language,
       legacySettingItems.change_password,
@@ -458,6 +467,12 @@ export default function AdditionalSettingsPage() {
     confirm: "",
   });
   const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Profile Edit State
+  const [profileName, setProfileName] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingProfilePhoto, setUploadingProfilePhoto] = useState(false);
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null);
 
   // Dynamic Gallery State
   const [customImages, setCustomImages] = useState<
@@ -657,10 +672,204 @@ export default function AdditionalSettingsPage() {
     }
   };
 
+  useEffect(() => {
+    if (selectedSetting === "profile" && user) {
+      setProfileName(user.full_name || "");
+    }
+  }, [selectedSetting, user]);
+
+  const handleUpdateProfileName = async () => {
+    if (!profileName.trim()) {
+      toast.error("Name cannot be empty");
+      return;
+    }
+    try {
+      setSavingProfile(true);
+      await apiClient.patch(AuthApis.meProfile, { name: profileName.trim() });
+      await useAuth.getState().syncUserProfile();
+      toast.success("Profile name updated successfully");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to update profile name");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleProfilePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file (PNG, JPG, etc.)");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image size must be less than 5MB");
+      return;
+    }
+
+    try {
+      setUploadingProfilePhoto(true);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await apiClient.post(AuthApis.uploadProfilePicture, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      if (res.data?.status === "success" || res.data?.data?.file_url) {
+        const fileUrl = res.data?.data?.file_url;
+        if (user) {
+          useAuth.getState().setAuth(
+            { ...user, photo_url: fileUrl },
+            useAuth.getState().token,
+            useAuth.getState().refreshToken
+          );
+        }
+        await useAuth.getState().syncUserProfile();
+        toast.success("Profile photo updated successfully!");
+      }
+    } catch (err: any) {
+      console.error("Profile photo upload failed:", err);
+      toast.error(err?.response?.data?.message || "Failed to upload profile photo");
+    } finally {
+      setUploadingProfilePhoto(false);
+      if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = "";
+    }
+  };
+
   const renderSettingContent = () => {
     if (!selectedSetting) return null;
 
     switch (selectedSetting) {
+      case "profile":
+        return (
+          <div className="space-y-6 py-4">
+            {/* Avatar section */}
+            <div className="flex flex-col sm:flex-row items-center gap-5 p-4 rounded-2xl bg-muted/40 border border-border/40">
+              <div className="relative group">
+                <div className="h-20 w-20 rounded-2xl overflow-hidden border-2 border-primary/20 shadow-md bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white text-2xl font-black">
+                  {user?.photo_url ? (
+                    <img
+                      src={user.photo_url}
+                      alt={user?.full_name || "Profile"}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span>
+                      {(user?.full_name || user?.email || "U")
+                        .slice(0, 2)
+                        .toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => profilePhotoInputRef.current?.click()}
+                  disabled={uploadingProfilePhoto}
+                  className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex flex-col items-center justify-center text-white cursor-pointer backdrop-blur-[1px]"
+                  title="Upload profile photo"
+                >
+                  {uploadingProfilePhoto ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <Camera className="w-5 h-5 mb-0.5" />
+                      <span className="text-[9px] font-black uppercase tracking-wider">
+                        Upload
+                      </span>
+                    </>
+                  )}
+                </button>
+                <input
+                  ref={profilePhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleProfilePhotoUpload}
+                  className="hidden"
+                />
+              </div>
+
+              <div className="flex-1 text-center sm:text-left space-y-1">
+                <p className="text-sm font-black tracking-tight text-foreground">
+                  Profile Picture
+                </p>
+                <p className="text-xs text-muted-foreground font-medium">
+                  Upload a square photo (PNG, JPG, max 5MB). Visible in the dashboard header, sidebar, and team cards.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => profilePhotoInputRef.current?.click()}
+                  disabled={uploadingProfilePhoto}
+                  className="h-7 text-[11px] font-bold mt-1 gap-1.5"
+                >
+                  {uploadingProfilePhoto ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Camera className="w-3.5 h-3.5" />
+                  )}
+                  {uploadingProfilePhoto ? "Uploading..." : "Change Photo"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Profile fields */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs font-black uppercase tracking-widest opacity-60">
+                  Full Name
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Enter your name"
+                    value={profileName}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setProfileName(e.target.value)
+                    }
+                    className="font-bold border-border/40 flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleUpdateProfileName}
+                    disabled={savingProfile || !profileName.trim() || profileName.trim() === user?.full_name}
+                    className="font-black uppercase tracking-wider text-[11px] px-5"
+                  >
+                    {savingProfile ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      "Save"
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-black uppercase tracking-widest opacity-60">
+                  Email Address
+                </Label>
+                <Input
+                  value={user?.email || ""}
+                  disabled
+                  className="font-semibold border-border/30 bg-muted/50 cursor-not-allowed opacity-80"
+                />
+                <p className="text-[11px] text-muted-foreground italic font-medium">
+                  Login email is managed securely and cannot be changed directly here.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-black uppercase tracking-widest opacity-60">
+                  Assigned Role
+                </Label>
+                <div className="inline-flex items-center px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 text-xs font-black uppercase tracking-wider">
+                  {user?.role || "Staff"}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
       case "appearance":
         return (
           <div className="space-y-6 py-4">

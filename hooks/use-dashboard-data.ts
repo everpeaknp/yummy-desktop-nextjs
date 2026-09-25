@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { DateRange } from "react-day-picker"
-import { DateRangePreset } from "@/components/ui/date-range-dropdown"
+import { DateRangePreset, DateRangePresetOption } from "@/components/ui/date-range-dropdown"
 import apiClient from "@/lib/api-client"
-import { DashboardApis, AnalyticsApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
+import { DashboardApis, AnalyticsApis, StaffApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions"
 import {
   mapAnalyticsTrends,
@@ -33,6 +33,8 @@ export function useDashboardData(
   const [trendsData, setTrendsData] = useState<any[]>([])
   const [categoryData, setCategoryData] = useState<any[]>([])
   const [activities, setActivities] = useState<any[]>([])
+  const [dateFilterOptions, setDateFilterOptions] = useState<DateRangePresetOption[]>([])
+  const [staff, setStaff] = useState<any[]>([])
   const [deltaData, setDeltaData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -61,7 +63,7 @@ export function useDashboardData(
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
     try {
-      const [v2Res, occupancyRes] = await Promise.all([
+      const [v2Res, occupancyRes, staffRes] = await Promise.all([
         apiClient
           .get(
             DashboardApis.dashboardDataV2({
@@ -80,6 +82,10 @@ export function useDashboardData(
             console.error("Occupancy failed:", err)
             return null
           }),
+        apiClient.get(StaffApis.list()).catch((err) => {
+          console.error("Staff failed:", err)
+          return null
+        }),
       ])
 
       if (requestId !== liveRequestRef.current) return
@@ -94,6 +100,9 @@ export function useDashboardData(
       if (occupancyRes?.data?.status === "success") {
         setOccupancy(occupancyRes.data.data || [])
       }
+      if (staffRes?.data?.status === "success") {
+        setStaff((staffRes.data.data || []).filter((member: any) => member.is_active !== false))
+      }
     } catch (err) {
       console.error("Live dashboard fetch error:", err)
       if (requestId === liveRequestRef.current && !hasLoadedRef.current) {
@@ -107,11 +116,6 @@ export function useDashboardData(
 
     const requestId = ++analyticsRequestRef.current
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-    const { dateFrom, dateTo, startTime, endTime } = resolveDateRange(
-      activeRange,
-      date
-    )
-
     if (!canViewAnalytics) {
       setAnalyticsData(null)
       setTrendsData([])
@@ -124,8 +128,28 @@ export function useDashboardData(
     }
 
     setAnalyticsUnavailable(false)
-
     try {
+      const optionsRes = await apiClient.get(
+        AnalyticsApis.dateFilterOptions({ restaurantId: user.restaurant_id, timezone })
+      )
+      const responseOptions = optionsRes?.data?.status === "success"
+        ? optionsRes.data.data?.options
+        : null
+      if (!Array.isArray(responseOptions)) {
+        throw new Error("Analytics date filter options were not returned by the backend.")
+      }
+      const filterOptions = responseOptions as DateRangePresetOption[]
+      setDateFilterOptions(filterOptions)
+
+    const selectedPreset = filterOptions.find((option) => option.value === activeRange)
+    if (activeRange === "lifetime" && !selectedPreset?.date_from) {
+      throw new Error("Lifetime analytics is not available for this account.")
+    }
+    const { dateFrom, dateTo, startTime, endTime } = resolveDateRange(
+      activeRange,
+      date,
+      selectedPreset
+    )
       const now = new Date()
       let compareStartTime = startTime
       let compareEndTime = endTime
@@ -138,7 +162,7 @@ export function useDashboardData(
       }
 
       const [deltaRes, analyticsRes, historyRes] = await Promise.all([
-        apiClient
+        activeRange === "lifetime" ? Promise.resolve(null) : apiClient
           .get(
             AnalyticsApis.compare({
               restaurantId: user.restaurant_id,
@@ -238,7 +262,7 @@ export function useDashboardData(
         prevDateTo = formatDateYmd(previousEnd)
       }
 
-      const prevAnalyticsRes = await apiClient
+      const prevAnalyticsRes = activeRange === "lifetime" ? null : await apiClient
         .get(
           AnalyticsApis.dashboard({
             restaurantId: user.restaurant_id,
@@ -253,7 +277,7 @@ export function useDashboardData(
 
       if (requestId !== analyticsRequestRef.current) return
 
-      if (
+      if (activeRange !== "lifetime" &&
         analyticsRes?.data?.status === "success" &&
         prevAnalyticsRes?.data?.status === "success"
       ) {
@@ -410,7 +434,11 @@ export function useDashboardData(
     fetchAnalyticsBundle,
   ])
 
-  const { dateFrom, dateTo } = resolveDateRange(activeRange, date)
+  const { dateFrom, dateTo } = resolveDateRange(
+    activeRange,
+    date,
+    dateFilterOptions.find((option) => option.value === activeRange)
+  )
 
   return {
     data,
@@ -419,6 +447,7 @@ export function useDashboardData(
     trendsData,
     categoryData,
     activities,
+    staff,
     deltaData,
     loading,
     refreshing,
@@ -429,6 +458,7 @@ export function useDashboardData(
     canViewAnalytics,
     dateFrom,
     dateTo,
+    dateFilterOptions,
     retry,
     fetchAll,
   }

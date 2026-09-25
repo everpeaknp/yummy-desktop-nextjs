@@ -614,6 +614,11 @@ export const DayBookApis = {
 };
 
 export const AnalyticsApis = {
+  dateFilterOptions: ({ restaurantId, timezone }: { restaurantId: number; timezone?: string }) => {
+    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    if (timezone) params.append("timezone", timezone);
+    return `/analytics/date-filter-options?${params.toString()}`;
+  },
   dashboard: ({
     restaurantId,
     dateFrom,

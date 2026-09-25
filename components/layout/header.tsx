@@ -644,10 +644,10 @@ export const Header = memo(function Header() {
             </Button>
           )}
           <div className="relative h-8 w-8 min-w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-border/50">
-            {restaurant?.profile_picture ? (
+            {user?.photo_url ? (
               <Image
-                src={getImageUrl(restaurant.profile_picture)}
-                alt="Profile"
+                src={getImageUrl(user.photo_url)}
+                alt={user.full_name || "Profile"}
                 className="object-cover"
                 fill
                 unoptimized
@@ -656,6 +656,14 @@ export const Header = memo(function Header() {
               <span className="text-xs font-bold">
                 {user.full_name.charAt(0).toUpperCase()}
               </span>
+            ) : restaurant?.profile_picture ? (
+              <Image
+                src={getImageUrl(restaurant.profile_picture)}
+                alt="Profile"
+                className="object-cover"
+                fill
+                unoptimized
+              />
             ) : (
               <User className="h-5 w-5" />
             )}
