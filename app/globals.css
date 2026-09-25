@@ -161,26 +161,28 @@ body[data-scroll-locked] .orders-new-order-cta {
 
   .sidebar-scroll {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--primary) / 0.55) hsl(var(--muted) / 0.35);
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.2s ease;
+  }
+  .sidebar-scroll:hover {
+    scrollbar-color: hsl(var(--foreground) / 0.2) transparent;
   }
   .sidebar-scroll::-webkit-scrollbar {
-    width: 10px;
+    width: 4px;
   }
   .sidebar-scroll::-webkit-scrollbar-track {
-    background: hsl(var(--muted) / 0.35);
-    border-radius: 999px;
+    background: transparent;
   }
   .sidebar-scroll::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      hsl(var(--primary) / 0.6) 0%,
-      hsl(var(--primary) / 0.8) 100%
-    );
+    background: transparent;
     border-radius: 999px;
-    border: 2px solid hsl(var(--card));
+    transition: background-color 0.2s ease;
+  }
+  .sidebar-scroll:hover::-webkit-scrollbar-thumb {
+    background: hsl(var(--foreground) / 0.18);
   }
   .sidebar-scroll::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--primary) / 0.95);
+    background: hsl(var(--foreground) / 0.35);
   }
 
   .no-scrollbar::-webkit-scrollbar {
