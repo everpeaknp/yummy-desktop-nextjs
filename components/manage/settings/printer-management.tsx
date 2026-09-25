@@ -620,9 +620,9 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
 
             {/* Dialog for Add/Edit */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="sm:max-w-[500px] border-border/40 backdrop-blur-2xl">
+                <DialogContent className="settings-dialog sm:max-w-[500px] border-border/40">
                     <DialogHeader>
-                        <DialogTitle className="text-2xl font-black tracking-tight uppercase italic flex items-center gap-2">
+                        <DialogTitle className="settings-dialog-title text-xl font-semibold flex items-center gap-2">
                             {editingPrinter?.id ? "Edit Printer" : "Register Printer"}
                         </DialogTitle>
                         <DialogDescription className="font-bold text-muted-foreground/80">
@@ -747,7 +747,7 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
                         </div>
                     </div>
 
-                    <DialogFooter className="border-t border-border/10 pt-4 mt-2">
+                    <DialogFooter className="settings-dialog-footer mt-2">
                         <Button 
                             variant="ghost" 
                             onClick={() => setIsDialogOpen(false)}

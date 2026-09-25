@@ -854,7 +854,7 @@ export default function AdditionalSettingsPage() {
                   disabled
                   className="font-semibold border-border/30 bg-muted/50 cursor-not-allowed opacity-80"
                 />
-                <p className="text-[11px] text-muted-foreground italic font-medium">
+                <p className="text-xs text-muted-foreground font-medium">
                   Login email is managed securely and cannot be changed directly here.
                 </p>
               </div>
@@ -1478,7 +1478,7 @@ export default function AdditionalSettingsPage() {
       >
         <DialogContent
           className={cn(
-            "border-border/40 backdrop-blur-2xl transition-all duration-500",
+            "settings-dialog border-border/60 transition-all duration-200",
             selectedSetting === "receipt_designer" ||
               selectedSetting === "kot_designer" ||
               selectedSetting === "printer_management"
@@ -1487,7 +1487,7 @@ export default function AdditionalSettingsPage() {
           )}
         >
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-2xl font-black tracking-tight uppercase italic">
+            <DialogTitle className="settings-dialog-title flex items-center gap-2 text-xl font-semibold">
               {selectedSetting &&
                 categories
                   .flatMap((c: any) => c.items)
@@ -1503,19 +1503,19 @@ export default function AdditionalSettingsPage() {
             {renderSettingContent()}
           </div>
 
-          <DialogFooter className="sm:justify-end gap-2 pt-4 border-t border-border/20">
+          <DialogFooter className="settings-dialog-footer sm:justify-end">
             <Button
               type="button"
               variant="ghost"
               onClick={() => setSelectedSetting(null)}
-              className="font-bold uppercase tracking-widest text-[10px]"
+              className="font-medium"
             >
               Cancel
             </Button>
             <Button
               type="button"
               onClick={() => setSelectedSetting(null)}
-              className="font-black uppercase tracking-widest text-[10px] px-8"
+              className="font-semibold px-6"
             >
               Done
             </Button>
@@ -1540,9 +1540,9 @@ export default function AdditionalSettingsPage() {
       )}
 
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="settings-dialog sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle className="text-rose-600 font-black uppercase italic tracking-tight">
+            <DialogTitle className="settings-dialog-title text-rose-600 text-lg font-semibold">
               Final Confirmation
             </DialogTitle>
             <DialogDescription className="font-bold">
@@ -1558,7 +1558,7 @@ export default function AdditionalSettingsPage() {
               id="delete-confirm-input"
             />
           </div>
-          <DialogFooter className="flex gap-2">
+          <DialogFooter className="settings-dialog-footer flex gap-2">
             <Button
               variant="outline"
               onClick={() => setIsDeleteConfirmOpen(false)}
@@ -1568,7 +1568,7 @@ export default function AdditionalSettingsPage() {
             </Button>
             <Button
               variant="destructive"
-              className="flex-1 font-black uppercase italic"
+              className="flex-1 font-semibold"
               disabled={isDeleting}
               onClick={() => {
                 const val = (

@@ -87,6 +87,43 @@
   }
 }
 
+@layer components {
+  .settings-dialog {
+    @apply gap-5 rounded-xl border-border/60 bg-background p-6 shadow-2xl sm:rounded-xl;
+  }
+
+  .settings-dialog > div:first-child h2,
+  .settings-dialog .settings-dialog-title {
+    @apply normal-case font-semibold tracking-tight;
+    font-style: normal;
+  }
+
+  .settings-dialog .italic {
+    font-style: normal;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  .settings-dialog > div:first-child p {
+    @apply text-sm font-normal text-muted-foreground;
+  }
+
+  .settings-dialog input:not([type="checkbox"]),
+  .settings-dialog [role="combobox"] {
+    @apply h-10 rounded-md border-border/70 font-normal;
+  }
+
+  .settings-dialog .settings-dialog-footer {
+    @apply gap-2 border-t border-border/60 pt-4;
+  }
+
+  .settings-dialog .settings-dialog-footer > button {
+    @apply min-h-10 rounded-md px-4 text-sm font-medium tracking-normal;
+    text-transform: none;
+    font-style: normal;
+  }
+}
+
 @layer base {
   html {
     scrollbar-gutter: stable;

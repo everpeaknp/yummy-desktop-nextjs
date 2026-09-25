@@ -346,9 +346,9 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                 }
             }}
         >
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="settings-dialog sm:max-w-[425px]">
                 <DialogHeader>
-                    <DialogTitle className="text-xl font-black uppercase tracking-tight italic">Invite Administrator</DialogTitle>
+                    <DialogTitle className="settings-dialog-title text-xl font-semibold">Invite Administrator</DialogTitle>
                     <p className="text-xs text-muted-foreground font-medium">The recipient must sign in with this verified email and accept the invitation before they become an admin.</p>
                 </DialogHeader>
                 {invitationResult ? (
@@ -395,7 +395,7 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                     </div>
                 </div>
                 )}
-                <DialogFooter>
+                <DialogFooter className="settings-dialog-footer">
                     <Button 
                         variant="outline" 
                         onClick={() => setIsInviteOpen(false)}
@@ -407,7 +407,7 @@ export function AdminManagement({ restaurantId }: AdminManagementProps) {
                     <Button 
                         onClick={handleInviteAdmin} 
                         disabled={isInviting}
-                        className="h-10 font-black uppercase tracking-tighter italic"
+                        className="h-10 font-semibold"
                     >
                         {isInviting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
                         Send Invitation
