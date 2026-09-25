@@ -610,172 +610,207 @@ export function Sidebar() {
           </nav>
         </div>
 
-        <div className="p-2.5 mt-auto border-t border-border/40" data-tour="sidebar-account">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+        <div className="p-2 mt-auto border-t border-border/40 flex flex-col gap-1.5" data-tour="sidebar-account">
+          <div className="flex items-center gap-1">
+            <div className="flex-1 min-w-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={cn(
+                      "w-full flex items-center rounded-xl border border-transparent hover:border-border/50 hover:bg-muted/50 p-1.5 transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary group",
+                      collapsed ? "justify-center" : "gap-2.5",
+                    )}
+                  >
+                    <div className="relative shrink-0">
+                      {user?.photo_url ? (
+                        <div className="relative h-8 w-8 rounded-lg overflow-hidden border border-border/50 bg-background shadow-2xs">
+                          <Image
+                            src={getImageUrl(user.photo_url)}
+                            alt={user.full_name || "User"}
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        </div>
+                      ) : (
+                        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/20">
+                          {(user?.full_name && !user.full_name.includes("@")
+                            ? user.full_name
+                            : "User"
+                          )
+                            .substring(0, 2)
+                            .toUpperCase()}
+                        </div>
+                      )}
+                      <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background" />
+                    </div>
+                    {!collapsed && (
+                      <div className="flex-1 min-w-0 flex flex-col justify-center text-left">
+                        <div className="font-semibold text-[13px] truncate text-foreground leading-tight group-hover:text-primary transition-colors">
+                          {user?.full_name && !user.full_name.includes("@")
+                            ? user.full_name
+                            : "User"}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
+                          <span className="capitalize">{user?.role || user?.roles?.[0] || "Staff"}</span>
+                          <span className="text-[9px] text-muted-foreground/50">•</span>
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Online</span>
+                        </div>
+                      </div>
+                    )}
+                    {!collapsed && (
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-foreground shrink-0 transition-transform group-hover:translate-x-0.5" />
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side={collapsed ? "right" : "top"}
+                  align="start"
+                  sideOffset={collapsed ? 12 : 8}
+                  className="w-[240px] p-1.5 rounded-2xl shadow-xl border border-border/60 bg-popover/95 backdrop-blur-md z-50 mb-1"
+                >
+                  {/* User preview inside dropdown */}
+                  <div className="flex items-center gap-2.5 p-2 rounded-xl bg-muted/30 border border-border/30 mb-1">
+                    <div className="relative shrink-0">
+                      {user?.photo_url ? (
+                        <div className="relative h-9 w-9 rounded-xl overflow-hidden border border-border/50 bg-background shadow-2xs">
+                          <Image
+                            src={getImageUrl(user.photo_url)}
+                            alt={user.full_name || "User"}
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        </div>
+                      ) : (
+                        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/20">
+                          {(user?.full_name && !user.full_name.includes("@")
+                            ? user.full_name
+                            : "User"
+                          )
+                            .substring(0, 2)
+                            .toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-xs truncate text-foreground leading-tight">
+                        {user?.full_name && !user.full_name.includes("@")
+                          ? user.full_name
+                          : "User"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground truncate leading-tight capitalize mt-0.5">
+                        {user?.email || user?.role || "Staff"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="py-0.5 space-y-0.5">
+                    <DropdownMenuItem
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={uploadingAvatar}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      {uploadingAvatar ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      ) : (
+                        <Camera className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span>{uploadingAvatar ? "Uploading photo..." : "Upload Profile Photo"}</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={() => router.push("/manage/profile")}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      <Pencil className="h-4 w-4 text-muted-foreground" /> Business Profile
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={() => router.push("/feedback")}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      <ThumbsUp className="h-4 w-4 text-muted-foreground" /> Give Feedback
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={() => setHelpOpen(true)}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      <HelpCircle className="h-4 w-4 text-muted-foreground" /> Help & Support
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg flex items-center justify-between"
+                      onSelect={(e) => e.preventDefault()}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Sun className="h-4 w-4 text-muted-foreground" /> Dark Theme
+                      </div>
+                      <Switch
+                        checked={theme === "dark"}
+                        onCheckedChange={(checked) =>
+                          setTheme(checked ? "dark" : "light")
+                        }
+                      />
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator className="my-1 bg-border/50" />
+
+                    <DropdownMenuItem
+                      onClick={() => router.push("/settings")}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      <Settings className="h-4 w-4 text-muted-foreground" /> Settings
+                    </DropdownMenuItem>
+                  </div>
+
+                  <div className="pt-1.5 px-0.5 pb-0.5 border-t border-border/40 mt-1">
+                    <button
+                      onClick={() => {
+                        logout();
+                        router.push("/");
+                      }}
+                      className="w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 py-2 rounded-xl text-xs font-bold transition-colors border border-rose-500/20 cursor-pointer"
+                    >
+                      <LogOut className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" /> Log out
+                    </button>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            {/* Direct visible semi-red logout action */}
+            {collapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => {
+                      logout();
+                      router.push("/");
+                    }}
+                    title="Log out"
+                    className="flex h-8 w-8 mx-auto items-center justify-center rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Log out</TooltipContent>
+              </Tooltip>
+            ) : (
               <button
-                className={cn(
-                  "w-full flex items-center rounded-xl border border-transparent hover:border-border/50 hover:bg-muted/50 p-2 transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary group",
-                  collapsed ? "justify-center p-1.5" : "gap-2.5",
-                )}
+                onClick={() => {
+                  logout();
+                  router.push("/");
+                }}
+                title="Log out"
+                className="flex items-center justify-center h-8 px-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition-all text-xs font-semibold gap-1.5 shrink-0 cursor-pointer"
               >
-                <div className="relative shrink-0">
-                  {user?.photo_url ? (
-                    <div className="relative h-8 w-8 rounded-lg overflow-hidden border border-border/50 bg-background shadow-2xs">
-                      <Image
-                        src={getImageUrl(user.photo_url)}
-                        alt={user.full_name || "User"}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                    </div>
-                  ) : (
-                    <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/20">
-                      {(user?.full_name && !user.full_name.includes("@")
-                        ? user.full_name
-                        : "User"
-                      )
-                        .substring(0, 2)
-                        .toUpperCase()}
-                    </div>
-                  )}
-                  <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background" />
-                </div>
-                {!collapsed && (
-                  <div className="flex-1 min-w-0 flex flex-col justify-center text-left">
-                    <div className="font-semibold text-[13px] truncate text-foreground leading-tight group-hover:text-primary transition-colors">
-                      {user?.full_name && !user.full_name.includes("@")
-                        ? user.full_name
-                        : "User"}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
-                      <span className="capitalize">{user?.role || user?.roles?.[0] || "Staff"}</span>
-                      <span className="text-[9px] text-muted-foreground/50">•</span>
-                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Online</span>
-                    </div>
-                  </div>
-                )}
-                {!collapsed && (
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-foreground shrink-0 transition-transform group-hover:translate-x-0.5" />
-                )}
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="hidden xl:inline text-[11px]">Log out</span>
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              side={collapsed ? "right" : "top"}
-              align="start"
-              sideOffset={collapsed ? 12 : 8}
-              className="w-[240px] p-1.5 rounded-2xl shadow-xl border border-border/60 bg-popover/95 backdrop-blur-md z-50 mb-1"
-            >
-              {/* User preview inside dropdown */}
-              <div className="flex items-center gap-2.5 p-2 rounded-xl bg-muted/30 border border-border/30 mb-1">
-                <div className="relative shrink-0">
-                  {user?.photo_url ? (
-                    <div className="relative h-9 w-9 rounded-xl overflow-hidden border border-border/50 bg-background shadow-2xs">
-                      <Image
-                        src={getImageUrl(user.photo_url)}
-                        alt={user.full_name || "User"}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                    </div>
-                  ) : (
-                    <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/20">
-                      {(user?.full_name && !user.full_name.includes("@")
-                        ? user.full_name
-                        : "User"
-                      )
-                        .substring(0, 2)
-                        .toUpperCase()}
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-xs truncate text-foreground leading-tight">
-                    {user?.full_name && !user.full_name.includes("@")
-                      ? user.full_name
-                      : "User"}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground truncate leading-tight capitalize mt-0.5">
-                    {user?.email || user?.role || "Staff"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="py-0.5 space-y-0.5">
-                <DropdownMenuItem
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={uploadingAvatar}
-                  className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
-                >
-                  {uploadingAvatar ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  ) : (
-                    <Camera className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <span>{uploadingAvatar ? "Uploading photo..." : "Upload Profile Photo"}</span>
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => router.push("/manage/profile")}
-                  className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
-                >
-                  <Pencil className="h-4 w-4 text-muted-foreground" /> Business Profile
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => router.push("/feedback")}
-                  className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
-                >
-                  <ThumbsUp className="h-4 w-4 text-muted-foreground" /> Give Feedback
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => setHelpOpen(true)}
-                  className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
-                >
-                  <HelpCircle className="h-4 w-4 text-muted-foreground" /> Help & Support
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg flex items-center justify-between"
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Sun className="h-4 w-4 text-muted-foreground" /> Dark Theme
-                  </div>
-                  <Switch
-                    checked={theme === "dark"}
-                    onCheckedChange={(checked) =>
-                      setTheme(checked ? "dark" : "light")
-                    }
-                  />
-                </DropdownMenuItem>
-
-                <DropdownMenuSeparator className="my-1 bg-border/50" />
-
-                <DropdownMenuItem
-                  onClick={() => router.push("/settings")}
-                  className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
-                >
-                  <Settings className="h-4 w-4 text-muted-foreground" /> Settings
-                </DropdownMenuItem>
-              </div>
-
-              <div className="pt-1.5 px-0.5 pb-0.5 border-t border-border/40 mt-1">
-                <button
-                  onClick={() => {
-                    logout();
-                    router.push("/");
-                  }}
-                  className="w-full flex items-center justify-center gap-2 bg-muted/40 hover:bg-muted text-foreground py-2 rounded-xl text-xs font-bold transition-colors border border-transparent hover:border-border/50 cursor-pointer"
-                >
-                  <LogOut className="h-3.5 w-3.5 text-foreground/60" /> Log out
-                </button>
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+          </div>
 
           <input
             ref={avatarInputRef}
