@@ -43,6 +43,64 @@ test("Orders keeps its domain cards and mobile New Order interaction while using
   assert.match(newOrder, /new-order-sheet-motion/);
 });
 
+test("KOT status chips and station/table filters use a consistent control style", () => {
+  const page = read("app/(dashboard)/orders/page.tsx");
+  const kotFilters = page.match(
+    /\{activeTab === "kot" && \([\s\S]*?\n          \)\}/,
+  )?.[0];
+
+  assert.ok(kotFilters, "KOT filter controls should exist");
+  assert.match(kotFilters, /className=\{cn\([\s\S]*rounded-xl/);
+  assert.match(kotFilters, /bg-primary\/10 text-primary/);
+  assert.match(kotFilters, /<SelectTrigger[\s\S]*h-11[\s\S]*rounded-xl/);
+  assert.match(kotFilters, /aria-label="Filter kitchen station"/);
+  assert.match(kotFilters, /aria-label="Filter table"/);
+  assert.doesNotMatch(kotFilters, /<select\b/);
+});
+
+test("History date fields align their labels with the shortcut controls", () => {
+  const page = read("app/(dashboard)/orders/page.tsx");
+  const historyFilters = page.match(
+    /\{activeTab === "history" && \([\s\S]*?\n          \)\}/,
+  )?.[0];
+  const dateFilter = page.match(
+    /function HistoryDateFilter\([\s\S]*?(?=\nfunction OrderDetailFilterFields)/,
+  )?.[0];
+
+  assert.ok(historyFilters, "History filter controls should exist");
+  assert.ok(dateFilter, "History date picker should exist");
+  assert.match(historyFilters, /<HistoryDateFilter[\s\S]*label="From"/);
+  assert.match(historyFilters, /<HistoryDateFilter[\s\S]*label="To"/);
+  assert.match(dateFilter, /h-11 w-\[216px\] shrink-0/);
+  assert.match(dateFilter, /aria-label=\{`\$\{label\} date`\}/);
+  assert.match(page, /from "@\/components\/ui\/calendar"/);
+  assert.match(dateFilter, /<CalendarComponent[\s\S]*mode="single"/);
+  assert.doesNotMatch(dateFilter, /type="date"/);
+  assert.doesNotMatch(dateFilter, /grid gap-1 text-xs text-muted-foreground/);
+});
+
+test("Order history requests real server pages and shows page navigation", () => {
+  const page = read("app/(dashboard)/orders/page.tsx");
+
+  assert.match(page, /const HISTORY_PAGE_SIZE = 50/);
+  assert.match(page, /skip:\s*\(historyPage - 1\) \* HISTORY_PAGE_SIZE/);
+  assert.match(page, /limit:\s*HISTORY_PAGE_SIZE/);
+  assert.match(page, /setHistoryTotal\(Number\(data\.total/);
+  assert.match(page, /Previous/);
+  assert.match(page, /Next/);
+  assert.doesNotMatch(page, /IntersectionObserver/);
+});
+
+test("Resetting order history clears its filters and returns to the first page", () => {
+  const page = read("app/(dashboard)/orders/page.tsx");
+
+  assert.match(page, /const resetHistoryFilters = useCallback/);
+  assert.match(page, /setSearchQuery\(""\)/);
+  assert.match(page, /setHistoryDetailFilters\(emptyOrderDetailFilters\)/);
+  assert.match(page, /setHistoryPage\(1\)/);
+  assert.match(page, /onClick=\{resetHistoryFilters\}/);
+});
+
 test("Orders money, receipt access, and operational detail hierarchy remain intact", () => {
   const activeCard = read("components/orders/order-card.tsx");
   const historyCard = read("components/orders/order-history-card.tsx");
