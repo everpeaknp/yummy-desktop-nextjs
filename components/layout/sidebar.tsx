@@ -98,7 +98,9 @@ function SidebarNavLink({
     "flex items-center rounded-xl transition-all duration-150 group relative font-medium text-[13.5px]",
     collapsed ? "justify-center h-10 w-10 mx-auto my-0.5" : "gap-3 px-3 py-2 my-0.5",
     !collapsed && item.isNestedChild ? "pl-9 pr-3 text-[13px]" : "",
-    isActive && !item.isNestedChild
+    isActive && hasSubItems
+      ? "bg-muted/50 text-foreground"
+      : isActive && !item.isNestedChild
       ? "bg-primary/10 text-primary font-semibold shadow-xs"
       : isActive && item.isNestedChild
         ? "text-primary font-semibold bg-primary/5"
@@ -107,14 +109,14 @@ function SidebarNavLink({
 
   const content = (
     <>
-      {isActive && !collapsed && !item.isNestedChild && (
+      {isActive && !hasSubItems && !collapsed && !item.isNestedChild && (
         <div className="absolute left-1.5 top-1/2 -translate-y-1/2 h-4 w-1 bg-primary rounded-full" />
       )}
       <div
         className={cn(
           "flex items-center justify-center shrink-0 rounded-lg transition-colors",
           collapsed ? "h-8 w-8" : "h-6 w-6",
-          isActive
+          isActive && !hasSubItems
             ? "text-primary"
             : "text-muted-foreground group-hover:text-foreground",
         )}
@@ -167,15 +169,56 @@ function SidebarNavLink({
     );
   }
 
+  // Group labels open their landing page; only the chevron changes expansion.
   if (hasSubItems) {
+    if (collapsed) {
+      return (
+        <Link
+          href={item.href}
+          onClick={() => sessionStorage.removeItem("fromManage")}
+          className={classes}
+          title={item.title}
+          {...tourAttr}
+        >
+          {content}
+        </Link>
+      );
+    }
+
     return (
-      <button
-        onClick={onToggle}
-        className={cn(classes, "w-full text-left")}
-        {...tourAttr}
-      >
-        {content}
-      </button>
+      <div className={cn(classes, "w-full pr-1")} {...tourAttr}>
+        <Link
+          href={item.href}
+          onClick={() => sessionStorage.removeItem("fromManage")}
+          className="flex min-w-0 flex-1 items-center gap-3 py-0"
+        >
+          <div
+            className={cn(
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition-colors",
+              isActive && !hasSubItems
+                ? "text-primary"
+                : "text-muted-foreground group-hover:text-foreground",
+            )}
+          >
+            <item.icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-150 group-hover:scale-105" />
+          </div>
+          <span className="flex-1 truncate text-[13.5px]">{item.title}</span>
+        </Link>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={`${isOpen ? "Collapse" : "Expand"} ${item.title} menu`}
+          aria-expanded={!!isOpen}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <ChevronRight
+            className={cn(
+              "h-3.5 w-3.5 transition-transform duration-200",
+              isOpen && "rotate-90 text-foreground",
+            )}
+          />
+        </button>
+      </div>
     );
   }
 
@@ -391,14 +434,24 @@ export function Sidebar() {
   };
 
   const isItemActive = (item: SidebarItem) => {
+    if (item.subItems?.length) {
+      const hasActiveChild = item.subItems.some((sub) =>
+        matchesRoute(pathname, sub.href),
+      );
+      const isOwnDestination =
+        !isExcludedRoute(pathname, item.href) &&
+        matchesRoute(pathname, item.href);
+
+      // When a landing page is also listed as a child (Finance / Overview),
+      // emphasize that destination once instead of coloring both rows.
+      return isOwnDestination && !hasActiveChild;
+    }
+
     if (
       !isExcludedRoute(pathname, item.href) &&
       matchesRoute(pathname, item.href)
     ) {
       return true;
-    }
-    if (item.subItems) {
-      return item.subItems.some((sub) => matchesRoute(pathname, sub.href));
     }
     return false;
   };
