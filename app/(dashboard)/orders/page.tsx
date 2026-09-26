@@ -8,7 +8,6 @@ import apiClient from "@/lib/api-client";
 import { OrderApis, TableApis, KotApis } from "@/lib/api/endpoints";
 import {
   defaultHistoryDateRange,
-  hasExtendedHistoryAccess,
   resolvePrimaryRole,
   validateHistoryDateRange,
   validationToScopeError,
@@ -628,11 +627,6 @@ export default function OrdersPage() {
       ? historyTotal
       : Math.min(historyTotal, Math.max(0, historyRecordLimit));
   const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
-  const canUseExtendedHistory = useMemo(
-    () => hasExtendedHistoryAccess(user),
-    [user],
-  );
-
   useEffect(() => {
     if (!user || dateRangeInitialized.current) return;
     setDateRange(defaultHistoryDateRange(primaryRole, { user }));
@@ -1374,14 +1368,6 @@ export default function OrdersPage() {
         <div className="min-w-0">
           {activeTab === "history" && (
             <FilterBar className="hidden lg:block" title="History filters">
-              {canUseExtendedHistory ? (
-                <Badge
-                  variant="secondary"
-                  className="h-11 rounded-xl px-3 text-xs"
-                >
-                  Extended history
-                </Badge>
-              ) : null}
               <Select
                 value={historyPaymentStatus}
                 onValueChange={(value) => {

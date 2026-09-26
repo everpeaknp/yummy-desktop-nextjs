@@ -135,6 +135,7 @@ test("Desktop order history payment filter aligns inline with date controls", ()
     /<SelectTrigger[\s\S]*?h-11[\s\S]*?<span className="text-xs text-muted-foreground">Payment<\/span>[\s\S]*?<SelectValue/,
   );
   assert.doesNotMatch(historyFilters, /Payment status<\/label>/);
+  assert.doesNotMatch(historyFilters, /Extended history/);
 });
 
 test("Order history ignores stale responses after its filters change", () => {
