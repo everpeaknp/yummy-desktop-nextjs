@@ -600,6 +600,7 @@ export default function OrdersPage() {
   const [scopeNotice, setScopeNotice] = useState<ParsedScopeError | null>(null);
   const [suggestedRange, setSuggestedRange] = useState<DateRange | undefined>();
   const dateRangeInitialized = useRef(false);
+  const historyRequestId = useRef(0);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
@@ -749,7 +750,7 @@ export default function OrdersPage() {
   }, [user?.restaurant_id, kotTimeScope]);
 
   // 3. Fetch History Orders
-  const fetchHistoryData = useCallback(async () => {
+  const fetchHistoryData = useCallback(async (requestId: number) => {
     if (!user?.restaurant_id || activeTab !== "history") return;
 
     const validation = validateHistoryDateRange(dateRange, {
@@ -759,6 +760,7 @@ export default function OrdersPage() {
       user,
     });
     if (!validation.allowed) {
+      if (requestId !== historyRequestId.current) return;
       setScopeNotice(validationToScopeError(validation));
       setSuggestedRange(validation.suggestedRange);
       setHistoryOrders([]);
@@ -813,6 +815,7 @@ export default function OrdersPage() {
       const res = await apiClient.get(
         `${OrderApis.listOrders}?${queryString.toString()}`,
       );
+      if (requestId !== historyRequestId.current) return;
       if (res.data.status === "success") {
         const data = res.data.data;
         const list = [...(data.orders || [])].sort(
@@ -827,6 +830,7 @@ export default function OrdersPage() {
               .map((order: any) => Number(order.id))
               .filter((id: number) => id > 0),
           );
+          if (requestId !== historyRequestId.current) return;
           setHistorySettlements(
             Object.fromEntries(
               settlements.map((settlement) => [
@@ -844,6 +848,7 @@ export default function OrdersPage() {
         }
       }
     } catch (err: unknown) {
+      if (requestId !== historyRequestId.current) return;
       const parsed = parseApiScopeError(err, { role: primaryRole });
       if (parsed) {
         setScopeNotice(parsed);
@@ -862,7 +867,7 @@ export default function OrdersPage() {
       }
       toast.error("Failed to load history");
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestId.current) setHistoryLoading(false);
     }
   }, [
     user,
@@ -915,8 +920,12 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (activeTab === "history") {
-      const timer = setTimeout(fetchHistoryData, 500);
-      return () => clearTimeout(timer);
+      const requestId = ++historyRequestId.current;
+      const timer = setTimeout(() => fetchHistoryData(requestId), 500);
+      return () => {
+        clearTimeout(timer);
+        if (historyRequestId.current === requestId) historyRequestId.current += 1;
+      };
     }
   }, [fetchHistoryData, activeTab]);
 

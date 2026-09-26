@@ -137,6 +137,18 @@ test("Desktop order history payment filter aligns inline with date controls", ()
   assert.doesNotMatch(historyFilters, /Payment status<\/label>/);
 });
 
+test("Order history ignores stale responses after its filters change", () => {
+  const page = read("app/(dashboard)/orders/page.tsx");
+
+  assert.match(page, /const historyRequestId = useRef\(0\)/);
+  assert.match(page, /fetchHistoryData\(requestId\)/);
+  assert.match(page, /if \(requestId !== historyRequestId\.current\) return/);
+  assert.match(
+    page,
+    /if \(requestId === historyRequestId\.current\) setHistoryLoading\(false\)/,
+  );
+});
+
 test("Orders money, receipt access, and operational detail hierarchy remain intact", () => {
   const activeCard = read("components/orders/order-card.tsx");
   const historyCard = read("components/orders/order-history-card.tsx");
