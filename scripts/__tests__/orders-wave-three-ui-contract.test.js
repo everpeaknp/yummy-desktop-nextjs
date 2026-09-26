@@ -123,6 +123,20 @@ test("Order history payment status is sent to the paginated API and filterable o
   assert.match(page, /setHistoryPage\(1\)/);
 });
 
+test("Desktop order history payment filter aligns inline with date controls", () => {
+  const page = read("app/(dashboard)/orders/page.tsx");
+  const historyFilters = page.match(
+    /<FilterBar className="hidden lg:block" title="History filters">([\s\S]*?)<\/FilterBar>/,
+  )?.[1];
+
+  assert.ok(historyFilters, "History filter row should exist");
+  assert.match(
+    historyFilters,
+    /<SelectTrigger[\s\S]*?h-11[\s\S]*?<span className="text-xs text-muted-foreground">Payment<\/span>[\s\S]*?<SelectValue/,
+  );
+  assert.doesNotMatch(historyFilters, /Payment status<\/label>/);
+});
+
 test("Orders money, receipt access, and operational detail hierarchy remain intact", () => {
   const activeCard = read("components/orders/order-card.tsx");
   const historyCard = read("components/orders/order-history-card.tsx");

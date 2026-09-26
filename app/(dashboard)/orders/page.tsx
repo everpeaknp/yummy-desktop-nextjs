@@ -1373,31 +1373,27 @@ export default function OrdersPage() {
                   Extended history
                 </Badge>
               ) : null}
-              <div className="flex min-w-[10rem] flex-col gap-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Payment status
-                </label>
-                <Select
-                  value={historyPaymentStatus}
-                  onValueChange={(value) => {
-                    setHistoryPaymentStatus(value as HistoryPaymentStatus);
-                    setHistoryPage(1);
-                  }}
+              <Select
+                value={historyPaymentStatus}
+                onValueChange={(value) => {
+                  setHistoryPaymentStatus(value as HistoryPaymentStatus);
+                  setHistoryPage(1);
+                }}
+              >
+                <SelectTrigger
+                  aria-label="Filter by payment status"
+                  className="h-11 w-[216px] shrink-0 rounded-xl"
                 >
-                  <SelectTrigger
-                    aria-label="Filter by payment status"
-                    className="h-11 rounded-xl"
-                  >
-                    <SelectValue placeholder="All statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="paid">Paid</SelectItem>
-                    <SelectItem value="partially_paid">Partially paid</SelectItem>
-                    <SelectItem value="unpaid">Unpaid</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                  <span className="text-xs text-muted-foreground">Payment</span>
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="partially_paid">Partially paid</SelectItem>
+                  <SelectItem value="unpaid">Unpaid</SelectItem>
+                </SelectContent>
+              </Select>
               <HistoryDateFilter
               label="From"
               value={dateRange?.from}
