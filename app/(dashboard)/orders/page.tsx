@@ -985,7 +985,12 @@ export default function OrdersPage() {
       return (
         (order.table_name || "").toLowerCase().includes(q) ||
         (order.customer_name || "").toLowerCase().includes(q) ||
-        String(order.restaurant_order_id || order.id).includes(q)
+        String(order.restaurant_order_id || order.id).includes(q) ||
+        (order.items || []).some((item) =>
+          String(item.name_snapshot || item.item_name || "")
+            .toLowerCase()
+            .includes(q),
+        )
       );
     })
     .sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
@@ -1176,7 +1181,7 @@ export default function OrdersPage() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               onClear={() => setSearchQuery("")}
-              placeholder="Search orders or customers"
+              placeholder="Search orders, items, or tables"
               containerClassName="min-w-0 flex-1 lg:w-[320px]"
             />
             <FilterBar
