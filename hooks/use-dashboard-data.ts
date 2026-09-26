@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { DateRange } from "react-day-picker"
 import { DateRangePreset, DateRangePresetOption } from "@/components/ui/date-range-dropdown"
 import apiClient from "@/lib/api-client"
-import { DashboardApis, AnalyticsApis, StaffApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
+import { DashboardApis, AnalyticsApis, MenuApis, StaffApis, TableApis, TransactionsApis } from "@/lib/api/endpoints"
 import { hasAnalyticsViewPermission } from "@/lib/role-permissions"
 import {
   mapAnalyticsTrends,
@@ -35,6 +35,7 @@ export function useDashboardData(
   const [activities, setActivities] = useState<any[]>([])
   const [dateFilterOptions, setDateFilterOptions] = useState<DateRangePresetOption[]>([])
   const [staff, setStaff] = useState<any[]>([])
+  const [menuItems, setMenuItems] = useState<any[]>([])
   const [deltaData, setDeltaData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -63,7 +64,7 @@ export function useDashboardData(
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
     try {
-      const [v2Res, occupancyRes, staffRes] = await Promise.all([
+      const [v2Res, occupancyRes, staffRes, menuRes] = await Promise.all([
         apiClient
           .get(
             DashboardApis.dashboardDataV2({
@@ -86,6 +87,10 @@ export function useDashboardData(
           console.error("Staff failed:", err)
           return null
         }),
+        apiClient.get(MenuApis.getMenusGroupedByRestaurant(user.restaurant_id)).catch((err) => {
+          console.error("Menu catalog failed:", err)
+          return null
+        }),
       ])
 
       if (requestId !== liveRequestRef.current) return
@@ -102,6 +107,14 @@ export function useDashboardData(
       }
       if (staffRes?.data?.status === "success") {
         setStaff((staffRes.data.data || []).filter((member: any) => member.is_active !== false))
+      }
+      if (menuRes?.data?.status === "success") {
+        const groups = Array.isArray(menuRes.data.data) ? menuRes.data.data : []
+        setMenuItems(groups.flatMap((group: any) => (group.items || []).map((item: any) => ({
+          ...item,
+          category_name: item.category_name || group.category_name,
+          item_category_id: item.item_category_id ?? group.category_id,
+        }))))
       }
     } catch (err) {
       console.error("Live dashboard fetch error:", err)
@@ -188,7 +201,7 @@ export function useDashboardData(
               endTime,
               timezone,
               businessLine: dashboardBusinessLine,
-              include: "core,insights",
+              include: "core,insights,orders,menu",
             })
           )
           .catch((err) => {
@@ -258,6 +271,13 @@ export function useDashboardData(
       } else if (activeRange === "lastMonth") {
         const previousStart = new Date(dFrom.getFullYear(), dFrom.getMonth() - 1, 1)
         const previousEnd = new Date(dFrom.getFullYear(), dFrom.getMonth(), 0)
+        prevDateFrom = formatDateYmd(previousStart)
+        prevDateTo = formatDateYmd(previousEnd)
+      } else if (activeRange === "thisYear" || activeRange === "lastYear") {
+        const previousStart = new Date(dFrom)
+        previousStart.setFullYear(previousStart.getFullYear() - 1)
+        const previousEnd = new Date(dTo)
+        previousEnd.setFullYear(previousEnd.getFullYear() - 1)
         prevDateFrom = formatDateYmd(previousStart)
         prevDateTo = formatDateYmd(previousEnd)
       }
@@ -448,6 +468,7 @@ export function useDashboardData(
     categoryData,
     activities,
     staff,
+    menuItems,
     deltaData,
     loading,
     refreshing,

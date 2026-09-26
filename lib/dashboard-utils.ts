@@ -35,6 +35,8 @@ export type DateRangePreset =
   | "last30"
   | "month"
   | "lastMonth"
+  | "thisYear"
+  | "lastYear"
   | "lifetime"
   | "custom"
 
@@ -70,6 +72,11 @@ export function resolveDateRange(
     const end = new Date(now.getFullYear(), now.getMonth(), 0)
     dateFrom = formatDateYmd(start)
     dateTo = formatDateYmd(end)
+  } else if (activeRange === "thisYear") {
+    dateFrom = formatDateYmd(new Date(now.getFullYear(), 0, 1))
+  } else if (activeRange === "lastYear") {
+    dateFrom = formatDateYmd(new Date(now.getFullYear() - 1, 0, 1))
+    dateTo = formatDateYmd(new Date(now.getFullYear() - 1, 11, 31))
   } else if (activeRange === "custom" && customRange?.from) {
     dateFrom = formatDateYmd(customRange.from)
     dateTo = customRange.to ? formatDateYmd(customRange.to) : dateFrom
@@ -106,6 +113,10 @@ export function getPeriodLabel(activeRange: DateRangePreset): string {
       return "This month"
     case "lastMonth":
       return "Last month"
+    case "thisYear":
+      return "This year"
+    case "lastYear":
+      return "Last year"
     case "lifetime":
       return "Lifetime"
     case "custom":
@@ -122,6 +133,8 @@ export function getCompareLabel(activeRange: DateRangePreset): string {
   if (activeRange === "last30") return "the previous 30 days"
   if (activeRange === "month") return "the previous month"
   if (activeRange === "lastMonth") return "the month before last"
+  if (activeRange === "thisYear") return "the same period last year"
+  if (activeRange === "lastYear") return "the year before last"
   return "previous period"
 }
 

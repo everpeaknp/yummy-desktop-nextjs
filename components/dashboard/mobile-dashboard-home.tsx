@@ -76,15 +76,13 @@ export function MobileDashboardHome({ home, currency }: Props) {
   return (
     <main className="mx-auto max-w-md space-y-6 pb-24 md:hidden">
       <section className="space-y-3">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2">
           {serviceMetrics.map((metric) => {
             const Icon = metric.icon
-            return <MetricCard key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} icon={<Icon className="h-4 w-4" />} tone={metric.tone} className="min-w-0 rounded-xl p-2.5 [&_div.text-xl]:text-lg [&_div.text-xs]:text-[10px]" />
+            return <MetricCard key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} icon={<Icon className="h-4 w-4" />} tone={metric.tone} className="min-w-0 rounded-xl p-3 [&_div.text-xl]:text-lg" labelClassName="whitespace-normal leading-tight min-h-[2em]" />
           })}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <MetricCard label="Completed" value={completed} detail="This shift" className="rounded-xl p-3 [&_div.text-xl]:text-lg" />
-          <MetricCard label="Cancelled" value={shift?.cancelled ?? 0} detail="This shift" tone="danger" className="rounded-xl p-3 [&_div.text-xl]:text-lg" />
+          <MetricCard label="Completed" value={completed} detail="This shift" className="rounded-xl p-3 [&_div.text-xl]:text-lg" labelClassName="whitespace-normal leading-tight min-h-[2em]" />
+          <MetricCard label="Cancelled" value={shift?.cancelled ?? 0} detail="This shift" tone="danger" className="rounded-xl p-3 [&_div.text-xl]:text-lg" labelClassName="whitespace-normal leading-tight min-h-[2em]" />
         </div>
       </section>
 

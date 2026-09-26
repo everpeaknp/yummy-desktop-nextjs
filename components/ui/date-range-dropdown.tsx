@@ -14,7 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-export type DateRangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'lastMonth' | 'lifetime' | 'custom'
+export type DateRangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'month' | 'lastMonth' | 'thisYear' | 'lastYear' | 'lifetime' | 'custom'
 
 export const DATE_PRESETS: ReadonlyArray<{ label: string; value: Exclude<DateRangePreset, 'custom'> }> = [
   { label: "Today", value: "today" },
@@ -97,8 +97,7 @@ export function DateRangeDropdown({
         <Button
           variant="ghost"
           className={cn(
-            "dc-filter-control dc-filter-control-active h-11 min-w-[160px] justify-between rounded-2xl px-4 font-medium",
-            !date && "text-muted-foreground",
+            "h-9 min-w-[108px] justify-between rounded-xl border border-border bg-background px-3 font-medium text-foreground shadow-none hover:bg-muted dark:border-white/15 dark:bg-card dark:hover:bg-muted",
             className,
           )}
         >

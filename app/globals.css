@@ -85,6 +85,15 @@
     --input: 217 13% 20%;
     --ring: 13 88% 53%;
   }
+
+  .dark .dashboard-executive {
+    --foreground: 0 0% 95%;
+    --muted-foreground: 218 10% 66%;
+    --primary: 13 88% 53%;
+    --primary-foreground: 222 39% 11%;
+    --ring: 13 88% 53%;
+    --dashboard-chart-orange: #f97316;
+  }
 }
 
 @layer components {
@@ -673,4 +682,14 @@ body[data-scroll-locked] .orders-new-order-cta {
 .phone-input-field .PhoneInput--disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.dashboard-executive {
+  --dashboard-chart-orange: #f97316;
+}
+
+.dark .dashboard-executive .dashboard-muted-card {
+  border-color: hsl(var(--border)) !important;
+  background-color: hsl(var(--card)) !important;
+  background-image: none !important;
 }
