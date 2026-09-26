@@ -140,6 +140,7 @@ type OrderDetailFilters = {
 };
 
 type OrderTimeScope = "all" | "today" | "yesterday" | "last7" | "thisMonth";
+type HistoryPaymentStatus = "all" | "paid" | "partially_paid" | "unpaid";
 const HISTORY_PAGE_SIZE = 50;
 
 const orderTimeScopes: Array<{ value: OrderTimeScope; label: string }> = [
@@ -574,6 +575,8 @@ export default function OrdersPage() {
   const [historyOrders, setHistoryOrders] = useState<any[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyPage, setHistoryPage] = useState(1);
+  const [historyPaymentStatus, setHistoryPaymentStatus] =
+    useState<HistoryPaymentStatus>("all");
   const [historySettlements, setHistorySettlements] = useState<
     Record<number, FinanceOrderSettlementSummary>
   >({});
@@ -778,6 +781,10 @@ export default function OrdersPage() {
         limit: HISTORY_PAGE_SIZE,
       };
 
+      if (historyPaymentStatus !== "all") {
+        params.payment_status = historyPaymentStatus;
+      }
+
       if (dateRange?.from) {
         params.date_from = format(dateRange.from, "yyyy-MM-dd");
       }
@@ -863,6 +870,7 @@ export default function OrdersPage() {
     dateRange,
     searchQuery,
     historyPage,
+    historyPaymentStatus,
     primaryRole,
     restaurant?.effective_plan,
     historyDays,
@@ -881,6 +889,7 @@ export default function OrdersPage() {
     setDateRange(defaultHistoryDateRange(primaryRole, { user }));
     setSearchQuery("");
     setHistoryDetailFilters(emptyOrderDetailFilters);
+    setHistoryPaymentStatus("all");
     setHistoryPage(1);
     setScopeNotice(null);
     setSuggestedRange(undefined);
@@ -1135,7 +1144,9 @@ export default function OrdersPage() {
           Number(kotStatusFilter !== "ALL") +
           Number(kotStationFilter !== "All") +
           Number(kotTableFilter !== "All")
-        : filterCount(historyDetailFilters) + Number(Boolean(searchQuery.trim()));
+        : filterCount(historyDetailFilters) +
+          Number(Boolean(searchQuery.trim())) +
+          Number(historyPaymentStatus !== "all");
   const mobileOrdersFilterContent =
     activeTab === "active" ? (
       <>
@@ -1182,6 +1193,19 @@ export default function OrdersPage() {
       </>
     ) : (
       <>
+        <ChoiceChips
+          label="Payment status"
+          value={historyPaymentStatus === "all" ? "" : historyPaymentStatus}
+          onChange={(value) => {
+            setHistoryPaymentStatus((value || "all") as HistoryPaymentStatus);
+            setHistoryPage(1);
+          }}
+          options={[
+            { value: "paid", label: "Paid" },
+            { value: "partially_paid", label: "Partially paid" },
+            { value: "unpaid", label: "Unpaid" },
+          ]}
+        />
         <TimeScopeChips
           value={
             orderTimeScopes.find((scope) => {
@@ -1319,6 +1343,7 @@ export default function OrdersPage() {
           onValueChange={(value) =>
             setOrdersTab(value as "active" | "kot" | "history")
           }
+          activeVariant="accent"
           mobileMode="equal"
           items={[
             {
@@ -1348,6 +1373,31 @@ export default function OrdersPage() {
                   Extended history
                 </Badge>
               ) : null}
+              <div className="flex min-w-[10rem] flex-col gap-1.5">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Payment status
+                </label>
+                <Select
+                  value={historyPaymentStatus}
+                  onValueChange={(value) => {
+                    setHistoryPaymentStatus(value as HistoryPaymentStatus);
+                    setHistoryPage(1);
+                  }}
+                >
+                  <SelectTrigger
+                    aria-label="Filter by payment status"
+                    className="h-11 rounded-xl"
+                  >
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="partially_paid">Partially paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <HistoryDateFilter
               label="From"
               value={dateRange?.from}

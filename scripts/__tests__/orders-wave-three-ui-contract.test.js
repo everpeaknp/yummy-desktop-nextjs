@@ -58,6 +58,17 @@ test("KOT status chips and station/table filters use a consistent control style"
   assert.doesNotMatch(kotFilters, /<select\b/);
 });
 
+test("Orders tabs use a visibly accented active state", () => {
+  const page = read("app/(dashboard)/orders/page.tsx");
+  const pageTabs = read("components/patterns/navigation/page-tabs.tsx");
+
+  assert.match(page, /<PageTabs[\s\S]*?activeVariant="accent"/);
+  assert.match(pageTabs, /activeVariant\?: "default" \| "accent"/);
+  assert.match(pageTabs, /data-\[state=active\]:bg-primary\/10/);
+  assert.match(pageTabs, /data-\[state=active\]:text-primary/);
+  assert.match(pageTabs, /data-\[state=active\]:ring-1/);
+});
+
 test("History date fields align their labels with the shortcut controls", () => {
   const page = read("app/(dashboard)/orders/page.tsx");
   const historyFilters = page.match(
@@ -99,6 +110,17 @@ test("Resetting order history clears its filters and returns to the first page",
   assert.match(page, /setHistoryDetailFilters\(emptyOrderDetailFilters\)/);
   assert.match(page, /setHistoryPage\(1\)/);
   assert.match(page, /onClick=\{resetHistoryFilters\}/);
+});
+
+test("Order history payment status is sent to the paginated API and filterable on mobile and desktop", () => {
+  const page = read("app/(dashboard)/orders/page.tsx");
+
+  assert.match(page, /historyPaymentStatus/);
+  assert.match(page, /params\.payment_status = historyPaymentStatus/);
+  assert.match(page, /Payment status/);
+  assert.match(page, /Partially paid/);
+  assert.match(page, /setHistoryPaymentStatus\("all"\)/);
+  assert.match(page, /setHistoryPage\(1\)/);
 });
 
 test("Orders money, receipt access, and operational detail hierarchy remain intact", () => {

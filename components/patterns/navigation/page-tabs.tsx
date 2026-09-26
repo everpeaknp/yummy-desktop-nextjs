@@ -26,6 +26,7 @@ export interface PageTabsProps {
   value: string;
   onValueChange: (value: string) => void;
   mobileMode?: "equal" | "scroll" | "select";
+  activeVariant?: "default" | "accent";
   ariaLabel?: string;
   className?: string;
 }
@@ -50,6 +51,7 @@ export function PageTabs({
   value,
   onValueChange,
   mobileMode = "scroll",
+  activeVariant = "default",
   ariaLabel = "Page sections",
   className,
 }: PageTabsProps) {
@@ -112,6 +114,8 @@ export function PageTabs({
               disabled={item.disabled}
               className={cn(
                 "group min-h-11 min-w-0 gap-1.5 rounded-lg px-3 text-xs shadow-none data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm",
+                activeVariant === "accent" &&
+                  "data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:ring-1 data-[state=active]:ring-primary/25",
                 denseEqualTabs &&
                   "gap-0.5 px-1 text-[10px] sm:gap-1.5 sm:px-3 sm:text-sm",
               )}
