@@ -16,6 +16,7 @@ import {
   Receipt,
   Settings,
   Settings2,
+  Store,
   Truck,
   Users,
   UtensilsCrossed,
@@ -178,6 +179,17 @@ const sections: Array<{ title: string; items: ManageItem[] }> = [
         href: "/settings",
         icon: Settings,
         sidebarHref: "/settings",
+      },
+    ],
+  },
+  {
+    title: "Business profile",
+    items: [
+      {
+        title: "Business profile",
+        description: "Restaurant identity, location and public details",
+        href: "/manage/business-profile",
+        icon: Store,
       },
     ],
   },

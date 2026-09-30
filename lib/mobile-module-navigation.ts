@@ -13,6 +13,7 @@ const globalMobileNavigationRoutes = [
   "/dashboard",
   "/orders",
   "/analytics",
+  "/manage/profile",
   "/settings/business-profile",
   "/manage",
   "/hotel",
@@ -29,6 +30,8 @@ const routeTitles: Array<[string, string, MobileNavigationLevel?, string?]> = [
   ["/orders/history", "Order history", "secondary", "/orders"],
   ["/orders", "Orders", "top-level"],
   ["/analytics", "Analytics", "top-level"],
+  ["/manage/profile", "My profile", "top-level"],
+  ["/manage/business-profile", "Business profile", "secondary", "/manage"],
   ["/settings", "Settings", "secondary", "/manage"],
   ["/manage", "Manage", "top-level"],
   [

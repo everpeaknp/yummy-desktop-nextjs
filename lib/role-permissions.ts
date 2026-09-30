@@ -705,6 +705,10 @@ export function isRouteAllowed(
 ): boolean {
   if (!user) return false;
 
+  // The Profile tab is self-service; every signed-in user can edit their own
+  // account details without needing staff-management permission.
+  if (pathname === "/manage/profile") return true;
+
   // Leaving is membership self-service. Do not tie it to a tenant permission
   // that may not exist for a legitimate custom-role or legacy-association
   // member. The backend remains authoritative when the action is submitted.

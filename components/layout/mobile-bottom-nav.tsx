@@ -27,7 +27,7 @@ export function MobileBottomNav() {
     ...primaryItems,
     {
       title: "Profile",
-      href: "/settings/business-profile",
+      href: "/manage/profile",
       icon: UserRound,
     },
     {
