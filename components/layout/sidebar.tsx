@@ -95,32 +95,44 @@ function SidebarNavLink({
   onToggle?: () => void;
 }) {
   const classes = cn(
-    "flex items-center rounded-lg transition-all group relative",
-    collapsed ? "justify-center px-0 py-2.5" : "gap-3 py-2.5",
-    !collapsed && item.isNestedChild ? "pl-9 pr-3 mt-0.5 text-[13px]" : "px-3",
-    isActive && !item.isNestedChild
-      ? "bg-primary/10 text-primary font-semibold"
+    "flex items-center rounded-xl transition-all duration-150 group relative font-medium text-[13.5px]",
+    collapsed ? "justify-center h-10 w-10 mx-auto my-0.5" : "gap-3 px-3 py-2 my-0.5",
+    !collapsed && item.isNestedChild ? "pl-9 pr-3 text-[13px]" : "",
+    isActive && hasSubItems
+      ? "bg-muted/50 text-foreground"
+      : isActive && !item.isNestedChild
+      ? "bg-primary/10 text-primary font-semibold shadow-xs"
       : isActive && item.isNestedChild
-        ? "text-primary font-semibold"
-        : "text-muted-foreground hover:bg-primary/5 hover:text-primary",
+        ? "text-primary font-semibold bg-primary/5"
+        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
   );
 
   const content = (
     <>
-      {isActive && !collapsed && !item.isNestedChild && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 h-2/3 w-1 bg-primary rounded-r-md" />
+      {isActive && !hasSubItems && !collapsed && !item.isNestedChild && (
+        <div className="absolute left-1.5 top-1/2 -translate-y-1/2 h-4 w-1 bg-primary rounded-full" />
       )}
-      <item.icon
+      <div
         className={cn(
-          "shrink-0 transition-colors",
-          item.isNestedChild ? "h-4 w-4" : "h-5 w-5",
+          "flex items-center justify-center shrink-0 rounded-lg transition-colors",
+          collapsed ? "h-8 w-8" : "h-6 w-6",
+          isActive && !hasSubItems
+            ? "text-primary"
+            : "text-muted-foreground group-hover:text-foreground",
         )}
-      />
+      >
+        <item.icon
+          className={cn(
+            "shrink-0 transition-transform duration-150 group-hover:scale-105",
+            item.isNestedChild ? "h-3.5 w-3.5" : "h-[18px] w-[18px]",
+          )}
+        />
+      </div>
       {!collapsed && (
         <span
           className={cn(
             "flex-1 truncate",
-            item.isNestedChild ? "text-[13px]" : "text-sm",
+            item.isNestedChild ? "text-[13px]" : "text-[13.5px]",
           )}
         >
           {item.title}
@@ -129,8 +141,8 @@ function SidebarNavLink({
       {!collapsed && hasSubItems && (
         <ChevronRight
           className={cn(
-            "h-4 w-4 shrink-0 transition-transform",
-            isOpen && "rotate-90",
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-200",
+            isOpen && "rotate-90 text-foreground",
           )}
         />
       )}
@@ -157,15 +169,56 @@ function SidebarNavLink({
     );
   }
 
+  // Group labels open their landing page; only the chevron changes expansion.
   if (hasSubItems) {
+    if (collapsed) {
+      return (
+        <Link
+          href={item.href}
+          onClick={() => sessionStorage.removeItem("fromManage")}
+          className={classes}
+          title={item.title}
+          {...tourAttr}
+        >
+          {content}
+        </Link>
+      );
+    }
+
     return (
-      <button
-        onClick={onToggle}
-        className={cn(classes, "w-full text-left")}
-        {...tourAttr}
-      >
-        {content}
-      </button>
+      <div className={cn(classes, "w-full pr-1")} {...tourAttr}>
+        <Link
+          href={item.href}
+          onClick={() => sessionStorage.removeItem("fromManage")}
+          className="flex min-w-0 flex-1 items-center gap-3 py-0"
+        >
+          <div
+            className={cn(
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition-colors",
+              isActive && !hasSubItems
+                ? "text-primary"
+                : "text-muted-foreground group-hover:text-foreground",
+            )}
+          >
+            <item.icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-150 group-hover:scale-105" />
+          </div>
+          <span className="flex-1 truncate text-[13.5px]">{item.title}</span>
+        </Link>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={`${isOpen ? "Collapse" : "Expand"} ${item.title} menu`}
+          aria-expanded={!!isOpen}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <ChevronRight
+            className={cn(
+              "h-3.5 w-3.5 transition-transform duration-200",
+              isOpen && "rotate-90 text-foreground",
+            )}
+          />
+        </button>
+      </div>
     );
   }
 
@@ -215,17 +268,15 @@ export function Sidebar() {
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [helpOpen, setHelpOpen] = useState(false);
   const resizingRef = useRef(false);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const planDisplayName = currentPlanDisplayName(
     currentSubscription,
     restaurant,
   );
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
-  const handleAvatarUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0];
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
@@ -242,28 +293,24 @@ export function Sidebar() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await apiClient.post(
-        AuthApis.uploadProfilePicture,
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } },
-      );
-      const fileUrl = response.data?.data?.file_url;
+      const res = await apiClient.post(AuthApis.uploadProfilePicture, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
-      if (response.data?.status === "success" || fileUrl) {
-        if (user && fileUrl) {
+      if (res.data?.status === "success" || res.data?.data?.file_url) {
+        const fileUrl = res.data?.data?.file_url;
+        if (user) {
           useAuth.getState().setAuth(
             { ...user, photo_url: fileUrl },
             useAuth.getState().token,
-            useAuth.getState().refreshToken,
+            useAuth.getState().refreshToken
           );
         }
         toast.success("Profile photo updated successfully!");
       }
-    } catch (error: any) {
-      console.error("Avatar upload failed:", error);
-      toast.error(
-        error?.response?.data?.message || "Failed to upload profile photo",
-      );
+    } catch (err: any) {
+      console.error("Avatar upload failed:", err);
+      toast.error(err?.response?.data?.message || "Failed to upload profile photo");
     } finally {
       setUploadingAvatar(false);
       if (avatarInputRef.current) avatarInputRef.current.value = "";
@@ -387,14 +434,24 @@ export function Sidebar() {
   };
 
   const isItemActive = (item: SidebarItem) => {
+    if (item.subItems?.length) {
+      const hasActiveChild = item.subItems.some((sub) =>
+        matchesRoute(pathname, sub.href),
+      );
+      const isOwnDestination =
+        !isExcludedRoute(pathname, item.href) &&
+        matchesRoute(pathname, item.href);
+
+      // When a landing page is also listed as a child (Finance / Overview),
+      // emphasize that destination once instead of coloring both rows.
+      return isOwnDestination && !hasActiveChild;
+    }
+
     if (
       !isExcludedRoute(pathname, item.href) &&
       matchesRoute(pathname, item.href)
     ) {
       return true;
-    }
-    if (item.subItems) {
-      return item.subItems.some((sub) => matchesRoute(pathname, sub.href));
     }
     return false;
   };
@@ -415,62 +472,77 @@ export function Sidebar() {
               }
         }
       >
+        {/* Unified Workspace Header */}
         <div
+          data-tour="sidebar-outlet"
           className={cn(
-            "flex items-center justify-between border-b border-border/50",
-            collapsed ? "flex-col gap-2 py-3 px-2" : "h-14 px-4",
+            "flex items-center justify-between border-b border-border/50 transition-all",
+            collapsed ? "flex-col gap-2 py-3 px-2" : "h-14 px-3.5",
           )}
         >
-          <Link
-            href={homeHref}
-            data-tour="sidebar-brand"
+          <div
             className={cn(
-              "flex items-center font-bold hover:opacity-90 transition-opacity",
-              collapsed
-                ? "justify-center"
-                : "gap-2 text-lg overflow-hidden min-w-0",
+              "flex items-center min-w-0 flex-1",
+              collapsed ? "justify-center" : "gap-2.5",
             )}
           >
-            <div className="relative h-6 w-6 min-w-6 flex items-center justify-center shrink-0">
-              <Image
-                src="/logos/yummy_logo.png"
-                alt="Logo"
-                width={24}
-                height={24}
-                className="rounded"
-                unoptimized
-              />
+            <div className="relative h-8 w-8 min-w-8 flex items-center justify-center shrink-0 rounded-lg overflow-hidden border border-border/50 bg-background shadow-2xs">
+              {restaurant?.profile_picture ? (
+                <Image
+                  src={getImageUrl(restaurant.profile_picture)}
+                  alt="Logo"
+                  className="object-cover"
+                  fill
+                  unoptimized
+                />
+              ) : (
+                <div className="bg-primary/10 w-full h-full flex items-center justify-center">
+                  <Store className="h-4 w-4 text-primary" />
+                </div>
+              )}
             </div>
+
             {!collapsed && (
-              <span className="truncate text-foreground tracking-tight">
-                Yummy Manage
-              </span>
+              <div className="flex-1 min-w-0 flex flex-col justify-center">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-bold text-[13.5px] truncate text-foreground tracking-tight">
+                    {restaurant?.name || "Yummy Outlet"}
+                  </span>
+                  {isPathAccessible("/premium", user) ? (
+                    <Link
+                      href="/premium"
+                      title="View Billing & Subscription"
+                      className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold tracking-tight shrink-0 hover:bg-amber-500/20 transition-colors"
+                    >
+                      <Crown className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
+                      {planDisplayName}
+                    </Link>
+                  ) : (
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold tracking-tight shrink-0">
+                      <Crown className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
+                      {planDisplayName}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 text-[10.5px] text-muted-foreground leading-tight mt-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="truncate">Active Outlet</span>
+                </div>
+              </div>
             )}
-          </Link>
+          </div>
 
           <div
             className={cn(
-              "flex items-center",
+              "flex items-center shrink-0",
               collapsed ? "flex-col gap-2" : "gap-1",
             )}
           >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  data-tour="sidebar-search"
-                  onClick={() => setSearchOpen(true)}
-                  className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                >
-                  <Search className="h-4 w-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Search (Ctrl+K)</TooltipContent>
-            </Tooltip>
-
             <button
               data-tour="sidebar-collapse"
               onClick={toggle}
               className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               {collapsed ? (
                 <ChevronsRight className="h-4 w-4" />
@@ -483,139 +555,41 @@ export function Sidebar() {
 
         <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
 
-        <div className="p-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                data-tour="sidebar-outlet"
-                className={cn(
-                  "w-full rounded-xl border border-border/50 bg-card transition-all hover:border-primary/30 outline-none focus-visible:ring-2 focus-visible:ring-primary overflow-hidden text-left shadow-sm",
-                  collapsed ? "p-2" : "",
-                )}
-              >
-                <div
-                  className={cn(
-                    "flex items-center",
-                    collapsed ? "justify-center" : "p-3 gap-3",
-                  )}
+        <div className="px-3 pt-2.5 pb-1">
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  data-tour="sidebar-search"
+                  onClick={() => setSearchOpen(true)}
+                  className="flex h-9 w-9 mx-auto items-center justify-center rounded-xl border border-border/50 bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground transition-all shadow-2xs"
                 >
-                  <div className="relative h-9 w-9 min-w-9 flex items-center justify-center shrink-0">
-                    {restaurant?.profile_picture ? (
-                      <Image
-                        src={getImageUrl(restaurant.profile_picture)}
-                        alt="Logo"
-                        className="object-cover rounded-lg"
-                        fill
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="bg-primary/10 w-full h-full rounded-lg flex items-center justify-center">
-                        <Store className="h-5 w-5 text-primary" />
-                      </div>
-                    )}
-                  </div>
-                  {!collapsed && (
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm truncate text-foreground">
-                        {restaurant?.name || "Ramon Restro"}
-                      </div>
-                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
-                        <Crown className="h-3 w-3 text-amber-500" />
-                        <span className="truncate">{planDisplayName}</span>
-                      </div>
-                    </div>
-                  )}
-                  {!collapsed && (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                  )}
-                </div>
-                {!collapsed && (
-                  <div className="bg-primary/5 text-primary text-[11px] font-semibold px-3 py-1.5 text-center border-t border-primary/10 hover:bg-primary/10 transition-colors flex items-center justify-center gap-1 uppercase tracking-wider">
-                    View subscription <Zap className="h-3 w-3" />
-                  </div>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="w-[300px] p-2 rounded-2xl"
-              align="start"
-              side="right"
-              sideOffset={16}
+                  <Search className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Search (Ctrl+K)</TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              type="button"
+              data-tour="sidebar-search"
+              onClick={() => setSearchOpen(true)}
+              className="w-full flex items-center justify-between rounded-xl border border-border/50 bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground px-2.5 py-2 text-xs transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary shadow-2xs group cursor-pointer"
             >
-              <div className="flex items-center justify-between p-2 mb-2">
-                <div className="flex items-center gap-3">
-                  <div className="relative h-11 w-11 min-w-11 flex items-center justify-center shrink-0">
-                    {restaurant?.profile_picture ? (
-                      <Image
-                        src={getImageUrl(restaurant.profile_picture)}
-                        alt="Logo"
-                        className="object-cover rounded-xl"
-                        fill
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="bg-primary/10 w-full h-full rounded-xl flex items-center justify-center">
-                        <Store className="h-5 w-5 text-primary" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-[15px] truncate leading-tight text-foreground">
-                      {restaurant?.name || "Yummy"}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <div className="flex items-center gap-1 text-[11px] text-amber-500 font-bold tracking-tight">
-                        <Crown className="h-3 w-3 fill-amber-500" />
-                        {planDisplayName}
-                      </div>
-                      <div className="text-[10px] font-bold bg-muted px-2 py-0.5 rounded-md text-foreground/80 tracking-tight">
-                        Role:{" "}
-                        {user?.roles?.filter(
-                          (r) => !r.startsWith("__user_"),
-                        )?.[0] ||
-                          user?.role ||
-                          "Admin"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="h-3 w-3 rounded-full border-[2.5px] border-primary bg-transparent shrink-0 self-start mt-1 mr-1" />
+              <div className="flex items-center gap-2 truncate">
+                <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70 group-hover:text-foreground transition-colors" />
+                <span className="text-[12.5px] truncate">Search...</span>
               </div>
-
-              <div className="py-1">
-                {isPathAccessible("/premium", user) && (
-                  <DropdownMenuItem
-                    onClick={() => router.push("/premium")}
-                    className="cursor-pointer gap-4 py-2.5 px-3 text-[14px] font-medium text-foreground/90 hover:text-foreground"
-                  >
-                    <DollarSign className="h-4 w-4" /> Billing & Subscription
-                  </DropdownMenuItem>
-                )}
-
-                {isPathAccessible("/staff", user) && (
-                  <DropdownMenuItem
-                    onClick={() => router.push("/staff")}
-                    className="cursor-pointer gap-4 py-2.5 px-3 text-[14px] font-medium text-foreground/90 hover:text-foreground"
-                  >
-                    <User className="h-4 w-4" /> Manage Staff
-                  </DropdownMenuItem>
-                )}
-
-                {isPathAccessible("/manage/settings", user) && (
-                  <DropdownMenuItem
-                    onClick={() => router.push("/settings")}
-                    className="cursor-pointer gap-4 py-2.5 px-3 text-[14px] font-medium text-foreground/90 hover:text-foreground"
-                  >
-                    <Settings className="h-4 w-4" /> Settings
-                  </DropdownMenuItem>
-                )}
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              <kbd className="text-[10px] font-mono bg-background/80 border border-border/60 text-muted-foreground/80 px-1.5 py-0.5 rounded shadow-2xs shrink-0">
+                Ctrl+K
+              </kbd>
+            </button>
+          )}
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0 sidebar-scroll px-3 pb-4">
-          <nav className="flex flex-col gap-1">
+        <div className="flex-1 overflow-y-auto min-h-0 sidebar-scroll px-2.5 py-2">
+          <nav className="flex flex-col gap-0.5">
             {items.map((item, index) => {
               const active = isItemActive(item);
               const isOpen = openMenus[item.title];
@@ -653,7 +627,7 @@ export function Sidebar() {
                     item.subItems &&
                     item.subItems.length > 0 &&
                     isOpen && (
-                      <div className="ml-5 mt-1 flex flex-col gap-1 border-l pl-4 border-border/50">
+                      <div className="ml-5 my-0.5 flex flex-col gap-0.5 border-l-2 border-border/40 pl-3">
                         {item.subItems.map((sub, sIdx) => {
                           const subActive = matchesRoute(pathname, sub.href);
                           const subTour = tourAttrForHref(sub.href);
@@ -663,13 +637,21 @@ export function Sidebar() {
                               href={sub.href}
                               {...subTour}
                               className={cn(
-                                "text-[13px] py-1.5 px-3 rounded-md transition-all font-medium",
+                                "text-[12.5px] py-1.5 px-2.5 rounded-lg transition-all font-medium flex items-center gap-2",
                                 subActive
-                                  ? "text-primary bg-primary/5"
-                                  : "text-muted-foreground hover:text-primary hover:bg-primary/5",
+                                  ? "text-primary bg-primary/10 font-semibold"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
                               )}
                             >
-                              {sub.title}
+                              <span
+                                className={cn(
+                                  "h-1.5 w-1.5 rounded-full shrink-0 transition-colors",
+                                  subActive
+                                    ? "bg-primary"
+                                    : "bg-muted-foreground/40",
+                                )}
+                              />
+                              <span className="truncate">{sub.title}</span>
                             </Link>
                           );
                         })}
@@ -681,146 +663,215 @@ export function Sidebar() {
           </nav>
         </div>
 
-        <div className="p-3 mt-auto" data-tour="sidebar-account">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+        <div className="p-2 mt-auto border-t border-border/40 flex flex-col gap-1.5" data-tour="sidebar-account">
+          <div className="flex items-center gap-1">
+            <div className="flex-1 min-w-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={cn(
+                      "w-full flex items-center rounded-xl border border-transparent hover:border-border/50 hover:bg-muted/50 p-1.5 transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary group",
+                      collapsed ? "justify-center" : "gap-2.5",
+                    )}
+                  >
+                    <div className="relative shrink-0">
+                      {user?.photo_url ? (
+                        <div className="relative h-8 w-8 rounded-lg overflow-hidden border border-border/50 bg-background shadow-2xs">
+                          <Image
+                            src={getImageUrl(user.photo_url)}
+                            alt={user.full_name || "User"}
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        </div>
+                      ) : (
+                        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/20">
+                          {(user?.full_name && !user.full_name.includes("@")
+                            ? user.full_name
+                            : "User"
+                          )
+                            .substring(0, 2)
+                            .toUpperCase()}
+                        </div>
+                      )}
+                      <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background" />
+                    </div>
+                    {!collapsed && (
+                      <div className="flex-1 min-w-0 flex flex-col justify-center text-left">
+                        <div className="font-semibold text-[13px] truncate text-foreground leading-tight group-hover:text-primary transition-colors">
+                          {user?.full_name && !user.full_name.includes("@")
+                            ? user.full_name
+                            : "User"}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
+                          <span className="capitalize">{user?.role || user?.roles?.[0] || "Staff"}</span>
+                          <span className="text-[9px] text-muted-foreground/50">•</span>
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Online</span>
+                        </div>
+                      </div>
+                    )}
+                    {!collapsed && (
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-foreground shrink-0 transition-transform group-hover:translate-x-0.5" />
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side={collapsed ? "right" : "top"}
+                  align="start"
+                  sideOffset={collapsed ? 12 : 8}
+                  className="w-[240px] p-1.5 rounded-2xl shadow-xl border border-border/60 bg-popover/95 backdrop-blur-md z-50 mb-1"
+                >
+                  {/* User preview inside dropdown */}
+                  <div className="flex items-center gap-2.5 p-2 rounded-xl bg-muted/30 border border-border/30 mb-1">
+                    <div className="relative shrink-0">
+                      {user?.photo_url ? (
+                        <div className="relative h-9 w-9 rounded-xl overflow-hidden border border-border/50 bg-background shadow-2xs">
+                          <Image
+                            src={getImageUrl(user.photo_url)}
+                            alt={user.full_name || "User"}
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        </div>
+                      ) : (
+                        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/20">
+                          {(user?.full_name && !user.full_name.includes("@")
+                            ? user.full_name
+                            : "User"
+                          )
+                            .substring(0, 2)
+                            .toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-xs truncate text-foreground leading-tight">
+                        {user?.full_name && !user.full_name.includes("@")
+                          ? user.full_name
+                          : "User"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground truncate leading-tight capitalize mt-0.5">
+                        {user?.email || user?.role || "Staff"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="py-0.5 space-y-0.5">
+                    <DropdownMenuItem
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={uploadingAvatar}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      {uploadingAvatar ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      ) : (
+                        <Camera className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span>{uploadingAvatar ? "Uploading photo..." : "Upload Profile Photo"}</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={() => router.push("/manage/profile")}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      <User className="h-4 w-4 text-muted-foreground" /> My profile
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={() => router.push("/settings/business-profile")}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      <Pencil className="h-4 w-4 text-muted-foreground" /> Business Profile
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={() => router.push("/feedback")}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      <ThumbsUp className="h-4 w-4 text-muted-foreground" /> Give Feedback
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={() => setHelpOpen(true)}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      <HelpCircle className="h-4 w-4 text-muted-foreground" /> Help & Support
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg flex items-center justify-between"
+                      onSelect={(e) => e.preventDefault()}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Sun className="h-4 w-4 text-muted-foreground" /> Dark Theme
+                      </div>
+                      <Switch
+                        checked={theme === "dark"}
+                        onCheckedChange={(checked) =>
+                          setTheme(checked ? "dark" : "light")
+                        }
+                      />
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator className="my-1 bg-border/50" />
+
+                    <DropdownMenuItem
+                      onClick={() => router.push("/settings")}
+                      className="cursor-pointer gap-2.5 py-2 px-2.5 text-xs font-medium text-foreground/90 hover:text-foreground rounded-lg"
+                    >
+                      <Settings className="h-4 w-4 text-muted-foreground" /> Settings
+                    </DropdownMenuItem>
+                  </div>
+
+                  <div className="pt-1.5 px-0.5 pb-0.5 border-t border-border/40 mt-1">
+                    <button
+                      onClick={() => {
+                        logout();
+                        router.push("/");
+                      }}
+                      className="w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 py-2 rounded-xl text-xs font-bold transition-colors border border-rose-500/20 cursor-pointer"
+                    >
+                      <LogOut className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" /> Log out
+                    </button>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            {/* Direct visible semi-red logout action */}
+            {collapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => {
+                      logout();
+                      router.push("/");
+                    }}
+                    title="Log out"
+                    className="flex h-8 w-8 mx-auto items-center justify-center rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Log out</TooltipContent>
+              </Tooltip>
+            ) : (
               <button
-                className={cn(
-                  "w-full flex items-center rounded-xl border border-border/50 bg-card p-2 transition-all hover:bg-muted/50 outline-none focus-visible:ring-2 focus-visible:ring-primary shadow-sm",
-                  collapsed ? "justify-center" : "gap-3",
-                )}
+                onClick={() => {
+                  logout();
+                  router.push("/");
+                }}
+                title="Log out"
+                className="flex items-center justify-center h-8 px-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition-all text-xs font-semibold gap-1.5 shrink-0 cursor-pointer"
               >
-                <div className="h-9 w-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0 text-sm">
-                  {(user?.full_name && !user.full_name.includes("@")
-                    ? user.full_name
-                    : "User"
-                  )
-                    .substring(0, 2)
-                    .toUpperCase()}
-                </div>
-                {!collapsed && (
-                  <div className="flex-1 min-w-0 flex flex-col justify-center text-left">
-                    <div className="font-semibold text-sm truncate text-foreground leading-none mb-1">
-                      {user?.full_name && !user.full_name.includes("@")
-                        ? user.full_name
-                        : "User"}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground truncate leading-none capitalize">
-                      {user?.role || user?.roles?.[0] || "Staff"}
-                    </div>
-                  </div>
-                )}
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="hidden xl:inline text-[11px]">Log out</span>
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              side="right"
-              align="end"
-              sideOffset={16}
-              className="w-[300px] p-2 rounded-2xl mb-2"
-            >
-              <div className="flex items-center gap-3 p-2 mb-1">
-                <div className="h-12 w-12 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xl shrink-0">
-                  {(user?.full_name && !user.full_name.includes("@")
-                    ? user.full_name
-                    : "User"
-                  )
-                    .substring(0, 2)
-                    .toUpperCase()}
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="font-bold text-[15px] truncate text-foreground">
-                    {user?.full_name && !user.full_name.includes("@")
-                      ? user.full_name
-                      : "User"}
-                  </span>
-                  <span className="text-xs text-muted-foreground truncate leading-snug capitalize">
-                    {user?.role || user?.roles?.[0] || "Staff"}
-                  </span>
-                </div>
-              </div>
+            )}
+          </div>
 
-              <DropdownMenuSeparator className="mx-2 bg-border/50" />
-
-              <div className="py-1">
-                <DropdownMenuItem
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={uploadingAvatar}
-                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
-                >
-                  {uploadingAvatar ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Camera className="h-4 w-4" />
-                  )}
-                  {uploadingAvatar ? "Uploading photo..." : "Upload profile photo"}
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => router.push("/manage/profile")}
-                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
-                >
-                  <User className="h-4 w-4" /> My profile
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => router.push("/settings/business-profile")}
-                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
-                >
-                  <Pencil className="h-4 w-4" /> Business Profile
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => router.push("/feedback")}
-                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
-                >
-                  <ThumbsUp className="h-4 w-4" /> Give Feedback
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => setHelpOpen(true)}
-                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
-                >
-                  <HelpCircle className="h-4 w-4" /> Help
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground flex items-center justify-between"
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  <div className="flex items-center gap-3">
-                    <Sun className="h-4 w-4" /> Dark Theme
-                  </div>
-                  <Switch
-                    checked={theme === "dark"}
-                    onCheckedChange={(checked) =>
-                      setTheme(checked ? "dark" : "light")
-                    }
-                  />
-                </DropdownMenuItem>
-
-                <DropdownMenuSeparator className="mx-2 bg-border/50" />
-
-                <DropdownMenuItem
-                  onClick={() => router.push("/settings")}
-                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
-                >
-                  <Settings className="h-4 w-4" /> Settings
-                </DropdownMenuItem>
-              </div>
-
-              <div className="pt-2 px-1 pb-1">
-                <button
-                  onClick={() => {
-                    logout();
-                    router.push("/");
-                  }}
-                  className="w-full flex items-center justify-center gap-2 bg-muted/40 hover:bg-muted text-foreground py-2.5 rounded-xl text-[13px] font-bold transition-colors border border-transparent hover:border-border/50"
-                >
-                  <LogOut className="h-4 w-4 text-foreground/60" /> Log out
-                </button>
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
           <input
             ref={avatarInputRef}
             type="file"
