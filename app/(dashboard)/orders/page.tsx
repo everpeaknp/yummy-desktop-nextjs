@@ -8,7 +8,6 @@ import apiClient from "@/lib/api-client";
 import { OrderApis, TableApis, KotApis } from "@/lib/api/endpoints";
 import {
   defaultHistoryDateRange,
-  hasExtendedHistoryAccess,
   resolvePrimaryRole,
   validateHistoryDateRange,
   validationToScopeError,
@@ -22,6 +21,7 @@ import {
   LayoutGrid,
   ClipboardList,
   History,
+  Calendar as CalendarIcon,
   Receipt,
   ChevronLeft,
   ChevronRight,
@@ -73,6 +73,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { EmptyState as SharedEmptyState } from "@/components/patterns/feedback/feedback-state";
 import {
   humanizeKotEvent,
@@ -133,6 +139,8 @@ type OrderDetailFilters = {
 };
 
 type OrderTimeScope = "all" | "today" | "yesterday" | "last7" | "thisMonth";
+type HistoryPaymentStatus = "all" | "paid" | "partially_paid" | "unpaid";
+const HISTORY_PAGE_SIZE = 50;
 
 const orderTimeScopes: Array<{ value: OrderTimeScope; label: string }> = [
   { value: "today", label: "Today" },
@@ -306,6 +314,76 @@ function ChoiceChips({
         ))}
       </div>
     </section>
+  );
+}
+
+function HistoryDateFilter({
+  label,
+  value,
+  onSelect,
+}: {
+  label: "From" | "To";
+  value?: Date;
+  onSelect: (date: Date | undefined) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          aria-label={`${label} date`}
+          className="h-11 w-[216px] shrink-0 justify-between rounded-xl border-border bg-background px-3 font-medium shadow-none transition-colors hover:bg-muted/40"
+        >
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span className="text-xs text-muted-foreground">{label}</span>
+            <span
+              className={cn(
+                "truncate text-sm",
+                !value && "text-muted-foreground",
+              )}
+            >
+              {value ? format(value, "MM/dd/yyyy") : "Select date"}
+            </span>
+          </span>
+          <CalendarIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-auto rounded-2xl border-border p-0 shadow-lg"
+      >
+        <CalendarComponent
+          initialFocus
+          mode="single"
+          defaultMonth={value ?? new Date()}
+          selected={value}
+          onSelect={(date) => {
+            onSelect(date);
+            if (date) setOpen(false);
+          }}
+          weekStartsOn={1}
+        />
+        {value ? (
+          <div className="border-t border-border/70 p-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9 w-full rounded-xl text-sm text-muted-foreground"
+              onClick={() => {
+                onSelect(undefined);
+                setOpen(false);
+              }}
+            >
+              Clear date
+            </Button>
+          </div>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -494,6 +572,10 @@ export default function OrdersPage() {
   );
   const [orders, setOrders] = useState<any[]>([]);
   const [historyOrders, setHistoryOrders] = useState<any[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPaymentStatus, setHistoryPaymentStatus] =
+    useState<HistoryPaymentStatus>("all");
   const [historySettlements, setHistorySettlements] = useState<
     Record<number, FinanceOrderSettlementSummary>
   >({});
@@ -517,6 +599,7 @@ export default function OrdersPage() {
   const [scopeNotice, setScopeNotice] = useState<ParsedScopeError | null>(null);
   const [suggestedRange, setSuggestedRange] = useState<DateRange | undefined>();
   const dateRangeInitialized = useRef(false);
+  const historyRequestId = useRef(0);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
@@ -525,33 +608,6 @@ export default function OrdersPage() {
   const [kotActivity, setKotActivity] = useState<OrdersKotActivity[]>([]);
   const [kotActivityLoading, setKotActivityLoading] = useState(false);
   const [kotStatusUpdating, setKotStatusUpdating] = useState(false);
-  const [historyLimit, setHistoryLimit] = useState(50);
-  const observerTarget = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (activeTab !== "history" || historyLoading) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && historyOrders.length >= historyLimit) {
-          setHistoryLimit((prev) => prev + 50);
-        }
-      },
-      { threshold: 0.1 },
-    );
-
-    const currentTarget = observerTarget.current;
-    if (currentTarget) {
-      observer.observe(currentTarget);
-    }
-
-    return () => {
-      if (currentTarget) {
-        observer.unobserve(currentTarget);
-      }
-    };
-  }, [activeTab, historyLoading, historyOrders.length, historyLimit]);
-
   const user = useAuth((state) => state.user);
   const me = useAuth((state) => state.me);
   const restaurant = useRestaurant((state) => state.restaurant);
@@ -562,12 +618,15 @@ export default function OrdersPage() {
     subscriptionEntitlements,
     "finance.history_days",
   );
-  const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
-  const canUseExtendedHistory = useMemo(
-    () => hasExtendedHistoryAccess(user),
-    [user],
+  const historyRecordLimit = entitlementLimit(
+    subscriptionEntitlements,
+    "finance.history_records.max",
   );
-
+  const historyAccessibleTotal =
+    historyRecordLimit == null
+      ? historyTotal
+      : Math.min(historyTotal, Math.max(0, historyRecordLimit));
+  const primaryRole = useMemo(() => resolvePrimaryRole(user), [user]);
   useEffect(() => {
     if (!user || dateRangeInitialized.current) return;
     setDateRange(defaultHistoryDateRange(primaryRole, { user }));
@@ -685,7 +744,7 @@ export default function OrdersPage() {
   }, [user?.restaurant_id, kotTimeScope]);
 
   // 3. Fetch History Orders
-  const fetchHistoryData = useCallback(async () => {
+  const fetchHistoryData = useCallback(async (requestId: number) => {
     if (!user?.restaurant_id || activeTab !== "history") return;
 
     const validation = validateHistoryDateRange(dateRange, {
@@ -695,9 +754,11 @@ export default function OrdersPage() {
       user,
     });
     if (!validation.allowed) {
+      if (requestId !== historyRequestId.current) return;
       setScopeNotice(validationToScopeError(validation));
       setSuggestedRange(validation.suggestedRange);
       setHistoryOrders([]);
+      setHistoryTotal(0);
       setHistorySettlements({});
       setHistoryLoading(false);
       return;
@@ -712,8 +773,13 @@ export default function OrdersPage() {
         restaurant_id: user.restaurant_id,
         status: ["completed", "canceled"],
         timezone: timezone,
-        limit: historyLimit,
+        skip: (historyPage - 1) * HISTORY_PAGE_SIZE,
+        limit: HISTORY_PAGE_SIZE,
       };
+
+      if (historyPaymentStatus !== "all") {
+        params.payment_status = historyPaymentStatus;
+      }
 
       if (dateRange?.from) {
         params.date_from = format(dateRange.from, "yyyy-MM-dd");
@@ -743,12 +809,14 @@ export default function OrdersPage() {
       const res = await apiClient.get(
         `${OrderApis.listOrders}?${queryString.toString()}`,
       );
+      if (requestId !== historyRequestId.current) return;
       if (res.data.status === "success") {
         const data = res.data.data;
         const list = [...(data.orders || [])].sort(
           (a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a),
         );
         setHistoryOrders(list);
+        setHistoryTotal(Number(data.total ?? list.length));
         try {
           const settlements = await financeSalesApi.getOrderSettlements(
             Number(user.restaurant_id),
@@ -756,6 +824,7 @@ export default function OrdersPage() {
               .map((order: any) => Number(order.id))
               .filter((id: number) => id > 0),
           );
+          if (requestId !== historyRequestId.current) return;
           setHistorySettlements(
             Object.fromEntries(
               settlements.map((settlement) => [
@@ -773,10 +842,12 @@ export default function OrdersPage() {
         }
       }
     } catch (err: unknown) {
+      if (requestId !== historyRequestId.current) return;
       const parsed = parseApiScopeError(err, { role: primaryRole });
       if (parsed) {
         setScopeNotice(parsed);
         setHistoryOrders([]);
+        setHistoryTotal(0);
         setHistorySettlements({});
         if (parsed.kind === "role_manager_limit") {
           setSuggestedRange({ from: subDays(new Date(), 30), to: new Date() });
@@ -790,14 +861,15 @@ export default function OrdersPage() {
       }
       toast.error("Failed to load history");
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestId.current) setHistoryLoading(false);
     }
   }, [
     user,
     activeTab,
     dateRange,
     searchQuery,
-    historyLimit,
+    historyPage,
+    historyPaymentStatus,
     primaryRole,
     restaurant?.effective_plan,
     historyDays,
@@ -806,10 +878,26 @@ export default function OrdersPage() {
   const applySuggestedHistoryRange = useCallback(() => {
     if (suggestedRange) {
       setDateRange(suggestedRange);
+      setHistoryPage(1);
       setScopeNotice(null);
       setSuggestedRange(undefined);
     }
   }, [suggestedRange]);
+
+  const resetHistoryFilters = useCallback(() => {
+    setDateRange(defaultHistoryDateRange(primaryRole, { user }));
+    setSearchQuery("");
+    setHistoryDetailFilters(emptyOrderDetailFilters);
+    setHistoryPaymentStatus("all");
+    setHistoryPage(1);
+    setScopeNotice(null);
+    setSuggestedRange(undefined);
+  }, [primaryRole, user]);
+
+  const updateHistorySearch = useCallback((value: string) => {
+    setSearchQuery(value);
+    setHistoryPage(1);
+  }, []);
 
   useEffect(() => {
     if (user?.restaurant_id && activeTab === "active") {
@@ -826,8 +914,12 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (activeTab === "history") {
-      const timer = setTimeout(fetchHistoryData, 500);
-      return () => clearTimeout(timer);
+      const requestId = ++historyRequestId.current;
+      const timer = setTimeout(() => fetchHistoryData(requestId), 500);
+      return () => {
+        clearTimeout(timer);
+        if (historyRequestId.current === requestId) historyRequestId.current += 1;
+      };
     }
   }, [fetchHistoryData, activeTab]);
 
@@ -960,6 +1052,10 @@ export default function OrdersPage() {
 
     return groups;
   }, [filteredHistoryOrders]);
+  const historyPageCount = Math.max(
+    1,
+    Math.ceil(historyAccessibleTotal / HISTORY_PAGE_SIZE),
+  );
 
   const filteredActive = orders
     .filter((order) => {
@@ -985,7 +1081,12 @@ export default function OrdersPage() {
       return (
         (order.table_name || "").toLowerCase().includes(q) ||
         (order.customer_name || "").toLowerCase().includes(q) ||
-        String(order.restaurant_order_id || order.id).includes(q)
+        String(order.restaurant_order_id || order.id).includes(q) ||
+        (order.items || []).some((item) =>
+          String(item.name_snapshot || item.item_name || "")
+            .toLowerCase()
+            .includes(q),
+        )
       );
     })
     .sort((a: any, b: any) => getOrderTimeMs(b) - getOrderTimeMs(a));
@@ -1046,7 +1147,9 @@ export default function OrdersPage() {
           Number(kotStatusFilter !== "ALL") +
           Number(kotStationFilter !== "All") +
           Number(kotTableFilter !== "All")
-        : filterCount(historyDetailFilters);
+        : filterCount(historyDetailFilters) +
+          Number(Boolean(searchQuery.trim())) +
+          Number(historyPaymentStatus !== "all");
   const mobileOrdersFilterContent =
     activeTab === "active" ? (
       <>
@@ -1093,6 +1196,19 @@ export default function OrdersPage() {
       </>
     ) : (
       <>
+        <ChoiceChips
+          label="Payment status"
+          value={historyPaymentStatus === "all" ? "" : historyPaymentStatus}
+          onChange={(value) => {
+            setHistoryPaymentStatus((value || "all") as HistoryPaymentStatus);
+            setHistoryPage(1);
+          }}
+          options={[
+            { value: "paid", label: "Paid" },
+            { value: "partially_paid", label: "Partially paid" },
+            { value: "unpaid", label: "Unpaid" },
+          ]}
+        />
         <TimeScopeChips
           value={
             orderTimeScopes.find((scope) => {
@@ -1103,45 +1219,36 @@ export default function OrdersPage() {
               );
             })?.value ?? "all"
           }
-          onChange={(scope) =>
+          onChange={(scope) => {
             setDateRange(
               dateRangeForTimeScope(scope) ??
                 defaultHistoryDateRange(primaryRole, { user }),
-            )
-          }
+            );
+            setHistoryPage(1);
+          }}
         />
-        <label className="grid gap-1 text-sm font-medium">
-          From
-          <Input
-            type="date"
-            value={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : ""}
-            onChange={(event) =>
-              setDateRange((current) => ({
-                from: event.target.value
-                  ? startOfDay(new Date(`${event.target.value}T00:00:00`))
-                  : undefined,
-                to: current?.to,
-              }))
-            }
-            className="h-11 rounded-xl"
-          />
-        </label>
-        <label className="grid gap-1 text-sm font-medium">
-          To
-          <Input
-            type="date"
-            value={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : ""}
-            onChange={(event) =>
-              setDateRange((current) => ({
-                from: current?.from,
-                to: event.target.value
-                  ? endOfDay(new Date(`${event.target.value}T00:00:00`))
-                  : undefined,
-              }))
-            }
-            className="h-11 rounded-xl"
-          />
-        </label>
+        <HistoryDateFilter
+          label="From"
+          value={dateRange?.from}
+          onSelect={(date) => {
+            setDateRange((current) => ({
+              from: date ? startOfDay(date) : undefined,
+              to: current?.to,
+            }));
+            setHistoryPage(1);
+          }}
+        />
+        <HistoryDateFilter
+          label="To"
+          value={dateRange?.to}
+          onSelect={(date) => {
+            setDateRange((current) => ({
+              from: current?.from,
+              to: date ? endOfDay(date) : undefined,
+            }));
+            setHistoryPage(1);
+          }}
+        />
         <OrderDetailFilterFields
           orders={historyOrders}
           filters={historyDetailFilters}
@@ -1151,9 +1258,10 @@ export default function OrdersPage() {
             order.completed_by?.name ||
             order.completed_by?.full_name
           }
-          onChange={(next) =>
-            setHistoryDetailFilters((current) => ({ ...current, ...next }))
-          }
+          onChange={(next) => {
+            setHistoryDetailFilters((current) => ({ ...current, ...next }));
+            setHistoryPage(1);
+          }}
         />
       </>
     );
@@ -1174,9 +1282,9 @@ export default function OrdersPage() {
           <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto">
             <SearchField
               value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onClear={() => setSearchQuery("")}
-              placeholder="Search orders or customers"
+              onChange={(event) => updateHistorySearch(event.target.value)}
+              onClear={() => updateHistorySearch("")}
+              placeholder="Search orders, items, or tables"
               containerClassName="min-w-0 flex-1 lg:w-[320px]"
             />
             <FilterBar
@@ -1219,12 +1327,7 @@ export default function OrdersPage() {
                   <Button
                     variant="outline"
                     className="w-full"
-                    onClick={() => {
-                      setDateRange(
-                        defaultHistoryDateRange(primaryRole, { user }),
-                      );
-                      setHistoryDetailFilters(emptyOrderDetailFilters);
-                    }}
+                    onClick={resetHistoryFilters}
                   >
                     Clear filters
                   </Button>
@@ -1243,6 +1346,7 @@ export default function OrdersPage() {
           onValueChange={(value) =>
             setOrdersTab(value as "active" | "kot" | "history")
           }
+          activeVariant="accent"
           mobileMode="equal"
           items={[
             {
@@ -1264,76 +1368,75 @@ export default function OrdersPage() {
         <div className="min-w-0">
           {activeTab === "history" && (
             <FilterBar className="hidden lg:block" title="History filters">
-              {canUseExtendedHistory ? (
-                <Badge
-                  variant="secondary"
-                  className="h-11 rounded-xl px-3 text-xs"
+              <Select
+                value={historyPaymentStatus}
+                onValueChange={(value) => {
+                  setHistoryPaymentStatus(value as HistoryPaymentStatus);
+                  setHistoryPage(1);
+                }}
+              >
+                <SelectTrigger
+                  aria-label="Filter by payment status"
+                  className="h-11 w-[216px] shrink-0 rounded-xl"
                 >
-                  Extended history
-                </Badge>
-              ) : null}
-              <label className="grid gap-1 text-xs text-muted-foreground">
-                From
-                <Input
-                  type="date"
-                  value={
-                    dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : ""
-                  }
-                  onChange={(event) =>
-                    setDateRange((current) => ({
-                      from: event.target.value
-                        ? startOfDay(new Date(`${event.target.value}T00:00:00`))
-                        : undefined,
-                      to: current?.to,
-                    }))
-                  }
-                  className="h-11 rounded-xl"
-                />
-              </label>
-              <label className="grid gap-1 text-xs text-muted-foreground">
-                To
-                <Input
-                  type="date"
-                  value={
-                    dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : ""
-                  }
-                  onChange={(event) =>
-                    setDateRange((current) => ({
-                      from: current?.from,
-                      to: event.target.value
-                        ? endOfDay(new Date(`${event.target.value}T00:00:00`))
-                        : undefined,
-                    }))
-                  }
-                  className="h-11 rounded-xl"
-                />
-              </label>
+                  <span className="text-xs text-muted-foreground">Payment</span>
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="partially_paid">Partially paid</SelectItem>
+                  <SelectItem value="unpaid">Unpaid</SelectItem>
+                </SelectContent>
+              </Select>
+              <HistoryDateFilter
+              label="From"
+              value={dateRange?.from}
+                onSelect={(date) => {
+                  setDateRange((current) => ({
+                    from: date ? startOfDay(date) : undefined,
+                    to: current?.to,
+                  }));
+                  setHistoryPage(1);
+                }}
+              />
+              <HistoryDateFilter
+                label="To"
+                value={dateRange?.to}
+                onSelect={(date) => {
+                  setDateRange((current) => ({
+                    from: current?.from,
+                    to: date ? endOfDay(date) : undefined,
+                  }));
+                  setHistoryPage(1);
+                }}
+              />
               <FilterChip
-                onClick={() =>
+                onClick={() => {
                   setDateRange({
                     from: startOfDay(new Date()),
                     to: endOfDay(new Date()),
-                  })
-                }
+                  });
+                  setHistoryPage(1);
+                }}
               >
                 Today
               </FilterChip>
               <FilterChip
-                onClick={() =>
+                onClick={() => {
                   setDateRange({
                     from: startOfDay(subDays(new Date(), 7)),
                     to: endOfDay(new Date()),
-                  })
-                }
+                  });
+                  setHistoryPage(1);
+                }}
               >
                 Last 7 days
               </FilterChip>
               <Button
                 variant="ghost"
                 className="h-11 px-3 text-sm"
-                onClick={() =>
-                  setDateRange(defaultHistoryDateRange(primaryRole, { user }))
-                }
+                onClick={resetHistoryFilters}
               >
                 Reset
               </Button>
@@ -1363,6 +1466,11 @@ export default function OrdersPage() {
                 <FilterChip
                   key={status}
                   active={kotStatusFilter === status}
+                  className={cn(
+                    "min-h-11 rounded-xl px-4",
+                    kotStatusFilter === status &&
+                      "border-primary/30 bg-primary/10 text-primary hover:bg-primary/10",
+                  )}
                   onClick={() =>
                     setKotStatusFilter(status === "ALL" ? "ALL" : status)
                   }
@@ -1372,44 +1480,61 @@ export default function OrdersPage() {
                     : status.charAt(0) + status.slice(1).toLowerCase()}
                 </FilterChip>
               ))}
-              <select
-                aria-label="Filter kitchen station"
+              <Select
                 value={kotStationFilter}
-                onChange={(event) => setKotStationFilter(event.target.value)}
-                className="h-11 rounded-xl border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none focus:border-primary"
+                onValueChange={setKotStationFilter}
               >
-                {Array.from(
-                  new Set([
-                    "All",
-                    ...(kots
-                      .map((kot) => kot.station)
-                      .filter(Boolean) as string[]),
-                  ]),
-                ).map((station) => (
-                  <option key={station} value={station}>
-                    {station}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Filter table"
-                value={kotTableFilter}
-                onChange={(event) => setKotTableFilter(event.target.value)}
-                className="h-11 rounded-xl border border-border bg-card px-3 text-sm font-medium text-muted-foreground outline-none focus:border-primary"
-              >
-                {Array.from(
-                  new Set([
-                    "All",
-                    ...(kots
-                      .map((kot) => kot.table_name)
-                      .filter(Boolean) as string[]),
-                  ]),
-                ).map((table) => (
-                  <option key={table} value={table}>
-                    {table}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  aria-label="Filter kitchen station"
+                  className="h-11 w-[156px] rounded-xl border-border/70 bg-background px-3 text-sm font-medium shadow-none transition-colors hover:border-primary/40 focus:border-primary focus:ring-2 focus:ring-primary/15"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-64 rounded-xl border-border p-1 shadow-lg">
+                  {Array.from(
+                    new Set([
+                      "All",
+                      ...(kots
+                        .map((kot) => kot.station)
+                        .filter(Boolean) as string[]),
+                    ]),
+                  ).map((station) => (
+                    <SelectItem
+                      key={station}
+                      value={station}
+                      className="rounded-lg py-2.5 text-sm"
+                    >
+                      {station === "All" ? "All stations" : station}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={kotTableFilter} onValueChange={setKotTableFilter}>
+                <SelectTrigger
+                  aria-label="Filter table"
+                  className="h-11 w-[156px] rounded-xl border-border/70 bg-background px-3 text-sm font-medium shadow-none transition-colors hover:border-primary/40 focus:border-primary focus:ring-2 focus:ring-primary/15"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-64 rounded-xl border-border p-1 shadow-lg">
+                  {Array.from(
+                    new Set([
+                      "All",
+                      ...(kots
+                        .map((kot) => kot.table_name)
+                        .filter(Boolean) as string[]),
+                    ]),
+                  ).map((table) => (
+                    <SelectItem
+                      key={table}
+                      value={table}
+                      className="rounded-lg py-2.5 text-sm"
+                    >
+                      {table === "All" ? "All tables" : table}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </FilterBar>
           )}
         </div>
@@ -1506,14 +1631,46 @@ export default function OrdersPage() {
                   </div>
                 </div>
               ))}
-              <div
-                ref={observerTarget}
-                className="h-16 w-full flex items-center justify-center mt-6"
-              >
-                {historyOrders.length >= historyLimit && (
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                )}
-              </div>
+              {historyAccessibleTotal > HISTORY_PAGE_SIZE ? (
+                <div className="mt-2 flex flex-col items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/60 px-4 py-3 sm:flex-row">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {(historyPage - 1) * HISTORY_PAGE_SIZE + 1}–
+                    {Math.min(
+                      historyPage * HISTORY_PAGE_SIZE,
+                      historyAccessibleTotal,
+                    )}
+                    {" of "}
+                    {historyAccessibleTotal.toLocaleString()} orders
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 rounded-lg"
+                      disabled={historyPage <= 1 || historyLoading}
+                      onClick={() => setHistoryPage((page) => page - 1)}
+                    >
+                      Previous
+                    </Button>
+                    <span className="min-w-20 text-center text-xs font-medium text-muted-foreground">
+                      Page {historyPage} of {historyPageCount}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 rounded-lg"
+                      disabled={
+                        historyPage >= historyPageCount || historyLoading
+                      }
+                      onClick={() => setHistoryPage((page) => page + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         </div>

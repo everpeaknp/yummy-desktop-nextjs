@@ -20,14 +20,15 @@ export interface MetricCardProps extends React.HTMLAttributes<HTMLDivElement> {
   detail?: React.ReactNode;
   trend?: React.ReactNode;
   tone?: MetricTone;
+  labelClassName?: string;
 }
 
-export function MetricCard({ label, value, icon, detail, trend, tone = "neutral", className, ...props }: MetricCardProps) {
+export function MetricCard({ label, value, icon, detail, trend, tone = "neutral", className, labelClassName, ...props }: MetricCardProps) {
   return (
     <div className={cn("min-w-0 rounded-2xl border border-border bg-card p-3.5 shadow-sm sm:p-4", className)} {...props}>
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-xs font-medium text-muted-foreground">{label}</div>
+          <div className={cn("truncate text-xs font-medium text-muted-foreground", labelClassName)}>{label}</div>
           <div className="mt-1 truncate text-xl font-semibold leading-tight tracking-[-0.025em] text-foreground tabular-nums sm:text-2xl">{value}</div>
         </div>
         {icon ? <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", tones[tone])}>{icon}</div> : null}
@@ -41,4 +42,3 @@ export function MetricCard({ label, value, icon, detail, trend, tone = "neutral"
     </div>
   );
 }
-

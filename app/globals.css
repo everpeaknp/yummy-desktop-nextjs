@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap");
 @import "leaflet/dist/leaflet.css";
 
 @tailwind base;
@@ -84,6 +85,52 @@
     --input: 217 13% 20%;
     --ring: 13 88% 53%;
   }
+
+  .dark .dashboard-executive {
+    --foreground: 0 0% 95%;
+    --muted-foreground: 218 10% 66%;
+    --primary: 13 88% 53%;
+    --primary-foreground: 222 39% 11%;
+    --ring: 13 88% 53%;
+    --dashboard-chart-orange: #f97316;
+  }
+}
+
+@layer components {
+  .settings-dialog {
+    @apply gap-5 rounded-xl border-border/60 bg-background p-6 shadow-2xl sm:rounded-xl;
+  }
+
+  .settings-dialog > div:first-child h2,
+  .settings-dialog .settings-dialog-title {
+    @apply normal-case font-semibold tracking-tight;
+    font-style: normal;
+  }
+
+  .settings-dialog .italic {
+    font-style: normal;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  .settings-dialog > div:first-child p {
+    @apply text-sm font-normal text-muted-foreground;
+  }
+
+  .settings-dialog input:not([type="checkbox"]),
+  .settings-dialog [role="combobox"] {
+    @apply h-10 rounded-md border-border/70 font-normal;
+  }
+
+  .settings-dialog .settings-dialog-footer {
+    @apply gap-2 border-t border-border/60 pt-4;
+  }
+
+  .settings-dialog .settings-dialog-footer > button {
+    @apply min-h-10 rounded-md px-4 text-sm font-medium tracking-normal;
+    text-transform: none;
+    font-style: normal;
+  }
 }
 
 @layer base {
@@ -161,26 +208,28 @@ body[data-scroll-locked] .orders-new-order-cta {
 
   .sidebar-scroll {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--primary) / 0.55) hsl(var(--muted) / 0.35);
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.2s ease;
+  }
+  .sidebar-scroll:hover {
+    scrollbar-color: hsl(var(--foreground) / 0.2) transparent;
   }
   .sidebar-scroll::-webkit-scrollbar {
-    width: 10px;
+    width: 4px;
   }
   .sidebar-scroll::-webkit-scrollbar-track {
-    background: hsl(var(--muted) / 0.35);
-    border-radius: 999px;
+    background: transparent;
   }
   .sidebar-scroll::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      hsl(var(--primary) / 0.6) 0%,
-      hsl(var(--primary) / 0.8) 100%
-    );
+    background: transparent;
     border-radius: 999px;
-    border: 2px solid hsl(var(--card));
+    transition: background-color 0.2s ease;
+  }
+  .sidebar-scroll:hover::-webkit-scrollbar-thumb {
+    background: hsl(var(--foreground) / 0.18);
   }
   .sidebar-scroll::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--primary) / 0.95);
+    background: hsl(var(--foreground) / 0.35);
   }
 
   .no-scrollbar::-webkit-scrollbar {
@@ -633,4 +682,14 @@ body[data-scroll-locked] .orders-new-order-cta {
 .phone-input-field .PhoneInput--disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.dashboard-executive {
+  --dashboard-chart-orange: #f97316;
+}
+
+.dark .dashboard-executive .dashboard-muted-card {
+  border-color: hsl(var(--border)) !important;
+  background-color: hsl(var(--card)) !important;
+  background-image: none !important;
 }

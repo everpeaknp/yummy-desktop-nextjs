@@ -593,10 +593,20 @@ export function useSidebarItems(): SidebarItem[] {
       }
     }
 
-    // Clean up empty subItems arrays
-    return result.map((r) => ({
+    // Ensure Settings is always at the very end of navigation
+    const cleaned = result.map((r) => ({
       ...r,
       subItems: r.subItems?.length ? r.subItems : undefined,
     }));
+
+    const settingsIndex = cleaned.findIndex(
+      (item) => item.href === "/settings" || item.title.toLowerCase() === "settings",
+    );
+    if (settingsIndex >= 0 && settingsIndex !== cleaned.length - 1) {
+      const [settingsItem] = cleaned.splice(settingsIndex, 1);
+      cleaned.push(settingsItem);
+    }
+
+    return cleaned;
   }, [currentSubscription, restaurant, user]);
 }

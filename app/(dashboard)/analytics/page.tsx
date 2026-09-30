@@ -289,7 +289,9 @@ export default function AnalyticsPage() {
     let dateFrom = formatDateStr(now);
     let dateTo = formatDateStr(now);
 
-    if (activeRange === "yesterday") {
+    if (activeRange === "lifetime") {
+      dateFrom = "1970-01-01";
+    } else if (activeRange === "yesterday") {
       const y = new Date(now);
       y.setDate(y.getDate() - 1);
       dateFrom = formatDateStr(y);
@@ -725,7 +727,9 @@ export default function AnalyticsPage() {
         let dateFrom = formatDate(now);
         let dateTo = formatDate(now);
 
-        if (activeRange === "yesterday") {
+        if (activeRange === "lifetime") {
+          dateFrom = "1970-01-01";
+        } else if (activeRange === "yesterday") {
           const y = new Date(now);
           y.setDate(y.getDate() - 1);
           dateFrom = formatDate(y);

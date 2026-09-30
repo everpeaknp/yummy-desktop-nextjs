@@ -168,11 +168,12 @@ export default function DashboardLayout({
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background lg:flex-row">
       <Sidebar />
-      <div className="flex flex-col flex-1 h-full overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
         <Header />
         <main
           className={cn(
             "flex-1 overflow-y-auto p-4 lg:pb-4",
+            pathname === "/dashboard" && "lg:p-0",
             isSecondaryMobileModule
               ? "pb-[max(env(safe-area-inset-bottom),1rem)]"
               : "pb-24",

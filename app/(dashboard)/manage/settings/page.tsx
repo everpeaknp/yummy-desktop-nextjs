@@ -953,7 +953,7 @@ export default function RestaurantSettingsPage() {
         open={qrDialog.open}
         onOpenChange={(open) => setQrDialog({ ...qrDialog, open })}
       >
-        <DialogContent>
+        <DialogContent className="settings-dialog">
           <DialogHeader>
             <DialogTitle>
               {qrDialog.index !== null
@@ -1029,7 +1029,7 @@ export default function RestaurantSettingsPage() {
               </Select>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="settings-dialog-footer">
             <Button
               variant="outline"
               onClick={() => setQrDialog({ open: false, index: null })}
@@ -1051,7 +1051,7 @@ export default function RestaurantSettingsPage() {
         open={cardDialog.open}
         onOpenChange={(open) => setCardDialog({ ...cardDialog, open })}
       >
-        <DialogContent>
+        <DialogContent className="settings-dialog">
           <DialogHeader>
             <DialogTitle>
               {cardDialog.index !== null
@@ -1106,7 +1106,7 @@ export default function RestaurantSettingsPage() {
               </Select>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="settings-dialog-footer">
             <Button
               variant="outline"
               onClick={() => setCardDialog({ open: false, index: null })}

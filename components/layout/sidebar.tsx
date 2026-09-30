@@ -25,7 +25,12 @@ import {
   User,
   DollarSign,
   HelpCircle,
+  Camera,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
+import apiClient from "@/lib/api-client";
+import { AuthApis } from "@/lib/api/endpoints";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
@@ -210,10 +215,60 @@ export function Sidebar() {
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [helpOpen, setHelpOpen] = useState(false);
   const resizingRef = useRef(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const planDisplayName = currentPlanDisplayName(
     currentSubscription,
     restaurant,
   );
+
+  const handleAvatarUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file (PNG, JPG, etc.)");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image size must be less than 5MB");
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await apiClient.post(
+        AuthApis.uploadProfilePicture,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+      const fileUrl = response.data?.data?.file_url;
+
+      if (response.data?.status === "success" || fileUrl) {
+        if (user && fileUrl) {
+          useAuth.getState().setAuth(
+            { ...user, photo_url: fileUrl },
+            useAuth.getState().token,
+            useAuth.getState().refreshToken,
+          );
+        }
+        toast.success("Profile photo updated successfully!");
+      }
+    } catch (error: any) {
+      console.error("Avatar upload failed:", error);
+      toast.error(
+        error?.response?.data?.message || "Failed to upload profile photo",
+      );
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
 
   // Expand all sidebar groups while the product tour is active
   useEffect(() => {
@@ -688,6 +743,19 @@ export function Sidebar() {
 
               <div className="py-1">
                 <DropdownMenuItem
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={uploadingAvatar}
+                  className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
+                >
+                  {uploadingAvatar ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Camera className="h-4 w-4" />
+                  )}
+                  {uploadingAvatar ? "Uploading photo..." : "Upload profile photo"}
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
                   onClick={() => router.push("/settings/business-profile")}
                   className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
                 >
@@ -746,6 +814,13 @@ export function Sidebar() {
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarUpload}
+          />
         </div>
 
         {!collapsed && (
