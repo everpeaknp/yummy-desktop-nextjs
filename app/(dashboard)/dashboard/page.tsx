@@ -8,7 +8,7 @@ import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
 import { DashboardStatusBanner } from "@/components/dashboard/dashboard-status-banner"
 import { FigmaExecutiveDashboard } from "@/components/dashboard/figma-executive-dashboard"
 import { MobileDashboardHome } from "@/components/dashboard/mobile-dashboard-home"
-import { DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown"
+import { DATE_PRESETS, DateRangeDropdown, DateRangePreset } from "@/components/ui/date-range-dropdown"
 import { useAuth } from "@/hooks/use-auth"
 import { useDashboardData } from "@/hooks/use-dashboard-data"
 import { mapAnalyticsTrends, mapBreakdownToPie, preferHourlyTrends } from "@/lib/analytics-dashboard-mapper"
@@ -26,7 +26,7 @@ export default function DashboardPage() {
   const [chartRange, setChartRange] = useState<"hourly" | "daily" | "weekly">("hourly")
 
   useEffect(() => {
-    setChartRange(preferHourlyTrends(activeRange) ? "hourly" : "daily")
+    setChartRange(activeRange === "lifetime" ? "weekly" : preferHourlyTrends(activeRange) ? "hourly" : "daily")
   }, [activeRange])
 
   const {
@@ -126,6 +126,9 @@ export default function DashboardPage() {
   const topItemsWithPhotos = getTopMenuItemsWithPhotos({ rankedRows: rankedItemRows, catalog: menuItems })
   const selectedTrends = chartRange === "hourly" ? hourlyTrends : dailyTrends
   const trends = selectedTrends.length ? selectedTrends : trendsData.length ? trendsData : liveRevenueTrend
+  const periodLabel = dateFilterOptions.find((option) => option.value === activeRange)?.label
+    || DATE_PRESETS.find((option) => option.value === activeRange)?.label
+    || "Custom date range"
 
   const handleExport = async () => {
     const XLSX = await import("xlsx")
@@ -173,9 +176,10 @@ export default function DashboardPage() {
           </Badge>
         }
         chartRange={chartRange}
+        periodLabel={periodLabel}
         onChartRangeChange={setChartRange}
         canShowHourly={preferHourlyTrends(activeRange) && (hourlyTrends.length > 0 || liveRevenueTrend.length > 0)}
-        canShowWeekly={dailyTrends.length >= 14}
+        canShowWeekly={dailyTrends.length >= 7 || (activeRange === "lifetime" && trends.length > 0)}
         connectionMessage={
           <DashboardStatusBanner
             error={error}

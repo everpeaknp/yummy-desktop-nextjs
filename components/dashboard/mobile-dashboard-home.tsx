@@ -13,12 +13,14 @@ import {
   Plus,
   ReceiptText,
   Users,
+  XCircle,
   type LucideIcon,
 } from "lucide-react"
 
 import { type ReactNode } from "react"
 
 import { MetricCard } from "@/components/cards/metric-card"
+import { DashboardPromoCarousel } from "@/components/dashboard/dashboard-promo-carousel"
 
 type Props = {
   home: any
@@ -66,7 +68,6 @@ export function MobileDashboardHome({ home, currency }: Props) {
   const quickActions = (home?.quick_actions?.items || []).filter((item: any) => item.enabled).filter((item: any) => !["tables", "reservations"].includes(item.key)).slice(0, 6)
   const topItems = (home?.top_items_live?.items || []).slice(0, 4)
   const insight = home?.quick_insights?.items?.[0] || home?.alerts?.items?.[0]
-  const completed = (pipeline?.status_counts || []).filter((item: any) => String(item.status).toUpperCase() === "COMPLETED").reduce((total: number, item: any) => total + Number(item.count || 0), 0)
   const serviceMetrics = [
     { label: "Active orders", value: shift?.active_orders ?? 0, detail: "In progress", icon: Activity, tone: "info" as const },
     { label: "KOT pending", value: shift?.kot_pending ?? 0, detail: "Kitchen queue", icon: Clock3, tone: "warning" as const },
@@ -74,16 +75,19 @@ export function MobileDashboardHome({ home, currency }: Props) {
   ]
 
   return (
-    <main className="mx-auto max-w-md space-y-6 pb-24 md:hidden">
+    <main className="w-full min-w-0 space-y-6 pb-24 md:hidden">
       <section className="space-y-3">
         <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2">
           {serviceMetrics.map((metric) => {
             const Icon = metric.icon
             return <MetricCard key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} icon={<Icon className="h-4 w-4" />} tone={metric.tone} className="min-w-0 rounded-xl p-3 [&_div.text-xl]:text-lg" labelClassName="whitespace-normal leading-tight min-h-[2em]" />
           })}
-          <MetricCard label="Completed" value={completed} detail="This shift" className="rounded-xl p-3 [&_div.text-xl]:text-lg" labelClassName="whitespace-normal leading-tight min-h-[2em]" />
-          <MetricCard label="Cancelled" value={shift?.cancelled ?? 0} detail="This shift" tone="danger" className="rounded-xl p-3 [&_div.text-xl]:text-lg" labelClassName="whitespace-normal leading-tight min-h-[2em]" />
+          <MetricCard label="Cancelled" value={shift?.cancelled ?? 0} detail="This shift" icon={<XCircle className="h-4 w-4" />} tone="danger" className="rounded-xl p-3" labelClassName="whitespace-normal leading-tight min-h-[2em]" />
         </div>
+      </section>
+
+      <section aria-label="Promotions">
+        <DashboardPromoCarousel />
       </section>
 
       <section className="space-y-3">
