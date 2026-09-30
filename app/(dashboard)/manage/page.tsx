@@ -215,6 +215,7 @@ function FinanceManageGroup({
     <div>
       <button
         type="button"
+        data-tour="mobile-manage-tool-finance"
         className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4"
         aria-expanded={expanded}
         aria-controls="manage-finance-destinations"
@@ -249,6 +250,7 @@ function FinanceManageGroup({
               <Link
                 key={item.href}
                 href={item.href}
+                data-tour={`mobile-manage-tool-${item.href.replace(/^\//, "").replace(/\//g, "-")}`}
                 className="flex min-h-11 items-center gap-3 rounded-lg px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -363,6 +365,7 @@ export default function ManagePage() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    data-tour={`mobile-manage-tool-${item.href.replace(/^\//, "").replace(/\//g, "-")}`}
                     className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {row}

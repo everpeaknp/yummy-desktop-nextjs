@@ -105,6 +105,10 @@ import {
   parseApiScopeError,
   type ParsedScopeError,
 } from "@/lib/parse-api-scope-error";
+import type {
+  StaffPerformanceResponse,
+  StaffPerformanceRow,
+} from "@/types/staff-performance";
 
 import { RevenueChart } from "@/components/analytics/revenue-chart";
 import { CategoryPieChart } from "@/components/analytics/category-pie";
@@ -266,7 +270,8 @@ export default function AnalyticsPage() {
   const [menuCategories, setMenuCategories] = useState<string[]>([]);
 
   // Staff Details Tab State
-  const [staffData, setStaffData] = useState<any>(null);
+  const [staffData, setStaffData] =
+    useState<StaffPerformanceResponse | null>(null);
   const [staffLoading, setStaffLoading] = useState(false);
   const [staffPage, setStaffPage] = useState(1);
   const [staffPageSize] = useState(20);
@@ -443,7 +448,7 @@ export default function AnalyticsPage() {
         });
         const res = await apiClient.get(url);
         if (res.data?.status === "success") {
-          setStaffData(res.data.data);
+          setStaffData(res.data.data as StaffPerformanceResponse);
         }
       } catch (e) {
         console.error("Failed to load staff details", e);
@@ -1293,8 +1298,11 @@ export default function AnalyticsPage() {
   // not data.tabs.staff -- that section is starved under the dashboard's
   // include=core fast path (same root cause as the Menu tab's summary
   // cards), so it always returns an empty leaderboard.
-  const staffLeaderboard = staffData?.staff || [];
-  const staffTopPerformer = staffLeaderboard[0] || {};
+  const staffLeaderboard = (staffData?.staff || []) as StaffPerformanceRow[];
+  const staffTopPerformer =
+    staffLeaderboard.find((staff) => staff.eligible_for_ranking) ||
+    staffLeaderboard[0] ||
+    ({} as StaffPerformanceRow);
   const topStaff = staffTopPerformer;
 
   // ── NC tab data ───────────────────────────────────────────────────────────
@@ -1544,6 +1552,7 @@ export default function AnalyticsPage() {
 
         <div className="flex items-center gap-2 sm:hidden">
           <DateRangeDropdown
+            dataTour="mobile-analytics-date-range"
             activeRange={activeRange}
             setActiveRange={setActiveRange}
             date={date}
@@ -1551,6 +1560,7 @@ export default function AnalyticsPage() {
             className="h-11 min-w-0 flex-1 rounded-xl bg-primary/5 px-3 text-sm"
           />
           <FilterBar
+            data-tour="mobile-analytics-filters"
             className="shrink-0"
             title="Filters"
             activeCount={
@@ -3748,52 +3758,47 @@ export default function AnalyticsPage() {
 
           {/* ══════════════════════════════════════════════════ STAFF TAB */}
           <TabsContent value="staff" className="space-y-6 outline-none">
-            {/* Staff Hero Card */}
+            {/* Performance signal */}
             {(topStaff?.name || staffTopPerformer?.name) && (
               <Card className="bg-card border-border shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-blue-500/10 to-transparent p-5">
+                <div className="border-l-4 border-primary p-5">
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                      <UserCheck className="w-5 h-5 text-blue-500" />
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <UserCheck className="w-5 h-5 text-primary" />
                     </div>
                     <div>
                       <h3 className="font-bold text-lg">Staff Performance</h3>
                       <p className="text-sm text-muted-foreground">
-                        Revenue and order ownership
+                        Verified work, normalized within each role
                       </p>
                     </div>
                   </div>
-                  <div className="bg-background/60 border border-border/40 rounded-xl p-4 mb-4">
-                    <p className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">
+                  <div className="bg-muted/30 border border-border rounded-xl p-4 mb-4">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
                       Top Performer
                     </p>
                     <p className="text-2xl font-bold">
                       {topStaff?.name || staffTopPerformer?.name}
                     </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {staffTopPerformer.role || "Staff"}
+                      {staffTopPerformer.performance_rank
+                        ? ` · Rank #${staffTopPerformer.performance_rank} in role`
+                        : ""}
+                    </p>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <HeroMetric
-                      label="Revenue"
-                      value={fmtShort(
-                        topStaff?.revenue || staffTopPerformer?.revenue || 0,
-                      )}
+                      label="Performance"
+                      value={`${Math.round(staffTopPerformer.performance_score || 0)}/100`}
                     />
                     <HeroMetric
-                      label="Orders"
-                      value={fmtCount(
-                        topStaff?.orders_count ||
-                          topStaff?.orders ||
-                          staffTopPerformer?.orders_count ||
-                          0,
-                      )}
+                      label="Approved hours"
+                      value={`${((staffTopPerformer.approved_attendance_minutes || 0) / 60).toFixed(1)}h`}
                     />
                     <HeroMetric
-                      label="Avg Order"
-                      value={fmtShort(
-                        topStaff?.avg_order_value ||
-                          staffTopPerformer?.avg_order_value ||
-                          0,
-                      )}
+                      label="Completed orders"
+                      value={fmtCount(staffTopPerformer.orders_completed || 0)}
                     />
                   </div>
                 </div>
@@ -3823,7 +3828,7 @@ export default function AnalyticsPage() {
                   </Badge>
                 </div>
                 <CardDescription>
-                  Ranked by revenue in selected range
+                  Ranked by performance score within each role
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -3836,9 +3841,14 @@ export default function AnalyticsPage() {
                     {staffLeaderboard
                       .slice(0, 10)
                       .map((staff: any, i: number) => {
-                        const maxRev = staffLeaderboard[0]?.revenue || 1;
+                        const maxScore = Math.max(
+                          ...staffLeaderboard.map((item) => item.performance_score || 0),
+                          1,
+                        );
                         const progress =
-                          maxRev > 0 ? (staff.revenue || 0) / maxRev : 0;
+                          maxScore > 0
+                            ? (staff.performance_score || 0) / maxScore
+                            : 0;
                         const rankColor =
                           i === 0
                             ? "text-amber-400 bg-amber-400/15 border-amber-400/30"
@@ -3848,9 +3858,11 @@ export default function AnalyticsPage() {
                                 ? "text-orange-700 bg-orange-700/15 border-orange-700/30"
                                 : "text-muted-foreground bg-muted/40 border-border";
                         return (
-                          <div
+                          <Link
                             key={staff.id ?? i}
-                            className="bg-card border border-border rounded-xl p-3 space-y-2"
+                            href={`/staff/${staff.id}?tab=performance`}
+                            className="block space-y-2 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/50 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            aria-label={`Open ${staff.name || "staff member"} performance`}
                           >
                             <div className="flex items-center gap-3">
                               <div
@@ -3859,7 +3871,9 @@ export default function AnalyticsPage() {
                                   rankColor,
                                 )}
                               >
-                                #{i + 1}
+                                {staff.performance_rank
+                                  ? `#${staff.performance_rank}`
+                                  : "—"}
                               </div>
                               <div className="w-8 h-8 rounded-xl bg-muted flex items-center justify-center shrink-0">
                                 <span className="text-xs font-bold text-foreground">
@@ -3873,28 +3887,30 @@ export default function AnalyticsPage() {
                                   {staff.name || "Unknown"}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground">
-                                  {staff.orders_count || staff.orders || 0}{" "}
-                                  orders
+                                  {staff.role || "Staff"} ·{" "}
+                                  {((staff.approved_attendance_minutes || 0) / 60).toFixed(1)}h approved
                                 </p>
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="text-sm font-bold">
-                                  {fmtShort(staff.revenue || 0)}
+                                  {Math.round(staff.performance_score || 0)}/100
                                 </p>
                                 <p className="text-[10px] text-muted-foreground">
-                                  Avg: {fmtShort(staff.avg_order_value || 0)}
+                                  {staff.eligible_for_ranking
+                                    ? `${staff.orders_completed || 0} completed`
+                                    : "Not ranked"}
                                 </p>
                               </div>
                             </div>
                             <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
                               <div
-                                className="h-full rounded-full bg-blue-500 transition-all"
+                                className="h-full rounded-full bg-primary transition-all"
                                 style={{
                                   width: `${(progress * 100).toFixed(1)}%`,
                                 }}
                               />
                             </div>
-                          </div>
+                          </Link>
                         );
                       })}
                   </div>
@@ -3902,14 +3918,17 @@ export default function AnalyticsPage() {
               </CardContent>
             </Card>
 
-            {/* Staff details from dedicated API */}
-            {staffData?.staff?.length > 0 && (
+            {/* Explainable staff detail */}
+            {staffLeaderboard.length > 0 && (
               <Card className="bg-card border-border shadow-sm">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base font-bold flex items-center gap-2">
                     <Users className="w-4 h-4 text-muted-foreground" /> Detailed
-                    Staff Analytics
+                    Performance detail
                   </CardTitle>
+                  <CardDescription>
+                    Raw activity remains visible as evidence; it does not assign the full order value to one person.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="rounded-xl border border-border overflow-hidden">
@@ -3918,15 +3937,15 @@ export default function AnalyticsPage() {
                         <TableRow>
                           <TableHead className="w-[40px]">#</TableHead>
                           <TableHead>Staff</TableHead>
-                          <TableHead className="text-right">Orders</TableHead>
-                          <TableHead className="text-right">Revenue</TableHead>
-                          <TableHead className="text-right">
-                            Avg Order
-                          </TableHead>
+                          <TableHead className="text-right">Score</TableHead>
+                          <TableHead className="text-right">Attendance</TableHead>
+                          <TableHead className="text-right">Opened</TableHead>
+                          <TableHead className="text-right">Completed</TableHead>
+                          <TableHead className="text-right">Items added</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {staffData.staff.map((staff: any, i: number) => (
+                        {staffLeaderboard.map((staff, i: number) => (
                           <TableRow
                             key={staff.id ?? i}
                             className="hover:bg-muted/10"
@@ -3935,18 +3954,33 @@ export default function AnalyticsPage() {
                               {(staffPage - 1) * staffPageSize + i + 1}
                             </TableCell>
                             <TableCell className="font-semibold">
-                              {staff.name || staff.staff_name || "Unknown"}
+                              <Link
+                                href={`/staff/${staff.id}?tab=performance`}
+                                className="block rounded-sm outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                <div>{staff.name || "Unknown"}</div>
+                                <div className="text-xs font-normal text-muted-foreground">
+                                  {staff.role || "Staff"}
+                                  {staff.performance_rank
+                                    ? ` · Rank #${staff.performance_rank}`
+                                    : " · Not ranked"}
+                                </div>
+                              </Link>
                             </TableCell>
                             <TableCell className="text-right font-medium">
-                              {fmtCount(
-                                staff.orders_count || staff.orders || 0,
-                              )}
+                              {Math.round(staff.performance_score || 0)}/100
                             </TableCell>
-                            <TableCell className="text-right font-semibold">
-                              {fmtShort(staff.revenue || 0)}
+                            <TableCell className="text-right font-medium">
+                              {((staff.approved_attendance_minutes || 0) / 60).toFixed(1)}h
                             </TableCell>
                             <TableCell className="text-right text-muted-foreground text-xs">
-                              {fmtShort(staff.avg_order_value || 0)}
+                              {fmtCount(staff.orders_count || 0)}
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground text-xs">
+                              {fmtCount(staff.orders_completed || 0)}
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground text-xs">
+                              {fmtCount(staff.items_added || 0)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -4149,23 +4183,20 @@ function StaffSummaryCards({
   leaderboard,
   topPerformer,
 }: {
-  leaderboard: any[];
-  topPerformer: any;
+  leaderboard: StaffPerformanceRow[];
+  topPerformer: StaffPerformanceRow;
 }) {
   const topName = leaderboard[0]?.name || topPerformer?.name || "N/A";
   const totalStaff = leaderboard.length;
-  const totalOrders =
-    leaderboard.reduce(
-      (s: number, i: any) => s + (i.orders_count || i.orders || 0),
-      0,
-    ) ||
-    topPerformer?.orders_count ||
-    0;
-  const revenue =
-    leaderboard.reduce((s: number, i: any) => s + (i.revenue || 0), 0) ||
-    topPerformer?.revenue ||
-    0;
-  const avgOrder = totalOrders > 0 ? revenue / totalOrders : 0;
+  const rankedStaff = leaderboard.filter((staff) => staff.eligible_for_ranking);
+  const approvedMinutes = leaderboard.reduce(
+    (total, staff) => total + Number(staff.approved_attendance_minutes || 0),
+    0,
+  );
+  const completedOrders = leaderboard.reduce(
+    (total, staff) => total + Number(staff.orders_completed || 0),
+    0,
+  );
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
       <BigMetricCard
@@ -4177,7 +4208,7 @@ function StaffSummaryCards({
         tagColor="bg-amber-500/10 text-amber-500"
       />
       <BigMetricCard
-        label="Active Staff"
+        label="Visible Staff"
         value={totalStaff}
         noCurrency
         icon={<Users className="w-4 h-4" />}
@@ -4185,26 +4216,28 @@ function StaffSummaryCards({
         tagColor="bg-blue-500/10 text-blue-500"
       />
       <BigMetricCard
-        label="Staff Orders"
-        value={totalOrders}
+        label="Rank eligible"
+        value={rankedStaff.length}
+        noCurrency
+        icon={<Check className="w-4 h-4" />}
+        color="text-emerald-500"
+        tagColor="bg-emerald-500/10 text-emerald-500"
+      />
+      <BigMetricCard
+        label="Approved hours"
+        value={`${(approvedMinutes / 60).toFixed(1)}h`}
+        noCurrency
+        icon={<Clock className="w-4 h-4" />}
+        color="text-blue-500"
+        tagColor="bg-blue-500/10 text-blue-500"
+      />
+      <BigMetricCard
+        label="Orders completed"
+        value={completedOrders}
         noCurrency
         icon={<ReceiptText className="w-4 h-4" />}
         color="text-orange-500"
         tagColor="bg-orange-500/10 text-orange-500"
-      />
-      <BigMetricCard
-        label="Avg Order"
-        value={avgOrder}
-        icon={<DollarSign className="w-4 h-4" />}
-        color="text-purple-500"
-        tagColor="bg-purple-500/10 text-purple-500"
-      />
-      <BigMetricCard
-        label="Handled Revenue"
-        value={revenue}
-        icon={<Wallet className="w-4 h-4" />}
-        color="text-emerald-500"
-        tagColor="bg-emerald-500/10 text-emerald-500"
       />
     </div>
   );

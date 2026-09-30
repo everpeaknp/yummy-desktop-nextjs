@@ -1,14 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/hooks/use-sidebar";
+import { useSidebarItems, type SidebarItem } from "@/hooks/use-sidebar-items";
+import { mobileNavigationTourSelector } from "@/lib/mobile-navigation-tour";
 
 export type TourStep = {
   target: string;
   title: string;
   text: string;
+  /** Mobile tours move to the actual destination before showing this step. */
+  href?: string;
 };
 
 type ProductTourProps = {
@@ -268,6 +273,145 @@ function leafTourNodes(nodes: HTMLElement[]) {
   );
 }
 
+function mobileTourSteps(items: SidebarItem[]): TourStep[] {
+  const home =
+    items.find((item) => item.href === "/dashboard" || item.href === "/hotel") ||
+    items[0];
+  const orders = items.find((item) => item.href === "/orders");
+  const analytics = items.find((item) => item.href === "/analytics");
+  const mobileTabs = [
+    home,
+    orders,
+    analytics,
+    { title: "Profile", href: "/manage/profile" },
+    { title: "Manage", href: "/manage" },
+  ].filter((item): item is { title: string; href: string } => Boolean(item));
+
+  const copy: Record<string, string> = {
+    "/dashboard": "Start here to see today's work, quick actions, and your business snapshot.",
+    "/hotel": "Start here to see today's hotel activity and front-desk work.",
+    "/orders": "Use this tab to create, follow, and complete orders.",
+    "/analytics": "Use this tab to review sales, operations, and team performance.",
+    "/manage/profile": "Use this tab to view your attendance, performance, and account details.",
+    "/manage": "Use this tab for restaurant setup, staff, finance, and other management tools.",
+  };
+
+  const dashboardActions: TourStep[] = [
+    {
+      target: '[data-tour="mobile-dashboard-action-create_order"]',
+      title: "New order",
+      text: "Start a sale here. Choose the order type that fits the customer.",
+    },
+    {
+      target: '[data-tour="mobile-dashboard-action-running_orders"]',
+      title: "Running orders",
+      text: "Open this to follow orders that are still in progress.",
+    },
+    {
+      target: '[data-tour="mobile-dashboard-action-kot"]',
+      title: "Kitchen tickets",
+      text: "Use this shortcut to see work waiting in the kitchen.",
+    },
+    {
+      target: '[data-tour="mobile-dashboard-action-day_close"]',
+      title: "Day close",
+      text: "Review and close the current business day when your shift is ready.",
+    },
+  ].filter((step) => targetExists(step.target));
+
+  const accessibleHrefs = new Set(
+    items.flatMap(function flatten(item): string[] {
+      return [item.href, ...(item.subItems?.flatMap(flatten) ?? [])];
+    }),
+  );
+  const manageTools = [
+    { href: "/tables", title: "Tables", text: "Set up tables and check their current occupancy." },
+    { href: "/reservations", title: "Reservations", text: "Manage guest bookings and seating plans." },
+    { href: "/menu/items", title: "Menu", text: "Add or update items, prices, and availability." },
+    { href: "/menu/categories", title: "Categories", text: "Organize menu items into clear groups." },
+    { href: "/menu/modifiers", title: "Options & add-ons", text: "Set up choices, toppings, sizes, and extras." },
+    { href: "/discounts", title: "Discounts", text: "Create and manage promotions and coupon rules." },
+    { href: "/finance/income", title: "Finance", text: "Open finance tools for income, expenses, and cash controls." },
+    { href: "/inventory", title: "Inventory", text: "Track stock, usage, and inventory activity." },
+    { href: "/suppliers", title: "Suppliers", text: "Manage purchasing partners and supplier details." },
+    { href: "/customers", title: "Customers", text: "View customer profiles, credit, and loyalty activity." },
+    { href: "/workforce", title: "Workforce", text: "Manage staff, attendance, and pay-related tools." },
+    { href: "/settings", title: "Settings", text: "Configure business, access, and operational settings." },
+  ]
+    .filter((tool) => accessibleHrefs.has(tool.href))
+    .map((tool) => ({
+      target:
+        tool.href === "/finance/income"
+          ? '[data-tour="mobile-manage-tool-finance"]'
+          : `[data-tour="mobile-manage-tool-${tool.href.replace(/^\//, "").replace(/\//g, "-")}"]`,
+      title: tool.title,
+      text: tool.text,
+    }));
+
+  const detailSteps: Record<string, TourStep[]> = {
+    "/dashboard": [
+      ...dashboardActions,
+    ],
+    "/orders": [
+      {
+        target: '[data-tour="mobile-orders-sections"]',
+        title: "Order sections",
+        text: "Switch between active orders, kitchen tickets, and completed history.",
+      },
+      {
+        target: '[data-tour="mobile-orders-filters"]',
+        title: "Order filters",
+        text: "Narrow the current order list to find the work you need quickly.",
+      },
+      {
+        target: '[data-tour="mobile-orders-new-order"]',
+        title: "Start a new order",
+        text: "Use this button to choose an order type and begin a new ticket.",
+      },
+    ],
+    "/analytics": [
+      {
+        target: '[data-tour="mobile-analytics-date-range"]',
+        title: "Choose a period",
+        text: "Change the date range to review today, a recent period, or a custom range.",
+      },
+      {
+        target: '[data-tour="mobile-analytics-filters"]',
+        title: "Refine analytics",
+        text: "Use filters to narrow the report to a daybook, station, or service when available.",
+      },
+    ],
+    "/manage/profile": [
+      {
+        target: '[data-tour="mobile-profile-attendance"]',
+        title: "Record attendance",
+        text: "Use this action to clock in or out through your restaurant's approved attendance process.",
+      },
+      {
+        target: '[data-tour="mobile-profile-performance"]',
+        title: "Your performance",
+        text: "Review your verified work, attendance, score, and ranking for the selected period.",
+      },
+      {
+        target: '[data-tour="mobile-profile-account-settings"]',
+        title: "Account settings",
+        text: "Update personal details, password, and restaurant access from here.",
+      },
+    ],
+    "/manage": manageTools,
+  };
+
+  return mobileTabs.flatMap((item) => [
+    {
+      target: mobileNavigationTourSelector(item.href),
+      title: item.title,
+      text: copy[item.href] || `Use this tab to open ${item.title}.`,
+      href: item.href,
+    },
+    ...(detailSteps[item.href] || []),
+  ]);
+}
+
 function discoverTourSteps(): TourStep[] {
   const steps: TourStep[] = [];
   const seen = new Set<string>();
@@ -297,8 +441,10 @@ function discoverTourSteps(): TourStep[] {
     navNodes.forEach(pushNode);
   }
 
-  const sidebar = document.querySelector<HTMLElement>('[data-tour="sidebar"]');
-  if (sidebar) {
+  const sidebars = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-tour="sidebar"]'),
+  );
+  sidebars.forEach((sidebar) => {
     const sideNodes = leafTourNodes(
       Array.from(
         sidebar.querySelectorAll<HTMLElement>(
@@ -312,7 +458,7 @@ function discoverTourSteps(): TourStep[] {
       return ar.top - br.top || ar.left - br.left;
     });
     sideNodes.forEach(pushNode);
-  }
+  });
 
   return steps;
 }
@@ -334,8 +480,14 @@ function nextAvailableIndex(steps: TourStep[], from: number, direction: 1 | -1) 
 
 export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourProps) {
   const setCollapsed = useSidebar((s) => s.setCollapsed);
+  const sidebarItems = useSidebarItems();
+  const router = useRouter();
+  const pathname = usePathname();
   const [steps, setSteps] = useState<TourStep[]>([]);
   const [index, setIndex] = useState(0);
+  const [isNarrowLayout, setIsNarrowLayout] = useState(false);
+  const [layoutKnown, setLayoutKnown] = useState(false);
+  const [pendingRouteIndex, setPendingRouteIndex] = useState<number | null>(null);
   const onCloseRef = useRef(onClose);
   const staticStepsRef = useRef(staticSteps);
   const startedRef = useRef(false);
@@ -348,6 +500,28 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
   useEffect(() => {
     staticStepsRef.current = staticSteps;
   }, [staticSteps]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1023px)");
+    const syncLayout = () => {
+      setIsNarrowLayout(media.matches);
+      setLayoutKnown(true);
+    };
+    syncLayout();
+    media.addEventListener("change", syncLayout);
+    return () => media.removeEventListener("change", syncLayout);
+  }, []);
+
+  useEffect(() => {
+    if (pendingRouteIndex === null) return;
+    const pendingStep = steps[pendingRouteIndex];
+    if (!pendingStep || pendingStep.href !== pathname) return;
+    const timer = window.setTimeout(() => {
+      setIndex(pendingRouteIndex);
+      setPendingRouteIndex(null);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [pathname, pendingRouteIndex, steps]);
 
   const clearHighlight = useCallback(() => {
     document.querySelectorAll(".tour-highlight").forEach((el) => {
@@ -422,35 +596,49 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
       clearHighlight();
       setSteps([]);
       setIndex(0);
+      setPendingRouteIndex(null);
       window.dispatchEvent(new CustomEvent("yummy-product-tour", { detail: { active: false } }));
       return;
     }
 
-    if (startedRef.current) return;
+    if (startedRef.current || !layoutKnown) return;
     startedRef.current = true;
 
-    setCollapsed(false);
+    if (!isNarrowLayout) setCollapsed(false);
     window.dispatchEvent(new CustomEvent("yummy-product-tour", { detail: { active: true } }));
 
     const timer = window.setTimeout(() => {
-      const discovered =
-        staticStepsRef.current?.length ? staticStepsRef.current : discoverTourSteps();
-      const first = nextAvailableIndex(discovered, 0, 1);
+      const discovered = staticStepsRef.current?.length
+        ? staticStepsRef.current
+        : isNarrowLayout
+          ? mobileTourSteps(sidebarItems)
+          : discoverTourSteps();
+      const isMobileTour = !staticStepsRef.current?.length && isNarrowLayout;
+      // A tour can be started from a secondary mobile page, where the bottom
+      // navigation is intentionally hidden. Route to its first real tab
+      // before checking for a visible target.
+      const first = isMobileTour ? 0 : nextAvailableIndex(discovered, 0, 1);
       if (first === -1 || discovered.length === 0) {
         startedRef.current = false;
         onCloseRef.current();
         return;
       }
       setSteps(discovered);
-      setIndex(first);
+      const firstStep = discovered[first];
+      if (firstStep?.href && firstStep.href !== pathname) {
+        setPendingRouteIndex(first);
+        router.push(firstStep.href);
+      } else {
+        setIndex(first);
+      }
     }, 300);
 
     return () => window.clearTimeout(timer);
-  }, [clearHighlight, open, setCollapsed]);
+  }, [clearHighlight, isNarrowLayout, layoutKnown, open, pathname, router, setCollapsed, sidebarItems]);
 
   // Highlight current step only when index/steps change.
   useEffect(() => {
-    if (!open || !steps.length) return;
+    if (!open || !steps.length || pendingRouteIndex !== null) return;
     if (!targetExists(steps[index]?.target ?? "")) {
       const next = nextAvailableIndex(steps, index + 1, 1);
       if (next === -1) {
@@ -462,7 +650,7 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
       return;
     }
     showStep(index, steps);
-  }, [clearHighlight, index, open, showStep, steps]);
+  }, [clearHighlight, index, open, pendingRouteIndex, showStep, steps]);
 
   useEffect(
     () => () => {
@@ -476,8 +664,23 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
 
   if (!open || steps.length === 0) return null;
 
+  if (pendingRouteIndex !== null) {
+    return <div className="fixed inset-0 z-[1000] bg-slate-950/70 backdrop-blur-[1px]" />;
+  }
+
   const step = steps[index];
   if (!step) return null;
+
+  const moveTo = (nextIndex: number) => {
+    const nextStep = steps[nextIndex];
+    if (nextStep?.href && nextStep.href !== pathname) {
+      clearHighlight();
+      setPendingRouteIndex(nextIndex);
+      router.push(nextStep.href);
+      return;
+    }
+    setIndex(nextIndex);
+  };
 
   const goNext = () => {
     const next = nextAvailableIndex(steps, index + 1, 1);
@@ -486,13 +689,13 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
       onCloseRef.current();
       return;
     }
-    setIndex(next);
+    moveTo(next);
   };
 
   const goBack = () => {
     const prev = nextAvailableIndex(steps, index - 1, -1);
     if (prev === -1) return;
-    setIndex(prev);
+    moveTo(prev);
   };
 
   const finish = () => {
@@ -501,9 +704,11 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
   };
 
   const isLast = nextAvailableIndex(steps, index + 1, 1) === -1;
-  const visibleCount = steps.filter((s) => targetExists(s.target)).length;
-  const visibleIndex =
-    steps.slice(0, index + 1).filter((s) => targetExists(s.target)).length || 1;
+  // Mobile steps intentionally span several pages. Do not recalculate the
+  // counter from the controls mounted on the current page, otherwise a
+  // complete 11-step journey can incorrectly read as "6 of 6" on Manage.
+  const stepNumber = index + 1;
+  const stepCount = steps.length;
 
   return (
     <>
@@ -517,7 +722,7 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
         )}
       >
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-primary">
-          Step {visibleIndex} of {visibleCount || steps.length}
+          Step {stepNumber} of {stepCount}
         </p>
         <h4 className="mt-2 text-lg font-bold tracking-tight">{step.title}</h4>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.text}</p>
@@ -533,7 +738,7 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
             <Button
               type="button"
               variant="secondary"
-              className={cn(visibleIndex <= 1 && "invisible")}
+              className={cn(stepNumber <= 1 && "invisible")}
               onClick={goBack}
             >
               Back

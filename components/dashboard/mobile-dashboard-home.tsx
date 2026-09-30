@@ -95,7 +95,7 @@ export function MobileDashboardHome({ home, currency }: Props) {
         <div className="grid grid-cols-4 gap-y-4">
           {quickActions.map((action: any) => {
             const Icon = actionIcons[action.key] || ReceiptText
-            return <Link key={action.key || action.title} href={resolveActionHref(action)} className="flex min-w-0 flex-col items-center gap-2 text-center">
+            return <Link key={action.key || action.title} href={resolveActionHref(action)} data-tour={action.key ? `mobile-dashboard-action-${action.key}` : undefined} className="flex min-w-0 flex-col items-center gap-2 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-card text-primary"><Icon className="h-5 w-5" /></span>
               <span className="line-clamp-2 text-[11px] font-medium leading-3 text-muted-foreground">{action.title}</span>
             </Link>

@@ -72,6 +72,13 @@ export type AttendanceEntry = {
   updated_at: string;
 };
 
+export type MyAttendanceStatus = {
+  staff_id: number;
+  is_clocked_in: boolean;
+  active_entry: AttendanceEntry | null;
+  latest_entry: AttendanceEntry | null;
+};
+
 export type AttendanceOverview = {
   date_from: string;
   date_to: string;

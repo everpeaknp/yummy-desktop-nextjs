@@ -889,6 +889,7 @@ export const AnalyticsApis = {
     page = 1,
     pageSize = 20,
     businessLine,
+    staffUserId,
   }: {
     restaurantId: number;
     dateFrom?: string;
@@ -899,6 +900,7 @@ export const AnalyticsApis = {
     page?: number;
     pageSize?: number;
     businessLine?: string;
+    staffUserId?: number;
   }) => {
     const params = new URLSearchParams({
       restaurant_id: restaurantId.toString(),
@@ -914,6 +916,7 @@ export const AnalyticsApis = {
     }
     if (timezone) params.append("timezone", timezone);
     if (businessLine) params.append("business_line", businessLine);
+    if (staffUserId) params.append("staff_user_id", staffUserId.toString());
     return `/analytics/staff/details?${params.toString()}`;
   },
   ncOrders: ({
@@ -2273,6 +2276,8 @@ export const StaffSalaryApis = {
 export const AttendanceApis = {
   settings: "/attendance/settings",
   overview: "/attendance/overview",
+  myStatus: "/attendance/me/status",
+  myEntries: "/attendance/me/entries",
   entries: "/attendance/entries",
   submitEntry: (id: number) => "/attendance/entries/" + id + "/submit",
   approveEntry: (id: number) => "/attendance/entries/" + id + "/approve",

@@ -21,6 +21,16 @@ beforeEach(() => {
 });
 
 describe("attendanceApi", () => {
+  it("uses self-only attendance endpoints for a staff member's workspace", async () => {
+    await attendanceApi.myStatus();
+    await attendanceApi.myEntries({ dateFrom: "2026-10-01", dateTo: "2026-10-07", limit: 6 });
+
+    expect(mocked.get).toHaveBeenCalledWith("/attendance/me/status");
+    expect(mocked.get).toHaveBeenCalledWith(
+      "/attendance/me/entries?date_from=2026-10-01&date_to=2026-10-07&limit=6",
+    );
+  });
+
   it("calls settings and schedule endpoints", async () => {
     await attendanceApi.getSettings();
     await attendanceApi.updateSettings({ timezone: "Asia/Kathmandu" });

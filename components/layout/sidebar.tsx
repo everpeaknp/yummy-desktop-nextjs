@@ -846,36 +846,6 @@ export function Sidebar() {
               </DropdownMenu>
             </div>
 
-            {/* Direct visible semi-red logout action */}
-            {collapsed ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => {
-                      logout();
-                      router.push("/");
-                    }}
-                    title="Log out"
-                    className="flex h-8 w-8 mx-auto items-center justify-center rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition-colors cursor-pointer"
-                  >
-                    <LogOut className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Log out</TooltipContent>
-              </Tooltip>
-            ) : (
-              <button
-                onClick={() => {
-                  logout();
-                  router.push("/");
-                }}
-                title="Log out"
-                className="flex items-center justify-center h-8 px-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition-all text-xs font-semibold gap-1.5 shrink-0 cursor-pointer"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span className="hidden xl:inline text-[11px]">Log out</span>
-              </button>
-            )}
           </div>
 
           <input
