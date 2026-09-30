@@ -298,6 +298,9 @@ export default function PremiumPage() {
   };
 
   const handlePlanRequest = async (plan: SubscriptionPlan) => {
+    if (plan.code.toLowerCase() === "free") {
+      return;
+    }
     const selectedAddons = (catalog?.addons ?? []).filter((addon) =>
       selectedAddonCodes.includes(addon.code),
     );
@@ -475,9 +478,11 @@ export default function PremiumPage() {
               const isCurrent = currentCode === plan.code;
               const isFreePlan = plan.code.toLowerCase() === "free";
               const canRequest =
-                (isCurrent && selectedAddonCodes.length > 0) ||
-                prices.quoteOnly ||
-                Boolean(primaryPrice);
+                !isFreePlan && (
+                  (isCurrent && selectedAddonCodes.length > 0) ||
+                  prices.quoteOnly ||
+                  Boolean(primaryPrice)
+                );
               const isRequesting = requestingPlan === plan.code && requestLoading;
               const showContact = savedRequestPlan === plan.code;
 
@@ -577,6 +582,11 @@ export default function PremiumPage() {
                       onClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => event.stopPropagation()}
                     >
+                      {isFreePlan ? (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-medium text-emerald-800">
+                          Included automatically when your trial or paid access ends.
+                        </div>
+                      ) : <>
                       <Button
                         className="w-full"
                         variant={isCurrent ? "outline" : "default"}
@@ -617,6 +627,7 @@ export default function PremiumPage() {
                         <MessageSquare className="mr-2 h-4 w-4" />
                         Contact Yummy (optional)
                       </Button>
+                      </>}
                     </div>
                   </CardContent>
                 </Card>
