@@ -505,7 +505,13 @@ export function DrawerSessionPanel({
         );
         continue;
       }
-      if (settledSession) continue;
+      if (settledSession) {
+        // A settled drawer can still physically retain cash for the next
+        // session. It is not active, but it must remain part of "Cash in
+        // drawers" until that retained float is opened or explicitly moved.
+        unopenedRetainedCash += numberAmount(settledSession.retained_float);
+        continue;
+      }
       const suggestion =
         suggestions[drawerScopeKey(config.station, config.drawer_key)];
       if (suggestion?.source === "previous_retained_float") {

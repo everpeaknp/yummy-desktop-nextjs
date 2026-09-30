@@ -203,17 +203,17 @@ test("Refund Register fits desktop and humanizes backend enums", () => {
 });
 
 test("Day Close keeps row actions secondary to the page action", () => {
-  const page = read("app/(dashboard)/day-close/page.tsx");
+  const flow = read("components/day-close/day-close-flow.tsx");
   const historyCard = read(
     "components/analytics/day-close-history-list-card.tsx",
   );
   const history = read("components/analytics/day-close-history.tsx");
 
-  assert.match(page, /className="bg-primary[^"]*"/);
+  assert.match(flow, /"Close day"/);
   assert.match(historyCard, /variant="outline"[\s\S]*Close/);
   assert.doesNotMatch(historyCard, /bg-orange-600 hover:bg-orange-700/);
   assert.match(history, /variant="outline"[\s\S]*Close This Day/);
-  assert.match(history, /variant="outline"[\s\S]*Re-confirm Day Close/);
+  assert.match(history, /variant="outline"[\s\S]*Close day again/);
 });
 
 test("Wave 2B reports use statement, register, and operational archetypes", () => {

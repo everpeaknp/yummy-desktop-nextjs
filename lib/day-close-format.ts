@@ -56,6 +56,40 @@ export function formatDayClosePeriod(
   return `${startLabel} – ${endFmt.format(end)}`;
 }
 
+export function getDayClosePeriodContext(
+  periodStart?: string | null,
+  periodEnd?: string | null,
+): { durationLabel?: string; isMultiDay: boolean } {
+  if (!periodStart || !periodEnd) return { isMultiDay: false };
+  const start = new Date(periodStart);
+  const end = new Date(periodEnd);
+  const durationMs = end.getTime() - start.getTime();
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime()) ||
+    durationMs < 0
+  ) {
+    return { isMultiDay: false };
+  }
+
+  const totalMinutes = Math.round(durationMs / 60_000);
+  const days = Math.floor(totalMinutes / 1_440);
+  const hours = Math.floor((totalMinutes % 1_440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts: string[] = [];
+
+  if (days > 0) parts.push(`${days} ${days === 1 ? "day" : "days"}`);
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hr" : "hrs"}`);
+  if (minutes > 0 || parts.length === 0) {
+    parts.push(`${minutes} ${minutes === 1 ? "min" : "mins"}`);
+  }
+
+  return {
+    durationLabel: parts.join(" "),
+    isMultiDay: durationMs >= 86_400_000,
+  };
+}
+
 export function formatDayCloseCloseName(businessLine?: string | null): string {
   return String(businessLine ?? "restaurant").toLowerCase() === "hotel"
     ? "Hotel Daybook"

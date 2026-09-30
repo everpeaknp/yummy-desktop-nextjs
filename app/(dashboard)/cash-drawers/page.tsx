@@ -67,6 +67,9 @@ function activeDrawerCountLabel(count: number) {
 export default function CashDrawersPage() {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((state) => state.restaurant);
+  const restaurantLoading = useRestaurant((state) => state.loading);
+  const restaurantError = useRestaurant((state) => state.error);
+  const fetchRestaurant = useRestaurant((state) => state.fetchRestaurant);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -94,6 +97,12 @@ export default function CashDrawersPage() {
     businessLine === "hotel" ? "Hotel Cash Drawers" : "Restaurant Cash Drawers";
   const activeDrawerCash =
     drawerSummary.activeDrawerCash + drawerSummary.unopenedRetainedCash;
+
+  useEffect(() => {
+    // Carry-forward suggestions are keyed to the server-controlled operational
+    // day, which can intentionally differ from the browser calendar date.
+    void fetchRestaurant(true);
+  }, [fetchRestaurant]);
 
   useEffect(() => {
     if (!restaurant) return;
@@ -208,10 +217,31 @@ export default function CashDrawersPage() {
         </div>
       ) : null}
 
-      {!restaurantId ? (
+      {!restaurantId || restaurantLoading ? (
         <div className="flex items-center gap-3 border-y border-border/70 py-5 text-sm text-muted-foreground">
           <RefreshCw className="h-4 w-4" />
           Loading restaurant context...
+        </div>
+      ) : businessLine === "restaurant" &&
+        !restaurant?.current_business_date ? (
+        <div className="flex flex-col gap-3 border-y border-amber-300/70 py-5 text-sm text-amber-800 dark:text-amber-300 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium">Operational business date unavailable</p>
+            <p className="mt-1 text-muted-foreground">
+              {restaurantError ||
+                "Refresh the restaurant context before opening or carrying forward drawer cash."}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2 self-start sm:self-auto"
+            onClick={() => void fetchRestaurant(true)}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </Button>
         </div>
       ) : (
         <>
@@ -239,6 +269,11 @@ export default function CashDrawersPage() {
             key={drawerWorkspaceKey}
             restaurantId={restaurantId}
             businessLine={businessLine}
+            businessDate={
+              businessLine === "restaurant"
+                ? restaurant?.current_business_date || undefined
+                : undefined
+            }
             title="Active drawer"
             presentation="flat"
             footerNote="Checkout uses the logged-in cashier's active drawer. Day close verifies closure and settlement."
@@ -378,9 +413,10 @@ function DrawerHistoryCard({
         ) : (
           <>
             <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
-              <div className="hidden grid-cols-[150px_minmax(160px,1fr)_150px_120px_120px_auto] gap-4 bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground lg:grid">
+              <div className="hidden grid-cols-[170px_120px_minmax(170px,1fr)_150px_120px_120px_auto] gap-3 bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground xl:grid">
                 <span>Drawer</span>
-                <span>Date</span>
+                <span>Business date</span>
+                <span>Opened / closed</span>
                 <span>Cashier</span>
                 <span className="text-right">Opening</span>
                 <span className="text-right">Closing</span>
@@ -409,20 +445,33 @@ function DrawerHistoryCard({
                       }
                     }}
                   >
-                    <div className="grid gap-3 lg:grid-cols-[150px_minmax(160px,1fr)_150px_120px_120px_auto] lg:items-center">
+                    <div className="grid gap-3 xl:grid-cols-[170px_120px_minmax(170px,1fr)_150px_120px_120px_auto] xl:items-center">
                       <div className="min-w-0">
-                        <div className="flex items-start justify-between gap-3 lg:block">
+                        <div className="flex items-start justify-between gap-3 xl:block">
                           <div className="font-medium">
-                            {session.station} / {session.drawer_key}
+                            {session.configuration_name || session.drawer_key}
                           </div>
-                          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium capitalize text-muted-foreground lg:hidden">
+                          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium capitalize text-muted-foreground xl:hidden">
                             {statusLabel(session.status)}
                           </span>
                         </div>
-                        <div className="mt-1 text-xs text-muted-foreground lg:hidden">
-                          {session.opened_at
-                            ? formatDateTime(session.opened_at)
-                            : formatDate(session.business_date)}
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {session.station} / {session.drawer_key}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground xl:hidden">
+                          Business date: {formatDate(session.business_date)}
+                          <div>
+                            Opened:{" "}
+                            {session.opened_at
+                              ? formatDateTime(session.opened_at)
+                              : "—"}
+                          </div>
+                          <div>
+                            Closed:{" "}
+                            {session.closed_at
+                              ? formatDateTime(session.closed_at)
+                              : "—"}
+                          </div>
                           {session.cashier_name
                             ? ` · ${session.cashier_name}`
                             : session.cashier_id
@@ -430,33 +479,45 @@ function DrawerHistoryCard({
                               : ""}
                         </div>
                       </div>
-                      <div className="hidden text-sm text-muted-foreground lg:block">
-                        {session.opened_at
-                          ? formatDateTime(session.opened_at)
-                          : formatDate(session.business_date)}
+                      <div className="hidden text-sm text-muted-foreground xl:block">
+                        {formatDate(session.business_date)}
                       </div>
-                      <div className="hidden min-w-0 truncate text-sm text-muted-foreground lg:block">
+                      <div className="hidden space-y-1 text-xs text-muted-foreground xl:block">
+                        <div>
+                          Opened:{" "}
+                          {session.opened_at
+                            ? formatDateTime(session.opened_at)
+                            : "—"}
+                        </div>
+                        <div>
+                          Closed:{" "}
+                          {session.closed_at
+                            ? formatDateTime(session.closed_at)
+                            : "—"}
+                        </div>
+                      </div>
+                      <div className="hidden min-w-0 truncate text-sm text-muted-foreground xl:block">
                         {session.cashier_name ||
                           (session.cashier_id
                             ? `Cashier #${session.cashier_id}`
                             : "—")}
                       </div>
-                      <dl className="grid grid-cols-2 gap-3 text-sm lg:contents">
-                        <div className="flex items-center justify-between gap-3 lg:block lg:text-right">
-                          <dt className="text-xs text-muted-foreground lg:sr-only">
+                      <dl className="grid grid-cols-2 gap-3 text-sm xl:contents">
+                        <div className="flex items-center justify-between gap-3 xl:block xl:text-right">
+                          <dt className="text-xs text-muted-foreground xl:sr-only">
                             Opening
                           </dt>
-                          <dd className="font-medium tabular-nums lg:mt-0.5">
+                          <dd className="font-medium tabular-nums xl:mt-0.5">
                             {formatMoney(
                               Number(session.counted_opening_cash ?? 0),
                             )}
                           </dd>
                         </div>
-                        <div className="flex items-center justify-between gap-3 lg:block lg:text-right">
-                          <dt className="text-xs text-muted-foreground lg:sr-only">
+                        <div className="flex items-center justify-between gap-3 xl:block xl:text-right">
+                          <dt className="text-xs text-muted-foreground xl:sr-only">
                             Closing
                           </dt>
-                          <dd className="font-medium tabular-nums lg:mt-0.5">
+                          <dd className="font-medium tabular-nums xl:mt-0.5">
                             {formatMoney(
                               Number(
                                 session.counted_closing_cash ??
@@ -467,8 +528,8 @@ function DrawerHistoryCard({
                           </dd>
                         </div>
                       </dl>
-                      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                        <span className="hidden rounded-full bg-muted px-2.5 py-1 text-xs font-medium capitalize text-muted-foreground lg:inline-flex">
+                      <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                        <span className="hidden rounded-full bg-muted px-2.5 py-1 text-xs font-medium capitalize text-muted-foreground xl:inline-flex">
                           {statusLabel(session.status)}
                         </span>
                         {session.cash_variance != null &&

@@ -4,8 +4,7 @@ export const FISCAL_REGISTRATION_TYPES = [
   "vat",
 ] as const;
 
-export type FiscalRegistrationType =
-  (typeof FISCAL_REGISTRATION_TYPES)[number];
+export type FiscalRegistrationType = (typeof FISCAL_REGISTRATION_TYPES)[number];
 
 export const FISCAL_BILLING_MODES = [
   "legacy_flexible",
@@ -41,11 +40,7 @@ export type FiscalDocumentType =
   | "credit_note"
   | "debit_note";
 
-export type FiscalDocumentStatus =
-  | "draft"
-  | "issued"
-  | "voided"
-  | "credited";
+export type FiscalDocumentStatus = "draft" | "issued" | "voided" | "credited";
 
 export type CbmsSyncStatus =
   | "not_required"
@@ -168,6 +163,30 @@ export interface FiscalDocumentLine {
   vat_amount?: string | number;
 }
 
+export interface CanonicalPrintPreviewRow {
+  text: string;
+  align: "left" | "center" | "right";
+  bold: boolean;
+  width_mult: number;
+  height_mult: number;
+}
+
+export interface CanonicalFiscalPreview {
+  schema_version: number;
+  document_id: number;
+  paper_size: string;
+  column_capacity: number;
+  rows: CanonicalPrintPreviewRow[];
+}
+
+export interface CanonicalFiscalRenderPayload {
+  schema_version: number;
+  document_id: number;
+  payload_base64: string;
+  paper_size: string;
+  preview: CanonicalFiscalPreview;
+}
+
 export interface FiscalDocument {
   id: number;
   restaurant_id: number;
@@ -207,6 +226,8 @@ export interface FiscalDocument {
   cbms_sync_status?: CbmsSyncStatus;
   print_count?: number;
   original_document_id?: number | null;
+  metadata_json?: Record<string, unknown> | null;
+  render_preview?: CanonicalFiscalPreview | null;
   lines?: FiscalDocumentLine[];
 }
 
@@ -245,6 +266,7 @@ export interface PrintAuthorization {
   copy_number: number;
   designation: string;
   document: FiscalDocument;
+  render_payload: CanonicalFiscalRenderPayload;
 }
 
 export interface PrintCompletionInput {

@@ -14,11 +14,14 @@ import {
   MapPin,
   LayoutGrid,
   Info,
+  Monitor,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +40,12 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
-import { PrinterApis, RestaurantApis, StationApis } from "@/lib/api/endpoints";
+import {
+  PrinterApis,
+  RestaurantApis,
+  StationApis,
+  StaffApis,
+} from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
 import {
@@ -73,6 +81,22 @@ interface DynamicStation {
   is_active: boolean;
 }
 
+interface ReceiptTerminal {
+  id?: number;
+  name: string;
+  printer_id: number | null;
+  user_ids: number[];
+  users?: { id: number; name: string; email: string }[];
+  is_active: boolean;
+}
+
+interface StaffUser {
+  id: number;
+  name: string;
+  email: string;
+  is_active?: boolean;
+}
+
 interface PrinterManagementProps {
   restaurantId: number;
 }
@@ -90,6 +114,10 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [stations, setStations] = useState<DynamicStation[]>([]);
   const [receiptPrinterId, setReceiptPrinterId] = useState<number | null>(null);
+  const [receiptTerminals, setReceiptTerminals] = useState<ReceiptTerminal[]>(
+    [],
+  );
+  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [unauthorized, setUnauthorized] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -104,6 +132,9 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
     null,
   );
   const [formLoading, setFormLoading] = useState(false);
+  const [isTerminalDialogOpen, setIsTerminalDialogOpen] = useState(false);
+  const [editingTerminal, setEditingTerminal] =
+    useState<ReceiptTerminal | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -126,6 +157,18 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
       if (stationsRes.data.status === "success") {
         setStations(stationsRes.data.data?.stations || []);
       }
+
+      const [terminalsRes, staffRes] = await Promise.all([
+        apiClient.get(PrinterApis.receiptTerminals(restaurantId)),
+        apiClient.get(StaffApis.list()),
+      ]);
+      setReceiptTerminals(
+        (terminalsRes.data?.data || []).map((terminal: any) => ({
+          ...terminal,
+          user_ids: (terminal.users || []).map((user: any) => user.id),
+        })),
+      );
+      setStaffUsers(staffRes.data?.data || []);
 
       // Receipt printing is not a station -- it's a dedicated field on
       // the restaurant (see Restaurant.receipt_printer_id).
@@ -346,6 +389,56 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
       useRestaurant.getState().fetchRestaurant();
     } catch (err) {
       toast.error("Failed to update receipt printer");
+    }
+  };
+
+  const openNewTerminal = () => {
+    setEditingTerminal({
+      name: "",
+      printer_id: null,
+      user_ids: [],
+      is_active: true,
+    });
+    setIsTerminalDialogOpen(true);
+  };
+
+  const handleSaveTerminal = async () => {
+    if (!editingTerminal?.name.trim() || !editingTerminal.printer_id) {
+      toast.error("Enter a terminal name and choose a printer");
+      return;
+    }
+    try {
+      setFormLoading(true);
+      const payload = {
+        name: editingTerminal.name.trim(),
+        printer_id: editingTerminal.printer_id,
+        user_ids: editingTerminal.user_ids,
+        is_active: editingTerminal.is_active,
+      };
+      if (editingTerminal.id) {
+        await apiClient.put(
+          PrinterApis.updateReceiptTerminal(editingTerminal.id),
+          payload,
+        );
+      } else {
+        await apiClient.post(
+          PrinterApis.createReceiptTerminal(restaurantId),
+          payload,
+        );
+      }
+      toast.success(
+        editingTerminal.id
+          ? "Receipt terminal updated"
+          : "Receipt terminal created",
+      );
+      setIsTerminalDialogOpen(false);
+      await fetchData();
+    } catch (error: any) {
+      toast.error(
+        error?.response?.data?.detail || "Failed to save receipt terminal",
+      );
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -775,41 +868,113 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
         </div>
       </div>
 
-      {/* Receipt Printer -- deliberately separate from station routing
-                above: a receipt has no revenue/menu-item/inventory meaning,
-                it's purely a print target, so it isn't a Station. */}
+      {/* Receipt terminals are work locations. Users route through their
+          assigned terminal; the restaurant printer remains a fallback. */}
       <div className="space-y-3 pt-4 border-t border-border/20">
-        <div className="space-y-0.5">
-          <h2 className="text-base font-semibold">Receipt printer</h2>
-          <p className="text-sm text-muted-foreground">
-            Choose the printer used for whole-order receipts.
-          </p>
-        </div>
-        <div className="flex flex-col gap-3 border-y border-border py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center shrink-0">
-              <Printer className="w-4 h-4" />
-            </div>
-            <span className="text-sm font-medium">Default receipt output</span>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-0.5">
+            <h2 className="text-base font-semibold">Receipt terminals</h2>
+            <p className="text-sm text-muted-foreground">
+              Route each user&apos;s receipts to the printer at their work
+              location.
+            </p>
           </div>
-          <Select
-            value={receiptPrinterId?.toString() || "none"}
-            onValueChange={handleUpdateReceiptPrinter}
+          <Button
+            type="button"
+            size="sm"
+            className="h-11"
+            onClick={openNewTerminal}
           >
-            <SelectTrigger className="h-11 w-full sm:w-[260px]">
-              <SelectValue placeholder="Select printer" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Use the default printer</SelectItem>
-              {printers
-                .filter((p) => p.enabled)
-                .map((p) => (
-                  <SelectItem key={p.id} value={p.id.toString()}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+            <Plus className="mr-1.5 h-4 w-4" /> Add terminal
+          </Button>
+        </div>
+
+        {receiptTerminals.length === 0 ? (
+          <EmptyState
+            icon={<Monitor className="h-5 w-5" />}
+            title="No receipt terminals"
+            description="Create a terminal to route receipts by user and work location."
+            actionLabel="Add terminal"
+            onAction={openNewTerminal}
+          />
+        ) : (
+          <div className="divide-y divide-border rounded-xl border border-border">
+            {receiptTerminals.map((terminal) => {
+              const printer = printers.find(
+                (item) => item.id === terminal.printer_id,
+              );
+              return (
+                <button
+                  key={terminal.id}
+                  type="button"
+                  className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-muted/40"
+                  onClick={() => {
+                    setEditingTerminal({ ...terminal });
+                    setIsTerminalDialogOpen(true);
+                  }}
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                    <Monitor className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="font-semibold">{terminal.name}</span>
+                      {!terminal.is_active ? (
+                        <Badge variant="secondary">Disabled</Badge>
+                      ) : null}
+                    </span>
+                    <span className="block truncate text-sm text-muted-foreground">
+                      {printer?.display_name ||
+                        printer?.name ||
+                        "Printer unavailable"}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
+                    <Users className="h-4 w-4" />
+                    {terminal.user_ids.length}
+                  </span>
+                  <Settings2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="space-y-2 border-t border-border pt-4">
+          <div>
+            <p className="text-sm font-medium">Fallback receipt printer</p>
+            <p className="text-xs text-muted-foreground">
+              Used only when the printing user has no terminal assignment.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 border-y border-border py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center shrink-0">
+                <Printer className="w-4 h-4" />
+              </div>
+              <span className="text-sm font-medium">
+                Default receipt output
+              </span>
+            </div>
+            <Select
+              value={receiptPrinterId?.toString() || "none"}
+              onValueChange={handleUpdateReceiptPrinter}
+            >
+              <SelectTrigger className="h-11 w-full sm:w-[260px]">
+                <SelectValue placeholder="Select printer" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Use the default printer</SelectItem>
+                {printers
+                  .filter((p) => p.enabled)
+                  .map((p) => (
+                    <SelectItem key={p.id} value={p.id.toString()}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
@@ -1089,6 +1254,148 @@ export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
               {editingPrinter?.id
                 ? "Update Configuration"
                 : "Register Hardware"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isTerminalDialogOpen}
+        onOpenChange={setIsTerminalDialogOpen}
+      >
+        <DialogContent className="max-h-[90dvh] overflow-hidden sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingTerminal?.id
+                ? "Edit receipt terminal"
+                : "Add receipt terminal"}
+            </DialogTitle>
+            <DialogDescription>
+              Assign a work location, its receipt printer, and the people who
+              use it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[62dvh] space-y-5 overflow-y-auto py-2 pr-1">
+            <div className="space-y-2">
+              <Label htmlFor="receipt-terminal-name">Terminal name</Label>
+              <Input
+                id="receipt-terminal-name"
+                className="h-11"
+                placeholder="Main counter"
+                value={editingTerminal?.name || ""}
+                onChange={(event) =>
+                  setEditingTerminal((current) =>
+                    current
+                      ? { ...current, name: event.target.value }
+                      : current,
+                  )
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Receipt printer</Label>
+              <Select
+                value={editingTerminal?.printer_id?.toString() || ""}
+                onValueChange={(value) =>
+                  setEditingTerminal((current) =>
+                    current
+                      ? { ...current, printer_id: Number(value) }
+                      : current,
+                  )
+                }
+              >
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="Choose a printer" />
+                </SelectTrigger>
+                <SelectContent>
+                  {printers
+                    .filter((printer) => printer.enabled)
+                    .map((printer) => (
+                      <SelectItem
+                        key={printer.id}
+                        value={printer.id.toString()}
+                      >
+                        {printer.display_name || printer.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <div>
+                <Label>Assigned users</Label>
+                <p className="text-xs text-muted-foreground">
+                  Users assigned to multiple terminals choose one before
+                  printing.
+                </p>
+              </div>
+              <div className="divide-y divide-border rounded-xl border border-border">
+                {staffUsers.map((staff) => {
+                  const checked =
+                    editingTerminal?.user_ids.includes(staff.id) ?? false;
+                  return (
+                    <label
+                      key={staff.id}
+                      className="flex min-h-12 cursor-pointer items-center gap-3 px-3 py-2.5"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(next) =>
+                          setEditingTerminal((current) => {
+                            if (!current) return current;
+                            return {
+                              ...current,
+                              user_ids: next
+                                ? [...current.user_ids, staff.id]
+                                : current.user_ids.filter(
+                                    (id) => id !== staff.id,
+                                  ),
+                            };
+                          })
+                        }
+                      />
+                      <span className="min-w-0">
+                        <span className="block font-medium">{staff.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {staff.email}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <label className="flex min-h-11 items-center justify-between gap-3 border-t border-border pt-4">
+              <span>
+                <span className="block text-sm font-medium">
+                  Terminal active
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  Inactive terminals cannot be selected for printing.
+                </span>
+              </span>
+              <Switch
+                checked={editingTerminal?.is_active ?? true}
+                onCheckedChange={(is_active) =>
+                  setEditingTerminal((current) =>
+                    current ? { ...current, is_active } : current,
+                  )
+                }
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsTerminalDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveTerminal} disabled={formLoading}>
+              {formLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Save terminal
             </Button>
           </DialogFooter>
         </DialogContent>

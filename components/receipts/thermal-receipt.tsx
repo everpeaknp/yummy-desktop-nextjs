@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
+import QRCode from "qrcode";
 import { ReceiptData } from "@/types/order";
 import { numberToWords } from "@/lib/utils/number-to-words";
-import { QrCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getRecordedOrderDiscount } from "@/lib/order-totals";
 
@@ -11,6 +11,14 @@ interface ThermalReceiptProps {
   data: ReceiptData;
   template: any[];
   mode?: "bill" | "receipt";
+  printDesignation?: string | null;
+  paymentQr?: ReceiptPaymentQr | null;
+}
+
+export interface ReceiptPaymentQr {
+  config_id?: string | null;
+  name: string;
+  payload: string;
 }
 
 export function receiptDocumentNotice(
@@ -18,23 +26,19 @@ export function receiptDocumentNotice(
   mode: "bill" | "receipt",
 ): string[] {
   if (mode === "bill") {
-    return ["ESTIMATE / PRE-BILL", "NOT A TAX INVOICE", "NOT PROOF OF PAYMENT"];
+    return ["PRE-BILL", "Estimate - not a tax invoice"];
   }
 
   const registrationType = data.fiscal_registration_type ?? "unverified";
   const billingMode = data.fiscal_billing_mode ?? "legacy_flexible";
   if (registrationType !== "vat") {
-    return ["PAYMENT RECEIPT", "NOT A VAT TAX INVOICE"];
+    return ["PAYMENT RECEIPT", "Not a tax invoice"];
   }
   if (billingMode === "vat_external") {
-    return [
-      "PAYMENT RECEIPT",
-      "NOT A TAX INVOICE",
-      "TAX INVOICE ISSUED SEPARATELY",
-    ];
+    return ["PAYMENT RECEIPT", "Tax invoice issued separately"];
   }
   if (billingMode !== "vat_ebilling") {
-    return ["PAYMENT RECEIPT", "NOT A TAX INVOICE"];
+    return ["PAYMENT RECEIPT", "Not a tax invoice"];
   }
   return [];
 }
@@ -43,8 +47,14 @@ export function ThermalReceipt({
   data,
   template,
   mode = "receipt",
+  printDesignation,
+  paymentQr,
 }: ThermalReceiptProps) {
   const { order, restaurant } = data;
+  const resolvedPaymentQr =
+    paymentQr === undefined
+      ? restaurant.payment_qrs?.find((qr) => qr.payload.trim()) || null
+      : paymentQr;
 
   const globalBlock = template.find((b) => b.type === "global_settings");
   const globalConfig = {
@@ -79,61 +89,118 @@ export function ThermalReceipt({
     if (mode === "receipt" && !b.showOnReceipt) return false;
     return true;
   });
+  const staffConfig =
+    blocks.find((block) => block.type === "bill_info")?.config || {};
 
   const is58mm = globalConfig.paper_size === "58mm";
   const paperWidth = is58mm ? "220px" : "300px";
   const documentNotice = receiptDocumentNotice(data, mode);
+  const completedPrintCount =
+    mode === "bill"
+      ? Number(data.prebill_print_count || 0)
+      : Number(data.receipt_print_count || 0);
 
   return (
-    <div
-      className="thermal-receipt bg-white text-black font-mono leading-tight p-4 relative overflow-hidden transition-all duration-500 ease-in-out origin-top border-x-4 border-white group"
-      style={{
-        width: paperWidth,
-        maxWidth: paperWidth,
-        minWidth: paperWidth,
-        fontSize: `${globalConfig.global_font_size}px`,
-        lineHeight: globalConfig.line_spacing,
-        boxSizing: "border-box",
-      }}
-    >
-      {documentNotice.length > 0 && (
-        <header className="mb-4 border-b border-dashed border-black pb-3 text-center">
-          {documentNotice.map((line, index) => (
+    <>
+      <style jsx global>{`
+        @media print {
+          @page {
+            margin: 0 !important;
+            size: auto;
+          }
+          html,
+          body {
+            width: 80mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+          .thermal-receipt {
+            width: 72mm !important;
+            min-width: 72mm !important;
+            max-width: 72mm !important;
+            margin: 0 auto !important;
+            box-shadow: none !important;
+          }
+        }
+      `}</style>
+      <div
+        className="thermal-receipt bg-white text-black font-mono leading-tight p-4 relative overflow-hidden transition-all duration-500 ease-in-out origin-top border-x-4 border-white group"
+        style={{
+          width: paperWidth,
+          maxWidth: paperWidth,
+          minWidth: paperWidth,
+          fontSize: `${globalConfig.global_font_size}px`,
+          lineHeight: globalConfig.line_spacing,
+          boxSizing: "border-box",
+        }}
+      >
+        {documentNotice.length > 0 && (
+          <header className="mb-4 border-b border-dashed border-black pb-3 text-center">
+            {documentNotice.map((line, index) => (
+              <div
+                key={line}
+                className={cn(
+                  index === 0
+                    ? "font-black"
+                    : "text-[0.85em] font-normal normal-case",
+                )}
+              >
+                {line}
+              </div>
+            ))}
+            <div className="mt-1 text-[0.8em] font-bold">
+              {printDesignation || "PRINT PREVIEW"}
+            </div>
+            {!printDesignation && completedPrintCount > 0 && (
+              <div className="text-[0.75em] font-normal">
+                Printed {completedPrintCount}{" "}
+                {completedPrintCount === 1 ? "time" : "times"}
+              </div>
+            )}
+          </header>
+        )}
+        <div className="space-y-4">
+          {filteredBlocks.map((block) => (
             <div
-              key={line}
-              className={cn(
-                index === 0 ? "font-black" : "font-bold text-[0.9em]",
-              )}
+              key={block.id}
+              style={{
+                paddingTop: `${block.config.padding_top || 0}px`,
+                paddingBottom: `${block.config.padding_bottom || 0}px`,
+                textAlign: (block.config.align as any) || "center",
+                width: "100%",
+              }}
             >
-              {line}
+              {renderBlock(
+                block,
+                globalConfig,
+                data,
+                mode,
+                resolvedPaymentQr,
+                staffConfig,
+              )}
             </div>
           ))}
-        </header>
-      )}
-      <div className="space-y-4">
-        {filteredBlocks.map((block) => (
-          <div
-            key={block.id}
-            style={{
-              paddingTop: `${block.config.padding_top || 0}px`,
-              paddingBottom: `${block.config.padding_bottom || 0}px`,
-              textAlign: (block.config.align as any) || "center",
-              width: "100%",
-            }}
-          >
-            {renderBlock(block, globalConfig, data)}
-          </div>
-        ))}
+        </div>
+        {/* Bottom edge indicator like preview */}
+        <div className="mt-8 border-t border-dashed border-gray-300 w-full" />
       </div>
-      {/* Bottom edge indicator like preview */}
-      <div className="mt-8 border-t border-dashed border-gray-300 w-full" />
-    </div>
+    </>
   );
 }
 
-function renderBlock(block: any, global: any, data: ReceiptData) {
+function renderBlock(
+  block: any,
+  global: any,
+  data: ReceiptData,
+  mode: "bill" | "receipt",
+  paymentQr: ReceiptPaymentQr | null,
+  staffConfig: Record<string, any>,
+) {
   const { config, type } = block;
   const { order, restaurant } = data;
+  const operatorName = order.created_by_name || order.waiter_name;
+  const staffAttribution = data.staff_attribution;
   // Normal receipts use the assigned business bill number, never the
   // database order ID. Completed orders receive this number server-side.
   const billNumber = String(order.invoice_number || "").trim() || "Not issued";
@@ -235,9 +302,9 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
       const showStation = config.show_station === true;
       const showKotNum = config.show_kot_number === true;
       const showType = config.show_kot_type === true;
-      const showDate = config.show_date === true;
-      const showUser = config.show_user === true;
-      const showTime = config.show_time === true;
+      const showDate = config.show_date ?? true;
+      const showUser = config.show_user ?? true;
+      const showTime = config.show_time ?? true;
       const showCategory = config.show_category === true;
 
       const hasDetailFlags =
@@ -303,19 +370,11 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
                   )}
                 </div>
               )}
-              {(showUser || showTime) && (
+              {showTime && (
                 <div className="flex justify-between">
-                  {showUser && (
-                    <span>
-                      {config.user_label || "USER"}:{" "}
-                      {order.created_by_name || "-"}
-                    </span>
-                  )}
-                  {showTime && (
-                    <span className="text-right">
-                      {config.time_label || "TIME"}: {timeStr}
-                    </span>
-                  )}
+                  <span>
+                    {config.time_label || "TIME"}: {timeStr}
+                  </span>
                 </div>
               )}
               {showCategory && (
@@ -365,50 +424,53 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
         </div>
       );
 
-    case "items":
+    case "items": {
+      const showSerial = config.show_serial === true;
+      const showRate = config.show_rate !== false;
+      const showAmount = config.show_amount !== false;
       return (
         <div style={style}>
-          <div className="flex justify-between border-b border-dashed border-black pb-0.5 mb-1 font-bold">
-            {config.show_serial !== false && (
-              <span className="w-8">{config.sn_label || "S.N"}</span>
-            )}
-            <span className="flex-1 text-left px-2">
+          <div
+            className="grid gap-1 border-b border-dashed border-black pb-0.5 mb-1 font-bold"
+            style={{
+              gridTemplateColumns: `${showSerial ? "22px " : ""}minmax(0, 1fr) 30px ${showRate ? "48px " : ""}${showAmount ? "55px" : ""}`,
+            }}
+          >
+            {showSerial && <span>{config.sn_label || "S.N"}</span>}
+            <span className="min-w-0 text-left">
               {config.item_label || "ITEM"}
             </span>
-            {config.show_rate !== false && (
-              <span className="w-12 text-right">
-                {config.rate_label || "RATE"}
-              </span>
+            <span className="text-right">{config.qty_label || "QTY"}</span>
+            {showRate && (
+              <span className="text-right">{config.rate_label || "RATE"}</span>
             )}
-            <span className="w-8 text-right">{config.qty_label || "QTY"}</span>
-            {config.show_amount !== false && (
-              <span className="w-12 text-right">
-                {config.amount_label || "AMT"}
-              </span>
+            {showAmount && (
+              <span className="text-right">{config.amount_label || "AMT"}</span>
             )}
           </div>
           {order.items.map((item, idx) => (
             <div
               key={item.id}
-              className="flex justify-between mb-1 items-start"
+              className="grid items-start gap-1 mb-1"
+              style={{
+                gridTemplateColumns: `${showSerial ? "22px " : ""}minmax(0, 1fr) 30px ${showRate ? "48px " : ""}${showAmount ? "55px" : ""}`,
+              }}
             >
-              {config.show_serial !== false && (
-                <span className="w-8">{idx + 1}</span>
-              )}
-              <span className="flex-1 text-left px-2">
+              {showSerial && <span>{idx + 1}</span>}
+              <span className="min-w-0 break-words text-left">
                 {item.name_snapshot || item.item_name}
                 {item.notes && (
                   <div className="text-[0.8em] italic">({item.notes})</div>
                 )}
               </span>
-              {config.show_rate !== false && (
-                <span className="w-12 text-right">
+              <span className="text-right tabular-nums">{item.qty}</span>
+              {showRate && (
+                <span className="text-right tabular-nums">
                   {Number(item.unit_price).toFixed(2)}
                 </span>
               )}
-              <span className="w-8 text-right">{item.qty}</span>
-              {config.show_amount !== false && (
-                <span className="w-12 text-right">
+              {showAmount && (
+                <span className="text-right tabular-nums">
                   {Number(item.line_total).toFixed(2)}
                 </span>
               )}
@@ -417,20 +479,43 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
           <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
         </div>
       );
+    }
 
     case "totals":
       return (
         <div style={style} className="space-y-0.5">
+          {config.show_subtotal !== false && (
+            <div className="flex justify-between">
+              <span>{config.subtotal_label || "Subtotal"}</span>
+              <span>NPR {Number(order.subtotal).toFixed(2)}</span>
+            </div>
+          )}
           {config.show_discount !== false && computedDiscount > 0 && (
             <div className="flex justify-between">
               <span>{config.discount_label || "Discount"}</span>
-              <span>-Rs. {computedDiscount.toFixed(2)}</span>
+              <span>-NPR {computedDiscount.toFixed(2)}</span>
+            </div>
+          )}
+          {config.show_service_charge !== false &&
+            Number(order.service_charge || 0) > 0 && (
+              <div className="flex justify-between">
+                <span>{config.service_charge_label || "Service charge"}</span>
+                <span>NPR {Number(order.service_charge).toFixed(2)}</span>
+              </div>
+            )}
+          {config.show_tax !== false && Number(order.tax_total || 0) > 0 && (
+            <div className="flex justify-between">
+              <span>{config.tax_label || "VAT / Tax"}</span>
+              <span>NPR {Number(order.tax_total).toFixed(2)}</span>
             </div>
           )}
           <div className="border-t-2 border-double border-black pt-0.5 mt-0.5" />
           <div className="flex justify-between font-black">
             <span>{config.total_label || "TOTAL"}</span>
-            <span>Rs. {Number(order.grand_total).toFixed(2)}</span>
+            <span>NPR {Number(order.grand_total).toFixed(2)}</span>
+          </div>
+          <div className="pt-1 text-left text-[0.8em]">
+            In words: {numberToWords(Number(order.grand_total || 0))}
           </div>
         </div>
       );
@@ -439,6 +524,10 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
       const hasPayments = order.payments && order.payments.length > 0;
       const totalPaid = Number(data.total_paid || 0);
       const balanceDue = Number(data.balance_due || 0);
+      const changeReturned = Math.max(
+        0,
+        totalPaid - Number(order.grand_total || 0),
+      );
 
       if (!hasPayments && totalPaid === 0 && balanceDue === 0) return null;
 
@@ -452,9 +541,18 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
                 <span>{config.header_label || "PAYMENTS"}</span>
               </div>
               {order.payments?.map((p) => (
-                <div key={p.id} className="flex justify-between">
-                  <span className="capitalize">{p.method}</span>
-                  <span>Rs. {Number(p.amount).toFixed(2)}</span>
+                <div key={p.id}>
+                  <div className="flex justify-between">
+                    <span className="capitalize">
+                      {p.instrument_name || p.method}
+                    </span>
+                    <span>NPR {Number(p.amount).toFixed(2)}</span>
+                  </div>
+                  {config.show_reference === true && p.reference && (
+                    <div className="text-left text-[0.8em]">
+                      Reference: {p.reference}
+                    </div>
+                  )}
                 </div>
               ))}
               <div className="w-full overflow-hidden border-t border-dashed border-black mt-1 mb-1" />
@@ -463,26 +561,48 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
 
           <div className="flex justify-between font-bold">
             <span>Paid:</span>
-            <span>Rs. {totalPaid.toFixed(2)}</span>
+            <span>NPR {totalPaid.toFixed(2)}</span>
           </div>
           {balanceDue > 0 && (
             <div className="flex justify-between font-bold text-[1.1em]">
               <span>Due:</span>
-              <span>Rs. {balanceDue.toFixed(2)}</span>
+              <span>NPR {balanceDue.toFixed(2)}</span>
             </div>
           )}
+          {changeReturned > 0 && (
+            <div className="flex justify-between font-bold">
+              <span>Change:</span>
+              <span>NPR {changeReturned.toFixed(2)}</span>
+            </div>
+          )}
+          <div className="text-left text-[0.8em]">
+            {mode === "bill"
+              ? "Estimate only — payment status is not final."
+              : balanceDue > 0
+                ? `Settlement: NPR ${balanceDue.toFixed(2)} assigned as balance due / credit.`
+                : "Settlement: Paid in full."}
+          </div>
+          {mode === "receipt" &&
+            renderStaffAttribution(
+              staffConfig,
+              staffConfig.show_user !== false,
+              staffAttribution,
+              operatorName,
+            )}
         </div>
       );
 
     case "qr":
+      if (mode !== "bill" || !paymentQr?.payload.trim()) return null;
       return (
-        <div style={style} className="flex flex-col items-center gap-1 py-2">
-          <div className="w-20 h-20 border border-black flex items-center justify-center p-2 rounded">
-            <QrCode className="w-full h-full" />
+        <div
+          style={{ ...style, display: "flex", alignItems: "center" }}
+          className="flex w-full flex-col items-center justify-center gap-1 py-2 text-center"
+        >
+          <ScannablePaymentQr payload={paymentQr.payload} />
+          <div className="font-bold text-[0.8em]">
+            {config.label || paymentQr.name || "Scan to pay"}
           </div>
-          {config.label && (
-            <div className="font-bold text-[0.8em]">{config.label}</div>
-          )}
         </div>
       );
 
@@ -506,6 +626,93 @@ function renderBlock(block: any, global: any, data: ReceiptData) {
     default:
       return null;
   }
+}
+
+function staffNames(names: string[] | undefined): string {
+  const unique = Array.from(
+    new Set((names || []).map((name) => name.trim()).filter(Boolean)),
+  );
+  return unique.join(", ");
+}
+
+function formatServiceDuration(totalMinutes: number): string {
+  const minutes = Math.max(0, Math.trunc(totalMinutes));
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hr" : "hrs"}`);
+  if (remainingMinutes > 0 || parts.length === 0) {
+    parts.push(
+      `${remainingMinutes} ${remainingMinutes === 1 ? "min" : "mins"}`,
+    );
+  }
+  return parts.join(" ");
+}
+
+function renderStaffAttribution(
+  config: Record<string, any>,
+  showUser: boolean,
+  attribution: ReceiptData["staff_attribution"],
+  fallbackName?: string | null,
+) {
+  const explicitMode = config.staff_attribution_mode;
+  const mode = String(explicitMode || (showUser ? "compact" : "hidden"));
+  if (mode === "hidden" || (!explicitMode && !showUser)) return null;
+
+  const openedBy = attribution?.opened_by?.trim() || "";
+  const settledBy = attribution?.settled_by?.trim() || "";
+  const handledBy =
+    staffNames(attribution?.handled_by) || openedBy || fallbackName || "";
+
+  return (
+    <div className="mt-1 space-y-0.5 border-t border-dashed border-black pt-1 text-left">
+      {mode === "opened_settled" ? (
+        <>
+          {openedBy && <div>Opened by: {openedBy}</div>}
+          {handledBy && handledBy !== openedBy && (
+            <div>Handled by: {handledBy}</div>
+          )}
+          {settledBy && <div>Settled by: {settledBy}</div>}
+        </>
+      ) : (
+        handledBy && <div>Served by: {handledBy}</div>
+      )}
+      {config.show_service_duration === true &&
+        attribution?.service_duration_minutes != null && (
+          <div>
+            Service duration:{" "}
+            {formatServiceDuration(attribution.service_duration_minutes)}
+          </div>
+        )}
+    </div>
+  );
+}
+
+function ScannablePaymentQr({ payload }: { payload: string }) {
+  const qr = QRCode.create(payload, { errorCorrectionLevel: "M" });
+  const size = qr.modules.size;
+  let path = "";
+
+  for (let row = 0; row < size; row += 1) {
+    for (let column = 0; column < size; column += 1) {
+      if (qr.modules.get(row, column)) {
+        path += `M${column} ${row}h1v1h-1z`;
+      }
+    }
+  }
+
+  return (
+    <svg
+      aria-label="Payment QR code"
+      className="h-24 w-24 bg-white"
+      role="img"
+      shapeRendering="crispEdges"
+      viewBox={`-4 -4 ${size + 8} ${size + 8}`}
+    >
+      <rect x="-4" y="-4" width={size + 8} height={size + 8} fill="white" />
+      <path d={path} fill="black" />
+    </svg>
+  );
 }
 
 function resolveReceiptPlaceholders(text: string, data: ReceiptData) {

@@ -164,6 +164,26 @@ function money(value: FinanceReportingMoney | null | undefined) {
   return formatCurrency(asNumber(value));
 }
 
+function accountingBalance(
+  debit: FinanceReportingMoney | null | undefined,
+  credit: FinanceReportingMoney | null | undefined,
+) {
+  const net = asNumber(debit) - asNumber(credit);
+  const side = net > 0.004 ? "debit" : net < -0.004 ? "credit" : null;
+  return {
+    side,
+    text: side
+      ? `${money(Math.abs(net))} ${side === "debit" ? "Dr" : "Cr"}`
+      : money(0),
+  };
+}
+
+function abnormalBalanceMessage(row: FinanceReportingTrialBalanceRow) {
+  const closing = accountingBalance(row.closing_debit, row.closing_credit);
+  if (!closing.side || closing.side === row.normal_side) return null;
+  return `${closing.side === "credit" ? "Credit" : "Debit"} balance requires reconciliation`;
+}
+
 function humanize(value: string | null | undefined) {
   if (!value) return "—";
   return value
@@ -1494,8 +1514,11 @@ function AccountLedgerListView({
                   );
                 }
                 const { row, context } = item;
-                const closing =
-                  asNumber(row.closing_debit) - asNumber(row.closing_credit);
+                const closing = accountingBalance(
+                  row.closing_debit,
+                  row.closing_credit,
+                );
+                const balanceWarning = abnormalBalanceMessage(row);
                 return (
                   <button
                     key={row.head_id}
@@ -1510,13 +1533,18 @@ function AccountLedgerListView({
                       <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                         {context || `${row.code} · ${humanize(row.head_type)}`}
                       </span>
+                      {balanceWarning ? (
+                        <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
+                          {balanceWarning}
+                        </span>
+                      ) : null}
                     </span>
                     <span className="shrink-0 text-right">
                       <span className="block text-xs text-muted-foreground">
                         Closing
                       </span>
                       <span className="font-mono text-sm font-semibold tabular-nums">
-                        {money(closing)}
+                        {closing.text}
                       </span>
                     </span>
                   </button>
@@ -1553,12 +1581,15 @@ function AccountLedgerListView({
                       );
                     }
                     const { row, context } = item;
-                    const opening =
-                      asNumber(row.opening_debit) -
-                      asNumber(row.opening_credit);
-                    const closing =
-                      asNumber(row.closing_debit) -
-                      asNumber(row.closing_credit);
+                    const opening = accountingBalance(
+                      row.opening_debit,
+                      row.opening_credit,
+                    );
+                    const closing = accountingBalance(
+                      row.closing_debit,
+                      row.closing_credit,
+                    );
+                    const balanceWarning = abnormalBalanceMessage(row);
                     return (
                       <TableRow
                         key={row.head_id}
@@ -1574,6 +1605,11 @@ function AccountLedgerListView({
                               {context}
                             </div>
                           ) : null}
+                          {balanceWarning ? (
+                            <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                              {balanceWarning}
+                            </div>
+                          ) : null}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">
@@ -1581,7 +1617,7 @@ function AccountLedgerListView({
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
-                          {money(opening)}
+                          {opening.text}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
                           {row.period_debit && asNumber(row.period_debit)
@@ -1594,7 +1630,7 @@ function AccountLedgerListView({
                             : "—"}
                         </TableCell>
                         <TableCell className="text-right font-mono font-semibold tabular-nums">
-                          {money(closing)}
+                          {closing.text}
                         </TableCell>
                       </TableRow>
                     );
@@ -2435,6 +2471,11 @@ function ReportingLedgerReportContent({
       <AccountLedgerPanel
         headId={selectedHeadId}
         presentation="operational"
+        initialDateFrom={dateFrom}
+        initialDateTo={dateTo}
+        businessLine={businessLine === "all" ? undefined : businessLine}
+        periodStartAt={searchParams.get("period_start_at") || undefined}
+        periodEndAt={searchParams.get("period_end_at") || undefined}
         onOpenChange={(open) => !open && setSelectedHeadId(null)}
       />
     </AppPage>

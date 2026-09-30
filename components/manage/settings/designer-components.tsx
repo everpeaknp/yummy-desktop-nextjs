@@ -82,6 +82,9 @@ export interface GlobalConfig {
   line_spacing: number;
   paper_size: "58mm" | "80mm";
   column_capacity: number;
+  bill_copies?: number;
+  receipt_copies?: number;
+  print_copies?: number;
 }
 
 // --- Icons Mapping ---
@@ -402,6 +405,9 @@ export const ThermalPreview = ({
     if (mode === "receipt" && !b.showOnReceipt) return false;
     return true;
   });
+  const documentNotice = previewDocumentNotice(mode, context);
+  const staffConfig =
+    blocks.find((block) => block.type === "bill_info")?.config || {};
 
   useEffect(() => {
     if (!selectedId) return;
@@ -436,6 +442,23 @@ export const ThermalPreview = ({
       <div className="absolute top-0 bottom-0 right-0 w-1 bg-gradient-to-l from-black/5 to-transparent pointer-events-none" />
 
       <div className="space-y-4">
+        {documentNotice.length > 0 ? (
+          <div className="border-b border-dashed border-black pb-3 text-center">
+            {documentNotice.map((line, index) => (
+              <div
+                key={line}
+                className={cn(
+                  index === 0
+                    ? "font-black"
+                    : "text-[0.85em] font-normal normal-case",
+                )}
+              >
+                {line}
+              </div>
+            ))}
+            <div className="mt-1 text-[0.75em]">LAYOUT PREVIEW</div>
+          </div>
+        ) : null}
         {filteredBlocks.map((block) => {
           const isSelected = selectedId === block.id;
           return (
@@ -468,7 +491,7 @@ export const ThermalPreview = ({
                   <Settings className="w-3 h-3" />
                 </div>
               )}
-              {renderBlockPreview(block, globalConfig, context)}
+              {renderBlockPreview(block, globalConfig, context, staffConfig)}
             </div>
           );
         })}
@@ -487,11 +510,13 @@ export const ConfigPanel = ({
   onUpdate,
   onDelete,
   mode = "receipt",
+  protectedBlock = false,
 }: {
   block: ReceiptBlock;
   onUpdate: (updates: Partial<ReceiptBlock>) => void;
   onDelete: () => void;
   mode?: "receipt" | "kot";
+  protectedBlock?: boolean;
 }) => {
   const meta = BLOCK_METADATA[block.type];
   const [stylingOpen, setStylingOpen] = useState(false);
@@ -521,12 +546,13 @@ export const ConfigPanel = ({
               <Label className="text-xs text-muted-foreground">Enabled</Label>
               <Switch
                 className="scale-75"
-                checked={block.isVisible}
+                checked={protectedBlock ? true : block.isVisible}
                 onCheckedChange={(val) => onUpdate({ isVisible: val })}
+                disabled={protectedBlock}
               />
             </div>
           )}
-          {block.type !== "global_settings" && (
+          {block.type !== "global_settings" && !protectedBlock && (
             <Button
               variant="ghost"
               size="icon"
@@ -549,6 +575,7 @@ export const ConfigPanel = ({
             <Switch
               checked={block.showOnBill}
               onCheckedChange={(val) => onUpdate({ showOnBill: val })}
+              disabled={protectedBlock}
             />
           </div>
           <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/40">
@@ -556,8 +583,9 @@ export const ConfigPanel = ({
               On Receipt
             </Label>
             <Switch
-              checked={block.showOnReceipt}
+              checked={protectedBlock ? true : block.showOnReceipt}
               onCheckedChange={(val) => onUpdate({ showOnReceipt: val })}
+              disabled={protectedBlock}
             />
           </div>
         </div>
@@ -565,7 +593,7 @@ export const ConfigPanel = ({
 
       <div className="space-y-6">
         {/* Specific Configs */}
-        {renderConfigFields(block, updateConfig)}
+        {renderConfigFields(block, updateConfig, mode)}
 
         {/* Advanced styling stays available without dominating routine editing. */}
         {block.type !== "global_settings" && (
@@ -652,6 +680,7 @@ export const MobileDesignerEditorSheet = ({
   onDelete,
   onCancel,
   onSave,
+  protectedBlock = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -666,6 +695,7 @@ export const MobileDesignerEditorSheet = ({
   onDelete: () => void;
   onCancel: () => void;
   onSave: () => void;
+  protectedBlock?: boolean;
 }) => {
   const isGlobal = globalConfig !== null;
   const title = isGlobal
@@ -709,6 +739,7 @@ export const MobileDesignerEditorSheet = ({
                 onUpdate={onUpdateBlock}
                 onDelete={onDelete}
                 mode={mode}
+                protectedBlock={protectedBlock}
               />
               <div className="mt-6 border-t border-border pt-4">
                 <p className="mb-3 text-sm font-medium">Position</p>
@@ -775,17 +806,146 @@ export interface PreviewContext {
   station?: string;
   type?: string;
   user?: string;
+  opened_by?: string;
+  handled_by?: string[];
+  settled_by?: string;
+  service_duration_minutes?: number;
   category?: string;
   // Customer sample data
   customer_name?: string;
   customer_phone?: string;
   customer_address?: string;
+  customer_pan?: string;
+  fiscal_registration_type?: "unverified" | "pan_only" | "vat";
+  fiscal_billing_mode?:
+    "legacy_flexible" | "pan_invoice" | "vat_external" | "vat_ebilling";
+  document_family?:
+    "pre_bill" | "payment_receipt" | "tax_invoice" | "credit_note";
+  document_title?: string;
+  document_message?: string;
+  station_ticket_title?: string;
+  subtotal?: string;
+  tax?: string;
+  service_charge?: string;
+  discount?: string;
+  total?: string;
+  amount_in_words?: string;
+  total_paid?: string;
+  balance_due?: string;
+  change_returned?: string;
+  settlement?: string;
+  items?: Array<{
+    name: string;
+    qty: string;
+    rate?: string;
+    amount?: string;
+    fiscal_code?: string;
+    unit?: string;
+    notes?: string;
+    modifiers?: string[];
+  }>;
+  payments?: Array<{ method: string; amount: string; reference?: string }>;
+}
+
+function previewDocumentNotice(
+  mode: "bill" | "receipt" | "kot",
+  context?: PreviewContext,
+): string[] {
+  if (mode === "kot") return [];
+  if (context?.document_family === "tax_invoice") return ["TAX INVOICE"];
+  if (context?.document_family === "credit_note") return ["CREDIT NOTE"];
+  if (mode === "bill") {
+    return [
+      context?.document_title || "PRE-BILL",
+      context?.document_message || "",
+    ].filter(Boolean);
+  }
+  if (context?.document_family === "payment_receipt") {
+    const registration = context?.fiscal_registration_type ?? "unverified";
+    const billingMode = context?.fiscal_billing_mode ?? "legacy_flexible";
+    const defaultMessage =
+      registration === "vat" && billingMode === "vat_external"
+        ? "Tax invoice issued separately"
+        : "Not a tax invoice";
+    return [
+      context?.document_title || "PAYMENT RECEIPT",
+      context?.document_message ?? defaultMessage,
+    ].filter(Boolean);
+  }
+  const registration = context?.fiscal_registration_type ?? "unverified";
+  const billingMode = context?.fiscal_billing_mode ?? "legacy_flexible";
+  if (registration !== "vat") {
+    return ["PAYMENT RECEIPT", "Not a tax invoice"];
+  }
+  if (billingMode === "vat_external") {
+    return ["PAYMENT RECEIPT", "Tax invoice issued separately"];
+  }
+  if (billingMode !== "vat_ebilling") {
+    return ["PAYMENT RECEIPT", "Not a tax invoice"];
+  }
+  return ["TAX INVOICE"];
+}
+
+function renderPreviewStaffAttribution(
+  config: Record<string, any>,
+  context?: PreviewContext,
+) {
+  const explicitMode = config.staff_attribution_mode;
+  const showUser = explicitMode
+    ? explicitMode !== "hidden"
+    : (config.show_user ?? true);
+  const mode = String(explicitMode || (showUser ? "compact" : "hidden"));
+  if (!showUser || mode === "hidden") return null;
+
+  const handlers = context?.handled_by || [
+    context?.user || "BHAVANA",
+    "MANDEEP",
+    "SITA",
+  ];
+  const staff = handlers.join(", ");
+
+  return (
+    <div className="mt-1 space-y-0.5 border-t border-dashed border-black pt-1 text-left">
+      {mode === "opened_settled" ? (
+        <>
+          <div>
+            Opened by: {context?.opened_by || context?.user || "BHAVANA"}
+          </div>
+          <div>Handled by: {staff}</div>
+          <div>Settled by: {context?.settled_by || "MANDEEP"}</div>
+        </>
+      ) : (
+        <div>Served by: {staff}</div>
+      )}
+      {config.show_service_duration === true ? (
+        <div>
+          Service duration:{" "}
+          {formatPreviewDuration(context?.service_duration_minutes ?? 100)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatPreviewDuration(totalMinutes: number): string {
+  const minutes = Math.max(0, Math.trunc(totalMinutes));
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hr" : "hrs"}`);
+  if (remainingMinutes > 0 || parts.length === 0) {
+    parts.push(
+      `${remainingMinutes} ${remainingMinutes === 1 ? "min" : "mins"}`,
+    );
+  }
+  return parts.join(" ");
 }
 
 function renderBlockPreview(
   block: ReceiptBlock,
   global: GlobalConfig,
   context?: PreviewContext,
+  staffConfig: Record<string, any> = {},
 ) {
   const { config, type } = block;
   const effectiveFontType = config.font_type || global.global_font_type;
@@ -874,15 +1034,41 @@ function renderBlockPreview(
         <div className="w-full overflow-hidden border-t border-dashed border-black my-1" />
       );
     case "bill_info": {
+      const fiscalDocument =
+        context?.document_family === "tax_invoice" ||
+        context?.document_family === "credit_note";
+      if (fiscalDocument) {
+        return (
+          <div style={style} className="space-y-0.5 text-left">
+            <div className="flex justify-between">
+              <span>
+                {context.document_family === "credit_note"
+                  ? "Credit note"
+                  : "Invoice"}
+                : 000123
+              </span>
+              <span>{context?.date || "03/02/2026"}</span>
+            </div>
+            <div>Fiscal year: 2083/084</div>
+            {config.show_order_id !== false ? (
+              <div>Order: #{context?.order_id || "10"}</div>
+            ) : null}
+            {config.show_table !== false ? (
+              <div>Table / service: {context?.table_name || "4"}</div>
+            ) : null}
+            <div className="mt-1 w-full overflow-hidden border-t border-dashed border-black" />
+          </div>
+        );
+      }
       // Match Flutter's visibility defaults exactly
       const showTable = config.show_table ?? true; // default true
       const showOrderId = config.show_order_id ?? true; // default true
       const showStation = config.show_station === true; // default false
       const showKotNum = config.show_kot_number === true; // default false
       const showType = config.show_kot_type === true; // default false
-      const showDate = config.show_date === true; // default false
-      const showUser = config.show_user === true; // default false
-      const showTime = config.show_time === true; // default false
+      const showDate = config.show_date ?? true;
+      const showUser = config.show_user ?? true;
+      const showTime = config.show_time ?? true;
       const showCategory = config.show_category === true; // default false
 
       // Legacy fallback: if no KOT/detail flags are set, show simple bill format
@@ -952,20 +1138,10 @@ function renderBlockPreview(
                 </div>
               )}
 
-              {/* Row 4: User & Time */}
-              {(showUser || showTime) && (
-                <div className="flex justify-between">
-                  {showUser && (
-                    <span>
-                      {config.user_label || "USER"}:{" "}
-                      {context?.user || "BHAVANA THAPALIYA"}
-                    </span>
-                  )}
-                  {showTime && (
-                    <span className="text-right">
-                      {config.time_label || "TIME"}: {context?.time || "15:30"}
-                    </span>
-                  )}
+              {/* Row 4: Order time */}
+              {showTime && (
+                <div>
+                  {config.time_label || "TIME"}: {context?.time || "15:30"}
                 </div>
               )}
 
@@ -1012,68 +1188,144 @@ function renderBlockPreview(
         </div>
       );
     }
-    case "items":
+    case "items": {
+      const showSerial = config.show_serial === true;
+      const showRate = config.show_rate !== false;
+      const showAmount = config.show_amount !== false;
+      const items = context?.items?.length
+        ? context.items
+        : [
+            {
+              name: "Margherita Pizza",
+              qty: "2",
+              rate: "640.00",
+              amount: "1,280.00",
+              fiscal_code: "ITEM-001",
+              unit: "plate",
+              modifiers: ["Extra cheese"],
+              notes: "No onion",
+            },
+            {
+              name: "Coke",
+              qty: "1",
+              rate: "80.00",
+              amount: "80.00",
+              fiscal_code: "ITEM-002",
+              unit: "bottle",
+            },
+          ];
       return (
         <div style={style}>
-          <div className="flex justify-between border-b border-dashed border-black pb-0.5 mb-1 font-bold">
-            {config.show_serial !== false && (
+          <div
+            className="grid gap-1 border-b border-dashed border-black pb-0.5 mb-1 font-bold"
+            style={{
+              gridTemplateColumns: `${showSerial ? "22px " : ""}minmax(0, 1fr) 30px ${showRate ? "48px " : ""}${showAmount ? "55px" : ""}`,
+            }}
+          >
+            {showSerial && (
               <span className="w-8">{config.sn_label || "S.N"}</span>
             )}
-            <span className="flex-1 text-left px-2">
+            <span className="min-w-0 text-left">
               {config.item_label || "ITEM"}
             </span>
-            {config.show_rate !== false && (
-              <span className="w-12 text-right">
-                {config.rate_label || "RATE"}
-              </span>
+            <span className="text-right">{config.qty_label || "QTY"}</span>
+            {showRate && (
+              <span className="text-right">{config.rate_label || "RATE"}</span>
             )}
-            <span className="w-8 text-right">{config.qty_label || "QTY"}</span>
-            {config.show_amount !== false && (
-              <span className="w-12 text-right">
-                {config.amount_label || "AMT"}
-              </span>
+            {showAmount && (
+              <span className="text-right">{config.amount_label || "AMT"}</span>
             )}
           </div>
-          {/* Sample item 1: Margherita Pizza */}
-          <div className="flex justify-between">
-            {config.show_serial !== false && <span className="w-8">1</span>}
-            <span className="flex-1 text-left px-2">Margherita Pizza</span>
-            {config.show_rate !== false && (
-              <span className="w-12 text-right">12.99</span>
-            )}
-            <span className="w-8 text-right">2</span>
-            {config.show_amount !== false && (
-              <span className="w-12 text-right">25.98</span>
-            )}
-          </div>
-          {/* Sample item 2: Coke */}
-          <div className="flex justify-between">
-            {config.show_serial !== false && <span className="w-8">2</span>}
-            <span className="flex-1 text-left px-2">Coke</span>
-            {config.show_rate !== false && (
-              <span className="w-12 text-right">2.50</span>
-            )}
-            <span className="w-8 text-right">3</span>
-            {config.show_amount !== false && (
-              <span className="w-12 text-right">7.50</span>
-            )}
-          </div>
+          {items.map((item, index) => (
+            <div key={`${item.name}-${index}`} className="mb-1">
+              <div
+                className="grid items-start gap-1"
+                style={{
+                  gridTemplateColumns: `${showSerial ? "22px " : ""}minmax(0, 1fr) 30px ${showRate ? "48px " : ""}${showAmount ? "55px" : ""}`,
+                }}
+              >
+                {showSerial && <span>{index + 1}</span>}
+                <span className="min-w-0 break-words text-left">
+                  {item.name}
+                </span>
+                <span className="text-right tabular-nums">{item.qty}</span>
+                {showRate && (
+                  <span className="text-right tabular-nums">
+                    {item.rate || "0.00"}
+                  </span>
+                )}
+                {showAmount && (
+                  <span className="text-right tabular-nums">
+                    {item.amount || "0.00"}
+                  </span>
+                )}
+              </div>
+              {item.modifiers?.map((modifier) => (
+                <div key={modifier} className="pl-4 text-left text-[0.8em]">
+                  + {modifier}
+                </div>
+              ))}
+              {item.notes ? (
+                <div className="pl-4 text-left text-[0.8em]">
+                  Note: {item.notes}
+                </div>
+              ) : null}
+              {(context?.document_family === "tax_invoice" ||
+                context?.document_family === "credit_note") &&
+              (config.show_fiscal_code === true ||
+                config.show_unit !== false) ? (
+                <div className="pl-4 text-left text-[0.8em]">
+                  {[
+                    config.show_fiscal_code === true ? item.fiscal_code : null,
+                    config.show_unit !== false ? item.unit : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              ) : null}
+            </div>
+          ))}
           <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
         </div>
       );
+    }
     case "totals":
       return (
         <div style={style} className="space-y-0.5">
-          {config.show_discount !== false && (
+          {config.show_subtotal !== false && (
             <div className="flex justify-between">
-              <span>{config.discount_label || "Discount"}</span>
-              <span>-Rs. 5.00</span>
+              <span>{config.subtotal_label || "Subtotal"}</span>
+              <span>{context?.subtotal || "NPR 1,360.00"}</span>
             </div>
           )}
+          {config.show_tax !== false && (
+            <div className="flex justify-between">
+              <span>{config.tax_label || "Tax"}</span>
+              <span>{context?.tax || "NPR 176.80"}</span>
+            </div>
+          )}
+          {config.show_service_charge !== false && context?.service_charge && (
+            <div className="flex justify-between">
+              <span>{config.service_charge_label || "Service charge"}</span>
+              <span>{context.service_charge}</span>
+            </div>
+          )}
+          {config.show_discount !== false &&
+            context?.discount !== "NPR 0.00" && (
+              <div className="flex justify-between">
+                <span>{config.discount_label || "Discount"}</span>
+                <span>-{context?.discount || "NPR 0.00"}</span>
+              </div>
+            )}
           <div className="border-t-2 border-double border-black pt-0.5 mt-0.5" />
           <div className="flex justify-between font-black">
             <span>{config.total_label || "TOTAL"}</span>
-            <span>Rs. 32.83</span>
+            <span>{context?.total || "NPR 1,536.80"}</span>
+          </div>
+          <div className="pt-1 text-left text-[0.8em]">
+            In words:{" "}
+            {context?.amount_in_words ||
+              "Nepalese Rupees One Thousand Five Hundred Thirty Six and Eighty Paisa Only"}
           </div>
         </div>
       );
@@ -1089,27 +1341,68 @@ function renderBlockPreview(
       return (
         <div style={style} className="text-left py-0.5">
           <div className="font-bold">
-            {context?.customer_name || "John Doe"}
+            {context?.document_family === "tax_invoice" ||
+            context?.document_family === "credit_note"
+              ? `Buyer: ${context?.customer_name || "Consumer"}`
+              : context?.customer_name || "John Doe"}
           </div>
           {config.show_phone !== false && (
             <div>{context?.customer_phone || "987-654-3210"}</div>
           )}
+          {(context?.document_family === "tax_invoice" ||
+            context?.document_family === "credit_note") && (
+            <div>Buyer PAN: {context?.customer_pan || "987654321"}</div>
+          )}
           <div className="w-full overflow-hidden border-t border-dashed border-black mt-1" />
         </div>
       );
-    case "payments":
+    case "payments": {
+      const payments = context?.payments?.length
+        ? context.payments
+        : [{ method: "Cash", amount: "NPR 1,446.40" }];
       return (
         <div style={style} className="space-y-0.5">
           <div className="w-full overflow-hidden border-t border-dashed border-black" />
-          <div className="font-black">
-            <span>{config.header_label || "PAID"}</span>
+          <div className="text-center font-black">
+            <span>{config.header_label || "PAYMENTS"}</span>
           </div>
-          <div className="flex justify-between">
-            <span>Cash</span>
-            <span>Rs. 32.83</span>
+          {payments.map((payment, index) => (
+            <div key={`${payment.method}-${index}`}>
+              <div className="flex justify-between">
+                <span>{payment.method}</span>
+                <span>{payment.amount}</span>
+              </div>
+              {config.show_reference === true && payment.reference ? (
+                <div className="text-left text-[0.8em]">
+                  Ref: {payment.reference}
+                </div>
+              ) : null}
+            </div>
+          ))}
+          <div className="w-full overflow-hidden border-t border-dashed border-black" />
+          <div className="flex justify-between font-bold">
+            <span>Amount paid</span>
+            <span>{context?.total_paid || "NPR 1,446.40"}</span>
           </div>
+          {context?.change_returned ? (
+            <div className="flex justify-between">
+              <span>Change returned</span>
+              <span>{context.change_returned}</span>
+            </div>
+          ) : null}
+          {context?.balance_due && context.balance_due !== "NPR 0.00" ? (
+            <div className="flex justify-between">
+              <span>Balance due</span>
+              <span>{context.balance_due}</span>
+            </div>
+          ) : null}
+          <div className="text-left text-[0.8em]">
+            Settlement: {context?.settlement || "Paid in full"}
+          </div>
+          {renderPreviewStaffAttribution(staffConfig, context)}
         </div>
       );
+    }
     case "partial_pay":
       return (
         <div style={style} className="space-y-0.5">
@@ -1165,7 +1458,10 @@ function renderBlockPreview(
 function resolvePreviewPlaceholders(text: string, context?: PreviewContext) {
   if (!text || typeof text !== "string") return text;
   return text
-    .replace(/\{\{station_ticket_title\}\}/g, context?.station || "KITCHEN")
+    .replace(
+      /\{\{station_ticket_title\}\}/g,
+      context?.station_ticket_title || "INITIAL TICKET",
+    )
     .replace(/\{\{station\}\}/g, context?.station || "KITCHEN")
     .replace(/\{\{kot_number\}\}/g, context?.kot_no || "17-1")
     .replace(/\{\{table\}\}/g, context?.table_name || "N/A")
@@ -1188,6 +1484,7 @@ function resolvePreviewPlaceholders(text: string, context?: PreviewContext) {
 function renderConfigFields(
   block: ReceiptBlock,
   update: (k: string, v: any) => void,
+  mode: "receipt" | "kot",
 ) {
   const { config, type } = block;
 
@@ -1222,6 +1519,27 @@ function renderConfigFields(
     case "bill_info":
       return (
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Staff attribution</Label>
+            <Select
+              value={
+                config.staff_attribution_mode ||
+                (config.show_user === false ? "hidden" : "compact")
+              }
+              onValueChange={(value) => update("staff_attribution_mode", value)}
+            >
+              <SelectTrigger className="min-h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="compact">Compact served by</SelectItem>
+                <SelectItem value="opened_settled">
+                  Opened, handled and settled
+                </SelectItem>
+                <SelectItem value="hidden">Hidden</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <ToggleItem
               label="KOT #"
@@ -1244,9 +1562,9 @@ function renderConfigFields(
               onChange={(v) => update("show_date", v)}
             />
             <ToggleItem
-              label="User"
-              value={config.show_user}
-              onChange={(v) => update("show_user", v)}
+              label="Service duration"
+              value={config.show_service_duration}
+              onChange={(v) => update("show_service_duration", v)}
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -1281,6 +1599,16 @@ function renderConfigFields(
               label="Show Amount"
               value={config.show_amount}
               onChange={(v) => update("show_amount", v)}
+            />
+            <ToggleItem
+              label="Item code"
+              value={config.show_fiscal_code}
+              onChange={(v) => update("show_fiscal_code", v)}
+            />
+            <ToggleItem
+              label="Unit"
+              value={config.show_unit}
+              onChange={(v) => update("show_unit", v)}
             />
           </div>
         </div>
@@ -1410,6 +1738,87 @@ function renderConfigFields(
     case "global_settings":
       return (
         <div className="space-y-6">
+          <div className="space-y-3 border-b border-border pb-5">
+            <div>
+              <Label className="text-sm font-medium">Copies per print</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The server sends the complete copy batch as one printer job.
+                Maximum 5.
+              </p>
+            </div>
+            {mode === "receipt" ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="bill-copies" className="text-xs">
+                    Pre-bill copies
+                  </Label>
+                  <Input
+                    id="bill-copies"
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={config.bill_copies || 1}
+                    onChange={(event) =>
+                      update(
+                        "bill_copies",
+                        Math.max(
+                          1,
+                          Math.min(5, Number(event.target.value) || 1),
+                        ),
+                      )
+                    }
+                    className="h-11 tabular-nums"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="receipt-copies" className="text-xs">
+                    Receipt copies
+                  </Label>
+                  <Input
+                    id="receipt-copies"
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={config.receipt_copies || 1}
+                    onChange={(event) =>
+                      update(
+                        "receipt_copies",
+                        Math.max(
+                          1,
+                          Math.min(5, Number(event.target.value) || 1),
+                        ),
+                      )
+                    }
+                    className="h-11 tabular-nums"
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-muted-foreground">
+                  Fiscal invoice copies remain controlled by fiscal print
+                  authorization.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="kot-copies" className="text-xs">
+                  KOT copies
+                </Label>
+                <Input
+                  id="kot-copies"
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={config.print_copies || 1}
+                  onChange={(event) =>
+                    update(
+                      "print_copies",
+                      Math.max(1, Math.min(5, Number(event.target.value) || 1)),
+                    )
+                  }
+                  className="h-11 max-w-28 tabular-nums"
+                />
+              </div>
+            )}
+          </div>
           <FontSelector
             value={config.global_font_type || "A"}
             onChange={(v) => update("global_font_type", v)}

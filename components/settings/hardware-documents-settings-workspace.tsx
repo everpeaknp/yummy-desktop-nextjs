@@ -51,6 +51,9 @@ export function HardwareDocumentsSettingsWorkspace({
   const [template, setTemplate] = useState<
     Array<Record<string, unknown>> | undefined
   >();
+  const [receiptDocumentSettings, setReceiptDocumentSettings] = useState<
+    Record<string, Record<string, unknown>> | undefined
+  >();
   const [templateLoading, setTemplateLoading] = useState(kind !== "printers");
   const [templateError, setTemplateError] = useState<string | null>(null);
   const copy = WORKSPACE_COPY[kind];
@@ -69,6 +72,9 @@ export function HardwareDocumentsSettingsWorkspace({
           ? data?.receipt_template || []
           : data?.kot_template || [],
       );
+      if (kind === "receipt") {
+        setReceiptDocumentSettings(data?.receipt_document_settings || {});
+      }
     } catch (error) {
       console.error(`Failed to load ${kind} template`, error);
       setTemplateError(
@@ -115,6 +121,7 @@ export function HardwareDocumentsSettingsWorkspace({
               <ReceiptDesigner
                 restaurantId={restaurant.id}
                 initialTemplate={template}
+                initialDocumentSettings={receiptDocumentSettings}
               />
             ) : (
               <KOTDesigner

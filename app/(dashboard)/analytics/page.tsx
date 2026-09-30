@@ -87,6 +87,7 @@ import { FilterBar } from "@/components/patterns/controls/filter-bar";
 import { useRef } from "react";
 import { DateRange } from "react-day-picker";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   AnalyticsAccessDenied,
   AnalyticsAccessLoading,
@@ -123,7 +124,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import {
   breakdownPieCopy,
   formatCancellationRate,
@@ -154,6 +154,9 @@ import {
 } from "@/lib/finance-station-scope";
 
 export default function AnalyticsPage() {
+  const searchParams = useSearchParams();
+  const linkedDayCloseId = Number(searchParams.get("day_close_id"));
+  const linkedBusinessLine = searchParams.get("business_line");
   const [activeRange, setActiveRange] = useState<DateRangePreset>("today");
   const [data, setData] = useState<any>(null);
   const [cashControlSummary, setCashControlSummary] =
@@ -169,10 +172,11 @@ export default function AnalyticsPage() {
   const [fetchTrigger, setFetchTrigger] = useState(0);
   const analyticsRequestGenerationRef = useRef(0);
   const [date, setDate] = useState<DateRange | undefined>();
-  const [isDayCloseOpen, setIsDayCloseOpen] = useState(false);
   const [showFinanceBreakdown, setShowFinanceBreakdown] = useState(false);
   const [businessLine, setBusinessLine] = useState<string | undefined>(
-    "restaurant",
+    linkedBusinessLine === "hotel" || linkedBusinessLine === "combined"
+      ? linkedBusinessLine
+      : "restaurant",
   );
   const [selectedDayCloseSession, setSelectedDayCloseSession] = useState<
     any | null
@@ -413,6 +417,7 @@ export default function AnalyticsPage() {
     menuPageSize,
     menuSortBy,
     menuSortDir,
+    menuSearch,
     menuCategory,
   ]);
 
@@ -520,6 +525,14 @@ export default function AnalyticsPage() {
     };
     fetchSessions();
   }, [user?.restaurant_id, businessLine]);
+
+  useEffect(() => {
+    if (!Number.isFinite(linkedDayCloseId) || linkedDayCloseId <= 0) return;
+    const linkedSession = sessions.find(
+      (session) => Number(session?.id) === linkedDayCloseId,
+    );
+    if (linkedSession) setSelectedDayCloseSession(linkedSession);
+  }, [linkedDayCloseId, sessions]);
 
   const getSessionDateLabel = (session: any) => {
     if (!session) return "";
@@ -2098,50 +2111,51 @@ export default function AnalyticsPage() {
 
             {/* Day Close */}
             <section>
-              <Card
-                className="bg-card border-border shadow-sm hover:border-orange-500/30 hover:shadow-md transition-all cursor-pointer overflow-hidden"
-                onClick={() => setIsDayCloseOpen(true)}
+              <Link
+                href={`/day-close?business_line=${businessLine || "restaurant"}`}
               >
-                <CardContent className="p-0">
-                  <div className="flex flex-col lg:flex-row lg:items-center">
-                    <div className="flex items-center gap-4 p-5 lg:p-6 flex-1">
-                      <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shrink-0">
-                        <ReceiptText className="w-7 h-7 text-orange-500" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-lg font-bold text-foreground">
-                            Day Close
-                          </h3>
-                          <Badge
-                            variant="outline"
-                            className="border-orange-500/20 text-orange-500 bg-orange-500/5 text-[10px] uppercase tracking-wider"
-                          >
-                            Finance Action
-                          </Badge>
+                <Card className="bg-card border-border shadow-sm hover:border-orange-500/30 hover:shadow-md transition-all cursor-pointer overflow-hidden">
+                  <CardContent className="p-0">
+                    <div className="flex flex-col lg:flex-row lg:items-center">
+                      <div className="flex items-center gap-4 p-5 lg:p-6 flex-1">
+                        <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shrink-0">
+                          <ReceiptText className="w-7 h-7 text-orange-500" />
                         </div>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Reconcile payments, expenses, and daily totals for{" "}
-                          {new Date().toLocaleDateString()}.
-                        </p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-lg font-bold text-foreground">
+                              Day Close
+                            </h3>
+                            <Badge
+                              variant="outline"
+                              className="border-orange-500/20 text-orange-500 bg-orange-500/5 text-[10px] uppercase tracking-wider"
+                            >
+                              Finance Action
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Reconcile payments, expenses, and daily totals for{" "}
+                            {new Date().toLocaleDateString()}.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="border-t lg:border-t-0 lg:border-l border-border/50 bg-muted/20 px-5 py-4 lg:px-6 lg:min-w-[240px] flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                            Next Step
+                          </p>
+                          <p className="text-sm font-semibold text-foreground mt-1">
+                            Open Day Close
+                          </p>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                          <ChevronRight className="w-5 h-5" />
+                        </div>
                       </div>
                     </div>
-                    <div className="border-t lg:border-t-0 lg:border-l border-border/50 bg-muted/20 px-5 py-4 lg:px-6 lg:min-w-[240px] flex items-center justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                          Next Step
-                        </p>
-                        <p className="text-sm font-semibold text-foreground mt-1">
-                          Open Day Close
-                        </p>
-                      </div>
-                      <div className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                        <ChevronRight className="w-5 h-5" />
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </Link>
             </section>
           </TabsContent>
 
@@ -3940,15 +3954,6 @@ export default function AnalyticsPage() {
             )}
           </TabsContent>
         </Tabs>
-      )}
-
-      {user?.restaurant_id && (
-        <DayCloseModal
-          isOpen={isDayCloseOpen}
-          onClose={() => setIsDayCloseOpen(false)}
-          restaurantId={user.restaurant_id}
-          businessLine={businessLine as any}
-        />
       )}
     </AppPage>
   );

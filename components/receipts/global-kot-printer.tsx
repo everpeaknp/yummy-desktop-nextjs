@@ -662,7 +662,16 @@ export function GlobalKotPrinter() {
             renderError,
           );
         }
-                const payload = payloadBase64 || buildEscPosKot(data, template);
+        const globalSettings = template.find(
+          (block: any) => block?.type === "global_settings",
+        );
+        const configuredCopies = Math.max(
+          1,
+          Math.min(5, Number(globalSettings?.print_copies || 1)),
+        );
+        const compatibilityPayload = buildEscPosKot(data, template);
+        const payload =
+          payloadBase64 || compatibilityPayload.repeat(configuredCopies);
 
         console.log(
           `[GlobalKotPrinter] 🖨️ Sending raw ESC/POS (${payload.length} bytes) → ${host}:${port}`,
@@ -683,11 +692,20 @@ export function GlobalKotPrinter() {
         }
       } else if (winAny.electronAPI.printSilent) {
         const printerName = assignedPrinter.name;
+        const globalSettings = template.find(
+          (block: any) => block?.type === "global_settings",
+        );
+        const configuredCopies = Math.max(
+          1,
+          Math.min(5, Number(globalSettings?.print_copies || 1)),
+        );
         console.log(
           `[GlobalKotPrinter] 🖨️ Silent Windows print → ${printerName}`,
         );
         try {
-          await winAny.electronAPI.printSilent({ printerName });
+          for (let copy = 0; copy < configuredCopies; copy += 1) {
+            await winAny.electronAPI.printSilent({ printerName });
+          }
           console.log(`[GlobalKotPrinter] ✅ Silent print sent.`);
         } catch (err) {
           console.error(`[GlobalKotPrinter] ❌ Silent print error:`, err);

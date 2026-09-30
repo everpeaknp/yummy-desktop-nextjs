@@ -9,7 +9,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 import apiClient from "@/lib/api-client";
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/role-permissions";
 import { cn } from "@/lib/utils";
 import { DayCloseApis } from "@/lib/api/endpoints";
 import { Card, CardContent } from "@/components/ui/card";
@@ -65,9 +68,9 @@ import {
   resizableDialogContentClass,
   useResizableDialogStyle,
 } from "@/lib/resizable-dialog";
-import { DayCloseModal } from "@/components/analytics/day-close-modal";
 import { DayCloseSnapshotPanel } from "@/components/analytics/day-close-snapshot-panel";
 import { DayCloseFinancialSummary } from "@/components/analytics/day-close-financial-summary";
+import { DayCloseConfirmedDetail } from "@/components/day-close/day-close-confirmed-detail";
 import {
   formatDayCloseExportFilename,
   formatDayCloseListHeading,
@@ -205,10 +208,14 @@ function PresetButton({ label, onClick, active, className }: any) {
 
 function ConfirmedDayCloseActionButtons({
   compact = false,
+  canAdjust,
+  canReopen,
   onAddAdjustment,
   onReopen,
 }: {
   compact?: boolean;
+  canAdjust: boolean;
+  canReopen: boolean;
   onAddAdjustment: () => void;
   onReopen: () => void;
 }) {
@@ -228,22 +235,26 @@ function ConfirmedDayCloseActionButtons({
           : "flex-nowrap items-center shrink-0",
       )}
     >
-      <Button
-        variant="outline"
-        size="sm"
-        className={cn("dc-action-outline", buttonClass)}
-        onClick={onAddAdjustment}
-      >
-        Add Adjustment
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        className={cn("dc-action-outline", buttonClass)}
-        onClick={onReopen}
-      >
-        Reopen Day
-      </Button>
+      {canAdjust ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("dc-action-outline", buttonClass)}
+          onClick={onAddAdjustment}
+        >
+          Add correction
+        </Button>
+      ) : null}
+      {canReopen ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("dc-action-outline", buttonClass)}
+          onClick={onReopen}
+        >
+          Reopen day
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -269,7 +280,7 @@ function ReopenedDayCloseActionButtons({
       className={cn("dc-action-outline", buttonClass)}
       onClick={onReconfirm}
     >
-      Re-confirm Day Close
+      Close day again
     </Button>
   );
 }
@@ -417,6 +428,16 @@ export const DayCloseHistory = forwardRef<
   }: DayCloseHistoryProps,
   ref,
 ) {
+  const router = useRouter();
+  const user = useAuth((state) => state.user);
+  const canInitiate = hasPermission(user, "reports.dayclose.initiate");
+  const canConfirm = hasPermission(user, "reports.dayclose.confirm");
+  const canCancel = hasPermission(user, "reports.dayclose.cancel");
+  const canReopen = hasPermission(user, "reports.dayclose.reopen");
+  const canAdjust =
+    hasPermission(user, "reports.dayclose.adjust.cash") ||
+    hasPermission(user, "reports.dayclose.adjust.financial");
+  const canReconfirm = canInitiate && canConfirm;
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<DayCloseListItem[]>([]);
   const [businessLine, setBusinessLine] =
@@ -449,14 +470,6 @@ export const DayCloseHistory = forwardRef<
     useState<DayCloseSnapshotTab>("payments");
   const snapshotSectionRef = useRef<HTMLDivElement>(null);
   const detailDialogStyle = useResizableDialogStyle(detailMaximized, "detail");
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizardBusinessLine, setWizardBusinessLine] =
-    useState<BusinessLine>("restaurant");
-  const [wizardDayCloseId, setWizardDayCloseId] = useState<number | null>(null);
-  const [wizardBusinessDate, setWizardBusinessDate] = useState<string | null>(
-    null,
-  );
-
   const [actionOpen, setActionOpen] = useState<
     null | "reopen" | "addAdjustment" | "cancel"
   >(null);
@@ -627,8 +640,6 @@ export const DayCloseHistory = forwardRef<
       setAdjDesc("");
       setAdjNotes("");
       setAdjCategoryId("");
-      setWizardOpen(false);
-      setWizardBusinessLine("restaurant");
       try {
         const detailRes = await apiClient.get(DayCloseApis.get(id));
         if (detailRes.data?.status !== "success") {
@@ -698,7 +709,9 @@ export const DayCloseHistory = forwardRef<
     if (!activeId) return;
     setActionSaving(true);
     try {
-      const res = await apiClient.post(DayCloseApis.cancel(activeId));
+      const res = await apiClient.post(DayCloseApis.cancel(activeId), {
+        cancel_reason: "Pending close canceled from Day Close history.",
+      });
       if (res.data?.status === "success") {
         toast.success("Day close canceled");
         setActionOpen(null);
@@ -796,7 +809,7 @@ export const DayCloseHistory = forwardRef<
     }
   };
 
-  const loadSnapshot = async () => {
+  const loadSnapshot = useCallback(async () => {
     if (!activeId) return;
     try {
       const snap = await fetchDayCloseSnapshotForDetail(activeId, detail, {
@@ -804,11 +817,13 @@ export const DayCloseHistory = forwardRef<
         businessLine,
       });
       if (snap) setSnapshot(snap);
-      else toast.error("Snapshot not available");
+      else toast.error("Close details are unavailable");
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Snapshot not available");
+      toast.error(
+        err?.response?.data?.detail || "Close details are unavailable",
+      );
     }
-  };
+  }, [activeId, businessLine, detail, restaurantId]);
 
   const loadAudit = async () => {
     if (!activeId) return;
@@ -882,32 +897,31 @@ export const DayCloseHistory = forwardRef<
 
   const isConfirmed =
     String(detail?.status || "").toLowerCase() === "confirmed";
+  const isVersionedClose = Boolean(parsedSnapshotData?.evidence);
 
   const isPending = String(detail?.status || "").toLowerCase() === "pending";
   const isReopened = String(detail?.status || "").toLowerCase() === "reopened";
   const isOpen = String(detail?.status || "").toLowerCase() === "open";
-  const showConfirmedActions = isConfirmed;
-  const showReopenedActions = isReopened;
-  const showConfirmedActionsInHeader = detailMaximized && showConfirmedActions;
+  const showConfirmedActions = isConfirmed && (canAdjust || canReopen);
+  const showReopenedActions = isReopened && canReconfirm;
+  const showConfirmedActionsInHeader =
+    !isVersionedClose && detailMaximized && showConfirmedActions;
   const showReopenedActionsInHeader = detailMaximized && showReopenedActions;
 
   const openCloseWizard = useCallback(() => {
     if (!detail) return;
-    setWizardBusinessLine(
-      String(detail.business_line ?? "restaurant").toLowerCase() === "hotel"
-        ? "hotel"
-        : "restaurant",
-    );
-    setWizardDayCloseId(detail.id);
-    setWizardBusinessDate(detail.business_date ?? null);
-    setDetailOpen(false);
-    setWizardOpen(true);
-  }, [detail]);
+    const params = new URLSearchParams({
+      business_line: String(detail.business_line ?? "restaurant"),
+      day_close_id: String(detail.id),
+    });
+    if (detail.business_date) params.set("business_date", detail.business_date);
+    router.push(`/day-close?${params.toString()}`);
+  }, [detail, router]);
 
   const detailSubtitle = useMemo(() => {
     if (!detail) return null;
     if (isReopened) {
-      return "This day close was reopened. Review the numbers, then use Re-confirm Day Close to save a fresh close.";
+      return "This day close was reopened. Review the numbers, then close the day again to save the correction.";
     }
     if (detail.confirmed_at) {
       const confirmed = new Date(detail.confirmed_at);
@@ -921,7 +935,7 @@ export const DayCloseHistory = forwardRef<
         })}`;
       }
     }
-    return "Server snapshot — totals are not recalculated in the browser";
+    return "Saved close details — totals come from the confirmed record";
   }, [detail, isReopened]);
 
   return (
@@ -934,7 +948,7 @@ export const DayCloseHistory = forwardRef<
                 Day Close History
               </h2>
               <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
-                Export reports, inspect snapshots, and review what changed.
+                Review closed days, export reports, and see what changed.
               </p>
             </div>
 
@@ -1264,6 +1278,8 @@ export const DayCloseHistory = forwardRef<
               ) : showConfirmedActionsInHeader ? (
                 <>
                   <ConfirmedDayCloseActionButtons
+                    canAdjust={canAdjust}
+                    canReopen={canReopen}
                     onAddAdjustment={() => setActionOpen("addAdjustment")}
                     onReopen={() => setActionOpen("reopen")}
                   />
@@ -1286,7 +1302,7 @@ export const DayCloseHistory = forwardRef<
                 </>
               ) : (
                 <>
-                  {isOpen ? (
+                  {isOpen && canInitiate ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1315,9 +1331,24 @@ export const DayCloseHistory = forwardRef<
               </div>
             ) : (
               <>
-                {isPending ||
-                (showConfirmedActions && !showConfirmedActionsInHeader) ||
-                (showReopenedActions && !showReopenedActionsInHeader) ? (
+                {isVersionedClose ? (
+                  <DayCloseConfirmedDetail
+                    detail={detail}
+                    snapshot={parsedSnapshotData}
+                    timezone={timezone}
+                    canAdjust={canAdjust}
+                    canReopen={canReopen}
+                    onAddCorrection={() => setActionOpen("addAdjustment")}
+                    onReopen={() => setActionOpen("reopen")}
+                    onExportPdf={() => void exportPdf()}
+                    onExportExcel={() => void exportExcel()}
+                  />
+                ) : null}
+
+                {!isVersionedClose &&
+                (isPending ||
+                  (showConfirmedActions && !showConfirmedActionsInHeader) ||
+                  (showReopenedActions && !showReopenedActionsInHeader)) ? (
                   <div
                     className={cn(
                       isPending && detailMaximized && "dc-surface p-3 sm:p-4",
@@ -1330,7 +1361,7 @@ export const DayCloseHistory = forwardRef<
                         "w-full",
                     )}
                   >
-                    {isPending ? (
+                    {isPending && canCancel ? (
                       <Button
                         variant="outline"
                         className="dc-btn-outline border-0 shadow-none rounded-2xl font-medium w-full sm:w-auto"
@@ -1348,6 +1379,8 @@ export const DayCloseHistory = forwardRef<
                     {showConfirmedActions && !showConfirmedActionsInHeader ? (
                       <ConfirmedDayCloseActionButtons
                         compact
+                        canAdjust={canAdjust}
+                        canReopen={canReopen}
                         onAddAdjustment={() => setActionOpen("addAdjustment")}
                         onReopen={() => setActionOpen("reopen")}
                       />
@@ -1355,16 +1388,15 @@ export const DayCloseHistory = forwardRef<
                   </div>
                 ) : null}
 
-                {isReopened ? (
+                {!isVersionedClose && isReopened ? (
                   <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
                     This close is reopened. Make any corrections you need, then
-                    use{" "}
-                    <span className="font-semibold">Re-confirm Day Close</span>{" "}
+                    use <span className="font-semibold">Close day again</span>{" "}
                     to save the updated close for this business day.
                   </div>
                 ) : null}
 
-                {parsedSnapshotData ? (
+                {parsedSnapshotData && !parsedSnapshotData.evidence ? (
                   <DayCloseFinancialSummary
                     snapshot={parsedSnapshotData}
                     detail={detail}
@@ -1373,190 +1405,196 @@ export const DayCloseHistory = forwardRef<
                   />
                 ) : null}
 
-                <Tabs
-                  value={detailTab}
-                  onValueChange={(v) => setDetailTab(v as typeof detailTab)}
-                  className="w-full"
-                >
-                  <TabsList className="dc-tabs-list grid grid-cols-3 rounded-2xl">
-                    <TabsTrigger
-                      value="snapshot"
-                      className="dc-tab-trigger"
-                      onClick={() => snapshot == null && loadSnapshot()}
-                    >
-                      Snapshot
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="audit"
-                      className="dc-tab-trigger"
-                      onClick={() => audit == null && loadAudit()}
-                    >
-                      Audit
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="adjustments"
-                      className="dc-tab-trigger"
-                      onClick={() => adjustments == null && loadAdjustments()}
-                    >
-                      Adjustments
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="snapshot" className="mt-4">
-                    {!parsedSnapshotData ? (
-                      <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <AlertCircle className="w-5 h-5 opacity-60" />
-                          <p className="text-sm font-semibold">
-                            Snapshot not available for this day close.
-                          </p>
-                        </div>
-                        <Button
-                          variant="secondary"
-                          className="rounded-2xl font-medium"
-                          onClick={loadSnapshot}
-                        >
-                          Retry Snapshot
-                        </Button>
-                      </div>
-                    ) : (
-                      <div
-                        ref={snapshotSectionRef}
-                        className="space-y-3 scroll-mt-4"
+                {!isVersionedClose ? (
+                  <Tabs
+                    value={detailTab}
+                    onValueChange={(v) => setDetailTab(v as typeof detailTab)}
+                    className="w-full"
+                  >
+                    <TabsList className="dc-tabs-list grid grid-cols-3 rounded-2xl">
+                      <TabsTrigger
+                        value="snapshot"
+                        className="dc-tab-trigger"
+                        onClick={() => snapshot == null && loadSnapshot()}
                       >
-                        <div className="flex items-center justify-between px-1">
-                          <p className="dc-eyebrow">
-                            Generated{" "}
-                            {snapshot?.generated_at
-                              ? format(
-                                  new Date(snapshot.generated_at),
-                                  "MMM dd, yyyy HH:mm",
-                                )
-                              : "—"}
-                          </p>
-                          <Badge
+                        Close details
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="audit"
+                        className="dc-tab-trigger"
+                        onClick={() => audit == null && loadAudit()}
+                      >
+                        Audit
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="adjustments"
+                        className="dc-tab-trigger"
+                        onClick={() => adjustments == null && loadAdjustments()}
+                      >
+                        Corrections
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="snapshot" className="mt-4">
+                      {!parsedSnapshotData ? (
+                        <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <AlertCircle className="w-5 h-5 opacity-60" />
+                            <p className="text-sm font-semibold">
+                              Close details are unavailable for this day.
+                            </p>
+                          </div>
+                          <Button
                             variant="secondary"
-                            className="rounded-full text-[10px] font-medium uppercase"
+                            className="rounded-2xl font-medium"
+                            onClick={loadSnapshot}
                           >
-                            Saved Snapshot
-                          </Badge>
+                            Retry Snapshot
+                          </Button>
                         </div>
-                        <DayCloseSnapshotPanel
-                          snapshot={parsedSnapshotData}
-                          detail={detail}
-                          hideFinancialSummary
-                          compact={!detailMaximized}
-                          activeTab={snapshotTab}
-                          onTabChange={setSnapshotTab}
-                        />
-                      </div>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="audit" className="mt-4">
-                    {!audit ? (
-                      <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground flex items-center justify-between">
-                        <p className="text-sm font-semibold">
-                          Audit log not loaded yet.
-                        </p>
-                        <Button
-                          variant="secondary"
-                          className="rounded-2xl font-medium"
-                          onClick={loadAudit}
+                      ) : (
+                        <div
+                          ref={snapshotSectionRef}
+                          className="space-y-3 scroll-mt-4"
                         >
-                          Load Audit
-                        </Button>
-                      </div>
-                    ) : audit.length === 0 ? (
-                      <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground">
-                        No audit entries.
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
-                        <div className="max-h-[340px] overflow-auto no-scrollbar">
-                          {audit.map((a, idx) => (
-                            <div
-                              key={idx}
-                              className="px-5 py-4 border-b border-border/30 last:border-none"
-                            >
-                              <div className="flex items-center justify-between">
-                                <p className="text-sm font-semibold text-foreground">
-                                  {humanizeKey(a.action || "Action")}
-                                </p>
-                                <p className="text-xs font-semibold text-muted-foreground">
-                                  {a.created_at
-                                    ? format(
-                                        new Date(a.created_at),
-                                        "MMM dd, yyyy HH:mm",
-                                      )
-                                    : "—"}
-                                </p>
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {a.user_name
-                                  ? `${a.user_name}${a.user_role ? ` • ${a.user_role}` : ""}`
-                                  : "System"}
+                          <div className="flex items-center justify-between px-1">
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">
+                                Legacy close record
+                              </p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                This close uses the original saved report
+                                format.
                               </p>
                             </div>
-                          ))}
+                            <p className="text-xs text-muted-foreground">
+                              Generated{" "}
+                              {snapshot?.generated_at
+                                ? format(
+                                    new Date(snapshot.generated_at),
+                                    "MMM dd, yyyy HH:mm",
+                                  )
+                                : "—"}
+                            </p>
+                          </div>
+                          <DayCloseSnapshotPanel
+                            snapshot={parsedSnapshotData}
+                            detail={detail}
+                            hideFinancialSummary
+                            compact={!detailMaximized}
+                            activeTab={snapshotTab}
+                            onTabChange={setSnapshotTab}
+                          />
                         </div>
-                      </div>
-                    )}
-                  </TabsContent>
+                      )}
+                    </TabsContent>
 
-                  <TabsContent value="adjustments" className="mt-4">
-                    {!adjustments ? (
-                      <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground flex items-center justify-between">
-                        <p className="text-sm font-semibold">
-                          Adjustments not loaded yet.
-                        </p>
-                        <Button
-                          variant="secondary"
-                          className="rounded-2xl font-medium"
-                          onClick={loadAdjustments}
-                        >
-                          Load Adjustments
-                        </Button>
-                      </div>
-                    ) : adjustments.length === 0 ? (
-                      <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground">
-                        No adjustments recorded for this day close.
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
-                        <div className="max-h-[340px] overflow-auto no-scrollbar">
-                          {adjustments.map((adj, idx) => (
-                            <div
-                              key={idx}
-                              className="px-5 py-4 border-b border-border/30 last:border-none"
-                            >
-                              <div className="flex items-center justify-between">
-                                <p className="text-sm font-semibold text-foreground">
-                                  {humanizeKey(
-                                    adj.adjustment_type || "Adjustment",
-                                  )}
-                                </p>
-                                <p className="text-sm font-semibold text-foreground">
-                                  Rs. {Number(adj.amount || 0).toLocaleString()}
+                    <TabsContent value="audit" className="mt-4">
+                      {!audit ? (
+                        <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground flex items-center justify-between">
+                          <p className="text-sm font-semibold">
+                            Audit log not loaded yet.
+                          </p>
+                          <Button
+                            variant="secondary"
+                            className="rounded-2xl font-medium"
+                            onClick={loadAudit}
+                          >
+                            Load Audit
+                          </Button>
+                        </div>
+                      ) : audit.length === 0 ? (
+                        <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground">
+                          No audit entries.
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
+                          <div className="max-h-[340px] overflow-auto no-scrollbar">
+                            {audit.map((a, idx) => (
+                              <div
+                                key={idx}
+                                className="px-5 py-4 border-b border-border/30 last:border-none"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <p className="text-sm font-semibold text-foreground">
+                                    {humanizeKey(a.action || "Action")}
+                                  </p>
+                                  <p className="text-xs font-semibold text-muted-foreground">
+                                    {a.created_at
+                                      ? format(
+                                          new Date(a.created_at),
+                                          "MMM dd, yyyy HH:mm",
+                                        )
+                                      : "—"}
+                                  </p>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {a.user_name
+                                    ? `${a.user_name}${a.user_role ? ` • ${a.user_role}` : ""}`
+                                    : "System"}
                                 </p>
                               </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {adj.description || "—"}{" "}
-                                {adj.payment_method
-                                  ? `• ${String(adj.payment_method).toUpperCase()}`
-                                  : ""}
-                              </p>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </TabsContent>
-                </Tabs>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="adjustments" className="mt-4">
+                      {!adjustments ? (
+                        <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground flex items-center justify-between">
+                          <p className="text-sm font-semibold">
+                            Adjustments not loaded yet.
+                          </p>
+                          <Button
+                            variant="secondary"
+                            className="rounded-2xl font-medium"
+                            onClick={loadAdjustments}
+                          >
+                            Load Adjustments
+                          </Button>
+                        </div>
+                      ) : adjustments.length === 0 ? (
+                        <div className="p-6 rounded-2xl border border-border/60 bg-muted/10 text-muted-foreground">
+                          No adjustments recorded for this day close.
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
+                          <div className="max-h-[340px] overflow-auto no-scrollbar">
+                            {adjustments.map((adj, idx) => (
+                              <div
+                                key={idx}
+                                className="px-5 py-4 border-b border-border/30 last:border-none"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <p className="text-sm font-semibold text-foreground">
+                                    {humanizeKey(
+                                      adj.adjustment_type || "Adjustment",
+                                    )}
+                                  </p>
+                                  <p className="text-sm font-semibold text-foreground">
+                                    Rs.{" "}
+                                    {Number(adj.amount || 0).toLocaleString()}
+                                  </p>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {adj.description || "—"}{" "}
+                                  {adj.payment_method
+                                    ? `• ${String(adj.payment_method).toUpperCase()}`
+                                    : ""}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                ) : null}
               </>
             )}
 
-            {!detailLoading ? (
+            {!detailLoading && !isVersionedClose ? (
               <div className="pt-6 mt-2 border-t border-border/40 flex flex-col gap-3 shrink-0">
                 <div className="flex flex-col sm:flex-row gap-3 w-full">
                   <Button
@@ -1585,8 +1623,8 @@ export const DayCloseHistory = forwardRef<
                   </Button>
                 </div>
                 <p className="text-[11px] text-muted-foreground font-medium text-center sm:text-left pb-2">
-                  PDF and Excel are generated on the server from the saved
-                  day-close snapshot.
+                  PDF and Excel are generated on the server from the saved close
+                  record.
                 </p>
               </div>
             ) : null}
@@ -1695,7 +1733,7 @@ export const DayCloseHistory = forwardRef<
         <DialogContent className="day-close-ui w-[calc(100vw-1.5rem)] sm:max-w-[720px] bg-card border-border rounded-2xl sm:rounded-3xl overflow-hidden p-0 max-h-[90vh] flex flex-col">
           <DialogHeader className="p-6 sm:p-8 pb-5 bg-muted/20 border-b border-border/40">
             <DialogTitle className="text-xl font-medium tracking-tight">
-              Add Adjustment
+              Add correction
             </DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground mt-1">
               Record a correction after close (income or expense) with payment
@@ -1805,32 +1843,6 @@ export const DayCloseHistory = forwardRef<
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {restaurantId && wizardOpen ? (
-        <DayCloseModal
-          isOpen={wizardOpen}
-          onClose={async () => {
-            setWizardOpen(false);
-            setWizardDayCloseId(null);
-            setWizardBusinessDate(null);
-            await fetchList();
-            if (activeId) {
-              try {
-                const res = await apiClient.get(DayCloseApis.get(activeId));
-                if (res.data?.status === "success") {
-                  setDetail(parseDayCloseDetail(res.data.data));
-                }
-              } catch {
-                // ignore
-              }
-            }
-          }}
-          restaurantId={restaurantId}
-          businessLine={wizardBusinessLine}
-          targetDayCloseId={wizardDayCloseId}
-          targetBusinessDate={wizardBusinessDate}
-        />
-      ) : null}
     </div>
   );
 });

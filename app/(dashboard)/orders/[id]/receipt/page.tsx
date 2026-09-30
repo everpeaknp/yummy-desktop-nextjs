@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
@@ -48,14 +48,19 @@ import {
   RotateCcw,
 } from "lucide-react";
 import type { ReceiptData, OrderItem, OrderPayment } from "@/types/order";
-import { ThermalReceipt } from "@/components/receipts/thermal-receipt";
+import {
+  ThermalReceipt,
+  type ReceiptPaymentQr,
+} from "@/components/receipts/thermal-receipt";
 import { FiscalReceipt } from "@/components/receipts/fiscal-receipt";
 import { RestaurantApis } from "@/lib/api/endpoints";
 import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
 import { useOrderFiscalDocument } from "@/hooks/use-order-fiscal-document";
 import { useFiscalPrint } from "@/hooks/use-fiscal-print";
-import { buildFiscalReceiptRawPayload } from "@/lib/fiscal/receipt-print";
-import { getRecordedOrderDiscount } from "@/lib/order-totals";
+import {
+  isElectronDesktop,
+  printRawToReceiptPrinter,
+} from "@/lib/receipt-network-print";
 
 function formatCurrency(amount: number) {
   return `Rs. ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -131,133 +136,22 @@ function getDefaultTemplate(): any[] {
   ];
 }
 
-function buildReceiptRawPayload(
-  receipt: ReceiptData,
-  template: any[],
+async function getCanonicalReceiptPayload(
   orderId: number,
-): string {
-  const order = receipt?.order as any;
-  const restaurant = receipt?.restaurant as any;
-  const blocks = (template || [])
-    .filter((b: any) => b?.type !== "global_settings")
-    .map((b: any) => ({ ...b, cfg: b?.config ? { ...b, ...b.config } : b }))
-    .filter(
-      (b: any) =>
-        (b?.is_visible ?? b?.isVisible ?? true) &&
-        (b?.show_on_receipt ?? b?.showOnReceipt ?? true),
-    );
-
-  const lines: string[] = [];
-
-  const header = blocks.find((b: any) => b.type === "header")?.cfg || {};
-  lines.push(String(header.title || restaurant?.name || "YUMMY RECEIPT"));
-  if (header.show_address !== false && restaurant?.address)
-    lines.push(String(restaurant.address));
-  if (header.show_phone !== false && restaurant?.phone)
-    lines.push(`${header.phone_label || "Contact"}: ${restaurant.phone}`);
-
-  lines.push("---------------------------");
-  lines.push(`Bill No: ${order?.invoice_number || "Not issued"}`);
-  if (order?.restaurant_order_id) {
-    lines.push(`Daily order: #${order.restaurant_order_id}`);
-  }
-  lines.push(`Table: ${order?.table_name || "-"}`);
-  lines.push(
-    `Date: ${new Date(order?.created_at || Date.now()).toLocaleString()}`,
-  );
-  lines.push("---------------------------");
-
-  const itemsCfg = blocks.find((b: any) => b.type === "items")?.cfg || {};
-  const showRate = itemsCfg.show_rate !== false;
-  const orderItems = Array.isArray(order?.items) ? order.items : [];
-  orderItems.forEach((item: any, idx: number) => {
-    const name = item?.name_snapshot || item?.item_name || "Item";
-    const qty = Number(item?.qty ?? 1);
-    const rate = Number(item?.unit_price ?? 0);
-    const amount = Number(item?.line_total ?? rate * qty);
-    if (showRate) {
-      lines.push(
-        `${idx + 1}. ${name} x${qty} @${rate.toFixed(2)} = ${amount.toFixed(2)}`,
-      );
-    } else {
-      lines.push(`${idx + 1}. ${name} x${qty}`);
-    }
-  });
-
-  lines.push("---------------------------");
-  const totalsCfg = blocks.find((b: any) => b.type === "totals")?.cfg || {};
-  const subtotal = Number(order?.subtotal ?? 0);
-  const tax = Number(order?.tax_total ?? 0);
-  const total = Number(order?.grand_total ?? 0);
-  const serviceCharge = Number(order?.service_charge ?? 0);
-  const computedDiscount = getRecordedOrderDiscount(order);
-  const loyaltyPointsRedeemed =
-    Number(
-      order?.loyalty_points_redeemed ??
-        order?.redeemed_points ??
-        order?.points_redeemed ??
-        0,
-    ) || 0;
-  const discountReason =
-    order?.discount_reason ||
-    order?.manual_discount_reason ||
-    order?.discount_note ||
-    order?.discount_code ||
-    (loyaltyPointsRedeemed > 0
-      ? `Loyalty Points - ${order?.customer_name || "Customer"} (${loyaltyPointsRedeemed} pts)`
-      : null) ||
-    (Number(order?.manual_discount_amount || 0) > 0
-      ? "Manual discount"
-      : null) ||
-    null;
-  lines.push(
-    `${totalsCfg.subtotal_label || "Subtotal"}: Rs.${subtotal.toFixed(2)}`,
-  );
-  if (totalsCfg.show_tax !== false) {
-    lines.push(`${totalsCfg.tax_label || "Tax"}: Rs.${tax.toFixed(2)}`);
-  }
-  if (totalsCfg.show_discount !== false && computedDiscount > 0) {
-    lines.push(
-      `${totalsCfg.discount_label || "Discount"}: -Rs.${computedDiscount.toFixed(2)}`,
-    );
-    if (discountReason) {
-      lines.push(
-        `${totalsCfg.discount_reason_label || "Reason"}: ${String(discountReason)}`,
-      );
-    }
-  }
-  lines.push(
-    `${totalsCfg.total_label || "Grand Total"}: Rs.${total.toFixed(2)}`,
-  );
-
-  const paymentsCfg = blocks.find((b: any) => b.type === "payments")?.cfg || {};
-  const payments = Array.isArray(order?.payments) ? order.payments : [];
-  if (payments.length) {
-    lines.push("---------------------------");
-    lines.push(`Paid: Rs.${Number(receipt?.total_paid ?? 0).toFixed(2)}`);
-    if (Number(receipt?.balance_due ?? 0) > 0) {
-      lines.push(
-        `Balance Due: Rs.${Number(receipt?.balance_due ?? 0).toFixed(2)}`,
-      );
-    }
-    payments.forEach((p: any) => {
-      lines.push(
-        `${String(p?.method || paymentsCfg.method_label || "payment").toUpperCase()}: Rs.${Number(p?.amount || 0).toFixed(2)}`,
-      );
-    });
-  }
-
-  const footer = blocks.find((b: any) => b.type === "footer")?.cfg || {};
-  lines.push("---------------------------");
-  lines.push(String(footer.message || "THANK YOU"));
-  lines.push("\n\n\n");
-
-  return lines.join("\n");
-}
-
-async function getCanonicalReceiptPayload(orderId: number): Promise<string> {
+  mode: "bill" | "receipt" = "receipt",
+  authorizationId?: number,
+  paymentQrConfigId?: string | null,
+  terminalId?: number | null,
+): Promise<string> {
+  const authorizationQuery = authorizationId
+    ? `&authorization_id=${authorizationId}`
+    : "";
+  const paymentQrQuery = paymentQrConfigId
+    ? `&payment_qr_config_id=${encodeURIComponent(paymentQrConfigId)}`
+    : "";
+  const terminalQuery = terminalId ? `&terminal_id=${terminalId}` : "";
   const response = await apiClient.get(
-    `/receipts/orders/${orderId}/print-payload?mode=receipt`,
+    `/receipts/orders/${orderId}/print-payload?mode=${mode}${authorizationQuery}${paymentQrQuery}${terminalQuery}`,
   );
   const payload = response.data?.data?.payload_base64;
   if (!payload) throw new Error("Canonical receipt payload is empty.");
@@ -300,9 +194,16 @@ function getReceiptNetworkTarget(
 ): { host: string; port: number } | null {
   const cfg = receipt.printer_config;
   if (cfg) {
-    const host = String(cfg.address || "").trim();
-    const port = Number(cfg.port || 9100);
-    const type = String(cfg.type || "").toLowerCase();
+    const printer = cfg as any;
+    const host = String(
+      printer.connection_config?.ip_address || printer.address || "",
+    ).trim();
+    const port = Number(
+      printer.connection_config?.port || printer.port || 9100,
+    );
+    const type = String(
+      printer.printer_type || printer.type || "",
+    ).toLowerCase();
     const isNetwork =
       type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
     if (isNetwork && host) return { host, port };
@@ -360,11 +261,27 @@ export default function ReceiptPage() {
 
   // Extract returnTo from URL if present
   const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [autoPrintRequested, setAutoPrintRequested] = useState(false);
+  const [paymentQrConfigId, setPaymentQrConfigId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
       setReturnTo(urlParams.get("returnTo"));
+      setPaymentQrConfigId(urlParams.get("paymentQrConfigId"));
+      const requested = urlParams.get("autoPrint") === "1";
+      setAutoPrintRequested(requested);
+      if (requested) {
+        urlParams.delete("autoPrint");
+        const query = urlParams.toString();
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${window.location.pathname}${query ? `?${query}` : ""}`,
+        );
+      }
     }
   }, []);
 
@@ -385,10 +302,22 @@ export default function ReceiptPage() {
   const [refundReference, setRefundReference] = useState("");
   const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [refundError, setRefundError] = useState<string | null>(null);
-
+  const [ordinaryPrintDesignation, setOrdinaryPrintDesignation] = useState<
+    string | null
+  >(null);
+  const [qrChooserOpen, setQrChooserOpen] = useState(false);
+  const [pendingQrPrintIntent, setPendingQrPrintIntent] = useState<
+    "manual" | "auto" | null
+  >(null);
+  const [terminalChooserOpen, setTerminalChooserOpen] = useState(false);
+  const [selectedTerminalId, setSelectedTerminalId] = useState<number | null>(
+    null,
+  );
+  const [pendingTerminalPrintIntent, setPendingTerminalPrintIntent] = useState<
+    "manual" | "auto" | null
+  >(null);
   useOrderFull(orderId);
   const autoPrintedOrderRef = useRef<number | null>(null);
-  const suppressAutoPrintFallbackRef = useRef(false);
   const receiptRef = useRef<HTMLDivElement>(null);
   const {
     isActiveVatEbilling,
@@ -396,6 +325,35 @@ export default function ReceiptPage() {
     error: fiscalProfileError,
     refresh: refreshFiscalProfile,
   } = useFiscalProfile(Boolean(orderId));
+  const isPreBill = Boolean(
+    receipt &&
+    receipt.order.status !== "completed" &&
+    (isActiveVatEbilling || !receipt.is_fully_paid),
+  );
+  const paymentQrs = useMemo(
+    () =>
+      (receipt?.restaurant.payment_qrs || []).filter((qr) => qr.payload.trim()),
+    [receipt?.restaurant.payment_qrs],
+  );
+  const receiptTerminals = useMemo(
+    () => receipt?.receipt_terminals || [],
+    [receipt?.receipt_terminals],
+  );
+  const selectedTerminal = useMemo(
+    () =>
+      receiptTerminals.find((terminal) => terminal.id === selectedTerminalId) ||
+      null,
+    [receiptTerminals, selectedTerminalId],
+  );
+  const paymentQr = useMemo(() => {
+    if (!isPreBill) return null;
+    if (paymentQrConfigId) {
+      return (
+        paymentQrs.find((qr) => qr.config_id === paymentQrConfigId) || null
+      );
+    }
+    return paymentQrs.length === 1 ? paymentQrs[0] : null;
+  }, [isPreBill, paymentQrConfigId, paymentQrs]);
   const {
     document: fiscalDocument,
     loading: fiscalDocumentLoading,
@@ -403,19 +361,19 @@ export default function ReceiptPage() {
     refresh: refreshFiscalDocument,
   } = useOrderFiscalDocument({
     orderId,
-    enabled: isActiveVatEbilling && Boolean(receipt),
+    enabled: isActiveVatEbilling && Boolean(receipt) && !isPreBill,
   });
   const {
     print: printFiscalDocument,
     printing: fiscalPrinting,
     error: fiscalPrintError,
     lastAuthorization,
+    clearLastAuthorization,
   } = useFiscalPrint(fiscalDocument);
 
   // Reset print guard when navigating to a different receipt id.
   useEffect(() => {
     autoPrintedOrderRef.current = null;
-    suppressAutoPrintFallbackRef.current = false;
     setPrinted(false);
   }, [orderId]);
 
@@ -485,72 +443,6 @@ export default function ReceiptPage() {
     fetchData();
   }, [fetchData]);
 
-  const tryElectronNetworkReceiptPrint = useCallback(
-    async (options?: { timeoutMs?: number }): Promise<boolean> => {
-      try {
-        const electronApi =
-          typeof window === "undefined"
-            ? undefined
-            : (window as any).electronAPI;
-        if (!electronApi?.printNetworkRaw) {
-          return false;
-        }
-        const restaurantId = receipt?.restaurant?.id || user?.restaurant_id;
-        if (!restaurantId) return false;
-
-        const res = await apiClient.get(PrinterApis.list(restaurantId));
-        const printers = res?.data?.data || [];
-        const printer = resolveReceiptAssignedPrinter(
-          printers,
-          receipt?.restaurant,
-        );
-        if (!printer) return false;
-
-        const host = String(
-          printer?.connection_config?.ip_address || printer?.address || "",
-        ).trim();
-        const port = Number(printer?.connection_config?.port || 9100);
-        const type = String(printer?.printer_type || "").toLowerCase();
-        const isNetwork =
-          type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
-        if (!isNetwork || !host) return false;
-        if (!receipt) return false;
-
-        let payloadBase64: string | null = null;
-        try {
-          payloadBase64 = await getCanonicalReceiptPayload(orderId);
-        } catch (renderError) {
-          console.warn(
-            "[ReceiptPage] Canonical render failed; using compatibility renderer:",
-            renderError,
-          );
-        }
-        const payload = payloadBase64
-          ? undefined
-          : buildReceiptRawPayload(receipt, template || [], orderId);
-
-        const printRes = await electronApi.printNetworkRaw({
-          host,
-          port,
-          ...(payloadBase64 ? { payloadBase64 } : { payload }),
-          timeoutMs: options?.timeoutMs ?? 2000,
-        });
-        if (!printRes?.success) {
-          console.warn(
-            "[ReceiptPage] Network raw print failed:",
-            printRes?.message,
-          );
-          return false;
-        }
-        return true;
-      } catch (err) {
-        console.warn("[ReceiptPage] Network raw print error:", err);
-        return false;
-      }
-    },
-    [receipt, user?.restaurant_id, orderId, template],
-  );
-
   const openPrintDialog = useCallback(() => {
     const printWhenReady = () => window.print();
     if (typeof requestAnimationFrame === "function") {
@@ -560,61 +452,92 @@ export default function ReceiptPage() {
     }
   }, []);
 
+  const authorizeOrdinaryPrint = useCallback(async () => {
+    const mode = isPreBill ? "bill" : "receipt";
+    const response = await apiClient.post(
+      `/receipts/orders/${orderId}/print-authorizations`,
+      {
+        mode,
+        device_identifier: "yummy-web-receipt-route",
+        printer_name: receipt?.printer_config?.name || "Browser print dialog",
+        receipt_terminal_id: selectedTerminalId,
+      },
+    );
+    return response.data.data as {
+      authorization_id: number;
+      designation: string;
+    };
+  }, [isPreBill, orderId, receipt?.printer_config?.name, selectedTerminalId]);
+
+  const completeOrdinaryPrint = useCallback(
+    async (
+      authorizationId: number,
+      succeeded: boolean,
+      failureReason?: string,
+    ) => {
+      await apiClient.post(
+        `/receipts/print-authorizations/${authorizationId}/complete`,
+        {
+          succeeded,
+          failure_reason: failureReason,
+        },
+      );
+    },
+    [],
+  );
+
   const runAutoPrint = useCallback(async () => {
-    if (suppressAutoPrintFallbackRef.current || !receipt || !template) return;
+    if (!receipt || !template) return;
 
-    const winAny = typeof window !== "undefined" ? (window as any) : null;
-    const networkTarget = getReceiptNetworkTarget(receipt);
+    const authorization = await authorizeOrdinaryPrint();
+    setOrdinaryPrintDesignation(authorization.designation);
 
-    // Instant path: receipt API already includes printer_config (no extra printer list fetch).
-    if (networkTarget && winAny?.electronAPI?.printNetworkRaw) {
-      try {
-        const payloadBase64 = await getCanonicalReceiptPayload(orderId);
-        void winAny.electronAPI
-          .printNetworkRaw({ ...networkTarget, payloadBase64, timeoutMs: 800 })
-          .catch((err: unknown) =>
-            console.warn("[ReceiptPage] Network auto-print:", err),
-          );
-        setPrinted(true);
-        return;
-      } catch (renderError) {
-        console.warn(
-          "[ReceiptPage] Canonical auto-print render failed; trying compatibility path:",
-          renderError,
+    try {
+      if (isElectronDesktop()) {
+        const payloadBase64 = await getCanonicalReceiptPayload(
+          orderId,
+          isPreBill ? "bill" : "receipt",
+          authorization.authorization_id,
+          paymentQr?.config_id,
+          selectedTerminalId,
         );
+        await printRawToReceiptPrinter(
+          selectedTerminal?.printer
+            ? { ...receipt, printer_config: selectedTerminal.printer }
+            : receipt,
+          {
+            payloadBase64,
+            timeoutMs: 2000,
+          },
+        );
+      } else {
+        openPrintDialog();
       }
-    }
-
-    const silentName = receipt.printer_config?.name?.trim();
-    if (silentName && winAny?.electronAPI?.printSilent) {
-      void winAny.electronAPI
-        .printSilent({ printerName: silentName })
-        .catch((err: unknown) =>
-          console.warn("[ReceiptPage] Silent auto-print:", err),
-        );
       setPrinted(true);
-      return;
+      await completeOrdinaryPrint(authorization.authorization_id, true);
+      await fetchData();
+    } catch (printError) {
+      await completeOrdinaryPrint(
+        authorization.authorization_id,
+        false,
+        printError instanceof Error ? printError.message : "Printing failed",
+      ).catch(() => undefined);
+      throw printError;
+    } finally {
+      setOrdinaryPrintDesignation(null);
     }
-
-    // Fallback: resolve printer via API (only when printer_config is missing).
-    if (winAny?.electronAPI?.printNetworkRaw) {
-      const ok = await tryElectronNetworkReceiptPrint({ timeoutMs: 800 });
-      if (suppressAutoPrintFallbackRef.current) return;
-      if (ok) {
-        setPrinted(true);
-        return;
-      }
-    }
-
-    if (suppressAutoPrintFallbackRef.current) return;
-    openPrintDialog();
-    setPrinted(true);
   }, [
     receipt,
     template,
     orderId,
-    tryElectronNetworkReceiptPrint,
     openPrintDialog,
+    isPreBill,
+    authorizeOrdinaryPrint,
+    completeOrdinaryPrint,
+    fetchData,
+    paymentQr?.config_id,
+    selectedTerminal,
+    selectedTerminalId,
   ]);
 
   const resolveFiscalPrintDestination =
@@ -624,9 +547,12 @@ export default function ReceiptPage() {
       }
 
       const winAny = typeof window !== "undefined" ? (window as any) : null;
-      const directNetworkTarget = getReceiptNetworkTarget(receipt);
+      const effectivePrinter =
+        selectedTerminal?.printer || receipt.printer_config;
+      const effectiveReceipt = { ...receipt, printer_config: effectivePrinter };
+      const directNetworkTarget = getReceiptNetworkTarget(effectiveReceipt);
       const directPrinterName =
-        String(receipt.printer_config?.name || "").trim() ||
+        String(effectivePrinter?.name || "").trim() ||
         "Configured receipt printer";
 
       if (directNetworkTarget && winAny?.electronAPI?.printNetworkRaw) {
@@ -637,13 +563,10 @@ export default function ReceiptPage() {
         };
       }
 
-      if (
-        receipt.printer_config?.name?.trim() &&
-        winAny?.electronAPI?.printSilent
-      ) {
+      if (effectivePrinter?.name?.trim() && winAny?.electronAPI?.printSilent) {
         return {
           kind: "silent",
-          printerName: receipt.printer_config.name.trim(),
+          printerName: effectivePrinter.name.trim(),
         };
       }
 
@@ -696,11 +619,16 @@ export default function ReceiptPage() {
         }
       }
 
+      if (isElectronDesktop()) {
+        throw new Error(
+          "No usable receipt printer was found. Configure the network receipt printer in Settings → Printers.",
+        );
+      }
       return {
         kind: "browser",
         printerName: "Browser print dialog",
       };
-    }, [receipt, user?.restaurant_id]);
+    }, [receipt, selectedTerminal, user?.restaurant_id]);
 
   const runFiscalPrint = useCallback(async () => {
     if (!receipt || !fiscalDocument) {
@@ -711,51 +639,65 @@ export default function ReceiptPage() {
 
     const destination = await resolveFiscalPrintDestination();
     const winAny = typeof window !== "undefined" ? (window as any) : null;
-    const authorization = await printFiscalDocument({
-      authorizationInput: {
-        device_identifier: "yummy-web-receipt-route",
-        printer_name: destination.printerName,
-      },
-      dispatch: async (printAuthorization) => {
-        if (destination.kind === "network") {
-          const result = await winAny?.electronAPI?.printNetworkRaw({
-            host: destination.host,
-            port: destination.port,
-            payload: buildFiscalReceiptRawPayload(printAuthorization),
-            timeoutMs: 2000,
-          });
-          if (!result?.success) {
-            throw new Error(
-              result?.message || "The fiscal invoice could not be printed.",
-            );
+    try {
+      const authorization = await printFiscalDocument({
+        authorizationInput: {
+          device_identifier: "yummy-web-receipt-route",
+          printer_name: destination.printerName,
+        },
+        dispatch: async (printAuthorization) => {
+          if (destination.kind === "network") {
+            const payloadBase64 =
+              printAuthorization.render_payload?.payload_base64;
+            if (!payloadBase64) {
+              throw new Error(
+                "The backend did not return the authorized fiscal print payload.",
+              );
+            }
+            const result = await winAny?.electronAPI?.printNetworkRaw({
+              host: destination.host,
+              port: destination.port,
+              payloadBase64,
+              timeoutMs: 2000,
+            });
+            if (!result?.success) {
+              throw new Error(
+                result?.message || "The fiscal invoice could not be printed.",
+              );
+            }
+            return;
           }
-          return;
-        }
 
-        await waitForFiscalReceiptRender();
-        if (destination.kind === "silent") {
-          const result = await winAny?.electronAPI?.printSilent({
-            printerName: destination.printerName,
-          });
-          if (!result?.success) {
-            throw new Error(
-              result?.error || "The fiscal invoice could not be printed.",
-            );
+          await waitForFiscalReceiptRender();
+          if (destination.kind === "silent") {
+            const result = await winAny?.electronAPI?.printSilent({
+              printerName: destination.printerName,
+            });
+            if (!result?.success) {
+              throw new Error(
+                result?.error || "The fiscal invoice could not be printed.",
+              );
+            }
+            return;
           }
-          return;
-        }
 
-        window.print();
-      },
-    });
+          window.print();
+        },
+      });
 
-    setPrinted(true);
-    return authorization;
+      setPrinted(true);
+      await refreshFiscalDocument();
+      return authorization;
+    } finally {
+      clearLastAuthorization();
+    }
   }, [
     fiscalDocument,
     fiscalDocumentError,
     printFiscalDocument,
+    clearLastAuthorization,
     receipt,
+    refreshFiscalDocument,
     resolveFiscalPrintDestination,
   ]);
 
@@ -763,11 +705,26 @@ export default function ReceiptPage() {
   // server-issued print authorization. Other tenants keep legacy auto-print.
   useEffect(() => {
     if (!receipt || !template) return;
+    // Viewing a fiscal receipt must never reserve another legal copy number.
+    // Auto-print is allowed only for an explicit, one-shot checkout request.
+    if (!autoPrintRequested) return;
     if (fiscalProfileLoading || fiscalProfileError) return;
     if (autoPrintedOrderRef.current === orderId) return;
-    if (receipt.should_auto_print === false) return;
+    if (receiptTerminals.length > 1 && !selectedTerminalId) {
+      setPendingTerminalPrintIntent("auto");
+      setTerminalChooserOpen(true);
+      return;
+    }
+    if (receipt.should_auto_print === false && !selectedTerminal?.printer)
+      return;
 
-    if (isActiveVatEbilling) {
+    if (isPreBill && paymentQrs.length > 1 && !paymentQr) {
+      setPendingQrPrintIntent("auto");
+      setQrChooserOpen(true);
+      return;
+    }
+
+    if (isActiveVatEbilling && !isPreBill) {
       if (fiscalDocumentLoading || !fiscalDocument || fiscalDocumentError) {
         return;
       }
@@ -791,36 +748,152 @@ export default function ReceiptPage() {
     fiscalProfileError,
     fiscalProfileLoading,
     isActiveVatEbilling,
+    isPreBill,
     orderId,
     receipt,
+    paymentQr,
+    paymentQrs.length,
     runAutoPrint,
     runFiscalPrint,
     template,
+    autoPrintRequested,
+    receiptTerminals.length,
+    selectedTerminalId,
+    selectedTerminal?.printer,
   ]);
 
-  const handlePrint = async () => {
-    suppressAutoPrintFallbackRef.current = true;
-    if (fiscalProfileLoading) return;
-    if (fiscalProfileError) {
-      toast.error(fiscalProfileError);
-      return;
-    }
-    if (isActiveVatEbilling) {
+  const handlePrint = useCallback(
+    async (qrSelectionConfirmed = false) => {
+      if (receiptTerminals.length > 1 && !selectedTerminalId) {
+        setPendingTerminalPrintIntent("manual");
+        setTerminalChooserOpen(true);
+        return;
+      }
+      if (isPreBill && paymentQrs.length > 1 && !qrSelectionConfirmed) {
+        setPendingQrPrintIntent("manual");
+        setQrChooserOpen(true);
+        return;
+      }
+      if (fiscalProfileLoading) return;
+      if (fiscalProfileError) {
+        toast.error(fiscalProfileError);
+        return;
+      }
+      if (isActiveVatEbilling && !isPreBill) {
+        try {
+          await runFiscalPrint();
+          toast.success("Fiscal print result recorded.");
+        } catch (printError) {
+          toast.error(
+            printError instanceof Error
+              ? printError.message
+              : "Fiscal printing failed.",
+          );
+        }
+        return;
+      }
       try {
-        await runFiscalPrint();
-        toast.success("Fiscal print result recorded.");
+        autoPrintedOrderRef.current = orderId;
+        await runAutoPrint();
+        toast.success("Receipt sent to the configured printer.");
       } catch (printError) {
         toast.error(
-          printError instanceof Error
-            ? printError.message
-            : "Fiscal printing failed.",
+          printError instanceof Error ? printError.message : "Printing failed.",
         );
       }
+    },
+    [
+      fiscalProfileError,
+      fiscalProfileLoading,
+      isActiveVatEbilling,
+      isPreBill,
+      orderId,
+      paymentQrs.length,
+      runFiscalPrint,
+      runAutoPrint,
+      receiptTerminals.length,
+      selectedTerminalId,
+    ],
+  );
+
+  const selectReceiptTerminal = useCallback((terminalId: number) => {
+    setSelectedTerminalId(terminalId);
+    setTerminalChooserOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (
+      terminalChooserOpen ||
+      !pendingTerminalPrintIntent ||
+      !selectedTerminalId
+    )
       return;
+    const intent = pendingTerminalPrintIntent;
+    setPendingTerminalPrintIntent(null);
+    if (intent === "auto") {
+      if (isPreBill && paymentQrs.length > 1 && !paymentQr) {
+        setPendingQrPrintIntent("auto");
+        setQrChooserOpen(true);
+      } else if (isActiveVatEbilling && !isPreBill) {
+        void runFiscalPrint();
+      } else {
+        void runAutoPrint();
+      }
+    } else {
+      void handlePrint();
     }
-    openPrintDialog();
-    setPrinted(true);
-  };
+  }, [
+    handlePrint,
+    isActiveVatEbilling,
+    isPreBill,
+    paymentQr,
+    paymentQrs.length,
+    pendingTerminalPrintIntent,
+    runAutoPrint,
+    runFiscalPrint,
+    selectedTerminalId,
+    terminalChooserOpen,
+  ]);
+
+  const selectPaymentQrForPrint = useCallback(
+    (qr: ReceiptPaymentQr) => {
+      const configId = qr.config_id?.trim();
+      if (!configId) {
+        toast.error(
+          "This payment QR has no stable configuration ID. Save it again in Payment integrations before printing.",
+        );
+        return;
+      }
+
+      if (pendingQrPrintIntent === "auto") {
+        autoPrintedOrderRef.current = orderId;
+      }
+      setPaymentQrConfigId(configId);
+      setQrChooserOpen(false);
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("paymentQrConfigId", configId);
+      window.history.replaceState(window.history.state, "", url.toString());
+    },
+    [orderId, pendingQrPrintIntent],
+  );
+
+  useEffect(() => {
+    if (qrChooserOpen || !pendingQrPrintIntent || !paymentQr) return;
+    const intent = pendingQrPrintIntent;
+    setPendingQrPrintIntent(null);
+    if (intent === "auto") {
+      void runAutoPrint();
+    } else {
+      void handlePrint(true);
+    }
+  }, [
+    handlePrint,
+    paymentQr,
+    pendingQrPrintIntent,
+    qrChooserOpen,
+    runAutoPrint,
+  ]);
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -1009,7 +1082,11 @@ export default function ReceiptPage() {
     );
   }
 
-  if (isActiveVatEbilling && (fiscalDocumentLoading || !fiscalDocument)) {
+  if (
+    isActiveVatEbilling &&
+    !isPreBill &&
+    (fiscalDocumentLoading || !fiscalDocument)
+  ) {
     if (fiscalDocumentError) {
       return (
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4 px-6 text-center">
@@ -1125,61 +1202,6 @@ export default function ReceiptPage() {
               <p className="text-sm text-muted-foreground">{orderLabel}</p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            {showRefundAction && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2 rounded-xl text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/20"
-                disabled={!refundAllowed}
-                onClick={() => {
-                  setRefundError(null);
-                  setRefundAmount(String(receipt.total_paid || ""));
-                  setRefundOpen(true);
-                }}
-              >
-                <RotateCcw className="h-3.5 w-3.5" /> Refund
-              </Button>
-            )}
-            {receipt.is_fully_paid && order.status !== "completed" && (
-              <Button
-                size="sm"
-                onClick={handleComplete}
-                disabled={completing}
-                className="gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700"
-              >
-                {completing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CheckCircle className="h-3.5 w-3.5" />
-                )}
-                Complete Order
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleShare}
-              className="gap-2 rounded-xl"
-              id="share-btn"
-            >
-              <Share2 className="h-3.5 w-3.5" /> Share
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => void handlePrint()}
-              disabled={fiscalPrinting}
-              className="gap-2 rounded-xl shadow-lg"
-            >
-              {fiscalPrinting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Printer className="h-3.5 w-3.5" />
-              )}
-              {isActiveVatEbilling ? "Print Tax Invoice" : "Print"}
-            </Button>
-          </div>
         </div>
 
         {/* ── Fully Paid Banner ── */}
@@ -1202,17 +1224,31 @@ export default function ReceiptPage() {
         <div className="flex-1 flex items-start justify-center p-4 bg-muted/30 overflow-y-auto">
           <div
             ref={receiptRef}
-            id={isActiveVatEbilling ? undefined : "receipt-printable-wrapper"}
+            id={
+              isActiveVatEbilling && !isPreBill
+                ? undefined
+                : "receipt-printable-wrapper"
+            }
             className="shadow-2xl border border-border/40 bg-white"
           >
-            {isActiveVatEbilling && fiscalDocument ? (
+            {isActiveVatEbilling && !isPreBill && fiscalDocument ? (
               <FiscalReceipt
                 document={lastAuthorization?.document ?? fiscalDocument}
                 copyNumber={lastAuthorization?.copy_number}
                 designation={lastAuthorization?.designation}
+                preview={
+                  lastAuthorization?.render_payload?.preview ??
+                  fiscalDocument.render_preview
+                }
               />
             ) : (
-              <ThermalReceipt data={receipt} template={template} />
+              <ThermalReceipt
+                data={receipt}
+                template={template}
+                mode={isPreBill ? "bill" : "receipt"}
+                printDesignation={ordinaryPrintDesignation}
+                paymentQr={paymentQr}
+              />
             )}
           </div>
         </div>
@@ -1278,7 +1314,11 @@ export default function ReceiptPage() {
               ) : (
                 <Printer className="h-4 w-4" />
               )}
-              {isActiveVatEbilling ? "Print Tax Invoice Again" : "Print Again"}
+              {isPreBill
+                ? "Print Pre-bill"
+                : isActiveVatEbilling
+                  ? "Print Tax Invoice"
+                  : "Print Receipt"}
             </Button>
             <Button
               variant="outline"
@@ -1290,6 +1330,115 @@ export default function ReceiptPage() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={terminalChooserOpen}
+        onOpenChange={(open) => {
+          setTerminalChooserOpen(open);
+          if (!open && !selectedTerminalId) {
+            setPendingTerminalPrintIntent(null);
+            setAutoPrintRequested(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md gap-0 p-0">
+          <DialogHeader className="border-b px-5 py-4 text-left">
+            <DialogTitle>Select receipt terminal</DialogTitle>
+            <DialogDescription>
+              Choose the work location whose printer should receive this
+              document.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="divide-y p-2">
+            {receiptTerminals.map((terminal) => (
+              <button
+                key={terminal.id}
+                type="button"
+                onClick={() => selectReceiptTerminal(terminal.id)}
+                className="flex min-h-14 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                  <Printer className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold">{terminal.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {terminal.printer?.name || "Receipt printer"}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={qrChooserOpen}
+        onOpenChange={(open) => {
+          setQrChooserOpen(open);
+          if (!open) {
+            if (pendingQrPrintIntent === "auto") {
+              setAutoPrintRequested(false);
+            }
+            setPendingQrPrintIntent(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md gap-0 p-0">
+          <DialogHeader className="border-b px-5 py-4 text-left">
+            <DialogTitle>Select payment QR</DialogTitle>
+            <DialogDescription>
+              Choose the QR that should appear on this pre-bill.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="divide-y px-2 py-2">
+            {paymentQrs.map((qr) => {
+              const selectable = Boolean(qr.config_id?.trim());
+              return (
+                <button
+                  key={qr.config_id || `${qr.name}:${qr.payload}`}
+                  type="button"
+                  disabled={!selectable}
+                  onClick={() => selectPaymentQrForPrint(qr)}
+                  className="flex min-h-14 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                    <Smartphone className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">
+                      {qr.name || "Payment QR"}
+                    </span>
+                    {!selectable && (
+                      <span className="block text-xs text-muted-foreground">
+                        Save this QR again before printing
+                      </span>
+                    )}
+                  </span>
+                  {paymentQrConfigId === qr.config_id && (
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <DialogFooter className="border-t px-5 py-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (pendingQrPrintIntent === "auto") {
+                  setAutoPrintRequested(false);
+                }
+                setPendingQrPrintIntent(null);
+                setQrChooserOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
         <DialogContent className="sm:max-w-md">

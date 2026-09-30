@@ -3,10 +3,13 @@
 import { AlertTriangle, CheckCircle2, ShieldCheck } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { formatDayCloseCurrency } from "@/lib/day-close-format";
+import type { DayClosePresentation } from "@/lib/presentation/day-close";
 import type { DayCloseDetail } from "@/types/day-close";
 
 type OperationalCloseStatusProps = {
   detail: DayCloseDetail | null;
+  presentation?: DayClosePresentation;
 };
 
 function reviewStatus(detail: DayCloseDetail | null) {
@@ -23,10 +26,15 @@ function blockers(detail: DayCloseDetail | null) {
   return Array.isArray(raw) ? raw.map(String) : [];
 }
 
-export function OperationalCloseStatus({ detail }: OperationalCloseStatusProps) {
+export function OperationalCloseStatus({
+  detail,
+  presentation,
+}: OperationalCloseStatusProps) {
   const status = reviewStatus(detail);
   const blockerRows = blockers(detail);
-  const accountingReady = ["ready", "reviewed", "posted"].includes(status) && blockerRows.length === 0;
+  const accountingReady =
+    ["ready", "reviewed", "posted"].includes(status) &&
+    blockerRows.length === 0;
   const needsReview = !accountingReady;
 
   return (
@@ -38,7 +46,7 @@ export function OperationalCloseStatus({ detail }: OperationalCloseStatusProps) 
         <div>
           <div className="text-sm font-semibold">Operational day closed</div>
           <div className="text-xs text-muted-foreground">
-            The cashier/manager evidence packet is saved. Cash drawer evidence is now available for accounting review.
+            The close record and cash evidence have been saved.
           </div>
         </div>
       </div>
@@ -52,26 +60,70 @@ export function OperationalCloseStatus({ detail }: OperationalCloseStatusProps) 
         )}
       >
         <div className="mt-0.5">
-          {needsReview ? <AlertTriangle className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+          {needsReview ? (
+            <AlertTriangle className="h-4 w-4" />
+          ) : (
+            <ShieldCheck className="h-4 w-4" />
+          )}
         </div>
         <div>
           <div className="text-sm font-semibold">
-            {needsReview ? "Accounting review required" : "Accounting ready"}
+            {needsReview ? "Finance review required" : "Finance check complete"}
           </div>
           <div className="text-xs opacity-80">
             {needsReview
-              ? "Accountant review is still needed before this day can support period locking."
-              : "Accounting checks are clean and the day can move into review approval."}
+              ? "An authorized finance user must review the accounting check."
+              : "No finance action is required for this close."}
           </div>
-          {blockerRows.length ? (
-            <ul className="mt-2 space-y-1 text-xs">
-              {blockerRows.map((blocker) => (
-                <li key={blocker}>- {blocker}</li>
-              ))}
-            </ul>
-          ) : null}
         </div>
       </div>
+
+      {presentation ? (
+        <dl className="grid grid-cols-2 gap-x-5 gap-y-3 border-t pt-3 text-sm">
+          <div>
+            <dt className="text-muted-foreground">Sales</dt>
+            <dd className="font-medium tabular-nums">
+              {formatDayCloseCurrency(presentation.summary.sales)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Payments collected</dt>
+            <dd className="font-medium tabular-nums">
+              {formatDayCloseCurrency(presentation.summary.paymentsCollected)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Cash counted</dt>
+            <dd className="font-medium tabular-nums">
+              {presentation.cash.counted == null
+                ? "Not counted"
+                : formatDayCloseCurrency(presentation.cash.counted)}
+            </dd>
+            <dd className="text-xs text-muted-foreground">
+              {presentation.cash.countSourceLabel}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Cash difference</dt>
+            <dd className="font-medium tabular-nums">
+              {formatDayCloseCurrency(presentation.cash.difference)}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
+      {presentation?.warnings.length ? (
+        <div className="border-t pt-3 text-xs text-muted-foreground">
+          {presentation.warnings.map((warning) => (
+            <p key={`${warning.code}-${warning.title}`}>
+              <span className="font-medium text-foreground">
+                {warning.title}.
+              </span>{" "}
+              {warning.description}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

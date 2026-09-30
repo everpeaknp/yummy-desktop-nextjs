@@ -1,15 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { History } from "lucide-react";
+
+import apiClient from "@/lib/api-client";
+import { DrawerSessionApis } from "@/lib/api/endpoints";
+import { canAccessBusinessModule, hasPermission } from "@/lib/role-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AppPage } from "@/components/patterns/page/app-page";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -17,71 +18,55 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DayCloseModal } from "@/components/analytics/day-close-modal";
+import { DayCloseFlow } from "@/components/day-close/day-close-flow";
 import {
   DayCloseHistory,
   type DayCloseHistoryHandle,
 } from "@/components/analytics/day-close-history";
-import { cn } from "@/lib/utils";
-import { Calendar, CheckCircle2 } from "lucide-react";
-import apiClient from "@/lib/api-client";
-import { toast } from "sonner";
-import { DayCloseApis, DrawerSessionApis } from "@/lib/api/endpoints";
-import { canAccessBusinessModule, hasPermission } from "@/lib/role-permissions";
-import {
-  formatDayCloseCurrency,
-  formatDayCloseListHeading,
-  pickBackendAmount,
-} from "@/lib/day-close-format";
-import {
-  parseDayCloseCurrent,
-  parseDayCloseSnapshotData,
-  unwrapApiData,
-  type DayCloseCurrent,
-  type DayCloseSnapshotData,
-  type BusinessLine,
-} from "@/types/day-close";
-import { AppPage } from "@/components/patterns/page/app-page";
+import type { BusinessLine } from "@/types/day-close";
+
+function todayIso() {
+  const date = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
 export default function DayClosePage() {
   const searchParams = useSearchParams();
-  const user = useAuth((s) => s.user);
-  const restaurant = useRestaurant((s) => s.restaurant);
+  const user = useAuth((state) => state.user);
+  const restaurant = useRestaurant((state) => state.restaurant);
   const restaurantId = user?.restaurant_id ?? undefined;
-  const [closeOpen, setCloseOpen] = useState(false);
   const requestedBusinessLine = searchParams.get("business_line");
+  const requestedBusinessDate = searchParams.get("business_date");
+  const targetDayCloseId =
+    Number(searchParams.get("day_close_id") || "") || null;
+  const detailId = Number(searchParams.get("detail") || "") || null;
+  const [businessDate, setBusinessDate] = useState(
+    requestedBusinessDate || todayIso(),
+  );
   const [businessLine, setBusinessLine] = useState<BusinessLine>(
     requestedBusinessLine === "hotel" || requestedBusinessLine === "combined"
       ? requestedBusinessLine
       : "restaurant",
   );
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const now = new Date();
-    const pad = (value: number) => String(value).padStart(2, "0");
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  });
-  const [currentLoading, setCurrentLoading] = useState(false);
-  const [currentClose, setCurrentClose] = useState<DayCloseCurrent | null>(
-    null,
-  );
-  const [snapshotPreview, setSnapshotPreview] =
-    useState<DayCloseSnapshotData | null>(null);
   const [cashControlMode, setCashControlMode] = useState<
     "separate" | "combined"
   >("separate");
-  const dayCloseHistoryRef = useRef<DayCloseHistoryHandle | null>(null);
+  const [showHistory, setShowHistory] = useState(Boolean(detailId));
+  const historyRef = useRef<DayCloseHistoryHandle | null>(null);
 
-  const canUseRestaurantClose = canAccessBusinessModule(user, "restaurant");
-  const canUseHotelDaybook =
+  const canViewDayClose = hasPermission(user, "reports.dayclose.view");
+  const canUseRestaurant = canAccessBusinessModule(user, "restaurant");
+  const canUseHotel =
     Boolean(restaurant?.hotel_enabled) &&
     canAccessBusinessModule(user, "hotel") &&
-    hasPermission(user, "reports.dayclose.view");
-
+    canViewDayClose;
   const showBusinessLinePicker = Boolean(
-    restaurant?.hotel_enabled &&
+    cashControlMode !== "combined" &&
     restaurant?.restaurant_enabled &&
-    canUseRestaurantClose &&
-    canUseHotelDaybook,
+    restaurant?.hotel_enabled &&
+    canUseRestaurant &&
+    canUseHotel,
   );
 
   useEffect(() => {
@@ -91,14 +76,15 @@ export default function DayClosePage() {
       .get(
         DrawerSessionApis.cashControlPolicy({
           restaurantId,
-          effectiveDate: selectedDate,
+          effectiveDate: businessDate,
         }),
       )
       .then((response) => {
         if (!active) return;
-        setCashControlMode(
-          response.data?.data?.mode === "combined" ? "combined" : "separate",
-        );
+        const mode =
+          response.data?.data?.mode === "combined" ? "combined" : "separate";
+        setCashControlMode(mode);
+        if (mode === "combined") setBusinessLine("combined");
       })
       .catch(() => {
         if (active) setCashControlMode("separate");
@@ -106,392 +92,92 @@ export default function DayClosePage() {
     return () => {
       active = false;
     };
-  }, [restaurantId, selectedDate]);
+  }, [businessDate, restaurantId]);
 
   useEffect(() => {
-    if (cashControlMode === "combined") {
-      setBusinessLine("combined");
-      return;
-    }
-    if (requestedBusinessLine === "hotel" && canUseHotelDaybook) {
-      setBusinessLine(requestedBusinessLine);
-    } else if (
-      requestedBusinessLine === "restaurant" &&
-      canUseRestaurantClose
-    ) {
-      setBusinessLine(requestedBusinessLine);
-    } else if (!canUseRestaurantClose && canUseHotelDaybook) {
+    if (cashControlMode === "combined") return;
+    if (requestedBusinessLine === "hotel" && canUseHotel)
       setBusinessLine("hotel");
-    }
-  }, [
-    canUseHotelDaybook,
-    canUseRestaurantClose,
-    cashControlMode,
-    requestedBusinessLine,
-  ]);
-
-  const loadCurrent = useCallback(async () => {
-    if (!restaurantId) return;
-    setCurrentLoading(true);
-    try {
-      const [sessionRes, snapshotRes] = await Promise.all([
-        apiClient.get(
-          DayCloseApis.current({
-            restaurantId,
-            businessLine,
-            businessDate: selectedDate,
-          }),
-        ),
-        apiClient.get(
-          DayCloseApis.generateSnapshot({
-            restaurantId,
-            businessLine,
-            businessDate: selectedDate,
-          }),
-        ),
-      ]);
-
-      if (sessionRes.data?.status === "success") {
-        setCurrentClose(unwrapApiData(sessionRes.data, parseDayCloseCurrent));
-      } else {
-        setCurrentClose(null);
-      }
-
-      if (snapshotRes.data?.status === "success") {
-        setSnapshotPreview(
-          unwrapApiData(snapshotRes.data, parseDayCloseSnapshotData),
-        );
-      } else {
-        setSnapshotPreview(null);
-      }
-    } catch (err: unknown) {
-      setCurrentClose(null);
-      setSnapshotPreview(null);
-      const message =
-        (err as { response?: { data?: { message?: string; detail?: string } } })
-          ?.response?.data?.message ??
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ??
-        "Failed to load day close data.";
-      toast.error(message);
-    } finally {
-      setCurrentLoading(false);
-    }
-  }, [restaurantId, businessLine, selectedDate]);
+    else if (!canUseRestaurant && canUseHotel) setBusinessLine("hotel");
+    else setBusinessLine("restaurant");
+  }, [canUseHotel, canUseRestaurant, cashControlMode, requestedBusinessLine]);
 
   useEffect(() => {
-    if (restaurantId) loadCurrent();
-  }, [restaurantId, loadCurrent]);
+    if (!detailId) return;
+    setShowHistory(true);
+  }, [detailId]);
 
-  const actionLabel = useMemo(() => {
-    const label = currentClose?.action_label?.trim();
-    if (label) return label;
-    const status = String(currentClose?.status ?? "open").toLowerCase();
-    if (status === "pending") return "Continue Close";
-    if (status === "confirmed") return "View Closed Period";
-    return "Start Close";
-  }, [currentClose?.action_label, currentClose?.status]);
+  useEffect(() => {
+    if (!detailId || !showHistory) return;
+    const timer = window.setTimeout(() => {
+      void historyRef.current?.openDayCloseDetail(detailId);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [detailId, showHistory]);
 
-  const handlePrimaryAction = useCallback(async () => {
-    if (
-      currentClose?.id &&
-      String(currentClose.status).toLowerCase() === "confirmed"
-    ) {
-      await dayCloseHistoryRef.current?.openDayCloseDetail(currentClose.id);
-      return;
-    }
-    setCloseOpen(true);
-  }, [currentClose?.id, currentClose?.status]);
+  const scopeLabel = useMemo(() => {
+    if (businessLine === "combined") return "Restaurant + hotel";
+    if (businessLine === "hotel") return "Hotel";
+    return "Restaurant";
+  }, [businessLine]);
 
-  const displayNetSales = pickBackendAmount(
-    snapshotPreview?.net_sales,
-    currentClose?.snapshot_preview?.net_sales,
-  );
-  const displayExpenseTotal = pickBackendAmount(
-    snapshotPreview?.expense_total,
-    currentClose?.snapshot_preview?.expense_total,
-  );
-
-  const businessLineLabel =
-    businessLine === "combined"
-      ? "Combined Day Close"
-      : businessLine === "hotel"
-        ? "Hotel Daybook"
-        : "Restaurant Close";
-  const statusLabel = String(currentClose?.status ?? "—").replace(/_/g, " ");
-  const statusTone = (() => {
-    const normalized = statusLabel.toLowerCase();
-    if (normalized === "open")
-      return "bg-emerald-500/10 text-emerald-600 border-emerald-200";
-    if (normalized === "confirmed")
-      return "bg-primary/10 text-primary border-primary/20";
-    if (normalized === "pending")
-      return "bg-amber-500/10 text-amber-600 border-amber-200";
-    if (normalized === "reopened")
-      return "bg-blue-500/10 text-blue-600 border-blue-200";
-    return "bg-muted text-muted-foreground border-border";
-  })();
-  const isConfirmed =
-    String(currentClose?.status ?? "").toLowerCase() === "confirmed";
+  if (!restaurantId || !canViewDayClose) return null;
 
   return (
-    <AppPage width="wide" className="day-close-page day-close-ui pb-20">
-      <div className="hidden flex-col justify-between gap-4 lg:flex lg:flex-row lg:items-center">
-        <div className="space-y-1">
-          <h1 className="dc-page-title">
-            {businessLine === "combined"
-              ? "Combined Day Close"
-              : businessLine === "hotel"
-                ? "Hotel Daybook"
-                : "Restaurant Day Close"}
-          </h1>
-          <p className="dc-page-subtitle">
-            {businessLine === "combined"
-              ? "One cash reconciliation for shared drawers; Hotel and Restaurant reporting remains separate."
-              : businessLine === "hotel"
-                ? "Settle hotel drawers, then save an audited daily hotel daybook."
-                : "Settle drawers, review the daybook, and confirm one audited restaurant close."}
-          </p>
-        </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-          <div className="space-y-1">
-            <Label htmlFor="day-close-page-date" className="sr-only">
-              Close date
-            </Label>
-            <Input
-              id="day-close-page-date"
-              type="date"
-              value={selectedDate}
-              max={(() => {
-                const now = new Date();
-                const pad = (value: number) => String(value).padStart(2, "0");
-                return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-              })()}
-              onChange={(event) => setSelectedDate(event.target.value)}
-              className="h-11 min-w-[170px] rounded-2xl"
-            />
-          </div>
+    <AppPage width="wide" className="pb-6">
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="mb-5 flex items-center justify-between gap-3">
           {cashControlMode === "combined" ? (
-            <Badge
-              variant="outline"
-              className="h-11 rounded-2xl px-4 text-sm font-medium"
-            >
-              Shared drawers · combined close
-            </Badge>
+            <p className="text-sm font-medium text-muted-foreground">
+              {scopeLabel}
+            </p>
           ) : showBusinessLinePicker ? (
             <Select
               value={businessLine}
               onValueChange={(value) => setBusinessLine(value as BusinessLine)}
             >
-              <SelectTrigger className="dc-filter-control dc-filter-control-active h-11 rounded-2xl font-medium min-w-[200px]">
-                <SelectValue placeholder="Business line" />
+              <SelectTrigger className="h-11 w-[190px]">
+                <SelectValue placeholder="Business area" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="restaurant">Restaurant Day Close</SelectItem>
-                <SelectItem value="hotel">Hotel Daybook</SelectItem>
+                <SelectItem value="restaurant">Restaurant</SelectItem>
+                <SelectItem value="hotel">Hotel</SelectItem>
               </SelectContent>
             </Select>
-          ) : null}
+          ) : (
+            <p className="text-sm font-medium text-muted-foreground">
+              {scopeLabel}
+            </p>
+          )}
           <Button
-            onClick={handlePrimaryAction}
-            className="bg-primary hover:bg-primary/90 text-white font-medium h-11 px-6 rounded-2xl shadow-md gap-2"
-            disabled={!restaurantId}
+            type="button"
+            variant="ghost"
+            className="h-11"
+            onClick={() => setShowHistory((value) => !value)}
           >
-            <CheckCircle2 className="w-4 h-4" />
-            {actionLabel}
+            <History className="mr-2 h-4 w-4" />
+            {showHistory ? "Back to close" : "History"}
           </Button>
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-2 lg:hidden">
-        <div className="col-span-2">
-          <Label htmlFor="day-close-page-date-mobile" className="sr-only">
-            Close date
-          </Label>
-          <Input
-            id="day-close-page-date-mobile"
-            type="date"
-            value={selectedDate}
-            max={(() => {
-              const now = new Date();
-              const pad = (value: number) => String(value).padStart(2, "0");
-              return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-            })()}
-            onChange={(event) => setSelectedDate(event.target.value)}
-            className="h-11 w-full rounded-xl"
-          />
-        </div>
-        {cashControlMode === "combined" ? (
-          <Badge
-            variant="outline"
-            className="col-span-2 h-11 justify-start rounded-xl px-3 text-sm font-medium"
-          >
-            Shared drawers · combined close
-          </Badge>
-        ) : showBusinessLinePicker ? (
-          <Select
-            value={businessLine}
-            onValueChange={(value) => setBusinessLine(value as BusinessLine)}
-          >
-            <SelectTrigger className="col-span-2 h-11 rounded-xl font-medium">
-              <SelectValue placeholder="Business line" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="restaurant">Restaurant close</SelectItem>
-              <SelectItem value="hotel">Hotel daybook</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : null}
-        <Button
-          onClick={handlePrimaryAction}
-          className="col-span-2 h-11 rounded-xl font-medium"
-          disabled={!restaurantId}
-        >
-          <CheckCircle2 className="mr-2 h-4 w-4" />
-          {actionLabel}
-        </Button>
-      </div>
-
-      <section
-        className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:gap-6"
-        aria-label="Day close summary"
-      >
-        <Card
-          className="dc-card lg:col-span-1 relative overflow-hidden group transition-all duration-300"
-          role={isConfirmed && currentClose?.id ? "button" : undefined}
-          tabIndex={isConfirmed && currentClose?.id ? 0 : undefined}
-          onClick={
-            isConfirmed && currentClose?.id
-              ? () => void handlePrimaryAction()
-              : undefined
-          }
-          onKeyDown={
-            isConfirmed && currentClose?.id
-              ? (event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    void handlePrimaryAction();
-                  }
-                }
-              : undefined
-          }
-        >
-          <div className="absolute top-0 right-0 h-16 w-16 rounded-bl-[56px] bg-primary/5 md:-mr-4 md:-mt-4 md:h-24 md:w-24 md:rounded-bl-[80px]" />
-          <CardHeader className="relative z-10 p-4 pb-2 md:pb-3">
-            <div className="flex items-center gap-3">
-              <CardTitle className="dc-card-title flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-primary" />
-                {businessLineLabel}
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="relative z-10 space-y-2 p-4 pt-0 md:space-y-3">
-            <p className="text-xs font-medium text-muted-foreground">
-              Selected close date
-            </p>
-            <p className="text-base font-medium tracking-tight break-words text-foreground md:text-lg">
-              {currentClose?.id
-                ? formatDayCloseListHeading({
-                    id: currentClose.id,
-                    business_line: currentClose.business_line,
-                    period_start_at: currentClose.period_start_at,
-                    period_end_at: currentClose.period_end_at,
-                    timezone: restaurant?.timezone ?? currentClose.timezone,
-                  })
-                : "—"}
-            </p>
-            <Badge
-              variant="outline"
-              className={cn("capitalize font-medium border", statusTone)}
-            >
-              {statusLabel}
-            </Badge>
-          </CardContent>
-        </Card>
-
-        <dl className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card lg:col-span-2">
-          <div className="border-r px-4 py-3 sm:px-5 lg:py-5">
-            <dt className="text-xs font-medium text-muted-foreground">
-              Net sales
-            </dt>
-            <dd className="mt-1 text-base font-semibold tabular-nums sm:text-lg">
-              {formatDayCloseCurrency(displayNetSales)}
-            </dd>
-          </div>
-          <div className="px-4 py-3 sm:px-5 lg:py-5">
-            <dt className="text-xs font-medium text-muted-foreground">
-              Total expenses
-            </dt>
-            <dd className="mt-1 text-base font-semibold tabular-nums sm:text-lg">
-              {formatDayCloseCurrency(displayExpenseTotal)}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <Tabs defaultValue="history" className="w-full">
-        <TabsList className="dc-tabs-list grid h-11 grid-cols-2 rounded-xl md:h-auto md:rounded-2xl">
-          <TabsTrigger value="history" className="dc-tab-trigger">
-            History
-          </TabsTrigger>
-          <TabsTrigger value="about" className="dc-tab-trigger">
-            What This Does
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="history" className="mt-3 md:mt-5">
+        {showHistory ? (
           <DayCloseHistory
-            ref={dayCloseHistoryRef}
+            ref={historyRef}
             restaurantId={restaurantId}
             timezone={restaurant?.timezone}
             initialBusinessLine={businessLine}
-            liveCurrentClose={currentClose}
-            liveSnapshotPreview={snapshotPreview}
-            onLiveCurrentRefresh={loadCurrent}
           />
-        </TabsContent>
-
-        <TabsContent value="about" className="mt-3 md:mt-5">
-          <Card className="overflow-hidden rounded-xl border-border/50 bg-card/80 shadow-sm backdrop-blur-sm md:rounded-2xl">
-            <CardContent className="space-y-4 p-4 md:p-8">
-              <p className="text-sm text-muted-foreground">
-                A Day Close locks in your daily totals (sales, payments,
-                expenses, refunds) and records a cash reconciliation. If you
-                spot a mistake later, you can reopen or adjust the close with a
-                reason so the system keeps an audit trail.
-              </p>
-              <div className="text-sm text-muted-foreground space-y-2">
-                <p>
-                  Use{" "}
-                  <span className="font-semibold text-foreground">
-                    {actionLabel}
-                  </span>{" "}
-                  to run the close wizard.
-                </p>
-                <p>
-                  Use{" "}
-                  <span className="font-semibold text-foreground">History</span>{" "}
-                  to export PDF/Excel and review saved snapshots from the
-                  backend.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {restaurantId ? (
-        <DayCloseModal
-          isOpen={closeOpen}
-          onClose={() => {
-            setCloseOpen(false);
-            loadCurrent();
-          }}
-          restaurantId={restaurantId}
-          businessLine={businessLine}
-          targetBusinessDate={selectedDate}
-        />
-      ) : null}
+        ) : (
+          <DayCloseFlow
+            restaurantId={restaurantId}
+            businessLine={businessLine}
+            businessDate={businessDate}
+            timezone={restaurant?.timezone}
+            targetDayCloseId={targetDayCloseId}
+            onBusinessDateChange={setBusinessDate}
+          />
+        )}
+      </div>
     </AppPage>
   );
 }

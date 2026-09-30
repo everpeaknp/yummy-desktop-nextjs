@@ -78,8 +78,8 @@ test("document designers preserve template mutations and use responsive workspac
   assert.match(receipt, /RestaurantApis\.updateTemplates/);
   assert.match(receipt, /receipt_template: templateData/);
   assert.match(receipt, /xl:grid-cols-\[minmax\(420px,1fr\)_320px\]/);
-  assert.match(receipt, /Final receipt/);
-  assert.match(receipt, /Pre-payment bill/);
+  assert.match(receipt, /Payment receipt/);
+  assert.match(receipt, /Pre-bill/);
   assert.match(
     receipt,
     /mappedBlocks\.find\(\(block\) => block\.type === "header"\)/,

@@ -11,12 +11,16 @@ import {
   Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import apiClient from "@/lib/api-client";
 import { RestaurantApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { fiscalApi } from "@/lib/fiscal/api";
+import type { FiscalProfile } from "@/lib/fiscal/types";
 import {
   BlockType,
   ReceiptBlock,
@@ -35,13 +39,15 @@ const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   line_spacing: 1.0,
   paper_size: "80mm",
   column_capacity: 48,
+  bill_copies: 1,
+  receipt_copies: 1,
 };
 
 const DEFAULT_RECEIPT_BLOCKS: ReceiptBlock[] = [
   {
     id: "1",
     type: "header",
-    config: {},
+    config: { show_pan: true },
     isVisible: true,
     showOnBill: true,
     showOnReceipt: true,
@@ -49,7 +55,16 @@ const DEFAULT_RECEIPT_BLOCKS: ReceiptBlock[] = [
   {
     id: "2",
     type: "bill_info",
-    config: {},
+    config: {
+      show_order_id: true,
+      show_table: true,
+      show_date: true,
+      show_time: true,
+      show_user: true,
+      staff_attribution_mode: "compact",
+      show_service_duration: true,
+      staff_details_layout: "settlement",
+    },
     isVisible: true,
     showOnBill: true,
     showOnReceipt: true,
@@ -65,7 +80,13 @@ const DEFAULT_RECEIPT_BLOCKS: ReceiptBlock[] = [
   {
     id: "4",
     type: "items",
-    config: {},
+    config: {
+      show_serial: false,
+      show_rate: true,
+      show_amount: true,
+      show_fiscal_code: false,
+      show_unit: true,
+    },
     isVisible: true,
     showOnBill: true,
     showOnReceipt: true,
@@ -81,8 +102,8 @@ const DEFAULT_RECEIPT_BLOCKS: ReceiptBlock[] = [
   {
     id: "6",
     type: "payments",
-    config: {},
-    isVisible: false,
+    config: { show_reference: false },
+    isVisible: true,
     showOnBill: false,
     showOnReceipt: true,
   },
@@ -107,11 +128,44 @@ const DEFAULT_RECEIPT_BLOCKS: ReceiptBlock[] = [
 interface ReceiptDesignerProps {
   restaurantId: number;
   initialTemplate?: any[];
+  initialDocumentSettings?: Record<string, Record<string, unknown>>;
 }
+
+type ReceiptDocumentFamily =
+  "pre_bill" | "payment_receipt" | "tax_invoice" | "credit_note";
+
+type ReceiptDocumentCopy = {
+  title: string;
+  message?: string;
+  external_vat_message?: string;
+  locked?: boolean;
+};
+
+const DEFAULT_DOCUMENT_SETTINGS: Record<
+  ReceiptDocumentFamily,
+  ReceiptDocumentCopy
+> = {
+  pre_bill: { title: "PRE-BILL", message: "Estimate - not a tax invoice" },
+  payment_receipt: {
+    title: "PAYMENT RECEIPT",
+    message: "Not a tax invoice",
+    external_vat_message: "Tax invoice issued separately",
+  },
+  tax_invoice: { title: "TAX INVOICE", locked: true },
+  credit_note: { title: "CREDIT NOTE", locked: true },
+};
+
+const FISCAL_REQUIRED_BLOCKS = new Set<BlockType>([
+  "header",
+  "customer",
+  "items",
+  "totals",
+]);
 
 export function ReceiptDesigner({
   restaurantId,
   initialTemplate,
+  initialDocumentSettings,
 }: ReceiptDesignerProps) {
   const restaurant = useRestaurant((s) => s.restaurant);
   const [blocks, setBlocks] = useState<ReceiptBlock[]>([]);
@@ -120,7 +174,14 @@ export function ReceiptDesigner({
   );
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [previewMode, setPreviewMode] = useState<"bill" | "receipt">("receipt");
+  const [fiscalProfile, setFiscalProfile] = useState<FiscalProfile | null>(
+    null,
+  );
+  const [documentFamily, setDocumentFamily] =
+    useState<ReceiptDocumentFamily>("payment_receipt");
+  const [documentSettings, setDocumentSettings] = useState(
+    DEFAULT_DOCUMENT_SETTINGS,
+  );
   const [previewExpanded, setPreviewExpanded] = useState(true);
   const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
   const [mobileDraftBlock, setMobileDraftBlock] = useState<ReceiptBlock | null>(
@@ -133,6 +194,24 @@ export function ReceiptDesigner({
   );
   const initialBlocksRef = useRef<ReceiptBlock[]>([]);
   const initialGlobalConfigRef = useRef<GlobalConfig>(DEFAULT_GLOBAL_CONFIG);
+  const initialDocumentSettingsRef = useRef(DEFAULT_DOCUMENT_SETTINGS);
+
+  useEffect(() => {
+    const next = Object.fromEntries(
+      (Object.keys(DEFAULT_DOCUMENT_SETTINGS) as ReceiptDocumentFamily[]).map(
+        (family) => [
+          family,
+          {
+            ...DEFAULT_DOCUMENT_SETTINGS[family],
+            ...(initialDocumentSettings?.[family] || {}),
+            locked: DEFAULT_DOCUMENT_SETTINGS[family].locked,
+          },
+        ],
+      ),
+    ) as Record<ReceiptDocumentFamily, ReceiptDocumentCopy>;
+    setDocumentSettings(next);
+    initialDocumentSettingsRef.current = next;
+  }, [initialDocumentSettings]);
 
   useEffect(() => {
     if (
@@ -153,6 +232,8 @@ export function ReceiptDesigner({
             column_capacity:
               potentialGlobal.column_capacity ||
               (potentialGlobal.paper_size === "58mm" ? 32 : 48),
+            bill_copies: potentialGlobal.bill_copies || 1,
+            receipt_copies: potentialGlobal.receipt_copies || 1,
           }
         : DEFAULT_GLOBAL_CONFIG;
       setGlobalConfig(nextGlobalConfig);
@@ -204,6 +285,21 @@ export function ReceiptDesigner({
       setSelectedBlockId(defaultBlocks[0]?.id ?? null);
     }
   }, [initialTemplate]);
+
+  useEffect(() => {
+    let active = true;
+    void fiscalApi
+      .getProfileOrLegacy()
+      .then((profile) => {
+        if (active) setFiscalProfile(profile);
+      })
+      .catch(() => {
+        if (active) setFiscalProfile(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleAddBlock = (type: BlockType) => {
     if (type === "global_settings") {
@@ -303,6 +399,7 @@ export function ReceiptDesigner({
     }));
     setBlocks(restoredBlocks);
     setGlobalConfig({ ...initialGlobalConfigRef.current });
+    setDocumentSettings(initialDocumentSettingsRef.current);
     setSelectedBlockId(restoredBlocks[0]?.id ?? null);
     setPreviewExpanded(true);
   };
@@ -355,6 +452,7 @@ export function ReceiptDesigner({
         RestaurantApis.updateTemplates(restaurantId),
         {
           receipt_template: templateData,
+          receipt_document_settings: documentSettings,
         },
       );
 
@@ -364,6 +462,7 @@ export function ReceiptDesigner({
           config: { ...block.config },
         }));
         initialGlobalConfigRef.current = { ...globalConfig };
+        initialDocumentSettingsRef.current = documentSettings;
         toast.success("Receipt layout saved");
       }
     } catch (err) {
@@ -374,6 +473,24 @@ export function ReceiptDesigner({
   };
 
   const selectedBlock = blocks.find((b) => b.id === selectedBlockId);
+  const isFiscalDocument =
+    documentFamily === "tax_invoice" || documentFamily === "credit_note";
+  const isSelectedBlockProtected = Boolean(
+    isFiscalDocument &&
+    selectedBlock &&
+    FISCAL_REQUIRED_BLOCKS.has(selectedBlock.type),
+  );
+  const previewBlocks = isFiscalDocument
+    ? blocks.map((block) =>
+        FISCAL_REQUIRED_BLOCKS.has(block.type)
+          ? { ...block, isVisible: true, showOnReceipt: true }
+          : block,
+      )
+    : blocks;
+  const visibleDocumentFamilies: ReceiptDocumentFamily[] =
+    fiscalProfile?.fiscal_billing_mode === "vat_ebilling"
+      ? ["pre_bill", "payment_receipt", "tax_invoice", "credit_note"]
+      : ["pre_bill", "payment_receipt"];
 
   return (
     <div className="flex min-w-0 flex-col gap-4 xl:min-h-[720px]">
@@ -384,23 +501,25 @@ export function ReceiptDesigner({
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <div className="grid grid-cols-2 rounded-lg border border-border bg-muted p-1">
-            <Button
-              variant={previewMode === "receipt" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setPreviewMode("receipt")}
-              className="h-9 text-xs font-medium"
-            >
-              Final receipt
-            </Button>
-            <Button
-              variant={previewMode === "bill" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setPreviewMode("bill")}
-              className="h-9 text-xs font-medium"
-            >
-              Pre-payment bill
-            </Button>
+          <div className="flex max-w-full gap-1 overflow-x-auto rounded-lg border border-border bg-muted p-1">
+            {visibleDocumentFamilies.map((family) => (
+              <Button
+                key={family}
+                variant={documentFamily === family ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setDocumentFamily(family)}
+                className="h-9 shrink-0 text-xs font-medium"
+              >
+                {
+                  {
+                    pre_bill: "Pre-bill",
+                    payment_receipt: "Payment receipt",
+                    tax_invoice: "Tax invoice",
+                    credit_note: "Credit note",
+                  }[family]
+                }
+              </Button>
+            ))}
           </div>
           <Button
             type="button"
@@ -426,6 +545,66 @@ export function ReceiptDesigner({
           </Button>
         </div>
       </div>
+
+      <section className="border-b border-border pb-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold">Document identity</h3>
+          <p className="text-xs text-muted-foreground">
+            {documentSettings[documentFamily].locked
+              ? "Required fiscal wording is protected. Layout and optional presentation remain customizable."
+              : "These are system defaults. You may tailor the wording for this ordinary document."}
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="receipt-document-title">Printed heading</Label>
+            <Input
+              id="receipt-document-title"
+              value={documentSettings[documentFamily].title}
+              disabled={documentSettings[documentFamily].locked}
+              onChange={(event) =>
+                setDocumentSettings((current) => ({
+                  ...current,
+                  [documentFamily]: {
+                    ...current[documentFamily],
+                    title: event.target.value,
+                  },
+                }))
+              }
+            />
+          </div>
+          {!documentSettings[documentFamily].locked && (
+            <div className="space-y-1.5">
+              <Label htmlFor="receipt-document-message">
+                Supporting message
+              </Label>
+              <Input
+                id="receipt-document-message"
+                value={
+                  documentFamily === "payment_receipt" &&
+                  fiscalProfile?.fiscal_billing_mode === "vat_external"
+                    ? documentSettings.payment_receipt.external_vat_message ||
+                      ""
+                    : documentSettings[documentFamily].message || ""
+                }
+                placeholder="Optional"
+                onChange={(event) =>
+                  setDocumentSettings((current) => ({
+                    ...current,
+                    [documentFamily]: {
+                      ...current[documentFamily],
+                      ...(documentFamily === "payment_receipt" &&
+                      fiscalProfile?.fiscal_billing_mode === "vat_external"
+                        ? { external_vat_message: event.target.value }
+                        : { message: event.target.value }),
+                    },
+                  }))
+                }
+              />
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(420px,1fr)_320px] xl:items-start">
         <div className="flex min-w-0 flex-col gap-4">
@@ -458,9 +637,9 @@ export function ReceiptDesigner({
               </div>
               <div className="flex max-h-[430px] items-start justify-center overflow-y-auto p-2 pt-8 xl:max-h-[520px]">
                 <ThermalPreview
-                  blocks={blocks}
+                  blocks={previewBlocks}
                   globalConfig={globalConfig}
-                  mode={previewMode}
+                  mode={documentFamily === "pre_bill" ? "bill" : "receipt"}
                   selectedId={selectedBlockId}
                   onSelect={handleSelectBlock}
                   context={{
@@ -480,6 +659,38 @@ export function ReceiptDesigner({
                     category: "GARDEN",
                     customer_name: "John Doe",
                     customer_phone: "987-654-3210",
+                    customer_pan: "987654321",
+                    fiscal_registration_type:
+                      fiscalProfile?.registration_type ?? "unverified",
+                    fiscal_billing_mode:
+                      fiscalProfile?.fiscal_billing_mode ?? "legacy_flexible",
+                    document_title: documentSettings[documentFamily].title,
+                    document_message:
+                      documentFamily === "payment_receipt" &&
+                      fiscalProfile?.fiscal_billing_mode === "vat_external"
+                        ? documentSettings.payment_receipt.external_vat_message
+                        : documentSettings[documentFamily].message,
+                    document_family: documentFamily,
+                    subtotal: "NPR 1,280.00",
+                    tax: "NPR 166.40",
+                    discount: "NPR 0.00",
+                    total: "NPR 1,446.40",
+                    amount_in_words:
+                      "Nepalese Rupees One Thousand Four Hundred Forty Six and Forty Paisa Only",
+                    total_paid: "NPR 1,446.40",
+                    balance_due: "NPR 0.00",
+                    settlement: "Paid in full",
+                    items: [
+                      {
+                        name: "Margherita Pizza",
+                        qty: "2",
+                        rate: "640.00",
+                        amount: "1,280.00",
+                        fiscal_code: "ITEM-001",
+                        unit: "plate",
+                      },
+                    ],
+                    payments: [{ method: "Cash", amount: "NPR 1,446.40" }],
                   }}
                 />
               </div>
@@ -562,6 +773,7 @@ export function ReceiptDesigner({
                   block={selectedBlock}
                   onUpdate={(u) => handleUpdateBlock(selectedBlock.id, u)}
                   onDelete={() => handleDeleteBlock(selectedBlock.id)}
+                  protectedBlock={isSelectedBlockProtected}
                 />
               ) : null}
             </div>
@@ -639,6 +851,11 @@ export function ReceiptDesigner({
         }}
         onCancel={closeMobileEditor}
         onSave={saveMobileEditor}
+        protectedBlock={Boolean(
+          isFiscalDocument &&
+          mobileDraftBlock &&
+          FISCAL_REQUIRED_BLOCKS.has(mobileDraftBlock.type),
+        )}
       />
     </div>
   );

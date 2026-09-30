@@ -1,45 +1,24 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
+import { ChevronRight } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import {
   formatDayCloseBusinessDate,
-  formatDayCloseCurrency,
-  formatDayCloseCoveredRange,
   formatDayCloseCloseName,
+  formatDayCloseCurrency,
 } from "@/lib/day-close-format";
 import type { DayCloseListItem } from "@/types/day-close";
-import { Calendar, ChevronRight } from "lucide-react";
 
-function statusBadge(status: string) {
-  const s = String(status || "").toLowerCase();
-  if (s === "confirmed") {
-    return (
-      <span className="inline-flex h-7 items-center rounded-full bg-primary/10 px-3 text-[10px] font-medium uppercase text-primary">
-        Confirmed
-      </span>
-    );
-  }
-  if (s === "pending") {
-    return (
-      <span className="inline-flex h-7 items-center rounded-full bg-orange-500/10 px-3 text-[10px] font-medium uppercase text-orange-700 dark:text-orange-500">
-        Pending
-      </span>
-    );
-  }
-  if (s === "reopened") {
-    return (
-      <span className="inline-flex h-7 items-center rounded-full bg-amber-500/10 px-3 text-[10px] font-medium uppercase text-amber-700 dark:text-amber-500">
-        Reopened
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex h-7 items-center rounded-full bg-emerald-500/10 px-3 text-[10px] font-medium uppercase text-emerald-600">
-      Open
-    </span>
-  );
+function cashDifference(value?: number) {
+  if (value == null) return "Unavailable";
+  if (Math.abs(value) <= 0.005) return "Matched";
+  return `${formatDayCloseCurrency(Math.abs(value))} ${value < 0 ? "short" : "over"}`;
+}
+
+function statusLabel(status: string) {
+  const normalized = String(status || "open").toLowerCase();
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 type DayCloseHistoryListCardProps = {
@@ -56,93 +35,58 @@ export function DayCloseHistoryListCard({
   onClose,
 }: DayCloseHistoryListCardProps) {
   const isOpen = String(item.status || "").toLowerCase() === "open";
-  const closeName = formatDayCloseCloseName(item.business_line);
-  const coveredRange = formatDayCloseCoveredRange(
-    item.period_start_at,
-    item.period_end_at,
-    timezone ?? item.timezone,
-  );
-  const businessDateLabel = formatDayCloseBusinessDate(
-    item.business_date,
-    timezone ?? item.timezone,
-  );
-  const subtitle = coveredRange
-    ? `${coveredRange} • Close #${item.id}`
-    : `${businessDateLabel !== "—" ? `Business date ${businessDateLabel}` : closeName} • Close #${item.id}`;
 
   return (
-    <Card
-      className="bg-card border-border shadow-sm hover:border-orange-500/30 hover:shadow-md transition-all cursor-pointer overflow-hidden rounded-2xl"
-      onClick={onOpen}
-    >
-      <CardContent className="p-0">
-        <div className="flex flex-col lg:flex-row lg:items-stretch">
-          <div className="flex items-center gap-4 p-5 lg:p-6 flex-1 min-w-0">
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shrink-0">
-              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm sm:text-base font-semibold text-foreground leading-snug break-words">
-                {closeName} #{item.id}
-              </h3>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                {subtitle}
-              </p>
-            </div>
-          </div>
-
-          <div
-            className="border-t lg:border-t-0 lg:border-l border-border/50 bg-muted/20 px-5 py-4 lg:px-6 lg:min-w-[min(100%,420px)] flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="grid grid-cols-3 gap-3 sm:gap-5 flex-1 min-w-0">
-              <div className="min-w-0">
-                <p className="dc-metric-label">Net</p>
-                <p className="text-sm dc-amount truncate mt-0.5">
-                  {formatDayCloseCurrency(item.net_sales)}
-                </p>
-              </div>
-              <div className="min-w-0">
-                <p className="dc-metric-label">Expected</p>
-                <p className="text-sm dc-amount truncate mt-0.5">
-                  {formatDayCloseCurrency(item.expected_cash)}
-                </p>
-              </div>
-              <div className="min-w-0">
-                <p className="dc-metric-label">Actual</p>
-                <p className="text-sm dc-amount truncate mt-0.5">
-                  {formatDayCloseCurrency(item.actual_cash)}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-              {statusBadge(item.status)}
-              {isOpen && onClose ? (
-                <Button
-                  variant="outline"
-                  className="h-11 rounded-xl px-4 font-medium shadow-none"
-                  onClick={onClose}
-                >
-                  Close
-                </Button>
-              ) : (
-                <button
-                  type="button"
-                  className={cn(
-                    "w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-sm",
-                    "hover:bg-orange-600 transition-colors",
-                  )}
-                  onClick={onOpen}
-                  aria-label="View day close"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
+    <div className="border-b border-border first:border-t">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="grid min-h-[92px] w-full gap-3 py-4 text-left transition-colors hover:bg-muted/40 sm:grid-cols-[minmax(190px,1fr)_minmax(130px,.65fr)_minmax(150px,.75fr)_auto] sm:items-center sm:px-3"
+      >
+        <div className="min-w-0">
+          <p className="font-semibold">
+            {formatDayCloseBusinessDate(
+              item.business_date,
+              timezone ?? item.timezone,
+            )}
+          </p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {formatDayCloseCloseName(item.business_line)}
+          </p>
         </div>
-      </CardContent>
-    </Card>
+        <div>
+          <p className="text-xs text-muted-foreground">Sales</p>
+          <p className="mt-0.5 font-medium tabular-nums">
+            {formatDayCloseCurrency(item.net_sales)}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Cash difference</p>
+          <p className="mt-0.5 font-medium tabular-nums">
+            {cashDifference(item.cash_discrepancy)}
+          </p>
+        </div>
+        <div className="flex items-center justify-between gap-3 sm:justify-end">
+          <div className="text-right">
+            <p className="text-sm font-medium">{statusLabel(item.status)}</p>
+            {item.confirmed_at ? (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Closed {new Date(item.confirmed_at).toLocaleString()}
+              </p>
+            ) : null}
+          </div>
+          <ChevronRight className="h-5 w-5 text-muted-foreground" />
+        </div>
+      </button>
+      {isOpen && onClose ? (
+        <Button
+          variant="outline"
+          className="mb-3 h-11 w-full sm:ml-auto sm:w-auto"
+          onClick={onClose}
+        >
+          Close this day
+        </Button>
+      ) : null}
+    </div>
   );
 }

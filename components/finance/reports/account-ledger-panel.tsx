@@ -259,6 +259,11 @@ export interface AccountLedgerPanelProps {
   presentation?: "operational" | "accounting";
   /** Only passed by the Chart of Accounts screen, which owns editing. */
   onEdit?: () => void;
+  initialDateFrom?: string;
+  initialDateTo?: string;
+  businessLine?: string;
+  periodStartAt?: string;
+  periodEndAt?: string;
 }
 
 /**
@@ -272,10 +277,19 @@ export function AccountLedgerPanel({
   onOpenChange,
   presentation = "accounting",
   onEdit,
+  initialDateFrom = "",
+  initialDateTo = "",
+  businessLine,
+  periodStartAt,
+  periodEndAt,
 }: AccountLedgerPanelProps) {
   const user = useAuth((state) => state.user);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(initialDateFrom);
+  const [dateTo, setDateTo] = useState(initialDateTo);
+  const [exactPeriodStartAt, setExactPeriodStartAt] = useState(
+    periodStartAt ?? "",
+  );
+  const [exactPeriodEndAt, setExactPeriodEndAt] = useState(periodEndAt ?? "");
   const [partyType, setPartyType] = useState("all");
   const [partyId, setPartyId] = useState("");
   const [sourceType, setSourceType] = useState("");
@@ -301,8 +315,10 @@ export function AccountLedgerPanel({
 
   useEffect(() => {
     // Reset local state whenever a different account is opened.
-    setDateFrom("");
-    setDateTo("");
+    setDateFrom(initialDateFrom);
+    setDateTo(initialDateTo);
+    setExactPeriodStartAt(periodStartAt ?? "");
+    setExactPeriodEndAt(periodEndAt ?? "");
     setPartyType("all");
     setPartyId("");
     setSourceType("");
@@ -314,7 +330,7 @@ export function AccountLedgerPanel({
     setSourceDetail(null);
     setSourceLoading(false);
     setSourceError(null);
-  }, [headId]);
+  }, [headId, initialDateFrom, initialDateTo, periodEndAt, periodStartAt]);
 
   const openLedgerLine = (line: FinanceReportingLedgerLine) => {
     setSelectedSalesDocument(null);
@@ -392,13 +408,26 @@ export function AccountLedgerPanel({
     () => ({
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
+      period_start_at: exactPeriodStartAt || undefined,
+      period_end_at: exactPeriodEndAt || undefined,
+      business_line: businessLine || undefined,
       party_type: partyType === "all" ? undefined : partyType,
       party_id: Number(partyId) > 0 ? Number(partyId) : undefined,
       source_type: sourceType.trim() || undefined,
       limit: PAGE_SIZE,
       offset,
     }),
-    [dateFrom, dateTo, offset, partyId, partyType, sourceType],
+    [
+      businessLine,
+      dateFrom,
+      dateTo,
+      offset,
+      partyId,
+      partyType,
+      exactPeriodEndAt,
+      exactPeriodStartAt,
+      sourceType,
+    ],
   );
 
   useEffect(() => {
@@ -881,7 +910,11 @@ export function AccountLedgerPanel({
                       <Input
                         type="date"
                         value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
+                        onChange={(e) => {
+                          setDateFrom(e.target.value);
+                          setExactPeriodStartAt("");
+                          setExactPeriodEndAt("");
+                        }}
                         className="h-8 w-36 text-xs"
                       />
                     </div>
@@ -892,7 +925,11 @@ export function AccountLedgerPanel({
                       <Input
                         type="date"
                         value={dateTo}
-                        onChange={(e) => setDateTo(e.target.value)}
+                        onChange={(e) => {
+                          setDateTo(e.target.value);
+                          setExactPeriodStartAt("");
+                          setExactPeriodEndAt("");
+                        }}
                         className="h-8 w-36 text-xs"
                       />
                     </div>
@@ -948,6 +985,8 @@ export function AccountLedgerPanel({
                         onClick={() => {
                           setDateFrom("");
                           setDateTo("");
+                          setExactPeriodStartAt("");
+                          setExactPeriodEndAt("");
                           setPartyType("all");
                           setPartyId("");
                           setSourceType("");
@@ -1002,7 +1041,11 @@ export function AccountLedgerPanel({
                         <Input
                           type="date"
                           value={dateFrom}
-                          onChange={(e) => setDateFrom(e.target.value)}
+                          onChange={(e) => {
+                            setDateFrom(e.target.value);
+                            setExactPeriodStartAt("");
+                            setExactPeriodEndAt("");
+                          }}
                           className="h-11 text-xs"
                         />
                       </div>
@@ -1013,7 +1056,11 @@ export function AccountLedgerPanel({
                         <Input
                           type="date"
                           value={dateTo}
-                          onChange={(e) => setDateTo(e.target.value)}
+                          onChange={(e) => {
+                            setDateTo(e.target.value);
+                            setExactPeriodStartAt("");
+                            setExactPeriodEndAt("");
+                          }}
                           className="h-11 text-xs"
                         />
                       </div>
@@ -1069,6 +1116,8 @@ export function AccountLedgerPanel({
                           onClick={() => {
                             setDateFrom("");
                             setDateTo("");
+                            setExactPeriodStartAt("");
+                            setExactPeriodEndAt("");
                             setPartyType("all");
                             setPartyId("");
                             setSourceType("");

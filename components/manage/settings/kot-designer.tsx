@@ -35,6 +35,7 @@ const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   line_spacing: 1.0,
   paper_size: "80mm",
   column_capacity: 48,
+  print_copies: 1,
 };
 
 const DEFAULT_KOT_BLOCKS: ReceiptBlock[] = [
@@ -42,10 +43,10 @@ const DEFAULT_KOT_BLOCKS: ReceiptBlock[] = [
     id: "k1",
     type: "text",
     config: {
-      text: "*** NEW ORDER ***",
+      text: "{{station_ticket_title}}",
       bold: true,
       align: "center",
-      font_size: 18,
+      font_size: 12,
     },
     isVisible: true,
     showOnBill: true,
@@ -65,9 +66,14 @@ const DEFAULT_KOT_BLOCKS: ReceiptBlock[] = [
     config: {
       show_kot_number: true,
       show_table: true,
-      show_station: true,
+      show_station: false,
+      show_kot_type: true,
+      show_order_id: true,
+      show_date: true,
+      show_time: true,
+      show_user: false,
       kot_label: "KOT",
-      table_label: "TABLE",
+      table_label: "Table",
     },
     isVisible: true,
     showOnBill: true,
@@ -86,26 +92,13 @@ const DEFAULT_KOT_BLOCKS: ReceiptBlock[] = [
     type: "items",
     config: {
       show_serial: false,
+      show_rate: false,
       show_amount: false,
-      item_label: "ITEM (MODIFIERS)",
+      show_cancelled_items: true,
+      item_label: "ITEM",
       qty_label: "QTY",
+      bold: true,
     },
-    isVisible: true,
-    showOnBill: true,
-    showOnReceipt: true,
-  },
-  {
-    id: "k6",
-    type: "divider",
-    config: {},
-    isVisible: true,
-    showOnBill: true,
-    showOnReceipt: true,
-  },
-  {
-    id: "k7",
-    type: "footer",
-    config: { message: "STATION: MAIN KITCHEN", align: "center", bold: true },
     isVisible: true,
     showOnBill: true,
     showOnReceipt: true,
@@ -159,6 +152,7 @@ export function KOTDesigner({
             column_capacity:
               potentialGlobal.column_capacity ||
               (potentialGlobal.paper_size === "58mm" ? 32 : 48),
+            print_copies: potentialGlobal.print_copies || 1,
           }
         : DEFAULT_GLOBAL_CONFIG;
       setGlobalConfig(nextGlobalConfig);
@@ -449,6 +443,24 @@ export function KOTDesigner({
                     restaurant_name: restaurant?.name,
                     address: restaurant?.address,
                     phone: restaurant?.phone,
+                    kot_no: "10-1",
+                    station: "KITCHEN",
+                    station_ticket_title: "INITIAL TICKET",
+                    type: "Initial Ticket",
+                    table_name: "M1",
+                    order_id: "10",
+                    date: "03/02/2026",
+                    time: "15:30",
+                    user: "BHAVANA THAPALIYA",
+                    items: [
+                      {
+                        name: "CHICKEN MOMO",
+                        qty: "2",
+                        modifiers: ["Extra spicy"],
+                        notes: "No onion",
+                      },
+                      { name: "COKE", qty: "1" },
+                    ],
                   }}
                 />
               </div>

@@ -50,6 +50,7 @@ const routeTitles: Array<[string, string, MobileNavigationLevel?, string?]> = [
   ["/finance/expenses", "Expenses", "secondary", "/finance"],
   ["/finance/sales", "Sales", "secondary", "/finance"],
   ["/cash-drawers", "Cash drawers", "secondary", "/manage"],
+  ["/day-close/finance-review", "Finance review", "detail", "/day-close"],
   ["/day-close", "Day close", "secondary", "/manage"],
   ["/finance", "Finance", "secondary", "/manage"],
   ["/inventory/purchases", "Purchases", "secondary", "/inventory"],

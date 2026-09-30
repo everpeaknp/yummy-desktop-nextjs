@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import apiClient from '@/lib/api-client';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import apiClient from "@/lib/api-client";
 
 export interface Restaurant {
   id: number;
@@ -9,8 +9,19 @@ export interface Restaurant {
   phone: string;
   timezone?: string;
   business_day_start_time?: string;
-  payment_qrs?: Array<{ config_id?: string; name: string; payload: string; bank_id?: number | null }>;
-  payment_cards?: Array<{ config_id?: string; name: string; identifier?: string | null; bank_id?: number | null }>;
+  current_business_date?: string | null;
+  payment_qrs?: Array<{
+    config_id?: string;
+    name: string;
+    payload: string;
+    bank_id?: number | null;
+  }>;
+  payment_cards?: Array<{
+    config_id?: string;
+    name: string;
+    identifier?: string | null;
+    bank_id?: number | null;
+  }>;
   profile_picture: string | null;
   cover_photo: string | null;
   currency: string;
@@ -35,7 +46,10 @@ export interface Restaurant {
     current_period_end?: string | null;
   } | null;
   entitlements?: Record<string, boolean | number | string | null>;
-  usage?: Record<string, { used: number; limit: number | null; remaining: number | null }>;
+  usage?: Record<
+    string,
+    { used: number; limit: number | null; remaining: number | null }
+  >;
   addons?: Array<Record<string, unknown>>;
 }
 
@@ -56,7 +70,7 @@ export const useRestaurant = create<RestaurantState>()(
       restaurant: null,
       loading: false,
       error: null,
-      
+
       setRestaurant: (data) => set({ restaurant: data }),
       clearRestaurant: () => set({ restaurant: null, error: null }),
 
@@ -68,11 +82,15 @@ export const useRestaurant = create<RestaurantState>()(
         restaurantFetchPromise = (async () => {
           set({ loading: true, ...(force ? { error: null } : {}) });
           try {
-            const response = await apiClient.get('/restaurants/by-user');
-            if (response.data.status === 'success') {
+            const response = await apiClient.get("/restaurants/by-user");
+            if (response.data.status === "success") {
               const nextData = response.data.data;
               console.log("[useRestaurant] Full Data received:", nextData);
-              console.log("[useRestaurant] Data flags check:", { id: nextData.id, hotel: nextData.hotel_enabled, rest: nextData.restaurant_enabled });
+              console.log("[useRestaurant] Data flags check:", {
+                id: nextData.id,
+                hotel: nextData.hotel_enabled,
+                rest: nextData.restaurant_enabled,
+              });
               set({ restaurant: nextData, error: null });
             }
           } catch (err: any) {
@@ -82,8 +100,12 @@ export const useRestaurant = create<RestaurantState>()(
             if (status === 404 || status === 403) {
               set({ restaurant: null, error: null });
             } else {
-              console.error('Failed to fetch restaurant:', err);
-              set({ error: err.response?.data?.detail || 'Failed to fetch restaurant profile' });
+              console.error("Failed to fetch restaurant:", err);
+              set({
+                error:
+                  err.response?.data?.detail ||
+                  "Failed to fetch restaurant profile",
+              });
             }
           } finally {
             set({ loading: false });
@@ -98,10 +120,10 @@ export const useRestaurant = create<RestaurantState>()(
       },
     }),
     {
-      name: 'restaurant-storage',
-      partialize: (state) => ({ 
+      name: "restaurant-storage",
+      partialize: (state) => ({
         restaurant: state.restaurant,
       }),
-    }
-  )
+    },
+  ),
 );

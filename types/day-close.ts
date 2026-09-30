@@ -3,7 +3,8 @@
 /** `combined` is a close/cash-custody scope; source documents remain hotel or restaurant. */
 export type BusinessLine = "restaurant" | "hotel" | "combined";
 
-export type DayCloseStatus = "open" | "pending" | "confirmed" | "reopened" | string;
+export type DayCloseStatus =
+  "open" | "pending" | "confirmed" | "reopened" | string;
 
 export type DrawerSessionStatus =
   | "draft"
@@ -160,6 +161,7 @@ export interface DrawerExpectedBreakdown {
 export interface DrawerSession {
   id: number;
   configuration_id: number;
+  configuration_name?: string | null;
   restaurant_id: number;
   day_close_id?: number | null;
   business_line: BusinessLine | string;
@@ -316,9 +318,13 @@ export interface DayCloseFinancialSummary {
   source?: string;
   ledger_source?: string;
   ledger_complete?: boolean;
+  fallback_applied?: boolean;
+  warnings?: string[];
   gross_sales?: number;
   sales_total?: number;
   discount_total?: number;
+  tax_total?: number;
+  service_charge_total?: number;
   net_sales?: number;
   collections_total?: number;
   credit_sales?: number;
@@ -327,6 +333,17 @@ export interface DayCloseFinancialSummary {
   total_income?: number;
   refund_total?: number;
   expense_total?: number;
+  recognized_cogs?: number | null;
+  other_recognized_expenses?: number | null;
+  inventory_acquired?: number | null;
+  inventory_purchases_paid?: number | null;
+  supplier_payments?: number | null;
+  purchase_returns_total?: number | null;
+  purchase_return_refunds?: number | null;
+  purchase_return_credits?: number | null;
+  supplier_payables_at_close?: number | null;
+  account_movements_complete?: boolean;
+  account_movements?: DayCloseAccountMovement[];
   operating_profit?: number;
   period_receivables_change?: number;
   outstanding_receivables_at_close?: number;
@@ -334,16 +351,303 @@ export interface DayCloseFinancialSummary {
   expected_drawer_balance?: number;
 }
 
+export interface DayCloseAccountMovement {
+  head_id: number;
+  code: string;
+  name: string;
+  head_type: string;
+  normal_side: string;
+  opening_debit: number;
+  opening_credit: number;
+  period_debit: number;
+  period_credit: number;
+  closing_debit: number;
+  closing_credit: number;
+}
+
+export type DayCloseEvidenceAvailability =
+  | "AVAILABLE"
+  | "PARTIAL"
+  | "UNAVAILABLE"
+  | "NOT_APPLICABLE"
+  | "DEFERRED_ATTRIBUTION";
+
+export interface DayCloseEvidenceMeta {
+  availability: DayCloseEvidenceAvailability;
+  source: string;
+  fallback_applied: boolean;
+  warnings: string[];
+}
+
+export interface DayCloseEvidenceOrderRow {
+  order_id: number;
+  order_number?: number | null;
+  invoice_number?: string | null;
+  status: string;
+  included_at: string;
+  created_at: string;
+  completed_at?: string | null;
+  cancelled_at?: string | null;
+  service_type: string;
+  table_id?: number | null;
+  table_name_snapshot?: string | null;
+  customer_id?: number | null;
+  customer_name_snapshot?: string | null;
+  order_creator_id?: number | null;
+  order_creator_name_snapshot?: string | null;
+  order_completer_id?: number | null;
+  order_completer_name_snapshot?: string | null;
+  subtotal_amount: number;
+  discount_amount: number;
+  tax_amount: number;
+  service_charge_amount: number;
+  grand_total_amount: number;
+  credit_amount: number;
+  payment_status: string;
+}
+
+export interface DayCloseEvidenceItemRow {
+  order_id: number;
+  order_item_id: number;
+  menu_item_id?: number | null;
+  item_name_snapshot: string;
+  category_id?: number | null;
+  category_name_snapshot: string;
+  quantity: number;
+  rejected_quantity: number;
+  voided_quantity: number;
+  eligible_quantity: number;
+  unit_price_amount: number;
+  item_subtotal_amount: number;
+  notes?: string | null;
+  modifiers: Array<{
+    modifier_id?: number | null;
+    name_snapshot: string;
+    unit_adjustment_amount: number;
+  }>;
+}
+
+export interface DayCloseEvidenceRankedItem {
+  menu_item_id?: number | null;
+  item_name_snapshot: string;
+  quantity: number;
+  item_subtotal_amount: number;
+  order_count: number;
+}
+
+export interface DayCloseEvidenceCategoryRow {
+  category_id?: number | null;
+  category_name_snapshot: string;
+  quantity: number;
+  item_subtotal_amount: number;
+  order_count: number;
+}
+
+export interface DayCloseEvidenceTableRow {
+  table_id?: number | null;
+  table_name_snapshot?: string | null;
+  service_type: string;
+  order_count: number;
+  attributed_order_amount: number;
+}
+
+export interface DayCloseEvidenceHourlyRow {
+  hour_start_local: string;
+  hour_label: string;
+  order_count: number;
+  attributed_order_amount: number;
+}
+
+export interface DayCloseEvidenceCustomerRow {
+  customer_id: number;
+  display_name_snapshot: string;
+  order_count: number;
+  attributed_order_amount: number;
+  credit_sales_amount: number;
+  credit_collections_amount?: number | null;
+}
+
+export interface DayCloseEvidenceUserRow {
+  user_id: number;
+  display_name_snapshot: string;
+  order_count: number;
+  attributed_order_amount: number;
+}
+
+export interface DayCloseEvidencePurchaseRow {
+  purchase_id: number;
+  supplier_id: number;
+  supplier_name_snapshot: string;
+  posted_at: string;
+  reference?: string | null;
+  purchase_amount: number;
+  payment_status?: string | null;
+}
+
+export interface DayCloseEvidencePurchasePaymentRow {
+  finance_event_id: number;
+  source_id?: number | null;
+  supplier_id?: number | null;
+  supplier_name_snapshot?: string | null;
+  paid_at: string;
+  payment_amount: number;
+  payment_method?: string | null;
+}
+
+export interface DayCloseEvidenceSupplierRow {
+  supplier_id: number;
+  supplier_name_snapshot: string;
+  purchase_count: number;
+  purchase_amount: number;
+  payment_amount: number;
+}
+
+export interface DayCloseEvidencePurchaseReturnRow {
+  purchase_return_id: number;
+  purchase_id?: number | null;
+  supplier_id: number;
+  supplier_name_snapshot: string;
+  posted_at: string;
+  amount: number;
+  settlement_type: string;
+}
+
+export interface DayCloseEvidenceDrawerRow {
+  session_id?: number | null;
+  previous_session_id?: number | null;
+  configuration_id: number;
+  station?: string | null;
+  drawer_key?: string | null;
+  name_snapshot: string;
+  cashier_id?: number | null;
+  status: string;
+  expected_closing_cash?: number | null;
+  counted_closing_cash?: number | null;
+  cash_variance?: number | null;
+  retained_float?: number | null;
+  boundary_inferred: boolean;
+  is_current_session: boolean;
+}
+
+export interface DayCloseEvidenceDrawers {
+  meta: DayCloseEvidenceMeta;
+  enabled: boolean;
+  opening_required: boolean;
+  opening_cash?: number | null;
+  expected_cash?: number | null;
+  counted_cash?: number | null;
+  cash_variance?: number | null;
+  boundary_inferred: boolean;
+  rows: DayCloseEvidenceDrawerRow[];
+}
+
+export interface DayCloseEvidenceSnapshot {
+  schema_version: "day-close.evidence.v1" | string;
+  frozen: boolean;
+  frozen_at?: string | null;
+  period: {
+    restaurant_id: number;
+    business_line?: string | null;
+    period_start_at: string;
+    period_end_at: string;
+  };
+  provenance: Record<string, string>;
+  financial: DayCloseFinancialSummary & {
+    source: string;
+    ledger_source: string;
+    ledger_complete: boolean;
+    fallback_applied: boolean;
+    warnings: string[];
+  };
+  operational: {
+    contract_version: "canonical-operational.v1" | string;
+    generated_at: string;
+    orders: {
+      meta: DayCloseEvidenceMeta;
+      inclusion_rule: string;
+      readiness_rule: string;
+      summary: {
+        orders_in_period: number;
+        completed_orders: number;
+        cancelled_orders: number;
+        open_blocking_orders_at_period_end: number;
+      };
+      rows: DayCloseEvidenceOrderRow[];
+      blocking_order_ids: number[];
+    };
+    items: {
+      meta: DayCloseEvidenceMeta;
+      rows: DayCloseEvidenceItemRow[];
+      most_sold_items: DayCloseEvidenceRankedItem[];
+      highest_item_subtotals: DayCloseEvidenceRankedItem[];
+    };
+    categories: {
+      meta: DayCloseEvidenceMeta;
+      rows: DayCloseEvidenceCategoryRow[];
+    };
+    tables: {
+      meta: DayCloseEvidenceMeta;
+      ownership_rule: string;
+      rows: DayCloseEvidenceTableRow[];
+    };
+    hourly: {
+      meta: DayCloseEvidenceMeta;
+      timezone: string;
+      timestamp_field: string;
+      rows: DayCloseEvidenceHourlyRow[];
+    };
+    customers: {
+      meta: DayCloseEvidenceMeta;
+      rows: DayCloseEvidenceCustomerRow[];
+      unattributed_order_count: number;
+      unattributed_order_amount: number;
+      highest_sales_customers: DayCloseEvidenceCustomerRow[];
+      most_orders_customers: DayCloseEvidenceCustomerRow[];
+    };
+    staff: {
+      meta: DayCloseEvidenceMeta;
+      order_creators: DayCloseEvidenceUserRow[];
+      order_completers: DayCloseEvidenceUserRow[];
+      servers: DayCloseEvidenceUserRow[];
+    };
+    cashiers: {
+      meta: DayCloseEvidenceMeta;
+      rows: DayCloseEvidenceUserRow[];
+    };
+    purchasing: {
+      purchases_meta: DayCloseEvidenceMeta;
+      purchase_payments_meta: DayCloseEvidenceMeta;
+      supplier_payable_meta: DayCloseEvidenceMeta;
+      suppliers_meta: DayCloseEvidenceMeta;
+      purchase_returns_meta: DayCloseEvidenceMeta;
+      purchases: DayCloseEvidencePurchaseRow[];
+      purchase_payments: DayCloseEvidencePurchasePaymentRow[];
+      suppliers: DayCloseEvidenceSupplierRow[];
+      purchase_returns: DayCloseEvidencePurchaseReturnRow[];
+      supplier_payable_balance_at_end?: number | null;
+    };
+    warnings: string[];
+  };
+  drawers?: DayCloseEvidenceDrawers | null;
+  availability: Record<string, DayCloseEvidenceAvailability>;
+  warnings: string[];
+}
+
 export interface DayCloseSnapshotData {
-  period_start_at?: string;
-  period_end_at?: string;
+  period_start_at?: string | null;
+  period_end_at?: string | null;
   business_date?: string;
   business_line?: BusinessLine | string;
   financial_summary?: DayCloseFinancialSummary;
+  /** Missing for older confirmed closes; clients must not reconstruct it. */
+  evidence?: DayCloseEvidenceSnapshot | null;
   opening_balance?: number;
   hotel_revenue_split?: HotelRevenueSplit;
   payment_distribution?: Partial<
-    Record<"cash" | "card" | "digital" | "fonepay" | "credit", PaymentDistributionBucket | number>
+    Record<
+      "cash" | "card" | "digital" | "fonepay" | "credit",
+      PaymentDistributionBucket | number
+    >
   >;
   payment_instrument_distribution?: PaymentInstrumentRow[];
   card_sales_by_instrument?: Record<string, number>;
@@ -390,8 +694,8 @@ export interface DayCloseDetail {
   restaurant_id: number;
   business_date?: string;
   business_line?: BusinessLine | string;
-  period_start_at?: string;
-  period_end_at?: string;
+  period_start_at?: string | null;
+  period_end_at?: string | null;
   status: DayCloseStatus;
   total_orders?: number;
   completed_orders?: number;
@@ -417,9 +721,12 @@ export interface DayCloseDetail {
   refund_total?: number;
   expected_cash?: number;
   actual_cash?: number;
+  counted_cash?: number;
   cash_discrepancy?: number;
+  cash_count_source?: "drawer_evidence" | "manual_count" | "not_counted";
   net_cash_position?: number;
   confirmed_at?: string;
+  confirmed_by_id?: number | null;
   confirmation_notes?: string | null;
   timezone?: string;
   accounting_review?: DayCloseAccountingReviewSummary | null;
@@ -436,8 +743,13 @@ export interface DayCloseListItem {
   net_sales?: number;
   expected_cash?: number;
   actual_cash?: number;
+  counted_cash?: number;
+  cash_discrepancy?: number;
+  cash_count_source?: "drawer_evidence" | "manual_count" | "not_counted";
   total_orders?: number;
   timezone?: string;
+  confirmed_at?: string;
+  confirmed_by_id?: number | null;
 }
 
 /** Confirmed close window from GET /day-closes/sessions (analytics/history filters). */
@@ -473,10 +785,32 @@ export interface DayCloseValidateResult {
   period_end_at?: string;
   drawer_ready?: boolean;
   drawer_blockers?: string[];
+  issues?: Array<{
+    code: string;
+    severity: "blocker" | "warning" | "info";
+    message: string;
+    count?: number | null;
+    details?: Record<string, unknown> | null;
+  }>;
+  drawer_readiness?: Array<{
+    configuration_id?: number | null;
+    name: string;
+    state:
+      | "ready"
+      | "needs_open"
+      | "needs_count"
+      | "needs_recount"
+      | "needs_variance_approval"
+      | "needs_settlement";
+    message: string;
+    session_id?: number | null;
+  }>;
 }
 
 /** Merge generate-snapshot summary root with nested `detailed` breakdown. */
-function mergeSnapshotPayload(raw: Record<string, unknown>): Record<string, unknown> {
+function mergeSnapshotPayload(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
   const detailed = asRecord(raw.detailed);
   if (!detailed) return raw;
   const { detailed: _omit, ...summary } = raw;
@@ -510,7 +844,7 @@ function readAmount(value: unknown): number | undefined {
 }
 
 export function parsePaymentDistributionBucket(
-  value: unknown
+  value: unknown,
 ): PaymentDistributionBucket | undefined {
   if (value == null) return undefined;
   const amount = readAmount(value);
@@ -523,7 +857,9 @@ export function parsePaymentDistributionBucket(
   return { amount, count };
 }
 
-export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotData | null {
+export function parseDayCloseSnapshotData(
+  payload: unknown,
+): DayCloseSnapshotData | null {
   const root = asRecord(payload);
   if (!root) return null;
 
@@ -531,6 +867,14 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
   const raw = asRecord(nested);
   if (!raw) return null;
   const data = mergeSnapshotPayload(raw);
+  const evidenceRaw = asRecord(data.evidence);
+  const evidence =
+    evidenceRaw?.schema_version === "day-close.evidence.v1" &&
+    asRecord(evidenceRaw.period) &&
+    asRecord(evidenceRaw.financial) &&
+    asRecord(evidenceRaw.operational)
+      ? (evidenceRaw as unknown as DayCloseEvidenceSnapshot)
+      : undefined;
   const financialRaw = asRecord(data.financial_summary);
   const financial_summary: DayCloseFinancialSummary | undefined = financialRaw
     ? {
@@ -538,6 +882,8 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
         gross_sales: readAmount(financialRaw.gross_sales),
         sales_total: readAmount(financialRaw.sales_total),
         discount_total: readAmount(financialRaw.discount_total),
+        tax_total: readAmount(financialRaw.tax_total),
+        service_charge_total: readAmount(financialRaw.service_charge_total),
         net_sales: readAmount(financialRaw.net_sales),
         collections_total: readAmount(financialRaw.collections_total),
         credit_sales: readAmount(financialRaw.credit_sales),
@@ -546,22 +892,55 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
         total_income: readAmount(financialRaw.total_income),
         refund_total: readAmount(financialRaw.refund_total),
         expense_total: readAmount(financialRaw.expense_total),
+        recognized_cogs: readAmount(financialRaw.recognized_cogs),
+        other_recognized_expenses: readAmount(
+          financialRaw.other_recognized_expenses,
+        ),
+        inventory_acquired: readAmount(financialRaw.inventory_acquired),
+        inventory_purchases_paid: readAmount(
+          financialRaw.inventory_purchases_paid,
+        ),
+        supplier_payments: readAmount(financialRaw.supplier_payments),
+        purchase_returns_total: readAmount(financialRaw.purchase_returns_total),
+        purchase_return_refunds: readAmount(
+          financialRaw.purchase_return_refunds,
+        ),
+        purchase_return_credits: readAmount(
+          financialRaw.purchase_return_credits,
+        ),
+        supplier_payables_at_close: readAmount(
+          financialRaw.supplier_payables_at_close,
+        ),
         operating_profit: readAmount(financialRaw.operating_profit),
-        period_receivables_change: readAmount(financialRaw.period_receivables_change),
-        outstanding_receivables_at_close: readAmount(financialRaw.outstanding_receivables_at_close),
+        period_receivables_change: readAmount(
+          financialRaw.period_receivables_change,
+        ),
+        outstanding_receivables_at_close: readAmount(
+          financialRaw.outstanding_receivables_at_close,
+        ),
         opening_drawer_balance: readAmount(financialRaw.opening_drawer_balance),
-        expected_drawer_balance: readAmount(financialRaw.expected_drawer_balance),
+        expected_drawer_balance: readAmount(
+          financialRaw.expected_drawer_balance,
+        ),
       }
     : undefined;
 
   const payment_distribution: DayCloseSnapshotData["payment_distribution"] = {};
   for (const key of ["cash", "card", "digital", "fonepay", "credit"] as const) {
-    const bucket = parsePaymentDistributionBucket(data[key] ?? asRecord(data.payment_distribution)?.[key]);
+    const bucket = parsePaymentDistributionBucket(
+      data[key] ?? asRecord(data.payment_distribution)?.[key],
+    );
     if (bucket) payment_distribution[key] = bucket;
   }
   const distObj = asRecord(data.payment_distribution);
   if (distObj) {
-    for (const key of ["cash", "card", "digital", "fonepay", "credit"] as const) {
+    for (const key of [
+      "cash",
+      "card",
+      "digital",
+      "fonepay",
+      "credit",
+    ] as const) {
       const bucket = parsePaymentDistributionBucket(distObj[key]);
       if (bucket) payment_distribution[key] = bucket;
     }
@@ -591,9 +970,13 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
   if (creditRaw) {
     credit_settlement = {
       customers_count:
-        typeof creditRaw.customers_count === "number" ? creditRaw.customers_count : undefined,
+        typeof creditRaw.customers_count === "number"
+          ? creditRaw.customers_count
+          : undefined,
       orders_count:
-        typeof creditRaw.orders_count === "number" ? creditRaw.orders_count : undefined,
+        typeof creditRaw.orders_count === "number"
+          ? creditRaw.orders_count
+          : undefined,
       amount: readAmount(creditRaw.amount),
       orders: Array.isArray(creditRaw.orders)
         ? (creditRaw.orders as CreditSettlementOrder[])
@@ -618,12 +1001,19 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
             ? receivablesRaw.credit_orders_count
             : undefined,
         credit_collections: readAmount(receivablesRaw.credit_collections),
-        cash_credit_collections: readAmount(receivablesRaw.cash_credit_collections),
-        outstanding_receivables: readAmount(receivablesRaw.outstanding_receivables),
+        cash_credit_collections: readAmount(
+          receivablesRaw.cash_credit_collections,
+        ),
+        outstanding_receivables: readAmount(
+          receivablesRaw.outstanding_receivables,
+        ),
         credit_collections_by_method:
           receivablesRaw.credit_collections_by_method &&
           typeof receivablesRaw.credit_collections_by_method === "object"
-            ? (receivablesRaw.credit_collections_by_method as Record<string, unknown>)
+            ? (receivablesRaw.credit_collections_by_method as Record<
+                string,
+                unknown
+              >)
             : undefined,
       }
     : undefined;
@@ -631,25 +1021,35 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
   const refundsRaw = asRecord(data.refunds);
   const refunds: DayCloseRefundsSnapshot | undefined = refundsRaw
     ? {
-        count: typeof refundsRaw.count === "number" ? refundsRaw.count : undefined,
+        count:
+          typeof refundsRaw.count === "number" ? refundsRaw.count : undefined,
         total: readAmount(refundsRaw.total),
         cash_refunds: readAmount(refundsRaw.cash_refunds),
         card_refunds: readAmount(refundsRaw.card_refunds),
         digital_refunds: readAmount(refundsRaw.digital_refunds),
         fonepay_refunds: readAmount(refundsRaw.fonepay_refunds),
-        entries: Array.isArray(refundsRaw.entries) ? refundsRaw.entries : undefined,
+        entries: Array.isArray(refundsRaw.entries)
+          ? refundsRaw.entries
+          : undefined,
       }
     : undefined;
 
   return {
     ...data,
-    period_start_at: data.period_start_at != null ? String(data.period_start_at) : undefined,
-    period_end_at: data.period_end_at != null ? String(data.period_end_at) : undefined,
-    business_date: data.business_date != null ? String(data.business_date) : undefined,
-    business_line: data.business_line != null ? String(data.business_line) : undefined,
+    period_start_at:
+      data.period_start_at != null ? String(data.period_start_at) : undefined,
+    period_end_at:
+      data.period_end_at != null ? String(data.period_end_at) : undefined,
+    business_date:
+      data.business_date != null ? String(data.business_date) : undefined,
+    business_line:
+      data.business_line != null ? String(data.business_line) : undefined,
     financial_summary,
+    evidence,
     opening_balance: readAmount(data.opening_balance),
-    payment_distribution: Object.keys(payment_distribution).length ? payment_distribution : undefined,
+    payment_distribution: Object.keys(payment_distribution).length
+      ? payment_distribution
+      : undefined,
     payment_instrument_distribution,
     credit_settlement,
     hotel_revenue_split,
@@ -657,7 +1057,9 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
     refunds,
     paid_purchase_total: readAmount(data.paid_purchase_total),
     paid_purchase_count:
-      typeof data.paid_purchase_count === "number" ? data.paid_purchase_count : undefined,
+      typeof data.paid_purchase_count === "number"
+        ? data.paid_purchase_count
+        : undefined,
     pending_purchase_total: readAmount(data.pending_purchase_total),
     pending_purchase_count:
       typeof data.pending_purchase_count === "number"
@@ -669,25 +1071,32 @@ export function parseDayCloseSnapshotData(payload: unknown): DayCloseSnapshotDat
         ? (data.expense_breakdown as Record<string, unknown>)
         : undefined,
     gross_sales: financial_summary?.gross_sales ?? readAmount(data.gross_sales),
-    discount_total: financial_summary?.discount_total ?? readAmount(data.discount_total),
+    discount_total:
+      financial_summary?.discount_total ?? readAmount(data.discount_total),
     net_sales: financial_summary?.net_sales ?? readAmount(data.net_sales),
-    expense_total: financial_summary?.expense_total ?? readAmount(data.expense_total),
-    total_income: financial_summary?.total_income ?? readAmount(data.total_income),
+    expense_total:
+      financial_summary?.expense_total ?? readAmount(data.expense_total),
+    total_income:
+      financial_summary?.total_income ?? readAmount(data.total_income),
     expected_cash: readAmount(data.expected_cash),
     cash_collected: readAmount(data.cash_collected),
     manual_income_total:
-      financial_summary?.manual_income_total ?? readAmount(data.manual_income_total),
+      financial_summary?.manual_income_total ??
+      readAmount(data.manual_income_total),
     manual_cash_income: readAmount(data.manual_cash_income),
   };
 }
 
-export function parseDayCloseSnapshotResponse(payload: unknown): DayCloseSnapshotResponse | null {
+export function parseDayCloseSnapshotResponse(
+  payload: unknown,
+): DayCloseSnapshotResponse | null {
   const root = asRecord(payload);
   if (!root) return null;
   const snapshot_data = parseDayCloseSnapshotData(root.snapshot_data ?? root);
   return {
     snapshot_data,
-    generated_at: root.generated_at != null ? String(root.generated_at) : undefined,
+    generated_at:
+      root.generated_at != null ? String(root.generated_at) : undefined,
   };
 }
 
@@ -723,6 +1132,7 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
     "refund_total",
     "expected_cash",
     "actual_cash",
+    "counted_cash",
     "cash_discrepancy",
     "net_cash_position",
   ] as const;
@@ -731,16 +1141,33 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
     id,
     restaurant_id,
     status: String(row.status ?? "open"),
-    business_date: row.business_date != null ? String(row.business_date) : undefined,
-    business_line: row.business_line != null ? String(row.business_line) : undefined,
-    period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
-    period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
-    confirmed_at: row.confirmed_at != null ? String(row.confirmed_at) : undefined,
+    business_date:
+      row.business_date != null ? String(row.business_date) : undefined,
+    business_line:
+      row.business_line != null ? String(row.business_line) : undefined,
+    period_start_at:
+      row.period_start_at != null ? String(row.period_start_at) : undefined,
+    period_end_at:
+      row.period_end_at != null ? String(row.period_end_at) : undefined,
+    confirmed_at:
+      row.confirmed_at != null ? String(row.confirmed_at) : undefined,
+    confirmed_by_id:
+      row.confirmed_by_id == null
+        ? null
+        : Number.isFinite(Number(row.confirmed_by_id))
+          ? Number(row.confirmed_by_id)
+          : null,
     confirmation_notes:
       row.confirmation_notes === null || row.confirmation_notes === undefined
         ? row.confirmation_notes
         : String(row.confirmation_notes),
     timezone: row.timezone != null ? String(row.timezone) : undefined,
+    cash_count_source:
+      row.cash_count_source === "drawer_evidence" ||
+      row.cash_count_source === "manual_count" ||
+      row.cash_count_source === "not_counted"
+        ? row.cash_count_source
+        : undefined,
     accounting_review:
       row.accounting_review && typeof row.accounting_review === "object"
         ? (row.accounting_review as DayCloseAccountingReviewSummary)
@@ -761,7 +1188,9 @@ export function parseDayCloseDetail(payload: unknown): DayCloseDetail | null {
   return detail;
 }
 
-export function parseDayCloseListItem(payload: unknown): DayCloseListItem | null {
+export function parseDayCloseListItem(
+  payload: unknown,
+): DayCloseListItem | null {
   const row = asRecord(payload);
   if (!row) return null;
   const id = Number(row.id);
@@ -770,14 +1199,39 @@ export function parseDayCloseListItem(payload: unknown): DayCloseListItem | null
   const item: DayCloseListItem = {
     id,
     status: String(row.status ?? "open"),
-    business_date: row.business_date != null ? String(row.business_date) : undefined,
-    business_line: row.business_line != null ? String(row.business_line) : undefined,
-    period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
-    period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    business_date:
+      row.business_date != null ? String(row.business_date) : undefined,
+    business_line:
+      row.business_line != null ? String(row.business_line) : undefined,
+    period_start_at:
+      row.period_start_at != null ? String(row.period_start_at) : undefined,
+    period_end_at:
+      row.period_end_at != null ? String(row.period_end_at) : undefined,
     timezone: row.timezone != null ? String(row.timezone) : undefined,
+    confirmed_at:
+      row.confirmed_at != null ? String(row.confirmed_at) : undefined,
+    confirmed_by_id:
+      row.confirmed_by_id == null
+        ? null
+        : Number.isFinite(Number(row.confirmed_by_id))
+          ? Number(row.confirmed_by_id)
+          : null,
+    cash_count_source:
+      row.cash_count_source === "drawer_evidence" ||
+      row.cash_count_source === "manual_count" ||
+      row.cash_count_source === "not_counted"
+        ? row.cash_count_source
+        : undefined,
   };
 
-  for (const key of ["net_sales", "expected_cash", "actual_cash", "total_orders"] as const) {
+  for (const key of [
+    "net_sales",
+    "expected_cash",
+    "actual_cash",
+    "counted_cash",
+    "cash_discrepancy",
+    "total_orders",
+  ] as const) {
     const value = readNumeric(row[key]);
     if (value !== undefined) {
       item[key] = value;
@@ -794,11 +1248,16 @@ export function parseDayCloseSession(payload: unknown): DayCloseSession | null {
   if (!Number.isFinite(id)) return null;
   return {
     id,
-    business_date: row.business_date != null ? String(row.business_date) : undefined,
-    business_line: row.business_line != null ? String(row.business_line) : undefined,
-    confirmed_at: row.confirmed_at != null ? String(row.confirmed_at) : undefined,
-    period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
-    period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    business_date:
+      row.business_date != null ? String(row.business_date) : undefined,
+    business_line:
+      row.business_line != null ? String(row.business_line) : undefined,
+    confirmed_at:
+      row.confirmed_at != null ? String(row.confirmed_at) : undefined,
+    period_start_at:
+      row.period_start_at != null ? String(row.period_start_at) : undefined,
+    period_end_at:
+      row.period_end_at != null ? String(row.period_end_at) : undefined,
     timezone: row.timezone != null ? String(row.timezone) : undefined,
   };
 }
@@ -842,38 +1301,116 @@ export function parseDayCloseCurrent(payload: unknown): DayCloseCurrent | null {
   if (!row) return null;
   return {
     id: typeof row.id === "number" ? row.id : undefined,
-    business_date: row.business_date != null ? String(row.business_date) : undefined,
-    business_line: row.business_line != null ? String(row.business_line) : undefined,
+    business_date:
+      row.business_date != null ? String(row.business_date) : undefined,
+    business_line:
+      row.business_line != null ? String(row.business_line) : undefined,
     status: row.status != null ? String(row.status) : undefined,
-    action_label: row.action_label != null ? String(row.action_label) : undefined,
-    period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
-    period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
+    action_label:
+      row.action_label != null ? String(row.action_label) : undefined,
+    period_start_at:
+      row.period_start_at != null ? String(row.period_start_at) : undefined,
+    period_end_at:
+      row.period_end_at != null ? String(row.period_end_at) : undefined,
     timezone: row.timezone != null ? String(row.timezone) : undefined,
-    snapshot_preview: parseDayCloseSnapshotData(row.snapshot_preview ?? row.snapshot_data),
+    snapshot_preview: parseDayCloseSnapshotData(
+      row.snapshot_preview ?? row.snapshot_data,
+    ),
   };
 }
 
-export function parseDayCloseValidateResult(payload: unknown): DayCloseValidateResult | null {
+export function parseDayCloseValidateResult(
+  payload: unknown,
+): DayCloseValidateResult | null {
   const row = asRecord(payload);
   if (!row) return null;
+  const issues = Array.isArray(row.issues)
+    ? row.issues.flatMap((value) => {
+        const item = asRecord(value);
+        if (!item || item.code == null || item.message == null) return [];
+        const severity = String(item.severity);
+        if (!(["blocker", "warning", "info"] as string[]).includes(severity))
+          return [];
+        return [
+          {
+            code: String(item.code),
+            severity: severity as "blocker" | "warning" | "info",
+            message: String(item.message),
+            count: typeof item.count === "number" ? item.count : null,
+            details: asRecord(item.details),
+          },
+        ];
+      })
+    : undefined;
+  const drawerReadiness = Array.isArray(row.drawer_readiness)
+    ? row.drawer_readiness.flatMap((value) => {
+        const item = asRecord(value);
+        if (
+          !item ||
+          item.name == null ||
+          item.message == null ||
+          item.state == null
+        )
+          return [];
+        const state = String(item.state);
+        const validStates = [
+          "ready",
+          "needs_open",
+          "needs_count",
+          "needs_recount",
+          "needs_variance_approval",
+          "needs_settlement",
+        ] as const;
+        if (!(validStates as readonly string[]).includes(state)) return [];
+        return [
+          {
+            configuration_id:
+              typeof item.configuration_id === "number"
+                ? item.configuration_id
+                : null,
+            name: String(item.name),
+            state: state as (typeof validStates)[number],
+            message: String(item.message),
+            session_id:
+              typeof item.session_id === "number" ? item.session_id : null,
+          },
+        ];
+      })
+    : undefined;
   return {
     can_close: Boolean(row.can_close),
     active_orders_count:
-      typeof row.active_orders_count === "number" ? row.active_orders_count : undefined,
+      typeof row.active_orders_count === "number"
+        ? row.active_orders_count
+        : undefined,
     pending_refunds_count:
-      typeof row.pending_refunds_count === "number" ? row.pending_refunds_count : undefined,
-    blockers: Array.isArray(row.blockers) ? row.blockers.map(String) : undefined,
-    warnings: Array.isArray(row.warnings) ? row.warnings.map(String) : undefined,
-    period_start_at: row.period_start_at != null ? String(row.period_start_at) : undefined,
-    period_end_at: row.period_end_at != null ? String(row.period_end_at) : undefined,
-    drawer_ready: typeof row.drawer_ready === "boolean" ? row.drawer_ready : undefined,
+      typeof row.pending_refunds_count === "number"
+        ? row.pending_refunds_count
+        : undefined,
+    blockers: Array.isArray(row.blockers)
+      ? row.blockers.map(String)
+      : undefined,
+    warnings: Array.isArray(row.warnings)
+      ? row.warnings.map(String)
+      : undefined,
+    period_start_at:
+      row.period_start_at != null ? String(row.period_start_at) : undefined,
+    period_end_at:
+      row.period_end_at != null ? String(row.period_end_at) : undefined,
+    drawer_ready:
+      typeof row.drawer_ready === "boolean" ? row.drawer_ready : undefined,
     drawer_blockers: Array.isArray(row.drawer_blockers)
       ? row.drawer_blockers.map(String)
       : undefined,
+    issues,
+    drawer_readiness: drawerReadiness,
   };
 }
 
-export function unwrapApiData<T>(payload: unknown, parser: (value: unknown) => T | null): T | null {
+export function unwrapApiData<T>(
+  payload: unknown,
+  parser: (value: unknown) => T | null,
+): T | null {
   const root = asRecord(payload);
   if (!root) return parser(payload);
   if (root.status === "success" && "data" in root) {
@@ -883,6 +1420,10 @@ export function unwrapApiData<T>(payload: unknown, parser: (value: unknown) => T
 }
 
 /** True when snapshot has the minimum fields needed to render financial sections. */
-export function hasSnapshotFinancialData(snapshot: DayCloseSnapshotData | null | undefined): boolean {
-  return Boolean(snapshot && (snapshot.payment_distribution || snapshot.net_sales != null));
+export function hasSnapshotFinancialData(
+  snapshot: DayCloseSnapshotData | null | undefined,
+): boolean {
+  return Boolean(
+    snapshot && (snapshot.payment_distribution || snapshot.net_sales != null),
+  );
 }

@@ -122,26 +122,32 @@ when its family enters a wave.
 
 ## Approved migration order
 
-| Stage      | Scope                                                                      | Approval outcome                                                                        |
-| ---------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Foundation | Phase 0/1 patterns, route presentation rules and UI gallery                | COMPLETE                                                                                |
-| References | Manage, Inventory and Analytics                                            | APPROVED reference-screen families                                                      |
-| Wave 1     | Finance transaction and register family                                    | APPROVED                                                                                |
-| Wave 2/2B  | Finance reporting, control, Cash & Banks and Cash Drawers                  | APPROVED                                                                                |
-| Wave 3     | Orders, Order History, Order Detail and Quick Bill                         | APPROVED                                                                                |
-| Wave 4     | Kitchen / KOT operational family                                           | APPROVED                                                                                |
-| Wave 5     | Product configuration: menu, categories, modifiers, discounts and stations | NEXT                                                                                    |
-| Wave 6     | Tables, Reservations, receipt history and service operations               | APPROVED                                                                                |
-| Wave 7     | Supplier and Customer remaining party workflows                            | APPROVED                                                                                |
-| Wave 8     | Workforce / Staff                                                          | FOUNDATION-COMPLIANT — Stage 1/2 approved; Stage 3 desktop completion pending manual QA |
-| Wave 9.1   | Settings Hub and navigation ownership                                      | APPROVED                                                                                |
-| Wave 9.2   | Business Settings — Business Profile slice                                 | APPROVED                                                                                |
-| Wave 9.3   | Branding ownership and image management                                    | MERGED INTO BUSINESS PROFILE                                                            |
-| Wave 9.4   | Finance & Payments Settings                                                | APPROVED                                                                                |
-| Wave 9.5   | People & Access Settings                                                   | APPROVED                                                                                |
-| Wave 9.6   | Hardware & Documents Settings                                              | FOUNDATION-COMPLIANT — pending manual QA                                                |
-| Wave 10    | Dashboard, Profile and shell-level refinement                              | NEXT                                                                                    |
-| Wave 11    | Repository-wide QA, accessibility and deprecated-style cleanup             | NEXT                                                                                    |
+| Stage       | Scope                                                                      | Approval outcome                                                                        |
+| ----------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Foundation  | Phase 0/1 patterns, route presentation rules and UI gallery                | COMPLETE                                                                                |
+| References  | Manage, Inventory and Analytics                                            | APPROVED reference-screen families                                                      |
+| Wave 1      | Finance transaction and register family                                    | APPROVED                                                                                |
+| Wave 2/2B   | Finance reporting, control, Cash & Banks and Cash Drawers                  | APPROVED                                                                                |
+| Wave 3      | Orders, Order History, Order Detail and Quick Bill                         | APPROVED                                                                                |
+| Wave 4      | Kitchen / KOT operational family                                           | APPROVED                                                                                |
+| Wave 5      | Product configuration: menu, categories, modifiers, discounts and stations | NEXT                                                                                    |
+| Wave 6      | Tables, Reservations, receipt history and service operations               | APPROVED                                                                                |
+| Wave 7      | Supplier and Customer remaining party workflows                            | APPROVED                                                                                |
+| Wave 8      | Workforce / Staff                                                          | FOUNDATION-COMPLIANT — Stage 1/2 approved; Stage 3 desktop completion pending manual QA |
+| Wave 9.1    | Settings Hub and navigation ownership                                      | APPROVED                                                                                |
+| Wave 9.2    | Business Settings — Business Profile slice                                 | APPROVED                                                                                |
+| Wave 9.3    | Branding ownership and image management                                    | MERGED INTO BUSINESS PROFILE                                                            |
+| Wave 9.4    | Finance & Payments Settings                                                | APPROVED                                                                                |
+| Wave 9.5    | People & Access Settings                                                   | APPROVED                                                                                |
+| Wave 9.6    | Hardware & Documents Settings                                              | FOUNDATION-COMPLIANT — pending manual QA                                                |
+| Day Close 0 | Domain correctness and contract hardening                                  | DOMAIN-HARDENED                                                                         |
+| Day Close 1 | Presentation contract and plain-language readiness                         | PRESENTATION-CONTRACT COMPLETE                                                          |
+| Day Close 2 | Mobile-first operational flow                                              | MOBILE FLOW IMPLEMENTED - pending manual QA                                             |
+| DC 2.5      | Day Close evidence, insights, and reporting contract                       | EVIDENCE & REPORTING CONTRACT AUDITED                                                   |
+| DC 2.6A     | Canonical metrics and cross-system consistency                             | CANONICAL METRICS COMPLETE                                                              |
+| DC 2.6B     | Frozen evidence and operational attribution                                | VERSIONED EVIDENCE CONTRACT COMPLETE                                                    |
+| Wave 10     | Dashboard, Profile and shell-level refinement                              | NEXT                                                                                    |
+| Wave 11     | Repository-wide QA, accessibility and deprecated-style cleanup             | NEXT                                                                                    |
 
 Finance follows the reference wave rather than leading it, because its recent
 domain-specific reporting and transaction-detail work must be preserved and
@@ -472,6 +478,88 @@ printer routing remains a neutral Settings link. Wave 9.6 is
 FOUNDATION-COMPLIANT pending manual QA at 390px and 1440px.
 
 ### Product presentation standards
+
+Day Close uses `lib/presentation/day-close.ts` as its UI contract. The adapter
+maps typed backend readiness, snapshot, close detail, explicit availability,
+and explicit capabilities into plain-language readiness, summaries, cash
+provenance, focused drawer actions, history fields, completion fields, and the
+next navigation action. It does not fetch, mutate, reconcile payments, derive
+expected cash, calculate cash difference, or make accounting decisions. Missing
+data is Unavailable rather than Ready or zero; ordinary users see Finance review
+required rather than journal/suspense diagnostics. Day Close 1 is
+PRESENTATION-CONTRACT COMPLETE. Day Close 2 implements the mobile-first
+Review -> Cash -> Close workflow and remains pending manual QA.
+
+Day Close 2.5 is **EVIDENCE & REPORTING CONTRACT AUDITED**. The current live and
+frozen snapshot, Finance/Analytics lineage, period-versus-balance semantics,
+insight readiness, source-document identity, email, and export boundaries are
+documented in [DAY_CLOSE_METRIC_LINEAGE.md](./DAY_CLOSE_METRIC_LINEAGE.md).
+Financial meaning remains backend-owned; shared backend aggregations must own
+operational rankings; confirmed reports must use versioned frozen evidence; and
+missing sections remain unavailable rather than becoming empty or zero. New
+customer/staff/cashier rankings, supplier insight, purchase-return evidence, or
+other speculative metrics are not approved. Day Close 3 has not started.
+
+Day Close 2.6A is **CANONICAL METRICS COMPLETE**. Finance, Analytics finance
+summary, and the live/future Day Close snapshot now consume one backend-owned
+UTC half-open-period financial contract. It carries source, ledger completeness,
+explicit fallback state, and warnings; payment totals and method/instrument
+groups share one source population. Tax and service charge are canonical sale
+metadata, and historical confirmed snapshots remain frozen. Purchases and
+purchase payments, supplier payable-at-end, item/category net allocation, and
+orders/table cross-system aggregation and localized hourly sales remain unavailable; customer/staff/cashier/supplier
+rankings remain deferred attribution.
+
+Day Close 2.6B is **VERSIONED EVIDENCE CONTRACT COMPLETE**. Future snapshots
+embed `day-close.evidence.v1`: live evidence refreshes before close and the
+server regenerates and freezes it at confirmation. Exact-window operational
+rows retain stable source IDs and frozen display names. Availability and
+attribution policy are explicit; cashier/server attribution remains deferred,
+and purchase/item limitations remain partial rather than becoming false zeroes.
+Older confirmed snapshots are never reconstructed from mutable current data.
+No evidence UI, export redesign, or Day Close 3 work is included.
+
+Day Close 2.6C.1 is **EVIDENCE VIEW INTEGRATION & HIERARCHY IMPLEMENTED, pending manual QA**. A
+single responsive `DayCloseEvidenceView` now serves live review support,
+completion, and frozen historical v1 reports. The normal Review, Cash, and Close
+workflow stays concise and opens the report on demand. Mobile uses a vertical
+section hierarchy and section-jump sheet; desktop receives only a centered wide
+report with a compact sticky index, not a Day Close 3 workspace redesign.
+
+Versioned `day-close.evidence.v1` reports now read as one progressive report
+instead of a KPI-card or report-tab wall. The period header explains multi-day
+windows, zero refunds collapse to a plain-language empty result, period credit
+movement is separated from the receivable balance at close, and the normal
+audit section exposes only `Ready` or `Finance review required`. Historical
+snapshots without v1 evidence keep their saved presentation and are explicitly
+labelled `Legacy report`; they are not reconstructed or falsely enriched.
+
+The report uses canonical financial values and typed operational evidence,
+preserves exact ranking/measure labels, distinguishes empty from unavailable,
+omits deferred staff/cashier rankings, and bounds source registers behind
+searchable sheets. Legacy snapshots retain their existing saved presentation.
+Email, PDF/Excel, and authoritative external source routing remain outside this
+wave.
+
+### Day Close final simplified financial flow
+
+The previous rich `DayCloseEvidenceView` direction is superseded. Day Close is a
+financial-finalization workflow, not an Analytics dashboard. The canonical
+mobile sequence is Review, Confirm cash, Review close, and Completion, with
+blockers first, five compact readiness rows, a neutral statement-style financial
+summary, and focused sheets for optional supporting totals. Desktop preserves
+the same mental model and adds only a narrow context/action rail.
+
+New `day-close.evidence.v1` close details show financial summary, cash
+reconciliation, period/close metadata, warnings, and secondary actions for
+Analytics, authorized accounting review, export, correction, and reopen. The
+history list is a compact close register. Legacy snapshots retain their original
+saved presentation and are labelled `Legacy close record`.
+
+Ownership is locked: Analytics owns business-performance detail; Finance /
+Accounting owns journals, posting, suspense, trial balance, and account evidence;
+Day Close consumes their backend-owned results without recalculation. Frozen v1
+evidence remains infrastructure for audit, exports, support, and compliance.
 
 - Normal product UI formats money through `formatMoney` using the configured
   currency code (for Nepal, `NPR 1,234.00`). Fiscal and legal print layouts

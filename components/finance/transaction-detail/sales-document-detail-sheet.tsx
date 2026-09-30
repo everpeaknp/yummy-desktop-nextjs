@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  ArrowLeft,
   CalendarDays,
   CheckCircle2,
   FileText,
@@ -21,6 +22,13 @@ import { TransactionDetailSheet } from "@/components/finance/transaction-detail/
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -34,7 +42,11 @@ import { useOrderFiscalDocument } from "@/hooks/use-order-fiscal-document";
 import apiClient from "@/lib/api-client";
 import { OrderApis, ReceiptApis, RestaurantApis } from "@/lib/api/endpoints";
 import { financeSalesApi } from "@/lib/api/finance-sales-api";
-import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import {
+  isElectronDesktop,
+  printRawToReceiptPrinter,
+} from "@/lib/receipt-network-print";
+import { cn, formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 import type {
   FinanceSalesDocument,
   FinanceSalesDocumentSettlement,
@@ -163,6 +175,11 @@ export function SalesDocumentDetailSheet({
   const [selectedReturn, setSelectedReturn] =
     useState<FinanceSalesDocument | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [ordinaryPrinting, setOrdinaryPrinting] = useState(false);
+  const [ordinaryPrintDesignation, setOrdinaryPrintDesignation] = useState<
+    string | null
+  >(null);
+  const [terminalChooserOpen, setTerminalChooserOpen] = useState(false);
   const [template, setTemplate] = useState<any[]>(DEFAULT_RECEIPT_TEMPLATE);
   const [loadingDocument, setLoadingDocument] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -340,50 +357,174 @@ export function SalesDocumentDetailSheet({
     printing: fiscalPrinting,
     error: fiscalPrintError,
     lastAuthorization,
+    clearLastAuthorization,
   } = useFiscalPrint(fiscalDocument);
 
-  const printReceipt = useCallback(async () => {
-    if (!receipt) return;
-    if (fiscalProfileError) {
-      toast.error(fiscalProfileError);
-      return;
-    }
-    if (!isActiveVatEbilling) {
-      window.print();
-      return;
-    }
-    if (!fiscalDocument) {
-      toast.error(
-        fiscalDocumentError || "The fiscal tax invoice is not ready.",
-      );
-      return;
-    }
-    try {
-      await printFiscalDocument({
-        authorizationInput: { device_identifier: "web-sale-detail" },
-        dispatch: async () => {
-          await new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  const printReceipt = useCallback(
+    async (terminalId?: number) => {
+      if (!receipt) return;
+      const terminals = receipt.receipt_terminals || [];
+      if (terminals.length > 1 && !terminalId) {
+        setTerminalChooserOpen(true);
+        return;
+      }
+      const selectedTerminal = terminals.find((item) => item.id === terminalId);
+      const effectiveReceipt = selectedTerminal?.printer
+        ? { ...receipt, printer_config: selectedTerminal.printer }
+        : receipt;
+      if (fiscalProfileError) {
+        toast.error(fiscalProfileError);
+        return;
+      }
+      const waitForReceiptRender = () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+
+      if (!isActiveVatEbilling) {
+        let authorizationId: number | null = null;
+        setOrdinaryPrinting(true);
+        try {
+          const authorizationResponse = await apiClient.post(
+            `/receipts/orders/${sourceOrderId}/print-authorizations`,
+            {
+              mode: "receipt",
+              device_identifier: "yummy-web-sale-detail",
+              printer_name:
+                effectiveReceipt.printer_config?.name || "Browser print dialog",
+              receipt_terminal_id: terminalId || null,
+            },
           );
-          window.print();
-        },
-      });
-      toast.success("Fiscal print result recorded.");
-    } catch (printError) {
-      toast.error(
-        printError instanceof Error
-          ? printError.message
-          : "Fiscal printing failed.",
-      );
-    }
-  }, [
-    fiscalDocument,
-    fiscalDocumentError,
-    fiscalProfileError,
-    isActiveVatEbilling,
-    printFiscalDocument,
-    receipt,
-  ]);
+          const authorization = authorizationResponse.data.data as {
+            authorization_id: number;
+            designation: string;
+          };
+          authorizationId = authorization.authorization_id;
+          setOrdinaryPrintDesignation(authorization.designation);
+          if (isElectronDesktop()) {
+            const payloadResponse = await apiClient.get(
+              `/receipts/orders/${sourceOrderId}/print-payload`,
+              {
+                params: {
+                  mode: "receipt",
+                  authorization_id: authorization.authorization_id,
+                  terminal_id: terminalId || undefined,
+                },
+              },
+            );
+            const payloadBase64 = String(
+              payloadResponse.data?.data?.payload_base64 || "",
+            );
+            if (!payloadBase64) {
+              throw new Error("The backend returned an empty receipt payload.");
+            }
+            await printRawToReceiptPrinter(effectiveReceipt, { payloadBase64 });
+          } else {
+            setShowReceipt(true);
+            await waitForReceiptRender();
+            window.print();
+          }
+          await apiClient.post(
+            `/receipts/print-authorizations/${authorizationId}/complete`,
+            { succeeded: true },
+          );
+          authorizationId = null;
+          await apiClient
+            .get(ReceiptApis.getReceiptData(sourceOrderId))
+            .then((refreshedReceipt) => {
+              if (refreshedReceipt.data?.status === "success") {
+                setReceipt(refreshedReceipt.data.data as ReceiptData);
+              }
+            })
+            .catch(() => undefined);
+          toast.success("Receipt print recorded.");
+        } catch (printError) {
+          if (authorizationId) {
+            await apiClient
+              .post(
+                `/receipts/print-authorizations/${authorizationId}/complete`,
+                {
+                  succeeded: false,
+                  failure_reason:
+                    printError instanceof Error
+                      ? printError.message
+                      : "Printing failed",
+                },
+              )
+              .catch(() => undefined);
+          }
+          toast.error(
+            printError instanceof Error
+              ? printError.message
+              : "Receipt printing failed.",
+          );
+        } finally {
+          setOrdinaryPrintDesignation(null);
+          setOrdinaryPrinting(false);
+        }
+        return;
+      }
+      if (!fiscalDocument) {
+        toast.error(
+          fiscalDocumentError || "The fiscal tax invoice is not ready.",
+        );
+        return;
+      }
+      try {
+        await printFiscalDocument({
+          authorizationInput: {
+            device_identifier: "web-sale-detail",
+            printer_name:
+              effectiveReceipt.printer_config?.name ||
+              "Configured receipt printer",
+          },
+          dispatch: async (authorization) => {
+            if (isElectronDesktop()) {
+              const payloadBase64 =
+                authorization.render_payload?.payload_base64;
+              if (!payloadBase64) {
+                throw new Error(
+                  "The backend did not return the authorized fiscal print payload.",
+                );
+              }
+              await printRawToReceiptPrinter(effectiveReceipt, {
+                payloadBase64,
+              });
+            } else {
+              setShowReceipt(true);
+              await new Promise<void>((resolve) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => resolve()),
+                ),
+              );
+              window.print();
+            }
+          },
+        });
+        await refreshFiscalDocument();
+        toast.success("Fiscal print result recorded.");
+      } catch (printError) {
+        toast.error(
+          printError instanceof Error
+            ? printError.message
+            : "Fiscal printing failed.",
+        );
+      } finally {
+        clearLastAuthorization();
+      }
+    },
+    [
+      fiscalDocument,
+      fiscalDocumentError,
+      fiscalProfileError,
+      isActiveVatEbilling,
+      printFiscalDocument,
+      clearLastAuthorization,
+      refreshFiscalDocument,
+      receipt,
+      sourceOrderId,
+    ],
+  );
 
   const shareSale = useCallback(async () => {
     if (!resolvedDocument) return;
@@ -452,25 +593,60 @@ export function SalesDocumentDetailSheet({
       >
         <style jsx global>{`
           @media print {
+            @page {
+              margin: 0 !important;
+              size: auto;
+            }
+            html,
+            body {
+              width: 80mm !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: white !important;
+            }
             body * {
               visibility: hidden !important;
             }
             .thermal-receipt,
-            .thermal-receipt * {
+            .thermal-receipt *,
+            .fiscal-receipt-printable,
+            .fiscal-receipt-printable * {
               visibility: visible !important;
             }
-            .thermal-receipt {
+            .thermal-receipt,
+            .fiscal-receipt-printable {
               position: absolute !important;
               left: 50% !important;
               top: 0 !important;
               transform: translateX(-50%) !important;
+              width: 72mm !important;
+              min-width: 72mm !important;
+              max-width: 72mm !important;
               box-shadow: none !important;
               border: 0 !important;
             }
           }
         `}</style>
-        <SheetContent className="flex h-dvh w-full flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-w-3xl lg:max-w-[860px] print:w-full print:max-w-none print:border-0 print:shadow-none">
-          <SheetHeader className="sticky top-0 z-10 shrink-0 border-b border-border bg-background px-4 py-4 pr-12 text-left sm:px-6 sm:py-5 print:hidden">
+        <SheetContent
+          showCloseButton={false}
+          className="flex h-dvh w-full flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-w-3xl lg:max-w-[920px] print:w-full print:max-w-none print:border-0 print:shadow-none"
+        >
+          <SheetHeader className="sticky top-0 z-10 shrink-0 border-b border-border bg-background px-5 pb-5 text-left sm:px-7 sm:pb-6 print:hidden">
+            <div className="-mx-5 mb-5 flex h-14 items-center gap-2 border-b border-border px-3 sm:-mx-7 sm:mb-6 sm:px-5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                onClick={() => onOpenChange(false)}
+                aria-label="Back"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <p className="text-sm font-semibold text-foreground">
+                Sale details
+              </p>
+            </div>
             <div className="hidden">
               <div className="flex h-14 items-center border-b px-4 pr-12">
                 <SheetTitle className="text-lg font-semibold">
@@ -531,93 +707,55 @@ export function SalesDocumentDetailSheet({
                 ) : null}
               </div>
             </div>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-xs font-medium text-muted-foreground">
                   Sale
                 </p>
-                <SheetTitle className="mt-1 break-words text-xl font-semibold leading-tight tracking-tight sm:text-2xl">
+                <SheetTitle className="mt-1 break-words text-2xl font-semibold leading-tight tracking-tight sm:text-[28px]">
                   {resolvedDocument
                     ? `Sale ${resolvedDocument.document_number}`
                     : "Sale details"}
                 </SheetTitle>
-                <SheetDescription className="mt-2 max-w-xl text-sm leading-5">
+                <SheetDescription className="mt-1.5 truncate text-sm leading-5">
                   {resolvedDocument?.customer_name ||
                     receipt?.order?.customer_name ||
                     "Walk-in customer"}
-                  {resolvedDocument?.daily_order_number
-                    ? `· Daily order #${resolvedDocument.daily_order_number}`
-                    : null}
-                  {resolvedDocument?.fiscal_document_number
-                    ? `· Fiscal invoice #${resolvedDocument.fiscal_document_number}`
-                    : null}
-                  {resolvedDocument
-                    ? `· ${readableDate(resolvedDocument.created_at, true)}`
+                  {receipt?.order?.table_name
+                    ? ` · ${receipt.order.table_name}`
                     : null}
                 </SheetDescription>
               </div>
-
-              <div className="flex shrink-0 flex-wrap items-start gap-2">
-                <div className="border-t border-border pt-3 sm:min-w-40 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0 sm:text-right">
-                  <p className="text-[11px] font-medium text-muted-foreground">
-                    Sale total
-                  </p>
-                  <p className="mt-1 whitespace-nowrap text-2xl font-semibold tracking-tight tabular-nums text-foreground">
-                    {resolvedDocument
-                      ? money(resolvedDocument.grand_total)
-                      : "—"}
-                  </p>
-                </div>
-                <Button
+              {resolvedDocument ? (
+                <Badge
                   variant="outline"
-                  onClick={() => void printReceipt()}
-                  disabled={
-                    !receipt ||
-                    fiscalProfileLoading ||
-                    fiscalPrinting ||
-                    (isActiveVatEbilling && !fiscalDocument)
-                  }
-                >
-                  {fiscalPrinting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Printer className="mr-2 h-4 w-4" />
+                  className={cn(
+                    "mr-1 shrink-0 px-2.5 py-1 font-medium shadow-none",
+                    settlementTone(status),
                   )}
-                  Print receipt
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void shareSale()}
-                  disabled={!resolvedDocument}
-                  aria-label="Share sale"
                 >
-                  <Share2 className="mr-1.5 h-4 w-4" />
-                  Share
-                </Button>
-              </div>
-            </div>
-            {resolvedDocument ? (
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  {readableDate(resolvedDocument.created_at, true)}
-                </span>
-                {resolvedDocument.daily_order_number ? (
-                  <span>
-                    Daily order #{resolvedDocument.daily_order_number}
-                  </span>
-                ) : null}
-                {resolvedDocument.fiscal_document_number ? (
-                  <span>
-                    Fiscal invoice #{resolvedDocument.fiscal_document_number}
-                  </span>
-                ) : null}
-                <Badge variant="outline" className={settlementTone(status)}>
                   {saleStatusLabel(status)}
                 </Badge>
+              ) : null}
+            </div>
+            <div className="mt-4 flex items-end justify-between gap-4 border-t border-border pt-4">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  Sale total
+                </p>
+                <p className="mt-1 whitespace-nowrap text-3xl font-semibold tracking-tight tabular-nums text-foreground">
+                  {resolvedDocument ? money(resolvedDocument.grand_total) : "—"}
+                </p>
               </div>
-            ) : null}
+              {resolvedDocument ? (
+                <p className="max-w-[52%] text-right text-xs leading-5 text-muted-foreground">
+                  {readableDate(resolvedDocument.created_at, true)}
+                  {resolvedDocument.daily_order_number
+                    ? ` · Daily order #${resolvedDocument.daily_order_number}`
+                    : null}
+                </p>
+              ) : null}
+            </div>
           </SheetHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto bg-background">
@@ -684,6 +822,10 @@ export function SalesDocumentDetailSheet({
                         document={lastAuthorization?.document ?? fiscalDocument}
                         copyNumber={lastAuthorization?.copy_number}
                         designation={lastAuthorization?.designation}
+                        preview={
+                          lastAuthorization?.render_payload?.preview ??
+                          fiscalDocument.render_preview
+                        }
                       />
                     </div>
                   ) : receipt ? (
@@ -691,7 +833,11 @@ export function SalesDocumentDetailSheet({
                       id="receipt-content"
                       className="flex justify-center overflow-hidden rounded-xl border bg-white shadow-sm"
                     >
-                      <ThermalReceipt data={receipt} template={template} />
+                      <ThermalReceipt
+                        data={receipt}
+                        template={template}
+                        printDesignation={ordinaryPrintDesignation}
+                      />
                     </div>
                   ) : (
                     <InvoiceSummary document={resolvedDocument} />
@@ -705,72 +851,83 @@ export function SalesDocumentDetailSheet({
                 </section>
 
                 <section className="print:hidden">
-                  <DetailSection title="Fiscal invoice">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {resolvedDocument.fiscal_document_number
-                            ? `Invoice #${resolvedDocument.fiscal_document_number}`
-                            : "Invoice not issued"}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {isActiveVatEbilling
-                            ? fiscalDocument
-                              ? "Fiscal document ready for viewing and print."
-                              : fiscalDocumentError ||
-                                "Fiscal document is being prepared."
-                            : "Printable sale receipt."}
-                        </p>
+                  <div className="lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:border-b lg:border-border">
+                    <DetailSection
+                      title="Receipt"
+                      className="lg:border-b-0 lg:border-r"
+                    >
+                      <div className="rounded-xl border border-border bg-muted/30 p-3.5 sm:p-4">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-primary">
+                            <ReceiptText className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-foreground">
+                              {resolvedDocument.fiscal_document_number
+                                ? `Tax invoice #${resolvedDocument.fiscal_document_number}`
+                                : "Payment receipt"}
+                            </p>
+                            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                              {isActiveVatEbilling
+                                ? fiscalDocument
+                                  ? "Issued and ready to view or print."
+                                  : fiscalDocumentError ||
+                                    "The fiscal document is being prepared."
+                                : "Receipt for this completed sale."}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="min-h-11 w-full"
+                            onClick={() => setShowReceipt(true)}
+                            disabled={!receipt && !fiscalDocument}
+                          >
+                            View receipt
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex shrink-0 gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setShowReceipt(true)}
-                          disabled={!receipt && !fiscalDocument}
-                        >
-                          View receipt
-                        </Button>
+                    </DetailSection>
+                    <DetailSection
+                      title="Order overview"
+                      className="lg:border-b-0"
+                    >
+                      <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                        <Fact
+                          icon={<UserRound className="h-4 w-4" />}
+                          label="Customer"
+                          value={
+                            resolvedDocument.customer_name ||
+                            receipt?.order?.customer_name ||
+                            "Walk-in customer"
+                          }
+                        />
+                        <Fact
+                          icon={<CalendarDays className="h-4 w-4" />}
+                          label="Business date"
+                          value={readableDate(resolvedDocument.business_date)}
+                        />
+                        <Fact
+                          label="Order type"
+                          value={
+                            receipt?.order?.channel
+                              ? words(receipt.order.channel)
+                              : resolvedDocument.source_type === "pos_order"
+                                ? "POS order"
+                                : "Manual sale"
+                          }
+                        />
+                        <Fact
+                          label="Table / service"
+                          value={receipt?.order?.table_name || "Not applicable"}
+                        />
                       </div>
-                    </div>
-                  </DetailSection>
-                  <DetailSection title="Order overview">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <Fact
-                        icon={<UserRound className="h-4 w-4" />}
-                        label="Customer"
-                        value={
-                          resolvedDocument.customer_name ||
-                          receipt?.order?.customer_name ||
-                          "Walk-in customer"
-                        }
-                      />
-                      <Fact
-                        icon={<CalendarDays className="h-4 w-4" />}
-                        label="Business date"
-                        value={readableDate(resolvedDocument.business_date)}
-                      />
-                      <Fact
-                        label="Order type"
-                        value={
-                          receipt?.order?.channel
-                            ? words(receipt.order.channel)
-                            : resolvedDocument.source_type === "pos_order"
-                              ? "POS order"
-                              : "Manual sale"
-                        }
-                      />
-                      <Fact
-                        label="Table / service"
-                        value={receipt?.order?.table_name || "Not applicable"}
-                      />
-                    </div>
-                  </DetailSection>
+                    </DetailSection>
+                  </div>
 
                   <DetailSection title="Items sold">
-                    <p className="mb-3 text-xs leading-5 text-muted-foreground">
-                      Items and quantities recorded on this sale.
-                    </p>
                     {resolvedDocument.lines.length ? (
                       <>
                         <div className="divide-y divide-border border-y border-border sm:hidden">
@@ -833,7 +990,7 @@ export function SalesDocumentDetailSheet({
                   </DetailSection>
 
                   <DetailSection title="Settlement">
-                    <div className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                       <Metric
                         label="Sale total"
                         value={money(resolvedDocument.grand_total)}
@@ -841,7 +998,6 @@ export function SalesDocumentDetailSheet({
                       <Metric
                         label="Collected"
                         value={money(settlement?.amount_received)}
-                        tone="positive"
                       />
                       <Metric
                         label="Returned"
@@ -874,7 +1030,7 @@ export function SalesDocumentDetailSheet({
                                   {readableDate(payment.received_at, true)}
                                 </p>
                               </div>
-                              <p className="text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                              <p className="text-sm font-semibold tabular-nums text-foreground">
                                 {money(payment.amount)}
                               </p>
                             </div>
@@ -972,45 +1128,108 @@ export function SalesDocumentDetailSheet({
           </div>
         </SheetContent>
       </Sheet>
+      <Dialog open={terminalChooserOpen} onOpenChange={setTerminalChooserOpen}>
+        <DialogContent className="max-w-md gap-0 p-0">
+          <DialogHeader className="border-b px-5 py-4 text-left">
+            <DialogTitle>Select receipt terminal</DialogTitle>
+            <DialogDescription>
+              Choose the work location whose printer should receive this
+              receipt.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="divide-y p-2">
+            {(receipt?.receipt_terminals || []).map((terminal) => (
+              <button
+                key={terminal.id}
+                type="button"
+                className="flex min-h-14 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted"
+                onClick={() => {
+                  setTerminalChooserOpen(false);
+                  void printReceipt(terminal.id);
+                }}
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+                  <Printer className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold">{terminal.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {terminal.printer?.name || "Receipt printer"}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Sheet open={showReceipt} onOpenChange={setShowReceipt}>
-        <SheetContent className="flex h-dvh w-full flex-col gap-0 overflow-hidden p-0 sm:h-[90vh] sm:max-w-2xl">
-          <SheetHeader className="shrink-0 border-b bg-background px-4 py-4 pr-12 text-left sm:px-6">
+        <SheetContent className="flex h-dvh w-full flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[92vh] sm:max-w-xl">
+          <SheetHeader className="shrink-0 border-b bg-background px-5 py-4 pr-12 text-left sm:px-6">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <SheetTitle className="text-lg">Receipt</SheetTitle>
+                <SheetTitle className="text-xl tracking-tight">
+                  Receipt
+                </SheetTitle>
                 <SheetDescription className="mt-0.5 truncate text-xs">
                   {resolvedDocument?.fiscal_document_number
                     ? `Tax invoice #${resolvedDocument.fiscal_document_number}`
                     : resolvedDocument?.document_number || "Sale receipt"}
                 </SheetDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mr-7 shrink-0"
-                onClick={() => void printReceipt()}
-                disabled={
-                  !receipt ||
-                  fiscalProfileLoading ||
-                  fiscalPrinting ||
-                  (isActiveVatEbilling && !fiscalDocument)
-                }
-              >
-                <Printer className="mr-1.5 h-3.5 w-3.5" />
-                Print
-              </Button>
+              <div className="mr-7 flex shrink-0 items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10 w-10 px-0 sm:w-auto sm:px-3"
+                  onClick={() => void shareSale()}
+                  disabled={!resolvedDocument}
+                  aria-label="Share receipt"
+                >
+                  <Share2 className="h-3.5 w-3.5 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Share</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10 w-10 px-0 sm:w-auto sm:px-3"
+                  onClick={() => void printReceipt()}
+                  disabled={
+                    !receipt ||
+                    fiscalProfileLoading ||
+                    fiscalPrinting ||
+                    ordinaryPrinting ||
+                    (isActiveVatEbilling && !fiscalDocument)
+                  }
+                  aria-label="Print receipt"
+                >
+                  {fiscalPrinting || ordinaryPrinting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin sm:mr-1.5" />
+                  ) : (
+                    <Printer className="h-3.5 w-3.5 sm:mr-1.5" />
+                  )}
+                  <span className="hidden sm:inline">Print</span>
+                </Button>
+              </div>
             </div>
           </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto bg-muted p-4 sm:p-6">
-            <div className="mx-auto w-full max-w-md overflow-hidden rounded-lg border bg-card">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-muted/40 px-3 py-5 sm:px-6 sm:py-7">
+            <div className="mx-auto w-fit max-w-full overflow-x-auto bg-white shadow-[0_12px_36px_rgba(15,23,42,0.10)] ring-1 ring-black/5">
               {isActiveVatEbilling && fiscalDocument ? (
                 <FiscalReceipt
                   document={lastAuthorization?.document ?? fiscalDocument}
                   copyNumber={lastAuthorization?.copy_number}
                   designation={lastAuthorization?.designation}
+                  preview={
+                    lastAuthorization?.render_payload?.preview ??
+                    fiscalDocument.render_preview
+                  }
                 />
               ) : receipt ? (
-                <ThermalReceipt data={receipt} template={template} />
+                <ThermalReceipt
+                  data={receipt}
+                  template={template}
+                  printDesignation={ordinaryPrintDesignation}
+                />
               ) : resolvedDocument ? (
                 <InvoiceSummary document={resolvedDocument} />
               ) : null}
@@ -1033,14 +1252,23 @@ export function SalesDocumentDetailSheet({
 
 function DetailSection({
   title,
+  className,
   children,
 }: {
   title: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-b border-border px-4 py-4 last:border-b-0 sm:px-6 sm:py-5">
-      <h3 className="mb-3 text-sm font-semibold text-foreground">{title}</h3>
+    <section
+      className={cn(
+        "border-b border-border px-5 py-5 last:border-b-0 sm:px-7 sm:py-6",
+        className,
+      )}
+    >
+      <h3 className="mb-3.5 text-base font-semibold tracking-tight text-foreground">
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -1056,12 +1284,12 @@ function Fact({
   value: string;
 }) {
   return (
-    <div className="min-w-0 border-l border-border pl-3">
-      <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+    <div className="min-w-0">
+      <p className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
         {icon}
         {label}
       </p>
-      <p className="mt-1 truncate text-sm font-medium text-foreground">
+      <p className="mt-1 break-words text-sm font-medium leading-5 text-foreground">
         {value}
       </p>
     </div>
@@ -1078,7 +1306,7 @@ function Metric({
   tone?: "default" | "positive" | "warning";
 }) {
   return (
-    <div className="border-l border-border pl-3">
+    <div className="min-w-0 border-l border-border pl-3">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <p
         className={`mt-1 text-sm font-semibold tabular-nums ${tone === "positive" ? "text-emerald-700 dark:text-emerald-400" : tone === "warning" ? "text-orange-700 dark:text-orange-400" : "text-foreground"}`}

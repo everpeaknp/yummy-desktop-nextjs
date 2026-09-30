@@ -251,8 +251,10 @@ export const OrderApis = {
   },
   addOrderLine: (id: number) => `/orders/${id}/lines`,
   addOrderLinesBatch: (id: number) => `/orders/${id}/lines/batch`,
-  updateOrderLine: (orderId: number, itemId: number) => `/orders/${orderId}/lines/${itemId}`,
-  voidOrderLine: (orderId: number, itemId: number) => `/orders/${orderId}/lines/${itemId}/void`,
+  updateOrderLine: (orderId: number, itemId: number) =>
+    `/orders/${orderId}/lines/${itemId}`,
+  voidOrderLine: (orderId: number, itemId: number) =>
+    `/orders/${orderId}/lines/${itemId}/void`,
   addPayment: (id: number) => `/orders/${id}/payments`,
   updatePayment: (orderId: number, paymentId: number) =>
     `/orders/${orderId}/payments/${paymentId}`,
@@ -501,7 +503,8 @@ export const InventoryApis = {
   getMenuInventory: (menuItemId: number) => `/inventory/menu/${menuItemId}`,
   // Modifier <-> inventory linking (used to deduct inventory when a modifier is applied).
   linkModifierInventory: "/inventory/modifier-link",
-  updateModifierInventory: (linkId: number) => `/inventory/modifier-link/${linkId}`,
+  updateModifierInventory: (linkId: number) =>
+    `/inventory/modifier-link/${linkId}`,
   unlinkModifierInventory: (linkId: number) =>
     `/inventory/modifier-link/${linkId}`,
   getInventoryForModifier: (modifierId: number) =>
@@ -516,14 +519,14 @@ export const InventoryApis = {
 export const PurchaseApis = {
   create: "/purchases",
   list: ({
-      restaurantId,
-      supplierId,
-      status,
+    restaurantId,
+    supplierId,
+    status,
     skip = 0,
     limit = 50,
   }: {
-      restaurantId: number;
-      supplierId?: number;
+    restaurantId: number;
+    supplierId?: number;
     status?: string;
     skip?: number;
     limit?: number;
@@ -533,8 +536,8 @@ export const PurchaseApis = {
       skip: skip.toString(),
       limit: limit.toString(),
     });
-      if (status) params.append("status", status);
-      if (supplierId) params.append("supplier_id", supplierId.toString());
+    if (status) params.append("status", status);
+    if (supplierId) params.append("supplier_id", supplierId.toString());
     return `/purchases?${params.toString()}`;
   },
   get: (id: number, restaurantId: number) =>
@@ -546,13 +549,13 @@ export const PurchaseApis = {
 export const PurchaseReturnApis = {
   create: "/purchase-returns",
   list: ({
-      restaurantId,
-      supplierId,
+    restaurantId,
+    supplierId,
     skip = 0,
     limit = 50,
   }: {
-      restaurantId: number;
-      supplierId?: number;
+    restaurantId: number;
+    supplierId?: number;
     skip?: number;
     limit?: number;
   }) => {
@@ -560,8 +563,8 @@ export const PurchaseReturnApis = {
       restaurant_id: restaurantId.toString(),
       skip: skip.toString(),
       limit: limit.toString(),
-      });
-      if (supplierId) params.append("supplier_id", supplierId.toString());
+    });
+    if (supplierId) params.append("supplier_id", supplierId.toString());
     return `/purchase-returns?${params.toString()}`;
   },
   get: (id: number, restaurantId: number) =>
@@ -1692,7 +1695,8 @@ export const KotApis = {
 };
 
 export const ReceiptApis = {
-  getReceiptData: (orderId: number) => `/receipts/orders/${orderId}/data`,
+  getReceiptData: (orderId: number, terminalId?: number | null) =>
+    `/receipts/orders/${orderId}/data${terminalId ? `?terminal_id=${terminalId}` : ""}`,
 };
 
 export const ModifierApis = {
@@ -1940,7 +1944,9 @@ export const DrawerSessionApis = {
     restaurantId: number;
     effectiveDate?: string;
   }) => {
-    const params = new URLSearchParams({ restaurant_id: restaurantId.toString() });
+    const params = new URLSearchParams({
+      restaurant_id: restaurantId.toString(),
+    });
     if (effectiveDate) params.set("effective_date", effectiveDate);
     return `/drawer-sessions/cash-control-policy?${params.toString()}`;
   },
@@ -2120,6 +2126,12 @@ export const PrinterApis = {
     `/printers/restaurants/${restaurantId}/default`,
   stationConfig: (restaurantId: number) =>
     `/printers/restaurants/${restaurantId}/station-config`,
+  receiptTerminals: (restaurantId: number, assignedToMe = false) =>
+    `/printers/restaurants/${restaurantId}/receipt-terminals${assignedToMe ? "?assigned_to_me=true" : ""}`,
+  createReceiptTerminal: (restaurantId: number) =>
+    `/printers/restaurants/${restaurantId}/receipt-terminals`,
+  updateReceiptTerminal: (terminalId: number) =>
+    `/printers/receipt-terminals/${terminalId}`,
 };
 
 export const SupplierApis = {
@@ -2140,16 +2152,16 @@ export const SupplierApis = {
     });
     return `/suppliers/${id}/transactions?${params.toString()}`;
   },
-    settleTransaction: (
+  settleTransaction: (
     supplierId: number,
     transactionId: number,
     restaurantId: number,
   ) =>
-      `/suppliers/${supplierId}/transactions/${transactionId}/settle?restaurant_id=${restaurantId}`,
-    pay: (supplierId: number, restaurantId: number) =>
-      `/suppliers/${supplierId}/payments?restaurant_id=${restaurantId}`,
-    receive: (supplierId: number, restaurantId: number) =>
-      `/suppliers/${supplierId}/receipts?restaurant_id=${restaurantId}`,
+    `/suppliers/${supplierId}/transactions/${transactionId}/settle?restaurant_id=${restaurantId}`,
+  pay: (supplierId: number, restaurantId: number) =>
+    `/suppliers/${supplierId}/payments?restaurant_id=${restaurantId}`,
+  receive: (supplierId: number, restaurantId: number) =>
+    `/suppliers/${supplierId}/receipts?restaurant_id=${restaurantId}`,
   createSupplier: "/suppliers",
   updateSupplier: (id: number, restaurantId: number) =>
     `/suppliers/${id}?restaurant_id=${restaurantId}`,

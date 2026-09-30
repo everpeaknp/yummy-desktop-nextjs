@@ -92,6 +92,7 @@ export interface Order {
   grand_total: number;
   created_at: string;
   updated_at: string;
+  completed_at?: string | null;
   canceled_at?: string | null;
   cancel_reason?: string | null;
   items: OrderItem[];
@@ -99,6 +100,7 @@ export interface Order {
   scheduled_at?: string | null;
   duration_minutes?: number | null;
   created_by_name?: string | null;
+  completed_by_name?: string | null;
   parent_order_id?: number | null;
   split_group_id?: string | null;
 }
@@ -209,7 +211,14 @@ export interface RestaurantInfo {
   pan_number?: string | null;
   timezone: string;
   tax_enabled: boolean;
-  payment_qrs?: { name: string; payload: string }[] | null;
+  payment_qrs?:
+    | {
+        config_id?: string | null;
+        name: string;
+        payload: string;
+        bank_id?: number | null;
+      }[]
+    | null;
   fonepay_enabled?: boolean;
 }
 
@@ -219,6 +228,18 @@ export interface PrinterConfig {
   type: string;
   address?: string | null;
   port?: number | null;
+  printer_type?: "bluetooth" | "network";
+  connection_config?: { ip_address?: string; port?: number } | null;
+}
+
+export interface ReceiptTerminal {
+  id: number;
+  restaurant_id: number;
+  name: string;
+  printer_id: number | null;
+  printer: PrinterConfig | null;
+  users: { id: number; name: string; email: string }[];
+  is_active: boolean;
 }
 
 export interface ReceiptData {
@@ -233,7 +254,18 @@ export interface ReceiptData {
   subtotal_pre_tax: number | null;
   should_auto_print: boolean;
   printer_config: PrinterConfig | null;
+  receipt_terminals?: ReceiptTerminal[];
   fiscal_registration_type?: "unverified" | "pan_only" | "vat";
   fiscal_billing_mode?:
     "legacy_flexible" | "pan_invoice" | "vat_external" | "vat_ebilling";
+  receipt_print_count?: number;
+  prebill_print_count?: number;
+  staff_attribution?: {
+    opened_by?: string | null;
+    handled_by: string[];
+    settled_by?: string | null;
+    opened_at?: string | null;
+    settled_at?: string | null;
+    service_duration_minutes?: number | null;
+  };
 }
