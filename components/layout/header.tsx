@@ -17,6 +17,7 @@ import {
   MoreHorizontal,
   Zap,
   Download,
+  HelpCircle,
 } from "lucide-react";
 import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-download";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ import {
   type MobileAppBarAction,
 } from "@/components/layout/mobile-app-bar-title";
 import { MobileAppBar } from "@/components/patterns/navigation/mobile-app-bar";
+import { HelpCenterDialog } from "@/components/onboarding/help-center-dialog";
 
 function formatRoleLabel(role: string) {
   return role.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
@@ -261,6 +263,7 @@ export const Header = memo(function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const sidebarItems = useSidebarItems();
   const identityRoles = [
     user?.role,
@@ -593,6 +596,18 @@ export const Header = memo(function Header() {
               <NotificationPanel />
             </>
           ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground"
+            aria-label="Help"
+            title="Help and product tour"
+            data-tour="navbar-help"
+            onClick={() => setHelpOpen(true)}
+          >
+            <HelpCircle className="h-5 w-5" aria-hidden="true" />
+          </Button>
           <div className="hidden sm:block" data-tour="navbar-theme">
             <ModeToggle />
           </div>
@@ -650,6 +665,7 @@ export const Header = memo(function Header() {
           </div>
         </div>
       </div>
+      <HelpCenterDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </header>
   );
 });
