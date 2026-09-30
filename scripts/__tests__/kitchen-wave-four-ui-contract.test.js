@@ -12,9 +12,9 @@ test("Wave 4 records the Kitchen route as the dedicated KOT ticket queue", () =>
   assert.match(migration, /\| Wave 4\s+\| Kitchen \/ KOT operational family/);
   assert.match(
     migration,
-    /`\/kitchen`[\s\S]*Kitchen operations[\s\S]*FOUNDATION-COMPLIANT[\s\S]*\| 4/,
+    /`\/kitchen`[\s\S]*Kitchen operations[\s\S]*APPROVED[\s\S]*\| 4/,
   );
-  assert.match(migration, /Reusable ticket family; preserve lifecycle/);
+  assert.match(migration, /Approved canonical ticket family; preserve variants, lifecycle/);
 });
 
 test("Kitchen preserves queue state, filtering, and live-update ownership", () => {
@@ -38,6 +38,21 @@ test("Kitchen preserves queue state, filtering, and live-update ownership", () =
   assert.match(kitchen, /pb-\[calc\(6rem\+env\(safe-area-inset-bottom\)\)\]/);
   assert.match(kitchen, /grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3/);
   assert.doesNotMatch(kitchen, /2xl:grid-cols-4/);
+});
+
+test("Kitchen discards stale refresh responses so old KOT states cannot replace newer ones", () => {
+  const kitchen = read("app/(dashboard)/kitchen/page.tsx");
+
+  assert.match(kitchen, /const kotFetchRequestId = useRef\(0\)/);
+  assert.match(kitchen, /const requestId = \+\+kotFetchRequestId\.current/);
+  assert.match(
+    kitchen,
+    /if \(requestId !== kotFetchRequestId\.current\) return;[\s\S]*setKots\(res\.data\.data \|\| \[\]\)/,
+  );
+  assert.match(
+    kitchen,
+    /finally \{[\s\S]*if \(requestId === kotFetchRequestId\.current\) setLoading\(false\)/,
+  );
 });
 
 test("KOT card family provides shared board, compact, and embedded ticket variants", () => {

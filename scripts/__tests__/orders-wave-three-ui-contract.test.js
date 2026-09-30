@@ -69,6 +69,41 @@ test("Orders tabs use a visibly accented active state", () => {
   assert.match(pageTabs, /data-\[state=active\]:ring-1/);
 });
 
+test("Order detail sections give the selected tab a clear orange accent", () => {
+  const page = read("app/(dashboard)/orders/[id]/page.tsx");
+  const tabBar = page.match(
+    /aria-label="Order detail sections"([\s\S]*?)<\/nav>/,
+  )?.[1];
+
+  assert.ok(tabBar, "Order detail tab bar should exist");
+  assert.match(tabBar, /activeTab === tab\.key[\s\S]*bg-primary\/10/);
+  assert.match(tabBar, /text-primary[\s\S]*ring-1[\s\S]*ring-primary\/30/);
+  assert.match(tabBar, /: "text-muted-foreground hover:text-foreground"/);
+});
+
+test("Serving a KOT reconciles its item progress from the server response", () => {
+  const page = read("app/(dashboard)/orders/[id]/page.tsx");
+  const statusHandler = page.match(
+    /const handleKotStatusChange = useCallback\(([\s\S]*?)\n  const handleKotReject/,
+  )?.[1];
+
+  assert.ok(statusHandler, "KOT status handler should exist");
+  assert.match(statusHandler, /apiClient\.patch\(\s*KotApis\.updateKotStatus\(kotId\)/);
+  assert.match(statusHandler, /const updatedKot = response\.data\?\.data/);
+  assert.match(statusHandler, /Number\(updatedKot\.id\) === kotId/);
+  assert.match(statusHandler, /updateKotLocal\(kotId, updatedKot\)/);
+});
+
+test("Order detail marks only the KOT with an in-flight action as updating", () => {
+  const page = read("app/(dashboard)/orders/[id]/page.tsx");
+  const kotsTab = page.match(/function KOTsTab\([\s\S]*?(?=\n\/\/ ── Events Tab)/)?.[0];
+
+  assert.match(page, /const \[kotUpdatingIds, setKotUpdatingIds\] = useState<Set<number>>\(new Set\(\)\)/);
+  assert.match(kotsTab || "", /const isUpdating = Boolean\(updatingKotIds\?\.has\(kot\.id\)\)/);
+  assert.match(kotsTab || "", /isUpdating=\{isUpdating\}/);
+  assert.doesNotMatch(kotsTab || "", /updatingKotId && updatingKotId !== kot\.id/);
+});
+
 test("History date fields align their labels with the shortcut controls", () => {
   const page = read("app/(dashboard)/orders/page.tsx");
   const historyFilters = page.match(
@@ -147,6 +182,26 @@ test("Order history ignores stale responses after its filters change", () => {
   assert.match(
     page,
     /if \(requestId === historyRequestId\.current\) setHistoryLoading\(false\)/,
+  );
+});
+
+test("Order history shows fetched cards without waiting for settlement enrichment", () => {
+  const page = read("app/(dashboard)/orders/page.tsx");
+  const historyFetch = page.match(
+    /const fetchHistoryData = useCallback\(async \(requestId: number\) => \{([\s\S]*?)\n  \}, \[/,
+  )?.[1];
+
+  assert.ok(historyFetch, "History fetch callback should exist");
+  const ordersIndex = historyFetch.indexOf("setHistoryOrders(list)");
+  const loadingIndex = historyFetch.indexOf(
+    "setHistoryLoading(false)",
+    ordersIndex,
+  );
+  assert.ok(
+    ordersIndex >= 0 &&
+      loadingIndex > ordersIndex &&
+      loadingIndex < historyFetch.indexOf("financeSalesApi.getOrderSettlements("),
+    "History cards should become visible before optional settlement summaries load",
   );
 });
 

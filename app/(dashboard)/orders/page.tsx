@@ -817,6 +817,11 @@ export default function OrdersPage() {
         );
         setHistoryOrders(list);
         setHistoryTotal(Number(data.total ?? list.length));
+        // The order list is the primary history content. Settlement summaries
+        // are optional card enrichment and should not keep the whole grid in
+        // its loading state, especially for the unfiltered (larger) result.
+        setHistorySettlements({});
+        setHistoryLoading(false);
         try {
           const settlements = await financeSalesApi.getOrderSettlements(
             Number(user.restaurant_id),
@@ -1082,7 +1087,7 @@ export default function OrdersPage() {
         (order.table_name || "").toLowerCase().includes(q) ||
         (order.customer_name || "").toLowerCase().includes(q) ||
         String(order.restaurant_order_id || order.id).includes(q) ||
-        (order.items || []).some((item) =>
+        (order.items || []).some((item: { name_snapshot?: string; item_name?: string }) =>
           String(item.name_snapshot || item.item_name || "")
             .toLowerCase()
             .includes(q),

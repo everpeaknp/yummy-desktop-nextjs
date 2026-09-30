@@ -312,7 +312,7 @@ export default function OrderDetailPage() {
   const [itemOverrides, setItemOverrides] = useState<
     Record<number, Partial<OrderItem>>
   >({});
-  const [kotUpdatingId, setKotUpdatingId] = useState<number | null>(null);
+  const [kotUpdatingIds, setKotUpdatingIds] = useState<Set<number>>(new Set());
 
   const { canVoidOrder, canTransferOrder, canMarkNc } =
     usePosBillingPermissions();
@@ -412,9 +412,18 @@ export default function OrderDetailPage() {
       if (!next) return;
       const previousKot = context?.kots.find((kot) => kot.id === kotId);
       updateKotLocal(kotId, { status: next });
-      setKotUpdatingId(kotId);
+      setKotUpdatingIds((current) => new Set(current).add(kotId));
       try {
-        await apiClient.patch(KotApis.updateKotStatus(kotId), { status: next });
+        const response = await apiClient.patch(
+          KotApis.updateKotStatus(kotId),
+          { status: next },
+        );
+        const updatedKot = response.data?.data;
+        if (updatedKot && Number(updatedKot.id) === kotId) {
+          // The backend also updates each item's ready/served quantities. Keep
+          // those fields in sync so the ticket does not still show items waiting.
+          updateKotLocal(kotId, updatedKot);
+        }
         toast.success(`KOT marked ${next.toLowerCase()}`);
       } catch (err: any) {
         if (previousKot) updateKotLocal(kotId, previousKot);
@@ -424,7 +433,11 @@ export default function OrderDetailPage() {
           "Failed to update KOT status";
         toast.error(detail);
       } finally {
-        setKotUpdatingId(null);
+        setKotUpdatingIds((current) => {
+          const next = new Set(current);
+          next.delete(kotId);
+          return next;
+        });
       }
     },
     [context?.kots, updateKotLocal],
@@ -439,7 +452,7 @@ export default function OrderDetailPage() {
         return;
       const previousKot = context?.kots.find((kot) => kot.id === kotId);
       updateKotLocal(kotId, { status: "REJECTED" });
-      setKotUpdatingId(kotId);
+      setKotUpdatingIds((current) => new Set(current).add(kotId));
       try {
         await apiClient.post(KotApis.rejectKot(kotId), undefined);
         toast.success("KOT rejected");
@@ -451,7 +464,11 @@ export default function OrderDetailPage() {
           "Failed to reject KOT";
         toast.error(detail);
       } finally {
-        setKotUpdatingId(null);
+        setKotUpdatingIds((current) => {
+          const next = new Set(current);
+          next.delete(kotId);
+          return next;
+        });
       }
     },
     [context?.kots, updateKotLocal],
@@ -964,9 +981,9 @@ export default function OrderDetailPage() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                "flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-xs font-semibold transition-all duration-200",
+                "flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1",
                 activeTab === tab.key
-                  ? "bg-background shadow-sm text-foreground"
+                  ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/30 shadow-sm"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -1014,7 +1031,7 @@ export default function OrderDetailPage() {
               kots={context.kots}
               onStatusChange={handleKotStatusChange}
               onReject={handleKotReject}
-              updatingKotId={kotUpdatingId}
+              updatingKotIds={kotUpdatingIds}
             />
           )}
           {activeTab === "events" && (
@@ -1837,12 +1854,12 @@ function KOTsTab({
   kots,
   onStatusChange,
   onReject,
-  updatingKotId,
+  updatingKotIds,
 }: {
   kots: KOTUpdate[];
   onStatusChange?: (kotId: number, status: string) => void;
   onReject?: (kotId: number) => void;
-  updatingKotId?: number | null;
+  updatingKotIds?: ReadonlySet<number>;
 }) {
   if (!kots || kots.length === 0) {
     return (
@@ -1867,14 +1884,12 @@ function KOTsTab({
       {kots.map((kot) => {
         const next = nextKotStatus(kot.status);
         const action = kotActionLabel(kot.status);
-        const isUpdating = updatingKotId === kot.id;
+        const isUpdating = Boolean(updatingKotIds?.has(kot.id));
         return (
           <KotEmbeddedTicketCard
             key={kot.id}
             kot={kot}
-            isUpdating={
-              isUpdating || Boolean(updatingKotId && updatingKotId !== kot.id)
-            }
+            isUpdating={isUpdating}
             primaryAction={
               action && next && onStatusChange
                 ? {

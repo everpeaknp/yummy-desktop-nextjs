@@ -260,6 +260,7 @@ export default function KitchenPage() {
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
   const router = useRouter();
+  const kotFetchRequestId = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
   const timersRef = useRef<{
     ping?: ReturnType<typeof setInterval>;
@@ -294,6 +295,7 @@ export default function KitchenPage() {
   // ── Fetch KOTs — simple, takes restaurantId as param ───────────────
   const doFetch = useCallback(
     async (rid: number, dateOverride?: Date) => {
+      const requestId = ++kotFetchRequestId.current;
       try {
         const targetDate = dateOverride || selectedDate;
         // Convert to start/end of day in local time (browser) -> ISO
@@ -312,13 +314,16 @@ export default function KitchenPage() {
         });
 
         const res = await apiClient.get(`${KotApis.searchKots}?${params}`);
+        if (requestId !== kotFetchRequestId.current) return;
         if (res.data.status === "success") {
           setKots(res.data.data || []);
         }
       } catch (err) {
-        console.error("[KOT] Fetch error:", err);
+        if (requestId === kotFetchRequestId.current) {
+          console.error("[KOT] Fetch error:", err);
+        }
       } finally {
-        setLoading(false);
+        if (requestId === kotFetchRequestId.current) setLoading(false);
       }
     },
     [selectedDate],
