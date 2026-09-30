@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import apiClient from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
@@ -464,6 +464,8 @@ export default function CheckoutPage() {
   const [payAmount, setPayAmount] = useState("");
   const [payReference, setPayReference] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
+  const paymentSubmissionRef = useRef(false);
+  const paymentAttemptRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
   const [fonepayDialogOpen, setFonepayDialogOpen] = useState(false);
   const [fonepayPrn, setFonepayPrn] = useState<string | null>(null);
@@ -493,6 +495,20 @@ export default function CheckoutPage() {
   const [editingItem, setEditingItem] = useState<BillItem | null>(null);
   const [editItemNotes, setEditItemNotes] = useState("");
   const [itemUpdating, setItemUpdating] = useState(false);
+
+  const paymentAttemptKey = (fingerprint: string) => {
+    if (paymentAttemptRef.current?.fingerprint !== fingerprint) {
+      paymentAttemptRef.current = {
+        fingerprint,
+        key: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+      };
+    }
+    return paymentAttemptRef.current.key;
+  };
+
+  const clearPaymentAttempt = () => {
+    paymentAttemptRef.current = null;
+  };
 
 
   // Multi-Payment state
@@ -1379,7 +1395,7 @@ export default function CheckoutPage() {
   ]);
 
   // ── Add Payment ──────────────────────────────────
-  const handleAddPayment = async () => {
+  const submitPayment = async () => {
     if (!canProcessPayment) {
       setPayError("You do not have permission to process payments.");
       return;
@@ -1442,11 +1458,24 @@ export default function CheckoutPage() {
           ));
         }
 
+        const submissionId = paymentAttemptKey(JSON.stringify({
+          orderId,
+          mode: "multiple",
+          customerId: selectedCustomerId || orderMeta?.customer_id || null,
+          rows: parsedRows.map((row) => ({
+            method: row.method,
+            amount: row.amountNum,
+            reference: row.reference.trim() || null,
+            selectedStaticQrIndex: row.selectedStaticQrIndex,
+            selectedCardIndex: row.selectedCardIndex,
+          })),
+        }));
         for (let i = 0; i < parsedRows.length; i++) {
           const row = parsedRows[i];
           const instrument = buildPaymentInstrument(row.method, row.selectedStaticQrIndex, row.selectedCardIndex);
           
           await apiClient.post(OrderApis.addPayment(orderId), {
+            idempotency_key: `${submissionId}:${i}`,
             payment: {
               method: row.method,
               amount: row.amountNum,
@@ -1457,6 +1486,7 @@ export default function CheckoutPage() {
           });
         }
 
+        clearPaymentAttempt();
         setPaymentOpen(false);
         setMultiPayments([{ method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }]);
         setIsMultiPayment(false);
@@ -1467,13 +1497,19 @@ export default function CheckoutPage() {
         // Backend sometimes throws 500/400 but payment succeeds. Verify:
         try {
           const checkBill = await apiClient.get(OrderApis.getOrderBill(orderId));
-          if (checkBill.data?.data?.total_paid > (bill?.total_paid || 0)) {
+          const checkedBill = checkBill.data?.data;
+          if (checkedBill?.payment_complete || Number(checkedBill?.balance_due || 0) <= 0.009) {
+            clearPaymentAttempt();
             setPaymentOpen(false);
             setMultiPayments([{ method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }]);
             setIsMultiPayment(false);
             await Promise.all([fetchBill(), fetchCustomers()]);
             toast.success("Multiple payments processed successfully");
             if (checkBill.data.data.payment_complete) setShouldAutoRedirectAfterPayment(true);
+            return;
+          }
+          if (checkedBill?.total_paid > (bill?.total_paid || 0)) {
+            setPayError("Some payment rows were saved. Submit again to safely finish the remaining rows.");
             return;
           }
         } catch (e) {}
@@ -1539,16 +1575,28 @@ export default function CheckoutPage() {
       }
 
       const instrument = buildPaymentInstrument(payMethod, selectedStaticQrIndex, selectedCardIndex);
+      const paymentAmount = Math.min(amount, bill?.balance_due || amount);
+      const idempotencyKey = paymentAttemptKey(JSON.stringify({
+        orderId,
+        mode: "single",
+        customerId: selectedCustomerId || orderMeta?.customer_id || null,
+        method: payMethod,
+        amount: paymentAmount,
+        reference: payReference.trim() || null,
+        instrument,
+      }));
 
       const res = await apiClient.post(OrderApis.addPayment(orderId), {
+        idempotency_key: idempotencyKey,
         payment: {
           method: payMethod,
-          amount: Math.min(amount, bill?.balance_due || amount),
+          amount: paymentAmount,
           reference: payReference.trim() || null,
           instrument,
           status: "success",
         },
       });
+      clearPaymentAttempt();
       setPaymentOpen(false);
       setPayAmount("");
       setPayReference("");
@@ -1563,6 +1611,7 @@ export default function CheckoutPage() {
       try {
         const checkBill = await apiClient.get(OrderApis.getOrderBill(orderId));
         if (checkBill.data?.data?.total_paid > (bill?.total_paid || 0)) {
+          clearPaymentAttempt();
           setPaymentOpen(false);
           setPayAmount("");
           setPayReference("");
@@ -1575,6 +1624,16 @@ export default function CheckoutPage() {
       setPayError(err?.response?.data?.detail || "Failed to add payment");
     } finally {
       setPaySubmitting(false);
+    }
+  };
+
+  const handleAddPayment = async () => {
+    if (paymentSubmissionRef.current) return;
+    paymentSubmissionRef.current = true;
+    try {
+      await submitPayment();
+    } finally {
+      paymentSubmissionRef.current = false;
     }
   };
 
@@ -1719,37 +1778,8 @@ export default function CheckoutPage() {
 
       if (!isSuccess) return;
 
-      const paidAmountRaw = Number(payload?.amount ?? payload?.paid_amount ?? payload?.total_amount ?? 0);
-      const amountToApply = Math.min(
-        paidAmountRaw > 0 ? paidAmountRaw : displayBalanceDue,
-        displayBalanceDue
-      );
-
-      // Only attempt to record the payment if there's still a balance due.
-      // The webhook may have already posted it — any 400 from addPayment here
-      // means the payment is already recorded, so we safely swallow it.
-      if (amountToApply > 0.009) {
-        try {
-          await apiClient.post(OrderApis.addPayment(orderId), {
-            payment: {
-              method: "fonepay",
-              amount: amountToApply,
-              reference: fonepayPrn,
-              status: "success",
-            },
-          });
-        } catch (payErr: any) {
-          // Swallow any 400 — the webhook likely already recorded this payment.
-          // Only re-throw network errors or 5xx server errors.
-          const statusCode = payErr?.response?.status;
-          if (!statusCode || statusCode >= 500) {
-            throw payErr;
-          }
-          // 400/409 etc — payment already posted, continue to sync bill
-          console.warn("[Fonepay] Payment already recorded by webhook, skipping duplicate post.");
-        }
-      }
-
+      // Status verification is the single backend authority that records the
+      // provider payment. The browser must not create a second payment here.
       await Promise.all([fetchBill(), fetchContext(), fetchCustomers()]);
       setFonepayDialogOpen(false);
       setFonepayPrn(null);
@@ -2793,6 +2823,7 @@ export default function CheckoutPage() {
       <Dialog open={paymentOpen} onOpenChange={(open) => {
         setPaymentOpen(open);
         if (!open) {
+          if (!paymentSubmissionRef.current) clearPaymentAttempt();
           setIsMultiPayment(false);
           setMultiPayments([{ method: "cash", amount: "", reference: "", selectedStaticQrIndex: 0, selectedCardIndex: 0 }]);
         }
@@ -3285,7 +3316,15 @@ export default function CheckoutPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPaymentOpen(false)}>Cancel</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                clearPaymentAttempt();
+                setPaymentOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
             <Button onClick={handleAddPayment} disabled={paySubmitting} className="gap-2">
               {paySubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
               {paySubmitting ? "Processing..." : (isMultiPayment ? "Process Multiple Payments" : (payMethod === "fonepay" ? "Generate Fonepay QR" : "Add Payment"))}
