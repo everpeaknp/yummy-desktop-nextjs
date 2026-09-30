@@ -13,6 +13,7 @@ import {
   Search,
   Bell,
   Crown,
+  CreditCard,
   ChevronRight,
   Zap,
   Settings,
@@ -508,21 +509,10 @@ export function Sidebar() {
                   <span className="font-bold text-[13.5px] truncate text-foreground tracking-tight">
                     {restaurant?.name || "Yummy Outlet"}
                   </span>
-                  {isPathAccessible("/premium", user) ? (
-                    <Link
-                      href="/premium"
-                      title="View Billing & Subscription"
-                      className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold tracking-tight shrink-0 hover:bg-amber-500/20 transition-colors"
-                    >
-                      <Crown className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
-                      {planDisplayName}
-                    </Link>
-                  ) : (
-                    <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold tracking-tight shrink-0">
-                      <Crown className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
-                      {planDisplayName}
-                    </span>
-                  )}
+                  <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold tracking-tight shrink-0">
+                    <Crown className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
+                    {planDisplayName}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1 text-[10.5px] text-muted-foreground leading-tight mt-0.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
@@ -552,6 +542,22 @@ export function Sidebar() {
             </button>
           </div>
         </div>
+
+        {!collapsed && isPathAccessible("/premium", user) && (
+          <div className="border-b border-border/50 px-3.5 py-3">
+            <Link
+              href="/premium"
+              aria-label="Open billing and subscription"
+              className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <CreditCard className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                <span className="truncate">Billing &amp; subscription</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            </Link>
+          </div>
+        )}
 
         <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
 
