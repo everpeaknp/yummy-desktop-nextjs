@@ -1198,7 +1198,7 @@ export default function ReceiptPage() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
-              <h1 className="text-2xl font-black tracking-tight">Receipt</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Receipt</h1>
               <p className="text-sm text-muted-foreground">{orderLabel}</p>
             </div>
           </div>

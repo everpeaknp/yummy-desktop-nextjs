@@ -1372,7 +1372,7 @@ function ReasonDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[520px] bg-card border-border rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-black tracking-tight">
+          <DialogTitle className="text-xl font-semibold tracking-tight">
             {title}
           </DialogTitle>
           {description ? (

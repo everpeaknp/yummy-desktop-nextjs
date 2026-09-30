@@ -1890,7 +1890,7 @@ export default function InventoryPage() {
       >
         <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[980px] max-h-[90vh] overflow-hidden p-0 rounded-2xl flex flex-col">
           <DialogHeader className="p-6 border-b border-border/60 bg-muted/20">
-            <DialogTitle className="text-xl font-black tracking-tight">
+            <DialogTitle className="text-xl font-semibold tracking-tight">
               Inventory History
             </DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
