@@ -16,3 +16,13 @@ test("navbar Help opens the help center with the guided product tour", () => {
   assert.match(helpCenter, /title: "Product tour"[\s\S]*onClick: \(\) => requestProductTour\(\)/);
   assert.match(tour, /"navbar-help":\s*\{\s*title: "Help"/);
 });
+
+test("tour tooltip stays hidden until it has been positioned beside its target", () => {
+  const tour = read("components/onboarding/product-tour.tsx");
+
+  assert.match(tour, /id="product-tour-tooltip"\s+style=\{\{ visibility: "hidden" \}\}/);
+  assert.match(
+    tour,
+    /tooltip\.style\.visibility = "hidden";[\s\S]*positionTooltip\(target, tooltip\);[\s\S]*tooltip\.style\.visibility = "visible";/,
+  );
+});

@@ -339,6 +339,7 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
   const onCloseRef = useRef(onClose);
   const staticStepsRef = useRef(staticSteps);
   const startedRef = useRef(false);
+  const positionTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -395,9 +396,17 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
       const target = document.querySelector(step.target);
       const tooltip = document.getElementById("product-tour-tooltip");
       if (!target || !tooltip) return;
+      if (positionTimerRef.current !== null) {
+        window.clearTimeout(positionTimerRef.current);
+      }
+      tooltip.style.visibility = "hidden";
       target.classList.add("tour-highlight");
       target.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-      window.setTimeout(() => positionTooltip(target, tooltip), 200);
+      positionTimerRef.current = window.setTimeout(() => {
+        positionTooltip(target, tooltip);
+        tooltip.style.visibility = "visible";
+        positionTimerRef.current = null;
+      }, 200);
     },
     [clearHighlight, positionTooltip]
   );
@@ -405,6 +414,10 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
   // Start / stop tour once per open cycle — do not re-run on parent re-renders.
   useEffect(() => {
     if (!open) {
+      if (positionTimerRef.current !== null) {
+        window.clearTimeout(positionTimerRef.current);
+        positionTimerRef.current = null;
+      }
       startedRef.current = false;
       clearHighlight();
       setSteps([]);
@@ -451,7 +464,15 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
     showStep(index, steps);
   }, [clearHighlight, index, open, showStep, steps]);
 
-  useEffect(() => () => clearHighlight(), [clearHighlight]);
+  useEffect(
+    () => () => {
+      if (positionTimerRef.current !== null) {
+        window.clearTimeout(positionTimerRef.current);
+      }
+      clearHighlight();
+    },
+    [clearHighlight],
+  );
 
   if (!open || steps.length === 0) return null;
 
@@ -489,6 +510,7 @@ export function ProductTour({ open, steps: staticSteps, onClose }: ProductTourPr
       <div className="fixed inset-0 z-[1000] bg-slate-950/70 backdrop-blur-[1px]" />
       <div
         id="product-tour-tooltip"
+        style={{ visibility: "hidden" }}
         className={cn(
           "fixed z-[1003] rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-2xl",
           "animate-in fade-in zoom-in-95 duration-200"
