@@ -34,6 +34,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
+import { LoadingState } from "@/components/patterns/feedback/feedback-state";
 import {
   Select,
   SelectContent,
@@ -50,7 +51,7 @@ import {
   isReviewBank,
 } from "@/lib/payment-banks";
 import { hasPermission } from "@/lib/role-permissions";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useFiscalProfile } from "@/hooks/use-fiscal-profile";
@@ -74,10 +75,11 @@ export default function RestaurantSettingsPage() {
   } = useFiscalProfile(Boolean(user?.restaurant_id));
   const setGlobalRestaurant = useRestaurant((state) => state.setRestaurant);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const initialTab = searchParams?.get("tab") || "payments";
+  const initialTab = searchParams?.get("tab") || "advanced";
   const [activeTab, setActiveTab] = useState(initialTab);
 
   // FonePay State
@@ -168,10 +170,14 @@ export default function RestaurantSettingsPage() {
 
   useEffect(() => {
     const tabParam = searchParams?.get("tab");
+    if (tabParam === "payments") {
+      router.replace("/settings/payment-integrations");
+      return;
+    }
     if (tabParam) {
       setActiveTab(tabParam);
     }
-  }, [searchParams]);
+  }, [router, searchParams]);
 
   const handleFonePaySave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -411,6 +417,10 @@ export default function RestaurantSettingsPage() {
     );
   }
 
+  if (searchParams?.get("tab") === "payments") {
+    return <LoadingState label="Opening payment integrations" />;
+  }
+
   return (
     <AppPage className="pb-24" width="standard">
       <PageHeader
@@ -420,7 +430,13 @@ export default function RestaurantSettingsPage() {
 
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={(value) => {
+          if (value === "payments") {
+            router.push("/settings/payment-integrations");
+            return;
+          }
+          setActiveTab(value);
+        }}
         className="space-y-6"
       >
         <TabsList className="h-11 w-full rounded-xl bg-muted/50 p-1 sm:w-auto">

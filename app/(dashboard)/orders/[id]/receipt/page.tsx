@@ -28,7 +28,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { usePosBillingPermissions, isOrderRefundHistorical } from "@/hooks/use-pos-billing-permissions";
+import {
+  usePosBillingPermissions,
+  isOrderRefundHistorical,
+} from "@/hooks/use-pos-billing-permissions";
 import {
   ArrowLeft,
   Printer,
@@ -67,31 +70,91 @@ const PAYMENT_ICONS: Record<string, any> = {
 
 function getDefaultTemplate(): any[] {
   return [
-    { type: 'global_settings', id: 'metadata', global_font_type: 'A', global_font_size: 12, line_spacing: 1.2, paper_size: '80mm', column_capacity: 42 },
-    { id: '1', type: 'header', is_visible: true, show_on_bill: true, show_on_receipt: true },
-    { id: '2', type: 'bill_info', is_visible: true, show_on_bill: true, show_on_receipt: true },
-    { id: '3', type: 'customer', is_visible: true, show_on_bill: true, show_on_receipt: true },
-    { id: '4', type: 'items', is_visible: true, show_on_bill: true, show_on_receipt: true },
-    { id: '5', type: 'totals', is_visible: true, show_on_bill: true, show_on_receipt: true },
-    { id: '6', type: 'payments', is_visible: true, show_on_bill: false, show_on_receipt: true },
-    { id: '7', type: 'footer', is_visible: true, show_on_bill: true, show_on_receipt: true },
+    {
+      type: "global_settings",
+      id: "metadata",
+      global_font_type: "A",
+      global_font_size: 11,
+      line_spacing: 1.0,
+      paper_size: "80mm",
+      column_capacity: 48,
+    },
+    {
+      id: "1",
+      type: "header",
+      is_visible: true,
+      show_on_bill: true,
+      show_on_receipt: true,
+    },
+    {
+      id: "2",
+      type: "bill_info",
+      is_visible: true,
+      show_on_bill: true,
+      show_on_receipt: true,
+    },
+    {
+      id: "3",
+      type: "customer",
+      is_visible: true,
+      show_on_bill: true,
+      show_on_receipt: true,
+    },
+    {
+      id: "4",
+      type: "items",
+      is_visible: true,
+      show_on_bill: true,
+      show_on_receipt: true,
+    },
+    {
+      id: "5",
+      type: "totals",
+      is_visible: true,
+      show_on_bill: true,
+      show_on_receipt: true,
+    },
+    {
+      id: "6",
+      type: "payments",
+      is_visible: true,
+      show_on_bill: false,
+      show_on_receipt: true,
+    },
+    {
+      id: "7",
+      type: "footer",
+      is_visible: true,
+      show_on_bill: true,
+      show_on_receipt: true,
+    },
   ];
 }
 
-function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: number): string {
+function buildReceiptRawPayload(
+  receipt: ReceiptData,
+  template: any[],
+  orderId: number,
+): string {
   const order = receipt?.order as any;
   const restaurant = receipt?.restaurant as any;
   const blocks = (template || [])
     .filter((b: any) => b?.type !== "global_settings")
     .map((b: any) => ({ ...b, cfg: b?.config ? { ...b, ...b.config } : b }))
-    .filter((b: any) => (b?.is_visible ?? b?.isVisible ?? true) && (b?.show_on_receipt ?? b?.showOnReceipt ?? true));
+    .filter(
+      (b: any) =>
+        (b?.is_visible ?? b?.isVisible ?? true) &&
+        (b?.show_on_receipt ?? b?.showOnReceipt ?? true),
+    );
 
   const lines: string[] = [];
 
   const header = blocks.find((b: any) => b.type === "header")?.cfg || {};
   lines.push(String(header.title || restaurant?.name || "YUMMY RECEIPT"));
-  if (header.show_address !== false && restaurant?.address) lines.push(String(restaurant.address));
-  if (header.show_phone !== false && restaurant?.phone) lines.push(`${header.phone_label || "Contact"}: ${restaurant.phone}`);
+  if (header.show_address !== false && restaurant?.address)
+    lines.push(String(restaurant.address));
+  if (header.show_phone !== false && restaurant?.phone)
+    lines.push(`${header.phone_label || "Contact"}: ${restaurant.phone}`);
 
   lines.push("---------------------------");
   lines.push(`Bill No: ${order?.invoice_number || "Not issued"}`);
@@ -99,7 +162,9 @@ function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: 
     lines.push(`Daily order: #${order.restaurant_order_id}`);
   }
   lines.push(`Table: ${order?.table_name || "-"}`);
-  lines.push(`Date: ${new Date(order?.created_at || Date.now()).toLocaleString()}`);
+  lines.push(
+    `Date: ${new Date(order?.created_at || Date.now()).toLocaleString()}`,
+  );
   lines.push("---------------------------");
 
   const itemsCfg = blocks.find((b: any) => b.type === "items")?.cfg || {};
@@ -111,7 +176,9 @@ function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: 
     const rate = Number(item?.unit_price ?? 0);
     const amount = Number(item?.line_total ?? rate * qty);
     if (showRate) {
-      lines.push(`${idx + 1}. ${name} x${qty} @${rate.toFixed(2)} = ${amount.toFixed(2)}`);
+      lines.push(
+        `${idx + 1}. ${name} x${qty} @${rate.toFixed(2)} = ${amount.toFixed(2)}`,
+      );
     } else {
       lines.push(`${idx + 1}. ${name} x${qty}`);
     }
@@ -125,26 +192,43 @@ function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: 
   const serviceCharge = Number(order?.service_charge ?? 0);
   const computedDiscount = getRecordedOrderDiscount(order);
   const loyaltyPointsRedeemed =
-    Number(order?.loyalty_points_redeemed ?? order?.redeemed_points ?? order?.points_redeemed ?? 0) || 0;
+    Number(
+      order?.loyalty_points_redeemed ??
+        order?.redeemed_points ??
+        order?.points_redeemed ??
+        0,
+    ) || 0;
   const discountReason =
     order?.discount_reason ||
     order?.manual_discount_reason ||
     order?.discount_note ||
     order?.discount_code ||
-    (loyaltyPointsRedeemed > 0 ? `Loyalty Points - ${order?.customer_name || "Customer"} (${loyaltyPointsRedeemed} pts)` : null) ||
-    (Number(order?.manual_discount_amount || 0) > 0 ? "Manual discount" : null) ||
+    (loyaltyPointsRedeemed > 0
+      ? `Loyalty Points - ${order?.customer_name || "Customer"} (${loyaltyPointsRedeemed} pts)`
+      : null) ||
+    (Number(order?.manual_discount_amount || 0) > 0
+      ? "Manual discount"
+      : null) ||
     null;
-  lines.push(`${totalsCfg.subtotal_label || "Subtotal"}: Rs.${subtotal.toFixed(2)}`);
+  lines.push(
+    `${totalsCfg.subtotal_label || "Subtotal"}: Rs.${subtotal.toFixed(2)}`,
+  );
   if (totalsCfg.show_tax !== false) {
     lines.push(`${totalsCfg.tax_label || "Tax"}: Rs.${tax.toFixed(2)}`);
   }
   if (totalsCfg.show_discount !== false && computedDiscount > 0) {
-    lines.push(`${totalsCfg.discount_label || "Discount"}: -Rs.${computedDiscount.toFixed(2)}`);
+    lines.push(
+      `${totalsCfg.discount_label || "Discount"}: -Rs.${computedDiscount.toFixed(2)}`,
+    );
     if (discountReason) {
-      lines.push(`${totalsCfg.discount_reason_label || "Reason"}: ${String(discountReason)}`);
+      lines.push(
+        `${totalsCfg.discount_reason_label || "Reason"}: ${String(discountReason)}`,
+      );
     }
   }
-  lines.push(`${totalsCfg.total_label || "Grand Total"}: Rs.${total.toFixed(2)}`);
+  lines.push(
+    `${totalsCfg.total_label || "Grand Total"}: Rs.${total.toFixed(2)}`,
+  );
 
   const paymentsCfg = blocks.find((b: any) => b.type === "payments")?.cfg || {};
   const payments = Array.isArray(order?.payments) ? order.payments : [];
@@ -152,10 +236,14 @@ function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: 
     lines.push("---------------------------");
     lines.push(`Paid: Rs.${Number(receipt?.total_paid ?? 0).toFixed(2)}`);
     if (Number(receipt?.balance_due ?? 0) > 0) {
-      lines.push(`Balance Due: Rs.${Number(receipt?.balance_due ?? 0).toFixed(2)}`);
+      lines.push(
+        `Balance Due: Rs.${Number(receipt?.balance_due ?? 0).toFixed(2)}`,
+      );
     }
     payments.forEach((p: any) => {
-      lines.push(`${String(p?.method || paymentsCfg.method_label || "payment").toUpperCase()}: Rs.${Number(p?.amount || 0).toFixed(2)}`);
+      lines.push(
+        `${String(p?.method || paymentsCfg.method_label || "payment").toUpperCase()}: Rs.${Number(p?.amount || 0).toFixed(2)}`,
+      );
     });
   }
 
@@ -167,44 +255,74 @@ function buildReceiptRawPayload(receipt: ReceiptData, template: any[], orderId: 
   return lines.join("\n");
 }
 
-function resolveReceiptAssignedPrinter(printers: any[], restaurantLike: any): any | null {
+async function getCanonicalReceiptPayload(orderId: number): Promise<string> {
+  const response = await apiClient.get(
+    `/receipts/orders/${orderId}/print-payload?mode=receipt`,
+  );
+  const payload = response.data?.data?.payload_base64;
+  if (!payload) throw new Error("Canonical receipt payload is empty.");
+  return payload;
+}
+
+function resolveReceiptAssignedPrinter(
+  printers: any[],
+  restaurantLike: any,
+): any | null {
   const stations = restaurantLike?.kot_station_config?.stations;
   const receiptStation = Array.isArray(stations)
-    ? stations.find((s: any) => String(s?.name || "").trim().toLowerCase() === "receipt")
+    ? stations.find(
+        (s: any) =>
+          String(s?.name || "")
+            .trim()
+            .toLowerCase() === "receipt",
+      )
     : null;
   const receiptPrinterId = receiptStation?.printer_id;
 
   if (receiptPrinterId) {
-    const mapped = (printers || []).find((p: any) => p?.id === receiptPrinterId && p?.enabled);
+    const mapped = (printers || []).find(
+      (p: any) => p?.id === receiptPrinterId && p?.enabled,
+    );
     if (mapped) return mapped;
   }
 
-  return (printers || []).find((p: any) => p?.enabled && p?.is_default) || (printers || []).find((p: any) => p?.enabled) || null;
+  return (
+    (printers || []).find((p: any) => p?.enabled && p?.is_default) ||
+    (printers || []).find((p: any) => p?.enabled) ||
+    null
+  );
 }
 
 function getReceiptNetworkTarget(
   receipt: ReceiptData,
   printers?: any[],
-  restaurantLike?: any
+  restaurantLike?: any,
 ): { host: string; port: number } | null {
   const cfg = receipt.printer_config;
   if (cfg) {
     const host = String(cfg.address || "").trim();
     const port = Number(cfg.port || 9100);
     const type = String(cfg.type || "").toLowerCase();
-    const isNetwork = type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+    const isNetwork =
+      type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
     if (isNetwork && host) return { host, port };
   }
 
   const assigned = printers?.length
-    ? resolveReceiptAssignedPrinter(printers, restaurantLike ?? receipt.restaurant)
+    ? resolveReceiptAssignedPrinter(
+        printers,
+        restaurantLike ?? receipt.restaurant,
+      )
     : null;
   if (!assigned) return null;
 
-  const host = String(assigned?.connection_config?.ip_address || assigned?.address || "").trim();
+  const host = String(
+    assigned?.connection_config?.ip_address || assigned?.address || "",
+  ).trim();
   const port = Number(assigned?.connection_config?.port || 9100);
   const type = String(assigned?.printer_type || "").toLowerCase();
-  const isNetwork = type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  const isNetwork =
+    type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   if (isNetwork && host) return { host, port };
   return null;
 }
@@ -239,10 +357,10 @@ export default function ReceiptPage() {
   const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
   const orderId = Number(rawId || 0);
   const router = useRouter();
-  
+
   // Extract returnTo from URL if present
   const [returnTo, setReturnTo] = useState<string | null>(null);
-  
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
@@ -252,11 +370,8 @@ export default function ReceiptPage() {
 
   const user = useAuth((s) => s.user);
   const me = useAuth((s) => s.me);
-  const {
-    canProcessRefund,
-    canApproveHistoricalRefund,
-    canRefundOrder,
-  } = usePosBillingPermissions();
+  const { canProcessRefund, canApproveHistoricalRefund, canRefundOrder } =
+    usePosBillingPermissions();
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
   const [template, setTemplate] = useState<any[] | null>(null);
@@ -270,7 +385,7 @@ export default function ReceiptPage() {
   const [refundReference, setRefundReference] = useState("");
   const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [refundError, setRefundError] = useState<string | null>(null);
-  
+
   useOrderFull(orderId);
   const autoPrintedOrderRef = useRef<number | null>(null);
   const suppressAutoPrintFallbackRef = useRef(false);
@@ -307,9 +422,15 @@ export default function ReceiptPage() {
   // Auth guard
   useEffect(() => {
     const checkAuth = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && token) await me();
-      const updatedToken = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+      const updatedToken =
+        typeof window !== "undefined"
+          ? localStorage.getItem("accessToken")
+          : null;
       if (!user && !updatedToken) router.push("/");
     };
     const timer = setTimeout(checkAuth, 500);
@@ -320,7 +441,10 @@ export default function ReceiptPage() {
   const fetchData = useCallback(async () => {
     if (!orderId) return;
     try {
-      const receiptRes = await apiClient.get(ReceiptApis.getReceiptData(orderId), { params: { _t: Date.now() } });
+      const receiptRes = await apiClient.get(
+        ReceiptApis.getReceiptData(orderId),
+        { params: { _t: Date.now() } },
+      );
       if (receiptRes.data.status === "success") {
         const receiptData: ReceiptData = receiptRes.data.data;
         setReceipt(receiptData);
@@ -329,8 +453,13 @@ export default function ReceiptPage() {
         const restaurantId = receiptData.restaurant?.id || user?.restaurant_id;
         if (restaurantId) {
           try {
-            const templateRes = await apiClient.get(RestaurantApis.getTemplates(restaurantId));
-            if (templateRes.data.status === "success" && templateRes.data.data?.receipt_template?.length > 0) {
+            const templateRes = await apiClient.get(
+              RestaurantApis.getTemplates(restaurantId),
+            );
+            if (
+              templateRes.data.status === "success" &&
+              templateRes.data.data?.receipt_template?.length > 0
+            ) {
               setTemplate(templateRes.data.data.receipt_template);
             } else {
               setTemplate(getDefaultTemplate());
@@ -344,7 +473,9 @@ export default function ReceiptPage() {
       }
       setError(null);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || "Failed to load receipt");
+      setError(
+        err?.response?.data?.detail || err?.message || "Failed to load receipt",
+      );
     } finally {
       setLoading(false);
     }
@@ -354,46 +485,71 @@ export default function ReceiptPage() {
     fetchData();
   }, [fetchData]);
 
-  const tryElectronNetworkReceiptPrint = useCallback(async (options?: { timeoutMs?: number }): Promise<boolean> => {
-    try {
-      // @ts-ignore
-      if (typeof window === "undefined" || !window.electronAPI?.printNetworkRaw) {
+  const tryElectronNetworkReceiptPrint = useCallback(
+    async (options?: { timeoutMs?: number }): Promise<boolean> => {
+      try {
+        const electronApi =
+          typeof window === "undefined"
+            ? undefined
+            : (window as any).electronAPI;
+        if (!electronApi?.printNetworkRaw) {
+          return false;
+        }
+        const restaurantId = receipt?.restaurant?.id || user?.restaurant_id;
+        if (!restaurantId) return false;
+
+        const res = await apiClient.get(PrinterApis.list(restaurantId));
+        const printers = res?.data?.data || [];
+        const printer = resolveReceiptAssignedPrinter(
+          printers,
+          receipt?.restaurant,
+        );
+        if (!printer) return false;
+
+        const host = String(
+          printer?.connection_config?.ip_address || printer?.address || "",
+        ).trim();
+        const port = Number(printer?.connection_config?.port || 9100);
+        const type = String(printer?.printer_type || "").toLowerCase();
+        const isNetwork =
+          type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+        if (!isNetwork || !host) return false;
+        if (!receipt) return false;
+
+        let payloadBase64: string | null = null;
+        try {
+          payloadBase64 = await getCanonicalReceiptPayload(orderId);
+        } catch (renderError) {
+          console.warn(
+            "[ReceiptPage] Canonical render failed; using compatibility renderer:",
+            renderError,
+          );
+        }
+        const payload = payloadBase64
+          ? undefined
+          : buildReceiptRawPayload(receipt, template || [], orderId);
+
+        const printRes = await electronApi.printNetworkRaw({
+          host,
+          port,
+          ...(payloadBase64 ? { payloadBase64 } : { payload }),
+          timeoutMs: options?.timeoutMs ?? 2000,
+        });
+        if (!printRes?.success) {
+          console.warn(
+            "[ReceiptPage] Network raw print failed:",
+            printRes?.message,
+          );
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.warn("[ReceiptPage] Network raw print error:", err);
         return false;
       }
-      const restaurantId = receipt?.restaurant?.id || user?.restaurant_id;
-      if (!restaurantId) return false;
-
-      const res = await apiClient.get(PrinterApis.list(restaurantId));
-      const printers = res?.data?.data || [];
-      const printer = resolveReceiptAssignedPrinter(printers, receipt?.restaurant);
-      if (!printer) return false;
-
-      const host = String(printer?.connection_config?.ip_address || printer?.address || "").trim();
-      const port = Number(printer?.connection_config?.port || 9100);
-      const type = String(printer?.printer_type || "").toLowerCase();
-      const isNetwork = type.includes("network") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
-      if (!isNetwork || !host) return false;
-      if (!receipt) return false;
-
-      const payload = buildReceiptRawPayload(receipt, template || [], orderId);
-
-      // @ts-ignore
-      const printRes = await window.electronAPI.printNetworkRaw({
-        host,
-        port,
-        payload,
-        timeoutMs: options?.timeoutMs ?? 2000,
-      });
-      if (!printRes?.success) {
-        console.warn("[ReceiptPage] Network raw print failed:", printRes?.message);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      console.warn("[ReceiptPage] Network raw print error:", err);
-      return false;
-    }
-  }, [receipt, user?.restaurant_id, orderId, template]);
+    },
+    [receipt, user?.restaurant_id, orderId, template],
+  );
 
   const openPrintDialog = useCallback(() => {
     const printWhenReady = () => window.print();
@@ -408,23 +564,34 @@ export default function ReceiptPage() {
     if (suppressAutoPrintFallbackRef.current || !receipt || !template) return;
 
     const winAny = typeof window !== "undefined" ? (window as any) : null;
-    const payload = buildReceiptRawPayload(receipt, template, orderId);
     const networkTarget = getReceiptNetworkTarget(receipt);
 
     // Instant path: receipt API already includes printer_config (no extra printer list fetch).
     if (networkTarget && winAny?.electronAPI?.printNetworkRaw) {
-      void winAny.electronAPI
-        .printNetworkRaw({ ...networkTarget, payload, timeoutMs: 800 })
-        .catch((err: unknown) => console.warn("[ReceiptPage] Network auto-print:", err));
-      setPrinted(true);
-      return;
+      try {
+        const payloadBase64 = await getCanonicalReceiptPayload(orderId);
+        void winAny.electronAPI
+          .printNetworkRaw({ ...networkTarget, payloadBase64, timeoutMs: 800 })
+          .catch((err: unknown) =>
+            console.warn("[ReceiptPage] Network auto-print:", err),
+          );
+        setPrinted(true);
+        return;
+      } catch (renderError) {
+        console.warn(
+          "[ReceiptPage] Canonical auto-print render failed; trying compatibility path:",
+          renderError,
+        );
+      }
     }
 
     const silentName = receipt.printer_config?.name?.trim();
     if (silentName && winAny?.electronAPI?.printSilent) {
       void winAny.electronAPI
         .printSilent({ printerName: silentName })
-        .catch((err: unknown) => console.warn("[ReceiptPage] Silent auto-print:", err));
+        .catch((err: unknown) =>
+          console.warn("[ReceiptPage] Silent auto-print:", err),
+        );
       setPrinted(true);
       return;
     }
@@ -442,7 +609,13 @@ export default function ReceiptPage() {
     if (suppressAutoPrintFallbackRef.current) return;
     openPrintDialog();
     setPrinted(true);
-  }, [receipt, template, orderId, tryElectronNetworkReceiptPrint, openPrintDialog]);
+  }, [
+    receipt,
+    template,
+    orderId,
+    tryElectronNetworkReceiptPrint,
+    openPrintDialog,
+  ]);
 
   const resolveFiscalPrintDestination =
     useCallback(async (): Promise<FiscalPrintDestination> => {
@@ -665,7 +838,9 @@ export default function ReceiptPage() {
       const btn = document.getElementById("share-btn");
       if (btn) {
         btn.textContent = "Link Copied!";
-        setTimeout(() => { btn.textContent = "Share"; }, 2000);
+        setTimeout(() => {
+          btn.textContent = "Share";
+        }, 2000);
       }
     }
   };
@@ -673,28 +848,47 @@ export default function ReceiptPage() {
   const handleComplete = async () => {
     setCompleting(true);
     try {
-      await apiClient.patch(OrderApis.updateOrderStatus(orderId), { status: "completed" });
-      
+      await apiClient.patch(OrderApis.updateOrderStatus(orderId), {
+        status: "completed",
+      });
+
       // Auto-complete parent order if this is a split bill and all siblings are completed
       try {
-        const guestBillsRes = await apiClient.get(OrderApis.getGuestBills(orderId), { params: { _t: Date.now() } });
-        if (guestBillsRes.data.status === "success" && guestBillsRes.data.data) {
+        const guestBillsRes = await apiClient.get(
+          OrderApis.getGuestBills(orderId),
+          { params: { _t: Date.now() } },
+        );
+        if (
+          guestBillsRes.data.status === "success" &&
+          guestBillsRes.data.data
+        ) {
           const gb = guestBillsRes.data.data;
           const allCompleted = gb.orders.every((g: any) => {
             if (Number(g.order_id) === Number(orderId)) return true;
             return g.status === "completed";
           });
-          
+
           if (allCompleted && gb.anchor_order_id) {
-            const parentOrderRes = await apiClient.get(OrderApis.getOrder(gb.anchor_order_id));
-            if (parentOrderRes.data.status === "success" && parentOrderRes.data.data.status !== "completed") {
+            const parentOrderRes = await apiClient.get(
+              OrderApis.getOrder(gb.anchor_order_id),
+            );
+            if (
+              parentOrderRes.data.status === "success" &&
+              parentOrderRes.data.data.status !== "completed"
+            ) {
               console.log("Auto-completing parent order:", gb.anchor_order_id);
-              await apiClient.patch(OrderApis.updateOrderStatus(gb.anchor_order_id), { status: "completed" });
+              await apiClient.patch(
+                OrderApis.updateOrderStatus(gb.anchor_order_id),
+                { status: "completed" },
+              );
             }
           }
         }
       } catch (gbErr) {
-        console.warn("Guest bills parent auto-complete check skipped or failed:", gbErr);
+        console.warn(
+          "Guest bills parent auto-complete check skipped or failed:",
+          gbErr,
+        );
       }
 
       toast.success("Order completed successfully!");
@@ -722,8 +916,13 @@ export default function ReceiptPage() {
     if (!canRefundOrder(orderCreatedAt)) {
       if (!canProcessRefund) {
         setRefundError("You do not have permission to process refunds.");
-      } else if (isOrderRefundHistorical(orderCreatedAt) && !canApproveHistoricalRefund) {
-        setRefundError("Historical refunds require billing.refund.approve permission.");
+      } else if (
+        isOrderRefundHistorical(orderCreatedAt) &&
+        !canApproveHistoricalRefund
+      ) {
+        setRefundError(
+          "Historical refunds require billing.refund.approve permission.",
+        );
       } else {
         setRefundError("You cannot process this refund.");
       }
@@ -759,7 +958,9 @@ export default function ReceiptPage() {
       setRefundReference("");
       await fetchData();
     } catch (err: any) {
-      setRefundError(err?.response?.data?.detail || "Failed to process refund.");
+      setRefundError(
+        err?.response?.data?.detail || "Failed to process refund.",
+      );
     } finally {
       setRefundSubmitting(false);
     }
@@ -847,7 +1048,9 @@ export default function ReceiptPage() {
     ? `${order.table_name} • #${order.restaurant_order_id || order.id}`
     : `Order #${order.restaurant_order_id || order.id}`;
   const mobileAppBarTitle = order.table_name
-    ? (/^table\b/i.test(order.table_name) ? order.table_name : `Table ${order.table_name}`)
+    ? /^table\b/i.test(order.table_name)
+      ? order.table_name
+      : `Table ${order.table_name}`
     : order.channel === "room_service"
       ? "Room delivery"
       : "Receipt";
@@ -855,10 +1058,12 @@ export default function ReceiptPage() {
   const orderCreatedAt = order.created_at;
   const refundIsHistorical = isOrderRefundHistorical(orderCreatedAt);
   const refundAllowed = canRefundOrder(orderCreatedAt);
-  const showRefundAction = (receipt.total_paid || 0) > 0 && (canProcessRefund || canApproveHistoricalRefund);
+  const showRefundAction =
+    (receipt.total_paid || 0) > 0 &&
+    (canProcessRefund || canApproveHistoricalRefund);
 
-  const globalBlock = template.find(b => b.type === 'global_settings');
-  const paperSize = globalBlock?.paper_size || '80mm';
+  const globalBlock = template.find((b) => b.type === "global_settings");
+  const paperSize = globalBlock?.paper_size || "80mm";
 
   return (
     <>
@@ -870,7 +1075,8 @@ export default function ReceiptPage() {
             margin: 0;
             size: auto;
           }
-          html, body {
+          html,
+          body {
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
@@ -901,11 +1107,17 @@ export default function ReceiptPage() {
         {/* ── Header (no-print) ── */}
         <div className="flex items-center justify-between no-print px-4 pt-4">
           <div className="hidden items-center gap-4 md:flex">
-            <Button variant="ghost" size="icon" onClick={() => {
-              if (returnTo) router.push(returnTo);
-              else if (receipt?.order?.channel === "room_service") router.push("/hotel");
-              else router.back();
-            }} className="rounded-xl hover:bg-muted/50">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (returnTo) router.push(returnTo);
+                else if (receipt?.order?.channel === "room_service")
+                  router.push("/hotel");
+                else router.back();
+              }}
+              className="rounded-xl hover:bg-muted/50"
+            >
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
@@ -930,18 +1142,28 @@ export default function ReceiptPage() {
                 <RotateCcw className="h-3.5 w-3.5" /> Refund
               </Button>
             )}
-            {receipt.is_fully_paid && order.status !== 'completed' && (
+            {receipt.is_fully_paid && order.status !== "completed" && (
               <Button
                 size="sm"
                 onClick={handleComplete}
                 disabled={completing}
                 className="gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700"
               >
-                {completing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                {completing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CheckCircle className="h-3.5 w-3.5" />
+                )}
                 Complete Order
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={handleShare} className="gap-2 rounded-xl" id="share-btn">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleShare}
+              className="gap-2 rounded-xl"
+              id="share-btn"
+            >
               <Share2 className="h-3.5 w-3.5" /> Share
             </Button>
             <Button
@@ -965,9 +1187,12 @@ export default function ReceiptPage() {
           <div className="mx-4 flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl no-print">
             <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
             <div>
-              <p className="font-bold text-emerald-700 dark:text-emerald-300">Payment Complete</p>
+              <p className="font-bold text-emerald-700 dark:text-emerald-300">
+                Payment Complete
+              </p>
               <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">
-                This order has been fully paid. Total: Rs. {receipt.total_paid.toLocaleString()}
+                This order has been fully paid. Total: Rs.{" "}
+                {receipt.total_paid.toLocaleString()}
               </p>
             </div>
           </div>
@@ -1013,13 +1238,17 @@ export default function ReceiptPage() {
               <RotateCcw className="h-4 w-4" /> Process Refund
             </Button>
           )}
-          {receipt.is_fully_paid && order.status !== 'completed' && (
-            <Button 
+          {receipt.is_fully_paid && order.status !== "completed" && (
+            <Button
               className="w-full h-12 text-base font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 shadow-lg gap-2"
               onClick={handleComplete}
               disabled={completing}
             >
-              {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              {completing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4" />
+              )}
               Complete Order
             </Button>
           )}
@@ -1027,11 +1256,15 @@ export default function ReceiptPage() {
             className="flex-1 w-full sm:w-auto h-12 text-base font-bold gap-2 rounded-xl shadow-lg"
             onClick={() => {
               if (returnTo) router.push(returnTo);
-              else if (receipt?.order?.channel === "room_service") router.push("/hotel");
+              else if (receipt?.order?.channel === "room_service")
+                router.push("/hotel");
               else router.push("/orders/active");
             }}
           >
-            <CheckCircle className="h-4 w-4" /> {receipt?.order?.channel === "room_service" ? "Back to Hotel PMS" : "Back to Orders"}
+            <CheckCircle className="h-4 w-4" />{" "}
+            {receipt?.order?.channel === "room_service"
+              ? "Back to Hotel PMS"
+              : "Back to Orders"}
           </Button>
           <div className="flex gap-2 w-full sm:w-auto">
             <Button
@@ -1132,7 +1365,11 @@ export default function ReceiptPage() {
               disabled={refundSubmitting || !refundAllowed}
               className="gap-2"
             >
-              {refundSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              {refundSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RotateCcw className="h-4 w-4" />
+              )}
               {refundSubmitting ? "Processing..." : "Confirm Refund"}
             </Button>
           </DialogFooter>

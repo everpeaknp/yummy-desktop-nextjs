@@ -53,11 +53,24 @@ export function PageTabs({
   ariaLabel = "Page sections",
   className,
 }: PageTabsProps) {
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const equalStyle =
     mobileMode === "equal"
       ? { gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }
       : undefined;
   const denseEqualTabs = mobileMode === "equal" && items.length > 4;
+
+  React.useEffect(() => {
+    if (mobileMode !== "scroll") return;
+    const activeTab = scrollContainerRef.current?.querySelector<HTMLElement>(
+      '[role="tab"][data-state="active"]',
+    );
+    activeTab?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [mobileMode, value]);
 
   return (
     <Tabs
@@ -88,6 +101,7 @@ export function PageTabs({
       ) : null}
 
       <div
+        ref={scrollContainerRef}
         className={cn(
           "min-w-0",
           mobileMode === "select" && "hidden md:block",

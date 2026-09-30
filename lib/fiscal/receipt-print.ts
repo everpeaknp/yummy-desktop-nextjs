@@ -53,7 +53,7 @@ export function fiscalCopyDesignation(
   if (typeof copyNumber === "number" && copyNumber > 0) {
     return `COPY ${copyNumber}`;
   }
-  return "PRINT PREVIEW - AUTHORIZATION REQUIRED";
+  return "PRINT PREVIEW";
 }
 
 export function isFiscalCbmsPending(document: FiscalDocument): boolean {
@@ -150,12 +150,8 @@ export function buildFiscalReceiptRawPayload(
   if (document.cbms_required) {
     lines.push(
       isFiscalCbmsPending(document)
-        ? "CBMS STATUS: PENDING"
-        : `CBMS STATUS: SYNCED${
-            document.cbms_reference
-              ? ` (${document.cbms_reference})`
-              : ""
-          }`,
+        ? "FISCAL SUBMISSION PENDING"
+        : "IRD RECORD SUBMITTED",
     );
   }
 

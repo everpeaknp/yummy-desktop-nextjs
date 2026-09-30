@@ -7,6 +7,7 @@ import {
   ChevronRight,
   History,
   Loader2,
+  MoreHorizontal,
   Plus,
   ReceiptText,
   RefreshCw,
@@ -37,6 +38,12 @@ import {
 } from "@/components/patterns/data/detail-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -506,39 +513,47 @@ export function CustomerDetailWorkspace({
         </div>
         <div>
           <p className="mb-2 text-sm font-medium lg:hidden">Actions</p>
-          <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 lg:flex lg:flex-wrap lg:justify-end">
             <Button
-              variant="outline"
-              className="h-12 justify-start lg:h-11 lg:w-auto"
-              onClick={() => setReturnOpen(true)}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Sales return
-            </Button>
-            <Button
-              variant="outline"
-              className="h-12 justify-start lg:h-11 lg:w-auto"
-              onClick={() => setSaleOpen(true)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Record sale
-            </Button>
-            <Button
-              variant="outline"
-              className="h-12 justify-start lg:h-11 lg:w-auto"
-              onClick={openPaymentOut}
-              disabled={customerCredit <= 0}
-            >
-              <Banknote className="mr-2 h-4 w-4" />
-              Payment out
-            </Button>
-            <Button
-              className="order-first h-12 justify-start lg:order-none lg:h-11 lg:w-auto"
+              className="col-span-full h-12 w-full justify-center lg:h-11 lg:w-auto"
               onClick={openCollection}
             >
               <ReceiptText className="mr-2 h-4 w-4" />
               Receive payment
             </Button>
+            <Button
+              variant="outline"
+              className="h-12 min-w-0 justify-center lg:h-11 lg:w-auto"
+              onClick={() => setSaleOpen(true)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Record sale
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-12 w-12 shrink-0 lg:h-11 lg:w-11"
+                  aria-label="More customer actions"
+                >
+                  <MoreHorizontal className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setReturnOpen(true)}>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Sales return
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={openPaymentOut}
+                  disabled={customerCredit <= 0}
+                >
+                  <Banknote className="mr-2 h-4 w-4" />
+                  Payment out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

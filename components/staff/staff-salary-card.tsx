@@ -7,10 +7,16 @@ import {
   CheckCircle2,
   Clock,
   Loader2,
+  MoreHorizontal,
   TrendingUp,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  ErrorState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 
 import { staffCreditApi } from "@/lib/staff/credit";
 import {
@@ -19,15 +25,9 @@ import {
   type StaffSalaryBalance,
   type StaffSalaryTransaction,
 } from "@/lib/staff/salary";
+import type { SalaryHistoryRecord } from "@/lib/staff/workforce";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -40,12 +40,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   CashBankAccountSelect,
   type CashBankAccountOption,
 } from "@/components/finance/cash-bank-account-select";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 function money(value: number | string | null | undefined) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return formatCurrency(value);
 }
 
 function salaryTypeLabel(salaryType?: string | null) {
@@ -81,9 +88,12 @@ function breakdownText(balance: StaffSalaryBalance) {
     const parts = [
       b.off_days ? `${b.off_days} day(s) off (paid in full)` : null,
       b.worked_days ? `${b.worked_days} day(s) worked` : null,
-      b.absent_days ? `${b.absent_days} day(s) absent (Rs. 0)` : null,
+      b.absent_days
+        ? `${b.absent_days} day(s) absent (${formatCurrency(0)})`
+        : null,
     ].filter(Boolean);
-    const hours = b.worked_hours != null ? ` · ${b.worked_hours.toFixed(1)}h clocked` : "";
+    const hours =
+      b.worked_hours != null ? ` · ${b.worked_hours.toFixed(1)}h clocked` : "";
     return `${parts.join(" · ")} since ${startDate}${hours}`;
   }
 
@@ -111,38 +121,51 @@ export function StaffSalaryCard({
   canManage,
   attendanceBasedSalary,
   selfDiscountPercent,
+  compensationHistory,
   onSettingsChanged,
 }: {
   staffId: number;
   canManage: boolean;
   attendanceBasedSalary: boolean;
   selfDiscountPercent?: number | null;
+  compensationHistory: SalaryHistoryRecord[];
   onSettingsChanged: () => Promise<void> | void;
 }) {
   const [balance, setBalance] = useState<StaffSalaryBalance | null>(null);
   const [overtime, setOvertime] = useState<StaffOvertimeSummary | null>(null);
   const [history, setHistory] = useState<StaffSalaryTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [entryOpen, setEntryOpen] = useState<"pay" | "deduct" | null>(null);
   const [entryAmount, setEntryAmount] = useState("");
   const [entryReason, setEntryReason] = useState("");
   const [entryReference, setEntryReference] = useState("");
   const [entrySaving, setEntrySaving] = useState(false);
-  const [entryAccount, setEntryAccount] = useState<CashBankAccountOption | null>(null);
+  const [entryAccount, setEntryAccount] =
+    useState<CashBankAccountOption | null>(null);
 
   const [overtimeRateOpen, setOvertimeRateOpen] = useState(false);
   const [overtimeRate, setOvertimeRate] = useState("");
   const [overtimeSaving, setOvertimeSaving] = useState(false);
-  const [overtimeAccount, setOvertimeAccount] = useState<CashBankAccountOption | null>(null);
+  const [overtimeAccount, setOvertimeAccount] =
+    useState<CashBankAccountOption | null>(null);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
 
   const [discountOpen, setDiscountOpen] = useState(false);
   const [discountValue, setDiscountValue] = useState("");
   const [discountSaving, setDiscountSaving] = useState(false);
 
+  const paymentHistory = history.filter((item) =>
+    ["salary_paid", "overtime_paid"].includes(item.direction),
+  );
+  const adjustmentHistory = history.filter(
+    (item) => item.direction === "salary_deducted",
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const [nextBalance, nextOvertime] = await Promise.all([
         staffSalaryApi.balance(staffId),
@@ -163,7 +186,9 @@ export function StaffSalaryCard({
         ),
       );
     } catch (error) {
-      toast.error(message(error));
+      const detail = message(error);
+      setError(detail);
+      toast.error(detail);
     } finally {
       setLoading(false);
     }
@@ -285,7 +310,10 @@ export function StaffSalaryCard({
   const submitDiscount = async () => {
     const trimmed = discountValue.trim();
     const parsed = trimmed === "" ? null : Number(trimmed);
-    if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0 || parsed > 100)) {
+    if (
+      parsed !== null &&
+      (!Number.isFinite(parsed) || parsed < 0 || parsed > 100)
+    ) {
       toast.error("Enter a percentage between 0 and 100, or leave it empty");
       return;
     }
@@ -303,113 +331,158 @@ export function StaffSalaryCard({
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <section className="space-y-4">
+        <div className="flex items-start justify-between gap-3 border-b pb-3">
           <div>
-            <CardTitle>Salary</CardTitle>
-            <CardDescription>
+            <h3 className="text-base font-semibold">Current salary</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
               {attendanceBasedSalary
                 ? "Accrues daily, adjusted for attendance"
                 : "Accrues daily from the effective salary"}
-            </CardDescription>
+            </p>
           </div>
-          {canManage ? (
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <Button
-                variant="outline"
-                onClick={() => openEntry("pay")}
-                disabled={!balance || balance.balance <= 0}
-              >
-                <ArrowUpRight className="mr-2 h-4 w-4" />
-                Pay
-              </Button>
-              <Button variant="outline" onClick={() => openEntry("deduct")}>
-                <ArrowDownRight className="mr-2 h-4 w-4" />
-                Deduct
-              </Button>
-            </div>
+          {canManage && overtime && overtime.outstanding_minutes > 0 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 shrink-0"
+                  aria-label="More salary actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setOvertimeRate("");
+                    setOvertimeAccount(null);
+                    setOvertimeRateOpen(true);
+                  }}
+                >
+                  Pay overtime
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setDiscardConfirmOpen(true)}>
+                  Discard overtime
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : null}
-        </CardHeader>
-        <CardContent className="space-y-6">
+        </div>
+        <div className="space-y-6">
           {loading && !balance ? (
-            <div className="flex h-24 items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
-            </div>
+            <LoadingState label="Loading salary account" className="min-h-32" />
+          ) : error && !balance ? (
+            <ErrorState
+              title="Salary account unavailable"
+              description={error}
+              actionLabel="Retry"
+              onAction={() => void load()}
+              className="min-h-40"
+            />
           ) : balance ? (
             <>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Metric
-                  icon={Wallet}
-                  label="Balance owed"
-                  value={money(balance.balance)}
-                  prominent={balance.balance !== 0}
+              <DataList className="rounded-none border-x-0 bg-transparent">
+                <ListRow
+                  leading={<Wallet className="h-4 w-4" />}
+                  title="Pending"
+                  trailing={
+                    <span className="font-semibold tabular-nums">
+                      {money(balance.balance)}
+                    </span>
+                  }
                 />
-                <Metric icon={TrendingUp} label="Accrued so far" value={money(balance.accrued)} />
-                <Metric icon={CheckCircle2} label="Already paid" value={money(balance.paid)} />
-              </div>
-              <p className="text-xs text-muted-foreground">{breakdownText(balance)}</p>
+                <ListRow
+                  leading={<TrendingUp className="h-4 w-4" />}
+                  title="Accrued"
+                  trailing={
+                    <span className="font-semibold tabular-nums">
+                      {money(balance.accrued)}
+                    </span>
+                  }
+                />
+                <ListRow
+                  leading={<CheckCircle2 className="h-4 w-4" />}
+                  title="Paid"
+                  trailing={
+                    <span className="font-semibold tabular-nums">
+                      {money(balance.paid)}
+                    </span>
+                  }
+                />
+                <ListRow
+                  leading={<Clock className="h-4 w-4" />}
+                  title="Overtime"
+                  trailing={
+                    <span className="font-semibold tabular-nums">
+                      {overtime ? minutes(overtime.outstanding_minutes) : "—"}
+                    </span>
+                  }
+                />
+              </DataList>
+              <p className="text-xs text-muted-foreground">
+                {breakdownText(balance)}
+              </p>
 
-              <section>
-                <h3 className="mb-3 font-semibold">Salary &amp; overtime history</h3>
-                <div className="space-y-2">
-                  {history.length ? (
-                    history.map((transaction) => (
-                      <TransactionRow key={transaction.id} transaction={transaction} />
-                    ))
-                  ) : (
-                    <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-                      No salary payments or deductions yet.
-                    </div>
-                  )}
-                </div>
-              </section>
-            </>
-          ) : null}
-
-          <section className="rounded-xl border p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Outstanding overtime</p>
-                  <p className="text-lg font-bold">
-                    {overtime ? minutes(overtime.outstanding_minutes) : "—"}
-                  </p>
-                </div>
-              </div>
-              {canManage && overtime && overtime.outstanding_minutes > 0 ? (
-                <div className="flex gap-2">
+              {canManage ? (
+                <div className="grid grid-cols-2 gap-2 sm:flex">
                   <Button
-                    size="sm"
                     variant="outline"
-                    onClick={() => {
-                      setOvertimeRate("");
-                      setOvertimeAccount(null);
-                      setOvertimeRateOpen(true);
-                    }}
+                    size="sm"
+                    onClick={() => openEntry("pay")}
+                    disabled={balance.balance <= 0}
                   >
-                    Pay
+                    Pay salary
                   </Button>
                   <Button
-                    size="sm"
                     variant="outline"
-                    onClick={() => setDiscardConfirmOpen(true)}
+                    size="sm"
+                    onClick={() => openEntry("deduct")}
                   >
-                    Discard
+                    Deduct
                   </Button>
                 </div>
               ) : null}
+            </>
+          ) : null}
+
+          <section className="border-t pt-4">
+            <h3 className="mb-2 text-base font-semibold">Financial history</h3>
+            <div className="divide-y border-y">
+              <HistoryDisclosure
+                label="Salary history"
+                count={history.length}
+                transactions={history}
+              />
+              <HistoryDisclosure
+                label="Payments"
+                count={paymentHistory.length}
+                transactions={paymentHistory}
+              />
+              <HistoryDisclosure
+                label="Adjustments"
+                count={adjustmentHistory.length}
+                transactions={adjustmentHistory}
+              />
+              <CompensationHistoryDisclosure records={compensationHistory} />
             </div>
           </section>
 
-          <section className="space-y-4 rounded-xl border p-4">
-            <div className="flex items-center justify-between gap-4">
+          <details className="group border-t pt-1">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between py-2 text-sm font-semibold">
+              Salary settings
+              <span className="text-xs font-normal text-muted-foreground">
+                Attendance and discount
+              </span>
+            </summary>
+            <div className="flex items-center justify-between gap-4 border-t py-4">
               <div>
                 <p className="font-medium">Attendance-based salary</p>
                 <p className="text-xs text-muted-foreground">
-                  Adjust daily pay for late arrivals, early departures, and absences
+                  Adjust daily pay for late arrivals, early departures, and
+                  absences
                 </p>
               </div>
               <Switch
@@ -418,32 +491,44 @@ export function StaffSalaryCard({
                 onCheckedChange={toggleAttendanceBasedSalary}
               />
             </div>
-            <div className="flex items-center justify-between gap-4 border-t pt-4">
+            <div className="flex items-center justify-between gap-4 border-t py-4">
               <div>
                 <p className="font-medium">Staff purchase discount</p>
                 <p className="text-xs text-muted-foreground">
-                  Applied automatically to this staff member&apos;s own food orders
+                  Applied automatically to this staff member&apos;s own food
+                  orders
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold">
-                  {selfDiscountPercent == null ? "None" : `${selfDiscountPercent}%`}
+                  {selfDiscountPercent == null
+                    ? "None"
+                    : `${selfDiscountPercent}%`}
                 </span>
                 {canManage ? (
-                  <Button size="sm" variant="outline" onClick={openDiscountEditor}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={openDiscountEditor}
+                  >
                     Edit
                   </Button>
                 ) : null}
               </div>
             </div>
-          </section>
-        </CardContent>
-      </Card>
+          </details>
+        </div>
+      </section>
 
-      <Dialog open={Boolean(entryOpen)} onOpenChange={(open) => !open && setEntryOpen(null)}>
+      <Dialog
+        open={Boolean(entryOpen)}
+        onOpenChange={(open) => !open && setEntryOpen(null)}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{entryOpen === "pay" ? "Pay salary" : "Deduct from salary"}</DialogTitle>
+            <DialogTitle>
+              {entryOpen === "pay" ? "Pay salary" : "Deduct from salary"}
+            </DialogTitle>
             <DialogDescription>
               {entryOpen === "pay"
                 ? "Pays this employee against their accrued salary balance."
@@ -473,7 +558,11 @@ export function StaffSalaryCard({
               </div>
             ) : null}
             <div>
-              <Label>{entryOpen === "deduct" ? "Reason (required)" : "Reason (optional)"}</Label>
+              <Label>
+                {entryOpen === "deduct"
+                  ? "Reason (required)"
+                  : "Reason (optional)"}
+              </Label>
               <Input
                 value={entryReason}
                 onChange={(event) => setEntryReason(event.target.value)}
@@ -494,24 +583,36 @@ export function StaffSalaryCard({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEntryOpen(null)} disabled={entrySaving}>
+            <Button
+              variant="outline"
+              onClick={() => setEntryOpen(null)}
+              disabled={entrySaving}
+            >
               Cancel
             </Button>
-            <Button onClick={submitEntry} disabled={entrySaving || (entryOpen === "pay" && !entryAccount)}>
-              {entrySaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button
+              onClick={submitEntry}
+              disabled={entrySaving || (entryOpen === "pay" && !entryAccount)}
+            >
+              {entrySaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               {entryOpen === "pay" ? "Pay salary" : "Deduct salary"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={overtimeRateOpen} onOpenChange={(open) => !open && setOvertimeRateOpen(false)}>
+      <Dialog
+        open={overtimeRateOpen}
+        onOpenChange={(open) => !open && setOvertimeRateOpen(false)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Pay overtime</DialogTitle>
             <DialogDescription>
-              {overtime ? minutes(overtime.outstanding_minutes) : ""} outstanding. Enter the
-              hourly rate to pay it at.
+              {overtime ? minutes(overtime.outstanding_minutes) : ""}{" "}
+              outstanding. Enter the hourly rate to pay it at.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -539,21 +640,30 @@ export function StaffSalaryCard({
             >
               Cancel
             </Button>
-            <Button onClick={payOvertime} disabled={overtimeSaving || !overtimeAccount}>
-              {overtimeSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button
+              onClick={payOvertime}
+              disabled={overtimeSaving || !overtimeAccount}
+            >
+              {overtimeSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               Pay
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={discardConfirmOpen} onOpenChange={(open) => !open && setDiscardConfirmOpen(false)}>
+      <Dialog
+        open={discardConfirmOpen}
+        onOpenChange={(open) => !open && setDiscardConfirmOpen(false)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Discard outstanding overtime?</DialogTitle>
             <DialogDescription>
-              The recorded {overtime ? minutes(overtime.outstanding_minutes) : ""} of overtime
-              will be cleared without a payout. This cannot be undone.
+              The recorded{" "}
+              {overtime ? minutes(overtime.outstanding_minutes) : ""} of
+              overtime will be cleared without a payout. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -564,21 +674,30 @@ export function StaffSalaryCard({
             >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={discardOvertime} disabled={overtimeSaving}>
-              {overtimeSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button
+              variant="destructive"
+              onClick={discardOvertime}
+              disabled={overtimeSaving}
+            >
+              {overtimeSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               Discard
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={discountOpen} onOpenChange={(open) => !open && setDiscountOpen(false)}>
+      <Dialog
+        open={discountOpen}
+        onOpenChange={(open) => !open && setDiscountOpen(false)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Staff purchase discount</DialogTitle>
             <DialogDescription>
-              Automatically applied when this staff member orders food from this restaurant.
-              Leave empty for no discount.
+              Automatically applied when this staff member orders food from this
+              restaurant. Leave empty for no discount.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -594,11 +713,17 @@ export function StaffSalaryCard({
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDiscountOpen(false)} disabled={discountSaving}>
+            <Button
+              variant="outline"
+              onClick={() => setDiscountOpen(false)}
+              disabled={discountSaving}
+            >
               Cancel
             </Button>
             <Button onClick={submitDiscount} disabled={discountSaving}>
-              {discountSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {discountSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               Save
             </Button>
           </DialogFooter>
@@ -608,29 +733,80 @@ export function StaffSalaryCard({
   );
 }
 
-function Metric({
-  icon: Icon,
+function HistoryDisclosure({
   label,
-  value,
-  prominent = false,
+  count,
+  transactions,
 }: {
-  icon: typeof Wallet;
   label: string;
-  value: string;
-  prominent?: boolean;
+  count: number;
+  transactions: StaffSalaryTransaction[];
 }) {
   return (
-    <div className={`rounded-xl border p-4 ${prominent ? "border-amber-500/30 bg-amber-500/5" : "bg-muted/10"}`}>
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon className="h-4 w-4" />
-        <p className="text-xs font-medium">{label}</p>
+    <details className="group">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 py-3 text-sm font-medium">
+        <span>{label}</span>
+        <span className="tabular-nums text-muted-foreground">{count}</span>
+      </summary>
+      <div className="divide-y border-t pl-3">
+        {transactions.length ? (
+          transactions.map((transaction) => (
+            <TransactionRow key={transaction.id} transaction={transaction} />
+          ))
+        ) : (
+          <p className="py-3 text-sm text-muted-foreground">
+            No {label.toLowerCase()} yet.
+          </p>
+        )}
       </div>
-      <p className="mt-2 text-xl font-bold">{value}</p>
-    </div>
+    </details>
   );
 }
 
-function TransactionRow({ transaction }: { transaction: StaffSalaryTransaction }) {
+function CompensationHistoryDisclosure({
+  records,
+}: {
+  records: SalaryHistoryRecord[];
+}) {
+  return (
+    <details className="group">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 py-3 text-sm font-medium">
+        <span>Compensation changes</span>
+        <span className="tabular-nums text-muted-foreground">
+          {records.length}
+        </span>
+      </summary>
+      <div className="divide-y border-t pl-3">
+        {records.length ? (
+          records.map((record) => (
+            <div key={record.id} className="py-3">
+              <p className="font-medium tabular-nums">
+                {money(record.salary_amount)} / {record.salary_type}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Effective {formatDate(record.effective_from)}
+                {record.effective_to
+                  ? ` to ${formatDate(record.effective_to)}`
+                  : ""}
+                {record.reason ? ` · ${record.reason}` : ""}
+              </p>
+            </div>
+          ))
+        ) : (
+          <p className="py-3 text-sm text-muted-foreground">
+            No compensation changes yet.
+          </p>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function TransactionRow({
+  transaction,
+}: {
+  transaction: StaffSalaryTransaction;
+}) {
   const label =
     transaction.direction === "salary_paid"
       ? "Salary paid"
@@ -641,10 +817,14 @@ function TransactionRow({ transaction }: { transaction: StaffSalaryTransaction }
           : "Adjustment";
   const isOutflow = transaction.direction !== "salary_deducted";
   return (
-    <div className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-start gap-3">
-        <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-          {isOutflow ? <ArrowDownRight className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
+        <div className="pt-0.5 text-muted-foreground">
+          {isOutflow ? (
+            <ArrowDownRight className="h-4 w-4" />
+          ) : (
+            <ArrowUpRight className="h-4 w-4" />
+          )}
         </div>
         <div>
           <p className="font-semibold">{money(transaction.amount)}</p>
@@ -652,9 +832,13 @@ function TransactionRow({ transaction }: { transaction: StaffSalaryTransaction }
             {label}
             {transaction.reason ? ` • ${transaction.reason}` : ""}
             {transaction.reference ? ` • Ref: ${transaction.reference}` : ""}
-            {transaction.balance_after != null ? ` • Balance after: ${money(transaction.balance_after)}` : ""}
+            {transaction.balance_after != null
+              ? ` • Balance after: ${money(transaction.balance_after)}`
+              : ""}
           </p>
-          <p className="text-xs text-muted-foreground">{new Date(transaction.created_at).toLocaleString()}</p>
+          <p className="text-xs text-muted-foreground">
+            {new Date(transaction.created_at).toLocaleString()}
+          </p>
         </div>
       </div>
       <Badge variant="outline">{transaction.status}</Badge>

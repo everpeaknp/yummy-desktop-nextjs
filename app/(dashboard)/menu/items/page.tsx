@@ -56,6 +56,9 @@ import { InventoryLinkDialog } from "@/components/menu/inventory-link-dialog";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
 import { SearchField } from "@/components/patterns/controls/search-field";
+import { FilterBar } from "@/components/patterns/controls/filter-bar";
+import { MobileRegisterToolbar } from "@/components/patterns/controls/mobile-register-toolbar";
+import { MobileCreateFab } from "@/components/patterns/actions/mobile-create-fab";
 import { FilterChip } from "@/components/patterns/controls/filter-chip";
 import { EmptyState } from "@/components/patterns/feedback/feedback-state";
 import Image from "next/image";
@@ -502,34 +505,75 @@ export default function MenuItemsPage() {
         />
       </div>
 
-      <div className="flex min-w-0 items-center gap-2 lg:hidden">
-        <SearchField
-          placeholder="Search menu"
-          className="min-w-0"
-          containerClassName="flex-1"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onClear={handleClearSearch}
-        />
-        <Button
-          onClick={openAddDialog}
-          size="icon"
-          className="h-11 w-11 shrink-0 rounded-xl"
-          aria-label="Add menu item"
-        >
-          <Plus className="h-5 w-5" />
-        </Button>
-      </div>
+      <MobileRegisterToolbar
+        search={
+          <SearchField
+            placeholder="Search menu"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onClear={handleClearSearch}
+          />
+        }
+        filter={
+          <FilterBar
+            title="Filters"
+            activeCount={selectedCategoryIds === null ? 0 : 1}
+            responsiveAt="lg"
+            mobileTriggerVariant="icon"
+            mobileContent={
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Category</p>
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip
+                    onClick={() => setSelectedCategoryIds(null)}
+                    active={selectedCategoryIds === null}
+                    count={allItems.length}
+                  >
+                    All
+                  </FilterChip>
+                  {catalogCategories.map((cat) => {
+                    const count = allItems.filter(
+                      (item) =>
+                        item.item_category_id !== undefined &&
+                        cat.categoryIds.includes(item.item_category_id),
+                    ).length;
+                    const isActive =
+                      selectedCategoryIds !== null &&
+                      selectedCategoryIds.length === cat.categoryIds.length &&
+                      selectedCategoryIds.every((id) =>
+                        cat.categoryIds.includes(id),
+                      );
+                    return (
+                      <FilterChip
+                        key={cat.id}
+                        onClick={() =>
+                          setSelectedCategoryIds(
+                            isActive ? null : cat.categoryIds,
+                          )
+                        }
+                        active={isActive}
+                        count={count}
+                      >
+                        {cat.name}
+                      </FilterChip>
+                    );
+                  })}
+                </div>
+              </div>
+            }
+          />
+        }
+      />
 
       {/* Category Filter Tabs */}
       {loading ? (
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+        <div className="hidden gap-2 overflow-x-auto pb-1 no-scrollbar lg:flex">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-9 w-24 rounded-lg flex-shrink-0" />
           ))}
         </div>
       ) : catalogCategories.length > 0 ? (
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+        <div className="hidden gap-2 overflow-x-auto pb-1 no-scrollbar lg:flex">
           <FilterChip
             onClick={() => setSelectedCategoryIds(null)}
             active={selectedCategoryIds === null}
@@ -641,6 +685,8 @@ export default function MenuItemsPage() {
           </div>
         </>
       )}
+
+      <MobileCreateFab label="Add menu item" onClick={openAddDialog} />
 
       {/* Add/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>

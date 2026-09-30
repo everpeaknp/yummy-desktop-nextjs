@@ -9,7 +9,11 @@ import { useSidebarItems } from "@/hooks/use-sidebar-items";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
-import { isPathAccessible } from "@/lib/role-permissions";
+import { hasPermission, isPathAccessible } from "@/lib/role-permissions";
+import {
+  SETTINGS_CATEGORIES,
+  SETTINGS_NAVIGATION_ITEMS,
+} from "@/lib/settings-navigation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Users,
@@ -38,7 +42,6 @@ import {
   ShieldCheck,
   Monitor,
   Languages,
-  Image as ImageIcon,
   ImagePlus,
   Printer,
   FileEdit,
@@ -163,7 +166,7 @@ const MANAGE_ITEMS = [
   },
   {
     title: "Custom Roles",
-    href: "/manage/roles",
+    href: "/settings/roles",
     icon: Shield,
     section: "Manage / Administration",
   },
@@ -212,7 +215,7 @@ const MANAGE_ITEMS = [
   },
   {
     title: "Business Profile",
-    href: "/manage/profile",
+    href: "/settings/business-profile",
     icon: Store,
     section: "Settings / Business",
   },
@@ -256,12 +259,6 @@ const MANAGE_ITEMS = [
     section: "Settings / Personal",
   },
   {
-    title: "Branding (Logo & Cover)",
-    href: "/settings?setting=branding",
-    icon: ImageIcon,
-    section: "Settings / Business",
-  },
-  {
     title: "Menu Gallery",
     href: "/settings?setting=gallery_management",
     icon: ImagePlus,
@@ -269,19 +266,19 @@ const MANAGE_ITEMS = [
   },
   {
     title: "Printer Management",
-    href: "/settings?setting=printer_management",
+    href: "/settings/printers",
     icon: Printer,
     section: "Settings / Hardware & documents",
   },
   {
     title: "Receipt Designer",
-    href: "/manage/receipt-designer",
+    href: "/settings/receipt-designer",
     icon: Receipt,
     section: "Settings / Hardware & documents",
   },
   {
     title: "KOT Designer",
-    href: "/manage/kot-designer",
+    href: "/settings/kot-designer",
     icon: FileEdit,
     section: "Settings / Hardware & documents",
   },
@@ -340,8 +337,8 @@ const MANAGE_ITEMS = [
     section: "Settings / Administration & data",
   },
   {
-    title: "Admin Management",
-    href: "/settings?setting=admin_management",
+    title: "Administrators",
+    href: "/settings/administrators",
     icon: UserCheck,
     section: "Settings / People & access",
   },
@@ -396,6 +393,10 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
     });
 
     MANAGE_ITEMS.forEach((item) => {
+      // Settings destinations are supplied by the centralized ownership model
+      // below; ignore legacy search definitions so unavailable placeholders and
+      // renamed routes cannot leak back into navigation.
+      if (item.section.startsWith("Settings /")) return;
       if (!isPathAccessible(item.href, user)) return;
       if (
         item.href.startsWith("/finance/accounting") &&
@@ -407,16 +408,32 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
       }
     });
 
+    SETTINGS_NAVIGATION_ITEMS.forEach((item) => {
+      if (item.availabilityState !== "available") return;
+      if (item.permission && !hasPermission(user, item.permission)) return;
+      if (!isPathAccessible(item.route.split("?")[0], user)) return;
+      const category = SETTINGS_CATEGORIES.find(
+        (candidate) => candidate.id === item.category,
+      );
+      items.set(item.route, {
+        title: item.title,
+        href: item.route,
+        icon: item.icon,
+        section: `Settings / ${category?.title ?? "Settings"}`,
+        searchTerms: item.searchTerms,
+      });
+    });
+
     return Array.from(items.values());
   }, [sidebarItems, restaurant, user]);
 
   const filteredItems = useMemo(() => {
     if (!query.trim()) return allItems;
     const lowerQuery = query.toLowerCase();
-    return allItems.filter(
-      (item) =>
-        item.title.toLowerCase().includes(lowerQuery) ||
-        (item.section && item.section.toLowerCase().includes(lowerQuery)),
+    return allItems.filter((item) =>
+      [item.title, item.section, ...(item.searchTerms ?? [])]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(lowerQuery)),
     );
   }, [query, allItems]);
 

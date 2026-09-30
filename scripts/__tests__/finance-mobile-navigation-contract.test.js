@@ -15,7 +15,7 @@ test("Manage is a global mobile destination and modules remain secondary", () =>
 
   assert.match(
     routeResolver,
-    /globalMobileNavigationRoutes = \[[\s\S]*?"\/dashboard"[\s\S]*?"\/orders"[\s\S]*?"\/analytics"[\s\S]*?"\/manage\/profile"[\s\S]*?"\/manage"/,
+    /globalMobileNavigationRoutes = \[[\s\S]*?"\/dashboard"[\s\S]*?"\/orders"[\s\S]*?"\/analytics"[\s\S]*?"\/settings\/business-profile"[\s\S]*?"\/manage"/,
   );
   assert.match(routeResolver, /shouldMobileBottomNavBeVisible/);
   assert.match(routeResolver, /isMobileSecondaryModuleRoute/);

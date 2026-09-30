@@ -688,7 +688,7 @@ export function Sidebar() {
 
               <div className="py-1">
                 <DropdownMenuItem
-                  onClick={() => router.push("/manage/profile")}
+                  onClick={() => router.push("/settings/business-profile")}
                   className="cursor-pointer gap-3 py-2 px-3 text-sm font-medium text-foreground/80 hover:text-foreground"
                 >
                   <Pencil className="h-4 w-4" /> Business Profile

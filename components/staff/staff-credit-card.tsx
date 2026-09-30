@@ -10,6 +10,12 @@ import {
   WalletCards,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
+import { DataList, ListRow } from "@/components/patterns/data/data-list";
 
 import {
   staffCreditApi,
@@ -18,13 +24,6 @@ import {
 } from "@/lib/staff/credit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -46,9 +45,10 @@ import {
   CashBankAccountSelect,
   type CashBankAccountOption,
 } from "@/components/finance/cash-bank-account-select";
+import { formatCurrency } from "@/lib/utils";
 
 function money(value: number | string | null | undefined) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return formatCurrency(value);
 }
 
 function message(error: any) {
@@ -73,16 +73,22 @@ export function StaffCreditCard({
   onDiscountLimitChanged: (value: number | null) => Promise<void> | void;
 }) {
   const [balance, setBalance] = useState<StaffCreditBalance | null>(null);
-  const [transactions, setTransactions] = useState<StaffCreditTransaction[]>([]);
+  const [transactions, setTransactions] = useState<StaffCreditTransaction[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [entryOpen, setEntryOpen] = useState<"advance" | "repay" | null>(null);
   const [entryAmount, setEntryAmount] = useState("");
   const [entryReason, setEntryReason] = useState("");
   const [entrySaving, setEntrySaving] = useState(false);
-  const [entryAccount, setEntryAccount] = useState<CashBankAccountOption | null>(null);
+  const [entryAccount, setEntryAccount] =
+    useState<CashBankAccountOption | null>(null);
 
-  const [reversing, setReversing] = useState<StaffCreditTransaction | null>(null);
+  const [reversing, setReversing] = useState<StaffCreditTransaction | null>(
+    null,
+  );
   const [reversalReason, setReversalReason] = useState("");
   const [reversalSaving, setReversalSaving] = useState(false);
 
@@ -92,6 +98,7 @@ export function StaffCreditCard({
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const [nextBalance, nextTransactions] = await Promise.all([
         staffCreditApi.balance(staffId),
@@ -100,7 +107,9 @@ export function StaffCreditCard({
       setBalance(nextBalance);
       setTransactions(nextTransactions);
     } catch (error) {
-      toast.error(message(error));
+      const detail = message(error);
+      setError(detail);
+      toast.error(detail);
     } finally {
       setLoading(false);
     }
@@ -135,9 +144,12 @@ export function StaffCreditCard({
         account_type: entryAccount.account_type,
         account_id: entryAccount.id,
       };
-      if (entryOpen === "advance") await staffCreditApi.recordAdvance(staffId, payload);
+      if (entryOpen === "advance")
+        await staffCreditApi.recordAdvance(staffId, payload);
       else await staffCreditApi.recordRepayment(staffId, payload);
-      toast.success(entryOpen === "advance" ? "Advance recorded" : "Repayment recorded");
+      toast.success(
+        entryOpen === "advance" ? "Advance recorded" : "Repayment recorded",
+      );
       setEntryOpen(null);
       await load();
     } catch (error) {
@@ -154,7 +166,11 @@ export function StaffCreditCard({
     }
     setReversalSaving(true);
     try {
-      await staffCreditApi.reverse(staffId, reversing.id, reversalReason.trim());
+      await staffCreditApi.reverse(
+        staffId,
+        reversing.id,
+        reversalReason.trim(),
+      );
       toast.success("Transaction reversed");
       setReversing(null);
       setReversalReason("");
@@ -167,7 +183,9 @@ export function StaffCreditCard({
   };
 
   const openLimitEditor = () => {
-    setLimitValue(discountLimitAmount == null ? "" : String(discountLimitAmount));
+    setLimitValue(
+      discountLimitAmount == null ? "" : String(discountLimitAmount),
+    );
     setLimitOpen(true);
   };
 
@@ -191,72 +209,85 @@ export function StaffCreditCard({
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <section className="space-y-4">
+        <div className="border-b pb-3">
           <div>
-            <CardTitle>Discount limit &amp; credit</CardTitle>
-            <CardDescription>
-              Per-bill discount authorization cap, plus advances given to and repaid by this employee.
-            </CardDescription>
+            <h3 className="text-base font-semibold">Credits &amp; advances</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Per-bill discount authorization cap, plus advances given to and
+              repaid by this employee.
+            </p>
           </div>
-          {canManage ? (
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <Button variant="outline" onClick={() => openEntry("advance")}>
-                <ArrowUpRight className="mr-2 h-4 w-4" />
-                Advance
-              </Button>
-              <Button variant="outline" onClick={() => openEntry("repay")}>
-                <ArrowDownRight className="mr-2 h-4 w-4" />
-                Repay
-              </Button>
-            </div>
-          ) : null}
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Discount authorization limit</p>
-              <p className="mt-1 text-xl font-bold">
-                {discountLimitAmount == null ? "No limit set" : money(discountLimitAmount)}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Above this, applying a manual discount needs a manager override.
-              </p>
-            </div>
-            <CashBankAccountSelect
-              value={entryAccount}
-              onChange={setEntryAccount}
-              disabled={entrySaving}
-              label={entryOpen === "advance" ? "Pay from" : "Receive into"}
-            />
-            {canManage ? (
-              <Button size="sm" variant="outline" onClick={openLimitEditor}>
-                <Edit3 className="mr-2 h-4 w-4" />
-                Edit
-              </Button>
-            ) : null}
-          </div>
-
+        </div>
+        <div className="space-y-6">
           {loading && !balance ? (
-            <div className="flex h-24 items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
-            </div>
+            <LoadingState label="Loading advances" className="min-h-32" />
+          ) : error && !balance ? (
+            <ErrorState
+              title="Credit and advances unavailable"
+              description={error}
+              actionLabel="Retry"
+              onAction={() => void load()}
+              className="min-h-40"
+            />
           ) : balance ? (
             <>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Metric
-                  icon={WalletCards}
-                  label="Balance owed"
-                  value={money(balance.balance)}
-                  prominent={balance.balance !== 0}
+              <DataList className="rounded-none border-x-0 bg-transparent">
+                <ListRow
+                  leading={<WalletCards className="h-4 w-4" />}
+                  title="Balance"
+                  trailing={
+                    <span className="font-semibold tabular-nums">
+                      {money(balance.balance)}
+                    </span>
+                  }
                 />
-                <Metric icon={ArrowUpRight} label="Total advanced" value={money(balance.total_advanced)} />
-                <Metric icon={ArrowDownRight} label="Total repaid" value={money(balance.total_repaid)} />
-              </div>
+              </DataList>
 
-              <section>
-                <h3 className="mb-3 font-semibold">Advance &amp; repayment history</h3>
-                <div className="space-y-2">
+              {canManage ? (
+                <div className="grid grid-cols-2 gap-2 sm:flex">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openEntry("advance")}
+                  >
+                    Give advance
+                  </Button>
+                  {balance.balance > 0 ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openEntry("repay")}
+                    >
+                      Take repayment
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <details className="group border-t pt-1">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between py-2 text-sm font-semibold">
+                  <span>Advance history</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {transactions.length} record
+                    {transactions.length === 1 ? "" : "s"}
+                  </span>
+                </summary>
+                <div className="divide-y border-y">
+                  <div className="grid grid-cols-2 divide-x border-b text-sm">
+                    <div className="py-3 pr-3">
+                      <p className="text-xs text-muted-foreground">Advanced</p>
+                      <p className="mt-1 font-semibold tabular-nums">
+                        {money(balance.total_advanced)}
+                      </p>
+                    </div>
+                    <div className="py-3 pl-3">
+                      <p className="text-xs text-muted-foreground">Repaid</p>
+                      <p className="mt-1 font-semibold tabular-nums">
+                        {money(balance.total_repaid)}
+                      </p>
+                    </div>
+                  </div>
                   {transactions.length ? (
                     transactions.map((transaction) => (
                       <TransactionRow
@@ -270,21 +301,56 @@ export function StaffCreditCard({
                       />
                     ))
                   ) : (
-                    <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-                      No advances or repayments recorded yet.
-                    </div>
+                    <EmptyState
+                      title="No advance history"
+                      description="Advances and repayments will appear here."
+                      className="min-h-36"
+                    />
                   )}
                 </div>
-              </section>
+              </details>
+
+              <details className="group border-t pt-1">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between py-2 text-sm font-semibold">
+                  <span>Discount authorization</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {discountLimitAmount == null
+                      ? "No limit"
+                      : money(discountLimitAmount)}
+                  </span>
+                </summary>
+                <div className="flex items-center justify-between gap-4 border-t py-4">
+                  <p className="max-w-xl text-sm text-muted-foreground">
+                    Discounts above this amount require a manager override.
+                  </p>
+                  {canManage ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={openLimitEditor}
+                    >
+                      <Edit3 className="mr-2 h-4 w-4" />
+                      Edit
+                    </Button>
+                  ) : null}
+                </div>
+              </details>
             </>
           ) : null}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      <Dialog open={Boolean(entryOpen)} onOpenChange={(open) => !open && setEntryOpen(null)}>
+      <Dialog
+        open={Boolean(entryOpen)}
+        onOpenChange={(open) => !open && setEntryOpen(null)}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{entryOpen === "advance" ? "Record an advance" : "Record a repayment"}</DialogTitle>
+            <DialogTitle>
+              {entryOpen === "advance"
+                ? "Record an advance"
+                : "Record a repayment"}
+            </DialogTitle>
             <DialogDescription>
               {entryOpen === "advance"
                 ? "Money given to this employee, added to their outstanding balance."
@@ -292,6 +358,12 @@ export function StaffCreditCard({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <CashBankAccountSelect
+              value={entryAccount}
+              onChange={setEntryAccount}
+              disabled={entrySaving}
+              label={entryOpen === "advance" ? "Pay from" : "Receive into"}
+            />
             <div>
               <Label>Amount</Label>
               <Input
@@ -308,29 +380,48 @@ export function StaffCreditCard({
               <Input
                 value={entryReason}
                 onChange={(event) => setEntryReason(event.target.value)}
-                placeholder={entryOpen === "advance" ? "e.g. Emergency advance" : "e.g. Deducted from salary"}
+                placeholder={
+                  entryOpen === "advance"
+                    ? "e.g. Emergency advance"
+                    : "e.g. Deducted from salary"
+                }
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEntryOpen(null)} disabled={entrySaving}>
+            <Button
+              variant="outline"
+              onClick={() => setEntryOpen(null)}
+              disabled={entrySaving}
+            >
               Cancel
             </Button>
-            <Button onClick={submitEntry} disabled={entrySaving || !entryAccount}>
-              {entrySaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button
+              onClick={submitEntry}
+              disabled={entrySaving || !entryAccount}
+            >
+              {entrySaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               {entryOpen === "advance" ? "Record advance" : "Record repayment"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(reversing)} onOpenChange={(open) => { if (!open && !reversalSaving) setReversing(null); }}>
+      <Dialog
+        open={Boolean(reversing)}
+        onOpenChange={(open) => {
+          if (!open && !reversalSaving) setReversing(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reverse transaction</DialogTitle>
             <DialogDescription>
-              This reverses {reversing ? money(reversing.amount) : "the amount"} and restores the employee&apos;s
-              balance. The original record remains visible.
+              This reverses {reversing ? money(reversing.amount) : "the amount"}{" "}
+              and restores the employee&apos;s balance. The original record
+              remains visible.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -342,24 +433,39 @@ export function StaffCreditCard({
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReversing(null)} disabled={reversalSaving}>
+            <Button
+              variant="outline"
+              onClick={() => setReversing(null)}
+              disabled={reversalSaving}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={submitReversal} disabled={reversalSaving || reversalReason.trim().length < 3}>
-              {reversalSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Undo2 className="mr-2 h-4 w-4" />}
+            <Button
+              variant="destructive"
+              onClick={submitReversal}
+              disabled={reversalSaving || reversalReason.trim().length < 3}
+            >
+              {reversalSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Undo2 className="mr-2 h-4 w-4" />
+              )}
               Reverse
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={limitOpen} onOpenChange={(open) => !open && setLimitOpen(false)}>
+      <Dialog
+        open={limitOpen}
+        onOpenChange={(open) => !open && setLimitOpen(false)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Discount authorization limit</DialogTitle>
             <DialogDescription>
-              The most this staff member can discount on a single bill without a manager override. Leave empty for
-              no limit.
+              The most this staff member can discount on a single bill without a
+              manager override. Leave empty for no limit.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -374,39 +480,23 @@ export function StaffCreditCard({
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setLimitOpen(false)} disabled={limitSaving}>
+            <Button
+              variant="outline"
+              onClick={() => setLimitOpen(false)}
+              disabled={limitSaving}
+            >
               Cancel
             </Button>
             <Button onClick={submitLimit} disabled={limitSaving}>
-              {limitSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {limitSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               Save
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value,
-  prominent = false,
-}: {
-  icon: typeof WalletCards;
-  label: string;
-  value: string;
-  prominent?: boolean;
-}) {
-  return (
-    <div className={`rounded-xl border p-4 ${prominent ? "border-amber-500/30 bg-amber-500/5" : "bg-muted/10"}`}>
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon className="h-4 w-4" />
-        <p className="text-xs font-medium">{label}</p>
-      </div>
-      <p className="mt-2 text-xl font-bold">{value}</p>
-    </div>
   );
 }
 
@@ -427,9 +517,9 @@ function TransactionRow({
         ? "Repayment received"
         : "Adjustment";
   return (
-    <div className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-start gap-3">
-        <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+        <div className="pt-0.5 text-muted-foreground">
           {reversed ? (
             <Undo2 className="h-4 w-4" />
           ) : transaction.direction === "advance_granted" ? (
@@ -443,13 +533,19 @@ function TransactionRow({
           <p className="text-xs text-muted-foreground">
             {label}
             {transaction.reason ? ` • ${transaction.reason}` : ""}
-            {transaction.balance_after != null ? ` • Balance after: ${money(transaction.balance_after)}` : ""}
+            {transaction.balance_after != null
+              ? ` • Balance after: ${money(transaction.balance_after)}`
+              : ""}
           </p>
-          <p className="text-xs text-muted-foreground">{new Date(transaction.created_at).toLocaleString()}</p>
+          <p className="text-xs text-muted-foreground">
+            {new Date(transaction.created_at).toLocaleString()}
+          </p>
         </div>
       </div>
       <div className="flex items-center gap-2 sm:justify-end">
-        <Badge variant={reversed ? "secondary" : "outline"}>{transaction.status}</Badge>
+        <Badge variant={reversed ? "secondary" : "outline"}>
+          {transaction.status}
+        </Badge>
         {canManage && !reversed ? (
           <Button size="sm" variant="outline" onClick={onReverse}>
             <Undo2 className="mr-1 h-3.5 w-3.5" />

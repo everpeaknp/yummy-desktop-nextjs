@@ -1,3 +1,6 @@
+import { reportGroups } from "@/components/finance/reports/finance-report-catalog";
+import { getSettingsRouteOwnership } from "@/lib/settings-navigation";
+
 export type MobileNavigationLevel = "top-level" | "secondary" | "detail";
 
 export type MobileRoutePresentation = {
@@ -10,7 +13,7 @@ const globalMobileNavigationRoutes = [
   "/dashboard",
   "/orders",
   "/analytics",
-  "/manage/profile",
+  "/settings/business-profile",
   "/manage",
   "/hotel",
 ] as const;
@@ -26,15 +29,7 @@ const routeTitles: Array<[string, string, MobileNavigationLevel?, string?]> = [
   ["/orders/history", "Order history", "secondary", "/orders"],
   ["/orders", "Orders", "top-level"],
   ["/analytics", "Analytics", "top-level"],
-  ["/manage/profile", "Business profile", "top-level"],
   ["/settings", "Settings", "secondary", "/manage"],
-  ["/manage/additional-settings", "Settings", "secondary", "/manage"],
-  ["/manage/audit-logs", "Audit logs", "secondary", "/manage"],
-  ["/manage/receipt-designer", "Receipt designer", "detail", "/manage"],
-  ["/manage/kot-designer", "KOT designer", "detail", "/manage"],
-  ["/manage/taxes", "Taxes & fees", "secondary", "/manage"],
-  ["/manage/settings", "Restaurant operations", "secondary", "/settings"],
-  ["/manage/roles", "Roles", "secondary", "/manage"],
   ["/manage", "Manage", "top-level"],
   [
     "/finance/purchases/returns",
@@ -54,7 +49,6 @@ const routeTitles: Array<[string, string, MobileNavigationLevel?, string?]> = [
   ["/finance/payments", "Payments", "secondary", "/finance"],
   ["/finance/expenses", "Expenses", "secondary", "/finance"],
   ["/finance/sales", "Sales", "secondary", "/finance"],
-  ["/finance/setup", "Finance setup", "secondary", "/finance"],
   ["/cash-drawers", "Cash drawers", "secondary", "/manage"],
   ["/day-close", "Day close", "secondary", "/manage"],
   ["/finance", "Finance", "secondary", "/manage"],
@@ -66,8 +60,10 @@ const routeTitles: Array<[string, string, MobileNavigationLevel?, string?]> = [
   ["/discounts", "Discounts", "secondary", "/manage"],
   ["/customers", "Customers", "secondary", "/manage"],
   ["/suppliers", "Suppliers", "secondary", "/manage"],
+  ["/staff/join-requests", "Join requests", "detail", "/staff"],
+  ["/staff", "Staff", "secondary", "/manage"],
+  ["/attendance", "Attendance", "secondary", "/workforce"],
   ["/workforce", "Workforce", "secondary", "/manage"],
-  ["/premium", "Plans", "secondary", "/manage"],
 ];
 
 export function shouldMobileBottomNavBeVisible(pathname: string) {
@@ -102,6 +98,24 @@ export function getMobileRoutePresentation(
       navigationLevel: "detail",
       backFallback: "/orders",
     };
+  if (/^\/staff\/\d+/.test(pathname))
+    return {
+      title: "Staff",
+      navigationLevel: "detail",
+      backFallback: "/staff",
+    };
+
+  const settingsOwner = getSettingsRouteOwnership(pathname);
+  if (settingsOwner)
+    return {
+      title: settingsOwner.title,
+      navigationLevel:
+        settingsOwner.id === "receipt_designer" ||
+        settingsOwner.id === "kot_designer"
+          ? "detail"
+          : "secondary",
+      backFallback: settingsOwner.mobileBackTarget,
+    };
 
   const matched = routeTitles.find(
     ([path]) => pathname === path || pathname.startsWith(`${path}/`),
@@ -129,4 +143,3 @@ export function getMobileRoutePresentation(
     backFallback: "/manage",
   };
 }
-import { reportGroups } from "@/components/finance/reports/finance-report-catalog";

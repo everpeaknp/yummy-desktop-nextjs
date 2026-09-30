@@ -30,6 +30,9 @@ import {
   type DiscountRecord,
 } from "@/components/discounts/discount-presentation";
 import { SearchField } from "@/components/patterns/controls/search-field";
+import { MobileRegisterToolbar } from "@/components/patterns/controls/mobile-register-toolbar";
+import { MobileCreateFab } from "@/components/patterns/actions/mobile-create-fab";
+import { FilterBar } from "@/components/patterns/controls/filter-bar";
 import { DataList, ListRow } from "@/components/patterns/data/data-list";
 import {
   EmptyState,
@@ -37,11 +40,19 @@ import {
 } from "@/components/patterns/feedback/feedback-state";
 import { AppPage } from "@/components/patterns/page/app-page";
 import { PageHeader } from "@/components/patterns/page/page-header";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function DiscountsPage() {
   const [discounts, setDiscounts] = useState<DiscountRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingDiscount, setEditingDiscount] = useState<DiscountRecord | null>(
     null,
@@ -169,10 +180,17 @@ export default function DiscountsPage() {
 
   const filteredDiscounts = discounts.filter((discount) => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return true;
-    return [discount.name, discount.code, discount.description]
-      .filter(Boolean)
-      .some((value) => value?.toLowerCase().includes(query));
+    const matchesSearch =
+      !query ||
+      [discount.name, discount.code, discount.description]
+        .filter(Boolean)
+        .some((value) => value?.toLowerCase().includes(query));
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "active"
+        ? discount.is_active !== false
+        : discount.is_active === false);
+    return matchesSearch && matchesStatus;
   });
 
   const openCreateDialog = () => {
@@ -193,31 +211,70 @@ export default function DiscountsPage() {
         }
       />
 
-      <div className="flex items-center gap-2 lg:hidden">
+      <MobileRegisterToolbar
+        search={
+          <SearchField
+            placeholder="Search discounts"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onClear={() => setSearchQuery("")}
+          />
+        }
+        filter={
+          <FilterBar
+            title="Filters"
+            activeCount={statusFilter === "all" ? 0 : 1}
+            responsiveAt="lg"
+            mobileTriggerVariant="icon"
+            mobileContent={
+              <div className="space-y-2">
+                <label
+                  className="text-sm font-medium"
+                  htmlFor="discount-status-filter-mobile"
+                >
+                  Status
+                </label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger
+                    id="discount-status-filter-mobile"
+                    className="h-11 rounded-xl"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All discounts</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            }
+          />
+        }
+      />
+
+      <FilterBar className="hidden lg:block" responsiveAt="lg">
         <SearchField
-          containerClassName="flex-1"
+          containerClassName="max-w-sm"
           placeholder="Search discounts"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
           onClear={() => setSearchQuery("")}
         />
-        <Button
-          size="icon"
-          onClick={openCreateDialog}
-          className="h-11 w-11 shrink-0 rounded-xl"
-          aria-label="New discount"
-        >
-          <Plus className="h-5 w-5" />
-        </Button>
-      </div>
-
-      <SearchField
-        containerClassName="hidden max-w-sm lg:block"
-        placeholder="Search discounts"
-        value={searchQuery}
-        onChange={(event) => setSearchQuery(event.target.value)}
-        onClear={() => setSearchQuery("")}
-      />
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger
+            className="h-11 w-44 rounded-xl"
+            aria-label="Discount status"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All discounts</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterBar>
 
       {loading ? (
         <LoadingState label="Loading discounts..." />
@@ -226,12 +283,12 @@ export default function DiscountsPage() {
           icon={<Percent className="h-5 w-5" />}
           title={
             discounts.length
-              ? "No discounts match your search"
+              ? "No discounts match these filters"
               : "No discounts yet"
           }
           description={
             discounts.length
-              ? "Try another name or code."
+              ? "Try another name, code, or status."
               : "Create an offer for all menu items, selected items, or categories."
           }
           actionLabel={discounts.length ? undefined : "New discount"}
@@ -303,6 +360,8 @@ export default function DiscountsPage() {
           })}
         </DataList>
       )}
+
+      <MobileCreateFab label="New discount" onClick={openCreateDialog} />
 
       <DiscountDialog
         open={dialogOpen}

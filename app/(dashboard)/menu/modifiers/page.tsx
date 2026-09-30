@@ -40,6 +40,8 @@ import {
 } from "@/components/menu/modifier-group-dialog";
 import { ModifierOptionsSheet } from "@/components/menu/modifier-options-sheet";
 import { SearchField } from "@/components/patterns/controls/search-field";
+import { MobileRegisterToolbar } from "@/components/patterns/controls/mobile-register-toolbar";
+import { MobileCreateFab } from "@/components/patterns/actions/mobile-create-fab";
 import { DataList } from "@/components/patterns/data/data-list";
 import { EmptyState } from "@/components/patterns/feedback/feedback-state";
 import { AppPage } from "@/components/patterns/page/app-page";
@@ -182,23 +184,16 @@ export default function ModifiersPage() {
         }
       />
 
-      <div className="flex items-center gap-2 lg:hidden">
-        <SearchField
-          containerClassName="flex-1"
-          placeholder="Search option groups"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          onClear={() => setSearchQuery("")}
-        />
-        <Button
-          onClick={openCreateDialog}
-          size="icon"
-          className="h-11 w-11 shrink-0 rounded-xl"
-          aria-label="Add option group"
-        >
-          <Plus className="h-5 w-5" />
-        </Button>
-      </div>
+      <MobileRegisterToolbar
+        search={
+          <SearchField
+            placeholder="Search option groups"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onClear={() => setSearchQuery("")}
+          />
+        }
+      />
 
       <SearchField
         containerClassName="hidden max-w-sm lg:block"
@@ -308,6 +303,8 @@ export default function ModifiersPage() {
           ))}
         </DataList>
       )}
+
+      <MobileCreateFab label="Add option group" onClick={openCreateDialog} />
 
       <ModifierGroupDialog
         open={groupDialogOpen}

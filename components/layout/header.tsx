@@ -14,11 +14,18 @@ import {
   DollarSign,
   ArrowLeft,
   Settings2,
+  MoreHorizontal,
   Zap,
   Download,
 } from "lucide-react";
 import { DESKTOP_APP_DOWNLOAD_URL } from "@/lib/desktop-download";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -30,6 +37,7 @@ import {
   isMobileSecondaryModuleRoute,
   shouldMobileBottomNavBeVisible,
 } from "@/lib/mobile-module-navigation";
+import { getSettingsRouteOwnership } from "@/lib/settings-navigation";
 import { cn, getImageUrl } from "@/lib/utils";
 import {
   useNotifications,
@@ -41,7 +49,11 @@ import { DashboardApis } from "@/lib/api/endpoints";
 import { hasPermission } from "@/lib/role-permissions";
 
 import { memo } from "react";
-import { MOBILE_APP_BAR_TITLE_EVENT } from "@/components/layout/mobile-app-bar-title";
+import {
+  MOBILE_APP_BAR_ACTIONS_EVENT,
+  MOBILE_APP_BAR_TITLE_EVENT,
+  type MobileAppBarAction,
+} from "@/components/layout/mobile-app-bar-title";
 import { MobileAppBar } from "@/components/patterns/navigation/mobile-app-bar";
 
 function formatRoleLabel(role: string) {
@@ -71,94 +83,6 @@ function getVisibleRoleLabels(
   return formatRoleLabel(user?.role || "Manager");
 }
 
-function mobileAppBarTitle(pathname: string) {
-  if (pathname === "/dashboard") return "Yummy";
-
-  if (/^\/orders\/\d+\/checkout/.test(pathname)) return "Checkout";
-  if (/^\/orders\/\d+\/receipt/.test(pathname)) return "Receipt";
-  if (/^\/orders\/\d+\/add-items/.test(pathname)) return "Add items";
-  if (/^\/orders\/\d+/.test(pathname)) return "Order";
-
-  const titles: Array<[string, string]> = [
-    ["/orders/new", "New order"],
-    ["/orders/history", "Order history"],
-    ["/orders", "Orders"],
-    ["/analytics", "Analytics"],
-    ["/manage/additional-settings", "Settings"],
-    ["/manage/audit-logs", "Audit logs"],
-    ["/manage/receipt-designer", "Receipt designer"],
-    ["/manage/kot-designer", "KOT designer"],
-    ["/manage/taxes", "Taxes & fees"],
-    ["/manage/settings", "Restaurant operations"],
-    ["/manage/roles", "Roles"],
-    ["/manage/profile", "Business profile"],
-    ["/settings", "Settings"],
-    ["/manage", "Manage"],
-    ["/finance/purchases/returns", "Purchase returns"],
-    ["/finance/purchases", "Purchases"],
-    ["/finance/sales/returns", "Sales returns"],
-    ["/finance/reports/department-breakdown", "Department performance"],
-    ["/finance/reports/custody-reconciliation", "Custody reconciliation"],
-    ["/finance/reports/party-balances", "Party balances"],
-    ["/finance/reports/account-ledger", "Account ledger"],
-    ["/finance/reports/profit-and-loss", "Profit & Loss"],
-    ["/finance/reports/balance-sheet", "Balance sheet"],
-    ["/finance/reports/trial-balance", "Trial balance"],
-    ["/finance/reports/head-activity", "Account activity"],
-    ["/finance/reports/vat-sales", "VAT sales"],
-    ["/finance/reports/cash-flow", "Cash flow"],
-    ["/finance/reports/refunds", "Refunds"],
-    ["/finance/reports/daybook", "Daybook"],
-    ["/finance/reports", "Reports"],
-    ["/finance/accounting/opening-balances", "Opening balances"],
-    ["/finance/accounting/ledger-mapping", "Ledger mapping"],
-    ["/finance/accounting/settlements", "Settlement reconciliation"],
-    ["/finance/accounting/period-reports", "Period reports"],
-    ["/finance/accounting/trial-balance", "Trial balance"],
-    ["/finance/accounting/balance-sheet", "Balance sheet"],
-    ["/finance/accounting/profit-loss", "Profit and loss"],
-    ["/finance/accounting/customer-ledger", "Customer ledger"],
-    ["/finance/accounting/supplier-ledger", "Supplier ledger"],
-    ["/finance/accounting/general-ledger", "General ledger"],
-    ["/finance/accounting/day-closes", "Day close review"],
-    ["/finance/accounting/vouchers", "Journal vouchers"],
-    ["/finance/accounting/inventory", "Inventory accounting"],
-    ["/finance/accounting/periods", "Accounting periods"],
-    ["/finance/accounting/vat-export", "VAT export"],
-    ["/finance/accounting/ap-aging", "Payables aging"],
-    ["/finance/accounting/ar-aging", "Receivables aging"],
-    ["/finance/accounting/setup", "Accounting setup"],
-    ["/finance/other-income", "Other income"],
-    ["/finance/transactions", "Transactions"],
-    ["/finance/journals", "Journal vouchers"],
-    ["/finance/operations", "Cash & banks"],
-    ["/finance/heads", "Chart of accounts"],
-    ["/finance/payments", "Payments"],
-    ["/finance/expenses", "Expenses"],
-    ["/finance/sales", "Sales"],
-    ["/finance/setup", "Finance setup"],
-    ["/cash-drawers", "Cash drawers"],
-    ["/day-close", "Day close"],
-    ["/finance", "Finance"],
-    ["/inventory/purchases", "Purchases"],
-    ["/inventory", "Inventory"],
-    ["/customers", "Customers"],
-    ["/suppliers", "Suppliers"],
-    ["/workforce", "Workforce"],
-    ["/premium", "Plans"],
-  ];
-
-  const matchedTitle = titles.find(([path]) => pathname.startsWith(path))?.[1];
-  if (matchedTitle) return matchedTitle;
-
-  const lastSegment = pathname.split("/").filter(Boolean).at(-1);
-  return lastSegment
-    ? lastSegment
-        .replace(/[-_]+/g, " ")
-        .replace(/\b\w/g, (char) => char.toUpperCase())
-    : "Yummy";
-}
-
 function mobileAppBarBackHref(pathname: string) {
   const orderChild = pathname.match(
     /^\/orders\/(\d+)\/(?:checkout|receipt|add-items)/,
@@ -181,8 +105,7 @@ function mobileAppBarBackHref(pathname: string) {
   if (pathname === "/finance/heads") return "/finance/setup";
   if (pathname === "/finance") return null;
   if (pathname.startsWith("/finance/")) return "/finance";
-  if (pathname.startsWith("/manage/") && pathname !== "/manage/profile")
-    return "/manage/profile";
+  if (pathname.startsWith("/manage/")) return "/manage";
   if (pathname.startsWith("/customers/")) return "/customers";
   if (pathname.startsWith("/suppliers/")) return "/suppliers";
   if (pathname.startsWith("/workforce/")) return "/workforce";
@@ -360,7 +283,9 @@ export const Header = memo(function Header() {
   const showMobileBack = hasMobileAppBarBack(pathname);
   const mobilePresentation = getMobileRoutePresentation(pathname);
   const [contextualTitle, setContextualTitle] = useState<string | null>(null);
-
+  const [contextualActions, setContextualActions] = useState<
+    MobileAppBarAction[]
+  >([]);
   const [isFromManage, setIsFromManage] = useState(false);
 
   useEffect(() => {
@@ -385,6 +310,17 @@ export const Header = memo(function Header() {
     );
     return () =>
       window.removeEventListener(MOBILE_APP_BAR_TITLE_EVENT, setTitle);
+  }, []);
+
+  useEffect(() => {
+    const setActions = (event: Event) => {
+      setContextualActions(
+        (event as CustomEvent<MobileAppBarAction[]>).detail || [],
+      );
+    };
+    window.addEventListener(MOBILE_APP_BAR_ACTIONS_EVENT, setActions);
+    return () =>
+      window.removeEventListener(MOBILE_APP_BAR_ACTIONS_EVENT, setActions);
   }, []);
 
   const displayedAppBarTitle = contextualTitle || appBarTitle;
@@ -442,6 +378,11 @@ export const Header = memo(function Header() {
                     router.push("/manage");
                     return;
                   }
+                  const settingsOwner = getSettingsRouteOwnership(pathname);
+                  if (settingsOwner) {
+                    router.push(settingsOwner.mobileBackTarget);
+                    return;
+                  }
                   if (isMobileSecondaryModuleRoute(pathname || "")) {
                     router.back();
                     return;
@@ -453,7 +394,36 @@ export const Header = memo(function Header() {
               : undefined
           }
           actions={
-            pathname === "/cash-drawers" ? (
+            contextualActions.length ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11 rounded-xl"
+                    aria-label="More actions"
+                  >
+                    <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {contextualActions.map((action) => (
+                    <DropdownMenuItem
+                      key={action.id}
+                      disabled={action.disabled}
+                      className={cn(
+                        "min-h-11",
+                        action.destructive && "text-destructive",
+                      )}
+                      onSelect={action.onSelect}
+                    >
+                      {action.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : pathname === "/cash-drawers" ? (
               <Button
                 asChild
                 variant="ghost"

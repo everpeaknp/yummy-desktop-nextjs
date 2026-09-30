@@ -1,5 +1,5 @@
-import { SuppliersWorkspace } from "@/components/manage/suppliers/suppliers-workspace";
+import { redirect } from "next/navigation";
 
 export default function SuppliersPage() {
-  return <SuppliersWorkspace />;
+  redirect("/suppliers");
 }

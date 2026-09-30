@@ -116,18 +116,20 @@ export function FiscalReceipt({
         </section>
 
         <section className="py-2">
-          <div className="mb-1 grid grid-cols-[1fr_40px_58px] gap-1 border-b border-black pb-1 font-bold">
+          <div className="mb-1 grid grid-cols-[minmax(0,1fr)_34px_48px_58px] gap-1 border-b border-black pb-1 font-bold">
             <span>ITEM</span>
             <span className="text-right">QTY</span>
+            <span className="text-right">RATE</span>
             <span className="text-right">AMOUNT</span>
           </div>
           {(document.lines || []).map((item, index) => (
             <div key={item.id ?? index} className="mb-1">
-              <div className="grid grid-cols-[1fr_40px_58px] gap-1">
-                <span>
+              <div className="grid grid-cols-[minmax(0,1fr)_34px_48px_58px] items-start gap-1">
+                <span className="min-w-0 break-words">
                   {index + 1}. {item.description}
                 </span>
                 <span className="text-right">{amount(item.quantity)}</span>
+                <span className="text-right">{amount(item.unit_price)}</span>
                 <span className="text-right">{amount(item.line_total)}</span>
               </div>
               <p className="pl-3 text-[9px]">
@@ -196,7 +198,7 @@ export function FiscalReceipt({
             }`}
           >
             {cbmsPending
-              ? "CBMS SYNC PENDING"
+              ? "FISCAL SUBMISSION PENDING"
               : `CBMS SYNCED${
                   document.cbms_reference
                     ? ` · ${document.cbms_reference}`

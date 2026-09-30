@@ -1,7 +1,24 @@
-export type OrderStatus = 'pending' | 'running' | 'scheduled' | 'preparing' | 'ready' | 'out_for_delivery' | 'ready_for_pickup' | 'completed' | 'canceled';
-export type OrderType = 'quick_billing' | 'delivery' | 'pickup' | 'reservation' | 'table' | 'group' | 'online' | 'room_service';
-export type PaymentMethod = 'cash' | 'card' | 'digital' | 'fonepay' | 'credit';
-export type PaymentStatus = 'success' | 'pending' | 'failed' | 'refunded';
+export type OrderStatus =
+  | "pending"
+  | "running"
+  | "scheduled"
+  | "preparing"
+  | "ready"
+  | "out_for_delivery"
+  | "ready_for_pickup"
+  | "completed"
+  | "canceled";
+export type OrderType =
+  | "quick_billing"
+  | "delivery"
+  | "pickup"
+  | "reservation"
+  | "table"
+  | "group"
+  | "online"
+  | "room_service";
+export type PaymentMethod = "cash" | "card" | "digital" | "fonepay" | "credit";
+export type PaymentStatus = "success" | "pending" | "failed" | "refunded";
 
 export interface OrderItemModifier {
   id: number;
@@ -216,4 +233,7 @@ export interface ReceiptData {
   subtotal_pre_tax: number | null;
   should_auto_print: boolean;
   printer_config: PrinterConfig | null;
+  fiscal_registration_type?: "unverified" | "pan_only" | "vat";
+  fiscal_billing_mode?:
+    "legacy_flexible" | "pan_invoice" | "vat_external" | "vat_ebilling";
 }

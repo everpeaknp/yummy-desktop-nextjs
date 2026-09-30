@@ -9,8 +9,6 @@ import {
   ShoppingCart,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
-
 export type PartyActivityKind =
   "bill" | "credit" | "opening" | "payment" | "purchase" | "return";
 
@@ -28,7 +26,6 @@ const activityIcons: Record<
 
 export function PartyActivityRow({
   amount,
-  amountTone = "default",
   kind,
   metadata,
   onClick,
@@ -36,6 +33,7 @@ export function PartyActivityRow({
   title,
 }: {
   amount: string;
+  /** Retained for call-site compatibility; party amounts are intentionally neutral. */
   amountTone?: "default" | "positive" | "warning";
   kind: PartyActivityKind;
   metadata: string;
@@ -59,13 +57,7 @@ export function PartyActivityRow({
         </p>
       </div>
       <div className="min-w-0 text-right">
-        <p
-          className={cn(
-            "truncate text-sm font-semibold tabular-nums",
-            amountTone === "positive" && "text-emerald-600",
-            amountTone === "warning" && "text-orange-600",
-          )}
-        >
+        <p className="truncate text-sm font-semibold tabular-nums text-foreground">
           {amount}
         </p>
         <p className="mt-0.5 truncate text-xs leading-4 text-muted-foreground">

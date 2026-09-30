@@ -158,11 +158,15 @@ export function HelpCenterDialog({
   ];
 
   const shortcuts: HelpShortcut[] = [
-    { title: "Business profile", href: "/manage/profile", icon: Store },
+    {
+      title: "Business profile",
+      href: "/settings/business-profile",
+      icon: Store,
+    },
     { title: "Settings", href: "/settings", icon: Settings },
     {
       title: "Guides & tutorials",
-      href: "/manage/additional-settings?setting=guides",
+      href: "/settings",
       icon: BookOpen,
     },
   ].filter((item) => {

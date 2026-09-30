@@ -20,7 +20,7 @@ export interface FilterBarProps extends React.HTMLAttributes<HTMLDivElement> {
   mobileFooter?: React.ReactNode;
   actions?: React.ReactNode;
   mobileActionsPosition?: "before" | "after";
-  mobileTriggerVariant?: "full" | "icon";
+  mobileTriggerVariant?: "full" | "compact" | "icon";
   responsiveAt?: "md" | "lg";
 }
 
@@ -69,7 +69,9 @@ export function FilterBar({
                 "h-11 rounded-xl border shadow-none",
                 mobileTriggerVariant === "icon"
                   ? "relative w-11 shrink-0 justify-center px-0"
-                  : "flex-1 justify-between px-3",
+                  : mobileTriggerVariant === "compact"
+                    ? "w-auto shrink-0 justify-between px-3"
+                    : "flex-1 justify-between px-3",
               )}
             >
               <span
@@ -87,7 +89,7 @@ export function FilterBar({
               {activeCount > 0 ? (
                 <span
                   className={cn(
-                    "flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground",
+                    "flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-semibold text-foreground ring-1 ring-border",
                     mobileTriggerVariant === "icon" &&
                       "absolute -right-1 -top-1",
                   )}

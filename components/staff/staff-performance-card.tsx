@@ -1,17 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarRange, Loader2, ReceiptText, TrendingUp, Wallet } from "lucide-react";
+import { CalendarRange, ReceiptText, TrendingUp, Wallet } from "lucide-react";
 import { toast } from "sonner";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
 
 import apiClient from "@/lib/api-client";
 import { AnalyticsApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { WorkforceMetricStrip } from "@/components/workforce/workforce-presentation";
 
 type StaffDetailRow = {
   id: number;
@@ -30,7 +36,7 @@ type StaffDetailRow = {
 };
 
 function money(value: number) {
-  return `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return formatCurrency(value);
 }
 
 function yyyyMmDd(value: Date) {
@@ -48,7 +54,10 @@ export function StaffPerformanceCard({ userId }: { userId: number }) {
   const restaurantId = useRestaurant((state) => state.restaurant?.id);
   const authRestaurantId = useAuth((state) => state.user?.restaurant_id);
   const effectiveRestaurantId = restaurantId ?? authRestaurantId;
-  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
+  const timezone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    [],
+  );
 
   const [dateFrom, setDateFrom] = useState(() => {
     const value = new Date();
@@ -93,74 +102,90 @@ export function StaffPerformanceCard({ userId }: { userId: number }) {
   }, [load]);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <section className="space-y-4">
+      <div className="flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <CardTitle>Performance</CardTitle>
-          <CardDescription>Completed-order performance for this staff member.</CardDescription>
+          <h2 className="text-base font-semibold tracking-tight">Period</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Completed-order performance for this staff member.
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <Label className="text-xs">From</Label>
-            <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+            />
           </div>
           <div>
             <Label className="text-xs">To</Label>
-            <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+            />
           </div>
         </div>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div>
         {loading ? (
-          <div className="flex h-24 items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
-          </div>
+          <LoadingState label="Loading performance" className="min-h-40" />
         ) : error ? (
-          <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">{error}</div>
+          <ErrorState
+            title="Performance unavailable"
+            description={error}
+            actionLabel="Retry"
+            onAction={() => void load()}
+            className="min-h-40"
+          />
         ) : !row ? (
-          <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-            No completed orders attributed to this staff member in this period.
-          </div>
+          <EmptyState
+            title="No performance activity"
+            description="No completed orders were attributed to this staff member in the selected period."
+            className="min-h-40"
+          />
         ) : (
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Metric icon={ReceiptText} label="Orders created" value={String(row.orders_count)} />
-              <Metric icon={Wallet} label="Revenue (created)" value={money(row.revenue)} />
-              <Metric icon={TrendingUp} label="Avg order" value={money(row.avg_order_value)} />
-            </div>
-            {row.orders_completed > 0 || row.items_added > 0 ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {row.orders_completed > 0 ? (
-                  <Metric
-                    icon={Wallet}
-                    label="Orders completed"
-                    value={`${row.orders_completed} · ${money(row.revenue_as_completer)}`}
-                  />
-                ) : null}
-                {row.items_added > 0 ? (
-                  <Metric icon={ReceiptText} label="Items added to orders" value={String(row.items_added)} />
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+          <WorkforceMetricStrip
+            className="lg:grid-cols-5"
+            items={[
+              {
+                icon: ReceiptText,
+                label: "Orders created",
+                value: String(row.orders_count),
+              },
+              {
+                icon: Wallet,
+                label: "Created-order revenue",
+                value: money(row.revenue),
+                valueClassName: "whitespace-nowrap",
+              },
+              {
+                icon: TrendingUp,
+                label: "Average order",
+                value: money(row.avg_order_value),
+                valueClassName: "whitespace-nowrap",
+              },
+              {
+                icon: Wallet,
+                label: "Orders completed",
+                value: String(row.orders_completed),
+                helper: `${money(row.revenue_as_completer)} collected`,
+              },
+              {
+                icon: ReceiptText,
+                label: "Items added",
+                value: String(row.items_added),
+              },
+            ]}
+          />
         )}
         <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
           <CalendarRange className="h-3.5 w-3.5" />
-          {dateFrom} to {dateTo}
+          {formatDate(dateFrom)} – {formatDate(dateTo)}
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Metric({ icon: Icon, label, value }: { icon: typeof Wallet; label: string; value: string }) {
-  return (
-    <div className="rounded-xl border bg-muted/10 p-4">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon className="h-4 w-4" />
-        <p className="text-xs font-medium">{label}</p>
       </div>
-      <p className="mt-2 text-xl font-bold">{value}</p>
-    </div>
+    </section>
   );
 }

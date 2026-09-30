@@ -7,6 +7,7 @@ import {
   ChevronRight,
   History,
   Loader2,
+  MoreHorizontal,
   PackageMinus,
   Plus,
   ReceiptText,
@@ -23,6 +24,12 @@ import {
 } from "@/lib/api/endpoints";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -100,13 +107,8 @@ export function SupplierDetailWorkspace({
   const load = useCallback(async () => {
     if (!user?.restaurant_id) return;
     setLoading(true);
-    try {
-      const [
-        supplierResponse,
-        statementResponse,
-        purchasesResponse,
-        returnsResponse,
-      ] = await Promise.all([
+    const [supplierResult, statementResult, purchasesResult, returnsResult] =
+      await Promise.allSettled([
         apiClient.get(SupplierApis.getSupplier(supplierId, user.restaurant_id)),
         apiClient.get(
           PartyLedgerApis.statement("supplier", supplierId, user.restaurant_id),
@@ -126,13 +128,42 @@ export function SupplierDetailWorkspace({
           }),
         ),
       ]);
+
+    try {
+      if (supplierResult.status !== "fulfilled") {
+        throw supplierResult.reason;
+      }
+
+      const supplierResponse = supplierResult.value;
       setSupplier(supplierResponse.data.data);
-      setStatement(statementResponse.data.data);
-      setPurchases(purchasesResponse.data.data?.purchases || []);
-      setReturns(returnsResponse.data.data?.purchase_returns || []);
+      setStatement(
+        statementResult.status === "fulfilled"
+          ? statementResult.value.data.data
+          : null,
+      );
+      setPurchases(
+        purchasesResult.status === "fulfilled"
+          ? purchasesResult.value.data.data?.purchases || []
+          : [],
+      );
+      setReturns(
+        returnsResult.status === "fulfilled"
+          ? returnsResult.value.data.data?.purchase_returns || []
+          : [],
+      );
+
+      if (
+        statementResult.status !== "fulfilled" ||
+        purchasesResult.status !== "fulfilled" ||
+        returnsResult.status !== "fulfilled"
+      ) {
+        toast.error(
+          "Some supplier records could not be loaded. Supplier details remain available.",
+        );
+      }
     } catch (error) {
       console.error("Unable to load supplier workspace", error);
-      toast.error("Could not load this supplier's records.");
+      toast.error("Could not load this supplier.");
     } finally {
       setLoading(false);
     }
@@ -389,22 +420,17 @@ export function SupplierDetailWorkspace({
         </div>
         <div>
           <p className="mb-2 text-sm font-medium lg:hidden">Actions</p>
-          <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 lg:flex lg:flex-wrap lg:justify-end">
             <Button
-              variant="outline"
-              className="h-12 justify-start lg:h-11 lg:w-auto"
-              onClick={() =>
-                router.push(
-                  `/inventory/purchases/returns?supplier_id=${supplierId}`,
-                )
-              }
+              className="col-span-full h-12 w-full justify-center lg:h-11 lg:w-auto"
+              onClick={openPayment}
             >
-              <PackageMinus className="mr-2 h-4 w-4" />
-              Purchase return
+              <Banknote className="mr-2 h-4 w-4" />
+              Pay supplier
             </Button>
             <Button
               variant="outline"
-              className="h-12 justify-start lg:h-11 lg:w-auto"
+              className="h-12 min-w-0 justify-center lg:h-11 lg:w-auto"
               onClick={() =>
                 router.push(`/inventory/purchases?supplier_id=${supplierId}`)
               }
@@ -412,21 +438,34 @@ export function SupplierDetailWorkspace({
               <Plus className="mr-2 h-4 w-4" />
               Record purchase
             </Button>
-            <Button
-              variant="outline"
-              className="h-12 justify-start lg:h-11 lg:w-auto"
-              onClick={openReceipt}
-            >
-              <ReceiptText className="mr-2 h-4 w-4" />
-              Receive payment
-            </Button>
-            <Button
-              className="order-first h-12 justify-start lg:order-none lg:h-11 lg:w-auto"
-              onClick={openPayment}
-            >
-              <Banknote className="mr-2 h-4 w-4" />
-              Pay supplier
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-12 w-12 shrink-0 lg:h-11 lg:w-11"
+                  aria-label="More supplier actions"
+                >
+                  <MoreHorizontal className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() =>
+                    router.push(
+                      `/inventory/purchases/returns?supplier_id=${supplierId}`,
+                    )
+                  }
+                >
+                  <PackageMinus className="mr-2 h-4 w-4" />
+                  Purchase return
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={openReceipt}>
+                  <ReceiptText className="mr-2 h-4 w-4" />
+                  Receive payment
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

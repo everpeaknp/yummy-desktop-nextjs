@@ -1,43 +1,38 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { 
-    Printer, 
-    Plus, 
-    Trash2, 
-    Power, 
-    Settings2, 
-    Wifi, 
-    Bluetooth, 
-    RefreshCw, 
-    Check, 
-    X, 
-    Loader2,
-    Save,
-    MapPin,
-    LayoutGrid,
-    Info,
-    ShieldCheck
+import {
+  Printer,
+  Plus,
+  Trash2,
+  Settings2,
+  Wifi,
+  Bluetooth,
+  RefreshCw,
+  Loader2,
+  Save,
+  MapPin,
+  LayoutGrid,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { 
-    Dialog, 
-    DialogContent, 
-    DialogHeader, 
-    DialogTitle,
-    DialogDescription,
-    DialogFooter
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
-import { 
-    Select, 
-    SelectContent, 
-    SelectItem, 
-    SelectTrigger, 
-    SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -45,727 +40,1059 @@ import apiClient from "@/lib/api-client";
 import { PrinterApis, RestaurantApis, StationApis } from "@/lib/api/endpoints";
 import { useRestaurant } from "@/hooks/use-restaurant";
 
-import { 
-    Table, 
-    TableBody, 
-    TableCell, 
-    TableHead, 
-    TableHeader, 
-    TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/patterns/feedback/feedback-state";
 
 interface Printer {
-    id: number;
-    name: string;
-    display_name: string;
-    address: string;
-    printer_type: 'bluetooth' | 'network';
-    connection_config: any;
-    enabled: boolean;
-    is_default: boolean;
+  id: number;
+  name: string;
+  display_name: string;
+  address: string;
+  printer_type: "bluetooth" | "network";
+  connection_config: any;
+  enabled: boolean;
+  is_default: boolean;
 }
 
 interface DynamicStation {
-    id: number;
-    name: string;
-    printer_id: number | null;
-    is_active: boolean;
+  id: number;
+  name: string;
+  printer_id: number | null;
+  is_active: boolean;
 }
 
 interface PrinterManagementProps {
-    restaurantId: number;
+  restaurantId: number;
 }
 
+type ElectronPrinterBridge = {
+  testNetworkPrinter?: (options: {
+    host: string;
+    port: number;
+    timeoutMs: number;
+  }) => Promise<{ success?: boolean; message?: string }>;
+};
+
 export function PrinterManagement({ restaurantId }: PrinterManagementProps) {
-    const restaurant = useRestaurant((s) => s.restaurant);
-    const [printers, setPrinters] = useState<Printer[]>([]);
-    const [stations, setStations] = useState<DynamicStation[]>([]);
-    const [receiptPrinterId, setReceiptPrinterId] = useState<number | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [unauthorized, setUnauthorized] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const [testingId, setTestingId] = useState<number | null>(null);
-    
-    // Local Device Settings
-    const [localDeviceStations, setLocalDeviceStations] = useState<string[]>([]);
-    
-    // Create/Edit Dialog State
-    const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const [editingPrinter, setEditingPrinter] = useState<Partial<Printer> | null>(null);
-    const [formLoading, setFormLoading] = useState(false);
+  const restaurant = useRestaurant((s) => s.restaurant);
+  const [printers, setPrinters] = useState<Printer[]>([]);
+  const [stations, setStations] = useState<DynamicStation[]>([]);
+  const [receiptPrinterId, setReceiptPrinterId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [unauthorized, setUnauthorized] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [testingId, setTestingId] = useState<number | null>(null);
 
-    const fetchData = useCallback(async () => {
-        try {
-            setLoading(true);
-            setUnauthorized(false);
-            const printersRes = await apiClient.get(PrinterApis.list(restaurantId));
+  // Local Device Settings
+  const [localDeviceStations, setLocalDeviceStations] = useState<string[]>([]);
 
-            if (printersRes.data.status === 'success') {
-                setPrinters(printersRes.data.data);
-            }
+  // Create/Edit Dialog State
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingPrinter, setEditingPrinter] = useState<Partial<Printer> | null>(
+    null,
+  );
+  const [formLoading, setFormLoading] = useState(false);
 
-            // Station.printer_id is the source of truth for KOT routing (see
-            // app/services/printer_service.py::get_printer_for_kot) -- fetch
-            // the restaurant's real dynamic stations, not the deprecated
-            // kot_station_config blob.
-            const stationsRes = await apiClient.get(StationApis.list({ restaurantId, isActive: true, limit: 200 }));
-            if (stationsRes.data.status === 'success') {
-                setStations(stationsRes.data.data?.stations || []);
-            }
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setUnauthorized(false);
+      setLoadError(false);
+      const printersRes = await apiClient.get(PrinterApis.list(restaurantId));
 
-            // Receipt printing is not a station -- it's a dedicated field on
-            // the restaurant (see Restaurant.receipt_printer_id).
-            const currentRestaurant = useRestaurant.getState().restaurant;
-            setReceiptPrinterId((currentRestaurant as any)?.receipt_printer_id ?? null);
-        } catch (err: any) {
-            const status = err?.response?.status;
-            if (status === 401 || status === 403) {
-                setUnauthorized(true);
-                return;
-            }
-            toast.error("Failed to load printer settings");
-        } finally {
-            setLoading(false);
-        }
-    }, [restaurantId]);
+      if (printersRes.data.status === "success") {
+        setPrinters(printersRes.data.data);
+      }
 
-    useEffect(() => {
-        fetchData();
-        // Load local device settings
-        try {
-            const saved = localStorage.getItem("yummy_local_kot_stations");
-            if (saved) {
-                setLocalDeviceStations(JSON.parse(saved));
-            }
-        } catch (e) {
-            console.error("Failed to parse local stations", e);
-        }
-    }, [fetchData]);
+      // Station.printer_id is the source of truth for KOT routing (see
+      // app/services/printer_service.py::get_printer_for_kot) -- fetch
+      // the restaurant's real dynamic stations, not the deprecated
+      // kot_station_config blob.
+      const stationsRes = await apiClient.get(
+        StationApis.list({ restaurantId, isActive: true, limit: 200 }),
+      );
+      if (stationsRes.data.status === "success") {
+        setStations(stationsRes.data.data?.stations || []);
+      }
 
-    const handleToggleLocalStation = (stationName: string) => {
-        setLocalDeviceStations(prev => {
-            const newStations = prev.includes(stationName) 
-                ? prev.filter(s => s !== stationName)
-                : [...prev, stationName];
-            
-            localStorage.setItem("yummy_local_kot_stations", JSON.stringify(newStations));
-            return newStations;
+      // Receipt printing is not a station -- it's a dedicated field on
+      // the restaurant (see Restaurant.receipt_printer_id).
+      const currentRestaurant = useRestaurant.getState().restaurant;
+      setReceiptPrinterId(
+        (currentRestaurant as any)?.receipt_printer_id ?? null,
+      );
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 401 || status === 403) {
+        setUnauthorized(true);
+        return;
+      }
+      setLoadError(true);
+      toast.error("Failed to load printer settings");
+    } finally {
+      setLoading(false);
+    }
+  }, [restaurantId]);
+
+  useEffect(() => {
+    fetchData();
+    // Load local device settings
+    try {
+      const saved = localStorage.getItem("yummy_local_kot_stations");
+      if (saved) {
+        setLocalDeviceStations(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error("Failed to parse local stations", e);
+    }
+  }, [fetchData]);
+
+  const handleToggleLocalStation = (stationName: string) => {
+    setLocalDeviceStations((prev) => {
+      const newStations = prev.includes(stationName)
+        ? prev.filter((s) => s !== stationName)
+        : [...prev, stationName];
+
+      localStorage.setItem(
+        "yummy_local_kot_stations",
+        JSON.stringify(newStations),
+      );
+      return newStations;
+    });
+  };
+
+  const handleToggleEnabled = async (printer: Printer) => {
+    try {
+      const updated = { ...printer, enabled: !printer.enabled };
+      await apiClient.put(PrinterApis.update(printer.id), {
+        enabled: updated.enabled,
+      });
+      setPrinters((prev) =>
+        prev.map((p) => (p.id === printer.id ? updated : p)),
+      );
+      toast.success(`Printer ${updated.enabled ? "enabled" : "disabled"}`);
+    } catch (err) {
+      toast.error("Failed to update printer");
+    }
+  };
+
+  const handleTestPrinter = async (id: number | undefined) => {
+    if (!id) {
+      toast.info(
+        "Please register the printer configuration before testing the hardware connection.",
+      );
+      return;
+    }
+
+    try {
+      setTestingId(id);
+      toast.loading("Testing printer connectivity...", { id: `test-${id}` });
+      const printer = printers.find((p) => p.id === id);
+
+      // In Electron, prefer local desktop-to-printer network test.
+      const electronAPI =
+        typeof window !== "undefined"
+          ? (window as Window & { electronAPI?: ElectronPrinterBridge })
+              .electronAPI
+          : undefined;
+      const printerType = String(printer?.printer_type || "").toLowerCase();
+      const isNetworkPrinter =
+        printerType.includes("network") ||
+        /^\d{1,3}(\.\d{1,3}){3}$/.test(String(printer?.address || "").trim());
+
+      if (
+        electronAPI?.testNetworkPrinter &&
+        isNetworkPrinter &&
+        printer?.address
+      ) {
+        const host =
+          String(printer?.connection_config?.ip_address || "").trim() ||
+          String(printer.address).trim();
+        const testRes = await electronAPI.testNetworkPrinter({
+          host,
+          port: Number(printer.connection_config?.port || 9100),
+          timeoutMs: 10000,
         });
-    };
-
-    const handleToggleEnabled = async (printer: Printer) => {
-        try {
-            const updated = { ...printer, enabled: !printer.enabled };
-            await apiClient.put(PrinterApis.update(printer.id), { enabled: updated.enabled });
-            setPrinters(prev => prev.map(p => p.id === printer.id ? updated : p));
-            toast.success(`Printer ${updated.enabled ? 'enabled' : 'disabled'}`);
-        } catch (err) {
-            toast.error("Failed to update printer");
+        toast.dismiss(`test-${id}`);
+        if (testRes?.success) {
+          toast.success("Connection Successful (Local Electron)", {
+            description: testRes.message,
+          });
+        } else {
+          toast.error("Connection Failed (Local Electron)", {
+            description:
+              testRes?.message || "Could not reach printer from this desktop.",
+          });
         }
-    };
+        return;
+      }
 
-    const handleSetDefault = async (printer: Printer) => {
-        try {
-            await apiClient.put(PrinterApis.update(printer.id), { is_default: true });
-            setPrinters(prev => prev.map(p => ({
-                ...p,
-                is_default: p.id === printer.id
-            })));
-            toast.success(`${printer.name} is now the default printer`);
-        } catch (err) {
-            toast.error("Failed to set default printer");
-        }
-    };
+      // Browser/backend fallback: server-side test endpoint.
+      const response = await apiClient.post(PrinterApis.test(id));
+      toast.dismiss(`test-${id}`);
 
-    const handleTestPrinter = async (id: number | undefined) => {
-        if (!id) {
-            toast.info("Please register the printer configuration before testing the hardware connection.");
-            return;
-        }
+      if (response.data.status === "success") {
+        toast.success("Connection Successful", {
+          description: response.data.message,
+        });
+      } else {
+        toast.error("Connection Failed", {
+          description: response.data.message || "Could not reach printer.",
+        });
+      }
+    } catch (err) {
+      toast.dismiss(`test-${id}`);
+      toast.error("Network Error", {
+        description: "Failed to communicate with printer service.",
+      });
+    } finally {
+      setTestingId(null);
+    }
+  };
 
-        try {
-            setTestingId(id);
-            toast.loading("Testing printer connectivity...", { id: `test-${id}` });
-            const printer = printers.find((p) => p.id === id);
+  const handleDeletePrinter = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this printer?")) return;
+    try {
+      await apiClient.delete(PrinterApis.delete(id));
+      setPrinters((prev) => prev.filter((p) => p.id !== id));
+      toast.success("Printer deleted");
+    } catch (err) {
+      toast.error("Failed to delete printer");
+    }
+  };
 
-            // In Electron, prefer local desktop-to-printer network test.
-            // @ts-ignore
-            const electronAPI = typeof window !== "undefined" ? window.electronAPI : undefined;
-            const printerType = String(printer?.printer_type || "").toLowerCase();
-            const isNetworkPrinter =
-                printerType.includes("network") ||
-                /^\d{1,3}(\.\d{1,3}){3}$/.test(String(printer?.address || "").trim());
-
-            if (electronAPI?.testNetworkPrinter && isNetworkPrinter && printer?.address) {
-                const host =
-                    String(printer?.connection_config?.ip_address || "").trim() ||
-                    String(printer.address).trim();
-                const testRes = await electronAPI.testNetworkPrinter({
-                    host,
-                    port: Number(printer.connection_config?.port || 9100),
-                    timeoutMs: 10000,
-                });
-                toast.dismiss(`test-${id}`);
-                if (testRes?.success) {
-                    toast.success("Connection Successful (Local Electron)", {
-                        description: testRes.message,
-                    });
-                } else {
-                    toast.error("Connection Failed (Local Electron)", {
-                        description: testRes?.message || "Could not reach printer from this desktop.",
-                    });
-                }
-                return;
-            }
-
-            // Browser/backend fallback: server-side test endpoint.
-            const response = await apiClient.post(PrinterApis.test(id));
-            toast.dismiss(`test-${id}`);
-            
-            if (response.data.status === 'success') {
-                toast.success("Connection Successful", {
-                    description: response.data.message
-                });
-            } else {
-                toast.error("Connection Failed", {
-                    description: response.data.message || "Could not reach printer."
-                });
-            }
-        } catch (err) {
-            toast.dismiss(`test-${id}`);
-            toast.error("Network Error", {
-                description: "Failed to communicate with printer service."
-            });
-        } finally {
-            setTestingId(null);
-        }
-    };
-
-    const handleDeletePrinter = async (id: number) => {
-        if (!confirm("Are you sure you want to delete this printer?")) return;
-        try {
-            await apiClient.delete(PrinterApis.delete(id));
-            setPrinters(prev => prev.filter(p => p.id !== id));
-            toast.success("Printer deleted");
-        } catch (err) {
-            toast.error("Failed to delete printer");
-        }
-    };
-
-    const handleSavePrinter = async () => {
-        if (!editingPrinter?.name || !editingPrinter.printer_type) {
-            toast.error("Please fill in all required fields");
-            return;
-        }
-
-        try {
-            setFormLoading(true);
-            const payload = {
-                ...editingPrinter,
-                connection_config: editingPrinter.printer_type === 'network' 
-                    ? { 
-                        ip_address: editingPrinter.address, 
-                        port: parseInt((editingPrinter.connection_config?.port || '9100').toString()) 
-                      }
-                    : { 
-                        mac_address: editingPrinter.address 
-                      }
-            };
-
-            if (editingPrinter.id) {
-                await apiClient.put(PrinterApis.update(editingPrinter.id), payload);
-                toast.success("Printer updated");
-            } else {
-                await apiClient.post(PrinterApis.create(restaurantId), payload);
-                toast.success("Printer added");
-            }
-            setIsDialogOpen(false);
-            fetchData();
-        } catch (err) {
-            toast.error("Failed to save printer");
-        } finally {
-            setFormLoading(false);
-        }
-    };
-
-    const handleUpdateStationPrinter = async (stationId: number, printerId: string) => {
-        const newPrinterId = printerId === 'none' ? null : parseInt(printerId);
-        try {
-            await apiClient.patch(StationApis.updateStation(stationId, restaurantId), {
-                printer_id: newPrinterId,
-            });
-            setStations(prev => prev.map(s => s.id === stationId ? { ...s, printer_id: newPrinterId } : s));
-            toast.success("Station printer updated");
-        } catch (err) {
-            toast.error("Failed to update station printer");
-        }
-    };
-
-    const handleUpdateReceiptPrinter = async (printerId: string) => {
-        const newPrinterId = printerId === 'none' ? null : parseInt(printerId);
-        try {
-            await apiClient.put(RestaurantApis.update(restaurantId), {
-                receipt_printer_id: newPrinterId,
-            });
-            setReceiptPrinterId(newPrinterId);
-            toast.success("Receipt printer updated");
-            useRestaurant.getState().fetchRestaurant();
-        } catch (err) {
-            toast.error("Failed to update receipt printer");
-        }
-    };
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-primary opacity-20" />
-            </div>
-        );
+  const handleSavePrinter = async () => {
+    if (!editingPrinter?.name || !editingPrinter.printer_type) {
+      toast.error("Please fill in all required fields");
+      return;
     }
 
-    if (unauthorized) {
-        return (
-            <div className="rounded-xl border border-border/40 bg-card/50 p-6">
-                <p className="text-sm font-semibold">You do not have permission to view printer management.</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                    Ask an admin to configure station-printer routing for this restaurant.
-                </p>
-            </div>
-        );
-    }
+    try {
+      setFormLoading(true);
+      const payload = {
+        ...editingPrinter,
+        connection_config:
+          editingPrinter.printer_type === "network"
+            ? {
+                ip_address: editingPrinter.address,
+                port: parseInt(
+                  (editingPrinter.connection_config?.port || "9100").toString(),
+                ),
+              }
+            : {
+                mac_address: editingPrinter.address,
+              },
+      };
 
+      if (editingPrinter.id) {
+        await apiClient.put(PrinterApis.update(editingPrinter.id), payload);
+        toast.success("Printer updated");
+      } else {
+        await apiClient.post(PrinterApis.create(restaurantId), payload);
+        toast.success("Printer added");
+      }
+      setIsDialogOpen(false);
+      fetchData();
+    } catch (err) {
+      toast.error("Failed to save printer");
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleUpdateStationPrinter = async (
+    stationId: number,
+    printerId: string,
+  ) => {
+    const newPrinterId = printerId === "none" ? null : parseInt(printerId);
+    try {
+      await apiClient.patch(
+        StationApis.updateStation(stationId, restaurantId),
+        {
+          printer_id: newPrinterId,
+        },
+      );
+      setStations((prev) =>
+        prev.map((s) =>
+          s.id === stationId ? { ...s, printer_id: newPrinterId } : s,
+        ),
+      );
+      toast.success("Station printer updated");
+    } catch (err) {
+      toast.error("Failed to update station printer");
+    }
+  };
+
+  const handleUpdateReceiptPrinter = async (printerId: string) => {
+    const newPrinterId = printerId === "none" ? null : parseInt(printerId);
+    try {
+      await apiClient.put(RestaurantApis.update(restaurantId), {
+        receipt_printer_id: newPrinterId,
+      });
+      setReceiptPrinterId(newPrinterId);
+      toast.success("Receipt printer updated");
+      useRestaurant.getState().fetchRestaurant();
+    } catch (err) {
+      toast.error("Failed to update receipt printer");
+    }
+  };
+
+  if (loading) {
+    return <LoadingState label="Loading printers" />;
+  }
+
+  if (unauthorized) {
     return (
-        <div className="space-y-6 py-2">
-            {/* Printers Section */}
-            <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                        <h2 className="text-[11px] font-black tracking-[0.2em] text-muted-foreground/70 uppercase">Configured Printers</h2>
-                        <p className="text-sm font-bold tracking-tight">Management for billing & KOT hardware</p>
+      <ErrorState
+        title="Printer settings are restricted"
+        description="Ask an administrator to manage printer connections and station routing."
+      />
+    );
+  }
+
+  if (loadError) {
+    return (
+      <ErrorState
+        title="Printer settings could not be loaded"
+        description="Check the connection and try loading the hardware settings again."
+        actionLabel="Try again"
+        onAction={() => void fetchData()}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-7">
+      {/* Printers Section */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <h2 className="text-base font-semibold">Configured printers</h2>
+            <p className="text-sm text-muted-foreground">
+              Connections used for receipts and kitchen tickets.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditingPrinter({
+                printer_type: "network",
+                enabled: true,
+                is_default: false,
+              });
+              setIsDialogOpen(true);
+            }}
+            className="h-11 font-semibold"
+          >
+            <Plus className="mr-1.5 h-4 w-4" /> Add printer
+          </Button>
+        </div>
+
+        {printers.length === 0 ? (
+          <EmptyState
+            icon={<Printer className="h-5 w-5" />}
+            title="No printers configured"
+            description="Add a printer to route receipts or kitchen tickets to physical hardware."
+            actionLabel="Add printer"
+            onAction={() => {
+              setEditingPrinter({
+                printer_type: "network",
+                enabled: true,
+                is_default: false,
+              });
+              setIsDialogOpen(true);
+            }}
+          />
+        ) : (
+          <div className="divide-y divide-border rounded-xl border border-border md:hidden">
+            {printers.map((printer) => (
+              <div key={printer.id} className="space-y-3 p-4">
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted",
+                      printer.printer_type === "network"
+                        ? "text-blue-600"
+                        : "text-purple-600",
+                    )}
+                  >
+                    {printer.printer_type === "network" ? (
+                      <Wifi className="h-4 w-4" />
+                    ) : (
+                      <Bluetooth className="h-4 w-4" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{printer.name}</p>
+                      {printer.is_default ? (
+                        <Badge variant="secondary">Default</Badge>
+                      ) : null}
                     </div>
-                    <Button 
-                        size="sm" 
-                        onClick={() => {
-                            setEditingPrinter({ printer_type: 'network', enabled: true, is_default: false });
-                            setIsDialogOpen(true);
+                    <p className="truncate text-sm text-muted-foreground">
+                      {printer.address || "Connection not specified"}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={printer.enabled}
+                    aria-label={`${printer.enabled ? "Disable" : "Enable"} ${printer.name}`}
+                    onCheckedChange={() => handleToggleEnabled(printer)}
+                  />
+                </div>
+                <div className="grid grid-cols-[1fr_44px_44px] gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11"
+                    onClick={() => handleTestPrinter(printer.id)}
+                    disabled={testingId === printer.id}
+                  >
+                    {testingId === printer.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                    )}
+                    Test connection
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-11 w-11"
+                    aria-label={`Edit ${printer.name}`}
+                    onClick={() => {
+                      setEditingPrinter(printer);
+                      setIsDialogOpen(true);
+                    }}
+                  >
+                    <Settings2 className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-11 w-11 text-destructive"
+                    aria-label={`Delete ${printer.name}`}
+                    onClick={() => handleDeletePrinter(printer.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div
+          className={cn(
+            "hidden overflow-hidden rounded-xl border border-border md:block",
+            printers.length === 0 && "md:hidden",
+          )}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 border-b border-border/40 hover:bg-muted/30">
+                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9">
+                  Hardware
+                </TableHead>
+                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9">
+                  Connection
+                </TableHead>
+                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9">
+                  Status
+                </TableHead>
+                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9 text-right">
+                  Actions
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {printers.map((printer) => (
+                <TableRow key={printer.id} className="border-border/40">
+                  <TableCell className="py-2.5">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={cn(
+                          "w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border border-white/5",
+                          printer.printer_type === "network"
+                            ? "bg-blue-500/10 text-blue-500"
+                            : "bg-purple-500/10 text-purple-500",
+                        )}
+                      >
+                        {printer.printer_type === "network" ? (
+                          <Wifi className="w-4 h-4" />
+                        ) : (
+                          <Bluetooth className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm tracking-tight">
+                            {printer.name}
+                          </span>
+                          {printer.is_default && (
+                            <Badge
+                              variant="secondary"
+                              className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border-0 text-[8px] font-black h-4 px-1 p-0 uppercase tracking-widest"
+                            >
+                              Default
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground font-medium uppercase opacity-60">
+                          {printer.printer_type}
+                        </p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-2.5">
+                    <div className="space-y-1">
+                      <code className="text-[11px] font-bold bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                        {printer.address}
+                      </code>
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-2.5">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={printer.enabled}
+                        onCheckedChange={() => handleToggleEnabled(printer)}
+                        className="scale-75"
+                      />
+                      <span
+                        className={cn(
+                          "text-[10px] font-bold uppercase tracking-tight",
+                          printer.enabled
+                            ? "text-emerald-500"
+                            : "text-muted-foreground opacity-50",
+                        )}
+                      >
+                        {printer.enabled ? "Active" : "Disabled"}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-2.5 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-[10px] font-bold uppercase tracking-widest px-3 border-border/40 hover:bg-muted"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleTestPrinter(printer.id);
                         }}
-                        className="font-bold uppercase tracking-widest text-[10px] h-9"
+                        disabled={testingId === printer.id}
+                      >
+                        {testingId === printer.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                        ) : (
+                          <RefreshCw className="w-3 h-3 mr-1" />
+                        )}
+                        Test
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-full hover:bg-muted"
+                        onClick={() => {
+                          setEditingPrinter(printer);
+                          setIsDialogOpen(true);
+                        }}
+                      >
+                        <Settings2 className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => handleDeletePrinter(printer.id)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      {/* Station Routing Section */}
+      <div className="space-y-3 pt-4 border-t border-border/20">
+        <div className="space-y-0.5">
+          <h2 className="text-base font-semibold">Kitchen station routing</h2>
+          <p className="text-sm text-muted-foreground">
+            Choose the printer used by each preparation station.
+          </p>
+        </div>
+
+        {stations.length === 0 ? (
+          <EmptyState
+            icon={<LayoutGrid className="h-5 w-5" />}
+            title="No preparation stations"
+            description="Create a station before assigning kitchen ticket printing."
+          />
+        ) : (
+          <div className="divide-y divide-border rounded-xl border border-border md:hidden">
+            {stations.map((station) => (
+              <div key={station.id} className="space-y-3 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                    <MapPin className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">{station.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {station.printer_id
+                        ? "Printer assigned"
+                        : "Kitchen screen only"}
+                    </p>
+                  </div>
+                </div>
+                <Select
+                  value={station.printer_id?.toString() || "none"}
+                  onValueChange={(value) =>
+                    handleUpdateStationPrinter(station.id, value)
+                  }
+                >
+                  <SelectTrigger className="h-11 w-full">
+                    <SelectValue placeholder="Select printer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No printer</SelectItem>
+                    {printers
+                      .filter((printer) => printer.enabled)
+                      .map((printer) => (
+                        <SelectItem
+                          key={printer.id}
+                          value={printer.id.toString()}
+                        >
+                          {printer.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div
+          className={cn(
+            "hidden overflow-hidden rounded-xl border border-border md:block",
+            stations.length === 0 && "md:hidden",
+          )}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 border-b border-border/40 hover:bg-muted/30">
+                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9 w-[250px]">
+                  Preparation Station
+                </TableHead>
+                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9">
+                  Assigned Printer
+                </TableHead>
+                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9 text-right">
+                  Status
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {stations.map((station) => (
+                <TableRow key={station.id} className="border-border/40">
+                  <TableCell className="py-2.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0">
+                        <MapPin className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="font-bold text-sm tracking-tight uppercase">
+                        {station.name}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-2.5">
+                    <Select
+                      value={station.printer_id?.toString() || "none"}
+                      onValueChange={(val) =>
+                        handleUpdateStationPrinter(station.id, val)
+                      }
                     >
-                        <Plus className="w-4 h-4 mr-1" /> Add Printer
-                    </Button>
-                </div>
+                      <SelectTrigger className="h-8 w-[240px] text-[11px] font-bold border-border/40 bg-background/50 uppercase">
+                        <SelectValue placeholder="Select Printer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem
+                          value="none"
+                          className="text-[11px] font-bold uppercase"
+                        >
+                          None (Digital Only)
+                        </SelectItem>
+                        {printers
+                          .filter((p) => p.enabled)
+                          .map((p) => (
+                            <SelectItem
+                              key={p.id}
+                              value={p.id.toString()}
+                              className="text-[11px] font-bold uppercase"
+                            >
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell className="py-2.5 text-right">
+                    {station.printer_id ? (
+                      <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border-0 text-[9px] font-bold px-2 py-0.5 uppercase tracking-widest">
+                        Routed
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] font-bold px-2 py-0.5 uppercase tracking-widest opacity-40"
+                      >
+                        KOT Screen Only
+                      </Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
-                <div className="rounded-xl border border-border/40 overflow-hidden bg-card/50">
-                    <Table>
-                        <TableHeader>
-                            <TableRow className="bg-muted/30 border-b border-border/40 hover:bg-muted/30">
-                                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9">Hardware</TableHead>
-                                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9">Connection</TableHead>
-                                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9">Status</TableHead>
-                                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9 text-right">Actions</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {printers.map((printer) => (
-                                <TableRow key={printer.id} className="border-border/40">
-                                    <TableCell className="py-2.5">
-                                        <div className="flex items-center gap-3">
-                                            <div className={cn(
-                                                "w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border border-white/5",
-                                                printer.printer_type === 'network' ? "bg-blue-500/10 text-blue-500" : "bg-purple-500/10 text-purple-500"
-                                            )}>
-                                                {printer.printer_type === 'network' ? <Wifi className="w-4 h-4" /> : <Bluetooth className="w-4 h-4" />}
-                                            </div>
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-bold text-sm tracking-tight">{printer.name}</span>
-                                                    {printer.is_default && (
-                                                        <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border-0 text-[8px] font-black h-4 px-1 p-0 uppercase tracking-widest">Default</Badge>
-                                                    )}
-                                                </div>
-                                                <p className="text-[10px] text-muted-foreground font-medium uppercase opacity-60">{printer.printer_type}</p>
-                                            </div>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="py-2.5">
-                                        <div className="space-y-1">
-                                            <code className="text-[11px] font-bold bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{printer.address}</code>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="py-2.5">
-                                        <div className="flex items-center gap-2">
-                                            <Switch 
-                                                checked={printer.enabled} 
-                                                onCheckedChange={() => handleToggleEnabled(printer)}
-                                                className="scale-75"
-                                            />
-                                            <span className={cn(
-                                                "text-[10px] font-bold uppercase tracking-tight",
-                                                printer.enabled ? "text-emerald-500" : "text-muted-foreground opacity-50"
-                                            )}>
-                                                {printer.enabled ? "Active" : "Disabled"}
-                                            </span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="py-2.5 text-right">
-                                        <div className="flex items-center justify-end gap-1">
-                                            <Button 
-                                                type="button"
-                                                variant="outline" 
-                                                size="sm" 
-                                                className="h-8 text-[10px] font-bold uppercase tracking-widest px-3 border-border/40 hover:bg-muted"
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    handleTestPrinter(printer.id);
-                                                }}
-                                                disabled={testingId === printer.id}
-                                            >
-                                                {testingId === printer.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                                                Test
-                                            </Button>
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="h-8 w-8 rounded-full hover:bg-muted"
-                                                onClick={() => {
-                                                    setEditingPrinter(printer);
-                                                    setIsDialogOpen(true);
-                                                }}
-                                            >
-                                                <Settings2 className="w-3.5 h-3.5" />
-                                            </Button>
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive"
-                                                onClick={() => handleDeletePrinter(printer.id)}
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                            {printers.length === 0 && (
-                                <TableRow>
-                                    <TableCell colSpan={4} className="h-32 text-center">
-                                        <div className="flex flex-col items-center justify-center space-y-2 opacity-30">
-                                            <Printer className="w-8 h-8" />
-                                            <p className="text-[11px] font-bold uppercase tracking-widest">No printers registered</p>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
-            </div>
-
-            {/* Station Routing Section */}
-            <div className="space-y-3 pt-4 border-t border-border/20">
-                <div className="space-y-0.5">
-                    <h2 className="text-[11px] font-black tracking-[0.2em] text-indigo-500 uppercase">KOT Station Routing</h2>
-                    <p className="text-sm font-bold tracking-tight">Route orders from specific stations to physical hardware</p>
-                </div>
-
-                <div className="rounded-xl border border-border/40 overflow-hidden bg-card/50">
-                    <Table>
-                        <TableHeader>
-                            <TableRow className="bg-muted/30 border-b border-border/40 hover:bg-muted/30">
-                                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9 w-[250px]">Preparation Station</TableHead>
-                                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9">Assigned Printer</TableHead>
-                                <TableHead className="text-[10px] font-black tracking-widest uppercase opacity-60 h-9 text-right">Status</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {stations.map((station) => (
-                                <TableRow key={station.id} className="border-border/40">
-                                    <TableCell className="py-2.5">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0">
-                                                <MapPin className="w-3.5 h-3.5" />
-                                            </div>
-                                            <span className="font-bold text-sm tracking-tight uppercase">{station.name}</span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="py-2.5">
-                                        <Select
-                                            value={station.printer_id?.toString() || 'none'}
-                                            onValueChange={(val) => handleUpdateStationPrinter(station.id, val)}
-                                        >
-                                            <SelectTrigger className="h-8 w-[240px] text-[11px] font-bold border-border/40 bg-background/50 uppercase">
-                                                <SelectValue placeholder="Select Printer" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="none" className="text-[11px] font-bold uppercase">None (Digital Only)</SelectItem>
-                                                {printers.filter(p => p.enabled).map(p => (
-                                                    <SelectItem key={p.id} value={p.id.toString()} className="text-[11px] font-bold uppercase">
-                                                        {p.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </TableCell>
-                                    <TableCell className="py-2.5 text-right">
-                                        {station.printer_id ? (
-                                            <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border-0 text-[9px] font-bold px-2 py-0.5 uppercase tracking-widest">
-                                                Routed
-                                            </Badge>
-                                        ) : (
-                                            <Badge variant="outline" className="text-[9px] font-bold px-2 py-0.5 uppercase tracking-widest opacity-40">
-                                                KOT Screen Only
-                                            </Badge>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                            {stations.length === 0 && (
-                                <TableRow>
-                                    <TableCell colSpan={3} className="h-32 text-center">
-                                        <div className="flex flex-col items-center justify-center space-y-2 opacity-30">
-                                            <LayoutGrid className="w-8 h-8" />
-                                            <p className="text-[11px] font-bold uppercase tracking-widest">No stations configured</p>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
-            </div>
-
-            {/* Receipt Printer -- deliberately separate from station routing
+      {/* Receipt Printer -- deliberately separate from station routing
                 above: a receipt has no revenue/menu-item/inventory meaning,
                 it's purely a print target, so it isn't a Station. */}
-            <div className="space-y-3 pt-4 border-t border-border/20">
-                <div className="space-y-0.5">
-                    <h2 className="text-[11px] font-black tracking-[0.2em] text-purple-500 uppercase">Receipt Printer</h2>
-                    <p className="text-sm font-bold tracking-tight">Which printer prints the whole-order receipt</p>
-                </div>
-                <div className="rounded-xl border border-border/40 bg-card/50 p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center shrink-0">
-                            <Printer className="w-4 h-4" />
-                        </div>
-                        <span className="font-bold text-sm tracking-tight uppercase">Receipt</span>
-                    </div>
-                    <Select
-                        value={receiptPrinterId?.toString() || 'none'}
-                        onValueChange={handleUpdateReceiptPrinter}
-                    >
-                        <SelectTrigger className="h-8 w-[240px] text-[11px] font-bold border-border/40 bg-background/50 uppercase">
-                            <SelectValue placeholder="Select Printer" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="none" className="text-[11px] font-bold uppercase">None (Use Default Printer)</SelectItem>
-                            {printers.filter(p => p.enabled).map(p => (
-                                <SelectItem key={p.id} value={p.id.toString()} className="text-[11px] font-bold uppercase">
-                                    {p.name}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-            </div>
-
-            {/* Local Device Settings */}
-            <div className="space-y-3 pt-4 border-t border-border/20">
-                <div className="space-y-0.5">
-                    <h2 className="text-[11px] font-black tracking-[0.2em] text-orange-500 uppercase">This Computer&apos;s Print Duties</h2>
-                    <p className="text-sm font-bold tracking-tight">Select which KOT stations should auto-print on THIS specific device</p>
-                    <p className="text-[11px] text-muted-foreground">If none are selected, this computer will not auto-print any KOTs (useful for front-desk PCs).</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {stations.map((station) => {
-                        const isSelected = localDeviceStations.includes(station.name);
-                        return (
-                            <div 
-                                key={station.id}
-                                onClick={() => handleToggleLocalStation(station.name)}
-                                className={cn(
-                                    "flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all",
-                                    isSelected ? "border-orange-500/50 bg-orange-500/10" : "border-border/40 bg-card/50 hover:bg-muted/50"
-                                )}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className={cn(
-                                        "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
-                                        isSelected ? "bg-orange-500/20 text-orange-500" : "bg-muted text-muted-foreground"
-                                    )}>
-                                        <MapPin className="w-4 h-4" />
-                                    </div>
-                                    <span className={cn(
-                                        "font-bold text-sm tracking-tight uppercase",
-                                        isSelected ? "text-orange-600 dark:text-orange-400" : "text-foreground"
-                                    )}>{station.name}</span>
-                                </div>
-                                <Switch 
-                                    checked={isSelected}
-                                    onCheckedChange={() => handleToggleLocalStation(station.name)}
-                                    className="data-[state=checked]:bg-orange-500"
-                                />
-                            </div>
-                        );
-                    })}
-                    {stations.length === 0 && (
-                        <div className="col-span-full p-6 text-center border border-dashed rounded-xl border-border/40 text-muted-foreground text-xs uppercase tracking-widest font-bold">
-                            Please configure KOT stations first
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Dialog for Add/Edit */}
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="sm:max-w-[500px] border-border/40 backdrop-blur-2xl">
-                    <DialogHeader>
-                        <DialogTitle className="text-2xl font-black tracking-tight uppercase italic flex items-center gap-2">
-                            {editingPrinter?.id ? "Edit Printer" : "Register Printer"}
-                        </DialogTitle>
-                        <DialogDescription className="font-bold text-muted-foreground/80">
-                            Configure hardware connection and system preferences.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-8 py-4 overflow-y-auto max-h-[60vh] pr-4 -mr-4 custom-scrollbar">
-                        {/* Section 1: Basic Info */}
-                        <div className="space-y-4">
-                            <h2 className="text-[11px] font-black tracking-[0.2em] text-muted-foreground/70 uppercase flex items-center gap-2">
-                                <Info className="w-3.5 h-3.5" /> Basic Information
-                            </h2>
-                            <div className="grid gap-4">
-                                <div className="grid gap-2">
-                                    <Label className="text-[11px] font-bold uppercase tracking-tight">Printer Hardware Name</Label>
-                                    <Input 
-                                        placeholder="E.g. Main Kitchen Printer" 
-                                        value={editingPrinter?.name || ""}
-                                        onChange={(e) => setEditingPrinter({ ...editingPrinter, name: e.target.value })}
-                                        className="font-bold h-11 border-border/40 uppercase"
-                                    />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label className="text-[11px] font-bold uppercase tracking-tight">Transmission Type</Label>
-                                    <Select 
-                                        value={editingPrinter?.printer_type}
-                                        onValueChange={(val: any) => setEditingPrinter({ ...editingPrinter, printer_type: val })}
-                                    >
-                                        <SelectTrigger className="h-11 font-bold border-border/40 uppercase">
-                                            <SelectValue placeholder="Select type" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="network" className="font-bold uppercase">Network (Ethernet/Static IP)</SelectItem>
-                                            <SelectItem value="bluetooth" className="font-bold uppercase">Bluetooth Connection</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Section 2: Connection Configuration */}
-                        <div className="space-y-4 pt-4 border-t border-border/10">
-                            <h2 className="text-[11px] font-black tracking-[0.2em] text-indigo-500 uppercase flex items-center gap-2">
-                                <Wifi className="w-3.5 h-3.5" /> Connection Configuration
-                            </h2>
-                            <div className="grid gap-4">
-                                <div className="grid grid-cols-4 gap-4">
-                                    <div className="col-span-3 grid gap-2">
-                                        <Label className="text-[11px] font-bold uppercase tracking-tight">
-                                            {editingPrinter?.printer_type === 'network' ? 'IP Address' : 'MAC Address'}
-                                        </Label>
-                                        <Input 
-                                            placeholder={editingPrinter?.printer_type === 'network' ? "192.168.1.100" : "AA:BB:CC:DD:EE:FF"} 
-                                            value={editingPrinter?.address || ""}
-                                            onChange={(e) => setEditingPrinter({ ...editingPrinter, address: e.target.value })}
-                                            className="font-bold font-mono h-11 border-border/40 uppercase"
-                                        />
-                                    </div>
-                                    {editingPrinter?.printer_type === 'network' && (
-                                        <div className="grid gap-2">
-                                            <Label className="text-[11px] font-bold uppercase tracking-tight">Port</Label>
-                                            <Input 
-                                                placeholder="9100" 
-                                                value={editingPrinter?.connection_config?.port || "9100"}
-                                                onChange={(e) => setEditingPrinter({ 
-                                                    ...editingPrinter, 
-                                                    connection_config: { ...editingPrinter.connection_config, port: e.target.value } 
-                                                })}
-                                                className="font-bold font-mono h-11 border-border/40 text-center"
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Section 3: Settings */}
-                        <div className="space-y-4 pt-4 border-t border-border/10">
-                            <h2 className="text-[11px] font-black tracking-[0.2em] text-emerald-500 uppercase flex items-center gap-2">
-                                <Settings2 className="w-3.5 h-3.5" /> System Settings
-                            </h2>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="flex items-center justify-between p-3 rounded-xl border border-border/40 bg-muted/20">
-                                    <div className="space-y-0.5">
-                                        <Label className="text-[10px] font-black uppercase tracking-tight">Status</Label>
-                                        <p className="text-[9px] font-bold text-muted-foreground uppercase">{editingPrinter?.enabled ? 'Active' : 'Disabled'}</p>
-                                    </div>
-                                    <Switch 
-                                        checked={editingPrinter?.enabled} 
-                                        onCheckedChange={(val) => setEditingPrinter({ ...editingPrinter, enabled: val })}
-                                        className="scale-75"
-                                    />
-                                </div>
-                                <div className="flex items-center justify-between p-3 rounded-xl border border-border/40 bg-muted/20">
-                                    <div className="space-y-0.5">
-                                        <Label className="text-[10px] font-black uppercase tracking-tight">Default</Label>
-                                        <p className="text-[9px] font-bold text-muted-foreground uppercase">{editingPrinter?.is_default ? 'Main' : 'Global'}</p>
-                                    </div>
-                                    <Switch 
-                                        checked={editingPrinter?.is_default} 
-                                        onCheckedChange={(val) => setEditingPrinter({ ...editingPrinter, is_default: val })}
-                                        className="scale-75 data-[state=checked]:bg-emerald-500"
-                                    />
-                                </div>
-                            </div>
-
-                            <Button 
-                                type="button"
-                                variant="outline" 
-                                className="w-full h-11 font-black uppercase tracking-widest text-[10px] border-border/40 hover:bg-muted"
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    handleTestPrinter(editingPrinter?.id);
-                                }}
-                                disabled={testingId === (editingPrinter?.id || 0)}
-                            >
-                                {testingId === editingPrinter?.id && testingId !== null ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                                Test Printer Hardware Connection
-                            </Button>
-                        </div>
-                    </div>
-
-                    <DialogFooter className="border-t border-border/10 pt-4 mt-2">
-                        <Button 
-                            variant="ghost" 
-                            onClick={() => setIsDialogOpen(false)}
-                            className="font-bold uppercase tracking-widest text-[10px]"
-                        >
-                            Cancel
-                        </Button>
-                        <Button 
-                            onClick={handleSavePrinter} 
-                            disabled={formLoading}
-                            className="font-black uppercase tracking-widest text-[10px] px-8 h-11 bg-primary hover:bg-primary/90"
-                        >
-                            {formLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                            {editingPrinter?.id ? "Update Configuration" : "Register Hardware"}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+      <div className="space-y-3 pt-4 border-t border-border/20">
+        <div className="space-y-0.5">
+          <h2 className="text-base font-semibold">Receipt printer</h2>
+          <p className="text-sm text-muted-foreground">
+            Choose the printer used for whole-order receipts.
+          </p>
         </div>
-    );
+        <div className="flex flex-col gap-3 border-y border-border py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center shrink-0">
+              <Printer className="w-4 h-4" />
+            </div>
+            <span className="text-sm font-medium">Default receipt output</span>
+          </div>
+          <Select
+            value={receiptPrinterId?.toString() || "none"}
+            onValueChange={handleUpdateReceiptPrinter}
+          >
+            <SelectTrigger className="h-11 w-full sm:w-[260px]">
+              <SelectValue placeholder="Select printer" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Use the default printer</SelectItem>
+              {printers
+                .filter((p) => p.enabled)
+                .map((p) => (
+                  <SelectItem key={p.id} value={p.id.toString()}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Local Device Settings */}
+      <div className="space-y-3 pt-4 border-t border-border/20">
+        <div className="space-y-0.5">
+          <h2 className="text-base font-semibold">This device</h2>
+          <p className="text-sm text-muted-foreground">
+            Choose which kitchen stations automatically print from this
+            computer.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Leave every station off when this device should not automatically
+            print kitchen tickets.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {stations.map((station) => {
+            const isSelected = localDeviceStations.includes(station.name);
+            return (
+              <div
+                key={station.id}
+                className={cn(
+                  "flex items-center justify-between rounded-xl border p-4",
+                  isSelected
+                    ? "border-orange-500/50 bg-orange-500/10"
+                    : "border-border bg-card",
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={cn(
+                      "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                      isSelected
+                        ? "bg-orange-500/20 text-orange-500"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    <MapPin className="w-4 h-4" />
+                  </div>
+                  <span
+                    className={cn(
+                      "font-bold text-sm tracking-tight uppercase",
+                      isSelected
+                        ? "text-orange-600 dark:text-orange-400"
+                        : "text-foreground",
+                    )}
+                  >
+                    {station.name}
+                  </span>
+                </div>
+                <Switch
+                  checked={isSelected}
+                  aria-label={`Auto-print ${station.name} tickets on this device`}
+                  onCheckedChange={() => handleToggleLocalStation(station.name)}
+                  className="data-[state=checked]:bg-orange-500"
+                />
+              </div>
+            );
+          })}
+          {stations.length === 0 && (
+            <div className="col-span-full p-6 text-center border border-dashed rounded-xl border-border/40 text-muted-foreground text-xs uppercase tracking-widest font-bold">
+              Please configure KOT stations first
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Dialog for Add/Edit */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
+              {editingPrinter?.id ? "Edit printer" : "Add printer"}
+            </DialogTitle>
+            <DialogDescription>
+              Configure the printer connection used by this restaurant.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="-mr-4 max-h-[60vh] space-y-8 overflow-y-auto py-4 pr-4 custom-scrollbar">
+            {/* Section 1: Basic Info */}
+            <div className="space-y-4">
+              <h2 className="text-[11px] font-black tracking-[0.2em] text-muted-foreground/70 uppercase flex items-center gap-2">
+                <Info className="w-3.5 h-3.5" /> Basic Information
+              </h2>
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label className="text-[11px] font-bold uppercase tracking-tight">
+                    Printer Hardware Name
+                  </Label>
+                  <Input
+                    placeholder="E.g. Main Kitchen Printer"
+                    value={editingPrinter?.name || ""}
+                    onChange={(e) =>
+                      setEditingPrinter({
+                        ...editingPrinter,
+                        name: e.target.value,
+                      })
+                    }
+                    className="font-bold h-11 border-border/40 uppercase"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-[11px] font-bold uppercase tracking-tight">
+                    Transmission Type
+                  </Label>
+                  <Select
+                    value={editingPrinter?.printer_type}
+                    onValueChange={(val: any) =>
+                      setEditingPrinter({
+                        ...editingPrinter,
+                        printer_type: val,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-11 font-bold border-border/40 uppercase">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem
+                        value="network"
+                        className="font-bold uppercase"
+                      >
+                        Network (Ethernet/Static IP)
+                      </SelectItem>
+                      <SelectItem
+                        value="bluetooth"
+                        className="font-bold uppercase"
+                      >
+                        Bluetooth Connection
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Connection Configuration */}
+            <div className="space-y-4 pt-4 border-t border-border/10">
+              <h2 className="text-[11px] font-black tracking-[0.2em] text-indigo-500 uppercase flex items-center gap-2">
+                <Wifi className="w-3.5 h-3.5" /> Connection Configuration
+              </h2>
+              <div className="grid gap-4">
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="col-span-3 grid gap-2">
+                    <Label className="text-[11px] font-bold uppercase tracking-tight">
+                      {editingPrinter?.printer_type === "network"
+                        ? "IP Address"
+                        : "MAC Address"}
+                    </Label>
+                    <Input
+                      placeholder={
+                        editingPrinter?.printer_type === "network"
+                          ? "192.168.1.100"
+                          : "AA:BB:CC:DD:EE:FF"
+                      }
+                      value={editingPrinter?.address || ""}
+                      onChange={(e) =>
+                        setEditingPrinter({
+                          ...editingPrinter,
+                          address: e.target.value,
+                        })
+                      }
+                      className="font-bold font-mono h-11 border-border/40 uppercase"
+                    />
+                  </div>
+                  {editingPrinter?.printer_type === "network" && (
+                    <div className="grid gap-2">
+                      <Label className="text-[11px] font-bold uppercase tracking-tight">
+                        Port
+                      </Label>
+                      <Input
+                        placeholder="9100"
+                        value={
+                          editingPrinter?.connection_config?.port || "9100"
+                        }
+                        onChange={(e) =>
+                          setEditingPrinter({
+                            ...editingPrinter,
+                            connection_config: {
+                              ...editingPrinter.connection_config,
+                              port: e.target.value,
+                            },
+                          })
+                        }
+                        className="font-bold font-mono h-11 border-border/40 text-center"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Settings */}
+            <div className="space-y-4 pt-4 border-t border-border/10">
+              <h2 className="text-[11px] font-black tracking-[0.2em] text-emerald-500 uppercase flex items-center gap-2">
+                <Settings2 className="w-3.5 h-3.5" /> System Settings
+              </h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center justify-between p-3 rounded-xl border border-border/40 bg-muted/20">
+                  <div className="space-y-0.5">
+                    <Label className="text-[10px] font-black uppercase tracking-tight">
+                      Status
+                    </Label>
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase">
+                      {editingPrinter?.enabled ? "Active" : "Disabled"}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={editingPrinter?.enabled}
+                    onCheckedChange={(val) =>
+                      setEditingPrinter({ ...editingPrinter, enabled: val })
+                    }
+                    className="scale-75"
+                  />
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-xl border border-border/40 bg-muted/20">
+                  <div className="space-y-0.5">
+                    <Label className="text-[10px] font-black uppercase tracking-tight">
+                      Default
+                    </Label>
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase">
+                      {editingPrinter?.is_default ? "Main" : "Global"}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={editingPrinter?.is_default}
+                    onCheckedChange={(val) =>
+                      setEditingPrinter({ ...editingPrinter, is_default: val })
+                    }
+                    className="scale-75 data-[state=checked]:bg-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-11 font-black uppercase tracking-widest text-[10px] border-border/40 hover:bg-muted"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleTestPrinter(editingPrinter?.id);
+                }}
+                disabled={testingId === (editingPrinter?.id || 0)}
+              >
+                {testingId === editingPrinter?.id && testingId !== null ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Test Printer Hardware Connection
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-border/10 pt-4 mt-2">
+            <Button
+              variant="ghost"
+              onClick={() => setIsDialogOpen(false)}
+              className="font-bold uppercase tracking-widest text-[10px]"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSavePrinter}
+              disabled={formLoading}
+              className="font-black uppercase tracking-widest text-[10px] px-8 h-11 bg-primary hover:bg-primary/90"
+            >
+              {formLoading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              {editingPrinter?.id
+                ? "Update Configuration"
+                : "Register Hardware"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }

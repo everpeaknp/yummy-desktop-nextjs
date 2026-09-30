@@ -1,7 +1,5 @@
-"use client";
-
-import AdditionalSettingsPage from "../manage/additional-settings/page";
+import { SettingsHub } from "@/components/settings/settings-hub";
 
 export default function SettingsPage() {
-  return <AdditionalSettingsPage />;
+  return <SettingsHub />;
 }

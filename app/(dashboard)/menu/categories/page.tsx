@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CategoryDialog } from "@/components/menu/category-dialog";
 import { SearchField } from "@/components/patterns/controls/search-field";
+import { MobileRegisterToolbar } from "@/components/patterns/controls/mobile-register-toolbar";
+import { MobileCreateFab } from "@/components/patterns/actions/mobile-create-fab";
 import { DataList, ListRow } from "@/components/patterns/data/data-list";
 import { EmptyState } from "@/components/patterns/feedback/feedback-state";
 import { AppPage } from "@/components/patterns/page/app-page";
@@ -185,23 +187,16 @@ export default function CategoriesPage() {
         }
       />
 
-      <div className="flex items-center gap-2 lg:hidden">
-        <SearchField
-          containerClassName="flex-1"
-          placeholder="Search categories"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          onClear={() => setSearchQuery("")}
-        />
-        <Button
-          onClick={openCreateDialog}
-          size="icon"
-          className="h-11 w-11 shrink-0 rounded-xl"
-          aria-label="Add category"
-        >
-          <Plus className="h-5 w-5" />
-        </Button>
-      </div>
+      <MobileRegisterToolbar
+        search={
+          <SearchField
+            placeholder="Search categories"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onClear={() => setSearchQuery("")}
+          />
+        }
+      />
 
       <SearchField
         containerClassName="hidden max-w-sm lg:block"
@@ -286,6 +281,8 @@ export default function CategoriesPage() {
           {searchQuery ? ` · ${filteredCategories.length} shown` : ""}
         </p>
       </div>
+
+      <MobileCreateFab label="Add category" onClick={openCreateDialog} />
 
       {restaurantId ? (
         <CategoryDialog

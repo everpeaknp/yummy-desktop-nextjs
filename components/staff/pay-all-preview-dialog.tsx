@@ -5,7 +5,10 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { staffSalaryApi, type StaffPayAllPreviewItem } from "@/lib/staff/salary";
+import {
+  staffSalaryApi,
+  type StaffPayAllPreviewItem,
+} from "@/lib/staff/salary";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,9 +25,10 @@ import {
   CashBankAccountSelect,
   type CashBankAccountOption,
 } from "@/components/finance/cash-bank-account-select";
+import { formatCurrency } from "@/lib/utils";
 
 function money(value: number) {
-  return `Rs. ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return formatCurrency(value);
 }
 
 /**
@@ -60,7 +64,9 @@ export function PayAllPreviewDialog({
       .previewPayAll()
       .then(setItems)
       .catch((error) => {
-        toast.error(error?.response?.data?.detail || "Failed to load the pay-all preview");
+        toast.error(
+          error?.response?.data?.detail || "Failed to load the pay-all preview",
+        );
         onOpenChange(false);
       })
       .finally(() => setLoading(false));
@@ -85,7 +91,9 @@ export function PayAllPreviewDialog({
       onOpenChange(false);
       await onPaid();
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Failed to pay outstanding salaries");
+      toast.error(
+        error?.response?.data?.detail || "Failed to pay outstanding salaries",
+      );
     } finally {
       setPaying(false);
     }
@@ -97,8 +105,9 @@ export function PayAllPreviewDialog({
         <DialogHeader>
           <DialogTitle>Pay all outstanding salaries?</DialogTitle>
           <DialogDescription>
-            Review each staff member&apos;s current balance before paying everyone in full. Click
-            a name to pay, deduct, or add a bonus for just that person instead.
+            Review each staff member&apos;s current balance before paying
+            everyone in full. Click a name to pay, deduct, or add a bonus for
+            just that person instead.
           </DialogDescription>
         </DialogHeader>
 
@@ -130,7 +139,9 @@ export function PayAllPreviewDialog({
               </div>
             </ScrollArea>
             <div className="flex items-center justify-between border-t pt-3 text-sm">
-              <span className="text-muted-foreground">{items.length} staff member(s)</span>
+              <span className="text-muted-foreground">
+                {items.length} staff member(s)
+              </span>
               <span className="font-semibold">Total: {money(total)}</span>
             </div>
             <div className="space-y-3 border-t pt-3">
@@ -161,10 +172,17 @@ export function PayAllPreviewDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={paying}>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={paying}
+          >
             Cancel
           </Button>
-          <Button onClick={confirmPayAll} disabled={paying || loading || items.length === 0 || !account}>
+          <Button
+            onClick={confirmPayAll}
+            disabled={paying || loading || items.length === 0 || !account}
+          >
             {paying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Pay all · {money(total)}
           </Button>
