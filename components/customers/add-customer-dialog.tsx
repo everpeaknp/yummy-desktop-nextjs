@@ -30,10 +30,18 @@ const WhatsAppIcon = ({ className }: { className?: string }) => (
 
 interface AddCustomerDialogProps {
   onCustomerAdded: () => void;
+  hideTrigger?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
-  const [open, setOpen] = useState(false);
+export function AddCustomerDialog({ onCustomerAdded, hideTrigger = false, open: controlledOpen, onOpenChange }: AddCustomerDialogProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const user = useAuth((state) => state.user);
@@ -130,11 +138,13 @@ export function AddCustomerDialog({ onCustomerAdded }: AddCustomerDialogProps) {
         if (nextOpen) setError(null);
       }}
     >
-      <DialogTrigger asChild>
-        <Button className="bg-orange-600 hover:bg-orange-700 text-white">
-          <Plus className="w-4 h-4 mr-2" /> Add Customer
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button className="bg-orange-600 hover:bg-orange-700 text-white">
+            <Plus className="w-4 h-4 mr-2" /> Add Customer
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[900px]">
         <DialogHeader>
           <DialogTitle>Add New Customer</DialogTitle>
