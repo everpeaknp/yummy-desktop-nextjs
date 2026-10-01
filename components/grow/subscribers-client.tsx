@@ -43,6 +43,8 @@ import { toast } from "sonner";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import type { GrowthSettings } from "@/lib/api/growth-types";
 import { hasPermission } from "@/lib/role-permissions";
+import apiClient from "@/lib/api-client";
+import { CustomerApis } from "@/lib/api/endpoints";
 
 interface Subscriber {
   customer_id: number;
@@ -135,6 +137,7 @@ export function SubscribersClient() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [consentCustomer, setConsentCustomer] = useState<Subscriber | null>(null);
   const [consentDraft, setConsentDraft] = useState({ email: false, whatsapp: false });
+  const [contactDraft, setContactDraft] = useState({ phone: "", email: "" });
   const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
   const canManageConsent = hasPermission(user, "customers.manage");
@@ -291,6 +294,10 @@ export function SubscribersClient() {
       email: customer.email_subscribed,
       whatsapp: customer.whatsapp_subscribed,
     });
+    setContactDraft({
+      phone: customer.phone || "",
+      email: customer.email || "",
+    });
     setConsentConfirmed(false);
   };
 
@@ -300,19 +307,40 @@ export function SubscribersClient() {
       consentDraft.email !== consentCustomer.email_subscribed;
     const whatsappChanged =
       consentDraft.whatsapp !== consentCustomer.whatsapp_subscribed;
-    if (!emailChanged && !whatsappChanged) {
+    const phone = contactDraft.phone.trim();
+    const email = contactDraft.email.trim();
+    if (consentDraft.whatsapp && !phone) {
+      toast.error("Add a phone number before opting into WhatsApp");
+      return;
+    }
+    if (consentDraft.email && !email) {
+      toast.error("Add an email address before opting into Email");
+      return;
+    }
+    const contactChanged =
+      phone !== (consentCustomer.phone || "").trim() ||
+      email !== (consentCustomer.email || "").trim();
+    if (!contactChanged && !emailChanged && !whatsappChanged) {
       setConsentCustomer(null);
       return;
     }
 
     try {
       setConsentSaving(true);
-      await growthApi.updateStaffConsent({
-        customerId: consentCustomer.customer_id,
-        restaurantId: user.restaurant_id,
-        emailOptedIn: emailChanged ? consentDraft.email : undefined,
-        whatsappOptedIn: whatsappChanged ? consentDraft.whatsapp : undefined,
-      });
+      if (contactChanged) {
+        await apiClient.patch(
+          CustomerApis.updateCustomer(consentCustomer.customer_id),
+          { phone: phone || null, email: email || null },
+        );
+      }
+      if (emailChanged || whatsappChanged) {
+        await growthApi.updateStaffConsent({
+          customerId: consentCustomer.customer_id,
+          restaurantId: user.restaurant_id,
+          emailOptedIn: emailChanged ? consentDraft.email : undefined,
+          whatsappOptedIn: whatsappChanged ? consentDraft.whatsapp : undefined,
+        });
+      }
       toast.success("Marketing consent updated");
       setConsentCustomer(null);
       await loadSubscribers();
@@ -737,16 +765,16 @@ export function SubscribersClient() {
           <DialogHeader>
             <DialogTitle>Manage marketing consent</DialogTitle>
             <DialogDescription>
-              Record the channels {consentCustomer?.name} explicitly agreed to.
-              Turning a channel off records an opt-out immediately.
+              Add any missing contact details, then select the channels {consentCustomer?.name}
+              {" "}explicitly agreed to. Turning a channel off records an opt-out immediately.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
-            <label className="flex items-start gap-3 rounded-lg border p-3">
+            <div className="flex items-start gap-3 rounded-lg border p-3">
               <Checkbox
                 checked={consentDraft.whatsapp}
-                disabled={!consentCustomer?.phone && !consentCustomer?.whatsapp_subscribed}
+                disabled={!contactDraft.phone.trim() && !consentCustomer?.whatsapp_subscribed}
                 onCheckedChange={(checked) =>
                   setConsentDraft((current) => ({
                     ...current,
@@ -754,20 +782,29 @@ export function SubscribersClient() {
                   }))
                 }
               />
-              <span className="space-y-0.5">
+              <div className="min-w-0 flex-1 space-y-2">
                 <span className="flex items-center gap-2 text-sm font-medium">
                   <FaWhatsapp className="h-4 w-4 text-green-600" /> WhatsApp
                 </span>
-                <span className="block text-xs text-muted-foreground">
-                  {consentCustomer?.phone || "Add a phone number before opting in."}
-                </span>
-              </span>
-            </label>
+                <Input
+                  value={contactDraft.phone}
+                  onChange={(event) =>
+                    setContactDraft((current) => ({
+                      ...current,
+                      phone: event.target.value,
+                    }))
+                  }
+                  inputMode="tel"
+                  placeholder="Phone number, e.g. 98XXXXXXXX"
+                  aria-label="Customer phone number"
+                />
+              </div>
+            </div>
 
-            <label className="flex items-start gap-3 rounded-lg border p-3">
+            <div className="flex items-start gap-3 rounded-lg border p-3">
               <Checkbox
                 checked={consentDraft.email}
-                disabled={!consentCustomer?.email && !consentCustomer?.email_subscribed}
+                disabled={!contactDraft.email.trim() && !consentCustomer?.email_subscribed}
                 onCheckedChange={(checked) =>
                   setConsentDraft((current) => ({
                     ...current,
@@ -775,15 +812,24 @@ export function SubscribersClient() {
                   }))
                 }
               />
-              <span className="space-y-0.5">
+              <div className="min-w-0 flex-1 space-y-2">
                 <span className="flex items-center gap-2 text-sm font-medium">
                   <MdEmail className="h-4 w-4 text-blue-600" /> Email
                 </span>
-                <span className="block text-xs text-muted-foreground">
-                  {consentCustomer?.email || "Add an email address before opting in."}
-                </span>
-              </span>
-            </label>
+                <Input
+                  value={contactDraft.email}
+                  onChange={(event) =>
+                    setContactDraft((current) => ({
+                      ...current,
+                      email: event.target.value,
+                    }))
+                  }
+                  type="email"
+                  placeholder="customer@example.com"
+                  aria-label="Customer email address"
+                />
+              </div>
+            </div>
 
             <label className="flex items-start gap-3 rounded-lg bg-muted/50 p-3">
               <Checkbox
