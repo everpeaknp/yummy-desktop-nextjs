@@ -20,6 +20,7 @@ import {
   DrawerSessionApis,
   AccountingApis,
   StaffProfileApis,
+  GrowthApis,
 } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2564,9 +2565,31 @@ export default function CheckoutPage() {
           setDiscountSubmitting(false);
           return;
         }
-        await apiClient.patch(OrderApis.updateOrder(orderId), {
-          discount_code: discountCode.trim(),
-        });
+        const customerId = await ensureCustomerAttached();
+        try {
+          const validation = await apiClient.post(GrowthApis.validateOffer, {
+            order_id: orderId,
+            offer_code: discountCode.trim(),
+            customer_id: customerId || orderMeta?.customer_id || null,
+          });
+          if (validation.data?.data?.valid) {
+            await apiClient.patch(OrderApis.updateOrder(orderId), {
+              growth_offer_code: discountCode.trim(),
+            });
+            toast.success(`Growth offer applied: ${validation.data.data.offer_name || "Discount"}`);
+          } else {
+            setDiscountError(validation.data?.data?.message || "Invalid offer code");
+            return;
+          }
+        } catch (growthError: any) {
+          if ([403, 404].includes(growthError?.response?.status)) {
+            await apiClient.patch(OrderApis.updateOrder(orderId), {
+              discount_code: discountCode.trim(),
+            });
+          } else {
+            throw growthError;
+          }
+        }
       } else if (discountType === "staff") {
         const staffId = parseInt(selectedStaffId, 10);
         if (!staffId) {
@@ -2627,7 +2650,7 @@ export default function CheckoutPage() {
         OrderApis.updateOrder(orderId),
         orderMeta?.staff_order_for_id
           ? { staff_order_for_id: 0 }
-          : { discount_code: "" },
+          : { discount_code: "", growth_offer_code: "" },
       );
       await fetchBill();
     } catch (err: any) {

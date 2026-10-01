@@ -31,6 +31,8 @@ import {
   Truck,
   BookOpenCheck,
   BadgeDollarSign,
+  Sprout,
+  Megaphone,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -40,6 +42,8 @@ import {
   filterSidebarLinksByAccess,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useSubscriptionStore } from "@/hooks/use-subscription";
+import { isSubscriptionEntitlementEnabled } from "@/lib/subscription/entitlements";
 export interface SidebarItem {
   title: string;
   href: string;
@@ -77,6 +81,9 @@ const RESTAURANT_ICON_MAP: Record<string, LucideIcon> = {
   "/finance/setup": Settings,
   "/finance/operations": Banknote,
   "/customers": Users,
+  "/grow": Sprout,
+  "/grow/campaigns": Megaphone,
+  "/grow/subscribers": Users,
   "/attendance": Fingerprint,
   "/staff": Users,
   "/workforce": Briefcase,
@@ -170,8 +177,12 @@ const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
 export function useSidebarItems(): SidebarItem[] {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((s) => s.restaurant);
+  const currentSubscription = useSubscriptionStore((state) => state.current);
 
   return useMemo(() => {
+    const isExplicitlyLocked = (key: string, legacyFallback = true) =>
+      Boolean(currentSubscription) &&
+      !isSubscriptionEntitlementEnabled(currentSubscription, key, legacyFallback);
     const roles = normalizeRolesForUser(user);
     const isAdminOrManager = roles.some(
       (r) => r === "admin" || r === "manager",
@@ -209,6 +220,11 @@ export function useSidebarItems(): SidebarItem[] {
           restaurantOnlyItems.includes(item.href)
         )
           return false;
+        const entitlementByRoute: Record<string, string> = {
+          "/grow": "grow.enabled",
+        };
+        const requiredEntitlement = entitlementByRoute[item.href];
+        if (requiredEntitlement && isExplicitlyLocked(requiredEntitlement, false)) return false;
         return true;
       })
       .map((item) => ({
@@ -548,9 +564,14 @@ export function useSidebarItems(): SidebarItem[] {
     }
 
     // Ensure Settings is always at the very end of navigation
-    const cleaned = result.map((r) => ({
+    const isGrow = (item: SidebarItem) => item.href === "/grow" || item.href.startsWith("/grow/");
+    const ordered = [...result.filter((item) => !isGrow(item)), ...result.filter(isGrow)];
+    const cleaned = ordered.map((r) => ({
       ...r,
-      subItems: r.subItems?.length ? r.subItems : undefined,
+      section: isGrow(r) ? "Yummy Grow" : "Yummy Operations",
+      subItems: r.subItems?.length
+        ? r.subItems.map((subItem) => ({ ...subItem, section: "Yummy Operations" }))
+        : undefined,
     }));
 
     const settingsIndex = cleaned.findIndex(
@@ -562,5 +583,5 @@ export function useSidebarItems(): SidebarItem[] {
     }
 
     return cleaned;
-  }, [restaurant, user]);
+  }, [currentSubscription, restaurant, user]);
 }
