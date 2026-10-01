@@ -2364,6 +2364,10 @@ export const FeedbackApis = {
   submit: "/feedbacks/",
 };
 
+export const HelpCenterApis = {
+  content: "/help-center",
+};
+
 export const TransactionsApis = {
   list: ({
     restaurantId,

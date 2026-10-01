@@ -688,6 +688,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   "/workforce": ADMIN_MANAGER,
   "/settings": ALL_DASHBOARD_ROLES,
   "/feedback": ALL_DASHBOARD_ROLES,
+  "/help-center": ALL_DASHBOARD_ROLES,
   "/premium": ADMIN_MANAGER,
   "/welcome": ["user", ...ALL_DASHBOARD_ROLES],
   "/gateway": ["user", ...ALL_DASHBOARD_ROLES],

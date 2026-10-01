@@ -166,7 +166,7 @@ export function HelpCenterDialog({
     { title: "Settings", href: "/settings", icon: Settings },
     {
       title: "Guides & tutorials",
-      href: "/settings",
+      href: "/help-center",
       icon: BookOpen,
     },
   ].filter((item) => {
@@ -177,13 +177,7 @@ export function HelpCenterDialog({
 
   const supportLinks: HelpShortcut[] = [
     { title: "Send feedback", href: "/feedback", icon: MessageSquare },
-    {
-      title: "Email support",
-      icon: Mail,
-      onClick: () => {
-        window.location.href = "mailto:support@yummy.com";
-      },
-    },
+    { title: "Customer support", href: "/help-center#support", icon: Mail },
   ].filter((item) => {
     if (!item.href) return true;
     return isPathAccessible(item.href, user);

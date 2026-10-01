@@ -18,17 +18,19 @@ test("mobile promo carousel appears after the summary cards and before quick act
   assert.match(dashboard, /<main className="w-full min-w-0 space-y-6 pb-24 md:hidden">/);
 });
 
-test("mobile promo carousel uses local banners, auto-advances, and exposes slide controls", () => {
+test("mobile promo carousel is platform-managed, auto-advances, and exposes slide controls", () => {
   const carousel = read("components/dashboard/dashboard-promo-carousel.tsx");
 
-  assert.match(carousel, /\/mobile-promos\/burger\.png/);
-  assert.match(carousel, /\/mobile-promos\/king-banner\.png/);
-  assert.match(carousel, /\/mobile-promos\/plant-banner\.png/);
+  assert.doesNotMatch(carousel, /\/mobile-promos\//, "Promotions must not be hard-coded in the client.");
   assert.match(carousel, /apiClient\.get[\s\S]*?\/dashboard\/banners/);
   assert.match(carousel, /mobile_image_url/);
   assert.match(carousel, /desktop_image_url/);
+  assert.match(carousel, /action_type/);
+  assert.match(carousel, /router\.push\(actionValue\)/, "Internal banner destinations should use client navigation.");
+  assert.match(carousel, /window\.open\(actionValue, "_blank", "noopener,noreferrer"\)/, "External links opened in a new tab must be isolated.");
   assert.match(carousel, /variant === "desktop"/);
   assert.match(carousel, /setBanners\(data\.data \|\| \[\]\)/);
+  assert.match(carousel, /setBanners\(\[\]\)/, "A failed banner request must not revive an old local campaign.");
   assert.match(carousel, /setInterval\(/);
   assert.match(carousel, /aria-label=\{`Show promotional banner/);
   assert.match(carousel, /h-40 rounded-2xl xl:h-44/);

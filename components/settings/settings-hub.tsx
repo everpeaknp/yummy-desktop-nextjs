@@ -846,50 +846,23 @@ export function SettingsHub() {
         ) : null;
       case "contact_support":
         return (
-          <div className="space-y-6 py-6 text-center">
-            <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mx-auto text-blue-500">
-              <HelpCircle className="w-8 h-8" />
-            </div>
-            <div className="space-y-1">
-              <h4 className="font-black text-lg uppercase italic tracking-tight">
-                Need Assistance?
-              </h4>
-              <p className="text-sm text-muted-foreground font-bold opacity-60">
-                Our technical team is available 24/7.
-              </p>
-            </div>
-            <div className="grid gap-3 pt-4">
-              <Button
-                className="w-full h-12 font-black uppercase tracking-widest"
-                onClick={() =>
-                  (window.location.href = "mailto:support@yummy.com")
-                }
-              >
-                <Mail className="w-4 h-4 mr-2" /> Email Support
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full h-12 font-black uppercase tracking-widest border-border/40"
-              >
-                <Monitor className="w-4 h-4 mr-2" /> Live Chat
-              </Button>
-            </div>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Open the Help Center to choose an available support channel.
+            </p>
+            <Button className="w-full" onClick={() => router.push("/help-center#support")}>
+              Contact support
+            </Button>
           </div>
         );
       case "guides":
         return (
-          <div className="space-y-6 py-6 text-center">
-            <BookOpen className="w-16 h-16 text-emerald-500 opacity-20 mx-auto" />
-            <div className="space-y-1">
-              <h4 className="font-black text-lg uppercase italic tracking-tight">
-                Resource Center
-              </h4>
-              <p className="text-sm text-muted-foreground font-bold opacity-60">
-                Master the Yummy Dashboard with our tutorials.
-              </p>
-            </div>
-            <Button className="w-full h-12 font-black uppercase tracking-widest bg-emerald-600 hover:bg-emerald-700">
-              Visit Documentation <ArrowRight className="w-4 h-4 ml-2" />
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Browse current guides and video tutorials published by the Yummy team.
+            </p>
+            <Button className="w-full" onClick={() => router.push("/help-center")}>
+              Open Guides & Tutorials
             </Button>
           </div>
         );
