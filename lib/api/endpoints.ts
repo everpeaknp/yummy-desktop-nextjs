@@ -33,6 +33,7 @@ export const SubscriptionApis = {
   usage: "/subscriptions/usage",
   invoices: "/subscriptions/invoices",
   upgradeRequests: "/subscriptions/upgrade-requests",
+  quotaCompliance: "/subscriptions/quota-compliance/resolve",
 };
 
 export const FiscalApis = {

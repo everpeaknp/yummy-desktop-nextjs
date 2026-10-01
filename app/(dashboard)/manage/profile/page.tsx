@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { useRestaurant } from "@/hooks/use-restaurant";
+import { useEntitlement } from "@/hooks/use-subscription";
 import apiClient from "@/lib/api-client";
 import { AuthApis } from "@/lib/api/endpoints";
 import { attendanceApi } from "@/lib/attendance/api";
@@ -62,6 +63,7 @@ function todayKey() {
 export default function MyProfilePage() {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((state) => state.restaurant);
+  const attendanceAccess = useEntitlement("attendance.enabled", true);
   const [name, setName] = useState(user?.full_name || "");
   const [savingName, setSavingName] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -77,7 +79,14 @@ export default function MyProfilePage() {
 
   useEffect(() => { setName(user?.full_name || ""); }, [user?.full_name]);
   useEffect(() => {
-    if (!user) { setAttendanceLoading(false); return; }
+    if (!user || attendanceAccess.loading) return;
+    if (!attendanceAccess.allowed) {
+      setAttendanceStatus(null);
+      setAttendanceEntries([]);
+      setAttendanceUnavailable(true);
+      setAttendanceLoading(false);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       setAttendanceLoading(true);
@@ -89,7 +98,7 @@ export default function MyProfilePage() {
       setAttendanceLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [user?.id]);
+  }, [attendanceAccess.allowed, attendanceAccess.loading, user?.id]);
 
   const saveName = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

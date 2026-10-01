@@ -235,6 +235,13 @@ export function normalizeCurrentSubscription(payload: unknown): CurrentSubscript
     addons: Array.isArray(data.addons)
       ? data.addons.map(normalizeCurrentAddon).filter((addon): addon is CurrentAddon => Boolean(addon))
       : [],
+    quota_compliance: isRecord(data.quota_compliance) ? {
+      required: data.quota_compliance.required === true,
+      issues: Array.isArray(data.quota_compliance.issues) ? data.quota_compliance.issues.filter(isRecord).map((issue) => ({
+        key: asString(issue.key), label: asString(issue.label), limit: asNumber(issue.limit, 0), used: asNumber(issue.used, 0),
+        items: Array.isArray(issue.items) ? issue.items.filter(isRecord).map((item) => ({ id: asNumber(item.id, 0), label: asString(item.label) })).filter((item) => item.id > 0) : [],
+      })) : [],
+    } : { required: false, issues: [] },
   };
 }
 

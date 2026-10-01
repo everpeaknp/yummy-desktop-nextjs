@@ -40,9 +40,6 @@ import {
   filterSidebarLinksByAccess,
 } from "@/lib/role-permissions";
 import { useRestaurant } from "@/hooks/use-restaurant";
-import { useSubscriptionStore } from "@/hooks/use-subscription";
-import { isFinanceFeatureEnabled } from "@/lib/finance-feature-access";
-import { isSubscriptionEntitlementEnabled } from "@/lib/subscription/entitlements";
 export interface SidebarItem {
   title: string;
   href: string;
@@ -173,21 +170,15 @@ const HOTEL_CASHIER_ITEMS: SidebarItem[] = [
 export function useSidebarItems(): SidebarItem[] {
   const user = useAuth((state) => state.user);
   const restaurant = useRestaurant((s) => s.restaurant);
-  const currentSubscription = useSubscriptionStore((state) => state.current);
 
   return useMemo(() => {
-    const isExplicitlyLocked = (key: string) =>
-      Boolean(currentSubscription) &&
-      !isSubscriptionEntitlementEnabled(currentSubscription, key, true);
     const roles = normalizeRolesForUser(user);
     const isAdminOrManager = roles.some(
       (r) => r === "admin" || r === "manager",
     );
     const isCashier = roles.some((r) => r === "cashier");
 
-    const hotelAvailable =
-      Boolean(restaurant?.hotel_enabled) &&
-      !isExplicitlyLocked("business.hotel.enabled");
+    const hotelAvailable = Boolean(restaurant?.hotel_enabled);
     const restaurantAvailable = Boolean(restaurant?.restaurant_enabled);
 
     // Hotel-only properties keep hotel operations plus permitted shared tools.
@@ -217,23 +208,6 @@ export function useSidebarItems(): SidebarItem[] {
           !restaurant?.restaurant_enabled &&
           restaurantOnlyItems.includes(item.href)
         )
-          return false;
-        const entitlementByRoute: Record<string, string> = {
-          "/inventory": "inventory.enabled",
-          "/suppliers": "inventory.suppliers.enabled",
-          "/manage/suppliers": "inventory.suppliers.enabled",
-          "/reservations": "reservations.enabled",
-          "/finance/accounting": "finance.accounting.enabled",
-          "/finance/income": "finance.income_expense.enabled",
-          "/finance/expenses": "finance.income_expense.enabled",
-          "/cash-drawers": "finance.cash_drawer.enabled",
-          "/customers": "customers.crm.enabled",
-          "/day-close": "finance.daybook.enabled",
-          "/manage/receipt-designer": "designers.receipt.enabled",
-          "/manage/kot-designer": "designers.kot.enabled",
-        };
-        const requiredEntitlement = entitlementByRoute[item.href];
-        if (requiredEntitlement && isExplicitlyLocked(requiredEntitlement))
           return false;
         return true;
       })
@@ -332,13 +306,7 @@ export function useSidebarItems(): SidebarItem[] {
         isNestedChild: true,
       });
     }
-    if (
-      hasPermission(user, "attendance.manage") &&
-      !(
-        isExplicitlyLocked("attendance.mobile.enabled") &&
-        isExplicitlyLocked("attendance.biometric.enabled")
-      )
-    ) {
+    if (hasPermission(user, "attendance.manage")) {
       workforceItems.push({
         title: "Attendance",
         href: "/attendance",
@@ -379,10 +347,7 @@ export function useSidebarItems(): SidebarItem[] {
       group.subItems = subItems;
     }
 
-    if (
-      hasPermission(user, "finance.income.view") &&
-      !isExplicitlyLocked("finance.income_expense.enabled")
-    ) {
+    if (hasPermission(user, "finance.income.view")) {
       const group = getGroup(
         "finance",
         "Finance",
@@ -398,10 +363,7 @@ export function useSidebarItems(): SidebarItem[] {
           isNestedChild: true,
         });
       }
-      if (
-        isFinanceFeatureEnabled(restaurant, "reports") &&
-        !subItems.some((item) => item.href === "/finance/reports")
-      ) {
+      if (!subItems.some((item) => item.href === "/finance/reports")) {
         subItems.push({
           title: "Reports",
           href: "/finance/reports",
@@ -498,10 +460,7 @@ export function useSidebarItems(): SidebarItem[] {
         });
       }
 
-      if (
-        hasPermission(user, "day_close.drawer.open") &&
-        !isExplicitlyLocked("finance.cash_drawer.enabled")
-      ) {
+      if (hasPermission(user, "day_close.drawer.open")) {
         const cashBanksIndex = financeItems.findIndex(
           (item) => item.href === "/finance/operations",
         );
@@ -517,10 +476,7 @@ export function useSidebarItems(): SidebarItem[] {
         );
       }
 
-      if (
-        hasPermission(user, "finance.daybook.view") &&
-        !isExplicitlyLocked("finance.daybook.enabled")
-      ) {
+      if (hasPermission(user, "finance.daybook.view")) {
         const cashDrawersIndex = financeItems.findIndex(
           (item) => item.href === "/cash-drawers",
         );
@@ -545,14 +501,12 @@ export function useSidebarItems(): SidebarItem[] {
         });
       }
 
-      if (isFinanceFeatureEnabled(restaurant, "reports")) {
-        financeItems.push({
-          title: "Reports",
-          href: "/finance/reports",
-          icon: FileText,
-          isNestedChild: true,
-        });
-      }
+      financeItems.push({
+        title: "Reports",
+        href: "/finance/reports",
+        icon: FileText,
+        isNestedChild: true,
+      });
       if (
         hasPermission(user, "finance.coa.view") ||
         hasPermission(user, "finance.payment_instruments.manage")
@@ -608,5 +562,5 @@ export function useSidebarItems(): SidebarItem[] {
     }
 
     return cleaned;
-  }, [currentSubscription, restaurant, user]);
+  }, [restaurant, user]);
 }

@@ -107,6 +107,7 @@ export type CurrentSubscription = {
   entitlements: EntitlementMap;
   usage: SubscriptionUsageMap;
   addons: CurrentAddon[];
+  quota_compliance?: { required: boolean; issues: Array<{ key: string; label: string; limit: number; used: number; items: Array<{ id: number; label: string }> }> };
 };
 
 export type UpgradeRequestPayload = {

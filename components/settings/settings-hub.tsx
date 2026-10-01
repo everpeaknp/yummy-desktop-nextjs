@@ -1077,22 +1077,27 @@ export function SettingsHub() {
             </Badge>
           ) : undefined
         }
-        interactive={!restricted}
+        interactive
         className={cn(
           "[min-height:3.25rem] py-2",
           options.desktop &&
             selectedSetting === item.id &&
             "bg-primary/5 [&>div:first-child]:bg-primary/10 [&>div:first-child]:text-primary",
-          restricted && "cursor-not-allowed opacity-65",
+          restricted && "opacity-70",
         )}
       />
     );
 
     if (restricted) {
       return (
-        <div key={item.id} aria-disabled="true">
+        <Link
+          key={item.id}
+          href={item.route}
+          aria-label={`View upgrade options for ${item.title}`}
+          className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
           {row}
-        </div>
+        </Link>
       );
     }
 
