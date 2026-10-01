@@ -50,7 +50,7 @@ export const DefaultTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                   {initials || "Y"}
                 </div>
               )}
-              <span className="text-white font-bold" style={{ fontSize: "1.125rem", maxWidth: "100%", ...textConstraints }}>{restaurantName}</span>
+              <span className="text-white font-bold" style={{ fontSize: "1.125rem", ...textConstraints }}>{restaurantName}</span>
             </div>
           </div>
 

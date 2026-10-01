@@ -1328,7 +1328,10 @@ export function getTemplateColors(
   templateId: CampaignPosterTemplate,
   colors: typeof TEMPLATE_COLORS
 ): { primary: string; secondary: string } {
-  return colors[templateId] || colors.fresh;
+  return (
+    colors[templateId] ||
+    colors.fresh || { primary: "#047857", secondary: "#10b981" }
+  );
 }
 
 /**

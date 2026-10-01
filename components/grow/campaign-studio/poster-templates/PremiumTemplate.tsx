@@ -100,7 +100,6 @@ export const PremiumTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                   color: "#f5f0e6",
                   fontSize: "0.9375rem",
                   letterSpacing: "0.08em",
-                  maxWidth: "100%",
                   ...textConstraints
                 }}
               >
@@ -131,8 +130,8 @@ export const PremiumTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                 fontSize: "2.5rem",
                 lineHeight: "1.15",
                 letterSpacing: "-0.01em",
+                ...clampedTextStyles(3),
                 maxWidth: "92%",
-                ...clampedTextStyles(3)
               }}
             >
               {headline}

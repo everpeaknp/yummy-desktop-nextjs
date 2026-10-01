@@ -202,9 +202,9 @@ export function CampaignListClient() {
           return new Date(dateA).getTime() - new Date(dateB).getTime();
         }
         case "created_desc":
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          return Date.parse(b.created_at || "") - Date.parse(a.created_at || "");
         case "created_asc":
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          return Date.parse(a.created_at || "") - Date.parse(b.created_at || "");
         default:
           return 0;
       }

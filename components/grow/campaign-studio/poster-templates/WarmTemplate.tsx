@@ -68,7 +68,6 @@ export const WarmTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                 style={{
                   color: "#ffffff",
                   fontSize: "0.9375rem",
-                  maxWidth: "100%",
                   ...textConstraints
                 }}
               >
@@ -100,10 +99,10 @@ export const WarmTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                 color: "#ffffff",
                 fontSize: "2.5rem",
                 marginBottom: "1.5rem",
-                maxWidth: "90%",
                 textShadow: "0 2px 8px rgba(0,0,0,0.2)",
                 lineHeight: "1.15",
-                ...clampedTextStyles(3)
+                ...clampedTextStyles(3),
+                maxWidth: "90%"
               }}
             >
               {headline}

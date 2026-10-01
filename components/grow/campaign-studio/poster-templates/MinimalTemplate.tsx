@@ -83,7 +83,6 @@ export const MinimalTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                 style={{
                   color: "#ffffff",
                   fontSize: "1.0625rem",
-                  maxWidth: "100%",
                   ...textConstraints
                 }}
               >
@@ -108,7 +107,6 @@ export const MinimalTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                 fontFamily: headlineFont,
                 color: "#ffffff",
                 fontSize: "2.5rem",
-                maxWidth: "100%",
                 lineHeight: "1.15",
                 ...clampedTextStyles(3)
               }}

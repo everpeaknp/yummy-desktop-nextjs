@@ -67,7 +67,7 @@ export const GridTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                   {initials || "Y"}
                 </div>
               )}
-              <span className="text-white font-bold" style={{ fontSize: "1.125rem", maxWidth: "100%", ...textConstraints }}>{restaurantName}</span>
+              <span className="text-white font-bold" style={{ fontSize: "1.125rem", ...textConstraints }}>{restaurantName}</span>
             </div>
             <div className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-full text-white font-bold uppercase tracking-wider" style={{ fontSize: "0.625rem" }}>
               SPECIAL

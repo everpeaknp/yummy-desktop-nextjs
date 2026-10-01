@@ -181,7 +181,7 @@ export function renderLuxury(options: EmailPosterOptions): string {
           ${terms ? `<tr><td style="padding: 30px 44px 0; text-align: center;"><p style="margin: 0; font-family: ${BODY_FONT}; font-size: 11px; line-height: 1.7; color: #a39a86;">${nl2br(terms)}</p></td></tr>` : ""}
         </table>`;
 
-  return shell({ title: `${restaurantName} - An exclusive invitation`, bg: "#f4f0e6", content: wrapFooterRow(content, restaurantName, contactText, footerText, "#a39a86", "#8a7b5e", options.socialLinks) });
+  return shell({ title: `${restaurantName} - An exclusive invitation`, bg: "#f4f0e6", content: wrapFooterRow(content, restaurantName, options.restaurantAddress, contactText, footerText, "#a39a86", "#8a7b5e", options.socialLinks) });
 }
 
 // ---------------------------------------------------------------------------

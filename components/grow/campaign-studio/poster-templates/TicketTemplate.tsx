@@ -65,7 +65,6 @@ export const TicketTemplate = forwardRef<HTMLDivElement, TemplateProps>(
                 style={{
                   color: "#ffffff",
                   fontSize: "1.125rem",
-                  maxWidth: "100%",
                   ...textConstraints
                 }}
               >
