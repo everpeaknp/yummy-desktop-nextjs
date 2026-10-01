@@ -54,7 +54,7 @@ const TOUR_COPY: Record<string, { title: string; text: string }> = {
   },
   "navbar-help": {
     title: "Help",
-    text: "Open help for the product tour, onboarding, and useful links.",
+    text: "Open help for the product tour, settings, and useful links.",
   },
   "navbar-theme": {
     title: "Theme",

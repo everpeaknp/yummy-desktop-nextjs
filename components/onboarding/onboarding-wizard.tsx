@@ -137,19 +137,17 @@ function extractError(err: unknown): string {
 
 export function OnboardingWizard({
   initialEmail = "",
-  replay = false,
-  restaurantId = null,
-  initialRestaurant = null,
   onBackToOptions,
   embedded = false,
 }: {
   initialEmail?: string;
-  replay?: boolean;
-  restaurantId?: number | null;
-  initialRestaurant?: Record<string, unknown> | null;
   onBackToOptions?: () => void;
   embedded?: boolean;
 }) {
+  // The legacy multi-step replay path has been retired. This component now
+  // exclusively renders the one-time restaurant creation form.
+  const replay = false;
+  const initialRestaurant: Record<string, unknown> | null = null;
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const user = useAuth((s) => s.user);
@@ -174,10 +172,7 @@ export function OnboardingWizard({
   const prevStep = useOnboarding((s) => s.prevStep);
 
   const resolvedRestaurantId =
-    restaurantId ??
-    user?.restaurant_id ??
-    (initialRestaurant?.id as number | undefined) ??
-    null;
+    user?.restaurant_id ?? null;
   const {
     profile: fiscalProfile,
     isActiveVat,
@@ -998,8 +993,7 @@ export function OnboardingWizard({
           throw new Error("Restaurant setup did not return a profile.");
         }
 
-        // Set restaurant in state
-        setSelectedModule("restaurant");
+        // The simplified flow always creates a restaurant workspace.
         setRestaurant({
           ...(created as any),
           restaurant_enabled: true,
