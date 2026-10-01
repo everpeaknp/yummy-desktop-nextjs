@@ -154,7 +154,7 @@ export function PublicGrowthPreferencesClient({ signedToken }: { signedToken: st
           <Card className="w-full overflow-hidden rounded-3xl shadow-xl">
             <div className="bg-gradient-to-r from-primary/15 to-emerald-500/15 p-7 text-center">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-background text-primary shadow-sm">
-                <MonitorCog className="h-8 w-8" />
+                {preferences.status === "opted_in" ? <MonitorCog className="h-8 w-8" /> : <MonitorCog className="h-8 w-8" />}
               </div>
               <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Yummy Grow preferences</p>
               <h1 className="mt-2 text-2xl font-black">{preferences.restaurant_name}</h1>
