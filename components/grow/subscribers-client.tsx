@@ -49,7 +49,10 @@ interface Subscriber {
   preferred_language?: string;
   whatsapp_subscribed: boolean;
   email_subscribed: boolean;
-  created_at: string;
+  whatsapp_status: "opted_in" | "opted_out" | "not_asked";
+  email_status: "opted_in" | "opted_out" | "not_asked";
+  created_at?: string | null;
+  customer_created_at?: string | null;
 }
 
 type ViewMode = "table" | "grid";
@@ -74,6 +77,40 @@ function getLanguageLabel(lang?: string): string {
     ne_romanized: "Nepali (Romanized)",
   };
   return languageMap[lang || "en"] || "English";
+}
+
+function ConsentBadge({
+  channel,
+  status,
+}: {
+  channel: "Email" | "WhatsApp";
+  status: Subscriber["email_status"];
+}) {
+  const label =
+    status === "opted_in"
+      ? "Opted in"
+      : status === "opted_out"
+        ? "Opted out"
+        : "Not asked";
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "gap-1.5 whitespace-nowrap font-medium",
+        status === "opted_in" &&
+          "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
+        status === "opted_out" &&
+          "border-muted-foreground/20 bg-muted text-muted-foreground",
+      )}
+    >
+      {channel === "WhatsApp" ? (
+        <FaWhatsapp className="h-3.5 w-3.5" />
+      ) : (
+        <MdEmail className="h-3.5 w-3.5" />
+      )}
+      {channel}: {label}
+    </Badge>
+  );
 }
 
 export function SubscribersClient() {
@@ -162,7 +199,10 @@ export function SubscribersClient() {
   }, [searchQuery, channelFilter, subscribers]);
 
   const stats = {
-    total: subscribers.length,
+    customers: subscribers.length,
+    total: subscribers.filter(
+      (s) => s.whatsapp_subscribed || s.email_subscribed,
+    ).length,
     whatsapp: subscribers.filter((s) => s.whatsapp_subscribed).length,
     email: subscribers.filter((s) => s.email_subscribed).length,
     both: subscribers.filter((s) => s.whatsapp_subscribed && s.email_subscribed).length,
@@ -242,9 +282,9 @@ export function SubscribersClient() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Subscribers</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Customer Audience</h1>
           <p className="text-sm text-muted-foreground">
-            Customers who have opted in to receive marketing communications
+            All active customers, with their marketing consent shown per channel
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -384,8 +424,8 @@ export function SubscribersClient() {
                 <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Subscribers</p>
-                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.total}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Customers</p>
+                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.customers}</p>
               </div>
             </div>
           </CardContent>
@@ -394,12 +434,12 @@ export function SubscribersClient() {
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-green-500/10">
-                <FaWhatsapp className="h-5 w-5 text-green-600" />
+              <div className="p-2.5 rounded-lg bg-orange-500/10">
+                <Users className="h-5 w-5 text-orange-600" />
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">WhatsApp</p>
-                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.whatsapp}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subscribers</p>
+                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.total}</p>
               </div>
             </div>
           </CardContent>
@@ -422,12 +462,12 @@ export function SubscribersClient() {
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-purple-500/10">
-                <Users className="h-5 w-5 text-purple-600" />
+              <div className="p-2.5 rounded-lg bg-green-500/10">
+                <FaWhatsapp className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Both Channels</p>
-                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.both}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">WhatsApp</p>
+                <p className="text-2xl font-bold tabular-nums mt-0.5">{stats.whatsapp}</p>
               </div>
             </div>
           </CardContent>
@@ -439,9 +479,9 @@ export function SubscribersClient() {
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <CardTitle>All Subscribers</CardTitle>
+              <CardTitle>All Customers</CardTitle>
               <CardDescription>
-                Showing {startIndex + 1}-{Math.min(endIndex, filteredSubscribers.length)} of {filteredSubscribers.length} subscribers
+                Showing {filteredSubscribers.length ? startIndex + 1 : 0}-{Math.min(endIndex, filteredSubscribers.length)} of {filteredSubscribers.length} customers
               </CardDescription>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -451,10 +491,10 @@ export function SubscribersClient() {
                   <SelectValue placeholder="Filter by channel" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Channels</SelectItem>
-                  <SelectItem value="whatsapp">WhatsApp Only</SelectItem>
-                  <SelectItem value="email">Email Only</SelectItem>
-                  <SelectItem value="both">Both Channels</SelectItem>
+                  <SelectItem value="all">All Customers</SelectItem>
+                  <SelectItem value="whatsapp">WhatsApp opted in</SelectItem>
+                  <SelectItem value="email">Email opted in</SelectItem>
+                  <SelectItem value="both">Both opted in</SelectItem>
                 </SelectContent>
               </Select>
               <div className="relative w-full sm:w-72">
@@ -484,7 +524,7 @@ export function SubscribersClient() {
             <div className="text-center py-10">
               <Users className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
               <p className="text-sm text-muted-foreground">
-                {searchQuery || channelFilter !== "all" ? "No subscribers found matching your filters" : "No subscribers yet"}
+                {searchQuery || channelFilter !== "all" ? "No customers match your filters" : "No customers yet"}
               </p>
             </div>
           ) : viewMode === "table" ? (
@@ -496,8 +536,8 @@ export function SubscribersClient() {
                     <TableHead>Phone</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Preferred Language</TableHead>
-                    <TableHead>Channels</TableHead>
-                    <TableHead className="text-right">Subscribed</TableHead>
+                    <TableHead>Marketing consent</TableHead>
+                    <TableHead className="text-right">Last opt-in</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -528,17 +568,9 @@ export function SubscribersClient() {
                         <span className="text-sm">{getLanguageLabel(subscriber.preferred_language)}</span>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          {subscriber.whatsapp_subscribed && (
-                            <div className="p-1.5 rounded bg-green-500/10">
-                              <FaWhatsapp className="h-4 w-4 text-green-600" />
-                            </div>
-                          )}
-                          {subscriber.email_subscribed && (
-                            <div className="p-1.5 rounded bg-blue-500/10">
-                              <MdEmail className="h-4 w-4 text-blue-600" />
-                            </div>
-                          )}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <ConsentBadge channel="WhatsApp" status={subscriber.whatsapp_status} />
+                          <ConsentBadge channel="Email" status={subscriber.email_status} />
                         </div>
                       </TableCell>
                       <TableCell className="text-right text-sm text-muted-foreground">
@@ -580,16 +612,8 @@ export function SubscribersClient() {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
-                    {subscriber.whatsapp_subscribed && (
-                      <div className="p-1.5 rounded bg-green-500/10" title="WhatsApp">
-                        <FaWhatsapp className="h-4 w-4 text-green-600" />
-                      </div>
-                    )}
-                    {subscriber.email_subscribed && (
-                      <div className="p-1.5 rounded bg-blue-500/10" title="Email">
-                        <MdEmail className="h-4 w-4 text-blue-600" />
-                      </div>
-                    )}
+                    <ConsentBadge channel="WhatsApp" status={subscriber.whatsapp_status} />
+                    <ConsentBadge channel="Email" status={subscriber.email_status} />
                   </div>
                   {subscriber.created_at && (
                     <p className="text-xs text-muted-foreground">

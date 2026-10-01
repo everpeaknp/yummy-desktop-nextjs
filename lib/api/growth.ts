@@ -250,7 +250,11 @@ export const growthApi = {
   },
 
   async getSubscribers(restaurantId: number): Promise<any[]> {
-    return getData(apiClient.get(GrowthApis.subscribers));
+    return getData(
+      apiClient.get(GrowthApis.subscribers, {
+        params: { restaurant_id: restaurantId, include_all: true },
+      }),
+    );
   },
 };
 
