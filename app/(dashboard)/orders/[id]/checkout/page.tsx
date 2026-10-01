@@ -2565,7 +2565,7 @@ export default function CheckoutPage() {
           setDiscountSubmitting(false);
           return;
         }
-        const customerId = await attachSelectedCustomerToOrderIfNeeded();
+        const customerId = await ensureCustomerAttached();
         try {
           const validation = await apiClient.post(GrowthApis.validateOffer, {
             order_id: orderId,
