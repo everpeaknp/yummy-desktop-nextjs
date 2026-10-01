@@ -40,10 +40,10 @@ export interface FabricTemplate {
   >;
 }
 
-export const TEMPLATE_COLORS: Record<
+export const TEMPLATE_COLORS: Partial<Record<
   CampaignPosterTemplate,
   { primary: string; secondary: string }
-> = {
+>> = {
   fresh: { primary: "#047857", secondary: "#10b981" },
   warm: { primary: "#c2410c", secondary: "#fb923c" },
   minimal: { primary: "#111827", secondary: "#4b5563" },
