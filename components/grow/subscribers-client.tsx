@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { Grid3x3, List, Phone, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight, Share2, Copy, Check, ExternalLink, Download, QrCode as QrCodeIcon } from "lucide-react";
+import { Grid3x3, List, Phone, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight, Share2, Copy, Check, ExternalLink, Download, QrCode as QrCodeIcon, PencilLine, Loader2 } from "lucide-react";
 import { FaWhatsapp } from "react-icons/fa";
 import { MdEmail } from "react-icons/md";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -30,6 +31,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -40,6 +42,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useRestaurant } from "@/hooks/use-restaurant";
 import type { GrowthSettings } from "@/lib/api/growth-types";
+import { hasPermission } from "@/lib/role-permissions";
 
 interface Subscriber {
   customer_id: number;
@@ -130,6 +133,11 @@ export function SubscribersClient() {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [consentCustomer, setConsentCustomer] = useState<Subscriber | null>(null);
+  const [consentDraft, setConsentDraft] = useState({ email: false, whatsapp: false });
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const canManageConsent = hasPermission(user, "customers.manage");
 
   const loadSubscribers = async () => {
     if (!user?.restaurant_id) return;
@@ -275,6 +283,44 @@ export function SubscribersClient() {
     anchor.href = qrDataUrl;
     anchor.download = `${safeFileName(restaurant?.name || "restaurant")}-grow-signup-qr.png`;
     anchor.click();
+  };
+
+  const openConsentDialog = (customer: Subscriber) => {
+    setConsentCustomer(customer);
+    setConsentDraft({
+      email: customer.email_subscribed,
+      whatsapp: customer.whatsapp_subscribed,
+    });
+    setConsentConfirmed(false);
+  };
+
+  const saveConsent = async () => {
+    if (!consentCustomer || !user?.restaurant_id || !consentConfirmed) return;
+    const emailChanged =
+      consentDraft.email !== consentCustomer.email_subscribed;
+    const whatsappChanged =
+      consentDraft.whatsapp !== consentCustomer.whatsapp_subscribed;
+    if (!emailChanged && !whatsappChanged) {
+      setConsentCustomer(null);
+      return;
+    }
+
+    try {
+      setConsentSaving(true);
+      await growthApi.updateStaffConsent({
+        customerId: consentCustomer.customer_id,
+        restaurantId: user.restaurant_id,
+        emailOptedIn: emailChanged ? consentDraft.email : undefined,
+        whatsappOptedIn: whatsappChanged ? consentDraft.whatsapp : undefined,
+      });
+      toast.success("Marketing consent updated");
+      setConsentCustomer(null);
+      await loadSubscribers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update consent");
+    } finally {
+      setConsentSaving(false);
+    }
   };
 
   return (
@@ -538,6 +584,7 @@ export function SubscribersClient() {
                     <TableHead>Preferred Language</TableHead>
                     <TableHead>Marketing consent</TableHead>
                     <TableHead className="text-right">Last opt-in</TableHead>
+                    {canManageConsent && <TableHead className="w-[90px]" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -578,6 +625,19 @@ export function SubscribersClient() {
                           ? new Date(subscriber.created_at).toLocaleDateString()
                           : "—"}
                       </TableCell>
+                      {canManageConsent && (
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => openConsentDialog(subscriber)}
+                          >
+                            <PencilLine className="h-3.5 w-3.5" />
+                            Manage
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -620,6 +680,17 @@ export function SubscribersClient() {
                       Subscribed {new Date(subscriber.created_at).toLocaleDateString()}
                     </p>
                   )}
+                  {canManageConsent && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-auto gap-1.5"
+                      onClick={() => openConsentDialog(subscriber)}
+                    >
+                      <PencilLine className="h-3.5 w-3.5" />
+                      Manage consent
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -655,6 +726,97 @@ export function SubscribersClient() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={Boolean(consentCustomer)}
+        onOpenChange={(open) => {
+          if (!open && !consentSaving) setConsentCustomer(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Manage marketing consent</DialogTitle>
+            <DialogDescription>
+              Record the channels {consentCustomer?.name} explicitly agreed to.
+              Turning a channel off records an opt-out immediately.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <label className="flex items-start gap-3 rounded-lg border p-3">
+              <Checkbox
+                checked={consentDraft.whatsapp}
+                disabled={!consentCustomer?.phone && !consentCustomer?.whatsapp_subscribed}
+                onCheckedChange={(checked) =>
+                  setConsentDraft((current) => ({
+                    ...current,
+                    whatsapp: checked === true,
+                  }))
+                }
+              />
+              <span className="space-y-0.5">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <FaWhatsapp className="h-4 w-4 text-green-600" /> WhatsApp
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {consentCustomer?.phone || "Add a phone number before opting in."}
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 rounded-lg border p-3">
+              <Checkbox
+                checked={consentDraft.email}
+                disabled={!consentCustomer?.email && !consentCustomer?.email_subscribed}
+                onCheckedChange={(checked) =>
+                  setConsentDraft((current) => ({
+                    ...current,
+                    email: checked === true,
+                  }))
+                }
+              />
+              <span className="space-y-0.5">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <MdEmail className="h-4 w-4 text-blue-600" /> Email
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {consentCustomer?.email || "Add an email address before opting in."}
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 rounded-lg bg-muted/50 p-3">
+              <Checkbox
+                checked={consentConfirmed}
+                onCheckedChange={(checked) =>
+                  setConsentConfirmed(checked === true)
+                }
+              />
+              <span className="text-xs leading-5 text-muted-foreground">
+                I confirm the customer personally requested these consent changes.
+              </span>
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConsentCustomer(null)}
+              disabled={consentSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void saveConsent()}
+              disabled={!consentConfirmed || consentSaving}
+              className="gap-2"
+            >
+              {consentSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Save consent
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

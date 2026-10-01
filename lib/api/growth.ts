@@ -256,6 +256,26 @@ export const growthApi = {
       }),
     );
   },
+
+  async updateStaffConsent(input: {
+    customerId: number;
+    restaurantId: number;
+    emailOptedIn?: boolean;
+    whatsappOptedIn?: boolean;
+  }): Promise<void> {
+    await apiClient.post(
+      GrowthApis.staffConsentCapture,
+      {},
+      {
+        params: {
+          customer_id: input.customerId,
+          restaurant_id: input.restaurantId,
+          email_opted_in: input.emailOptedIn,
+          whatsapp_opted_in: input.whatsappOptedIn,
+        },
+      },
+    );
+  },
 };
 
 export type GrowthApi = typeof growthApi;

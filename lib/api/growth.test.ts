@@ -160,4 +160,41 @@ describe("growth API contract helpers", () => {
 
     expect(post).toHaveBeenCalledWith(GrowthApis.validateOffer, payload);
   });
+
+  it("loads the full customer audience without changing subscriber API defaults", async () => {
+    const get = vi.spyOn(apiClient, "get").mockResolvedValue({
+      data: { status: "success", data: [] },
+    } as never);
+
+    await growthApi.getSubscribers(119);
+
+    expect(get).toHaveBeenCalledWith(GrowthApis.subscribers, {
+      params: { restaurant_id: 119, include_all: true },
+    });
+  });
+
+  it("records only consent channels changed by staff", async () => {
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({
+      data: { status: "success", data: {} },
+    } as never);
+
+    await growthApi.updateStaffConsent({
+      customerId: 14,
+      restaurantId: 119,
+      whatsappOptedIn: true,
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      GrowthApis.staffConsentCapture,
+      {},
+      {
+        params: {
+          customer_id: 14,
+          restaurant_id: 119,
+          email_opted_in: undefined,
+          whatsapp_opted_in: true,
+        },
+      },
+    );
+  });
 });
