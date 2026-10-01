@@ -144,19 +144,17 @@ export type MergedInsight = {
   level?: string
   type?: string
   route?: string
-  source: "operational" | "ai_assisted"
-  domain?: string
-  data_status?: string
+  source: "ai" | "quick"
 }
 
 export function mergeDashboardInsights(
   quickInsights: any[],
-  analyticsInsights: any[]
+  aiInsights: any[]
 ): MergedInsight[] {
   const seen = new Set<string>()
   const result: MergedInsight[] = []
 
-  const add = (item: any) => {
+  const add = (item: any, source: "ai" | "quick") => {
     const message = String(item?.message || item?.title || "").trim()
     if (!message) return
     const key = message.toLowerCase().slice(0, 100)
@@ -168,14 +166,12 @@ export function mergeDashboardInsights(
       level: item?.level || item?.type,
       type: item?.type,
       route: item?.route,
-      source: item?.source === "ai_assisted" ? "ai_assisted" : "operational",
-      domain: item?.domain,
-      data_status: item?.data_status,
+      source,
     })
   }
 
-  analyticsInsights.forEach((item) => add(item))
-  quickInsights.forEach((item) => add(item))
+  aiInsights.forEach((item) => add(item, "ai"))
+  quickInsights.forEach((item) => add(item, "quick"))
 
   return result.slice(0, 6)
 }

@@ -70,9 +70,6 @@ export interface DashboardBreakdowns {
 export interface QuickInsight {
   type: 'POSITIVE' | 'WARNING' | 'INFO';
   message: string;
-  source?: string;
-  domain?: string;
-  data_status?: string;
 }
 
 export interface AdminDashboardV2Data {
