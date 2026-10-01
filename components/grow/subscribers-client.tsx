@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { Grid3x3, List, Phone, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight, Share2, Copy, Check, ExternalLink, Download, QrCode as QrCodeIcon, PencilLine, Loader2 } from "lucide-react";
+import { Grid3x3, List, Phone, RefreshCw, Search, Users, Filter, ChevronLeft, ChevronRight, Share2, Copy, Check, ExternalLink, Download, QrCode as QrCodeIcon, PencilLine, Loader2, UserCheck, UserMinus } from "lucide-react";
 import { FaWhatsapp } from "react-icons/fa";
 import { MdEmail } from "react-icons/md";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +62,7 @@ interface Subscriber {
 
 type ViewMode = "table" | "grid";
 type ChannelFilter = "all" | "whatsapp" | "email" | "both";
+type BulkConsentMode = "opt_in" | "opt_out";
 
 function resolveGrowPublicBaseUrl(): string {
   const configured = process.env.NEXT_PUBLIC_GROW_PUBLIC_BASE_URL?.trim();
@@ -140,6 +141,16 @@ export function SubscribersClient() {
   const [contactDraft, setContactDraft] = useState({ phone: "", email: "" });
   const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<Set<number>>(
+    new Set(),
+  );
+  const [bulkMode, setBulkMode] = useState<BulkConsentMode | null>(null);
+  const [bulkChannels, setBulkChannels] = useState({
+    email: false,
+    whatsapp: false,
+  });
+  const [bulkConfirmed, setBulkConfirmed] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const canManageConsent = hasPermission(user, "customers.manage");
 
   const loadSubscribers = async () => {
@@ -224,6 +235,15 @@ export function SubscribersClient() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedSubscribers = filteredSubscribers.slice(startIndex, endIndex);
+  const selectedCustomers = subscribers.filter((customer) =>
+    selectedCustomerIds.has(customer.customer_id),
+  );
+  const selectedPageCount = paginatedSubscribers.filter((customer) =>
+    selectedCustomerIds.has(customer.customer_id),
+  ).length;
+  const allPageSelected =
+    paginatedSubscribers.length > 0 &&
+    selectedPageCount === paginatedSubscribers.length;
 
   const goToPage = (page: number) => {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
@@ -348,6 +368,109 @@ export function SubscribersClient() {
       toast.error(err instanceof Error ? err.message : "Failed to update consent");
     } finally {
       setConsentSaving(false);
+    }
+  };
+
+  const toggleCustomerSelection = (customerId: number, selected: boolean) => {
+    setSelectedCustomerIds((current) => {
+      const next = new Set(current);
+      if (selected) next.add(customerId);
+      else next.delete(customerId);
+      return next;
+    });
+  };
+
+  const toggleCurrentPage = (selected: boolean) => {
+    setSelectedCustomerIds((current) => {
+      const next = new Set(current);
+      for (const customer of paginatedSubscribers) {
+        if (selected) next.add(customer.customer_id);
+        else next.delete(customer.customer_id);
+      }
+      return next;
+    });
+  };
+
+  const openBulkDialog = (mode: BulkConsentMode) => {
+    setBulkMode(mode);
+    setBulkChannels({ email: false, whatsapp: false });
+    setBulkConfirmed(false);
+  };
+
+  const bulkEligibility = {
+    whatsapp: selectedCustomers.filter((customer) =>
+      bulkMode === "opt_in"
+        ? Boolean(customer.phone) && !customer.whatsapp_subscribed
+        : customer.whatsapp_subscribed,
+    ).length,
+    email: selectedCustomers.filter((customer) =>
+      bulkMode === "opt_in"
+        ? Boolean(customer.email) && !customer.email_subscribed
+        : customer.email_subscribed,
+    ).length,
+  };
+
+  const applyBulkConsent = async () => {
+    if (!bulkMode || !user?.restaurant_id || !bulkConfirmed) return;
+    const restaurantId = user.restaurant_id;
+    if (!bulkChannels.email && !bulkChannels.whatsapp) {
+      toast.error("Select at least one channel");
+      return;
+    }
+
+    const operations = selectedCustomers.flatMap((customer) => {
+      const whatsappEligible =
+        bulkChannels.whatsapp &&
+        (bulkMode === "opt_in"
+          ? Boolean(customer.phone) && !customer.whatsapp_subscribed
+          : customer.whatsapp_subscribed);
+      const emailEligible =
+        bulkChannels.email &&
+        (bulkMode === "opt_in"
+          ? Boolean(customer.email) && !customer.email_subscribed
+          : customer.email_subscribed);
+      if (!whatsappEligible && !emailEligible) return [];
+      return [
+        {
+          customer,
+          request: growthApi.updateStaffConsent({
+            customerId: customer.customer_id,
+            restaurantId,
+            whatsappOptedIn: whatsappEligible
+              ? bulkMode === "opt_in"
+              : undefined,
+            emailOptedIn: emailEligible ? bulkMode === "opt_in" : undefined,
+          }),
+        },
+      ];
+    });
+
+    if (!operations.length) {
+      toast.error("None of the selected customers are eligible for this change");
+      return;
+    }
+
+    try {
+      setBulkSaving(true);
+      const results = await Promise.allSettled(
+        operations.map((operation) => operation.request),
+      );
+      const failedIds = new Set<number>();
+      let applied = 0;
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") applied += 1;
+        else failedIds.add(operations[index].customer.customer_id);
+      });
+      const skipped = selectedCustomers.length - operations.length;
+      const failed = failedIds.size;
+      toast[failed ? "warning" : "success"](
+        `${bulkMode === "opt_in" ? "Opt-in" : "Opt-out"} applied to ${applied} customer${applied === 1 ? "" : "s"}. ${skipped} skipped${failed ? `, ${failed} failed` : ""}.`,
+      );
+      setSelectedCustomerIds(failedIds);
+      setBulkMode(null);
+      await loadSubscribers();
+    } finally {
+      setBulkSaving(false);
     }
   };
 
@@ -582,6 +705,44 @@ export function SubscribersClient() {
               </div>
             </div>
           </div>
+          {canManageConsent && selectedCustomerIds.size > 0 && (
+            <div className="mt-4 flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold">
+                  {selectedCustomerIds.size} customer{selectedCustomerIds.size === 1 ? "" : "s"} selected
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Eligibility is checked separately for Email and WhatsApp.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSelectedCustomerIds(new Set())}
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => openBulkDialog("opt_out")}
+                >
+                  <UserMinus className="h-4 w-4" />
+                  Opt out
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => openBulkDialog("opt_in")}
+                >
+                  <UserCheck className="h-4 w-4" />
+                  Opt in
+                </Button>
+              </div>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -606,6 +767,23 @@ export function SubscribersClient() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {canManageConsent && (
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={
+                            allPageSelected
+                              ? true
+                              : selectedPageCount > 0
+                                ? "indeterminate"
+                                : false
+                          }
+                          onCheckedChange={(checked) =>
+                            toggleCurrentPage(checked === true)
+                          }
+                          aria-label="Select customers on this page"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>Name</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>Email</TableHead>
@@ -618,6 +796,20 @@ export function SubscribersClient() {
                 <TableBody>
                   {paginatedSubscribers.map((subscriber) => (
                     <TableRow key={subscriber.customer_id}>
+                      {canManageConsent && (
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedCustomerIds.has(subscriber.customer_id)}
+                            onCheckedChange={(checked) =>
+                              toggleCustomerSelection(
+                                subscriber.customer_id,
+                                checked === true,
+                              )
+                            }
+                            aria-label={`Select ${subscriber.name}`}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-medium">{subscriber.name}</TableCell>
                       <TableCell>
                         {subscriber.phone ? (
@@ -676,8 +868,25 @@ export function SubscribersClient() {
               {paginatedSubscribers.map((subscriber) => (
                 <div
                   key={subscriber.customer_id}
-                  className="flex flex-col gap-3 p-4 rounded-lg border border-border hover:bg-muted/30 transition-colors"
+                  className={cn(
+                    "relative flex flex-col gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/30",
+                    selectedCustomerIds.has(subscriber.customer_id) &&
+                      "border-primary/40 bg-primary/5",
+                  )}
                 >
+                  {canManageConsent && (
+                    <Checkbox
+                      checked={selectedCustomerIds.has(subscriber.customer_id)}
+                      onCheckedChange={(checked) =>
+                        toggleCustomerSelection(
+                          subscriber.customer_id,
+                          checked === true,
+                        )
+                      }
+                      aria-label={`Select ${subscriber.name}`}
+                      className="absolute right-4 top-4"
+                    />
+                  )}
                   <div className="space-y-1">
                     <p className="font-semibold">{subscriber.name}</p>
                     <div className="space-y-1 text-sm text-muted-foreground">
@@ -859,6 +1068,99 @@ export function SubscribersClient() {
             >
               {consentSaving && <Loader2 className="h-4 w-4 animate-spin" />}
               Save consent
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(bulkMode)}
+        onOpenChange={(open) => {
+          if (!open && !bulkSaving) setBulkMode(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {bulkMode === "opt_in" ? "Bulk opt in" : "Bulk opt out"}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedCustomers.length} selected. Only customers eligible for
+              each chosen channel will be changed; the rest will be skipped.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <label className="flex items-center justify-between gap-3 rounded-lg border p-3">
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <FaWhatsapp className="h-4 w-4 text-green-600" /> WhatsApp
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {bulkEligibility.whatsapp} eligible
+              </span>
+              <Checkbox
+                checked={bulkChannels.whatsapp}
+                disabled={bulkEligibility.whatsapp === 0}
+                onCheckedChange={(checked) =>
+                  setBulkChannels((current) => ({
+                    ...current,
+                    whatsapp: checked === true,
+                  }))
+                }
+              />
+            </label>
+
+            <label className="flex items-center justify-between gap-3 rounded-lg border p-3">
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <MdEmail className="h-4 w-4 text-blue-600" /> Email
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {bulkEligibility.email} eligible
+              </span>
+              <Checkbox
+                checked={bulkChannels.email}
+                disabled={bulkEligibility.email === 0}
+                onCheckedChange={(checked) =>
+                  setBulkChannels((current) => ({
+                    ...current,
+                    email: checked === true,
+                  }))
+                }
+              />
+            </label>
+
+            <label className="flex items-start gap-3 rounded-lg bg-muted/50 p-3">
+              <Checkbox
+                checked={bulkConfirmed}
+                onCheckedChange={(checked) => setBulkConfirmed(checked === true)}
+              />
+              <span className="text-xs leading-5 text-muted-foreground">
+                {bulkMode === "opt_in"
+                  ? "I confirm every customer being opted in personally agreed to receive marketing on the selected channel."
+                  : "I confirm these customers requested or require this opt-out."}
+              </span>
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBulkMode(null)}
+              disabled={bulkSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void applyBulkConsent()}
+              disabled={
+                bulkSaving ||
+                !bulkConfirmed ||
+                (!bulkChannels.email && !bulkChannels.whatsapp)
+              }
+              className="gap-2"
+            >
+              {bulkSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Apply to eligible
             </Button>
           </DialogFooter>
         </DialogContent>

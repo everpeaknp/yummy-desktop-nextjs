@@ -263,7 +263,7 @@ export const growthApi = {
     emailOptedIn?: boolean;
     whatsappOptedIn?: boolean;
   }): Promise<void> {
-    await apiClient.post(
+    const response = await apiClient.post(
       GrowthApis.staffConsentCapture,
       {},
       {
@@ -275,6 +275,12 @@ export const growthApi = {
         },
       },
     );
+    const errors = response.data?.data?.errors as
+      | Record<string, string>
+      | undefined;
+    if (errors && Object.keys(errors).length > 0) {
+      throw new Error(Object.values(errors).join("; "));
+    }
   },
 };
 
