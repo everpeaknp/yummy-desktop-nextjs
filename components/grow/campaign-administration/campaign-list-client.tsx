@@ -13,6 +13,7 @@ import {
   Grid3x3,
   List,
   Mail,
+  MessageCircle,
   Megaphone,
   Plus,
   RefreshCw,
@@ -23,7 +24,6 @@ import {
   TrendingUp,
   Activity,
 } from "lucide-react";
-import { FaWhatsapp } from "react-icons/fa";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -501,7 +501,7 @@ export function CampaignListClient() {
                                   : "bg-blue-500/10 border-blue-500/20 text-blue-600 group-hover:bg-blue-500/15"
                               )}>
                                 {campaign.channel === "whatsapp" ? (
-                                  <FaWhatsapp className="h-4 w-4" />
+                                  <MessageCircle className="h-4 w-4" />
                                 ) : (
                                   <Mail className="h-4 w-4" />
                                 )}
@@ -573,7 +573,7 @@ export function CampaignListClient() {
                                   : "bg-blue-500/10 border-blue-500/20 text-blue-600"
                               )}>
                                 {campaign.channel === "whatsapp" ? (
-                                  <FaWhatsapp className="h-3.5 w-3.5" />
+                                  <MessageCircle className="h-3.5 w-3.5" />
                                 ) : (
                                   <Mail className="h-3.5 w-3.5" />
                                 )}
